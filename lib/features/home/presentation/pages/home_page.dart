@@ -176,22 +176,31 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    // Profile Picture Placeholder
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: AppColors.textOnPrimary,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.textOnPrimary,
-                          width: 2,
+                    // Profile Picture Button - กดเพื่อไปหน้า Login
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.pushNamed(context, '/login');
+                        },
+                        borderRadius: BorderRadius.circular(30),
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: AppColors.textOnPrimary,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.textOnPrimary,
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.person,
+                            color: AppColors.primary,
+                            size: 36,
+                          ),
                         ),
-                      ),
-                      child: const Icon(
-                        Icons.person,
-                        color: AppColors.primary,
-                        size: 36,
                       ),
                     ),
                   ],
