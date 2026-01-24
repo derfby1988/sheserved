@@ -246,7 +246,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           // Section 2: Community
                           _buildMenuItem(
                             context,
-                            title: 'แจ้งเหตุ/ร้องเรียน',
+                            title: 'แจ้งเหตุ / ร้องเรียน',
                             icon: Icons.people_outline,
                             isUnderlined: true,
                             underlineText: 'แจ้ง',

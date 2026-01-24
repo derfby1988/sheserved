@@ -19,6 +19,49 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
+  late ScrollController _scrollController;
+  final GlobalKey _headerSectionKey = GlobalKey();
+  double _headerSectionHeight = 0;
+  bool _showTopBarBorderRadius = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+    // วัดความสูงของ Header Section หลังจาก build เสร็จ
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureHeaderSectionHeight();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _measureHeaderSectionHeight() {
+    final RenderBox? renderBox = _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      setState(() {
+        _headerSectionHeight = renderBox.size.height;
+      });
+    }
+  }
+
+  void _onScroll() {
+    // เมื่อ scroll position ถึงหรือเกินความสูงของ Header Section ให้แสดง borderRadius
+    if (_headerSectionHeight > 0) {
+      final shouldShowBorderRadius = _scrollController.offset >= _headerSectionHeight;
+      if (shouldShowBorderRadius != _showTopBarBorderRadius) {
+        setState(() {
+          _showTopBarBorderRadius = shouldShowBorderRadius;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,36 +117,45 @@ class _HomePageState extends State<HomePage> {
           child: SafeArea(
             child: Column(
               children: [
-                // Header with Search Bar
-                _buildHeader(context),
+                // Top Navigation Bar - อยู่กับที่ (ไม่เลื่อน)
+                _buildTopNavigationBar(context),
                 
-                // Main Content with Map Background
+                // Main Content with Scrollable Header Section
                 Expanded(
                   child: ClipRect(
                     child: SingleChildScrollView(
-                      child: Stack(
+                      controller: _scrollController,
+                      child: Column(
                         children: [
-                          // Map Background
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: 400,
-                            child: _buildMapBackground(),
-                          ),
+                          // Header Section (Content Row) - สามารถเลื่อนได้
+                          _buildHeaderSection(context),
                           
-                          // Content Layer
-                          Column(
+                          // Map Background and Content Layer
+                          Stack(
                             children: [
-                              const SizedBox(height: 16),
-                              _buildConsultationWidget(context),
-                              const SizedBox(height: 24),
-                              _buildPharmacyCard(context),
-                              const SizedBox(height: 24),
-                              _buildRecommendedSection(context),
-                              const SizedBox(height: 24),
-                              _buildInterestingSection(context),
-                              const SizedBox(height: 32),
+                              // Map Background - แสดงจากด้านบนลงมาจนถึงครึ่งของ Pharmacy Card
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: 400,
+                                child: _buildMapBackground(),
+                              ),
+                              
+                              // Content Layer
+                              Column(
+                                children: [
+                                  const SizedBox(height: 16),
+                                  _buildConsultationWidget(context),
+                                  const SizedBox(height: 24),
+                                  _buildPharmacyCard(context),
+                                  const SizedBox(height: 24),
+                                  _buildRecommendedSection(context),
+                                  const SizedBox(height: 24),
+                                  _buildInterestingSection(context),
+                                  const SizedBox(height: 32),
+                                ],
+                              ),
                             ],
                           ),
                         ],
@@ -160,10 +212,44 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Container(
+  /// Top Navigation Bar - อยู่กับที่ (ไม่เลื่อน)
+  Widget _buildTopNavigationBar(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: _showTopBarBorderRadius
+            ? const BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              )
+            : null,
+      ),
+      child: TlzAppTopBar(
+        notificationCount: 1,
+        // onMenuPressed: null → ใช้ default behavior เพื่อเปิด Drawer
+        onQRTap: () {
+          // TODO: Navigate to QR scanner
+        },
+        onNotificationTap: () {
+          // TODO: Navigate to notifications
+        },
+        onCartTap: () {
+          // TODO: Navigate to cart
+        },
+      ),
+    );
+  }
+
+  /// Header Section (Content Row) - สามารถเลื่อนได้
+  Widget _buildHeaderSection(BuildContext context) {
+    return Container(
+      key: _headerSectionKey,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: const BorderRadius.only(
@@ -171,102 +257,79 @@ class _HomePageState extends State<HomePage> {
           bottomRight: Radius.circular(24),
         ),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Navigation Bar
-          TlzAppTopBar(
-            notificationCount: 1,
-            // onMenuPressed: null → ใช้ default behavior เพื่อเปิด Drawer
-            onQRTap: () {
-              // TODO: Navigate to QR scanner
-            },
-            onNotificationTap: () {
-              // TODO: Navigate to notifications
-            },
-            onCartTap: () {
-              // TODO: Navigate to cart
-            },
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Content Row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left Side: Status Text & Profile Picture
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'สุขภาพ "ดี"',
-                      style: AppTextStyles.bodyLarge.copyWith(
+          // Left Side: Status Text & Profile Picture
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'สุขภาพ "ดี"',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: AppColors.textOnPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Profile Picture Button - กดเพื่อไปหน้า Login
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.pushNamed(context, '/login');
+                    },
+                    borderRadius: BorderRadius.circular(30),
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
                         color: AppColors.textOnPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Profile Picture Button - กดเพื่อไปหน้า Login
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.pushNamed(context, '/login');
-                        },
-                        borderRadius: BorderRadius.circular(30),
-                        child: Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: AppColors.textOnPrimary,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.textOnPrimary,
-                              width: 2,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.person,
-                            color: AppColors.primary,
-                            size: 36,
-                          ),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.textOnPrimary,
+                          width: 2,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Right Side: Medicine Reminder & Popular Badge
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    'อีก 10 นาที\nทานยา',
-                    textAlign: TextAlign.right,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textOnPrimary,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.textOnPrimary.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'ได้รับความนิยม',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textOnPrimary,
-                        fontWeight: FontWeight.w600,
+                      child: const Icon(
+                        Icons.person,
+                        color: AppColors.primary,
+                        size: 36,
                       ),
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          
+          // Right Side: Medicine Reminder & Popular Badge
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'อีก 10 นาที\nทานยา',
+                textAlign: TextAlign.right,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textOnPrimary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.textOnPrimary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'ได้รับความนิยม',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textOnPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
