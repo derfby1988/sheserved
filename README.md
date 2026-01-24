@@ -13,6 +13,7 @@ Tree Law Zoo is a Flutter-based mobile application for restaurant and medical se
 - 📍 Real-time Location Tracking via WebSocket
 - 🗺️ Interactive Maps (OpenStreetMap)
 - 🎨 Modern UI with custom design system
+- 🎥 Video Upload and Streaming (Bunny.net + FFmpeg)
 
 ## Getting Started
 
@@ -149,6 +150,7 @@ PORT=3000
 
 - [SETUP_NEW_MACHINE.md](SETUP_NEW_MACHINE.md) - Client Machine setup guide
 - [SETUP_DATABASE_SERVER.md](SETUP_DATABASE_SERVER.md) - Database Server setup guide
+- [VIDEO_SYSTEM_PLAN.md](VIDEO_SYSTEM_PLAN.md) - Video upload and streaming system plan
 - [websocket-server/README.md](websocket-server/README.md) - WebSocket Server documentation
 - [websocket-server/SETUP_GUIDE.md](websocket-server/SETUP_GUIDE.md) - WebSocket Server setup
 
@@ -159,6 +161,8 @@ PORT=3000
 - **PostgreSQL** - Database
 - **Socket.io** - Real-time communication
 - **OpenStreetMap** - Maps
+- **Bunny.net** - CDN and video storage
+- **FFmpeg** - Video transcoding
 
 ## Contributing
 
