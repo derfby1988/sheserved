@@ -9,6 +9,9 @@ class WebSocketService {
   IO.Socket? _socket;
   final String _serverUrl;
   bool _isConnected = false;
+  bool _isEnabled = true; // Flag to enable/disable WebSocket
+  int _connectionAttempts = 0;
+  static const int _maxConnectionAttempts = 3;
   
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
@@ -17,6 +20,7 @@ class WebSocketService {
   
   // Getters
   bool get isConnected => _isConnected;
+  bool get isEnabled => _isEnabled;
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
   Stream<String> get errorStream => _errorController.stream;
@@ -31,19 +35,47 @@ class WebSocketService {
     return _instance!;
   }
   
+  /// Enable or disable WebSocket connection
+  void setEnabled(bool enabled) {
+    _isEnabled = enabled;
+    if (!enabled) {
+      disconnect();
+    }
+  }
+  
+  /// Reset connection attempts (call this when user manually tries to connect)
+  void resetConnectionAttempts() {
+    _connectionAttempts = 0;
+  }
+  
   /// Connect to WebSocket Server
   Future<void> connect({String? userId, String? authToken}) async {
+    if (!_isEnabled) {
+      debugPrint('WebSocket is disabled');
+      return;
+    }
+    
     if (_isConnected) {
       debugPrint('WebSocket already connected');
       return;
     }
+    
+    // Check connection attempts to prevent infinite retry
+    if (_connectionAttempts >= _maxConnectionAttempts) {
+      debugPrint('WebSocket: Max connection attempts reached. Call resetConnectionAttempts() to retry.');
+      _errorController.add('Max connection attempts reached. Server may not be running.');
+      return;
+    }
+    
+    _connectionAttempts++;
     
     try {
       _socket = IO.io(
         _serverUrl,
         IO.OptionBuilder()
             .setTransports(['websocket'])
-            .enableAutoConnect()
+            .disableAutoConnect() // ปิด auto-connect เพื่อให้เชื่อมต่อเมื่อเรียก connect() เท่านั้น
+            .disableReconnection() // ปิด auto-reconnect เพื่อไม่ให้ retry ตลอดเวลา
             .setAuth({'userId': userId, 'token': authToken})
             .build(),
       );
@@ -52,6 +84,7 @@ class WebSocketService {
       _socket!.onConnect((_) {
         debugPrint('WebSocket connected');
         _isConnected = true;
+        _connectionAttempts = 0; // Reset on successful connection
         _connectionController.add(true);
         
         // Send user info after connection
@@ -67,7 +100,12 @@ class WebSocketService {
       });
       
       _socket!.onConnectError((error) {
-        debugPrint('WebSocket connection error: $error');
+        _isConnected = false;
+        // แสดง error เฉพาะครั้งแรกหรือเมื่อมีการ subscribe error stream
+        if (_connectionAttempts <= 1) {
+          debugPrint('WebSocket connection error: $error');
+          debugPrint('Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)');
+        }
         _errorController.add('Connection error: $error');
       });
       
@@ -78,12 +116,19 @@ class WebSocketService {
       });
       
       _socket!.on('error', (error) {
-        debugPrint('WebSocket error: $error');
+        if (kDebugMode) {
+          debugPrint('WebSocket error: $error');
+        }
         _errorController.add('Error: $error');
       });
       
+      // เชื่อมต่อหลังจาก setup events แล้ว
+      _socket!.connect();
+      
     } catch (e) {
-      debugPrint('Failed to connect WebSocket: $e');
+      if (kDebugMode) {
+        debugPrint('Failed to connect WebSocket: $e');
+      }
       _errorController.add('Failed to connect: $e');
     }
   }

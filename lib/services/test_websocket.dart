@@ -67,6 +67,8 @@ class _TestWebSocketWidgetState extends State<TestWebSocketWidget> {
     _addMessage('Make sure WebSocket Server is running on port 3000');
     
     try {
+      // Reset connection attempts when user manually tries to connect
+      _webSocketService.resetConnectionAttempts();
       await _webSocketService.connect(userId: 'test-user-${DateTime.now().millisecondsSinceEpoch}');
     } catch (e) {
       _addMessage('Failed to connect: $e');
