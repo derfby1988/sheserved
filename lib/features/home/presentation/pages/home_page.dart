@@ -144,43 +144,51 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 
                 // Main Content with Scrollable Header Section
                 Expanded(
-                  child: ClipRect(
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      child: Column(
-                        children: [
-                          // Header Section (Content Row) - สามารถเลื่อนได้
-                          _buildHeaderSection(context),
-                          
-                          // Map Background and Content Layer
-                          Stack(
-                            children: [
-                              // Map Background - แสดงจากด้านบนลงมาจนถึงครึ่งของ Pharmacy Card
-                              Positioned(
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                height: 400,
-                                child: _buildMapBackground(),
-                              ),
-                              
-                              // Content Layer
-                              Column(
+                  child: Container(
+                    // พื้นหลังสีเขียวเพื่อไม่ให้เห็นรอยต่อขณะเลื่อน
+                    color: AppColors.primary,
+                    child: ClipRect(
+                      child: SingleChildScrollView(
+                        controller: _scrollController,
+                        child: Column(
+                          children: [
+                            // Header Section (Content Row) - สามารถเลื่อนได้
+                            _buildHeaderSection(context),
+                            
+                            // Map Background and Content Layer
+                            Container(
+                              // พื้นหลังสี #EDF5DA ตั้งแต่ Map ลงมา
+                              color: const Color(0xFFEDF5DA),
+                              child: Stack(
                                 children: [
-                                  const SizedBox(height: 16),
-                                  _buildConsultationWidget(context),
-                                  const SizedBox(height: 24),
-                                  _buildPharmacyCard(context),
-                                  const SizedBox(height: 24),
-                                  _buildRecommendedSection(context),
-                                  const SizedBox(height: 24),
-                                  _buildInterestingSection(context),
-                                  const SizedBox(height: 32),
+                                  // Map Background - แสดงจากด้านบนลงมาจนถึงครึ่งของ Pharmacy Card
+                                  Positioned(
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: 400,
+                                    child: _buildMapBackground(),
+                                  ),
+                                  
+                                  // Content Layer
+                                  Column(
+                                    children: [
+                                      const SizedBox(height: 16),
+                                      _buildConsultationWidget(context),
+                                      const SizedBox(height: 24),
+                                      _buildPharmacyCard(context),
+                                      const SizedBox(height: 24),
+                                      _buildRecommendedSection(context),
+                                      const SizedBox(height: 24),
+                                      _buildInterestingSection(context),
+                                      const SizedBox(height: 32),
+                                    ],
+                                  ),
                                 ],
                               ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
