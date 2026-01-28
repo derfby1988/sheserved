@@ -17,22 +17,42 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
   late ScrollController _scrollController;
   final GlobalKey _headerSectionKey = GlobalKey();
   double _headerSectionHeight = 0;
   bool _showTopBarBorderRadius = false;
+  
+  // Map skeleton loader state
+  bool _isMapLoaded = false;
+  late AnimationController _shimmerController;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    
+    // Shimmer animation controller
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+    
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
+    });
+    
+    // Simulate map loading delay (map tiles usually load within 2-3 seconds)
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (mounted) {
+        setState(() {
+          _isMapLoaded = true;
+        });
+      }
     });
   }
 
@@ -40,6 +60,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _shimmerController.dispose();
     super.dispose();
   }
 
@@ -179,28 +200,35 @@ class _HomePageState extends State<HomePage> {
     return Stack(
       fit: StackFit.expand, // ให้ Stack ขยายเต็มพื้นที่
       children: [
-        // Map with Blur Effect
-        ClipRect(
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // ลด blur effect มากๆ เพื่อให้เห็นแผนที่ชัดเจน
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: initialLocation,
-                initialZoom: 13.0,
-                minZoom: 10.0,
-                maxZoom: 18.0,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.none, // ปิดการโต้ตอบกับแผนที่ (เป็นแค่พื้นหลัง)
+        // Skeleton Loader (shows while map is loading)
+        if (!_isMapLoaded) _buildMapSkeleton(),
+        
+        // Map with Blur Effect (with fade-in animation)
+        AnimatedOpacity(
+          opacity: _isMapLoaded ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 500),
+          child: ClipRect(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // ลด blur effect มากๆ เพื่อให้เห็นแผนที่ชัดเจน
+              child: FlutterMap(
+                options: MapOptions(
+                  initialCenter: initialLocation,
+                  initialZoom: 13.0,
+                  minZoom: 10.0,
+                  maxZoom: 18.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none, // ปิดการโต้ตอบกับแผนที่ (เป็นแค่พื้นหลัง)
+                  ),
                 ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.tree_law_zoo',
+                    maxZoom: 19,
+                    tileProvider: CancellableNetworkTileProvider(), // Better performance on web
+                  ),
+                ],
               ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.tree_law_zoo',
-                  maxZoom: 19,
-                  tileProvider: CancellableNetworkTileProvider(), // Better performance on web
-                ),
-              ],
             ),
           ),
         ),
@@ -211,6 +239,86 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Skeleton loader for map with shimmer effect
+  Widget _buildMapSkeleton() {
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + 2 * _shimmerController.value, 0),
+              end: Alignment(-1.0 + 2 * _shimmerController.value + 1, 0),
+              colors: [
+                AppColors.background,
+                AppColors.background.withOpacity(0.5),
+                AppColors.surface,
+                AppColors.background.withOpacity(0.5),
+                AppColors.background,
+              ],
+              stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+            ),
+          ),
+          child: Stack(
+            children: [
+              // Grid pattern to simulate map tiles
+              CustomPaint(
+                size: Size.infinite,
+                painter: _MapSkeletonPainter(
+                  color: AppColors.border.withOpacity(0.3),
+                ),
+              ),
+              // Center loading indicator
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.shadow,
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'กำลังโหลดแผนที่...',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -903,6 +1011,71 @@ class DottedCirclePainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Custom Painter for Map Skeleton Grid Pattern
+class _MapSkeletonPainter extends CustomPainter {
+  final Color color;
+  
+  _MapSkeletonPainter({required this.color});
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    
+    const tileSize = 50.0; // Size of each "tile" in the grid
+    
+    // Draw vertical lines
+    for (double x = 0; x < size.width; x += tileSize) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        paint,
+      );
+    }
+    
+    // Draw horizontal lines
+    for (double y = 0; y < size.height; y += tileSize) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        paint,
+      );
+    }
+    
+    // Draw some "road" lines to simulate map features
+    final roadPaint = Paint()
+      ..color = color.withOpacity(0.5)
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke;
+    
+    // Diagonal road
+    canvas.drawLine(
+      Offset(0, size.height * 0.3),
+      Offset(size.width, size.height * 0.7),
+      roadPaint,
+    );
+    
+    // Horizontal road
+    canvas.drawLine(
+      Offset(0, size.height * 0.5),
+      Offset(size.width, size.height * 0.5),
+      roadPaint,
+    );
+    
+    // Vertical road
+    canvas.drawLine(
+      Offset(size.width * 0.4, 0),
+      Offset(size.width * 0.4, size.height),
+      roadPaint,
+    );
+  }
+  
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
