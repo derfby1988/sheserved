@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -375,36 +376,52 @@ class _SearchOverlayState extends State<_SearchOverlay>
 
   Widget _buildSearchPanel() {
     return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Search input row
-            _buildSearchInput(),
-
-            // Divider
-            const Divider(height: 1),
-
-            // Content (history, suggestions, or results)
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.6,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                // Glass effect - โปร่งใสแบบแก้ว
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.5),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-              child: _buildContent(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Search input row
+                  _buildSearchInput(),
+
+                  // Divider - glass style
+                  Container(
+                    height: 1,
+                    color: Colors.grey.withOpacity(0.2),
+                  ),
+
+                  // Content (history, suggestions, or results)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.6,
+                    ),
+                    child: _buildContent(),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -415,19 +432,23 @@ class _SearchOverlayState extends State<_SearchOverlay>
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          // Back button
+          // Back button - glass style
           GestureDetector(
             onTap: _close,
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: Colors.grey.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.arrow_back,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimary.withOpacity(0.8),
                 size: 20,
               ),
             ),
@@ -435,19 +456,22 @@ class _SearchOverlayState extends State<_SearchOverlay>
 
           const SizedBox(width: 12),
 
-          // Search field
+          // Search field - glass style
           Expanded(
             child: Container(
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: Colors.grey.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(
+                  color: Colors.grey.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
               child: Row(
                 children: [
                   const SizedBox(width: 16),
-                  Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                  Icon(Icons.search, color: AppColors.textSecondary.withOpacity(0.7), size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
