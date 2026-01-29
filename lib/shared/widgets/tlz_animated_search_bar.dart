@@ -226,6 +226,8 @@ class _SearchOverlayState extends State<_SearchOverlay>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _widthAnimation;
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -240,7 +242,7 @@ class _SearchOverlayState extends State<_SearchOverlay>
     _localHistory = List.from(widget.searchHistory);
     
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 300),
       vsync: this,
     );
 
@@ -248,8 +250,22 @@ class _SearchOverlayState extends State<_SearchOverlay>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    // Scale from right (RTL effect)
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+
+    // Slide from right to left
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.3, 0.0), // Start from right
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+
+    // Width expansion animation
+    _widthAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
 
     _animationController.forward();
@@ -353,17 +369,20 @@ class _SearchOverlayState extends State<_SearchOverlay>
                 ),
               ),
 
-              // Search panel
+              // Search panel - RTL Animation + ขยายจากบนลงล่าง
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 child: FadeTransition(
                   opacity: _fadeAnimation,
-                  child: ScaleTransition(
-                    scale: _scaleAnimation,
-                    alignment: Alignment.topCenter,
-                    child: _buildSearchPanel(),
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: ScaleTransition(
+                      scale: _scaleAnimation,
+                      alignment: Alignment.topCenter, // ขยายจากบนลงล่าง
+                      child: _buildSearchPanel(),
+                    ),
                   ),
                 ),
               ),
@@ -430,93 +449,96 @@ class _SearchOverlayState extends State<_SearchOverlay>
   Widget _buildSearchInput() {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          // Back button - glass style
-          GestureDetector(
-            onTap: _close,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.grey.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: Icon(
-                Icons.arrow_back,
-                color: AppColors.textPrimary.withOpacity(0.8),
-                size: 20,
-              ),
-            ),
+      // Search field - เพิ่มความสูง
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(
+            color: Colors.grey.withOpacity(0.2),
+            width: 1,
           ),
-
-          const SizedBox(width: 12),
-
-          // Search field - glass style
-          Expanded(
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: Colors.grey.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Icon(Icons.search, color: AppColors.textSecondary.withOpacity(0.7), size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _focusNode,
-                      onChanged: _onSearchChanged,
-                      onSubmitted: _onSearchSubmitted,
-                      textInputAction: TextInputAction.search,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: widget.hintText,
-                        hintStyle: TextStyle(
-                          color: AppColors.textHint,
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
-                        isDense: true,
-                      ),
-                    ),
+        ),
+        child: Row(
+          children: [
+            // Back button - อยู่ภายในช่องค้นหา
+            GestureDetector(
+              onTap: _close,
+              child: Container(
+                width: 50,
+                height: 80,
+                decoration: const BoxDecoration(
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(25),
+                    bottomLeft: Radius.circular(25),
                   ),
-                  if (_query.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Icon(
-                          Icons.close,
-                          color: AppColors.textHint,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 8),
-                ],
+                ),
+                child: Icon(
+                  Icons.arrow_back,
+                  color: AppColors.textSecondary.withOpacity(0.7),
+                  size: 20,
+                ),
               ),
             ),
-          ),
-        ],
+            
+            // Divider
+            Container(
+              width: 1,
+              height: 24,
+              color: Colors.grey.withOpacity(0.2),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // Search icon
+            Icon(Icons.search, color: AppColors.textSecondary.withOpacity(0.7), size: 20),
+            const SizedBox(width: 12),
+            
+            // Text field
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _focusNode,
+                onChanged: _onSearchChanged,
+                onSubmitted: _onSearchSubmitted,
+                textInputAction: TextInputAction.search,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  hintStyle: TextStyle(
+                    color: AppColors.textHint,
+                    fontSize: 14,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  isDense: true,
+                ),
+              ),
+            ),
+            
+            // Clear button
+            if (_query.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Icon(
+                    Icons.close,
+                    color: AppColors.textHint,
+                    size: 18,
+                  ),
+                ),
+              ),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }
