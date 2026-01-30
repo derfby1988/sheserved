@@ -235,6 +235,7 @@ class _SearchOverlayState extends State<_SearchOverlay>
   String _query = '';
   List<Map<String, dynamic>> _searchResults = [];
   List<String> _localHistory = [];
+  bool _isClosing = false; // ป้องกันการปิดซ้ำ
 
   @override
   void initState() {
@@ -270,9 +271,11 @@ class _SearchOverlayState extends State<_SearchOverlay>
 
     _animationController.forward();
 
-    // Auto focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
+    // Auto focus with delay to ensure overlay is fully shown
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted && !_isClosing) {
+        _focusNode.requestFocus();
+      }
     });
   }
 
@@ -348,8 +351,17 @@ class _SearchOverlayState extends State<_SearchOverlay>
   }
 
   void _close() async {
+    // ป้องกันการปิดซ้ำ
+    if (_isClosing) return;
+    _isClosing = true;
+    
+    // ยกเลิก focus ก่อนปิด
+    _focusNode.unfocus();
+    
     await _animationController.reverse();
-    widget.onClose();
+    if (mounted) {
+      widget.onClose();
+    }
   }
 
   @override
@@ -374,14 +386,19 @@ class _SearchOverlayState extends State<_SearchOverlay>
                 top: 0,
                 left: 0,
                 right: 0,
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      alignment: Alignment.topCenter, // ขยายจากบนลงล่าง
-                      child: _buildSearchPanel(),
+                child: GestureDetector(
+                  // ป้องกันการ tap propagate ไปยัง background
+                  onTap: () {}, // Absorb tap
+                  behavior: HitTestBehavior.opaque,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: ScaleTransition(
+                        scale: _scaleAnimation,
+                        alignment: Alignment.topCenter, // ขยายจากบนลงล่าง
+                        child: _buildSearchPanel(),
+                      ),
                     ),
                   ),
                 ),

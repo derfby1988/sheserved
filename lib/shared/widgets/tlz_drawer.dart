@@ -198,7 +198,16 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             context,
                             title: 'หน้าหลัก',
                             icon: Icons.arrow_forward,
-                            onTap: () => _navigateTo(context, '/home'),
+                            onTap: () {
+                              _animationController.forward().then((_) {
+                                Navigator.of(context).pop(); // Close drawer
+                                // Navigate to Home and clear stack
+                                Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/',
+                                  (route) => false,
+                                );
+                              });
+                            },
                           ),
                           
                           // Health
@@ -232,10 +241,15 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           _buildMenuItem(
                             context,
                             title: 'บทความเพื่อสุขภาพ',
-                            icon: Icons.people_outline,
+                            icon: Icons.article_outlined,
                             isUnderlined: true,
                             underlineText: 'บทความ',
-                            onTap: () => _navigateTo(context, '/articles'),
+                            onTap: () {
+                              _animationController.forward().then((_) {
+                                Navigator.of(context).pop();
+                                Navigator.pushNamed(context, '/articles');
+                              });
+                            },
                           ),
                           _buildMenuItem(
                             context,

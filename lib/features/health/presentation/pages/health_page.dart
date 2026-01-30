@@ -87,93 +87,31 @@ class _HealthPageState extends State<HealthPage> {
     );
   }
 
-  /// Top Navigation Bar - Transparent (background is behind)
+  /// Top Navigation Bar - ใช้ TlzAppTopBar เหมือนหน้า Home
   Widget _buildTopNavigationBar(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
-        color: Colors.transparent, // Transparent เพราะมี background อยู่ด้านหลังแล้ว
+        color: Color(0xFF5B9A8B), // พื้นหลังสีเขียวเข้ม
       ),
-      child: Row(
-        children: [
-          // Menu Icon
-          GestureDetector(
-            onTap: () => Scaffold.of(context).openDrawer(),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.menu,
-                color: AppColors.accent,
-                size: 28,
-              ),
-            ),
-          ),
-          
-          const SizedBox(width: 12),
-          
-          // Search Bar
-          Expanded(
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.search,
-                    color: AppColors.textHint,
-                    size: 24,
-                  ),
-                  const Expanded(child: SizedBox()),
-                  // QR Code Icon
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    child: Icon(
-                      Icons.qr_code_scanner,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          const SizedBox(width: 12),
-          
-          // Notification Badge
-          Stack(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Text(
-                  '1',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(width: 8),
-          
-          // Chat Icon
-          Icon(
-            Icons.chat_bubble_outline,
-            color: Colors.white.withOpacity(0.7),
-            size: 24,
-          ),
-        ],
+      child: TlzAppTopBar.onPrimary(
+        notificationCount: 1,
+        searchHintText: 'ค้นหาข้อมูลสุขภาพ...',
+        onQRTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('QR Scanner')),
+          );
+        },
+        onNotificationTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Notifications')),
+          );
+        },
+        onCartTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cart')),
+          );
+        },
       ),
     );
   }

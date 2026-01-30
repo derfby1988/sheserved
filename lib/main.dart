@@ -5,6 +5,7 @@ import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
+import 'features/articles/presentation/pages/articles_page.dart';
 import 'services/test_websocket.dart';
 // import 'services/supabase_service.dart';
 
@@ -47,6 +48,7 @@ class TreeLawZooApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginPage(),
         '/health': (context) => const HealthPage(),
+        '/articles': (context) => const ArticlesPage(),
         '/test': (context) => const TestWebSocketWidget(),
       },
     );
