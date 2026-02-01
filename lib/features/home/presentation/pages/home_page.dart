@@ -25,8 +25,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   double _headerSectionHeight = 0;
   bool _showTopBarBorderRadius = false;
   
-  // Map skeleton loader state
+  // Map state
   bool _isMapLoaded = false;
+  bool _mapHasError = false;
+  int _mapErrorCount = 0;
+  static const int _maxMapErrors = 5; // จำนวน error สูงสุดก่อนแสดง error UI
   late AnimationController _shimmerController;
 
   @override
@@ -46,14 +49,41 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       _measureHeaderSectionHeight();
     });
     
-    // Simulate map loading delay (map tiles usually load within 2-3 seconds)
-    Future.delayed(const Duration(milliseconds: 2000), () {
-      if (mounted) {
+    // เริ่มโหลดแผนที่
+    _startMapLoading();
+  }
+  
+  void _startMapLoading() {
+    // รอให้ map tiles โหลด (ปกติใช้เวลา 2-3 วินาที)
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (mounted && !_mapHasError) {
         setState(() {
           _isMapLoaded = true;
         });
       }
     });
+  }
+  
+  void _retryMapLoad() {
+    setState(() {
+      _isMapLoaded = false;
+      _mapHasError = false;
+      _mapErrorCount = 0;
+    });
+    _startMapLoading();
+  }
+  
+  void _onMapTileError(TileImage tile, Object error, StackTrace? stackTrace) {
+    _mapErrorCount++;
+    debugPrint('Map tile error #$_mapErrorCount: $error');
+    
+    // ถ้า error เกินจำนวนที่กำหนด ให้แสดง error UI
+    if (_mapErrorCount >= _maxMapErrors && mounted && !_mapHasError) {
+      setState(() {
+        _mapHasError = true;
+        _isMapLoaded = false;
+      });
+    }
   }
 
   @override
@@ -74,14 +104,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _onScroll() {
-    // เมื่อ scroll position ถึงหรือเกินความสูงของ Header Section ให้แสดง borderRadius
-    if (_headerSectionHeight > 0) {
-      final shouldShowBorderRadius = _scrollController.offset >= _headerSectionHeight;
-      if (shouldShowBorderRadius != _showTopBarBorderRadius) {
-        setState(() {
-          _showTopBarBorderRadius = shouldShowBorderRadius;
-        });
-      }
+    if (!mounted) return;
+    
+    // วัดความสูงของ Header Section ถ้ายังไม่ได้ค่า
+    if (_headerSectionHeight <= 0) {
+      _measureHeaderSectionHeight();
+      if (_headerSectionHeight <= 0) return;
+    }
+
+    // เมื่อ scroll offset >= ความสูงของ Header Section
+    // หมายความว่า Header Section ได้เลื่อนผ่านไปแล้ว (ส่วนล่างถึง Top Nav Bar)
+    final shouldShowBorderRadius = _scrollController.offset >= _headerSectionHeight;
+
+    if (shouldShowBorderRadius != _showTopBarBorderRadius) {
+      setState(() {
+        _showTopBarBorderRadius = shouldShowBorderRadius;
+      });
     }
   }
 
@@ -136,56 +174,61 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               _dragStartX = null;
             });
           },
-          child: SafeArea(
-            child: Column(
-              children: [
-                // Top Navigation Bar - อยู่กับที่ (ไม่เลื่อน)
-                _buildTopNavigationBar(context),
+          child: Container(
+            // พื้นหลังสีเขียวด้านบน (รวมพื้นที่ status bar)
+            color: AppColors.primary,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  // Top Navigation Bar - อยู่กับที่ (ไม่เลื่อน)
+                  _buildTopNavigationBar(context),
                 
                 // Main Content with Scrollable Header Section
                 Expanded(
                   child: Container(
-                    // พื้นหลังสีเขียวเพื่อไม่ให้เห็นรอยต่อขณะเลื่อน
+                    // พื้นหลังสีเดียวกับ search bar
                     color: AppColors.primary,
                     child: ClipRect(
                       child: SingleChildScrollView(
                         controller: _scrollController,
-                        child: Column(
+                        child: Stack(
                           children: [
-                            // Header Section (Content Row) - สามารถเลื่อนได้
-                            _buildHeaderSection(context),
-                            
-                            // Map Background and Content Layer
-                            Container(
-                              // พื้นหลังสี #EDF5DA ตั้งแต่ Map ลงมา
-                              color: const Color(0xFFEDF5DA),
-                              child: Stack(
-                                children: [
-                                  // Map Background - แสดงจากด้านบนลงมาจนถึงครึ่งของ Pharmacy Card
-                                  Positioned(
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    height: 400,
-                                    child: _buildMapBackground(),
-                                  ),
-                                  
-                                  // Content Layer
-                                  Column(
+                            // Background Layer - Map ขยายลงมาถึงกลาง Pharmacy Card
+                            Column(
+                              children: [
+                                // Map Background - ความสูงถึงกลาง pharmacy card
+                                // Header(~144) + SizedBox(16) + Consultation(~220) + SizedBox(24) + HalfPharmacy(~60) = ~464
+                                SizedBox(
+                                  height: 500, // ความสูงถึงกลาง pharmacy card
+                                  child: _buildMapBackground(),
+                                ),
+                                // Content ด้านล่าง map - พื้นหลังสี #EDF5DA
+                                Container(
+                                  width: double.infinity,
+                                  color: const Color(0xFFEDF5DA),
+                                  child: Column(
                                     children: [
-                                      const SizedBox(height: 16),
-                                      _buildConsultationWidget(context),
-                                      const SizedBox(height: 24),
-                                      _buildPharmacyCard(context),
-                                      const SizedBox(height: 24),
+                                      // Spacer สำหรับครึ่งล่างของ Pharmacy Card + SizedBox(24)
+                                      const SizedBox(height: 100),
                                       _buildRecommendedSection(context),
                                       const SizedBox(height: 24),
                                       _buildInterestingSection(context),
                                       const SizedBox(height: 32),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
+                            ),
+                            // Foreground Layer - Header, Consultation, Pharmacy Card
+                            Column(
+                              children: [
+                                _buildHeaderSection(context),
+                                const SizedBox(height: 16),
+                                _buildConsultationWidget(context),
+                                const SizedBox(height: 24),
+                                _buildPharmacyCard(context),
+                                const SizedBox(height: 24),
+                              ],
                             ),
                           ],
                         ),
@@ -195,6 +238,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -209,44 +253,144 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       fit: StackFit.expand, // ให้ Stack ขยายเต็มพื้นที่
       children: [
         // Skeleton Loader (shows while map is loading)
-        if (!_isMapLoaded) _buildMapSkeleton(),
+        if (!_isMapLoaded && !_mapHasError) _buildMapSkeleton(),
+        
+        // Error UI (shows when map fails to load)
+        if (_mapHasError) _buildMapError(),
         
         // Map with Blur Effect (with fade-in animation)
-        AnimatedOpacity(
-          opacity: _isMapLoaded ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 500),
-          child: ClipRect(
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // ลด blur effect มากๆ เพื่อให้เห็นแผนที่ชัดเจน
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: initialLocation,
-                  initialZoom: 13.0,
-                  minZoom: 10.0,
-                  maxZoom: 18.0,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.none, // ปิดการโต้ตอบกับแผนที่ (เป็นแค่พื้นหลัง)
+        if (!_mapHasError)
+          AnimatedOpacity(
+            opacity: _isMapLoaded ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 500),
+            child: ClipRect(
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: initialLocation,
+                    initialZoom: 13.0,
+                    minZoom: 10.0,
+                    maxZoom: 18.0,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.none, // ปิดการโต้ตอบกับแผนที่
+                    ),
                   ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.tree_law_zoo',
+                      maxZoom: 19,
+                      tileProvider: CancellableNetworkTileProvider(),
+                      errorTileCallback: _onMapTileError,
+                      evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
+                    ),
+                  ],
                 ),
+              ),
+            ),
+          ),
+        
+        // Overlay สีเพื่อให้แผนที่ดูเบาลงและเข้ากับธีม
+        if (!_mapHasError)
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.background.withOpacity(0.05),
+            ),
+          ),
+      ],
+    );
+  }
+  
+  /// Error widget when map fails to load
+  Widget _buildMapError() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.background,
+            AppColors.background.withOpacity(0.8),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Error Icon
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.shadow,
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.map_outlined,
+                size: 48,
+                color: AppColors.textHint,
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Error Message
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.shadow,
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.tree_law_zoo',
-                    maxZoom: 19,
-                    tileProvider: CancellableNetworkTileProvider(), // Better performance on web
+                  Text(
+                    'ไม่สามารถโหลดแผนที่ได้',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Retry Button
+                  TextButton.icon(
+                    onPressed: _retryMapLoad,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('ลองใหม่'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
+          ],
         ),
-        // Overlay สีเพื่อให้แผนที่ดูเบาลงและเข้ากับธีม
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.background.withOpacity(0.05), // ลด opacity มากๆ เพื่อให้เห็นแผนที่ชัดเจนมาก
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -341,8 +485,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         color: AppColors.primary,
         borderRadius: _showTopBarBorderRadius
             ? const BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
               )
             : null,
       ),
@@ -396,8 +540,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
       ),
       child: Row(
