@@ -139,8 +139,8 @@ Copy `.env.example` to `.env` and configure:
 
 ```env
 DB_HOST=<Database_Server_IP>
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=<password>
 DB_PORT=5432
 PORT=3000

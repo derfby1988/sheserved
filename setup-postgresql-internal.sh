@@ -114,7 +114,7 @@ echo ""
 
 # สร้าง Database และ User
 echo "👤 สร้าง Database และ User..."
-read -sp "กรุณาใส่ password สำหรับ tree_law_zoo_user: " DB_PASSWORD
+read -sp "กรุณาใส่ password สำหรับ sheserved: " DB_PASSWORD
 echo ""
 read -p "ยืนยัน password อีกครั้ง: " DB_PASSWORD_CONFIRM
 
@@ -126,18 +126,18 @@ fi
 psql -U postgres <<EOF
 DO \$\$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_user WHERE usename = 'tree_law_zoo_user') THEN
-        CREATE USER tree_law_zoo_user WITH PASSWORD '$DB_PASSWORD';
+    IF NOT EXISTS (SELECT FROM pg_user WHERE usename = 'sheserved') THEN
+        CREATE USER sheserved WITH PASSWORD '$DB_PASSWORD';
     ELSE
-        ALTER USER tree_law_zoo_user WITH PASSWORD '$DB_PASSWORD';
+        ALTER USER sheserved WITH PASSWORD '$DB_PASSWORD';
     END IF;
 END
 \$\$;
 
-SELECT 'CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tree_law_zoo')\gexec
+SELECT 'CREATE DATABASE sheserved OWNER sheserved'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'sheserved')\gexec
 
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 EOF
 
 if [ $? -eq 0 ]; then
@@ -156,7 +156,7 @@ if [ ! -f "$SCHEMA_FILE" ]; then
     exit 1
 fi
 
-PGPASSWORD="$DB_PASSWORD" psql -U tree_law_zoo_user -d tree_law_zoo -f "$SCHEMA_FILE"
+PGPASSWORD="$DB_PASSWORD" psql -U sheserved -d sheserved -f "$SCHEMA_FILE"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Setup Database Schema เสร็จแล้ว${NC}"
@@ -185,7 +185,7 @@ echo ""
 echo "📋 สรุปข้อมูล:"
 echo "   Data Directory: $PG_DATA_DIR"
 echo "   Database Name: tree_law_zoo"
-echo "   Database User: tree_law_zoo_user"
+echo "   Database User: sheserved"
 echo "   Database Password: [ที่คุณตั้งไว้]"
 echo "   Database Port: 5432"
 echo "   Server IP: $IP_ADDRESS"
@@ -193,8 +193,8 @@ echo ""
 echo "📝 สำหรับเครื่อง Client:"
 echo "   ตั้งค่า .env ใน websocket-server/ ให้ใช้:"
 echo "   DB_HOST=$IP_ADDRESS"
-echo "   DB_NAME=tree_law_zoo"
-echo "   DB_USER=tree_law_zoo_user"
+echo "   DB_NAME=sheserved"
+echo "   DB_USER=sheserved"
 echo "   DB_PASSWORD=[password ที่ตั้งไว้]"
 echo "   DB_PORT=5432"
 echo ""

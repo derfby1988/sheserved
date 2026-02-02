@@ -9,7 +9,7 @@ echo "Updating .env file with user: $CURRENT_USER"
 cat > .env << EOF
 # Database Configuration
 DB_HOST=localhost
-DB_NAME=tracking_db
+DB_NAME=sheserved
 DB_USER=$CURRENT_USER
 DB_PASSWORD=
 DB_PORT=5432
@@ -25,7 +25,7 @@ echo "✅ .env file updated"
 echo ""
 echo "Current settings:"
 echo "  DB_USER=$CURRENT_USER"
-echo "  DB_NAME=tracking_db"
+echo "  DB_NAME=sheserved"
 echo "  DB_PASSWORD=(empty - no password needed)"
 echo ""
 echo "Restart server to apply changes:"

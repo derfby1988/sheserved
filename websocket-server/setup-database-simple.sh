@@ -10,7 +10,7 @@ CURRENT_USER=$(whoami)
 echo "Using user: $CURRENT_USER"
 
 # Database name
-DB_NAME=${DB_NAME:-tracking_db}
+DB_NAME=${DB_NAME:-sheserved}
 
 # Check if psql is available
 if ! command -v psql &> /dev/null; then

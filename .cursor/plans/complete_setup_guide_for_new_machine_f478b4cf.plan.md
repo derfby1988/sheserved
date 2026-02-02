@@ -187,13 +187,13 @@ brew services restart postgresql@14
 psql -U postgres
 
 # สร้าง user สำหรับ remote access
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
 
 # สร้าง database
-CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user;
+CREATE DATABASE sheserved OWNER sheserved;
 
 # ให้สิทธิ์
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 
 # ออกจาก psql
 \q
@@ -207,7 +207,7 @@ git clone <repository-url>
 cd tree_law_zoo/websocket-server
 
 # รัน schema
-psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 ### 0.5 หา IP Address ของ Database Server (macOS)
@@ -252,7 +252,7 @@ sudo pfctl -s rules
 
 ```bash
 # จากเครื่อง Client ทดสอบ:
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 # ใส่ password ที่ตั้งไว้
 
 # หรือใช้ telnet/nc เพื่อทดสอบ port
@@ -433,8 +433,8 @@ cp .env.example .env  # ถ้ามี
 # Database Configuration - ชี้ไปที่ Remote Database Server
 # ⚠️ เปลี่ยนค่าเหล่านี้ให้ตรงกับ Database Server
 DB_HOST=192.168.1.100  # IP address ของเครื่อง Database Server (จาก Phase 0.5)
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user  # User ที่สร้างที่ Database Server (จาก Phase 0.3)
+DB_NAME=sheserved
+DB_USER=sheserved  # User ที่สร้างที่ Database Server (จาก Phase 0.3)
 DB_PASSWORD=your_secure_password  # Password ที่ตั้งไว้ที่ Database Server
 DB_PORT=5432
 
@@ -464,7 +464,7 @@ FACEBOOK_APP_SECRET=your_facebook_app_secret
 
 ```bash
 # ถ้าติดตั้ง psql client
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 
 # หรือทดสอบผ่าน Node.js
 cd websocket-server
@@ -519,13 +519,13 @@ sudo systemctl restart postgresql
 psql -U postgres
 
 # สร้าง user สำหรับ remote access
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
 
 # สร้าง database
-CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user;
+CREATE DATABASE sheserved OWNER sheserved;
 
 # ให้สิทธิ์
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 
 # ออกจาก psql
 \q
@@ -535,7 +535,7 @@ GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
 
 ```bash
 # รัน schema
-psql -U tree_law_zoo_user -d tree_law_zoo -f websocket-server/database.sql
+psql -U sheserved -d sheserved -f websocket-server/database.sql
 ```
 
 **ขั้นตอนที่ 4: ตั้งค่า Firewall (ถ้าจำเป็น)**
@@ -567,7 +567,7 @@ sudo firewall-cmd --reload
 - **ไม่ต้อง setup database** - แค่ตั้งค่า `.env` ให้ชี้ไปที่ remote database
 - **ทดสอบ connection:**
 ```bash
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 ```
 
 
@@ -732,11 +732,11 @@ npm install
 ```bash
 # สร้าง database ใหม่ (ที่เครื่อง Database Server)
 psql -U postgres
-CREATE DATABASE tree_law_zoo;
+CREATE DATABASE sheserved;
 \q
 
 # รัน schema
-psql -U tree_law_zoo_user -d tree_law_zoo -f websocket-server/database.sql
+psql -U sheserved -d sheserved -f websocket-server/database.sql
 ```
 
 **ปัญหา: Connection timeout / Connection refused**
@@ -826,9 +826,9 @@ sudo systemctl restart postgresql
 ```bash
 psql -U postgres
 
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
-CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user;
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
+CREATE DATABASE sheserved OWNER sheserved;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 \q
 ```
 
@@ -836,7 +836,7 @@ GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
 
 ```bash
 cd websocket-server
-psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 #### 0.5 หา IP Address
@@ -903,14 +903,14 @@ if [ ! -f .env ]; then
     echo "📝 Creating .env file..."
     echo "⚠️  Please enter Remote Database Server information:"
     read -p "DB Server IP (from Database Server admin): " db_host
-    read -p "DB User (default: tree_law_zoo_user): " db_user
+    read -p "DB User (default: sheserved): " db_user
     read -sp "DB Password: " db_password
     echo ""
     
     cat > .env << EOF
 DB_HOST=${db_host:-localhost}
-DB_NAME=tree_law_zoo
-DB_USER=${db_user:-tree_law_zoo_user}
+DB_NAME=sheserved
+DB_USER=${db_user:-sheserved}
 DB_PASSWORD=${db_password}
 DB_PORT=5432
 PORT=3000
@@ -927,7 +927,7 @@ echo ""
 echo "Next steps:"
 echo "1. Verify websocket-server/.env points to Remote Database Server"
 echo "2. Test database connection:"
-echo "   psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo"
+echo "   psql -h <DB_SERVER_IP> -U sheserved -d sheserved"
 echo "3. Start WebSocket server: cd websocket-server && npm start"
 echo "4. Run Flutter app: flutter run -d chrome"
 echo ""

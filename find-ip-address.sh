@@ -69,7 +69,7 @@ if [ ! -z "$RECOMMENDED_IP" ]; then
     echo ""
     echo "🧪 ทดสอบ Connection:"
     echo "  nc -zv $RECOMMENDED_IP 5432"
-    echo "  psql -h $RECOMMENDED_IP -U tree_law_zoo_user -d tree_law_zoo"
+    echo "  psql -h $RECOMMENDED_IP -U sheserved -d sheserved"
 else
     echo -e "${YELLOW}⚠️  ไม่สามารถหา IP Address ได้${NC}"
     echo "ลองใช้คำสั่ง:"

@@ -98,8 +98,8 @@ psql --version
 
 2. Or manually:
    ```bash
-   createdb tracking_db
-   psql -U postgres -d tracking_db -f database.sql
+   createdb sheserved
+   psql -U postgres -d sheserved -f database.sql
    ```
 
 3. Update .env file with correct credentials

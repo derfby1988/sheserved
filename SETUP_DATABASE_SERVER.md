@@ -147,22 +147,22 @@ brew services restart postgresql@14
 psql -U postgres
 
 # สร้าง user สำหรับ remote access
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
 
 # สร้าง database
-CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user;
+CREATE DATABASE sheserved OWNER sheserved;
 
 # ให้สิทธิ์
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 
 # ออกจาก psql
 \q
 ```
 
 **บันทึกข้อมูลนี้ไว้:**
-- Username: `tree_law_zoo_user`
+- Username: `sheserved`
 - Password: `your_secure_password` (ที่ตั้งไว้)
-- Database: `tree_law_zoo`
+- Database: `sheserved`
 
 ---
 
@@ -174,7 +174,7 @@ git clone <repository-url>
 cd tree_law_zoo/websocket-server
 
 # รัน schema
-psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 ---
@@ -198,8 +198,8 @@ networksetup -getinfo "Wi-Fi" | grep "IP address"
 
 **แจ้งข้อมูลต่อไปนี้ให้ Client Machines:**
 - IP Address: `192.168.1.100` (ตัวอย่าง)
-- Database Name: `tree_law_zoo`
-- Username: `tree_law_zoo_user`
+- Database Name: `sheserved`
+- Username: `sheserved`
 - Password: `your_secure_password`
 - Port: `5432`
 
@@ -234,7 +234,7 @@ sudo pfctl -s rules
 
 ```bash
 # จากเครื่อง Client ทดสอบ:
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 # ใส่ password ที่ตั้งไว้
 
 # หรือใช้ telnet/nc เพื่อทดสอบ port
@@ -266,8 +266,8 @@ nc -zv <DB_SERVER_IP> 5432
 
 ### Database Setup
 
-- [ ] สร้าง user `tree_law_zoo_user` สำเร็จ
-- [ ] สร้าง database `tree_law_zoo` สำเร็จ
+- [ ] สร้าง user `sheserved` สำเร็จ
+- [ ] สร้าง database `sheserved` สำเร็จ
 - [ ] Setup database schema สำเร็จ (`database.sql`)
 - [ ] ทดสอบ local connection สำเร็จ
 
@@ -319,7 +319,7 @@ nc -zv <DB_SERVER_IP> 5432
 - ตรวจสอบ `pg_hba.conf`: มี rule สำหรับ remote access
 - ตรวจสอบ firewall: System Preferences > Security & Privacy > Firewall
 - ตรวจสอบ IP address ถูกต้อง
-- ทดสอบ local connection: `psql -U tree_law_zoo_user -d tree_law_zoo`
+- ทดสอบ local connection: `psql -U sheserved -d sheserved`
 
 **ปัญหา: Connection timeout**
 
@@ -335,7 +335,7 @@ nc -zv <DB_SERVER_IP> 5432
 ```bash
 # สร้าง database ใหม่
 psql -U postgres
-CREATE DATABASE tree_law_zoo;
+CREATE DATABASE sheserved;
 \q
 ```
 
@@ -344,8 +344,8 @@ CREATE DATABASE tree_law_zoo;
 ```bash
 # สร้าง user ใหม่
 psql -U postgres
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 \q
 ```
 
@@ -392,8 +392,8 @@ GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
 **สิ่งที่ต้องแจ้งให้ Client Machines:**
 
 - IP Address ของ Database Server
-- Database Name: `tree_law_zoo`
-- Username: `tree_law_zoo_user`
+- Database Name: `sheserved`
+- Username: `sheserved`
 - Password: (ที่ตั้งไว้)
 - Port: `5432`
 

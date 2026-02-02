@@ -30,8 +30,8 @@ psql -U postgres -f database.sql
 3. ตั้งค่า environment variables (สร้างไฟล์ `.env`):
 ```env
 DB_HOST=localhost
-DB_NAME=tracking_db
-DB_USER=postgres
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=your_password
 DB_PORT=5432
 PORT=3000

@@ -23,18 +23,18 @@ echo ""
 
 # ตรวจสอบ tables
 echo "📋 ตรวจสอบ Tables ใน Database:"
-TABLES=$(psql -U tree_law_zoo_user -d tree_law_zoo -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null)
+TABLES=$(psql -U sheserved -d sheserved -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null)
 
 if [ -z "$TABLES" ] || [ "$TABLES" -eq 0 ]; then
     echo -e "${YELLOW}⚠️  ยังไม่มี tables ใน database${NC}"
     echo ""
     echo "ต้องรัน database.sql:"
-    echo "  cd /Users/dave_macmini/tree_law_zoo/websocket-server"
-    echo "  PGPASSWORD='<password>' psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql"
+    echo "  cd /Users/dave_macmini/sheserved/websocket-server"
+    echo "  PGPASSWORD='<password>' psql -U sheserved -d sheserved -f database.sql"
 else
     echo -e "${GREEN}✅ พบ $TABLES tables ใน database${NC}"
     echo ""
     echo "รายการ Tables:"
-    psql -U tree_law_zoo_user -d tree_law_zoo -c "\dt" 2>/dev/null || echo "ไม่สามารถแสดง tables ได้"
+    psql -U sheserved -d sheserved -c "\dt" 2>/dev/null || echo "ไม่สามารถแสดง tables ได้"
 fi
 echo ""

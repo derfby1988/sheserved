@@ -11,8 +11,8 @@ if [ -f .env ]; then
 fi
 
 DB_HOST=${DB_HOST:-localhost}
-DB_NAME=${DB_NAME:-tracking_db}
-DB_USER=${DB_USER:-postgres}
+DB_NAME=${DB_NAME:-sheserved}
+DB_USER=${DB_USER:-sheserved}
 DB_PORT=${DB_PORT:-5432}
 
 read -sp "Enter PostgreSQL password for user '$DB_USER': " DB_PASSWORD

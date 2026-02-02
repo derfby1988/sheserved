@@ -20,8 +20,8 @@ cd websocket-server
 
 Script จะถาม:
 - PostgreSQL password
-- Database name (default: tracking_db)
-- Database user (default: postgres)
+- Database name (default: sheserved)
+- Database user (default: sheserved)
 
 ### วิธีที่ 2: Manual Setup
 
@@ -32,12 +32,12 @@ psql -U postgres
 
 2. สร้าง database:
 ```sql
-CREATE DATABASE tracking_db;
+CREATE DATABASE sheserved;
 ```
 
 3. ออกจาก psql และรัน schema:
 ```bash
-psql -U postgres -d tracking_db -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 ## ขั้นตอนที่ 2: Setup WebSocket Server
@@ -56,8 +56,8 @@ npm install
 ```env
 # Database Configuration
 DB_HOST=localhost
-DB_NAME=tracking_db
-DB_USER=postgres
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=your_password
 DB_PORT=5432
 
@@ -112,7 +112,7 @@ npm start
 ### 2. ตรวจสอบ Database
 
 ```bash
-psql -U postgres -d tracking_db -c "SELECT COUNT(*) FROM locations;"
+psql -U sheserved -d sheserved -c "SELECT COUNT(*) FROM locations;"
 ```
 
 ## Troubleshooting

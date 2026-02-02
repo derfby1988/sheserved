@@ -45,9 +45,9 @@ if [ ! -f .env ]; then
     cat > .env << EOF
 # Database Configuration
 DB_HOST=localhost
-DB_NAME=tracking_db
-DB_USER=postgres
-DB_PASSWORD=postgres
+DB_NAME=sheserved
+DB_USER=sheserved
+DB_PASSWORD=
 DB_PORT=5432
 
 # Server Configuration
@@ -67,11 +67,11 @@ echo "🗄️  Setting up database..."
 read -p "Enter PostgreSQL password (default: postgres): " db_password
 db_password=${db_password:-postgres}
 
-read -p "Enter database name (default: tracking_db): " db_name
-db_name=${db_name:-tracking_db}
+read -p "Enter database name (default: sheserved): " db_name
+db_name=${db_name:-sheserved}
 
-read -p "Enter database user (default: postgres): " db_user
-db_user=${db_user:-postgres}
+read -p "Enter database user (default: sheserved): " db_user
+db_user=${db_user:-sheserved}
 
 echo ""
 echo "Creating database..."

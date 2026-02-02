@@ -17,8 +17,8 @@
    - PostgreSQL ทำงานอยู่แล้ว
 
 3. ✅ **สร้าง Database และ User**
-   - Database: `tree_law_zoo`
-   - User: `tree_law_zoo_user`
+   - Database: `sheserved`
+   - User: `sheserved`
    - สิทธิ์: ALL PRIVILEGES
 
 4. ✅ **Setup Database Schema**
@@ -45,8 +45,8 @@
 
 ```
 DB_HOST=<IP_ADDRESS>
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=<password ที่ตั้งไว้>
 DB_PORT=5432
 ```
@@ -83,15 +83,15 @@ DB_PORT=5432
 2. **ตั้งค่า .env ใน websocket-server/**
    ```env
    DB_HOST=<IP_ADDRESS>
-   DB_NAME=tree_law_zoo
-   DB_USER=tree_law_zoo_user
+   DB_NAME=sheserved
+   DB_USER=sheserved
    DB_PASSWORD=<password>
    DB_PORT=5432
    ```
 
 3. **ทดสอบ Connection จาก Client**
    ```bash
-   psql -h <IP_ADDRESS> -U tree_law_zoo_user -d tree_law_zoo
+   psql -h <IP_ADDRESS> -U sheserved -d sheserved
    ```
 
 ---

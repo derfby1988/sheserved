@@ -82,8 +82,8 @@ CREATE TABLE videos (
 ```env
 # Database
 DB_HOST=localhost
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=<password>
 DB_PORT=5432
 

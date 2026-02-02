@@ -19,7 +19,7 @@
 - ✅ Format External Drive เป็น APFS (`/Volumes/PostgreSQL`)
 - ✅ Initialize Database Cluster บน External Drive
 - ✅ ตั้งค่า Remote Connection (postgresql.conf, pg_hba.conf)
-- ✅ สร้าง Database (`tree_law_zoo`) และ User (`tree_law_zoo_user`)
+- ✅ สร้าง Database (`tree_law_zoo`) และ User (`sheserved`)
 - ✅ Setup Database Schema (2 tables: users, locations)
 - ✅ หา IP Address
 - ✅ ตั้งค่า Firewall
@@ -28,8 +28,8 @@
 **ข้อมูล Database Server:**
 - Data Directory: `/Volumes/PostgreSQL/postgresql-data`
 - Filesystem: APFS
-- Database: `tree_law_zoo`
-- User: `tree_law_zoo_user`
+- Database: `sheserved`
+- User: `sheserved`
 - Port: 5432
 - Tables: `users`, `locations`
 
@@ -142,8 +142,8 @@ npm install
 # Database Configuration - ชี้ไปที่ Remote Database Server
 # ⚠️ เปลี่ยนค่าเหล่านี้ให้ตรงกับ Database Server
 DB_HOST=<IP_ADDRESS>  # IP address ของเครื่อง Database Server
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user  # User ที่สร้างที่ Database Server
+DB_NAME=sheserved
+DB_USER=sheserved  # User ที่สร้างที่ Database Server
 DB_PASSWORD=<password>  # Password ที่ตั้งไว้ที่ Database Server
 DB_PORT=5432
 
@@ -168,7 +168,7 @@ FACEBOOK_APP_SECRET=your_facebook_app_secret
 
 ```bash
 # ถ้าติดตั้ง psql client
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 
 # หรือทดสอบผ่าน Node.js
 cd websocket-server
@@ -325,8 +325,8 @@ flutter doctor --android-licenses  # สำหรับ Android
 
 **Database Server (เครื่องหลัก):**
 - IP Address: `<IP_ADDRESS>` (บันทึกไว้)
-- Database: `tree_law_zoo`
-- User: `tree_law_zoo_user`
+- Database: `sheserved`
+- User: `sheserved`
 - Password: `<password>` (บันทึกไว้)
 - Port: 5432
 

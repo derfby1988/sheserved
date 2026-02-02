@@ -154,13 +154,13 @@ psql -U postgres
 
 ```sql
 -- สร้าง user สำหรับ remote access
-CREATE USER tree_law_zoo_user WITH PASSWORD 'your_secure_password';
+CREATE USER sheserved WITH PASSWORD 'your_secure_password';
 
 -- สร้าง database
-CREATE DATABASE tree_law_zoo OWNER tree_law_zoo_user;
+CREATE DATABASE sheserved OWNER sheserved;
 
 -- ให้สิทธิ์
-GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
+GRANT ALL PRIVILEGES ON DATABASE sheserved TO sheserved;
 
 -- ออกจาก psql
 \q
@@ -172,7 +172,7 @@ GRANT ALL PRIVILEGES ON DATABASE tree_law_zoo TO tree_law_zoo_user;
 
 ```bash
 cd /Users/dave_macmini/tree_law_zoo/websocket-server
-psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 ---
@@ -218,7 +218,7 @@ sudo pfctl -s rules
 
 ```bash
 # ทดสอบ connection
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 
 # หรือใช้ telnet/nc เพื่อทดสอบ port
 nc -zv <DB_SERVER_IP> 5432
@@ -259,8 +259,8 @@ nc -zv <DB_SERVER_IP> 5432
 
 ```
 DB_HOST=<IP_ADDRESS>
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=<password ที่ตั้งไว้>
 DB_PORT=5432
 ```

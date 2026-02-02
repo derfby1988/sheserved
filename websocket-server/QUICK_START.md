@@ -17,15 +17,15 @@ npm install
 
 ```bash
 # สร้าง database
-createdb tracking_db
+createdb sheserved
 
 # หรือใช้ PostgreSQL client
-psql -U postgres
-CREATE DATABASE tracking_db;
+psql -U sheserved
+CREATE DATABASE sheserved;
 \q
 
 # รัน schema
-psql -U postgres -d tracking_db -f database.sql
+psql -U sheserved -d sheserved -f database.sql
 ```
 
 ### ขั้นตอนที่ 3: แก้ไขไฟล์ .env
@@ -34,8 +34,8 @@ psql -U postgres -d tracking_db -f database.sql
 
 ```env
 DB_HOST=localhost
-DB_NAME=tracking_db
-DB_USER=postgres
+DB_NAME=sheserved
+DB_USER=sheserved
 DB_PASSWORD=your_actual_password  # ← เปลี่ยนเป็น password จริงของคุณ
 DB_PORT=5432
 PORT=3000

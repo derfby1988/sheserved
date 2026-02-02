@@ -2,7 +2,7 @@
 -- PostgreSQL Database Schema
 
 -- Create database
--- CREATE DATABASE tracking_db;
+-- CREATE DATABASE sheserved;
 
 -- Users table (if not using existing user table)
 CREATE TABLE IF NOT EXISTS users (

@@ -22,8 +22,8 @@
 ### ✅ ขั้นตอนที่เสร็จแล้ว (เพิ่มเติม)
 
 #### 0.3 สร้าง Database และ User
-- ✅ สร้าง User: `tree_law_zoo_user`
-- ✅ สร้าง Database: `tree_law_zoo`
+- ✅ สร้าง User: `sheserved`
+- ✅ สร้าง Database: `sheserved`
 - ✅ ให้สิทธิ์เรียบร้อย
 
 #### 0.5 หา IP Address ของ Database Server
@@ -43,7 +43,7 @@
 
 #### 0.7 ทดสอบ Remote Connection
 - ⏸️ ทดสอบ port: `nc -zv <IP_ADDRESS> 5432`
-- ⏸️ ทดสอบ connection: `psql -h <IP_ADDRESS> -U tree_law_zoo_user -d tree_law_zoo`
+- ⏸️ ทดสอบ connection: `psql -h <IP_ADDRESS> -U sheserved -d sheserved`
 
 ---
 
@@ -68,11 +68,11 @@
 ### 1. ตรวจสอบ Database Schema (Phase 0.4)
 ```bash
 # ตรวจสอบว่า tables ถูกสร้างแล้วหรือยัง
-psql -U tree_law_zoo_user -d tree_law_zoo -c "\dt"
+psql -U sheserved -d sheserved -c "\dt"
 
 # ถ้ายังไม่มี tables ให้รัน schema
 cd /Users/dave_macmini/tree_law_zoo/websocket-server
-PGPASSWORD='<your_password>' psql -U tree_law_zoo_user -d tree_law_zoo -f database.sql
+PGPASSWORD='<your_password>' psql -U sheserved -d sheserved -f database.sql
 ```
 
 ---
@@ -91,7 +91,7 @@ PGPASSWORD='<your_password>' psql -U tree_law_zoo_user -d tree_law_zoo -f databa
 nc -zv <IP_ADDRESS> 5432
 
 # ทดสอบ connection (เปลี่ยน IP เป็น IP address จริง)
-psql -h <IP_ADDRESS> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <IP_ADDRESS> -U sheserved -d sheserved
 ```
 
 ---
@@ -103,7 +103,7 @@ psql -h <IP_ADDRESS> -U tree_law_zoo_user -d tree_law_zoo
 - **PostgreSQL Version:** 14.20
 - **Port:** 5432
 - **Database Name:** `tree_law_zoo` (จะสร้างในขั้นตอน 0.3)
-- **Database User:** `tree_law_zoo_user` (จะสร้างในขั้นตอน 0.3)
+- **Database User:** `sheserved` (จะสร้างในขั้นตอน 0.3)
 - **IP Address:** ยังต้องหา (ไม่ใช่ `192.168.1.255`)
 
 ---

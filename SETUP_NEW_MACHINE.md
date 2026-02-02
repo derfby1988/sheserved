@@ -21,7 +21,7 @@
 4. **PostgreSQL Client** (optional - สำหรับทดสอบ connection)
 5. **ข้อมูล Database Server:**
    - IP address ของ Database Server
-   - Database username (`tree_law_zoo_user`)
+   - Database username (`sheserved`)
    - Database password
    - Database name (`tree_law_zoo`)
 
@@ -192,8 +192,8 @@ cp .env.example .env
 # Database Configuration - ชี้ไปที่ Remote Database Server
 # ⚠️ เปลี่ยนค่าเหล่านี้ให้ตรงกับ Database Server
 DB_HOST=192.168.1.100  # IP address ของเครื่อง Database Server
-DB_NAME=tree_law_zoo
-DB_USER=tree_law_zoo_user  # User ที่สร้างที่ Database Server
+DB_NAME=sheserved
+DB_USER=sheserved  # User ที่สร้างที่ Database Server
 DB_PASSWORD=your_secure_password  # Password ที่ตั้งไว้ที่ Database Server
 DB_PORT=5432
 
@@ -224,7 +224,7 @@ FACEBOOK_APP_SECRET=your_facebook_app_secret
 
 ```bash
 # วิธีที่ 1: ใช้ psql client (ถ้าติดตั้งแล้ว)
-psql -h <DB_SERVER_IP> -U tree_law_zoo_user -d tree_law_zoo
+psql -h <DB_SERVER_IP> -U sheserved -d sheserved
 # ใส่ password ที่ตั้งไว้
 
 # วิธีที่ 2: ทดสอบผ่าน Node.js
@@ -397,7 +397,7 @@ npm install
 **ปัญหา: Authentication failed**
 
 - ตรวจสอบ username และ password ใน `.env`
-- ตรวจสอบว่า user `tree_law_zoo_user` มีอยู่ที่ Database Server
+- ตรวจสอบว่า user `sheserved` มีอยู่ที่ Database Server
 - ตรวจสอบว่า database `tree_law_zoo` มีอยู่
 
 ---

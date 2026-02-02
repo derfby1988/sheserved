@@ -76,7 +76,7 @@ if [ ! -f .env ]; then
     echo ""
     echo "⚠️  Please enter Remote Database Server information:"
     read -p "DB Server IP (from Database Server admin): " db_host
-    read -p "DB User (default: tree_law_zoo_user): " db_user
+    read -p "DB User (default: sheserved): " db_user
     read -sp "DB Password: " db_password
     echo ""
     
@@ -84,16 +84,16 @@ if [ ! -f .env ]; then
     if [ -f .env ]; then
         # Update existing .env
         sed -i '' "s|^DB_HOST=.*|DB_HOST=${db_host}|" .env
-        sed -i '' "s|^DB_USER=.*|DB_USER=${db_user:-tree_law_zoo_user}|" .env
+        sed -i '' "s|^DB_USER=.*|DB_USER=${db_user:-sheserved}|" .env
         sed -i '' "s|^DB_PASSWORD=.*|DB_PASSWORD=${db_password}|" .env
-        sed -i '' "s|^DB_NAME=.*|DB_NAME=tree_law_zoo|" .env
+        sed -i '' "s|^DB_NAME=.*|DB_NAME=sheserved|" .env
     else
         # Create new .env
         cat > .env << EOF
 # Database Configuration - Remote Database Server
 DB_HOST=${db_host}
-DB_NAME=tree_law_zoo
-DB_USER=${db_user:-tree_law_zoo_user}
+DB_NAME=sheserved
+DB_USER=${db_user:-sheserved}
 DB_PASSWORD=${db_password}
 DB_PORT=5432
 

@@ -52,14 +52,14 @@ echo "📝 สำหรับเครื่อง Client (.env):"
 echo "================================"
 if [ ! -z "$IP_ADDRESS" ]; then
     echo "DB_HOST=$IP_ADDRESS"
-    echo "DB_NAME=tree_law_zoo"
-    echo "DB_USER=tree_law_zoo_user"
+    echo "DB_NAME=sheserved"
+    echo "DB_USER=sheserved"
     echo "DB_PASSWORD=<password ที่ตั้งไว้>"
     echo "DB_PORT=5432"
     echo ""
     echo "🧪 ทดสอบ Connection:"
     echo "  nc -zv $IP_ADDRESS 5432"
-    echo "  psql -h $IP_ADDRESS -U tree_law_zoo_user -d tree_law_zoo"
+    echo "  psql -h $IP_ADDRESS -U sheserved -d sheserved"
 else
     echo "กรุณาหา IP Address ก่อน"
 fi
