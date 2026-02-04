@@ -1,10 +1,10 @@
-# Tree Law Zoo
+# Sheserved
 
 Smart Restaurant Super App - Flutter Application
 
 ## Overview
 
-Tree Law Zoo is a Flutter-based mobile application for restaurant and medical services, featuring real-time location tracking and social authentication.
+Sheserved is a Flutter-based mobile application for restaurant and medical services, featuring real-time location tracking and social authentication.
 
 ## Features
 
@@ -24,7 +24,7 @@ For **Client Machines** (เครื่องที่ 2):
 ```bash
 # Clone repository
 git clone <repository-url>
-cd tree_law_zoo
+cd sheserved
 
 # Run setup script
 chmod +x setup-new-machine.sh
@@ -54,7 +54,7 @@ See detailed setup guides:
 │  Flutter App        │         │  PostgreSQL          │
 │  WebSocket Server   │────────▶│  Port: 5432          │
 │                     │ Network │  Database: tree_law_ │
-│  .env:              │         │  User: tree_law_zoo_ │
+│  .env:              │         │  User: sheserved_ │
 │  DB_HOST=192.168... │         │  zoo_user            │
 └─────────────────────┘         └──────────────────────┘
               │                            │
@@ -81,7 +81,7 @@ See detailed setup guides:
 ## Project Structure
 
 ```
-tree_law_zoo/
+sheserved/
 ├── lib/
 │   ├── core/              # Core utilities (colors, themes, constants)
 │   ├── features/          # Feature modules

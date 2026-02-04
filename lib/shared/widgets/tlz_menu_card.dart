@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
-/// Menu Card for Home Page - Tree Law Zoo
+/// Menu Card for Home Page - Sheserved
 class TlzMenuCard extends StatelessWidget {
   final String title;
   final IconData icon;

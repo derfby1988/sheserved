@@ -1,4 +1,4 @@
-# Tree Law Zoo - Primary Machine Configuration
+# Sheserved - Primary Machine Configuration
 # เครื่องนี้คือเครื่องหลัก (Primary Machine)
 
 ## Machine Information
@@ -8,9 +8,9 @@
 - **Shell**: /bin/zsh
 
 ## Project Information
-- **Project Name**: Tree Law Zoo
-- **Project Path**: /Users/dave_macmini/tree_law_zoo
-- **GitHub Repository**: https://github.com/derfby1988/tree_law_zoo.git
+- **Project Name**: Sheserved
+- **Project Path**: /Users/dave_macmini/sheserved
+- **GitHub Repository**: https://github.com/derfby1988/sheserved.git
 - **Framework**: Flutter 3.38.1
 
 ## Development Environment
@@ -32,7 +32,7 @@
 - **Web**: Chrome 144.0.7559.59
 
 ## Important Notes
-- เครื่องนี้เป็นเครื่องหลักสำหรับพัฒนา Tree Law Zoo
+- เครื่องนี้เป็นเครื่องหลักสำหรับพัฒนา Sheserved
 - Flutter binary อาจมี quarantine attributes ที่ต้องแก้ด้วย `sudo xattr -cr /Users/dave_macmini/flutter/`
 - สำหรับ Android build อาจต้องใช้ sudo เพื่อลบ quarantine attributes
 - iOS และ Web builds ทำงานได้ปกติโดยไม่ต้องแก้ไข

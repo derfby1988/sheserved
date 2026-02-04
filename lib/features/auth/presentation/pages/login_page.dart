@@ -109,7 +109,7 @@ class _LoginPageState extends State<LoginPage>
                         ),
                         const SizedBox(height: 6), // ลด spacing
                         Text(
-                          'Tree Law Zoo',
+                          'Sheserved',
                           textAlign: TextAlign.center,
                           style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.textSecondary,

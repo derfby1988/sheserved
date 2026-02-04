@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
-/// Logo Widget for Tree Law Zoo
+/// Logo Widget for Sheserved
 class TlzLogo extends StatelessWidget {
   final double size;
   final bool showSubtitle;
@@ -67,7 +67,7 @@ class TlzLogo extends StatelessWidget {
         SizedBox(height: 12 * size),
         // Brand Name
         Text(
-          'TREE LAW ZOO',
+          'SHESERVED',
           style: AppTextStyles.brand.copyWith(
             fontSize: 24 * size,
             color: isDark ? AppColors.textOnPrimary : AppColors.primary,
@@ -123,7 +123,7 @@ class TlzLogoCompact extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'TREE LAW ZOO',
+              'SHESERVED',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
-/// App Text Styles for Tree Law Zoo
+/// App Text Styles for Sheserved
 /// ใช้ฟอนต์ Sarabun สำหรับภาษาไทย
 class AppTextStyles {
   AppTextStyles._();

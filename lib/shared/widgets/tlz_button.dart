@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
-/// Custom Button for Tree Law Zoo
+/// Custom Button for Sheserved
 enum TlzButtonType { primary, secondary, outline, text }
 
 enum TlzButtonSize { small, medium, large }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// App Colors for Tree Law Zoo
+/// App Colors for Sheserved
 /// โทนสีธรรมชาติ - ป่า ต้นไม้ น้ำตก
 class AppColors {
   AppColors._();

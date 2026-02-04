@@ -110,7 +110,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                   children: [
                     TileLayer(
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.tree_law_zoo',
+                      userAgentPackageName: 'com.sheserved.app',
                       maxZoom: 19,
                       tileProvider: CancellableNetworkTileProvider(),
                       errorTileCallback: _onMapTileError,

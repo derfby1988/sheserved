@@ -3,7 +3,7 @@
 # Setup Script for WebSocket Server
 # This script will help you setup the WebSocket server and database
 
-echo "🚀 Setting up WebSocket Server for Tree Law Zoo..."
+echo "🚀 Setting up WebSocket Server for Sheserved..."
 echo ""
 
 # Check if Node.js is installed

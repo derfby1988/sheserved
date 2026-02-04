@@ -32,16 +32,16 @@ void main() async {
   // Initialize Supabase
   // await SupabaseService.initialize();
 
-  runApp(const TreeLawZooApp());
+  runApp(const SheservedApp());
 }
 
-class TreeLawZooApp extends StatelessWidget {
-  const TreeLawZooApp({super.key});
+class SheservedApp extends StatelessWidget {
+  const SheservedApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Tree Law Zoo',
+      title: 'Sheserved',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const HomePage(),

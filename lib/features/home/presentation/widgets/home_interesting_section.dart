@@ -50,10 +50,13 @@ class HomeInterestingSection extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'น่าสนใจ',
-                style: AppTextStyles.heading5.copyWith(
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  'น่าสนใจ',
+                  style: AppTextStyles.heading5.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               TextButton(

@@ -24,10 +24,13 @@ class HomeRecommendedSection extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'แนะนำโดยผู้เชี่ยวชาญ',
-                style: AppTextStyles.heading5.copyWith(
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  'แนะนำโดยผู้เชี่ยวชาญ',
+                  style: AppTextStyles.heading5.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               TextButton(

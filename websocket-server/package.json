@@ -1,5 +1,5 @@
 {
-  "name": "tree-law-zoo-websocket-server",
+  "name": "sheserved-websocket-server",
   "version": "1.0.0",
   "description": "WebSocket Server for Real-time Location Tracking",
   "main": "server.js",

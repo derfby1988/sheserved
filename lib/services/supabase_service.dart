@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Supabase Service for Tree Law Zoo
+/// Supabase Service for Sheserved
 /// ใช้สำหรับเชื่อมต่อกับ Supabase Backend
 class SupabaseService {
   static SupabaseClient? _client;

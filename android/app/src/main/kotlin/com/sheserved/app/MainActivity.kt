@@ -1,4 +1,4 @@
-package com.example.tree_law_zoo
+package com.sheserved.app
 
 import io.flutter.embedding.android.FlutterActivity
 
