@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/tlz_text_field.dart';
+import '../../data/repositories/user_repository.dart';
+import '../../data/services/social_auth_service.dart';
 import '../widgets/social_login_button.dart';
 
 /// Login Page
@@ -15,18 +18,29 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  SocialProvider? _loadingProvider;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
+  // Services
+  late final UserRepository _userRepository;
+  late final SocialAuthService _socialAuthService;
+
   @override
   void initState() {
     super.initState();
+
+    // Initialize services
+    final supabaseClient = Supabase.instance.client;
+    _userRepository = UserRepository(supabaseClient);
+    _socialAuthService = SocialAuthService(_userRepository, supabaseClient);
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -53,7 +67,7 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     _animationController.dispose();
     super.dispose();
@@ -118,12 +132,12 @@ class _LoginPageState extends State<LoginPage>
                           ),
                           const SizedBox(height: 32),
 
-                          // Email/Phone Field
+                          // Username/Phone Field
                           _buildInputField(
-                            controller: _emailController,
-                            hintText: 'อีเมล์ หรือ เบอร์โทรศัพท์',
+                            controller: _usernameController,
+                            hintText: 'ชื่อผู้ใช้ หรือ เบอร์โทรศัพท์',
                             prefixIcon: Icons.person_outline,
-                            keyboardType: TextInputType.emailAddress,
+                            keyboardType: TextInputType.text,
                           ),
                           const SizedBox(height: 16),
 
@@ -205,17 +219,23 @@ class _LoginPageState extends State<LoginPage>
                                 onPressed: () =>
                                     _handleSocialLogin(SocialProvider.google),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               _buildSocialButton(
                                 SocialProvider.facebook,
                                 onPressed: () =>
                                     _handleSocialLogin(SocialProvider.facebook),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               _buildSocialButton(
                                 SocialProvider.apple,
                                 onPressed: () =>
                                     _handleSocialLogin(SocialProvider.apple),
+                              ),
+                              const SizedBox(width: 12),
+                              _buildSocialButton(
+                                SocialProvider.line,
+                                onPressed: () =>
+                                    _handleSocialLogin(SocialProvider.line),
                               ),
                             ],
                           ),
@@ -299,6 +319,7 @@ class _LoginPageState extends State<LoginPage>
     Widget iconWidget;
     Color backgroundColor;
     Color? borderColor;
+    Color iconColor = Colors.white;
 
     switch (provider) {
       case SocialProvider.google:
@@ -309,48 +330,85 @@ class _LoginPageState extends State<LoginPage>
       case SocialProvider.facebook:
         backgroundColor = const Color(0xFF1877F2);
         borderColor = null;
-        iconWidget = const Text(
-          'f',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Arial',
-          ),
+        iconWidget = const Icon(
+          Icons.facebook,
+          color: Colors.white,
+          size: 28,
         );
         break;
       case SocialProvider.apple:
-        backgroundColor = Colors.white;
-        borderColor = AppColors.border;
-        iconWidget = const SizedBox.shrink(); // Empty for Apple
-        break;
-      default:
-        backgroundColor = Colors.grey;
+        backgroundColor = Colors.black;
         borderColor = null;
-        iconWidget = const SizedBox.shrink();
+        iconWidget = const Icon(
+          Icons.apple,
+          color: Colors.white,
+          size: 28,
+        );
+        break;
+      case SocialProvider.line:
+        backgroundColor = const Color(0xFF00C300);
+        borderColor = null;
+        iconWidget = const Text(
+          'L',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        );
+        break;
+      case SocialProvider.tiktok:
+        backgroundColor = Colors.black;
+        borderColor = null;
+        iconWidget = const Text(
+          'T',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        );
+        break;
     }
+
+    final isLoadingThis = _isLoading && _loadingProvider == provider;
 
     return InkWell(
       onTap: _isLoading ? null : onPressed,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 56,
-        height: 56,
+        width: 52,
+        height: 52,
         decoration: BoxDecoration(
           color: backgroundColor,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           border: borderColor != null
               ? Border.all(color: borderColor, width: 1)
               : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withOpacity(0.08),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Center(child: iconWidget),
+        child: Center(
+          child: isLoadingThis
+              ? SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      provider == SocialProvider.google
+                          ? AppColors.primary
+                          : Colors.white,
+                    ),
+                  ),
+                )
+              : iconWidget,
+        ),
       ),
     );
   }
@@ -365,8 +423,8 @@ class _LoginPageState extends State<LoginPage>
 
   void _handleLogin() async {
     // Basic validation
-    if (_emailController.text.isEmpty) {
-      _showSnackBar('กรุณากรอกอีเมล์หรือเบอร์โทรศัพท์');
+    if (_usernameController.text.isEmpty) {
+      _showSnackBar('กรุณากรอกชื่อผู้ใช้หรือเบอร์โทรศัพท์');
       return;
     }
     if (_passwordController.text.isEmpty) {
@@ -378,33 +436,84 @@ class _LoginPageState extends State<LoginPage>
       _isLoading = true;
     });
 
-    // TODO: Implement login logic with Supabase
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final user = await _userRepository.login(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (!mounted) return;
 
-      // Navigate to home after successful login
-      Navigator.pushReplacementNamed(context, '/');
+      if (user != null) {
+        // Login successful
+        _showSnackBar('เข้าสู่ระบบสำเร็จ');
+        Navigator.pushReplacementNamed(context, '/');
+      } else {
+        _showSnackBar('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _handleSocialLogin(SocialProvider provider) async {
     setState(() {
       _isLoading = true;
+      _loadingProvider = provider;
     });
 
-    // TODO: Implement social login logic
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      SocialAuthResult result;
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      switch (provider) {
+        case SocialProvider.google:
+          result = await _socialAuthService.signInWithGoogle();
+          break;
+        case SocialProvider.facebook:
+          result = await _socialAuthService.signInWithFacebook();
+          break;
+        case SocialProvider.apple:
+          result = await _socialAuthService.signInWithApple();
+          break;
+        case SocialProvider.line:
+          result = await _socialAuthService.signInWithLine();
+          break;
+        case SocialProvider.tiktok:
+          result = await _socialAuthService.signInWithTikTok();
+          break;
+      }
 
-      _showSnackBar('${provider.name} login จะเปิดใช้งานเร็วๆ นี้');
+      if (!mounted) return;
+
+      if (result.success && result.user != null) {
+        if (result.isNewUser) {
+          _showSnackBar('ยินดีต้อนรับ ${result.user!.fullName}');
+        } else {
+          _showSnackBar('เข้าสู่ระบบสำเร็จ');
+        }
+        Navigator.pushReplacementNamed(context, '/');
+      } else {
+        _showSnackBar(result.errorMessage ?? 'เกิดข้อผิดพลาด');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadingProvider = null;
+        });
+      }
     }
   }
 
