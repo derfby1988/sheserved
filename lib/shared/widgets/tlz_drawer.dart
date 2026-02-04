@@ -285,13 +285,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           ),
                           _buildMenuItem(
                             context,
-                            title: 'มองหางาน',
+                            title: 'ดูแลผู้สูงอายุ',
                             icon: Icons.people_outline,
                             onTap: () => _navigateTo(context, '/jobs'),
                           ),
                           _buildMenuItem(
                             context,
-                            title: 'คัดกรอง',
+                            title: 'คัดกรองเข้าพื้นที่',
                             icon: Icons.people_outline,
                             onTap: () => _navigateTo(context, '/screening'),
                           ),
@@ -336,6 +336,18 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             title: 'ตั้งค่าระบบ',
                             icon: Icons.settings,
                             onTap: () => _navigateTo(context, '/settings'),
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          const Divider(color: AppColors.divider),
+                          const SizedBox(height: 16),
+                          
+                          // Section 5: Admin
+                          _buildMenuItem(
+                            context,
+                            title: 'จัดการฟิลด์ลงทะเบียน',
+                            icon: Icons.admin_panel_settings,
+                            onTap: () => _navigateTo(context, '/admin/registration-fields'),
                           ),
                           
                           const SizedBox(height: 32),
@@ -427,8 +439,17 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
     // เริ่ม animation ปิด drawer ก่อน navigate
     _animationController.forward().then((_) {
       Navigator.of(context).pop(); // Close drawer first
-      // TODO: Implement navigation
-      debugPrint('Navigate to: $route');
+      // Navigate to the route
+      Navigator.pushNamed(context, route).catchError((error) {
+        // ถ้า route ไม่มี ให้แสดง SnackBar
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('หน้า $route จะเปิดใช้งานเร็วๆ นี้'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return null;
+      });
     });
   }
 }

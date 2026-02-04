@@ -4,8 +4,11 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
+import 'features/auth/presentation/pages/register_page.dart';
+import 'features/auth/presentation/pages/register_wizard_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
+import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'services/test_websocket.dart';
 // import 'services/supabase_service.dart';
 
@@ -47,9 +50,12 @@ class SheservedApp extends StatelessWidget {
       home: const HomePage(),
       routes: {
         '/login': (context) => const LoginPage(),
+        '/register': (context) => const RegisterWizardPage(),
+        '/register-simple': (context) => const RegisterPage(),
         '/health': (context) => const HealthPage(),
         '/articles': (context) => const ArticlesPage(),
         '/test': (context) => const TestWebSocketWidget(),
+        '/admin/registration-fields': (context) => const RegistrationFieldAdminPage(),
       },
     );
   }
