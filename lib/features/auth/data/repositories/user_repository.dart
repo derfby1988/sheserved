@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
+import '../../../config/app_config.dart';
 
 /// User Repository - จัดการข้อมูลผู้ใช้ใน Database
 class UserRepository {
@@ -18,23 +23,50 @@ class UserRepository {
     required String lastName,
     required String username,
     required String password,
+    String? professionId,
     String? phone,
+    String? email,
     String? profileImageUrl,
   }) async {
     final now = DateTime.now();
+    final hashedPassword = _hashPassword(password);
+    
     final data = {
-      'user_type': userType.value,
+      'profession_id': professionId,
       'first_name': firstName,
       'last_name': lastName,
       'username': username,
-      'password_hash': password, // TODO: Hash password before storing
+      'password_hash': hashedPassword,
       'phone': phone,
+      'email': email,
       'profile_image_url': profileImageUrl,
       'verification_status': 'pending',
       'is_active': true,
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
     };
+
+    if (AppConfig.databaseMode == DatabaseMode.localOnly) {
+      final response = await http.post(
+        Uri.parse('${AppConfig.localApiUrl}/api/users'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'professionId': professionId,
+          'firstName': firstName,
+          'lastName': lastName,
+          'username': username,
+          'email': email,
+          'phone': phone,
+          'passwordHash': hashedPassword,
+        }),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return UserModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Failed to create user on local API: ${response.body}');
+      }
+    }
 
     final response = await _client.from('users').insert(data).select().single();
     return UserModel.fromJson(response);
@@ -87,18 +119,27 @@ class UserRepository {
 
   /// เข้าสู่ระบบด้วย Username และ Password
   Future<UserModel?> login(String username, String password) async {
+    final hashedPassword = _hashPassword(password);
+    
     try {
       final response = await _client
           .from('users')
           .select()
           .eq('username', username)
-          .eq('password_hash', password) // TODO: Compare hashed password
+          .eq('password_hash', hashedPassword)
           .eq('is_active', true)
           .single();
       return UserModel.fromJson(response);
     } catch (e) {
       return null;
     }
+  }
+
+  /// ฟังก์ชันช่วยสำหรับ Hash Password
+  String _hashPassword(String password) {
+    var bytes = utf8.encode(password);
+    var digest = crypto.sha256.convert(bytes);
+    return digest.toString();
   }
 
   /// อัพเดทข้อมูลผู้ใช้

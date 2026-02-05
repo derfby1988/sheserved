@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
-import '../../../admin/models/profession.dart';
+import '../../../admin/models/profession.dart' hide VerificationStatus;
 import '../../../admin/models/registration_field_config.dart';
+import '../../data/repositories/user_repository.dart';
+import '../../data/models/user_model.dart' as auth;
 
 /// Register Wizard Page - ลงทะเบียนแบบ 4 ขั้นตอน (รองรับอาชีพแบบ Dynamic)
 class RegisterWizardPage extends StatefulWidget {
@@ -1254,24 +1257,154 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       _isLoading = true;
     });
 
-    // TODO: Implement registration with Supabase
-    // 1. Create user
-    // 2. Create registration application if requires verification
-    // 3. Save dynamic field values
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-
-      if (_selectedProfession?.requiresVerification == true) {
-        _showSnackBar('ลงทะเบียนสำเร็จ! รอการตรวจสอบจาก Admin');
-      } else {
-        _showSnackBar('ลงทะเบียนสำเร็จ!');
+    try {
+      final supabase = Supabase.instance.client;
+      final userRepo = UserRepository(supabase);
+      
+      // 1. Check if username already exists
+      final usernameExists = await userRepo.isUsernameExists(_usernameController.text);
+      if (usernameExists) {
+        throw Exception('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว');
       }
-      Navigator.pushReplacementNamed(context, '/login');
+      
+      // 2. Get phone from dynamic fields
+      final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
+      final phone = phoneController?.text.replaceAll(RegExp(r'[^0-9]'), '');
+      
+      // Check if phone already exists
+      if (phone != null && phone.isNotEmpty) {
+        final phoneExists = await userRepo.isPhoneExists(phone);
+        if (phoneExists) {
+          throw Exception('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว');
+        }
+      }
+      
+      // 3. Determine user type based on profession category
+      auth.UserType userType;
+      if (_selectedProfession?.category == UserCategory.consumer) {
+        userType = auth.UserType.consumer;
+      } else if (_selectedProfession?.nameEn?.toLowerCase().contains('clinic') == true) {
+        userType = auth.UserType.clinic;
+      } else {
+        userType = auth.UserType.expert;
+      }
+      
+      // 4. Create user in database
+      final user = await userRepo.createUser(
+        userType: userType,
+        professionId: _selectedProfession?.id,
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        username: _usernameController.text,
+        password: _passwordController.text, // TODO: Hash password
+        phone: phone,
+      );
+      
+      debugPrint('✅ User created with ID: ${user.id}');
+      
+      // 5. Create profile based on user type
+      if (userType == auth.UserType.consumer) {
+        // Get email and birthday from dynamic fields
+        final emailController = _dynamicFieldValues['email_controller'] as TextEditingController?;
+        final birthday = _dynamicFieldValues['birthday_date'] as DateTime?;
+        
+        await userRepo.createConsumerProfile(
+          userId: user.id,
+          birthday: birthday,
+        );
+        debugPrint('✅ Consumer profile created');
+      } else if (userType == auth.UserType.expert) {
+        // Get expert-specific fields
+        final businessNameController = _dynamicFieldValues['business_name_controller'] as TextEditingController?;
+        final specialtyController = _dynamicFieldValues['specialty_controller'] as TextEditingController?;
+        final businessPhoneController = _dynamicFieldValues['business_phone_controller'] as TextEditingController?;
+        final businessEmailController = _dynamicFieldValues['business_email_controller'] as TextEditingController?;
+        final businessAddressController = _dynamicFieldValues['business_address_controller'] as TextEditingController?;
+        final experienceController = _dynamicFieldValues['experience_controller'] as TextEditingController?;
+        final descriptionController = _dynamicFieldValues['description_controller'] as TextEditingController?;
+        
+        await userRepo.createExpertProfile(
+          userId: user.id,
+          businessName: businessNameController?.text,
+          specialty: specialtyController?.text,
+          businessPhone: businessPhoneController?.text,
+          businessEmail: businessEmailController?.text,
+          businessAddress: businessAddressController?.text,
+          experienceYears: int.tryParse(experienceController?.text ?? ''),
+          description: descriptionController?.text,
+        );
+        debugPrint('✅ Expert profile created');
+      } else if (userType == auth.UserType.clinic) {
+        // Get clinic-specific fields
+        final clinicNameController = _dynamicFieldValues['clinic_name_controller'] as TextEditingController?;
+        final licenseNumberController = _dynamicFieldValues['license_number_controller'] as TextEditingController?;
+        final serviceTypeController = _dynamicFieldValues['service_type_controller'] as TextEditingController?;
+        final businessPhoneController = _dynamicFieldValues['business_phone_controller'] as TextEditingController?;
+        final businessEmailController = _dynamicFieldValues['business_email_controller'] as TextEditingController?;
+        final businessAddressController = _dynamicFieldValues['business_address_controller'] as TextEditingController?;
+        final descriptionController = _dynamicFieldValues['description_controller'] as TextEditingController?;
+        
+        await userRepo.createClinicProfile(
+          userId: user.id,
+          clinicName: clinicNameController?.text,
+          licenseNumber: licenseNumberController?.text,
+          serviceType: serviceTypeController?.text,
+          businessPhone: businessPhoneController?.text,
+          businessEmail: businessEmailController?.text,
+          businessAddress: businessAddressController?.text,
+          description: descriptionController?.text,
+        );
+        debugPrint('✅ Clinic profile created');
+      }
+      
+      // 6. Save dynamic field values
+      final Map<String, String> fieldValues = {};
+      for (final field in _professionFields) {
+        final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+        if (controller != null && controller.text.isNotEmpty) {
+          fieldValues[field.fieldId] = controller.text;
+        }
+        // Handle date fields
+        final dateValue = _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
+        if (dateValue != null) {
+          fieldValues[field.fieldId] = dateValue.toIso8601String();
+        }
+      }
+      
+      if (fieldValues.isNotEmpty) {
+        await userRepo.saveRegistrationData(user.id, fieldValues);
+        debugPrint('✅ Registration data saved: ${fieldValues.length} fields');
+      }
+      
+      // 7. Update verification status based on profession
+      if (_selectedProfession?.requiresVerification == true) {
+        await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.pending);
+        debugPrint('✅ User set to pending verification');
+      } else {
+        await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.verified);
+        debugPrint('✅ User verified (no verification required)');
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (_selectedProfession?.requiresVerification == true) {
+          _showSnackBar('ลงทะเบียนสำเร็จ! รอการตรวจสอบจาก Admin');
+        } else {
+          _showSnackBar('ลงทะเบียนสำเร็จ!');
+        }
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } catch (e) {
+      debugPrint('❌ Registration error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showSnackBar('เกิดข้อผิดพลาด: ${e.toString().replaceAll('Exception: ', '')}');
+      }
     }
   }
 

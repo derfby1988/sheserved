@@ -89,6 +89,7 @@ extension VerificationStatusExtension on VerificationStatus {
 /// User Model - ข้อมูลผู้ใช้หลัก
 class UserModel {
   final String id;
+  final String? professionId;
   final UserType userType;
   final String firstName;
   final String lastName;
@@ -97,6 +98,7 @@ class UserModel {
   final String? profileImageUrl;
   final String? socialProvider; // google, facebook, apple, line
   final String? socialId;
+  final String? passwordHash;
   final VerificationStatus verificationStatus;
   final bool isActive;
   final DateTime? lastLoginAt;
@@ -105,10 +107,12 @@ class UserModel {
 
   const UserModel({
     required this.id,
+    this.professionId,
     required this.userType,
     required this.firstName,
     required this.lastName,
     required this.username,
+    this.passwordHash,
     this.phone,
     this.profileImageUrl,
     this.socialProvider,
@@ -128,10 +132,12 @@ class UserModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'user_type': userType.value,
+      'profession_id': professionId,
+      // Note: user_type removed from DB but kept in Model for app logic
       'first_name': firstName,
       'last_name': lastName,
       'username': username,
+      'password_hash': passwordHash,
       'phone': phone,
       'profile_image_url': profileImageUrl,
       'social_provider': socialProvider,
@@ -145,12 +151,29 @@ class UserModel {
   }
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    // Derive UserType from profession_id if user_type is missing
+    UserType derivedType = UserType.consumer;
+    if (json['user_type'] != null) {
+      derivedType = UserTypeExtension.fromString(json['user_type']);
+    } else if (json['profession_id'] != null) {
+      final pId = json['profession_id'].toString();
+      if (pId == '00000000-0000-0000-0000-000000000002') {
+        derivedType = UserType.expert;
+      } else if (pId == '00000000-0000-0000-0000-000000000003') {
+        derivedType = UserType.clinic;
+      } else {
+        derivedType = UserType.consumer;
+      }
+    }
+
     return UserModel(
       id: json['id'],
-      userType: UserTypeExtension.fromString(json['user_type']),
+      professionId: json['profession_id'],
+      userType: derivedType,
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       username: json['username'],
+      passwordHash: json['password_hash'],
       phone: json['phone'],
       profileImageUrl: json['profile_image_url'],
       socialProvider: json['social_provider'],

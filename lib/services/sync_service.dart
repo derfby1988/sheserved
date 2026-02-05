@@ -285,12 +285,12 @@ class SyncService {
       saveToTarget: (data) => _saveToLocal('registration_field_configs', data),
     );
 
-    // Sync users (only non-sensitive data)
+    // Sync users (only non-sensitive data + password_hash for local auth)
     await _syncTable(
       tableName: 'users',
       fetchFromSource: () async {
         final response = await client.from('users').select(
-            'id, profession_id, first_name, last_name, username, verification_status, is_active, created_at, updated_at');
+            'id, profession_id, first_name, last_name, username, password_hash, verification_status, is_active, created_at, updated_at');
         return List<Map<String, dynamic>>.from(response);
       },
       saveToTarget: (data) => _saveToLocal('users', data),
