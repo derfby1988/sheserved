@@ -11,3 +11,6 @@ export 'tlz_notification_button.dart';
 export 'tlz_cart_button.dart';
 export 'tlz_app_top_bar.dart';
 export 'tlz_drawer.dart';
+
+// OTP Verification
+export 'otp_verification_dialog.dart';

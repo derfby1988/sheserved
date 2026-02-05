@@ -141,21 +141,21 @@ class _RegisterPageState extends State<RegisterPage>
                             ),
                             const SizedBox(height: 16),
 
-                            // Email Field
+                            // Phone Field (Primary identifier - Required)
                             _buildInputField(
-                              controller: _emailController,
-                              hintText: 'อีเมล์',
-                              prefixIcon: Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
+                              controller: _phoneController,
+                              hintText: 'เบอร์โทรศัพท์ *',
+                              prefixIcon: Icons.phone_outlined,
+                              keyboardType: TextInputType.phone,
                             ),
                             const SizedBox(height: 16),
 
-                            // Phone Field
+                            // Email Field (Optional)
                             _buildInputField(
-                              controller: _phoneController,
-                              hintText: 'เบอร์โทรศัพท์',
-                              prefixIcon: Icons.phone_outlined,
-                              keyboardType: TextInputType.phone,
+                              controller: _emailController,
+                              hintText: 'อีเมล์ (ไม่บังคับ)',
+                              prefixIcon: Icons.email_outlined,
+                              keyboardType: TextInputType.emailAddress,
                             ),
                             const SizedBox(height: 16),
 
@@ -504,13 +504,24 @@ class _RegisterPageState extends State<RegisterPage>
       _showSnackBar('กรุณากรอกชื่อ-นามสกุล');
       return;
     }
-    if (_emailController.text.isEmpty) {
-      _showSnackBar('กรุณากรอกอีเมล์');
-      return;
-    }
+    // Phone is required (primary identifier)
     if (_phoneController.text.isEmpty) {
       _showSnackBar('กรุณากรอกเบอร์โทรศัพท์');
       return;
+    }
+    // Validate phone format (Thai phone number)
+    final phoneRegex = RegExp(r'^0[0-9]{8,9}$');
+    if (!phoneRegex.hasMatch(_phoneController.text.replaceAll('-', '').replaceAll(' ', ''))) {
+      _showSnackBar('รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง');
+      return;
+    }
+    // Email is optional - but validate format if provided
+    if (_emailController.text.isNotEmpty) {
+      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+      if (!emailRegex.hasMatch(_emailController.text)) {
+        _showSnackBar('รูปแบบอีเมลไม่ถูกต้อง');
+        return;
+      }
     }
     if (_passwordController.text.isEmpty) {
       _showSnackBar('กรุณากรอกรหัสผ่าน');

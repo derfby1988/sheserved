@@ -88,9 +88,9 @@ CREATE TABLE IF NOT EXISTS users (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100),
     username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255),
+    email VARCHAR(255),  -- Optional (ไม่บังคับ)
     password_hash VARCHAR(255),
-    phone VARCHAR(20),
+    phone VARCHAR(20) NOT NULL UNIQUE,  -- Primary identifier (บังคับ + ไม่ซ้ำ)
     profile_image_url TEXT,
     social_provider VARCHAR(20) CHECK (social_provider IN ('google', 'facebook', 'apple', 'line', 'tiktok')),
     social_id VARCHAR(255),
@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_profession_id ON users(profession_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 
 -- 3.3 Locations Table (ใหม่ - UUID user_id)
 CREATE TABLE IF NOT EXISTS locations (
@@ -161,7 +162,8 @@ CREATE TABLE IF NOT EXISTS registration_applications (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100),
     username VARCHAR(50) NOT NULL,
-    phone VARCHAR(20),
+    phone VARCHAR(20) NOT NULL,  -- Primary identifier (บังคับ)
+    email VARCHAR(255),  -- Optional (ไม่บังคับ)
     profile_image_url TEXT,
     registration_data JSONB DEFAULT '{}',
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),

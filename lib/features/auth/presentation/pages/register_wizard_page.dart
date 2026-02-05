@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/otp_verification_dialog.dart';
 import '../../../admin/models/profession.dart';
 import '../../../admin/models/registration_field_config.dart';
 
@@ -42,6 +44,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   bool _acceptTerms = false;
   bool _isLoading = false;
 
+  // OTP Verification
+  bool _isPhoneVerified = false;
+  String? _verifiedPhoneNumber;
+
   @override
   void initState() {
     super.initState();
@@ -77,21 +83,21 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           RegistrationFieldConfig(
             id: '1',
             professionId: professionId,
-            fieldId: 'email',
-            label: 'อีเมล',
-            hint: 'กรอกอีเมลของคุณ',
-            fieldType: FieldType.email,
-            isRequired: true,
+            fieldId: 'phone',
+            label: 'เบอร์โทรศัพท์',
+            hint: 'กรอกเบอร์โทรศัพท์ (ใช้สำหรับยืนยันตัวตน)',
+            fieldType: FieldType.phone,
+            isRequired: true,  // Primary identifier
             order: 0,
           ),
           RegistrationFieldConfig(
             id: '2',
             professionId: professionId,
-            fieldId: 'phone',
-            label: 'เบอร์โทร',
-            hint: 'กรอกเบอร์โทรศัพท์',
-            fieldType: FieldType.phone,
-            isRequired: true,
+            fieldId: 'email',
+            label: 'อีเมล (ไม่บังคับ)',
+            hint: 'กรอกอีเมลของคุณ',
+            fieldType: FieldType.email,
+            isRequired: false,  // Optional
             order: 1,
           ),
           RegistrationFieldConfig(
@@ -617,12 +623,51 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         keyboardType = TextInputType.text;
     }
     
-    return _buildInputField(
-      controller: controller,
-      hintText: '${field.label}${field.isRequired ? " *" : ""}',
-      prefixIcon: _getIconForFieldType(field.fieldType),
-      keyboardType: keyboardType,
-      maxLines: maxLines,
+    // Check if this is a verified phone field
+    final isVerifiedPhone = field.fieldType == FieldType.phone && 
+        _isPhoneVerified && 
+        _verifiedPhoneNumber == controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildInputField(
+          controller: controller,
+          hintText: '${field.label}${field.isRequired ? " *" : ""}',
+          prefixIcon: _getIconForFieldType(field.fieldType),
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          suffixIcon: isVerifiedPhone 
+              ? const Icon(Icons.verified, color: Colors.green, size: 20)
+              : null,
+          onChanged: field.fieldType == FieldType.phone ? (_) {
+            // Reset verification if phone number changes
+            final currentPhone = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+            if (_verifiedPhoneNumber != currentPhone) {
+              setState(() {
+                _isPhoneVerified = false;
+              });
+            }
+          } : null,
+        ),
+        if (isVerifiedPhone)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  'ยืนยันเบอร์โทรศัพท์แล้ว',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
   
@@ -880,6 +925,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     bool obscureText = false,
     Widget? suffixIcon,
     int maxLines = 1,
+    ValueChanged<String>? onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -894,6 +940,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         keyboardType: keyboardType,
         obscureText: obscureText,
         maxLines: maxLines,
+        onChanged: onChanged,
         style: AppTextStyles.bodyMedium.copyWith(
           color: AppColors.textPrimary,
         ),
@@ -1075,8 +1122,37 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  void _handleNext() {
+  void _handleNext() async {
     if (!_validateCurrentStep()) return;
+
+    // OTP Verification for Step 2 (ข้อมูลจำเพาะ - มีเบอร์โทร)
+    if (_currentStep == 2 && AppConfig.enableOtpVerification) {
+      final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
+      final phoneNumber = phoneController?.text ?? '';
+      
+      if (phoneNumber.isNotEmpty) {
+        // Check if phone number changed from previously verified
+        if (_verifiedPhoneNumber != phoneNumber) {
+          _isPhoneVerified = false;
+        }
+        
+        if (!_isPhoneVerified) {
+          // Show OTP verification dialog
+          final verified = await OtpVerificationDialog.show(context, phoneNumber);
+          
+          if (!verified) {
+            _showSnackBar('กรุณายืนยันเบอร์โทรศัพท์');
+            return;
+          }
+          
+          // Mark as verified
+          setState(() {
+            _isPhoneVerified = true;
+            _verifiedPhoneNumber = phoneNumber;
+          });
+        }
+      }
+    }
 
     if (_currentStep < _totalSteps - 1) {
       setState(() {
@@ -1137,6 +1213,25 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             if (controller == null || controller.text.isEmpty) {
               _showSnackBar('กรุณากรอก ${field.label}');
               return false;
+            }
+            
+            // Validate phone format
+            if (field.fieldType == FieldType.phone) {
+              final phone = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+              final phoneRegex = RegExp(r'^0[0-9]{8,9}$');
+              if (!phoneRegex.hasMatch(phone)) {
+                _showSnackBar('รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง');
+                return false;
+              }
+            }
+            
+            // Validate email format (if provided)
+            if (field.fieldType == FieldType.email && controller.text.isNotEmpty) {
+              final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+              if (!emailRegex.hasMatch(controller.text)) {
+                _showSnackBar('รูปแบบอีเมลไม่ถูกต้อง');
+                return false;
+              }
             }
           }
         }

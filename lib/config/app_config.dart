@@ -72,6 +72,24 @@ class AppConfig {
   static const bool debugMode = true;
 
   // =====================================================
+  // OTP CONFIGURATION
+  // =====================================================
+  
+  /// ใช้ Console OTP (ทดสอบ - ไม่ส่ง SMS จริง)
+  /// true = แสดง OTP ใน Console (ฟรี สำหรับ development)
+  /// false = ส่ง SMS จริงผ่าน Supabase/Twilio (มีค่าใช้จ่าย)
+  static const bool useConsoleOtp = true;
+  
+  /// เปิดใช้งาน OTP Verification
+  static const bool enableOtpVerification = true;
+  
+  /// OTP หมดอายุ (นาที)
+  static const int otpExpiryMinutes = 5;
+  
+  /// จำนวนครั้งที่ลองใส่ OTP ผิดได้
+  static const int otpMaxRetries = 3;
+
+  // =====================================================
   // LEGACY SUPPORT
   // =====================================================
   

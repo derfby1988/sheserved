@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS users (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100),
     username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255),  -- เพิ่มจาก schema เดิม
+    email VARCHAR(255),  -- Optional (ไม่บังคับ)
     password_hash VARCHAR(255), -- NULL for social login
-    phone VARCHAR(20),
+    phone VARCHAR(20) NOT NULL UNIQUE,  -- Primary identifier (บังคับ + ไม่ซ้ำ)
     profile_image_url TEXT,
     -- Social Login Fields
     social_provider VARCHAR(20) CHECK (social_provider IN ('google', 'facebook', 'apple', 'line', 'tiktok')),
@@ -138,7 +138,8 @@ CREATE TABLE IF NOT EXISTS registration_applications (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100),
     username VARCHAR(50) NOT NULL,
-    phone VARCHAR(20),
+    phone VARCHAR(20) NOT NULL,  -- Primary identifier (บังคับ)
+    email VARCHAR(255),  -- Optional (ไม่บังคับ)
     profile_image_url TEXT,
     registration_data JSONB DEFAULT '{}',  -- เก็บข้อมูล dynamic fields
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
