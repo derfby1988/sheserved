@@ -337,6 +337,12 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             icon: Icons.settings,
                             onTap: () => _navigateTo(context, '/settings'),
                           ),
+                          _buildMenuItem(
+                            context,
+                            title: 'ตั้งค่า Sync',
+                            icon: Icons.sync,
+                            onTap: () => _navigateTo(context, '/settings/sync'),
+                          ),
                           
                           const SizedBox(height: 16),
                           const Divider(color: AppColors.divider),
@@ -345,9 +351,15 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           // Section 5: Admin
                           _buildMenuItem(
                             context,
-                            title: 'จัดการฟิลด์ลงทะเบียน',
+                            title: 'จัดการอาชีพ',
                             icon: Icons.admin_panel_settings,
-                            onTap: () => _navigateTo(context, '/admin/registration-fields'),
+                            onTap: () => _navigateTo(context, '/admin/professions'),
+                          ),
+                          _buildMenuItem(
+                            context,
+                            title: 'ตรวจสอบผู้สมัคร',
+                            icon: Icons.verified_user_outlined,
+                            onTap: () => _navigateTo(context, '/admin/applications'),
                           ),
                           
                           const SizedBox(height: 32),

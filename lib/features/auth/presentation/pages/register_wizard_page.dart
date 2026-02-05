@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../admin/models/profession.dart';
 import '../../../admin/models/registration_field_config.dart';
 
-/// Register Wizard Page - ลงทะเบียนแบบ 4 ขั้นตอน
+/// Register Wizard Page - ลงทะเบียนแบบ 4 ขั้นตอน (รองรับอาชีพแบบ Dynamic)
 class RegisterWizardPage extends StatefulWidget {
   const RegisterWizardPage({super.key});
 
@@ -14,15 +15,18 @@ class RegisterWizardPage extends StatefulWidget {
 class _RegisterWizardPageState extends State<RegisterWizardPage> {
   int _currentStep = 0;
   final int _totalSteps = 4;
-  final _configService = RegistrationFieldConfigService();
   
   // Dynamic field values storage
   final Map<String, dynamic> _dynamicFieldValues = {};
+  
+  // Available professions (loaded dynamically)
+  List<Profession> _professions = [];
+  bool _isLoadingProfessions = true;
 
   // Step 1 - ข้อมูลทั่วไป
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
-  UserType? _selectedUserType;
+  Profession? _selectedProfession;
 
   // Step 2 - ข้อมูลสำหรับเข้าสู่ระบบ
   final _usernameController = TextEditingController();
@@ -31,29 +35,206 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
-  // Step 3 - ข้อมูลจำเพาะ (Consumer)
-  final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _birthdayController = TextEditingController();
-  DateTime? _selectedBirthday;
-
-  // Step 3 - ข้อมูลจำเพาะ (Expert/Clinic)
-  final _businessNameController = TextEditingController();
-  final _licenseNumberController = TextEditingController();
-  final _businessAddressController = TextEditingController();
-  final _businessPhoneController = TextEditingController();
-  final _businessEmailController = TextEditingController();
-  final _specialtyController = TextEditingController();
-  final _experienceController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String? _idCardImagePath;
-  String? _licenseImagePath;
-  String? _profileImagePath;
-  String? _businessImagePath;
+  // Step 3 - ข้อมูลจำเพาะ (Dynamic fields from profession)
+  List<RegistrationFieldConfig> _professionFields = [];
 
   // Step 4 - ยืนยัน
   bool _acceptTerms = false;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfessions();
+  }
+
+  Future<void> _loadProfessions() async {
+    setState(() => _isLoadingProfessions = true);
+
+    // TODO: Load from ProfessionRepository
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    setState(() {
+      _professions = Profession.defaultProfessions;
+      _isLoadingProfessions = false;
+    });
+  }
+
+  void _loadFieldsForProfession(Profession profession) {
+    // TODO: Load from ProfessionRepository
+    // For now, use default fields
+    setState(() {
+      _professionFields = _getDefaultFieldsForProfession(profession.id);
+      // Clear dynamic field values when profession changes
+      _dynamicFieldValues.clear();
+    });
+  }
+
+  List<RegistrationFieldConfig> _getDefaultFieldsForProfession(String professionId) {
+    switch (professionId) {
+      case Profession.consumerProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '1',
+            professionId: professionId,
+            fieldId: 'email',
+            label: 'อีเมล',
+            hint: 'กรอกอีเมลของคุณ',
+            fieldType: FieldType.email,
+            isRequired: true,
+            order: 0,
+          ),
+          RegistrationFieldConfig(
+            id: '2',
+            professionId: professionId,
+            fieldId: 'phone',
+            label: 'เบอร์โทร',
+            hint: 'กรอกเบอร์โทรศัพท์',
+            fieldType: FieldType.phone,
+            isRequired: true,
+            order: 1,
+          ),
+          RegistrationFieldConfig(
+            id: '3',
+            professionId: professionId,
+            fieldId: 'birthday',
+            label: 'วันเกิด',
+            hint: 'เลือกวันเกิด',
+            fieldType: FieldType.date,
+            isRequired: false,
+            order: 2,
+          ),
+        ];
+      case Profession.expertProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '4',
+            professionId: professionId,
+            fieldId: 'profile_image',
+            label: 'รูปโปรไฟล์',
+            hint: 'อัพโหลดรูปโปรไฟล์',
+            fieldType: FieldType.image,
+            isRequired: false,
+            order: 0,
+          ),
+          RegistrationFieldConfig(
+            id: '5',
+            professionId: professionId,
+            fieldId: 'business_name',
+            label: 'ชื่อร้าน/ชื่อธุรกิจ',
+            hint: 'กรอกชื่อร้านหรือธุรกิจของคุณ',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 1,
+          ),
+          RegistrationFieldConfig(
+            id: '6',
+            professionId: professionId,
+            fieldId: 'specialty',
+            label: 'ความเชี่ยวชาญ/ประเภทสินค้า',
+            hint: 'ระบุความเชี่ยวชาญหรือประเภทสินค้า',
+            fieldType: FieldType.text,
+            isRequired: false,
+            order: 2,
+          ),
+          RegistrationFieldConfig(
+            id: '7',
+            professionId: professionId,
+            fieldId: 'business_phone',
+            label: 'เบอร์โทรติดต่อ',
+            hint: 'กรอกเบอร์โทรสำหรับติดต่อ',
+            fieldType: FieldType.phone,
+            isRequired: true,
+            order: 3,
+          ),
+          RegistrationFieldConfig(
+            id: '8',
+            professionId: professionId,
+            fieldId: 'id_card_image',
+            label: 'รูปบัตรประชาชน',
+            hint: 'อัพโหลดรูปบัตรประชาชน',
+            fieldType: FieldType.image,
+            isRequired: true,
+            order: 4,
+          ),
+          RegistrationFieldConfig(
+            id: '9',
+            professionId: professionId,
+            fieldId: 'description',
+            label: 'แนะนำตัว/ธุรกิจ',
+            hint: 'เขียนแนะนำตัวหรือธุรกิจของคุณ',
+            fieldType: FieldType.multilineText,
+            isRequired: false,
+            order: 5,
+          ),
+        ];
+      case Profession.clinicProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '10',
+            professionId: professionId,
+            fieldId: 'business_image',
+            label: 'รูปสถานประกอบการ',
+            hint: 'อัพโหลดรูปสถานประกอบการ',
+            fieldType: FieldType.image,
+            isRequired: false,
+            order: 0,
+          ),
+          RegistrationFieldConfig(
+            id: '11',
+            professionId: professionId,
+            fieldId: 'clinic_name',
+            label: 'ชื่อคลินิก/ศูนย์',
+            hint: 'กรอกชื่อคลินิกหรือศูนย์',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 1,
+          ),
+          RegistrationFieldConfig(
+            id: '12',
+            professionId: professionId,
+            fieldId: 'license_number',
+            label: 'เลขใบอนุญาตประกอบกิจการ',
+            hint: 'กรอกเลขใบอนุญาต',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 2,
+          ),
+          RegistrationFieldConfig(
+            id: '13',
+            professionId: professionId,
+            fieldId: 'business_phone',
+            label: 'เบอร์โทรติดต่อ',
+            hint: 'กรอกเบอร์โทรสำหรับติดต่อ',
+            fieldType: FieldType.phone,
+            isRequired: true,
+            order: 3,
+          ),
+          RegistrationFieldConfig(
+            id: '14',
+            professionId: professionId,
+            fieldId: 'license_image',
+            label: 'รูปใบอนุญาตประกอบกิจการ',
+            hint: 'อัพโหลดรูปใบอนุญาต',
+            fieldType: FieldType.image,
+            isRequired: true,
+            order: 4,
+          ),
+          RegistrationFieldConfig(
+            id: '15',
+            professionId: professionId,
+            fieldId: 'id_card_image',
+            label: 'รูปบัตรประชาชนผู้จดทะเบียน',
+            hint: 'อัพโหลดรูปบัตรประชาชน',
+            fieldType: FieldType.image,
+            isRequired: true,
+            order: 5,
+          ),
+        ];
+      default:
+        return [];
+    }
+  }
 
   @override
   void dispose() {
@@ -62,17 +243,12 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     _usernameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _birthdayController.dispose();
-    _businessNameController.dispose();
-    _licenseNumberController.dispose();
-    _businessAddressController.dispose();
-    _businessPhoneController.dispose();
-    _businessEmailController.dispose();
-    _specialtyController.dispose();
-    _experienceController.dispose();
-    _descriptionController.dispose();
+    // Dispose dynamic controllers
+    for (final entry in _dynamicFieldValues.entries) {
+      if (entry.key.endsWith('_controller') && entry.value is TextEditingController) {
+        (entry.value as TextEditingController).dispose();
+      }
+    }
     super.dispose();
   }
 
@@ -147,7 +323,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  /// Step 1: ข้อมูลทั่วไป
+  /// Step 1: ข้อมูลทั่วไป - เลือกอาชีพแบบ Dynamic
   Widget _buildStep1GeneralInfo() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -178,61 +354,126 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         ),
         const SizedBox(height: 24),
 
-        // ประเภทผู้ใช้
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: UserType.values.map((type) {
-            final isSelected = _selectedUserType == type;
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedUserType = type;
-                });
-              },
-              child: Column(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
-                      color: isSelected ? AppColors.primary : Colors.white,
-                    ),
-                    child: isSelected
-                        ? const Icon(
-                            Icons.check,
-                            color: Colors.white,
-                            size: 16,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: 80,
-                    child: Text(
-                      type.shortTitle,
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.caption.copyWith(
-                        color: isSelected
-                            ? AppColors.primary
-                            : AppColors.textSecondary,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+        // เลือกประเภท/อาชีพ
+        Text(
+          'เลือกประเภทการลงทะเบียน',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
+        const SizedBox(height: 12),
+
+        if (_isLoadingProfessions)
+          const Center(child: CircularProgressIndicator())
+        else
+          _buildProfessionSelector(),
       ],
     );
+  }
+
+  Widget _buildProfessionSelector() {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      alignment: WrapAlignment.center,
+      children: _professions.map((profession) {
+        final isSelected = _selectedProfession?.id == profession.id;
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedProfession = profession;
+            });
+            _loadFieldsForProfession(profession);
+          },
+          child: Container(
+            width: MediaQuery.of(context).size.width / 3 - 24,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? AppColors.primary : AppColors.border,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.background,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _getIconForProfession(profession.iconName),
+                    color: isSelected ? Colors.white : AppColors.textHint,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  profession.name,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.caption.copyWith(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (profession.requiresVerification) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.verified_user,
+                        size: 10,
+                        color: AppColors.warning,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        'ต้องตรวจสอบ',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.warning,
+                          fontSize: 8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getIconForProfession(String? iconName) {
+    switch (iconName) {
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'store':
+        return Icons.store;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'engineering':
+        return Icons.engineering;
+      case 'gavel':
+        return Icons.gavel;
+      default:
+        return Icons.work;
+    }
   }
 
   /// Step 2: ข้อมูลสำหรับเข้าสู่ระบบ
@@ -306,10 +547,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     );
   }
 
-  /// Step 3: ข้อมูลจำเพาะ - สร้างแบบ Dynamic จาก Config
+  /// Step 3: ข้อมูลจำเพาะ - สร้างแบบ Dynamic จาก Profession Config
   Widget _buildStep3SpecificInfo() {
-    final userType = _selectedUserType ?? UserType.consumer;
-    final fields = _configService.getConfigsForUserType(userType);
+    final profession = _selectedProfession;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -324,7 +564,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'สำหรับ ${userType.title}',
+          'สำหรับ ${profession?.name ?? ""}',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.textSecondary,
@@ -332,8 +572,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         ),
         const SizedBox(height: 28),
         
-        // Dynamic fields from config
-        ...fields.map((field) => Padding(
+        // Dynamic fields from profession config
+        ..._professionFields.map((field) => Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: _buildDynamicField(field),
         )),
@@ -357,10 +597,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   
   Widget _buildDynamicTextField(RegistrationFieldConfig field, {int maxLines = 1}) {
     // Get or create controller for this field
-    if (!_dynamicFieldValues.containsKey('${field.id}_controller')) {
-      _dynamicFieldValues['${field.id}_controller'] = TextEditingController();
+    if (!_dynamicFieldValues.containsKey('${field.fieldId}_controller')) {
+      _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
     }
-    final controller = _dynamicFieldValues['${field.id}_controller'] as TextEditingController;
+    final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
     
     TextInputType? keyboardType;
     switch (field.fieldType) {
@@ -379,7 +619,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     
     return _buildInputField(
       controller: controller,
-      hintText: field.hint ?? field.label,
+      hintText: '${field.label}${field.isRequired ? " *" : ""}',
       prefixIcon: _getIconForFieldType(field.fieldType),
       keyboardType: keyboardType,
       maxLines: maxLines,
@@ -387,17 +627,17 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
   
   Widget _buildDynamicDateField(RegistrationFieldConfig field) {
-    if (!_dynamicFieldValues.containsKey('${field.id}_controller')) {
-      _dynamicFieldValues['${field.id}_controller'] = TextEditingController();
+    if (!_dynamicFieldValues.containsKey('${field.fieldId}_controller')) {
+      _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
     }
-    final controller = _dynamicFieldValues['${field.id}_controller'] as TextEditingController;
+    final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
     
     return GestureDetector(
-      onTap: () => _selectDateForField(field.id, controller),
+      onTap: () => _selectDateForField(field.fieldId, controller),
       child: AbsorbPointer(
         child: _buildInputField(
           controller: controller,
-          hintText: field.hint ?? field.label,
+          hintText: '${field.label}${field.isRequired ? " *" : ""}',
           prefixIcon: Icons.calendar_today_outlined,
         ),
       ),
@@ -405,12 +645,12 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
   
   Widget _buildDynamicImageField(RegistrationFieldConfig field) {
-    final imagePath = _dynamicFieldValues['${field.id}_image'] as String?;
+    final imagePath = _dynamicFieldValues['${field.fieldId}_image'] as String?;
     
     return _buildImageUploadField(
       label: field.label,
       imagePath: imagePath,
-      onTap: () => _selectImageForField(field.id),
+      onTap: () => _selectImageForField(field.fieldId),
       icon: _getIconForFieldType(field.fieldType),
       required: field.isRequired,
     );
@@ -498,24 +738,48 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSummaryItem('ประเภทผู้ใช้', _selectedUserType?.title ?? '-'),
+              _buildSummaryItem('ประเภท', _selectedProfession?.name ?? '-'),
               const Divider(height: 24),
               _buildSummaryItem('ชื่อ-นามสกุล',
                   '${_firstNameController.text} ${_lastNameController.text}'),
               _buildSummaryItem('ชื่อผู้ใช้', _usernameController.text),
-              if (_selectedUserType == UserType.consumer) ...[
-                _buildSummaryItem('อีเมล', _emailController.text),
-                _buildSummaryItem('เบอร์โทร', _phoneController.text),
-                _buildSummaryItem('วันเกิด', _birthdayController.text),
-              ] else ...[
-                _buildSummaryItem(
-                    'ชื่อธุรกิจ/คลินิก', _businessNameController.text),
-                _buildSummaryItem('เบอร์โทร', _businessPhoneController.text),
-                _buildSummaryItem('อีเมล', _businessEmailController.text),
-              ],
+              const Divider(height: 24),
+              // Dynamic fields summary
+              ..._professionFields.where((f) => f.fieldType != FieldType.image).map((field) {
+                final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+                return _buildSummaryItem(field.label, controller?.text ?? '-');
+              }),
             ],
           ),
         ),
+
+        // Verification notice for provider professions
+        if (_selectedProfession?.requiresVerification == true) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: AppColors.warning, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'หลังลงทะเบียน ข้อมูลของคุณจะถูกตรวจสอบโดย Admin ก่อนเปิดใช้งาน',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         const SizedBox(height: 24),
 
         // Terms Checkbox
@@ -671,7 +935,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           border: Border.all(
             color: AppColors.primary,
             width: 1.5,
-            style: BorderStyle.solid,
           ),
         ),
         child: Row(
@@ -813,7 +1076,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   void _handleNext() {
-    // Validate current step
     if (!_validateCurrentStep()) return;
 
     if (_currentStep < _totalSteps - 1) {
@@ -821,7 +1083,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         _currentStep++;
       });
     } else {
-      // Submit registration
       _handleSubmit();
     }
   }
@@ -837,8 +1098,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           _showSnackBar('กรุณากรอกนามสกุล');
           return false;
         }
-        if (_selectedUserType == null) {
-          _showSnackBar('กรุณาเลือกประเภทผู้ใช้');
+        if (_selectedProfession == null) {
+          _showSnackBar('กรุณาเลือกประเภทการลงทะเบียน');
           return false;
         }
         return true;
@@ -863,23 +1124,20 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         return true;
 
       case 2:
-        if (_selectedUserType == UserType.consumer) {
-          if (_emailController.text.isEmpty) {
-            _showSnackBar('กรุณากรอกอีเมล');
-            return false;
-          }
-          if (_phoneController.text.isEmpty) {
-            _showSnackBar('กรุณากรอกเบอร์โทร');
-            return false;
-          }
-        } else {
-          if (_businessNameController.text.isEmpty) {
-            _showSnackBar('กรุณากรอกชื่อธุรกิจ/คลินิก');
-            return false;
-          }
-          if (_businessPhoneController.text.isEmpty) {
-            _showSnackBar('กรุณากรอกเบอร์โทรติดต่อ');
-            return false;
+        // Validate required dynamic fields
+        for (final field in _professionFields.where((f) => f.isRequired)) {
+          if (field.fieldType == FieldType.image) {
+            final imagePath = _dynamicFieldValues['${field.fieldId}_image'];
+            if (imagePath == null) {
+              _showSnackBar('กรุณาอัพโหลด ${field.label}');
+              return false;
+            }
+          } else {
+            final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+            if (controller == null || controller.text.isEmpty) {
+              _showSnackBar('กรุณากรอก ${field.label}');
+              return false;
+            }
           }
         }
         return true;
@@ -902,6 +1160,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     });
 
     // TODO: Implement registration with Supabase
+    // 1. Create user
+    // 2. Create registration application if requires verification
+    // 3. Save dynamic field values
+
     await Future.delayed(const Duration(seconds: 2));
 
     if (mounted) {
@@ -909,50 +1171,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         _isLoading = false;
       });
 
-      _showSnackBar('ลงทะเบียนสำเร็จ!');
+      if (_selectedProfession?.requiresVerification == true) {
+        _showSnackBar('ลงทะเบียนสำเร็จ! รอการตรวจสอบจาก Admin');
+      } else {
+        _showSnackBar('ลงทะเบียนสำเร็จ!');
+      }
       Navigator.pushReplacementNamed(context, '/login');
     }
-  }
-
-  Future<void> _selectBirthday() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().subtract(const Duration(days: 6570)), // 18 years ago
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      locale: const Locale('th', 'TH'),
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedBirthday = picked;
-        _birthdayController.text =
-            '${picked.day}/${picked.month}/${picked.year + 543}'; // Buddhist era
-      });
-    }
-  }
-
-  void _selectImage(String type) {
-    // TODO: Implement image picker
-    _showSnackBar('เลือกรูปภาพจะเปิดใช้งานเร็วๆ นี้');
-    
-    // Simulate image selection for now
-    setState(() {
-      switch (type) {
-        case 'profile':
-          _profileImagePath = 'selected';
-          break;
-        case 'idCard':
-          _idCardImagePath = 'selected';
-          break;
-        case 'license':
-          _licenseImagePath = 'selected';
-          break;
-        case 'business':
-          _businessImagePath = 'selected';
-          break;
-      }
-    });
   }
 
   void _showSnackBar(String message) {

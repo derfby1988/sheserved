@@ -1,27 +1,43 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/app_config.dart';
 
 /// Supabase Service for Sheserved
 /// ใช้สำหรับเชื่อมต่อกับ Supabase Backend
 class SupabaseService {
   static SupabaseClient? _client;
+  static bool _isInitialized = false;
 
-  // TODO: เปลี่ยนเป็น URL และ Key จาก Supabase Project จริง
-  static const String _supabaseUrl = 'YOUR_SUPABASE_URL';
-  static const String _supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';
-
-  /// Initialize Supabase
+  /// Initialize Supabase (uses AppConfig for URL and key)
   static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: _supabaseUrl,
-      anonKey: _supabaseAnonKey,
-    );
-    _client = Supabase.instance.client;
+    if (!AppConfig.isSupabaseConfigured) {
+      debugPrint('SupabaseService: Supabase not configured, skipping initialization');
+      return;
+    }
+
+    try {
+      await Supabase.initialize(
+        url: AppConfig.supabaseUrl,
+        anonKey: AppConfig.supabaseAnonKey,
+      );
+      _client = Supabase.instance.client;
+      _isInitialized = true;
+      debugPrint('SupabaseService: Initialized successfully');
+    } catch (e) {
+      debugPrint('SupabaseService: Failed to initialize - $e');
+    }
   }
 
-  /// Get Supabase Client
+  /// Check if Supabase is initialized
+  static bool get isInitialized => _isInitialized && _client != null;
+
+  /// Get Supabase Client (returns null if not initialized)
+  static SupabaseClient? get clientOrNull => _client;
+
+  /// Get Supabase Client (throws if not initialized)
   static SupabaseClient get client {
     if (_client == null) {
-      throw Exception('Supabase not initialized. Call SupabaseService.initialize() first.');
+      throw Exception('Supabase not initialized. Call SupabaseService.initialize() first or check isInitialized.');
     }
     return _client!;
   }

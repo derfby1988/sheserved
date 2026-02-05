@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'features/home/presentation/pages/home_page.dart';
@@ -8,9 +9,14 @@ import 'features/auth/presentation/pages/register_page.dart';
 import 'features/auth/presentation/pages/register_wizard_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
+import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
+import 'features/admin/presentation/pages/application_review_page.dart';
+import 'features/admin/models/profession.dart';
+import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
-// import 'services/supabase_service.dart';
+import 'services/service_locator.dart';
+import 'config/app_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,9 +37,23 @@ void main() async {
     ),
   );
 
-  // TODO: Uncomment when Supabase is configured
-  // Initialize Supabase
-  // await SupabaseService.initialize();
+  // Initialize Supabase first (if configured)
+  if (AppConfig.isSupabaseConfigured) {
+    try {
+      await Supabase.initialize(
+        url: AppConfig.supabaseUrl,
+        anonKey: AppConfig.supabaseAnonKey,
+      );
+      debugPrint('Main: Supabase initialized successfully');
+    } catch (e) {
+      debugPrint('Main: Failed to initialize Supabase - $e');
+    }
+  } else {
+    debugPrint('Main: Supabase not configured (using Local only)');
+  }
+
+  // Initialize Services (Local Database + Sync)
+  await ServiceLocator.instance.initialize();
 
   runApp(const SheservedApp());
 }
@@ -55,7 +75,19 @@ class SheservedApp extends StatelessWidget {
         '/health': (context) => const HealthPage(),
         '/articles': (context) => const ArticlesPage(),
         '/test': (context) => const TestWebSocketWidget(),
-        '/admin/registration-fields': (context) => const RegistrationFieldAdminPage(),
+        '/admin/professions': (context) => const ProfessionAdminPage(),
+        '/admin/applications': (context) => const ApplicationReviewPage(),
+        '/settings/sync': (context) => const SyncSettingsPage(),
+      },
+      onGenerateRoute: (settings) {
+        // Handle routes with arguments
+        if (settings.name == '/admin/registration-fields') {
+          final profession = settings.arguments as Profession?;
+          return MaterialPageRoute(
+            builder: (context) => RegistrationFieldAdminPage(profession: profession),
+          );
+        }
+        return null;
       },
     );
   }

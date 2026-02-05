@@ -1,40 +1,184 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../models/profession.dart';
 import '../../models/registration_field_config.dart';
 
-/// Admin Page สำหรับจัดการ Field ลงทะเบียน
+/// Admin Page สำหรับจัดการ Field ลงทะเบียนของอาชีพ
 class RegistrationFieldAdminPage extends StatefulWidget {
-  const RegistrationFieldAdminPage({super.key});
+  final Profession? profession;
+
+  const RegistrationFieldAdminPage({
+    super.key,
+    this.profession,
+  });
 
   @override
   State<RegistrationFieldAdminPage> createState() =>
       _RegistrationFieldAdminPageState();
 }
 
-class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final _configService = RegistrationFieldConfigService();
-  UserType _selectedUserType = UserType.consumer;
+class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage> {
+  late Profession _profession;
+  List<RegistrationFieldConfig> _fields = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: UserType.values.length, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {
-          _selectedUserType = UserType.values[_tabController.index];
-        });
-      }
+    _profession = widget.profession ?? Profession.defaultProfessions.first;
+    _loadFields();
+  }
+
+  Future<void> _loadFields() async {
+    setState(() => _isLoading = true);
+
+    // TODO: Load from repository
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    // For now, use default fields based on profession
+    setState(() {
+      _fields = _getDefaultFields(_profession.id);
+      _isLoading = false;
     });
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  List<RegistrationFieldConfig> _getDefaultFields(String professionId) {
+    // Return default fields based on profession
+    switch (professionId) {
+      case Profession.consumerProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '1',
+            professionId: professionId,
+            fieldId: 'email',
+            label: 'อีเมล',
+            hint: 'กรอกอีเมลของคุณ',
+            fieldType: FieldType.email,
+            isRequired: true,
+            order: 0,
+            iconName: 'email_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '2',
+            professionId: professionId,
+            fieldId: 'phone',
+            label: 'เบอร์โทร',
+            hint: 'กรอกเบอร์โทรศัพท์',
+            fieldType: FieldType.phone,
+            isRequired: true,
+            order: 1,
+            iconName: 'phone_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '3',
+            professionId: professionId,
+            fieldId: 'birthday',
+            label: 'วันเกิด',
+            hint: 'เลือกวันเกิด',
+            fieldType: FieldType.date,
+            isRequired: false,
+            order: 2,
+            iconName: 'calendar_today_outlined',
+          ),
+        ];
+      case Profession.expertProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '4',
+            professionId: professionId,
+            fieldId: 'profile_image',
+            label: 'รูปโปรไฟล์',
+            hint: 'อัพโหลดรูปโปรไฟล์',
+            fieldType: FieldType.image,
+            isRequired: false,
+            order: 0,
+            iconName: 'person',
+          ),
+          RegistrationFieldConfig(
+            id: '5',
+            professionId: professionId,
+            fieldId: 'business_name',
+            label: 'ชื่อร้าน/ชื่อธุรกิจ',
+            hint: 'กรอกชื่อร้านหรือธุรกิจของคุณ',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 1,
+            iconName: 'store_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '6',
+            professionId: professionId,
+            fieldId: 'business_phone',
+            label: 'เบอร์โทรติดต่อ',
+            hint: 'กรอกเบอร์โทรสำหรับติดต่อ',
+            fieldType: FieldType.phone,
+            isRequired: true,
+            order: 2,
+            iconName: 'phone_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '7',
+            professionId: professionId,
+            fieldId: 'id_card_image',
+            label: 'รูปบัตรประชาชน',
+            hint: 'อัพโหลดรูปบัตรประชาชน',
+            fieldType: FieldType.image,
+            isRequired: true,
+            order: 3,
+            iconName: 'credit_card',
+          ),
+        ];
+      case Profession.clinicProfessionId:
+        return [
+          RegistrationFieldConfig(
+            id: '8',
+            professionId: professionId,
+            fieldId: 'business_image',
+            label: 'รูปสถานประกอบการ',
+            hint: 'อัพโหลดรูปสถานประกอบการ',
+            fieldType: FieldType.image,
+            isRequired: false,
+            order: 0,
+            iconName: 'business',
+          ),
+          RegistrationFieldConfig(
+            id: '9',
+            professionId: professionId,
+            fieldId: 'clinic_name',
+            label: 'ชื่อคลินิก/ศูนย์',
+            hint: 'กรอกชื่อคลินิกหรือศูนย์',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 1,
+            iconName: 'local_hospital_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '10',
+            professionId: professionId,
+            fieldId: 'license_number',
+            label: 'เลขใบอนุญาตประกอบกิจการ',
+            hint: 'กรอกเลขใบอนุญาต',
+            fieldType: FieldType.text,
+            isRequired: true,
+            order: 2,
+            iconName: 'verified_outlined',
+          ),
+          RegistrationFieldConfig(
+            id: '11',
+            professionId: professionId,
+            fieldId: 'license_image',
+            label: 'รูปใบอนุญาตประกอบกิจการ',
+            hint: 'อัพโหลดรูปใบอนุญาต',
+            fieldType: FieldType.image,
+            isRequired: true,
+            order: 3,
+            iconName: 'document_scanner',
+          ),
+        ];
+      default:
+        return [];
+    }
   }
 
   @override
@@ -44,37 +188,31 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,
-        title: const Text('จัดการฟิลด์ลงทะเบียน'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('จัดการฟิลด์ลงทะเบียน'),
+            Text(
+              _profession.name,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textOnPrimary.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.preview),
             onPressed: _showPreview,
             tooltip: 'ดูตัวอย่าง',
           ),
-          IconButton(
-            icon: const Icon(Icons.restart_alt),
-            onPressed: _resetToDefaults,
-            tooltip: 'รีเซ็ตเป็นค่าเริ่มต้น',
-          ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.textOnPrimary,
-          labelColor: AppColors.textOnPrimary,
-          unselectedLabelColor: AppColors.textOnPrimary.withOpacity(0.6),
-          tabs: UserType.values.map((type) {
-            return Tab(text: type.shortTitle);
-          }).toList(),
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: UserType.values.map((type) {
-          return _buildFieldList(type);
-        }).toList(),
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildFieldList(),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddFieldDialog(_selectedUserType),
+        onPressed: _showAddFieldDialog,
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text(
@@ -85,10 +223,8 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
     );
   }
 
-  Widget _buildFieldList(UserType userType) {
-    final fields = _configService.getConfigsForUserType(userType);
-
-    if (fields.isEmpty) {
+  Widget _buildFieldList() {
+    if (_fields.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -119,21 +255,28 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
 
     return ReorderableListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: fields.length,
+      itemCount: _fields.length,
       onReorder: (oldIndex, newIndex) {
         setState(() {
-          _configService.reorderFields(userType, oldIndex, newIndex);
+          if (oldIndex < newIndex) {
+            newIndex -= 1;
+          }
+          final item = _fields.removeAt(oldIndex);
+          _fields.insert(newIndex, item);
+          // Update order values
+          for (int i = 0; i < _fields.length; i++) {
+            _fields[i] = _fields[i].copyWith(order: i);
+          }
         });
       },
       itemBuilder: (context, index) {
-        final field = fields[index];
-        return _buildFieldCard(field, userType, index);
+        final field = _fields[index];
+        return _buildFieldCard(field, index);
       },
     );
   }
 
-  Widget _buildFieldCard(
-      RegistrationFieldConfig field, UserType userType, int index) {
+  Widget _buildFieldCard(RegistrationFieldConfig field, int index) {
     return Card(
       key: ValueKey(field.id),
       margin: const EdgeInsets.only(bottom: 12),
@@ -214,12 +357,12 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               color: AppColors.primary,
-              onPressed: () => _showEditFieldDialog(userType, field),
+              onPressed: () => _showEditFieldDialog(field),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               color: AppColors.error,
-              onPressed: () => _confirmDeleteField(userType, field),
+              onPressed: () => _confirmDeleteField(field),
             ),
             ReorderableDragStartListener(
               index: index,
@@ -276,36 +419,39 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
     }
   }
 
-  void _showAddFieldDialog(UserType userType) {
+  void _showAddFieldDialog() {
     showDialog(
       context: context,
       builder: (context) => FieldEditorDialog(
-        userType: userType,
+        professionId: _profession.id,
         onSave: (field) {
           setState(() {
-            _configService.addField(userType, field);
+            _fields.add(field.copyWith(order: _fields.length));
           });
         },
       ),
     );
   }
 
-  void _showEditFieldDialog(UserType userType, RegistrationFieldConfig field) {
+  void _showEditFieldDialog(RegistrationFieldConfig field) {
     showDialog(
       context: context,
       builder: (context) => FieldEditorDialog(
-        userType: userType,
+        professionId: _profession.id,
         existingField: field,
         onSave: (updatedField) {
           setState(() {
-            _configService.updateField(userType, updatedField);
+            final index = _fields.indexWhere((f) => f.id == field.id);
+            if (index != -1) {
+              _fields[index] = updatedField;
+            }
           });
         },
       ),
     );
   }
 
-  void _confirmDeleteField(UserType userType, RegistrationFieldConfig field) {
+  void _confirmDeleteField(RegistrationFieldConfig field) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -319,7 +465,7 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
           TextButton(
             onPressed: () {
               setState(() {
-                _configService.removeField(userType, field.id);
+                _fields.removeWhere((f) => f.id == field.id);
               });
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -334,43 +480,13 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
     );
   }
 
-  void _resetToDefaults() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('รีเซ็ตเป็นค่าเริ่มต้น'),
-        content: const Text(
-            'การดำเนินการนี้จะลบการตั้งค่าทั้งหมดและกลับไปใช้ค่าเริ่มต้น\n\nต้องการดำเนินการต่อหรือไม่?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _configService.resetToDefaults();
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('รีเซ็ตเป็นค่าเริ่มต้นแล้ว')),
-              );
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('รีเซ็ต'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showPreview() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => FieldPreviewPage(
-          userType: _selectedUserType,
-          fields: _configService.getConfigsForUserType(_selectedUserType),
+          profession: _profession,
+          fields: _fields,
         ),
       ),
     );
@@ -379,13 +495,13 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
 
 /// Dialog สำหรับเพิ่ม/แก้ไข Field
 class FieldEditorDialog extends StatefulWidget {
-  final UserType userType;
+  final String professionId;
   final RegistrationFieldConfig? existingField;
   final Function(RegistrationFieldConfig) onSave;
 
   const FieldEditorDialog({
     super.key,
-    required this.userType,
+    required this.professionId,
     this.existingField,
     required this.onSave,
   });
@@ -397,6 +513,7 @@ class FieldEditorDialog extends StatefulWidget {
 class _FieldEditorDialogState extends State<FieldEditorDialog> {
   late TextEditingController _labelController;
   late TextEditingController _hintController;
+  late TextEditingController _fieldIdController;
   late FieldType _selectedFieldType;
   late bool _isRequired;
 
@@ -407,6 +524,8 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
         TextEditingController(text: widget.existingField?.label ?? '');
     _hintController =
         TextEditingController(text: widget.existingField?.hint ?? '');
+    _fieldIdController =
+        TextEditingController(text: widget.existingField?.fieldId ?? '');
     _selectedFieldType = widget.existingField?.fieldType ?? FieldType.text;
     _isRequired = widget.existingField?.isRequired ?? false;
   }
@@ -415,6 +534,7 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
   void dispose() {
     _labelController.dispose();
     _hintController.dispose();
+    _fieldIdController.dispose();
     super.dispose();
   }
 
@@ -437,6 +557,27 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
                 hintText: 'เช่น อีเมล, เบอร์โทร',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (value) {
+                // Auto-generate field ID from label
+                if (!isEditing && _fieldIdController.text.isEmpty) {
+                  _fieldIdController.text = value
+                      .toLowerCase()
+                      .replaceAll(RegExp(r'[^a-z0-9]'), '_');
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Field ID
+            TextField(
+              controller: _fieldIdController,
+              decoration: const InputDecoration(
+                labelText: 'Field ID *',
+                hintText: 'เช่น email, phone_number',
+                border: OutlineInputBorder(),
+                helperText: 'ใช้ภาษาอังกฤษ ไม่มีช่องว่าง',
+              ),
+              enabled: !isEditing, // Can't change ID when editing
             ),
             const SizedBox(height: 16),
 
@@ -515,9 +656,18 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
       return;
     }
 
+    if (_fieldIdController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณากรอก Field ID')),
+      );
+      return;
+    }
+
     final field = RegistrationFieldConfig(
       id: widget.existingField?.id ??
           DateTime.now().millisecondsSinceEpoch.toString(),
+      professionId: widget.professionId,
+      fieldId: _fieldIdController.text,
       label: _labelController.text,
       hint: _hintController.text.isNotEmpty ? _hintController.text : null,
       fieldType: _selectedFieldType,
@@ -532,12 +682,12 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
 
 /// หน้า Preview แสดงตัวอย่างฟอร์ม
 class FieldPreviewPage extends StatelessWidget {
-  final UserType userType;
+  final Profession profession;
   final List<RegistrationFieldConfig> fields;
 
   const FieldPreviewPage({
     super.key,
-    required this.userType,
+    required this.profession,
     required this.fields,
   });
 
@@ -548,7 +698,7 @@ class FieldPreviewPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,
-        title: Text('ตัวอย่าง: ${userType.title}'),
+        title: Text('ตัวอย่าง: ${profession.name}'),
         elevation: 0,
       ),
       body: Column(
@@ -578,7 +728,7 @@ class FieldPreviewPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'สำหรับ ${userType.title}',
+                      'สำหรับ ${profession.name}',
                       textAlign: TextAlign.center,
                       style: AppTextStyles.bodySmall.copyWith(
                         color: AppColors.textSecondary,

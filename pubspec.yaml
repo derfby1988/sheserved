@@ -47,6 +47,9 @@ dependencies:
   
   # Utils
   intl: ^0.18.0
+  
+  # HTTP Client
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:

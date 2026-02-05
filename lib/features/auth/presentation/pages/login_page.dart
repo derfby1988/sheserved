@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/tlz_text_field.dart';
@@ -28,18 +29,24 @@ class _LoginPageState extends State<LoginPage>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Services
-  late final UserRepository _userRepository;
-  late final SocialAuthService _socialAuthService;
+  // Services (nullable - may not be initialized if Supabase not configured)
+  UserRepository? _userRepository;
+  SocialAuthService? _socialAuthService;
 
   @override
   void initState() {
     super.initState();
 
-    // Initialize services
-    final supabaseClient = Supabase.instance.client;
-    _userRepository = UserRepository(supabaseClient);
-    _socialAuthService = SocialAuthService(_userRepository, supabaseClient);
+    // Initialize services (only if Supabase is configured)
+    if (AppConfig.isSupabaseConfigured) {
+      try {
+        final supabaseClient = Supabase.instance.client;
+        _userRepository = UserRepository(supabaseClient);
+        _socialAuthService = SocialAuthService(_userRepository!, supabaseClient);
+      } catch (e) {
+        debugPrint('LoginPage: Supabase not initialized - $e');
+      }
+    }
 
     _animationController = AnimationController(
       vsync: this,
@@ -422,6 +429,12 @@ class _LoginPageState extends State<LoginPage>
   }
 
   void _handleLogin() async {
+    // Check if Supabase is configured
+    if (_userRepository == null) {
+      _showSnackBar('ระบบยังไม่พร้อมใช้งาน (Supabase not configured)');
+      return;
+    }
+
     // Basic validation
     if (_usernameController.text.isEmpty) {
       _showSnackBar('กรุณากรอกชื่อผู้ใช้หรือเบอร์โทรศัพท์');
@@ -437,7 +450,7 @@ class _LoginPageState extends State<LoginPage>
     });
 
     try {
-      final user = await _userRepository.login(
+      final user = await _userRepository!.login(
         _usernameController.text.trim(),
         _passwordController.text,
       );
@@ -465,6 +478,12 @@ class _LoginPageState extends State<LoginPage>
   }
 
   void _handleSocialLogin(SocialProvider provider) async {
+    // Check if Supabase is configured
+    if (_socialAuthService == null) {
+      _showSnackBar('ระบบยังไม่พร้อมใช้งาน (Supabase not configured)');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _loadingProvider = provider;
@@ -475,19 +494,19 @@ class _LoginPageState extends State<LoginPage>
 
       switch (provider) {
         case SocialProvider.google:
-          result = await _socialAuthService.signInWithGoogle();
+          result = await _socialAuthService!.signInWithGoogle();
           break;
         case SocialProvider.facebook:
-          result = await _socialAuthService.signInWithFacebook();
+          result = await _socialAuthService!.signInWithFacebook();
           break;
         case SocialProvider.apple:
-          result = await _socialAuthService.signInWithApple();
+          result = await _socialAuthService!.signInWithApple();
           break;
         case SocialProvider.line:
-          result = await _socialAuthService.signInWithLine();
+          result = await _socialAuthService!.signInWithLine();
           break;
         case SocialProvider.tiktok:
-          result = await _socialAuthService.signInWithTikTok();
+          result = await _socialAuthService!.signInWithTikTok();
           break;
       }
 
