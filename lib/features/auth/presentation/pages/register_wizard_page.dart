@@ -6,6 +6,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
 import '../../../admin/models/profession.dart' hide VerificationStatus;
 import '../../../admin/models/registration_field_config.dart';
+import '../../../../features/admin/data/repositories/profession_repository.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/models/user_model.dart' as auth;
 
@@ -60,25 +61,66 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   Future<void> _loadProfessions() async {
     setState(() => _isLoadingProfessions = true);
 
-    // TODO: Load from ProfessionRepository
-    await Future.delayed(const Duration(milliseconds: 300));
+    try {
+      if (AppConfig.isSupabaseConfigured) {
+        final repository = ProfessionRepository(Supabase.instance.client);
+        final professions = await repository.getAllProfessions();
+        
+        setState(() {
+          _professions = professions;
+          _isLoadingProfessions = false;
+        });
+      } else {
+        // Fallback for local testing
+        await Future.delayed(const Duration(milliseconds: 300));
+        setState(() {
+          _professions = Profession.defaultProfessions;
+          _isLoadingProfessions = false;
+        });
+      }
 
-    setState(() {
-      _professions = Profession.defaultProfessions;
-      _isLoadingProfessions = false;
-    });
+      // Default: Consumer / ผู้ซื้อ
+      if (_selectedProfession == null && _professions.isNotEmpty) {
+        try {
+          final consumer = _professions.firstWhere(
+            (p) => p.id == Profession.consumerProfessionId,
+            orElse: () => _professions.first,
+          );
+          _selectedProfession = consumer;
+          _loadFieldsForProfession(consumer);
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('Error loading professions: $e');
+      setState(() => _isLoadingProfessions = false);
+    }
   }
 
   void _loadFieldsForProfession(Profession profession) {
-    // TODO: Load from ProfessionRepository
-    // For now, use default fields
     setState(() {
       _professionFields = _getDefaultFieldsForProfession(profession.id);
-      // Clear dynamic field values when profession changes
       _dynamicFieldValues.clear();
     });
   }
 
+  // Helper method for icon mapping (moved from build)
+  IconData _getIconForProfession(String? iconName) {
+    if (iconName == null) return Icons.work;
+    
+    // Simple mapping for demo/defaults
+    switch (iconName) {
+      case 'shopping_cart': return Icons.shopping_cart;
+      case 'store': return Icons.store;
+      case 'local_hospital': return Icons.local_hospital;
+      case 'medical_services': return Icons.medical_services;
+      case 'delivery_dining': return Icons.delivery_dining;
+      case 'engineering': return Icons.engineering;
+      case 'gavel': return Icons.gavel;
+      default: return Icons.work;
+    }
+  }
+
+  // ... (getDefaultFieldsForProfession remains same or can be updated if we had real field config loading, but sticking to hardcoded for fields as per current scope unless requested)
   List<RegistrationFieldConfig> _getDefaultFieldsForProfession(String professionId) {
     switch (professionId) {
       case Profession.consumerProfessionId:
@@ -266,49 +308,54 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Top Section - Back Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: _handleBack,
-                  icon: const Icon(
-                    Icons.arrow_back_ios,
-                    color: AppColors.textOnPrimary,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-
-            // Bottom Card - Form
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(32),
-                    topRight: Radius.circular(32),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    // Content
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-                        child: _buildCurrentStep(),
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Column(
+                children: [
+                  // Top Section - Back Button
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        onPressed: _handleBack,
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.textOnPrimary,
+                          size: 24,
+                        ),
                       ),
                     ),
+                  ),
 
-                    // Bottom Button & Progress
-                    _buildBottomSection(),
-                  ],
-                ),
+                  // Spacer to push content down (Maximize green area)
+                  const Spacer(),
+
+                  // Bottom Card - Form
+                  Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(32),
+                        topRight: Radius.circular(32),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min, // Shrink vertically
+                        children: [
+                          _buildCurrentStep(),
+                          const SizedBox(height: 24),
+                          _buildBottomSection(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -341,7 +388,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           'ข้อมูลทั่วไป',
           textAlign: TextAlign.center,
           style: AppTextStyles.heading4.copyWith(
-            color: AppColors.textPrimary,
+            color: AppColors.primary, // Green title
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -350,7 +397,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         // ชื่อ (จริง)
         _buildInputField(
           controller: _firstNameController,
-          hintText: 'ชื่อ (จริง)',
+          hintText: 'ชื่อจริง (ไม่ต้องใช้คำนำหน้า)',
           prefixIcon: Icons.person_outline,
         ),
         const SizedBox(height: 16),
@@ -363,15 +410,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         ),
         const SizedBox(height: 24),
 
-        // เลือกประเภท/อาชีพ
-        Text(
-          'เลือกประเภทการลงทะเบียน',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 12),
-
+        // เลือกประเภท/อาชีพ (Dropdown)
         if (_isLoadingProfessions)
           const Center(child: CircularProgressIndicator())
         else
@@ -381,109 +420,60 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   Widget _buildProfessionSelector() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      alignment: WrapAlignment.center,
-      children: _professions.map((profession) {
-        final isSelected = _selectedProfession?.id == profession.id;
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedProfession = profession;
-            });
-            _loadFieldsForProfession(profession);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: AppColors.primary,
+          width: 1.5,
+        ),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<Profession>(
+          value: _selectedProfession,
+          hint: Text(
+            'เลือกประเภทการลงทะเบียน',
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+          ),
+          icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+          isExpanded: true,
+          onChanged: (Profession? newValue) {
+            if (newValue != null) {
+              setState(() {
+                _selectedProfession = newValue;
+              });
+              _loadFieldsForProfession(newValue);
+            }
           },
-          child: Container(
-            width: MediaQuery.of(context).size.width / 3 - 24,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isSelected ? AppColors.primary : AppColors.border,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.background,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _getIconForProfession(profession.iconName),
-                    color: isSelected ? Colors.white : AppColors.textHint,
+          items: _professions.map<DropdownMenuItem<Profession>>((Profession value) {
+            return DropdownMenuItem<Profession>(
+              value: value,
+              child: Row(
+                children: [
+                  Icon(
+                    _getIconForProfession(value.iconName),
+                    color: AppColors.primary,
                     size: 20,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  profession.name,
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.caption.copyWith(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (profession.requiresVerification) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.verified_user,
-                        size: 10,
-                        color: AppColors.warning,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        'ต้องตรวจสอบ',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.warning,
-                          fontSize: 8,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 12),
+                  Text(
+                    value.name,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ],
-              ],
-            ),
-          ),
-        );
-      }).toList(),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
-  IconData _getIconForProfession(String? iconName) {
-    switch (iconName) {
-      case 'shopping_cart':
-        return Icons.shopping_cart;
-      case 'store':
-        return Icons.store;
-      case 'local_hospital':
-        return Icons.local_hospital;
-      case 'medical_services':
-        return Icons.medical_services;
-      case 'delivery_dining':
-        return Icons.delivery_dining;
-      case 'engineering':
-        return Icons.engineering;
-      case 'gavel':
-        return Icons.gavel;
-      default:
-        return Icons.work;
-    }
-  }
+
 
   /// Step 2: ข้อมูลสำหรับเข้าสู่ระบบ
   Widget _buildStep2LoginInfo() {
@@ -503,7 +493,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         // ชื่อผู้ใช้ (นามแฝง)
         _buildInputField(
           controller: _usernameController,
-          hintText: 'ชื่อผู้ใช้ (นามแฝง)',
+          hintText: 'ชื่อในระบบ',
           prefixIcon: Icons.alternate_email,
         ),
         const SizedBox(height: 16),
@@ -1128,41 +1118,81 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   void _handleNext() async {
     if (!_validateCurrentStep()) return;
 
-    // OTP Verification for Step 2 (ข้อมูลจำเพาะ - มีเบอร์โทร)
-    if (_currentStep == 2 && AppConfig.enableOtpVerification) {
-      final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
-      final phoneNumber = phoneController?.text ?? '';
-      
-      if (phoneNumber.isNotEmpty) {
-        // Check if phone number changed from previously verified
-        if (_verifiedPhoneNumber != phoneNumber) {
-          _isPhoneVerified = false;
-        }
-        
-        if (!_isPhoneVerified) {
-          // Show OTP verification dialog
-          final verified = await OtpVerificationDialog.show(context, phoneNumber);
-          
-          if (!verified) {
-            _showSnackBar('กรุณายืนยันเบอร์โทรศัพท์');
-            return;
-          }
-          
-          // Mark as verified
-          setState(() {
-            _isPhoneVerified = true;
-            _verifiedPhoneNumber = phoneNumber;
-          });
+    setState(() => _isLoading = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userRepo = UserRepository(supabase);
+
+      // Validate Username Uniqueness (Step 1 - Login Info)
+      if (_currentStep == 1) {
+        final username = _usernameController.text;
+        final exists = await userRepo.isUsernameExists(username);
+        if (exists) {
+          _showSnackBar('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น');
+          setState(() => _isLoading = false);
+          return;
         }
       }
-    }
 
-    if (_currentStep < _totalSteps - 1) {
-      setState(() {
-        _currentStep++;
-      });
-    } else {
-      _handleSubmit();
+      // Validate Phone Uniqueness (Step 2 - Specific Info)
+      if (_currentStep == 2) {
+        // Only check for Consumers who have 'phone_controller'
+        // If other professions use phone as ID later, add checking here
+        final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
+        final phoneNumber = phoneController?.text.replaceAll(RegExp(r'[^0-9]'), '') ?? '';
+        
+        if (phoneNumber.isNotEmpty) {
+           final exists = await userRepo.isPhoneExists(phoneNumber);
+           if (exists) {
+             _showSnackBar('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว กรุณาใช้เบอร์อื่น');
+             setState(() => _isLoading = false);
+             return;
+           }
+
+           // OTP Verification Logic
+           if (AppConfig.enableOtpVerification) {
+              // Check if phone number changed from previously verified
+              if (_verifiedPhoneNumber != phoneNumber) {
+                _isPhoneVerified = false;
+              }
+              
+              if (!_isPhoneVerified) {
+                // Show OTP verification dialog
+                // Ensure we hide loading before showing dialog?
+                // Dialog might be pushed on top.
+                
+                final verified = await OtpVerificationDialog.show(context, phoneNumber);
+                
+                if (!verified) {
+                  _showSnackBar('กรุณายืนยันเบอร์โทรศัพท์');
+                  setState(() => _isLoading = false);
+                  return;
+                }
+                
+                // Mark as verified
+                setState(() {
+                  _isPhoneVerified = true;
+                  _verifiedPhoneNumber = phoneNumber;
+                });
+              }
+           }
+        }
+      }
+
+      setState(() => _isLoading = false);
+
+      if (_currentStep < _totalSteps - 1) {
+        setState(() {
+          _currentStep++;
+        });
+      } else {
+        _handleSubmit();
+      }
+    } catch (e) {
+      debugPrint('Error validating step: $e');
+       _showSnackBar('เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
+      setState(() => _isLoading = false);
     }
   }
 
