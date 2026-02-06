@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
-import '../../../config/app_config.dart';
+import 'package:sheserved/config/app_config.dart';
 
 /// User Repository - จัดการข้อมูลผู้ใช้ใน Database
 class UserRepository {
@@ -117,19 +117,38 @@ class UserRepository {
     return response != null;
   }
 
-  /// เข้าสู่ระบบด้วย Username และ Password
-  Future<UserModel?> login(String username, String password) async {
+  /// เข้าสู่ระบบด้วย Username หรือ Phone และ Password
+  Future<UserModel?> login(String identifier, String password) async {
     final hashedPassword = _hashPassword(password);
     
     try {
-      final response = await _client
+      // 1. Try finding by username
+      var response = await _client
           .from('users')
           .select()
-          .eq('username', username)
+          .eq('username', identifier)
           .eq('password_hash', hashedPassword)
           .eq('is_active', true)
-          .single();
-      return UserModel.fromJson(response);
+          .maybeSingle();
+
+      if (response != null) {
+        return UserModel.fromJson(response);
+      }
+
+      // 2. Try finding by phone
+      response = await _client
+          .from('users')
+          .select()
+          .eq('phone', identifier)
+          .eq('password_hash', hashedPassword)
+          .eq('is_active', true)
+          .maybeSingle();
+
+      if (response != null) {
+        return UserModel.fromJson(response);
+      }
+
+      return null;
     } catch (e) {
       return null;
     }

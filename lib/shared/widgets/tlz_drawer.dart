@@ -375,10 +375,17 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                   child: _buildMenuItem(
                     context,
                     title: 'ออกจากระบบ',
-                    icon: Icons.logout,
+                    icon: Icons.exit_to_app,
                     onTap: widget.onLogout ?? () {
-                      // TODO: Implement logout
-                      debugPrint('Logout pressed');
+                      // Begin close animation
+                      _animationController.forward().then((_) {
+                        Navigator.of(context).pop(); // Close drawer
+                        // Navigate to Home and clear stack
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/',
+                          (route) => false,
+                        );
+                      });
                     },
                   ),
                 ),

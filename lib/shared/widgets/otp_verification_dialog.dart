@@ -394,7 +394,7 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
 
   Widget _buildOtpField(int index) {
     return SizedBox(
-      width: 45,
+      width: 38,
       height: 55,
       child: RawKeyboardListener(
         focusNode: FocusNode(),
