@@ -110,7 +110,7 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
 
         // Ruler Container
         Container(
-          height: 110,
+          height: 130,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             boxShadow: [

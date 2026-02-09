@@ -35,6 +35,9 @@ class TlzAppTopBar extends StatelessWidget {
   /// คำแนะนำการค้นหา
   final List<Map<String, dynamic>>? searchSuggestions;
 
+  /// Widget ทางซ้ายสุด (ถ้าไม่กำหนดจะใช้ Hamburger Menu)
+  final Widget? leading;
+
   const TlzAppTopBar({
     super.key,
     this.onMenuPressed,
@@ -50,6 +53,7 @@ class TlzAppTopBar extends StatelessWidget {
     this.onResultTap,
     this.searchHistory,
     this.searchSuggestions,
+    this.leading,
   });
 
   /// สร้าง Top Bar สำหรับพื้นหลังสีเข้ม (primary)
@@ -67,6 +71,7 @@ class TlzAppTopBar extends StatelessWidget {
     Function(Map<String, dynamic> item)? onResultTap,
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
+    Widget? leading,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -83,6 +88,7 @@ class TlzAppTopBar extends StatelessWidget {
       onResultTap: onResultTap,
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
+      leading: leading,
     );
   }
 
@@ -101,6 +107,7 @@ class TlzAppTopBar extends StatelessWidget {
     Function(Map<String, dynamic> item)? onResultTap,
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
+    Widget? leading,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -117,6 +124,7 @@ class TlzAppTopBar extends StatelessWidget {
       onResultTap: onResultTap,
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
+      leading: leading,
     );
   }
 
@@ -124,8 +132,8 @@ class TlzAppTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // Hamburger Menu
-        TlzHamburgerMenu(
+        // Leading Widget (Hamburger Menu or Custom)
+        leading ?? TlzHamburgerMenu(
           onPressed: onMenuPressed,
           scaffoldContext: context,
         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../../services/service_locator.dart';
 import '../../../auth/data/repositories/user_repository.dart';
 import '../../../auth/data/models/user_model.dart';
@@ -8,6 +9,7 @@ import '../../data/repositories/health_repository.dart';
 import '../widgets/gender_switch.dart';
 import '../widgets/age_picker.dart';
 import '../widgets/ruler_picker.dart';
+import '../../../../shared/widgets/tlz_app_top_bar.dart';
 
 class HealthDataEntryPage extends StatefulWidget {
   const HealthDataEntryPage({Key? key}) : super(key: key);
@@ -20,20 +22,34 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   // Form State
   String _gender = 'female';
   int _age = 25;
-  double _height = 165.0;
-  double _weight = 60.0;
+  double _height = 165.0; // cm
+  double _weight = 60.0;  // kg
   
+  // UI State
+  bool _isMetric = true; // true = Metric (cm/kg), false = Imperial (in/lb)
   bool _isLoading = true;
   bool _isSaving = false;
+  
+  // Search Bar
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadExistingData();
   }
+  
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadExistingData() async {
     try {
+      // Simulate network delay for shimmer effect demo
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
       final user = ServiceLocator.instance.currentUser;
       if (user == null) {
         if (mounted) {
@@ -83,19 +99,47 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
 
   void _onHeightChanged(double height) {
     setState(() {
-      _height = height;
+      if (_isMetric) {
+        _height = height;
+      } else {
+        // Convert inches to cm for storage
+        _height = height * 2.54;
+      }
     });
   }
 
   void _onWeightChanged(double weight) {
     setState(() {
-      _weight = weight;
+      if (_isMetric) {
+        _weight = weight;
+      } else {
+        // Convert lbs to kg for storage
+        _weight = weight * 0.453592;
+      }
+    });
+  }
+  
+  void _toggleUnit() {
+    setState(() {
+      _isMetric = !_isMetric;
     });
   }
 
   double get _calculatedBMI {
+    // Always use stored metric values for calculation
     final heightM = _height / 100;
     return _weight / (heightM * heightM);
+  }
+  
+  // Helper getters for display values
+  double get _displayHeight {
+    if (_isMetric) return _height;
+    return _height / 2.54; // cm to inches
+  }
+  
+  double get _displayWeight {
+    if (_isMetric) return _weight;
+    return _weight / 0.453592; // kg to lbs
   }
 
   String get _bmiCategory {
@@ -139,8 +183,8 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       final healthInfo = HealthInfo(
         gender: _gender,
         age: _age,
-        height: _height,
-        weight: _weight,
+        height: _height, // Already stored as cm
+        weight: _weight, // Already stored as kg
         bmi: _calculatedBMI,
       );
 
@@ -202,44 +246,65 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF5A7E28)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text(
-          'ข้อมูลสุขภาพ',
-          style: TextStyle(
-            color: Color(0xFF333333),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat_bubble_outline, color: Color(0xFFD4AF37)),
-            onPressed: () {},
-          ),
-          IconButton(
-             icon: const Icon(Icons.shopping_cart_outlined, color: Colors.grey),
-             onPressed: () {},
-          )
-        ],
-      ),
-      body: _isLoading 
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF679E83)),
+      // Remove AppBar as we use custom Top Navigation Bar
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 1. Top Navigation Bar (Fixed)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: TlzAppTopBar.onLight(
+                leading: BackButton(
+                  color: const Color(0xFF5A7E28),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                searchHintText: 'ค้นหาเมนูอาหารเพื่อสุขภาพ...',
+                // Mock callbacks for demonstration
+                onQRTap: () {},
+                onNotificationTap: () {},
+                onCartTap: () {},
               ),
-            )
-          : SafeArea(
-              child: Column(
+            ),
+
+            // 2. Page Header & Unit Toggle
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: SingleChildScrollView(
+                  const Text(
+                    'ข้อมูลสุขภาพ',
+                    style: TextStyle(
+                      color: Color(0xFF333333),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 20,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _toggleUnit,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF5A7E28),
+                      backgroundColor: const Color(0xFF5A7E28).withOpacity(0.1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    child: Text(
+                      _isMetric ? 'Metric' : 'Imperial',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            Expanded(
+              child: _isLoading 
+                  ? _buildShimmerLoading()
+                  : SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -288,11 +353,13 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
 
                           // Height
                           RulerPicker(
+                            key: ValueKey('height_$_isMetric'), // Force rebuild on unit change
                             label: 'ส่วนสูง',
-                            unit: 'เซนติเมตร',
-                            minValue: 100,
-                            maxValue: 250,
-                            initialValue: _height,
+                            unit: _isMetric ? 'เซนติเมตร' : 'นิ้ว',
+                            minValue: _isMetric ? 100 : 39, // ~100cm
+                            maxValue: _isMetric ? 250 : 98, // ~250cm
+                            initialValue: double.parse(_displayHeight.toStringAsFixed(1)),
+                            step: _isMetric ? 1 : 0.5,
                             onChanged: _onHeightChanged,
                           ),
 
@@ -300,11 +367,13 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
 
                           // Weight
                           RulerPicker(
+                            key: ValueKey('weight_$_isMetric'), // Force rebuild on unit change
                             label: 'น้ำหนัก',
-                            unit: 'กิโลกรัม',
-                            minValue: 30,
-                            maxValue: 200,
-                            initialValue: _weight,
+                            unit: _isMetric ? 'กิโลกรัม' : 'ปอนด์',
+                            minValue: _isMetric ? 30 : 66,  // ~30kg
+                            maxValue: _isMetric ? 200 : 440, // ~200kg
+                            initialValue: double.parse(_displayWeight.toStringAsFixed(1)),
+                            step: _isMetric ? 1 : 1,
                             onChanged: _onWeightChanged,
                           ),
                           
@@ -317,65 +386,115 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                         ],
                       ),
                     ),
-                  ),
-                  
-                  // Next Button
-                  Container(
-                    padding: const EdgeInsets.all(24.0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, -5),
-                        ),
-                      ],
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _isSaving ? null : _submitData,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF679E83),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                          elevation: 4,
-                          shadowColor: const Color(0xFF679E83).withOpacity(0.4),
-                        ),
-                        child: _isSaving 
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.5,
-                              ),
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Text(
-                                  'บันทึกข้อมูล',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Icon(Icons.check_circle_outline, size: 22),
-                              ],
-                            ),
-                      ),
-                    ),
+            ),
+            
+            // Next Button
+            Container(
+              padding: const EdgeInsets.all(24.0),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
                   ),
                 ],
               ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _submitData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF679E83),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    elevation: 4,
+                    shadowColor: const Color(0xFF679E83).withOpacity(0.4),
+                  ),
+                  child: _isSaving 
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'บันทึกข้อมูล',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Icon(Icons.check_circle_outline, size: 22),
+                        ],
+                      ),
+                ),
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(height: 10),
+            // Title Placeholder
+            Container(
+              width: 200,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+              ),
+            ),
+            const SizedBox(height: 32),
+            // Gender Placeholder
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(width: 80, height: 80, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                const SizedBox(width: 24),
+                Container(width: 80, height: 80, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+              ],
+            ),
+            const SizedBox(height: 36),
+            // Age Placeholder
+            Container(width: 100, height: 40, color: Colors.white),
+            const SizedBox(height: 16),
+            Container(width: double.infinity, height: 120, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            const SizedBox(height: 36),
+            // Ruler Placeholder 1
+            Container(width: 100, height: 24, color: Colors.white),
+            const SizedBox(height: 8),
+            Container(width: double.infinity, height: 130, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            const SizedBox(height: 36),
+            // Ruler Placeholder 2
+            Container(width: 100, height: 24, color: Colors.white),
+            const SizedBox(height: 8),
+            Container(width: double.infinity, height: 130, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+          ],
+        ),
+      ),
     );
   }
 
@@ -514,3 +633,4 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     );
   }
 }
+
