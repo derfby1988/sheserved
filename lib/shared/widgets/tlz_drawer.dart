@@ -370,25 +370,35 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                   ),
                 ),
                 
-                // Logout button
+                // Auth button (Logout/Login)
                 Padding(
                   padding: const EdgeInsets.only(left: 60, right: 16, bottom: 32),
                   child: _buildMenuItem(
                     context,
-                    title: 'ออกจากระบบ',
-                    icon: Icons.exit_to_app,
-                    onTap: widget.onLogout ?? () {
+                    title: AuthService.instance.isLoggedIn ? 'ออกจากระบบ' : 'ลงชื่อเข้าใช้',
+                    icon: AuthService.instance.isLoggedIn ? Icons.exit_to_app : Icons.login,
+                    onTap: () {
                       // Begin close animation
                       _animationController.forward().then((_) {
-                        // Clear user session
-                        AuthService.instance.logout();
-                        
-                        Navigator.of(context).pop(); // Close drawer
-                        // Navigate to Home and clear stack
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                          '/',
-                          (route) => false,
-                        );
+                        if (AuthService.instance.isLoggedIn) {
+                          if (widget.onLogout != null) {
+                            widget.onLogout!();
+                          } else {
+                            // Clear user session
+                            AuthService.instance.logout();
+                            
+                            Navigator.of(context).pop(); // Close drawer
+                            // Navigate to Home and clear stack
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/',
+                              (route) => false,
+                            );
+                          }
+                        } else {
+                          // Navigate to Login for Guest mode
+                          Navigator.of(context).pop(); // Close drawer
+                          Navigator.of(context).pushNamed('/login');
+                        }
                       });
                     },
                   ),
