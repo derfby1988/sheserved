@@ -63,15 +63,29 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       }
 
       final healthRepo = ServiceLocator.instance.healthRepository;
-      final healthInfo = await healthRepo.getHealthInfo(user.id);
+      // Fetch profile which includes birthday and health_info
+      final profile = await healthRepo.getConsumerProfileWithHealth(user.id);
 
       if (mounted) {
         setState(() {
-          if (healthInfo != null) {
-            _gender = healthInfo.gender;
-            _age = healthInfo.age;
-            _height = healthInfo.height;
-            _weight = healthInfo.weight;
+          if (profile != null) {
+            // Priority: Calculated from Birthday > Existing Health Info > Default
+            
+            // 1. Try to calculate age from birthday
+            if (profile.birthday != null) {
+              _age = _calculateAge(profile.birthday!);
+            } 
+            // 2. Fallback to existing health info if available and birthday is missing
+            else if (profile.healthInfo != null && profile.healthInfo!['age'] != null) {
+              _age = profile.healthInfo!['age'];
+            }
+
+            // Load other health info if available
+            if (profile.healthInfo != null) {
+              _gender = profile.healthInfo!['gender'] ?? 'female';
+              _height = (profile.healthInfo!['height'] as num?)?.toDouble() ?? 160.0;
+              _weight = (profile.healthInfo!['weight'] as num?)?.toDouble() ?? 50.0;
+            }
           }
           _isLoading = false;
         });
@@ -83,6 +97,16 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
         });
       }
     }
+  }
+
+  int _calculateAge(DateTime birthDate) {
+    final today = DateTime.now();
+    int age = today.year - birthDate.year;
+    if (today.month < birthDate.month || 
+        (today.month == birthDate.month && today.day < birthDate.day)) {
+      age--;
+    }
+    return age;
   }
 
   void _onGenderChanged(String gender) {

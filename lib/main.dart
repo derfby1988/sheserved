@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:thai_buddhist_date/thai_buddhist_date.dart';
+import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
@@ -56,6 +59,9 @@ void main() async {
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();
 
+  // Initialize Thai Date Service
+  await ThaiDateService().initializeLocale('th_TH');
+
   runApp(const SheservedApp());
 }
 
@@ -68,6 +74,15 @@ class SheservedApp extends StatelessWidget {
       title: 'Sheserved',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('th', 'TH'),
+        Locale('en', 'US'),
+      ],
       home: const HomePage(),
       routes: {
         '/login': (context) => const LoginPage(),

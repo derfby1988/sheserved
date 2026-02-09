@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   cupertino_icons: ^1.0.8
   
@@ -46,10 +48,13 @@ dependencies:
   permission_handler: ^11.3.1
   
   # Utils
-  intl: ^0.18.0
+  intl: ^0.20.2
   
   # HTTP Client
   http: ^1.2.0
+  
+  # Thai BE Date Picker
+  thai_buddhist_date_pickers: ^0.1.6
 
 dev_dependencies:
   flutter_test:

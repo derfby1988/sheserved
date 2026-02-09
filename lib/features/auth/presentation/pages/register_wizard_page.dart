@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:thai_buddhist_date/thai_buddhist_date.dart';
+import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -714,14 +716,83 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         return Icons.text_fields;
     }
   }
+
+  Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
+    final int currentYearBE = DateTime.now().year + 543;
+    final int startYearBE = initialYear + 543;
+    
+    return showDialog<int>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('เลือกปี พ.ศ.', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 2,
+              ),
+              itemCount: currentYearBE - (1900 + 543) + 1,
+              itemBuilder: (context, index) {
+                final yearBE = currentYearBE - index;
+                final bool isSelected = yearBE == startYearBE;
+                return InkWell(
+                  onTap: () => Navigator.pop(context, yearBE - 543),
+                  child: Container(
+                    margin: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$yearBE',
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
+            ),
+          ],
+        );
+      },
+    );
+  }
   
   Future<void> _selectDateForField(String fieldId, TextEditingController controller) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().subtract(const Duration(days: 6570)),
+    final DateTime initialDate = _dynamicFieldValues['${fieldId}_date'] as DateTime? ?? 
+                               DateTime.now().subtract(const Duration(days: 6570));
+    
+    // 1. Show Year Picker first for easier navigation
+    final int? selectedYear = await _showThaiYearPicker(context, initialDate.year);
+    if (selectedYear == null) return;
+    
+    final DateTime dateWithNewYear = DateTime(
+      selectedYear,
+      initialDate.month,
+      initialDate.day,
+    );
+
+    // 2. Show Month/Day Picker
+    final DateTime? picked = await showThaiDatePicker(
+      context,
+      initialDate: dateWithNewYear,
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
-      locale: const Locale('th', 'TH'),
+      era: Era.be,
+      locale: 'th_TH',
     );
 
     if (picked != null) {
