@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../services/auth_service.dart';
 
 /// Drawer Menu Item Model
 class DrawerMenuItem {
@@ -379,6 +380,9 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                     onTap: widget.onLogout ?? () {
                       // Begin close animation
                       _animationController.forward().then((_) {
+                        // Clear user session
+                        AuthService.instance.logout();
+                        
                         Navigator.of(context).pop(); // Close drawer
                         // Navigate to Home and clear stack
                         Navigator.of(context).pushNamedAndRemoveUntil(

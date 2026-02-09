@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../widgets/widgets.dart';
+import '../../../../services/service_locator.dart';
 
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
@@ -139,8 +140,15 @@ class _HomePageState extends State<HomePage> {
                                 children: [
                                   HomeHeaderSection(
                                     sectionKey: _headerSectionKey,
+                                    headerText: ServiceLocator.instance.currentUser != null 
+                                      ? 'ข้อมูลสุขภาพ' 
+                                      : 'ตรวจสุขภาพ',
                                     onHealthTap: () => Navigator.pushNamed(context, '/health'),
-                                    onProfileTap: () => Navigator.pushNamed(context, '/login'),
+                                    onProfileTap: () => Navigator.pushNamed(
+                                      context, 
+                                      '/login',
+                                      arguments: '/',
+                                    ),
                                   ),
                                   const SizedBox(height: 16),
                                   HomeConsultationWidget(

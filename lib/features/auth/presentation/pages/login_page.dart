@@ -7,6 +7,7 @@ import '../../../../shared/widgets/tlz_text_field.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/services/social_auth_service.dart';
 import '../widgets/social_login_button.dart';
+import '../../../../services/auth_service.dart';
 
 /// Login Page
 /// หน้าลงชื่อเข้าใช้ตาม UI Design - พื้นหลังเขียว + Card ขาวด้านล่าง
@@ -84,191 +85,205 @@ class _LoginPageState extends State<LoginPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.primary,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Section - Back Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
-                    Icons.arrow_back_ios,
-                    color: AppColors.textOnPrimary,
+      body: Stack(
+        children: [
+          // Content
+          SafeArea(
+            child: Column(
+              children: [
+                // Spacer to push card to bottom
+                const Spacer(),
+
+                // Bottom Card - Login Form
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(32),
+                          topRight: Radius.circular(32),
+                        ),
+                      ),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Title
+                              Text(
+                                'ลงชื่อเข้าใช้',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.heading3.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+
+                              // Username/Phone Field
+                              _buildInputField(
+                                controller: _usernameController,
+                                hintText: 'ชื่อผู้ใช้ หรือ เบอร์โทรศัพท์',
+                                prefixIcon: Icons.person_outline,
+                                keyboardType: TextInputType.text,
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Password Field
+                              _buildInputField(
+                                controller: _passwordController,
+                                hintText: 'รหัสผ่าน',
+                                prefixIcon: Icons.lock_outline,
+                                obscureText: _obscurePassword,
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.textHint,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // Submit Button - BLACK
+                              SizedBox(
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : _handleLogin,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: Colors.grey[400],
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(26),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      : Text(
+                                          'ตกลง',
+                                          style: AppTextStyles.button.copyWith(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // Divider with "หรือ"
+                              Text(
+                                'หรือ',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Social Login Icons
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    SocialProvider.google,
+                                    onPressed: () =>
+                                        _handleSocialLogin(SocialProvider.google),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _buildSocialButton(
+                                    SocialProvider.facebook,
+                                    onPressed: () =>
+                                        _handleSocialLogin(SocialProvider.facebook),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _buildSocialButton(
+                                    SocialProvider.apple,
+                                    onPressed: () =>
+                                        _handleSocialLogin(SocialProvider.apple),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _buildSocialButton(
+                                    SocialProvider.line,
+                                    onPressed: () =>
+                                        _handleSocialLogin(SocialProvider.line),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+
+                              // Register Link
+                              TextButton(
+                                onPressed: _handleSignUp,
+                                child: Text(
+                                  'ลงทะเบียนสำหรับผู้ใช้ใหม่',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.warning,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Top Header - Back Button (Absolute Position)
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    Navigator.pushReplacementNamed(context, '/');
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
                     size: 24,
                   ),
                 ),
               ),
             ),
-
-            // Spacer to push card to bottom
-            const Spacer(),
-
-            // Bottom Card - Login Form
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: Container(
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(32),
-                      topRight: Radius.circular(32),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Title
-                          Text(
-                            'ลงชื่อเข้าใช้',
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.heading3.copyWith(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-
-                          // Username/Phone Field
-                          _buildInputField(
-                            controller: _usernameController,
-                            hintText: 'ชื่อผู้ใช้ หรือ เบอร์โทรศัพท์',
-                            prefixIcon: Icons.person_outline,
-                            keyboardType: TextInputType.text,
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Password Field
-                          _buildInputField(
-                            controller: _passwordController,
-                            hintText: 'รหัสผ่าน',
-                            prefixIcon: Icons.lock_outline,
-                            obscureText: _obscurePassword,
-                            suffixIcon: IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: AppColors.textHint,
-                                size: 22,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Submit Button - BLACK
-                          SizedBox(
-                            height: 52,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _handleLogin,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
-                                disabledBackgroundColor: Colors.grey[400],
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(26),
-                                ),
-                                elevation: 0,
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  : Text(
-                                      'ตกลง',
-                                      style: AppTextStyles.button.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Divider with "หรือ"
-                          Text(
-                            'หรือ',
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Social Login Icons
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSocialButton(
-                                SocialProvider.google,
-                                onPressed: () =>
-                                    _handleSocialLogin(SocialProvider.google),
-                              ),
-                              const SizedBox(width: 12),
-                              _buildSocialButton(
-                                SocialProvider.facebook,
-                                onPressed: () =>
-                                    _handleSocialLogin(SocialProvider.facebook),
-                              ),
-                              const SizedBox(width: 12),
-                              _buildSocialButton(
-                                SocialProvider.apple,
-                                onPressed: () =>
-                                    _handleSocialLogin(SocialProvider.apple),
-                              ),
-                              const SizedBox(width: 12),
-                              _buildSocialButton(
-                                SocialProvider.line,
-                                onPressed: () =>
-                                    _handleSocialLogin(SocialProvider.line),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Register Link
-                          TextButton(
-                            onPressed: _handleSignUp,
-                            child: Text(
-                              'ลงทะเบียนสำหรับผู้ใช้ใหม่',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.warning,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -458,18 +473,52 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (user != null) {
+        // Save user session
+        AuthService.instance.login(user);
+        
         // Login successful
         _showSnackBar('เข้าสู่ระบบสำเร็จ');
-        Navigator.pushReplacementNamed(context, '/');
+        
+        // Wait a bit for SnackBar to show before navigating
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        if (!mounted) return;
+        
+        // Set loading to false BEFORE navigation
+        setState(() {
+          _isLoading = false;
+        });
+        
+        // Use addPostFrameCallback to ensure Navigator is ready
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          
+          // Get the redirect argument if it exists
+          final redirectRoute = ModalRoute.of(context)?.settings.arguments as String?;
+          
+          if (redirectRoute != null && redirectRoute.isNotEmpty) {
+            // If there's a redirect route, go there and replace the login page
+            Navigator.pushReplacementNamed(context, redirectRoute);
+          } else if (Navigator.canPop(context)) {
+            // If no redirect but can pop, go back to previous page
+            Navigator.pop(context);
+          } else {
+            // Default: go to home page
+            Navigator.pushReplacementNamed(context, '/');
+          }
+        });
       } else {
         _showSnackBar('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
+      debugPrint('Login error: $e');
       if (mounted) {
         _showSnackBar('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
-      }
-    } finally {
-      if (mounted) {
         setState(() {
           _isLoading = false;
         });
@@ -513,21 +562,56 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (result.success && result.user != null) {
+        // Save user session
+        AuthService.instance.login(result.user!);
+
         if (result.isNewUser) {
           _showSnackBar('ยินดีต้อนรับ ${result.user!.fullName}');
         } else {
           _showSnackBar('เข้าสู่ระบบสำเร็จ');
         }
-        Navigator.pushReplacementNamed(context, '/');
+        
+        // Wait a bit for SnackBar to show before navigating
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        if (!mounted) return;
+        
+        // Set loading to false BEFORE navigation
+        setState(() {
+          _isLoading = false;
+          _loadingProvider = null;
+        });
+        
+        // Use addPostFrameCallback to ensure Navigator is ready
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          
+          // Get the redirect argument if it exists
+          final redirectRoute = ModalRoute.of(context)?.settings.arguments as String?;
+          
+          if (redirectRoute != null && redirectRoute.isNotEmpty) {
+            // If there's a redirect route, go there and replace the login page
+            Navigator.pushReplacementNamed(context, redirectRoute);
+          } else if (Navigator.canPop(context)) {
+            // If no redirect but can pop, go back to previous page
+            Navigator.pop(context);
+          } else {
+            // Default: go to home page
+            Navigator.pushReplacementNamed(context, '/');
+          }
+        });
       } else {
         _showSnackBar(result.errorMessage ?? 'เกิดข้อผิดพลาด');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _loadingProvider = null;
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
         _showSnackBar('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
-      }
-    } finally {
-      if (mounted) {
         setState(() {
           _isLoading = false;
           _loadingProvider = null;

@@ -8,12 +8,14 @@ class HomeHeaderSection extends StatelessWidget {
   final GlobalKey? sectionKey;
   final VoidCallback? onHealthTap;
   final VoidCallback? onProfileTap;
+  final String? headerText;
 
   const HomeHeaderSection({
     super.key,
     this.sectionKey,
     this.onHealthTap,
     this.onProfileTap,
+    this.headerText,
   });
 
   @override
@@ -41,7 +43,7 @@ class HomeHeaderSection extends StatelessWidget {
                 GestureDetector(
                   onTap: onHealthTap,
                   child: Text(
-                    'สุขภาพ "ดี"',
+                    headerText ?? 'สุขภาพ "ดี"',
                     style: AppTextStyles.bodyLarge.copyWith(
                       color: AppColors.textOnPrimary,
                       fontWeight: FontWeight.w600,

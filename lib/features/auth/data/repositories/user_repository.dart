@@ -150,6 +150,7 @@ class UserRepository {
 
       return null;
     } catch (e) {
+      debugPrint('UserRepository.login error: $e');
       return null;
     }
   }

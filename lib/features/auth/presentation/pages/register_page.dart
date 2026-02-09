@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../services/service_locator.dart';
+import '../../data/repositories/user_repository.dart';
+import '../../data/models/user_model.dart';
 import '../widgets/social_login_button.dart';
 
 /// Register Page
@@ -544,17 +548,52 @@ class _RegisterPageState extends State<RegisterPage>
       _isLoading = true;
     });
 
-    // TODO: Implement register logic with Supabase
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final supabase = Supabase.instance.client;
+      final userRepo = UserRepository(supabase);
+      
+      // Split name into first and last name
+      final nameParts = _nameController.text.trim().split(' ');
+      final firstName = nameParts[0];
+      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      
+      // Phone number as username for simple registration
+      final phone = _phoneController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      
+      // Check if phone already exists
+      final phoneExists = await userRepo.isPhoneExists(phone);
+      if (phoneExists) {
+        throw Exception('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว');
+      }
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      // Create user
+      await userRepo.createUser(
+        userType: UserType.consumer,
+        firstName: firstName,
+        lastName: lastName,
+        username: phone, // Using phone as username for simplicity
+        password: _passwordController.text,
+        phone: phone,
+        email: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
+      );
 
-      // Show success and navigate to login
-      _showSnackBar('ลงทะเบียนสำเร็จ! กรุณาเข้าสู่ระบบ');
-      Navigator.pushReplacementNamed(context, '/login');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        // Show success and navigate to login
+        _showSnackBar('ลงทะเบียนสำเร็จ! กรุณาเข้าสู่ระบบ');
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } catch (e) {
+      debugPrint('Registration error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showSnackBar('เกิดข้อผิดพลาด: ${e.toString().replaceAll('Exception: ', '')}');
+      }
     }
   }
 

@@ -5,6 +5,10 @@ import '../features/admin/data/repositories/unified_repository.dart';
 import 'websocket_service.dart';
 import 'database_service.dart';
 import 'sync_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../features/auth/data/repositories/user_repository.dart';
+import '../features/health/data/repositories/health_repository.dart';
+import 'auth_service.dart';
 
 /// Service Locator สำหรับจัดการ Dependencies
 /// ใช้รูปแบบ Singleton เพื่อให้เข้าถึงได้จากทุกที่
@@ -17,6 +21,8 @@ class ServiceLocator {
   WebSocketService? _websocketService;
   DatabaseService? _databaseService;
   SyncService? _syncService;
+  UserRepository? _userRepository;
+  HealthRepository? _healthRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -27,6 +33,30 @@ class ServiceLocator {
   static ServiceLocator get instance {
     _instance ??= ServiceLocator._();
     return _instance!;
+  }
+
+  /// Static get method for generic repository access
+  static T get<T>() {
+    final instance = ServiceLocator.instance;
+    if (T == UserRepository) return instance.userRepository as T;
+    if (T == HealthRepository) return instance.healthRepository as T;
+    throw Exception('ServiceLocator: Type $T not registered');
+  }
+
+  /// Get current logged in user from AuthService
+  User? get currentUser {
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null) return null;
+    
+    // Convert UserModel to Supabase User format
+    // Return a mock User object with the ID
+    return User(
+      id: authUser.id,
+      appMetadata: {},
+      userMetadata: {},
+      aud: 'authenticated',
+      createdAt: authUser.createdAt.toIso8601String(),
+    );
   }
 
   /// Initialize all services
@@ -101,8 +131,29 @@ class ServiceLocator {
       }
     }
 
+    // Initialize repositories for Supabase
+    if (AppConfig.isSupabaseConfigured) {
+      final supabaseClient = Supabase.instance.client;
+      _userRepository = UserRepository(supabaseClient);
+      _healthRepository = HealthRepository(supabaseClient);
+    }
+
     _isInitialized = true;
     debugPrint('ServiceLocator: Initialized successfully');
+  }
+
+  UserRepository get userRepository {
+    if (_userRepository == null) {
+      _userRepository = UserRepository(Supabase.instance.client);
+    }
+    return _userRepository!;
+  }
+
+  HealthRepository get healthRepository {
+    if (_healthRepository == null) {
+      _healthRepository = HealthRepository(Supabase.instance.client);
+    }
+    return _healthRepository!;
   }
 
   /// Get Unified Repository (recommended)

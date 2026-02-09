@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
+import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
+import '../../../auth/data/repositories/user_repository.dart';
+import '../../../auth/data/models/user_model.dart';
 
 /// Health Page - Health Dashboard
 /// แสดงข้อมูลสุขภาพ อุปกรณ์ที่เชื่อมต่อ และคะแนนสุขภาพ
@@ -15,8 +19,51 @@ class HealthPage extends StatefulWidget {
 
 class _HealthPageState extends State<HealthPage> {
   int _selectedTabIndex = 0;
+  ConsumerProfile? _profile;
+  bool _isLoadingProfile = false;
   
   final List<String> _tabs = ['ทั่วไป', 'ออกแบบ\nโปรแกรม', 'คอร์ส\nVIP', 'บทความ\nสุขภาพ'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final authService = AuthService.instance;
+    if (authService.isLoggedIn) {
+      setState(() => _isLoadingProfile = true);
+      try {
+        final userRepository = ServiceLocator.get<UserRepository>();
+        final profile = await userRepository.getConsumerProfile(authService.currentUser!.id);
+        if (mounted) {
+          setState(() {
+            _profile = profile;
+            _isLoadingProfile = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => _isLoadingProfile = false);
+      }
+    }
+  }
+
+  String _calculateAge() {
+    if (_profile == null || _profile!.birthday == null) {
+      return 'ระบุ';
+    }
+    
+    final birthday = _profile!.birthday!;
+    final today = DateTime.now();
+    int age = today.year - birthday.year;
+    
+    if (today.month < birthday.month || (today.month == birthday.month && today.day < birthday.day)) {
+      age--;
+    }
+    
+    return age.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +80,7 @@ class _HealthPageState extends State<HealthPage> {
             child: CustomPaint(
               size: Size(MediaQuery.of(context).size.width, 320),
               painter: _CurvedTopBackgroundPainter(
-                color: const Color(0xFF5B9A8B),
+                gradientColors: const [Color(0xFF87B17F), Color(0xFF007FAD)],
               ),
             ),
           ),
@@ -48,26 +95,24 @@ class _HealthPageState extends State<HealthPage> {
                 // Health Stats Card - อยู่กับที่ (ไม่ scroll)
                 _buildHealthStatsCard(context),
                 
-                // Scrollable Content (เฉพาะส่วนนี้ scroll ได้)
+                // Content Section
                 Expanded(
                   child: Container(
                     color: Colors.white,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 24),
-                          
-                          // Connected Devices Section
-                          _buildConnectedDevicesSection(context),
-                          
-                          const SizedBox(height: 24),
-                          
-                          // Health Score Circle
-                          _buildHealthScoreSection(context),
-                          
-                          const SizedBox(height: 24),
-                        ],
-                      ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 24),
+                        
+                        // Connected Devices Section - อยู่ด้านบน
+                        _buildConnectedDevicesSection(context),
+                        
+                        // กึ่งกลางระหว่าง Connected Devices และ Top Tabs
+                        Expanded(
+                          child: Center(
+                            child: _buildHealthScoreSection(context),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -92,7 +137,7 @@ class _HealthPageState extends State<HealthPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
-        color: Color(0xFF5B9A8B), // พื้นหลังสีเขียวเข้ม
+        color: Colors.transparent, // ทำให้โปร่งใสเพื่อโชว์พื้นหลังไล่สีด้านหลัง
       ),
       child: TlzAppTopBar.onPrimary(
         notificationCount: 1,
@@ -143,7 +188,7 @@ class _HealthPageState extends State<HealthPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem('26', 'ปีอายุ'),
+                      child: _buildStatItem(_calculateAge(), 'อายุ'),
                     ),
                     Container(
                       width: 1,
@@ -178,30 +223,60 @@ class _HealthPageState extends State<HealthPage> {
             ),
           ),
           
+          // Name - Positioned between avatar and top of card
+          if (AuthService.instance.currentUser != null)
+            Positioned(
+              top: 12,
+              left: 0,
+              right: 0,
+              child: Text(
+                AuthService.instance.currentUser!.fullName,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: const Color(0xFF58910F),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+
           // Center Avatar
           Positioned(
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.divider,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+            child: GestureDetector(
+              onTap: () {
+                if (AuthService.instance.isLoggedIn) {
+                  Navigator.pushNamed(context, '/health-data-entry');
+                } else {
+                  Navigator.pushNamed(
+                    context, 
+                    '/login',
+                    arguments: '/health-data-entry',
+                  );
+                }
+              },
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.divider,
+                    width: 2,
                   ),
-                ],
-              ),
-              child: Icon(
-                Icons.person,
-                size: 40,
-                color: AppColors.textHint,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.person,
+                  size: 40,
+                  color: AppColors.textHint,
+                ),
               ),
             ),
           ),
@@ -209,16 +284,26 @@ class _HealthPageState extends State<HealthPage> {
           // Back Arrow
           Positioned(
             left: -8,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF5B9A8B),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.chevron_left,
-                color: Colors.white,
-                size: 20,
+            child: GestureDetector(
+              onTap: () {
+                // Navigate back or to home page
+                if (Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                } else {
+                  Navigator.pushReplacementNamed(context, '/');
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF5B9A8B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.chevron_left,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
             ),
           ),
@@ -227,30 +312,42 @@ class _HealthPageState extends State<HealthPage> {
     );
   }
 
-  /// Stat Item Widget
   Widget _buildStatItem(String value, String label) {
+    bool isPlaceholder = value == 'ระบุ';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         RichText(
+          textAlign: TextAlign.center,
           text: TextSpan(
             children: [
               TextSpan(
                 text: value,
-                style: AppTextStyles.heading3.copyWith(
-                  color: AppColors.primary,
+                style: AppTextStyles.heading2.copyWith(
+                  color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
                   fontWeight: FontWeight.bold,
+                  fontSize: isPlaceholder ? 14 : 28, // ปรับขนาดถ้าเป็นข้อความตัวหนังสือ
                 ),
               ),
-              TextSpan(
-                text: ' $label',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.primary,
+              if (!isPlaceholder)
+                TextSpan(
+                  text: ' $label',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: const Color(0xFF58910F),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
+        if (isPlaceholder)
+          Text(
+            label,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: const Color(0xFF7FA2C2),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
       ],
     );
   }
@@ -287,17 +384,27 @@ class _HealthPageState extends State<HealthPage> {
         
         const SizedBox(height: 12),
         
-        // Devices Row
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildDeviceItem(Icons.monitor_weight, 'เครื่องชั่ง'),
-              _buildDeviceItem(Icons.watch, 'นาฬิกา'),
-              _buildDeviceItem(Icons.directions_run, 'ลู่วิ่ง'),
-              _buildDeviceItem(Icons.ice_skating, 'รองเท้า', isEmpty: true),
-            ],
+        // Devices Row - Scrollable
+        Scrollbar(
+          thumbVisibility: false, // จะปรากฏขึ้นเมื่อมีการเลื่อน
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                _buildDeviceItem(Icons.monitor_weight, 'เครื่องชั่ง'),
+                const SizedBox(width: 80),
+                _buildDeviceItem(Icons.watch, 'นาฬิกา'),
+                const SizedBox(width: 80),
+                _buildDeviceItem(Icons.directions_run, 'ลู่วิ่ง'),
+                const SizedBox(width: 80),
+                _buildDeviceItem(Icons.ice_skating, 'รองเท้า', isEmpty: true),
+                const SizedBox(width: 80),
+                _buildDeviceItem(Icons.favorite, 'สายรัดหน้าอก', isEmpty: true),
+                const SizedBox(width: 80),
+                _buildDeviceItem(Icons.bluetooth, 'อุปกรณ์อื่นๆ', isEmpty: true),
+              ],
+            ),
           ),
         ),
       ],
@@ -345,7 +452,7 @@ class _HealthPageState extends State<HealthPage> {
   /// Health Score Section
   Widget _buildHealthScoreSection(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final circleSize = screenWidth * 0.5; // 50% ของความกว้างหน้าจอ
+    final circleSize = screenWidth * 0.40; // ปรับขนาดเป็น 40% ตามต้องการ (เดิม 35%)
     
     return Center(
       child: SizedBox(
@@ -368,7 +475,7 @@ class _HealthPageState extends State<HealthPage> {
                   '91 %',
                   style: AppTextStyles.heading1.copyWith(
                     color: AppColors.primary,
-                    fontSize: 64,
+                    fontSize: 74, // ลดขนาดตัวเลข (เดิม 64)
                     fontWeight: FontWeight.w300,
                   ),
                 ),
@@ -415,7 +522,7 @@ class _HealthPageState extends State<HealthPage> {
     }
     
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 80), // เพิ่ม padding เป็น 80 เพื่อให้ tabs เล็กจิ๋วลงอีก
       child: tabsContent,
     );
   }
@@ -439,45 +546,31 @@ class _HealthPageState extends State<HealthPage> {
           children: [
             // Tab Icon/Image placeholder - สี่เหลี่ยมจัตุรัส
             Container(
-              width: isLandscape ? 100 : null, // ขนาดคงที่ในแนวนอน
-              height: isLandscape ? 100 : null,
-              child: isLandscape
-                ? Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+              width: 48, // ปรับเป็น 48 ตามต้องการ
+              height: 48,
+              padding: EdgeInsets.zero,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12), // ปรับความโค้งให้สมดุลกับขนาด 48
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
                     ),
-                  )
-                : AspectRatio(
-                    aspectRatio: 1, // สี่เหลี่ยมจัตุรัส (1:1)
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12), // เพิ่มระยะห่างระหว่างปุ่มกับข้อความ
             // Tab Label
             Text(
               _tabs[index],
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(
+                fontSize: 20,
+                height: 1.0,
                 color: _selectedTabIndex == index 
                   ? AppColors.primary 
                   : AppColors.textSecondary,
@@ -599,14 +692,19 @@ class _HealthScorePainter extends CustomPainter {
 
 /// Curved Top Background Painter - วาดพื้นหลังโค้งสีเขียวด้านบน
 class _CurvedTopBackgroundPainter extends CustomPainter {
-  final Color color;
+  final List<Color> gradientColors;
   
-  _CurvedTopBackgroundPainter({required this.color});
+  _CurvedTopBackgroundPainter({required this.gradientColors});
   
   @override
   void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
     final paint = Paint()
-      ..color = color
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: gradientColors,
+      ).createShader(rect)
       ..style = PaintingStyle.fill;
     
     final path = Path();
