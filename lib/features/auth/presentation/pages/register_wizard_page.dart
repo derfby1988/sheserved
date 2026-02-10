@@ -671,15 +671,84 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
     }
     final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
+    final DateTime initialDate = _dynamicFieldValues['${field.fieldId}_date'] as DateTime? ?? 
+                               DateTime.now().subtract(const Duration(days: 6570));
     
-    return GestureDetector(
-      onTap: () => _selectDateForField(field.fieldId, controller),
-      child: AbsorbPointer(
-        child: _buildInputField(
-          controller: controller,
-          hintText: '${field.label}${field.isRequired ? " *" : ""}',
-          prefixIcon: Icons.calendar_today_outlined,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: AppColors.primary,
+          width: 1.5,
         ),
+      ),
+      child: Row(
+        children: [
+          // Day/Month Selection
+          Expanded(
+            child: InkWell(
+              onTap: () => _selectDateForField(field.fieldId, controller),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(28),
+                bottomLeft: Radius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, color: AppColors.primary, size: 24),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        controller.text.isEmpty 
+                          ? '${field.label}${field.isRequired ? " *" : ""}'
+                          : controller.text.substring(0, controller.text.lastIndexOf(' ') - 4),
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: controller.text.isEmpty ? AppColors.textHint : AppColors.primary,
+                          decoration: controller.text.isEmpty ? null : TextDecoration.underline,
+                          decorationStyle: controller.text.isEmpty ? null : TextDecorationStyle.dashed,
+                          fontWeight: controller.text.isEmpty ? null : FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 30, color: AppColors.primary.withOpacity(0.3)),
+          // Year Selection
+          InkWell(
+            onTap: () async {
+              final int? selectedYear = await _showThaiYearPicker(context, initialDate.year);
+              if (selectedYear != null) {
+                setState(() {
+                  final newDate = DateTime(selectedYear, initialDate.month, initialDate.day);
+                  _dynamicFieldValues['${field.fieldId}_date'] = newDate;
+                  controller.text = '${newDate.day} ${_getThaiShortMonth(newDate.month)} ${newDate.year + 543}';
+                });
+              }
+            },
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(28),
+              bottomRight: Radius.circular(28),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Text(
+                controller.text.isEmpty ? 'พ.ศ.' : controller.text.substring(controller.text.lastIndexOf(' ') + 1),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                  decoration: TextDecoration.underline,
+                  decorationStyle: TextDecorationStyle.dashed,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -720,6 +789,11 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
     final int currentYearBE = DateTime.now().year + 543;
     final int startYearBE = initialYear + 543;
+    final int selectedIndex = currentYearBE - startYearBE;
+    
+    // Calculate initial scroll offset (roughly 3 items per row, row height ~50)
+    final double initialOffset = (selectedIndex ~/ 3) * 50.0;
+    final ScrollController scrollController = ScrollController(initialScrollOffset: initialOffset);
     
     return showDialog<int>(
       context: context,
@@ -729,40 +803,48 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           content: SizedBox(
             width: double.maxFinite,
             height: 300,
-            child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 2,
-              ),
-              itemCount: currentYearBE - (1900 + 543) + 1,
-              itemBuilder: (context, index) {
-                final yearBE = currentYearBE - index;
-                final bool isSelected = yearBE == startYearBE;
-                return InkWell(
-                  onTap: () => Navigator.pop(context, yearBE - 543),
-                  child: Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppColors.primary : null,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$yearBE',
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            child: Scrollbar(
+              controller: scrollController,
+              thumbVisibility: true,
+              child: GridView.builder(
+                controller: scrollController,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 2,
+                ),
+                itemCount: currentYearBE - (1900 + 543) + 1,
+                itemBuilder: (context, index) {
+                  final yearBE = currentYearBE - index;
+                  final bool isSelected = yearBE == startYearBE;
+                  return InkWell(
+                    onTap: () => Navigator.pop(context, yearBE - 543),
+                    child: Container(
+                      margin: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : null,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$yearBE',
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.black,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                scrollController.dispose();
+                Navigator.pop(context);
+              },
               child: const Text('ยกเลิก'),
             ),
           ],
@@ -775,20 +857,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     final DateTime initialDate = _dynamicFieldValues['${fieldId}_date'] as DateTime? ?? 
                                DateTime.now().subtract(const Duration(days: 6570));
     
-    // 1. Show Year Picker first for easier navigation
-    final int? selectedYear = await _showThaiYearPicker(context, initialDate.year);
-    if (selectedYear == null) return;
-    
-    final DateTime dateWithNewYear = DateTime(
-      selectedYear,
-      initialDate.month,
-      initialDate.day,
-    );
-
-    // 2. Show Month/Day Picker
+    // Show Thai Date Picker directly with the existing/default value
     final DateTime? picked = await showThaiDatePicker(
       context,
-      initialDate: dateWithNewYear,
+      initialDate: initialDate,
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
       era: Era.be,
@@ -798,7 +870,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     if (picked != null) {
       setState(() {
         _dynamicFieldValues['${fieldId}_date'] = picked;
-        controller.text = '${picked.day}/${picked.month}/${picked.year + 543}';
+        controller.text = '${picked.day} ${_getThaiShortMonth(picked.month)} ${picked.year + 543}';
       });
     }
   }
@@ -1520,5 +1592,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  String _getThaiShortMonth(int month) {
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return months[month - 1];
   }
 }

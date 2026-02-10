@@ -433,50 +433,77 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                   const SizedBox(height: 16),
                   const Text('กรุณาเลือกวันเกิดที่ถูกต้อง เพื่อให้เราคำนวณคะแนนสุขภาพได้แม่นยำที่สุด:', style: TextStyle(fontSize: 13, color: Colors.grey)),
                   const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () async {
-                      // 1. Show Year Picker first for easier navigation
-                      final int? selectedYear = await _showThaiYearPicker(context, selectedDate.year);
-                      if (selectedYear == null) return;
-                      
-                      final DateTime dateWithNewYear = DateTime(
-                        selectedYear,
-                        selectedDate.month,
-                        selectedDate.day,
-                      );
-
-                      // 2. Show Month/Day Picker (Thai version)
-                      final DateTime? picked = await showThaiDatePicker(
-                        context,
-                        initialDate: dateWithNewYear,
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime.now(),
-                        era: Era.be,
-                        locale: 'th_TH',
-                      );
-                      
-                      if (picked != null) {
-                        setDialogState(() {
-                          selectedDate = picked;
-                        });
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFF5B9A8B)),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '${selectedDate.day}/${selectedDate.month}/${selectedDate.year + 543}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFF5B9A8B)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        // Day/Month part
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final DateTime? picked = await showThaiDatePicker(
+                                context,
+                                initialDate: selectedDate,
+                                firstDate: DateTime(1900),
+                                lastDate: DateTime.now(),
+                                era: Era.be,
+                                locale: 'th_TH',
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedDate = picked);
+                              }
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '${selectedDate.day} ${_getThaiShortMonth(selectedDate.month)} / ',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF5B9A8B),
+                                    decoration: TextDecoration.underline,
+                                    decorationStyle: TextDecorationStyle.dashed,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.calendar_today, size: 20, color: Color(0xFF5B9A8B)),
+                              ],
+                            ),
                           ),
-                          const Icon(Icons.calendar_today, size: 20, color: Color(0xFF5B9A8B)),
-                        ],
-                      ),
+                        ),
+                        const VerticalDivider(width: 20, color: Color(0xFF5B9A8B)),
+                        // Year part
+                        InkWell(
+                          onTap: () async {
+                            final int? selectedYear = await _showThaiYearPicker(context, selectedDate.year);
+                            if (selectedYear != null) {
+                              setDialogState(() {
+                                selectedDate = DateTime(
+                                  selectedYear,
+                                  selectedDate.month,
+                                  selectedDate.day,
+                                );
+                              });
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              '${selectedDate.year + 543}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF5B9A8B),
+                                decoration: TextDecoration.underline,
+                                decorationStyle: TextDecorationStyle.dashed,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -508,7 +535,12 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
     final int currentYearBE = DateTime.now().year + 543;
     final int startYearBE = initialYear + 543;
+    final int selectedIndex = currentYearBE - startYearBE;
     
+    // Calculate initial scroll offset (roughly 3 items per row, row height ~50)
+    final double initialOffset = (selectedIndex ~/ 3) * 50.0;
+    final ScrollController scrollController = ScrollController(initialScrollOffset: initialOffset);
+
     return showDialog<int>(
       context: context,
       builder: (BuildContext context) {
@@ -517,40 +549,48 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           content: SizedBox(
             width: double.maxFinite,
             height: 300,
-            child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 2,
-              ),
-              itemCount: currentYearBE - (1900 + 543) + 1,
-              itemBuilder: (context, index) {
-                final yearBE = currentYearBE - index;
-                final bool isSelected = yearBE == startYearBE;
-                return InkWell(
-                  onTap: () => Navigator.pop(context, yearBE - 543),
-                  child: Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF5B9A8B) : null,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF5B9A8B).withOpacity(0.3)),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$yearBE',
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            child: Scrollbar(
+              controller: scrollController,
+              thumbVisibility: true,
+              child: GridView.builder(
+                controller: scrollController,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 2,
+                ),
+                itemCount: currentYearBE - (1900 + 543) + 1,
+                itemBuilder: (context, index) {
+                  final yearBE = currentYearBE - index;
+                  final bool isSelected = yearBE == startYearBE;
+                  return InkWell(
+                    onTap: () => Navigator.pop(context, yearBE - 543),
+                    child: Container(
+                      margin: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFF5B9A8B) : null,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF5B9A8B).withOpacity(0.3)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$yearBE',
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.black,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                scrollController.dispose();
+                Navigator.pop(context);
+              },
               child: const Text('ยกเลิก'),
             ),
           ],
@@ -979,6 +1019,11 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
         ),
       ],
     );
+  }
+
+  String _getThaiShortMonth(int month) {
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return months[month - 1];
   }
 }
 

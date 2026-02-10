@@ -436,27 +436,35 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                   ),
                 ),
                 // User Name overlapping the bottom border
+                // User Name under the avatar
                 if (AuthService.instance.currentUser != null)
                   Positioned(
-                    bottom: -8, // ทับเส้นขอบพอดี
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 4,
-                          ),
-                        ],
-                      ),
+                    bottom: -5, // วางทับด้านบนเส้นขอบล่างของรูปโปรไฟล์
+                    child: GestureDetector(
+                      onTap: () {
+                        if (AuthService.instance.isLoggedIn) {
+                          Navigator.pushNamed(context, '/health-data-entry');
+                        } else {
+                          Navigator.pushNamed(
+                            context,
+                            '/login',
+                            arguments: '/health-data-entry',
+                          );
+                        }
+                      },
                       child: Text(
                         AuthService.instance.currentUser!.fullName,
                         style: AppTextStyles.bodySmall.copyWith(
                           color: const Color(0xFF7FA2C2),
                           fontWeight: FontWeight.bold,
                           fontSize: 11,
+                          shadows: [
+                            Shadow(
+                              color: Colors.white.withOpacity(0.8),
+                              offset: const Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -504,11 +512,52 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
   }
 
   Future<void> _showHistoryDialog(String title, String fieldType) async {
-    // Show loading
+    // Percentage loading state
+    double percentage = 0;
+    
+    // Show loading with percentage
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Simulate progress
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (percentage < 95 && mounted) {
+              setDialogState(() {
+                percentage += 5 + (DateTime.now().millisecond % 10);
+                if (percentage > 95) percentage = 95;
+              });
+            }
+          });
+
+          return Center(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Color(0xFF679E83)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'กำลังโหลด... ${percentage.toInt()}%',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF679E83),
+                      decoration: TextDecoration.none,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      ),
     );
 
     try {
@@ -523,6 +572,10 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
       
       // Fetch real data from database
       final logs = await healthRepository.getHealthHistoryLog(userId, fieldType);
+      
+      // Complete to 100% before closing
+      percentage = 100;
+      await Future.delayed(const Duration(milliseconds: 200));
 
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
@@ -532,6 +585,7 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
           barrierColor: Colors.black.withOpacity(0.2), // Dim background slightly
           builder: (context) => HealthHistoryDialog(
             title: 'ประวัติ$title',
+            fieldType: fieldType,
             historyLogs: logs,
           ),
         );
