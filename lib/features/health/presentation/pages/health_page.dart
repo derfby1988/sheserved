@@ -61,18 +61,72 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
 
   Future<void> _loadUserProfile() async {
     final authService = AuthService.instance;
+
+    // Guest Mode Check: Redirect to Login
+    if (!authService.isLoggedIn) {
+      if (mounted) {
+        Future.delayed(Duration.zero, () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('กรุณาเข้าสู่ระบบเพื่อใช้งานฟีเจอร์สุขภาพ'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          Navigator.pushReplacementNamed(
+            context, 
+            '/login',
+            arguments: '/health', // กลับมาหน้านี้หลังจาก Login สำเร็จ
+          );
+        });
+      }
+      return;
+    }
+
+    // Logged In User: Load Profile
     if (authService.isLoggedIn) {
       setState(() => _isLoadingProfile = true);
       try {
         final userRepository = ServiceLocator.get<UserRepository>();
         final profile = await userRepository.getConsumerProfile(authService.currentUser!.id);
+        
         if (mounted) {
+          // ตรวจสอบว่ามีข้อมูลสุขภาพครบถ้วนหรือไม่ (เพศ, อายุ, น้ำหนัก, ส่วนสูง)
+          final healthInfo = profile?.healthInfo;
+          bool isDataMissing = healthInfo == null;
+
+          if (!isDataMissing) {
+             final gender = healthInfo!['gender'];
+             final age = healthInfo['age'];
+             final weight = healthInfo['weight'];
+             final height = healthInfo['height'];
+
+             // ตรวจสอบข้อมูลแต่ละตัว
+             if (gender == null || gender.toString().isEmpty ||
+                 age == null ||
+                 weight == null || (weight is num && weight <= 0) ||
+                 height == null || (height is num && height <= 0)) {
+                isDataMissing = true;
+             }
+          }
+
+          if (isDataMissing) {
+            // ถ้าข้อมูลไม่ครบ ไม่ต้อง setState _profile (เพื่อให้หน้าจอ Loading ค้างไว้)
+            // และ Redirect ทันที
+             Future.delayed(Duration.zero, () {
+              if (mounted) {
+                Navigator.pushReplacementNamed(context, '/health-data-entry');
+              }
+            });
+            return;
+          }
+
           setState(() {
             _profile = profile;
             _isLoadingProfile = false;
             
             // Extract score from profile
-            final healthInfo = profile?.healthInfo;
+            final healthInfo = profile!.healthInfo; // มั่นใจว่ามีค่าเพราะผ่าน check data missing แล้ว
             if (healthInfo != null && healthInfo['health_score'] != null) {
               _targetScore = (healthInfo['health_score'] as num).toDouble();
             } else {
@@ -101,12 +155,15 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
   }
 
   String _calculateAge() {
-    // Priority 1: Check age in health_info (the value selected in entry page)
+    // Priority 1: Check age in health_info
     final healthInfo = _profile?.healthInfo;
-    if (healthInfo != null && healthInfo.containsKey('age') && healthInfo['age'] == null) {
-      return '-';
+    
+    // ถ้ามี age ใน healthInfo ให้ใช้เลย
+    if (healthInfo != null && healthInfo.containsKey('age') && healthInfo['age'] != null) {
+      return healthInfo['age'].toString();
     }
 
+    // Priority 2: Fallback to calculation from birthday (ถ้า healthInfo['age'] เป็น null หรือไม่มี)
     if (_profile == null || _profile!.birthday == null) {
       return 'ระบุ';
     }
@@ -135,7 +192,7 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
             left: 0,
             right: 0,
             child: CustomPaint(
-              size: Size(MediaQuery.of(context).size.width, 320),
+              size: Size(MediaQuery.of(context).size.width, 265),
               painter: _CurvedTopBackgroundPainter(
                 gradientColors: const [Color(0xFF87B17F), Color(0xFF007FAD)],
               ),
@@ -237,16 +294,29 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
 
   /// Health Stats Card - Card สีขาวแสดงข้อมูลสุขภาพ
   Widget _buildHealthStatsCard(BuildContext context) {
+    final healthInfo = _profile?.healthInfo;
+    final bmi = healthInfo?['bmi'] != null ? (healthInfo!['bmi'] as num).toStringAsFixed(1) : 'ระบุ';
+    final weight = healthInfo?['weight'] != null ? (healthInfo!['weight'] as num).toStringAsFixed(1) : 'ระบุ';
+    final height = healthInfo?['height'] != null ? (healthInfo!['height'] as num).toStringAsFixed(1) : 'ระบุ';
+
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
+          // Soft ambient shadow
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+          // Deeper bottom shadow for dimension
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+            spreadRadius: -4,
           ),
         ],
       ),
@@ -255,15 +325,15 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
         children: [
           // Stats Grid
           Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Reduced from 20
-                child: Column(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Column(
                   mainAxisSize: MainAxisSize.min, // Added
                   children: [
                 // Top Row: Age & BMI
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem(_calculateAge(), 'อายุ'),
+                      child: _buildStatItem(_calculateAge(), 'ปี', 'อายุ'),
                     ),
                     Container(
                       width: 1,
@@ -271,18 +341,18 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                       color: AppColors.divider,
                     ),
                     Expanded(
-                      child: _buildStatItem('22', 'BMI'),
+                      child: _buildStatItem(bmi, '', 'BMI'),
                     ),
                   ],
                 ),
                 
-                const SizedBox(height: 16), // Reduced from 24
+                const SizedBox(height: 16),
                 
                 // Bottom Row: Weight & Height
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem('64', 'กก.น้ำหนัก'),
+                      child: _buildStatItem(weight, 'กก.', 'น้ำหนัก'),
                     ),
                     Container(
                       width: 1,
@@ -290,7 +360,7 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                       color: AppColors.divider,
                     ),
                     Expanded(
-                      child: _buildStatItem('174', 'ช.ม.ส่วนสูง'),
+                      child: _buildStatItem(height, 'ซม.', 'ส่วนสูง'),
                     ),
                   ],
                 ),
@@ -298,61 +368,76 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
             ),
           ),
           
-          // Name - Positioned between avatar and top of card
-          if (AuthService.instance.currentUser != null)
-            Positioned(
-              top: 8, // Reduced from 12
-              left: 0,
-              right: 0,
-              child: Text(
-                AuthService.instance.currentUser!.fullName,
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: const Color(0xFF58910F),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-
-          // Center Avatar
+          // Center Avatar & Name
           Positioned(
-            child: GestureDetector(
-              onTap: () {
-                if (AuthService.instance.isLoggedIn) {
-                  Navigator.pushNamed(context, '/health-data-entry');
-                } else {
-                  Navigator.pushNamed(
-                    context, 
-                    '/login',
-                    arguments: '/health-data-entry',
-                  );
-                }
-              },
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.divider,
-                    width: 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (AuthService.instance.isLoggedIn) {
+                      Navigator.pushNamed(context, '/health-data-entry');
+                    } else {
+                      Navigator.pushNamed(
+                        context, 
+                        '/login',
+                        arguments: '/health-data-entry',
+                      );
+                    }
+                  },
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.divider,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
+                    child: Icon(
+                      Icons.person,
+                      size: 32,
+                      color: AppColors.textHint,
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.person,
-                  size: 32, // Reduced from 40
-                  color: AppColors.textHint,
-                ),
-              ),
+                // User Name overlapping the bottom border
+                if (AuthService.instance.currentUser != null)
+                  Positioned(
+                    bottom: -8, // ทับเส้นขอบพอดี
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        AuthService.instance.currentUser!.fullName,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: const Color(0xFF7FA2C2),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           
@@ -391,7 +476,7 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildStatItem(String value, String label) {
+  Widget _buildStatItem(String value, String unit, String label) {
     bool isPlaceholder = value == 'ระบุ';
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -407,34 +492,31 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                   style: AppTextStyles.heading2.copyWith(
                     color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
                     fontWeight: FontWeight.bold,
-                    fontSize: isPlaceholder ? 12 : 24, // Reduced from 14/28
+                    fontSize: isPlaceholder ? 14 : 24,
                   ),
                 ),
-                if (!isPlaceholder)
+                if (!isPlaceholder && unit.isNotEmpty)
                   TextSpan(
-                    text: ' $label',
-                    style: AppTextStyles.bodyMedium.copyWith( // Reduced from bodyLarge
+                    text: ' $unit',
+                    style: AppTextStyles.bodyMedium.copyWith(
                       color: const Color(0xFF58910F),
                       fontWeight: FontWeight.w500,
-                      fontSize: 12, // Explicitly smaller
+                      fontSize: 12,
                     ),
                   ),
               ],
             ),
           ),
         ),
-        if (isPlaceholder)
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              style: AppTextStyles.bodyMedium.copyWith( // Reduced from bodyLarge
-                color: const Color(0xFF7FA2C2),
-                fontWeight: FontWeight.w500,
-                fontSize: 12, // Explicitly smaller
-              ),
-            ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: const Color(0xFF7FA2C2),
+            fontWeight: FontWeight.w500,
+            fontSize: 12,
           ),
+        ),
       ],
     );
   }
@@ -785,15 +867,15 @@ class _CurvedTopBackgroundPainter extends CustomPainter {
     // Line to top right
     path.lineTo(size.width, 0);
     
-    // Line down on right side (ประมาณ 70% ของความสูง)
-    path.lineTo(size.width, size.height * 0.7);
+    // Line down on right side (75% ของความสูง)
+    path.lineTo(size.width, size.height * 0.75);
     
-    // Curve to bottom left - โค้งลงมา
+    // Curve to bottom left - โค้งลงมาที่จุดกึ่งกลางด้านล่างสุด (100% ของความสูง)
     path.quadraticBezierTo(
       size.width / 2, // Control point X (center)
-      size.height * 1.1, // Control point Y (below bottom for curve)
+      size.height, // Control point Y (bottom of the area)
       0, // End X
-      size.height * 0.7, // End Y
+      size.height * 0.75, // End Y
     );
     
     // Close the path back to top left
