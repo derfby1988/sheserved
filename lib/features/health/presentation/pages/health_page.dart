@@ -441,32 +441,35 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
             ),
           ),
           
-          // Back Arrow
+          // Back Arrow - Centered vertically
           Positioned(
             left: 0,
-            top: 12, // Align with name
-            child: GestureDetector(
-              onTap: () {
-                // Navigate back or to home page
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                } else {
-                  Navigator.pushReplacementNamed(context, '/');
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.all(6), // Reduced
-                decoration: const BoxDecoration(
-                  color: Color(0xFF5B9A8B),
-                  borderRadius: BorderRadius.only(
-                    topRight: Radius.circular(8),
-                    bottomRight: Radius.circular(8),
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () {
+                  // Navigate back or to home page
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    Navigator.pushReplacementNamed(context, '/');
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF5B9A8B),
+                    borderRadius: BorderRadius.only(
+                      topRight: Radius.circular(8),
+                      bottomRight: Radius.circular(8),
+                    ),
                   ),
-                ),
-                child: const Icon(
-                  Icons.chevron_left,
-                  color: Colors.white,
-                  size: 16, // Reduced
+                  child: const Icon(
+                    Icons.chevron_left,
+                    color: Colors.white,
+                    size: 16,
+                  ),
                 ),
               ),
             ),

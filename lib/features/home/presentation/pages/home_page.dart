@@ -58,8 +58,8 @@ class _HomePageState extends State<HomePage> {
       if (_headerSectionHeight <= 0) return;
     }
 
-    // แสดงมุมโค้งเมื่อ scroll offset >= ความสูงของ Header Section
-    final shouldShowBorderRadius = _scrollController.offset >= _headerSectionHeight;
+    // แสดงมุมโค้งเมื่อเลื่อนลูกกลิ้งลงมาระดับหนึ่ง (เพิ่ม threshold เพื่อไม่ให้สลับเร็วเกินไป)
+    final shouldShowBorderRadius = _scrollController.offset > 50;
 
     if (shouldShowBorderRadius != _showTopBarBorderRadius) {
       setState(() {
@@ -90,21 +90,19 @@ class _HomePageState extends State<HomePage> {
           onHorizontalDragUpdate: (details) => _onHorizontalDragUpdate(details, context),
           onHorizontalDragEnd: (details) => _onHorizontalDragEnd(details, context),
           child: Container(
-            color: AppColors.primary,
+            color: Colors.transparent, // โปร่งใสเพื่อให้เห็นเนื้อหาด้านหลังมุมโค้ง
             child: SafeArea(
-              child: Column(
+              child: Stack( // ใช้ Stack แทน Column เพื่อให้ Top Bar ลอยทับเนื้อหา
                 children: [
-                  // Top Navigation Bar - Fixed
-                  _buildTopNavigationBar(context),
-                
-                  // Main Content - Scrollable
-                  Expanded(
-                    child: Container(
-                      color: AppColors.primary,
-                      child: ClipRect(
-                        child: SingleChildScrollView(
-                          controller: _scrollController,
-                          child: Stack(
+                  // Main Content - Scrollable (วางเป็นลำดับแรกเพื่อให้ Header ทับ)
+                  Positioned.fill(
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      child: Column(
+                        children: [
+                          // เพิ่มพื้นที่ด้านบนสำหรับ Header ที่ Fixed
+                          const SizedBox(height: 70), 
+                          Stack(
                             children: [
                               // Background Layer - Map
                               Column(
@@ -163,9 +161,17 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ],
                           ),
-                        ),
+                        ],
                       ),
                     ),
+                  ),
+                  
+                  // Top Navigation Bar - Fixed Overlay
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildTopNavigationBar(context),
                   ),
                 ],
               ),
@@ -237,6 +243,15 @@ class _HomePageState extends State<HomePage> {
                 bottomLeft: Radius.circular(32),
                 bottomRight: Radius.circular(32),
               )
+            : null,
+        boxShadow: _showTopBarBorderRadius
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
             : null,
       ),
       child: TlzAppTopBar.onPrimary(
