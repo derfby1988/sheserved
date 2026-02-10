@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
@@ -21,6 +22,16 @@ import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
+
+// เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
+class AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+  };
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,6 +84,7 @@ class SheservedApp extends StatelessWidget {
     return MaterialApp(
       title: 'Sheserved',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: AppScrollBehavior(),
       theme: AppTheme.lightTheme,
       localizationsDelegates: [
         GlobalMaterialLocalizations.delegate,

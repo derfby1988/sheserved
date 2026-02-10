@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class AgePicker extends StatefulWidget {
-  final int initialAge;
+  final int? initialAge;
   final int minAge;
   final int maxAge;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<int?> onChanged;
   final double height;
 
   const AgePicker({
     Key? key,
-    this.initialAge = 25,
+    this.initialAge,
     this.minAge = 1,
     this.maxAge = 120,
     required this.onChanged,
@@ -23,14 +23,18 @@ class AgePicker extends StatefulWidget {
 
 class _AgePickerState extends State<AgePicker> {
   late FixedExtentScrollController _controller;
-  late int _currentAge;
+  int? _currentAge;
 
   @override
   void initState() {
     super.initState();
     _currentAge = widget.initialAge;
+    // index 0 is "-", ages start from index 1 (minAge)
+    final initialItem = widget.initialAge == null 
+        ? 0 
+        : widget.initialAge! - widget.minAge + 1;
     _controller = FixedExtentScrollController(
-      initialItem: widget.initialAge - widget.minAge,
+      initialItem: initialItem,
     );
   }
 
@@ -102,16 +106,18 @@ class _AgePickerState extends State<AgePicker> {
                   physics: const FixedExtentScrollPhysics(),
                   onSelectedItemChanged: (index) {
                     HapticFeedback.selectionClick();
-                    final newAge = widget.minAge + index;
+                    final newAge = index == 0 ? null : widget.minAge + index - 1;
                     setState(() {
                       _currentAge = newAge;
                     });
                     widget.onChanged(newAge);
                   },
                   childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: widget.maxAge - widget.minAge + 1,
+                    // +1 for the "-" item at index 0
+                    childCount: (widget.maxAge - widget.minAge + 1) + 1,
                     builder: (context, index) {
-                      final age = widget.minAge + index;
+                      final isHyphen = index == 0;
+                      final age = isHyphen ? null : widget.minAge + index - 1;
                       final isSelected = age == _currentAge;
                       
                       return Center(
@@ -124,7 +130,7 @@ class _AgePickerState extends State<AgePicker> {
                                 ? Colors.white 
                                 : Colors.white.withOpacity(0.5),
                           ),
-                          child: Text('$age'),
+                          child: Text(isHyphen ? '-' : '$age'),
                         ),
                       );
                     },

@@ -109,8 +109,15 @@ class _ArticlesPageState extends State<ArticlesPage> {
         children: [
           // Back Button
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              } else {
+                Navigator.pushReplacementNamed(context, '/');
+              }
+            },
             child: const Icon(
+
               Icons.arrow_back,
               color: Colors.white,
               size: 24,

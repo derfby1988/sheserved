@@ -47,18 +47,28 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    
     final offset = _scrollController.offset;
     final value = widget.minValue + (offset / _itemWidth);
     final clampedValue = value.clamp(widget.minValue, widget.maxValue);
     
-    if ((clampedValue - _currentValue).abs() >= widget.step) {
+    // Calculate the stepped value
+    final steppedValue = (clampedValue / widget.step).roundToDouble() * widget.step;
+    
+    // Only update and notify if the stepped value has actually changed
+    if ((steppedValue - _currentValue).abs() >= widget.step / 2) {
+      // Small threshold to avoid floating point issues
+      setState(() {
+        _currentValue = steppedValue;
+      });
+      
+      // Notify parent
+      widget.onChanged(double.parse(steppedValue.toStringAsFixed(1)));
+      
+      // Haptic feedback (optional check for efficiency)
       HapticFeedback.selectionClick();
     }
-    
-    setState(() {
-      _currentValue = clampedValue;
-    });
-    widget.onChanged(double.parse(clampedValue.toStringAsFixed(1)));
   }
 
   @override

@@ -17,17 +17,46 @@ class HealthPage extends StatefulWidget {
   State<HealthPage> createState() => _HealthPageState();
 }
 
-class _HealthPageState extends State<HealthPage> {
+class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateMixin {
   int _selectedTabIndex = 0;
   ConsumerProfile? _profile;
   bool _isLoadingProfile = false;
+  
+  late AnimationController _scoreController;
+  late Animation<double> _scoreAnimation;
+  double _targetScore = 0;
   
   final List<String> _tabs = ['ทั่วไป', 'ออกแบบ\nโปรแกรม', 'คอร์ส\nVIP', 'บทความ\nสุขภาพ'];
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation with 0, will update after loading profile
+    _scoreController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    
+    _scoreAnimation = Tween<double>(
+      begin: 0,
+      end: 0,
+    ).animate(_scoreController);
+
     _loadUserProfile();
+  }
+  
+  @override
+  void dispose() {
+    _scoreController.dispose();
+    super.dispose();
+  }
+
+  Color _getScoreColor(double score) {
+    if (score >= 80) return const Color(0xFF4CAF50); // Green
+    if (score >= 60) return const Color(0xFF8BC34A); // Light Green
+    if (score >= 40) return const Color(0xFFFFC107); // Yellow/Amber
+    return const Color(0xFFF44336); // Red
   }
 
   Future<void> _loadUserProfile() async {
@@ -41,6 +70,28 @@ class _HealthPageState extends State<HealthPage> {
           setState(() {
             _profile = profile;
             _isLoadingProfile = false;
+            
+            // Extract score from profile
+            final healthInfo = profile?.healthInfo;
+            if (healthInfo != null && healthInfo['health_score'] != null) {
+              _targetScore = (healthInfo['health_score'] as num).toDouble();
+            } else {
+              _targetScore = 0;
+            }
+
+            // Update animation with new target
+            _scoreAnimation = Tween<double>(
+              begin: 0,
+              end: _targetScore,
+            ).animate(CurvedAnimation(
+              parent: _scoreController,
+              curve: Curves.easeOutCubic,
+            ));
+            
+            if (_targetScore > 0) {
+              _scoreController.reset();
+              _scoreController.forward();
+            }
           });
         }
       } catch (e) {
@@ -50,6 +101,12 @@ class _HealthPageState extends State<HealthPage> {
   }
 
   String _calculateAge() {
+    // Priority 1: Check age in health_info (the value selected in entry page)
+    final healthInfo = _profile?.healthInfo;
+    if (healthInfo != null && healthInfo.containsKey('age') && healthInfo['age'] == null) {
+      return '-';
+    }
+
     if (_profile == null || _profile!.birthday == null) {
       return 'ระบุ';
     }
@@ -86,34 +143,50 @@ class _HealthPageState extends State<HealthPage> {
           ),
           
           // Layer 2: Content
-          SafeArea(
-            child: Column(
-              children: [
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
+                children: [
                 // Top Navigation Bar - อยู่กับที่
                 _buildTopNavigationBar(context),
                 
                 // Health Stats Card - อยู่กับที่ (ไม่ scroll)
                 _buildHealthStatsCard(context),
                 
-                // Content Section
+                // Content Section - Make it scrollable and center components
                 Expanded(
-                  child: Container(
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 24),
-                        
-                        // Connected Devices Section - อยู่ด้านบน
-                        _buildConnectedDevicesSection(context),
-                        
-                        // กึ่งกลางระหว่าง Connected Devices และ Top Tabs
-                        Expanded(
-                          child: Center(
-                            child: _buildHealthScoreSection(context),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: IntrinsicHeight(
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 16),
+                                
+                                // Connected Devices Section
+                                _buildConnectedDevicesSection(context),
+                                
+                                // Dynamic Spacer to push Health Score to center of remaining space
+                                const Spacer(),
+                                
+                                // Health Score Section
+                                _buildHealthScoreSection(context),
+                                
+                                // Dynamic Spacer at bottom to keep it centered
+                                const Spacer(),
+                                
+                                const SizedBox(height: 16),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
                 
@@ -127,10 +200,11 @@ class _HealthPageState extends State<HealthPage> {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   /// Top Navigation Bar - ใช้ TlzAppTopBar เหมือนหน้า Home
   Widget _buildTopNavigationBar(BuildContext context) {
@@ -181,9 +255,10 @@ class _HealthPageState extends State<HealthPage> {
         children: [
           // Stats Grid
           Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Reduced from 20
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, // Added
+                  children: [
                 // Top Row: Age & BMI
                 Row(
                   children: [
@@ -201,7 +276,7 @@ class _HealthPageState extends State<HealthPage> {
                   ],
                 ),
                 
-                const SizedBox(height: 40), // Space for avatar
+                const SizedBox(height: 16), // Reduced from 24
                 
                 // Bottom Row: Weight & Height
                 Row(
@@ -226,7 +301,7 @@ class _HealthPageState extends State<HealthPage> {
           // Name - Positioned between avatar and top of card
           if (AuthService.instance.currentUser != null)
             Positioned(
-              top: 12,
+              top: 8, // Reduced from 12
               left: 0,
               right: 0,
               child: Text(
@@ -274,7 +349,7 @@ class _HealthPageState extends State<HealthPage> {
                 ),
                 child: Icon(
                   Icons.person,
-                  size: 40,
+                  size: 32, // Reduced from 40
                   color: AppColors.textHint,
                 ),
               ),
@@ -283,26 +358,30 @@ class _HealthPageState extends State<HealthPage> {
           
           // Back Arrow
           Positioned(
-            left: -8,
+            left: 0,
+            top: 12, // Align with name
             child: GestureDetector(
               onTap: () {
                 // Navigate back or to home page
-                if (Navigator.canPop(context)) {
-                  Navigator.pop(context);
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
                 } else {
                   Navigator.pushReplacementNamed(context, '/');
                 }
               },
               child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF5B9A8B),
-                  borderRadius: BorderRadius.circular(8),
+                padding: const EdgeInsets.all(6), // Reduced
+                decoration: const BoxDecoration(
+                  color: Color(0xFF5B9A8B),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                  ),
                 ),
                 child: const Icon(
                   Icons.chevron_left,
                   color: Colors.white,
-                  size: 20,
+                  size: 16, // Reduced
                 ),
               ),
             ),
@@ -317,35 +396,43 @@ class _HealthPageState extends State<HealthPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        RichText(
-          textAlign: TextAlign.center,
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: value,
-                style: AppTextStyles.heading2.copyWith(
-                  color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
-                  fontWeight: FontWeight.bold,
-                  fontSize: isPlaceholder ? 14 : 28, // ปรับขนาดถ้าเป็นข้อความตัวหนังสือ
-                ),
-              ),
-              if (!isPlaceholder)
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              children: [
                 TextSpan(
-                  text: ' $label',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: const Color(0xFF58910F),
-                    fontWeight: FontWeight.w500,
+                  text: value,
+                  style: AppTextStyles.heading2.copyWith(
+                    color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
+                    fontWeight: FontWeight.bold,
+                    fontSize: isPlaceholder ? 12 : 24, // Reduced from 14/28
                   ),
                 ),
-            ],
+                if (!isPlaceholder)
+                  TextSpan(
+                    text: ' $label',
+                    style: AppTextStyles.bodyMedium.copyWith( // Reduced from bodyLarge
+                      color: const Color(0xFF58910F),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12, // Explicitly smaller
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         if (isPlaceholder)
-          Text(
-            label,
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: const Color(0xFF7FA2C2),
-              fontWeight: FontWeight.w500,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: AppTextStyles.bodyMedium.copyWith( // Reduced from bodyLarge
+                color: const Color(0xFF7FA2C2),
+                fontWeight: FontWeight.w500,
+                fontSize: 12, // Explicitly smaller
+              ),
             ),
           ),
       ],
@@ -426,9 +513,14 @@ class _HealthPageState extends State<HealthPage> {
               : null,
             boxShadow: isEmpty ? null : [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withOpacity(0.08), 
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: const Color(0xFF5B9A8B).withOpacity(0.1),
                 blurRadius: 4,
-                offset: const Offset(0, 2),
+                spreadRadius: -2,
               ),
             ],
           ),
@@ -451,45 +543,87 @@ class _HealthPageState extends State<HealthPage> {
 
   /// Health Score Section
   Widget _buildHealthScoreSection(BuildContext context) {
+    if (_targetScore <= 0) return const SizedBox.shrink();
+
     final screenWidth = MediaQuery.of(context).size.width;
-    final circleSize = screenWidth * 0.40; // ปรับขนาดเป็น 40% ตามต้องการ (เดิม 35%)
+    final circleSize = screenWidth * 0.55; // Reduced from 0.35
     
-    return Center(
-      child: SizedBox(
-        width: circleSize,
-        height: circleSize,
-        child: CustomPaint(
-          painter: _HealthScorePainter(
-            score: 91,
-            segments: [
-              _ScoreSegment(0.30, const Color(0xFFF5D5D5)), // Light pink
-              _ScoreSegment(0.25, const Color(0xFFF8A88C)), // Orange/peach
-              _ScoreSegment(0.36, Colors.white), // White/empty
-            ],
-          ),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return AnimatedBuilder(
+      animation: _scoreAnimation,
+      builder: (context, child) {
+        final currentScore = _scoreAnimation.value;
+        final color = _getScoreColor(currentScore);
+        
+        return Center(
+          child: SizedBox(
+            width: circleSize,
+            height: circleSize,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Text(
-                  '91 %',
-                  style: AppTextStyles.heading1.copyWith(
-                    color: AppColors.primary,
-                    fontSize: 74, // ลดขนาดตัวเลข (เดิม 64)
-                    fontWeight: FontWeight.w300,
+                // Background Circle (Light)
+                SizedBox(
+                  width: circleSize,
+                  height: circleSize,
+                  child: CustomPaint(
+                    painter: _HealthScorePainter(
+                      score: 100,
+                      color: AppColors.divider.withOpacity(0.3),
+                      strokeWidth: 12,
+                    ),
                   ),
                 ),
-                Text(
-                  'คะแนนสุขภาพ',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
+                // Progress Circle (Animated)
+                SizedBox(
+                  width: circleSize,
+                  height: circleSize,
+                  child: CustomPaint(
+                    painter: _HealthScorePainter(
+                      score: currentScore,
+                      color: color,
+                      strokeWidth: 14,
+                    ),
                   ),
+                ),
+                // Text Center
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: circleSize * 0.8,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${currentScore.toInt()} %',
+                          style: AppTextStyles.heading1.copyWith(
+                            color: color,
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold, // More emphasis
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: circleSize * 0.9,
+                      child: Text(
+                        'คะแนนสุขภาพ',
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 10,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -522,7 +656,7 @@ class _HealthPageState extends State<HealthPage> {
     }
     
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 80), // เพิ่ม padding เป็น 80 เพื่อให้ tabs เล็กจิ๋วลงอีก
+      padding: const EdgeInsets.symmetric(horizontal: 24), // Reduced from 80
       child: tabsContent,
     );
   }
@@ -546,31 +680,31 @@ class _HealthPageState extends State<HealthPage> {
           children: [
             // Tab Icon/Image placeholder - สี่เหลี่ยมจัตุรัส
             Container(
-              width: 48, // ปรับเป็น 48 ตามต้องการ
-              height: 48,
+              width: 40, // Reduced from 48
+              height: 40,
               padding: EdgeInsets.zero,
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12), // ปรับความโค้งให้สมดุลกับขนาด 48
+                  borderRadius: BorderRadius.circular(10), // Reduced from 12
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12), // เพิ่มระยะห่างระหว่างปุ่มกับข้อความ
+            const SizedBox(height: 6), // Reduced from 8
             // Tab Label
             Text(
               _tabs[index],
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(
-                fontSize: 20,
-                height: 1.0,
+                fontSize: 11, // Reduced from 12
+                height: 1.1,
                 color: _selectedTabIndex == index 
                   ? AppColors.primary 
                   : AppColors.textSecondary,
@@ -586,104 +720,40 @@ class _HealthPageState extends State<HealthPage> {
   }
 }
 
-/// Score Segment Data
-class _ScoreSegment {
-  final double percentage;
-  final Color color;
-  
-  _ScoreSegment(this.percentage, this.color);
-}
-
 /// Health Score Circle Painter
 class _HealthScorePainter extends CustomPainter {
-  final int score;
-  final List<_ScoreSegment> segments;
-  
+  final double score;
+  final Color color;
+  final double strokeWidth;
+
   _HealthScorePainter({
     required this.score,
-    required this.segments,
+    required this.color,
+    this.strokeWidth = 15,
   });
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - 40) / 2;
-    const strokeWidth = 24.0;
-    
-    // Draw background circle (dotted)
-    final dottedPaint = Paint()
-      ..color = const Color(0xFFE0E0E0)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    
-    // Draw dotted circle
-    const dashWidth = 8.0;
-    const dashSpace = 6.0;
-    final circumference = 2 * math.pi * radius;
-    final dashCount = (circumference / (dashWidth + dashSpace)).floor();
-    final anglePerDash = (2 * math.pi) / dashCount;
-    
-    for (int i = 0; i < dashCount; i++) {
-      final startAngle = i * anglePerDash - math.pi / 2;
-      final sweepAngle = anglePerDash * 0.6;
-      
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        sweepAngle,
-        false,
-        dottedPaint,
-      );
-    }
-    
-    // Draw colored segments
-    double startAngle = -math.pi / 2; // Start from top
-    
-    for (final segment in segments) {
-      if (segment.color != Colors.white) {
-        final segmentPaint = Paint()
-          ..color = segment.color
-          ..strokeWidth = strokeWidth
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round;
-        
-        final sweepAngle = 2 * math.pi * segment.percentage;
-        
-        canvas.drawArc(
-          Rect.fromCircle(center: center, radius: radius),
-          startAngle,
-          sweepAngle,
-          false,
-          segmentPaint,
-        );
-      }
-      
-      startAngle += 2 * math.pi * segment.percentage;
-    }
-    
-    // Draw indicator dots
-    final dotPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    
-    final dotBorderPaint = Paint()
-      ..color = const Color(0xFFE0E0E0)
+    final radius = (size.width - strokeWidth) / 2;
+
+    final paint = Paint()
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    
-    // Top dot
-    final topDotCenter = Offset(center.dx, center.dy - radius);
-    canvas.drawCircle(topDotCenter, 8, dotPaint);
-    canvas.drawCircle(topDotCenter, 8, dotBorderPaint);
-    
-    // Right dot (end of orange segment)
-    final rightAngle = -math.pi / 2 + 2 * math.pi * 0.55;
-    final rightDotCenter = Offset(
-      center.dx + radius * math.cos(rightAngle),
-      center.dy + radius * math.sin(rightAngle),
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    // Draw arc starting from top (-90 degrees)
+    const startAngle = -math.pi / 2;
+    final sweepAngle = (score / 100) * 2 * math.pi;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle,
+      false,
+      paint,
     );
-    canvas.drawCircle(rightDotCenter, 8, dotPaint);
-    canvas.drawCircle(rightDotCenter, 8, dotBorderPaint);
   }
   
   @override

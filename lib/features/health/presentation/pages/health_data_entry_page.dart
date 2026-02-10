@@ -10,6 +10,9 @@ import '../widgets/gender_switch.dart';
 import '../widgets/age_picker.dart';
 import '../widgets/ruler_picker.dart';
 import '../../../../shared/widgets/tlz_app_top_bar.dart';
+import '../../../../core/constants/app_colors.dart';
+import 'package:thai_buddhist_date/thai_buddhist_date.dart';
+import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 
 class HealthDataEntryPage extends StatefulWidget {
   const HealthDataEntryPage({Key? key}) : super(key: key);
@@ -19,19 +22,22 @@ class HealthDataEntryPage extends StatefulWidget {
 }
 
 class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
-  // Form State
+  // State
   String _gender = 'female';
-  int _age = 25;
+  int? _age; // Nullable age, defaults to null (displayed as "-")
   double _height = 165.0; // cm
   double _weight = 60.0;  // kg
+  DateTime? _originalBirthday; // Keep track of the DB birthday
   
   // UI State
   bool _isMetric = true; // true = Metric (cm/kg), false = Imperial (in/lb)
   bool _isLoading = true;
   bool _isSaving = false;
   
-  // Search Bar
+  // Controllers & Keys
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _agePickerKey = GlobalKey();
 
   @override
   void initState() {
@@ -42,25 +48,28 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _loadExistingData() async {
+    // Check Auth first
+    final user = ServiceLocator.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        Navigator.pushReplacementNamed(
+          context, 
+          '/login',
+          arguments: '/health-data-entry',
+        );
+      }
+      return;
+    }
+
     try {
       // Simulate network delay for shimmer effect demo
       await Future.delayed(const Duration(milliseconds: 1500));
-      
-      final user = ServiceLocator.instance.currentUser;
-      if (user == null) {
-        if (mounted) {
-          Navigator.pushReplacementNamed(
-            context, 
-            '/login',
-            arguments: '/health-data-entry',
-          );
-        }
-        return;
-      }
+
 
       final healthRepo = ServiceLocator.instance.healthRepository;
       // Fetch profile which includes birthday and health_info
@@ -68,25 +77,27 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
 
       if (mounted) {
         setState(() {
-          if (profile != null) {
-            // Priority: Calculated from Birthday > Existing Health Info > Default
-            
-            // 1. Try to calculate age from birthday
-            if (profile.birthday != null) {
-              _age = _calculateAge(profile.birthday!);
-            } 
-            // 2. Fallback to existing health info if available and birthday is missing
-            else if (profile.healthInfo != null && profile.healthInfo!['age'] != null) {
-              _age = profile.healthInfo!['age'];
-            }
+            if (profile != null) {
+              _originalBirthday = profile.birthday;
+              
+              // Priority: Calculated from Birthday > Existing Health Info > Default
+              
+              // 1. Try to calculate age from birthday
+              if (profile.birthday != null) {
+                _age = _calculateAge(profile.birthday!);
+              } 
+              // 2. Fallback to existing health info if available and birthday is missing
+              else if (profile.healthInfo != null && profile.healthInfo!['age'] != null) {
+                _age = profile.healthInfo!['age'];
+              }
 
-            // Load other health info if available
-            if (profile.healthInfo != null) {
-              _gender = profile.healthInfo!['gender'] ?? 'female';
-              _height = (profile.healthInfo!['height'] as num?)?.toDouble() ?? 160.0;
-              _weight = (profile.healthInfo!['weight'] as num?)?.toDouble() ?? 50.0;
+              // Load other health info if available
+              if (profile.healthInfo != null) {
+                _gender = profile.healthInfo!['gender'] ?? 'female';
+                _height = (profile.healthInfo!['height'] as num?)?.toDouble() ?? 160.0;
+                _weight = (profile.healthInfo!['weight'] as num?)?.toDouble() ?? 50.0;
+              }
             }
-          }
           _isLoading = false;
         });
       }
@@ -115,7 +126,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     });
   }
 
-  void _onAgeChanged(int age) {
+  void _onAgeChanged(int? age) {
     setState(() {
       _age = age;
     });
@@ -184,47 +195,100 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   }
 
   Future<void> _submitData() async {
-    setState(() {
-      _isSaving = true;
-    });
+    final user = ServiceLocator.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนดำเนินการ')),
+        );
+        Navigator.pushReplacementNamed(
+          context,
+          '/login',
+          arguments: '/health-data-entry',
+        );
+      }
+      return;
+    }
+
+    // VALIDATION: Ensure age is selected
+    if (_age == null) {
+      if (mounted) {
+        // Auto scroll to AgePicker
+        Scrollable.ensureVisible(
+          _agePickerKey.currentContext!,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(child: Text('กรุณาระบุอายุ เพื่อคำนวณข้อมูลสุขภาพ')),
+              ],
+            ),
+            backgroundColor: Colors.yellow[800],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+      return;
+    }
 
     try {
-      final user = ServiceLocator.instance.currentUser;
-      if (user == null) {
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนดำเนินการ')),
-          );
-          Navigator.pushReplacementNamed(
-            context, 
-            '/login',
-            arguments: '/health-data-entry',
-          );
+      // BIRTHDAY SYNC LOGIC - Do this BEFORE setting _isSaving = true
+      // to avoid UI conflict with the loading overlay on web
+      final userRepository = ServiceLocator.instance.userRepository;
+      final healthRepository = ServiceLocator.instance.healthRepository;
+      
+      DateTime? birthdayToSave = _originalBirthday;
+      int calculatedAgeFromOriginal = _originalBirthday != null ? _calculateAge(_originalBirthday!) : -1;
+
+      // Only sync if age is selected and different from current record
+      if (_age != null && _age != calculatedAgeFromOriginal) {
+        final DateTime? confirmedDate = await _showBirthdayConfirmationDialog();
+        if (confirmedDate == null) {
+          // User cancelled the dialog, just abort
+          return;
         }
-        return;
+        birthdayToSave = confirmedDate;
+      }
+
+      // NOW set saving state for actual DB operation
+      if (mounted) {
+        setState(() {
+          _isSaving = true;
+        });
       }
 
       final healthInfo = HealthInfo(
         gender: _gender,
         age: _age,
-        height: _height, // Already stored as cm
-        weight: _weight, // Already stored as kg
+        height: _height,
+        weight: _weight,
         bmi: _calculatedBMI,
       );
 
-      final userRepository = ServiceLocator.instance.userRepository;
-      final healthRepository = ServiceLocator.instance.healthRepository;
-      
       // Check if profile exists
       ConsumerProfile? profile = await userRepository.getConsumerProfile(user.id);
       
       if (profile != null) {
-        // Update existing
+        // Update existing health_info + birthday column
+        await userRepository.updateConsumerProfile(user.id, {
+          'health_info': healthInfo.toJson(),
+          'birthday': birthdayToSave?.toIso8601String(),
+        });
+        
+        // Ensure health score is recalculated in metadata (handled by repo usually)
         await healthRepository.updateHealthInfo(user.id, healthInfo);
       } else {
-        // Create new profile first
+        // Create new profile
         await userRepository.createConsumerProfile(
           userId: user.id,
+          birthday: birthdayToSave,
           healthInfo: healthInfo.toJson(),
         );
       }
@@ -266,206 +330,399 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     }
   }
 
+  Future<DateTime?> _showBirthdayConfirmationDialog() async {
+    // Generate a default date based on the age selected (e.g., Today's date Y years ago)
+    final now = DateTime.now();
+    final effectiveAge = _age ?? 25;
+    DateTime initialDate = _originalBirthday ?? DateTime(now.year - effectiveAge, now.month, now.day);
+    
+    // Ensure initialDate is reasonable if selected age changed
+    if (_calculateAge(initialDate) != effectiveAge) {
+      initialDate = DateTime(now.year - effectiveAge, now.month, now.day);
+    }
+
+    DateTime selectedDate = initialDate;
+
+    return await showDialog<DateTime>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Row(
+                children: [
+                  Icon(Icons.cake, color: Color(0xFF5B9A8B)),
+                  SizedBox(width: 10),
+                  Text('ยืนยันวันเกิดของคุณ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('อายุที่คุณเลือก ไม่ตรงกับวันเกิดที่เคยบันทึกไว้ หรืออาจยังไม่เคยกรอก'),
+                  const SizedBox(height: 16),
+                  const Text('กรุณาเลือกวันเกิดที่ถูกต้อง เพื่อให้เราคำนวณคะแนนสุขภาพได้แม่นยำที่สุด:', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      // 1. Show Year Picker first for easier navigation
+                      final int? selectedYear = await _showThaiYearPicker(context, selectedDate.year);
+                      if (selectedYear == null) return;
+                      
+                      final DateTime dateWithNewYear = DateTime(
+                        selectedYear,
+                        selectedDate.month,
+                        selectedDate.day,
+                      );
+
+                      // 2. Show Month/Day Picker (Thai version)
+                      final DateTime? picked = await showThaiDatePicker(
+                        context,
+                        initialDate: dateWithNewYear,
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime.now(),
+                        era: Era.be,
+                        locale: 'th_TH',
+                      );
+                      
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: const Color(0xFF5B9A8B)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${selectedDate.day}/${selectedDate.month}/${selectedDate.year + 543}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const Icon(Icons.calendar_today, size: 20, color: Color(0xFF5B9A8B)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('อายุที่คำนวณได้: ${_calculateAge(selectedDate)} ปี', 
+                      style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF5B9A8B))),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(null),
+                  child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(selectedDate),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B9A8B),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('ยืนยันและบันทึก', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
+    final int currentYearBE = DateTime.now().year + 543;
+    final int startYearBE = initialYear + 543;
+    
+    return showDialog<int>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('เลือกปี พ.ศ.', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 2,
+              ),
+              itemCount: currentYearBE - (1900 + 543) + 1,
+              itemBuilder: (context, index) {
+                final yearBE = currentYearBE - index;
+                final bool isSelected = yearBE == startYearBE;
+                return InkWell(
+                  onTap: () => Navigator.pop(context, yearBE - 543),
+                  child: Container(
+                    margin: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFF5B9A8B) : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF5B9A8B).withOpacity(0.3)),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$yearBE',
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // Remove AppBar as we use custom Top Navigation Bar
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // 1. Top Navigation Bar (Fixed)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: TlzAppTopBar.onLight(
-                leading: BackButton(
-                  color: const Color(0xFF5A7E28),
-                  onPressed: () => Navigator.of(context).pop(),
+            Column(
+              children: [
+                // 1. Top Navigation Bar (Fixed)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: TlzAppTopBar.onLight(
+                    leading: BackButton(
+                      color: const Color(0xFF5A7E28),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    searchHintText: 'ค้นหาเมนูอาหารเพื่อสุขภาพ...',
+                    onQRTap: () {},
+                    onNotificationTap: () {},
+                    onCartTap: () {},
+                  ),
                 ),
-                searchHintText: 'ค้นหาเมนูอาหารเพื่อสุขภาพ...',
-                // Mock callbacks for demonstration
-                onQRTap: () {},
-                onNotificationTap: () {},
-                onCartTap: () {},
-              ),
-            ),
-
-            // 2. Page Header & Unit Toggle
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'ข้อมูลสุขภาพ',
-                    style: TextStyle(
-                      color: Color(0xFF333333),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 20,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _toggleUnit,
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF5A7E28),
-                      backgroundColor: const Color(0xFF5A7E28).withOpacity(0.1),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    child: Text(
-                      _isMetric ? 'Metric' : 'Imperial',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
-            Expanded(
-              child: _isLoading 
-                  ? _buildShimmerLoading()
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 10),
-                          
-                          // Title
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFF679E83).withOpacity(0.1),
-                                  const Color(0xFF679E83).withOpacity(0.05),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            child: const Text(
-                              'ลักษณะทางกายภาพ',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF333333),
-                              ),
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 32),
-                          
-                          // Gender
-                          GenderSwitch(
-                            selectedGender: _gender,
-                            onChanged: _onGenderChanged,
-                          ),
-                          
-                          const SizedBox(height: 36),
-                          
-                          // Age
-                          AgePicker(
-                            initialAge: _age,
-                            onChanged: _onAgeChanged,
-                          ),
-
-                          const SizedBox(height: 36),
-
-                          // Height
-                          RulerPicker(
-                            key: ValueKey('height_$_isMetric'), // Force rebuild on unit change
-                            label: 'ส่วนสูง',
-                            unit: _isMetric ? 'เซนติเมตร' : 'นิ้ว',
-                            minValue: _isMetric ? 100 : 39, // ~100cm
-                            maxValue: _isMetric ? 250 : 98, // ~250cm
-                            initialValue: double.parse(_displayHeight.toStringAsFixed(1)),
-                            step: _isMetric ? 1 : 0.5,
-                            onChanged: _onHeightChanged,
-                          ),
-
-                          const SizedBox(height: 36),
-
-                          // Weight
-                          RulerPicker(
-                            key: ValueKey('weight_$_isMetric'), // Force rebuild on unit change
-                            label: 'น้ำหนัก',
-                            unit: _isMetric ? 'กิโลกรัม' : 'ปอนด์',
-                            minValue: _isMetric ? 30 : 66,  // ~30kg
-                            maxValue: _isMetric ? 200 : 440, // ~200kg
-                            initialValue: double.parse(_displayWeight.toStringAsFixed(1)),
-                            step: _isMetric ? 1 : 1,
-                            onChanged: _onWeightChanged,
-                          ),
-                          
-                          const SizedBox(height: 32),
-                          
-                          // BMI Preview Card
-                          _buildBMIPreviewCard(),
-                          
-                          const SizedBox(height: 24),
-                        ],
-                      ),
-                    ),
-            ),
-            
-            // Next Button
-            Container(
-              padding: const EdgeInsets.all(24.0),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _submitData,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF679E83),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    elevation: 4,
-                    shadowColor: const Color(0xFF679E83).withOpacity(0.4),
-                  ),
-                  child: _isSaving 
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
+                
+                // 2. Page Header & Unit Toggle
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'ข้อมูลสุขภาพ',
+                        style: TextStyle(
+                          color: Color(0xFF333333),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 20,
                         ),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Text(
-                            'บันทึกข้อมูล',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
+                      ),
+                      TextButton(
+                        onPressed: _toggleUnit,
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF5A7E28),
+                          backgroundColor: const Color(0xFF5A7E28).withOpacity(0.1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          SizedBox(width: 8),
-                          Icon(Icons.check_circle_outline, size: 22),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        ),
+                        child: Text(
+                          _isMetric ? 'Metric' : 'Imperial',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                Expanded(
+                  child: _isLoading
+                      ? _buildShimmerLoading()
+                      : SingleChildScrollView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(0xFF679E83).withOpacity(0.1),
+                                      const Color(0xFF679E83).withOpacity(0.05),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: const Text(
+                                  'ลักษณะทางกายภาพ',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF333333),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              GenderSwitch(
+                                selectedGender: _gender,
+                                onChanged: _onGenderChanged,
+                              ),
+                              const SizedBox(height: 36),
+                              Container(
+                                key: _agePickerKey,
+                                child: AgePicker(
+                                  initialAge: _age,
+                                  onChanged: _onAgeChanged,
+                                ),
+                              ),
+                              const SizedBox(height: 36),
+                              RulerPicker(
+                                key: ValueKey('height_$_isMetric'),
+                                label: 'ส่วนสูง',
+                                unit: _isMetric ? 'เซนติเมตร' : 'นิ้ว',
+                                minValue: _isMetric ? 100 : 39,
+                                maxValue: _isMetric ? 250 : 98,
+                                initialValue: double.parse(_displayHeight.toStringAsFixed(1)),
+                                step: _isMetric ? 1 : 0.5,
+                                onChanged: _onHeightChanged,
+                              ),
+                              const SizedBox(height: 36),
+                              RulerPicker(
+                                key: ValueKey('weight_$_isMetric'),
+                                label: 'น้ำหนัก',
+                                unit: _isMetric ? 'กิโลกรัม' : 'ปอนด์',
+                                minValue: _isMetric ? 30 : 66,
+                                maxValue: _isMetric ? 200 : 440,
+                                initialValue: double.parse(_displayWeight.toStringAsFixed(1)),
+                                step: _isMetric ? 1 : 1,
+                                onChanged: _onWeightChanged,
+                              ),
+                              const SizedBox(height: 32),
+                              _buildBMIPreviewCard(),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
+                        ),
+                ),
+                
+                // Next Button
+                Container(
+                  padding: const EdgeInsets.all(24.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: MediaQuery.of(context).size.width * 0.75,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF87B17F), Color(0xFF007FAD)],
+                        ),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF007FAD).withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
                         ],
                       ),
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _submitData,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Text(
+                              'บันทึกข้อมูล',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.check_circle_outline, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Global Loading Overlay
+            if (_isSaving)
+              Container(
+                color: Colors.black.withOpacity(0.3),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: Color(0xFF679E83),
+                          strokeWidth: 3,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'กำลังบันทึกข้อมูล...',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF679E83),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

@@ -1,7 +1,7 @@
 /// Health Info Model - ข้อมูลสุขภาพของผู้ใช้
 class HealthInfo {
   final String gender;
-  final int age;
+  final int? age;
   final double height; // cm
   final double weight; // kg
   final double bmi;
@@ -9,7 +9,7 @@ class HealthInfo {
 
   const HealthInfo({
     required this.gender,
-    required this.age,
+    this.age,
     required this.height,
     required this.weight,
     required this.bmi,
@@ -24,11 +24,13 @@ class HealthInfo {
 
   /// คำนวณ Health Score (simplified algorithm)
   /// Based on BMI, age, and other factors
-  static int calculateHealthScore({
+  static int? calculateHealthScore({
     required double bmi,
-    required int age,
+    int? age,
     required String gender,
   }) {
+    if (age == null) return null;
+    
     int score = 100;
     
     // BMI Score (optimal: 18.5-24.9)
@@ -78,7 +80,7 @@ class HealthInfo {
 
     return HealthInfo(
       gender: json['gender'] ?? 'female',
-      age: json['age'] ?? 25,
+      age: json['age'],
       height: height,
       weight: weight,
       bmi: bmi,
