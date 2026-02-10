@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/health_info.dart';
+import '../models/health_data_change_log.dart';
 import '../../../auth/data/models/user_model.dart';
 
 /// Health Repository - จัดการข้อมูลสุขภาพใน Database
@@ -99,6 +100,46 @@ class HealthRepository {
     // TODO: Implement actual device disconnection
     await Future.delayed(const Duration(milliseconds: 500));
     return true;
+  }
+
+  /// ดึงประวัติการเปลี่ยนแปลงข้อมูลสุขภาพ (Real Data)
+  Future<List<HealthDataChangeLog>> getHealthHistoryLog(String userId, String fieldType) async {
+    try {
+      final response = await _client
+          .from('health_data_logs')
+          .select()
+          .eq('user_id', userId)
+          .eq('field_type', fieldType)
+          .order('created_at', ascending: false);
+      
+      return (response as List).map((e) => HealthDataChangeLog.fromJson(e)).toList();
+    } catch (e) {
+      // If table doesn't exist yet or error occurs, return empty list
+      return [];
+    }
+  }
+
+  /// บันทึกประวัติการเปลี่ยนแปลงข้อมูลสุขภาพ
+  Future<void> logHealthChange({
+    required String userId,
+    required String fieldType,
+    String? oldValue,
+    required String newValue,
+    String? editorName,
+  }) async {
+    try {
+      await _client.from('health_data_logs').insert({
+        'user_id': userId,
+        'field_type': fieldType,
+        'old_value': oldValue,
+        'new_value': newValue,
+        'editor_name': editorName ?? 'Unknown',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      // Log error silently, don't block user flow
+      print('Error logging health change: $e');
+    }
   }
 
   /// ดึงประวัติการวัดสุขภาพ (Mock data)

@@ -276,6 +276,61 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       ConsumerProfile? profile = await userRepository.getConsumerProfile(user.id);
       
       if (profile != null) {
+        // --- DATA LOGGING START ---
+        // Compare and log changes
+        final oldInfo = profile.healthInfo;
+        if (oldInfo != null) {
+          // Weight
+          final oldWeight = (oldInfo['weight'] as num?)?.toDouble();
+          if (oldWeight != null && (oldWeight - _weight).abs() > 0.01) {
+            healthRepository.logHealthChange(
+              userId: user.id,
+              fieldType: 'weight',
+              oldValue: '$oldWeight กก.',
+              newValue: '$_weight กก.',
+              editorName: 'ฉัน',
+            );
+          }
+
+          // Height
+          final oldHeight = (oldInfo['height'] as num?)?.toDouble();
+          if (oldHeight != null && (oldHeight - _height).abs() > 0.01) {
+            healthRepository.logHealthChange(
+              userId: user.id,
+              fieldType: 'height',
+              oldValue: '$oldHeight ซม.',
+              newValue: '$_height ซม.',
+              editorName: 'ฉัน',
+            );
+          }
+
+          // Age
+          final oldAge = oldInfo['age'] as int?;
+          if (oldAge != null && oldAge != _age) {
+            healthRepository.logHealthChange(
+              userId: user.id,
+              fieldType: 'age',
+              oldValue: '$oldAge ปี',
+              newValue: '$_age ปี',
+              editorName: 'ฉัน',
+            );
+          }
+
+          // BMI
+          final oldBmi = (oldInfo['bmi'] as num?)?.toDouble();
+          final newBmi = _calculatedBMI;
+          if (oldBmi != null && (oldBmi - newBmi).abs() > 0.1) {
+            healthRepository.logHealthChange(
+              userId: user.id,
+              fieldType: 'bmi',
+              oldValue: oldBmi.toStringAsFixed(1),
+              newValue: newBmi.toStringAsFixed(1),
+              editorName: 'ฉัน',
+            );
+          }
+        }
+        // --- DATA LOGGING END ---
+
         // Update existing health_info + birthday column
         await userRepository.updateConsumerProfile(user.id, {
           'health_info': healthInfo.toJson(),
@@ -291,6 +346,18 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           birthday: birthdayToSave,
           healthInfo: healthInfo.toJson(),
         );
+        
+        // Log initial values for new profile? Optional, usually we just show current.
+        // If we want history from day 1, we could log here too.
+        // Let's log initial values as "New Record"
+        healthRepository.logHealthChange(
+            userId: user.id, fieldType: 'weight', newValue: '$_weight กก.', editorName: 'ฉัน');
+        healthRepository.logHealthChange(
+            userId: user.id, fieldType: 'height', newValue: '$_height ซม.', editorName: 'ฉัน');
+        healthRepository.logHealthChange(
+            userId: user.id, fieldType: 'age', newValue: '$_age ปี', editorName: 'ฉัน');
+        healthRepository.logHealthChange(
+            userId: user.id, fieldType: 'bmi', newValue: _calculatedBMI.toStringAsFixed(1), editorName: 'ฉัน');
       }
 
       if (mounted) {

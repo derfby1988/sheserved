@@ -7,6 +7,10 @@ import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../auth/data/repositories/user_repository.dart';
 import '../../../auth/data/models/user_model.dart';
+import '../../data/models/health_data_change_log.dart';
+import '../../data/models/health_data_change_log.dart';
+import '../../data/repositories/health_repository.dart';
+import '../widgets/health_history_dialog.dart';
 
 /// Health Page - Health Dashboard
 /// แสดงข้อมูลสุขภาพ อุปกรณ์ที่เชื่อมต่อ และคะแนนสุขภาพ
@@ -333,7 +337,12 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem(_calculateAge(), 'ปี', 'อายุ'),
+                      child: _buildStatItem(
+                        _calculateAge(), 
+                        'ปี', 
+                        'อายุ',
+                        onTap: () => _showHistoryDialog('อายุ', 'age'),
+                      ),
                     ),
                     Container(
                       width: 1,
@@ -341,7 +350,12 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                       color: AppColors.divider,
                     ),
                     Expanded(
-                      child: _buildStatItem(bmi, '', 'BMI'),
+                      child: _buildStatItem(
+                        bmi, 
+                        '', 
+                        'BMI',
+                        onTap: () => _showHistoryDialog(' BMI', 'bmi'),
+                      ),
                     ),
                   ],
                 ),
@@ -352,7 +366,12 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem(weight, 'กก.', 'น้ำหนัก'),
+                      child: _buildStatItem(
+                        weight, 
+                        'กก.', 
+                        'น้ำหนัก',
+                        onTap: () => _showHistoryDialog('น้ำหนัก', 'weight'),
+                      ),
                     ),
                     Container(
                       width: 1,
@@ -360,7 +379,12 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                       color: AppColors.divider,
                     ),
                     Expanded(
-                      child: _buildStatItem(height, 'ซม.', 'ส่วนสูง'),
+                      child: _buildStatItem(
+                        height, 
+                        'ซม.', 
+                        'ส่วนสูง',
+                        onTap: () => _showHistoryDialog('ส่วนสูง', 'height'),
+                      ),
                     ),
                   ],
                 ),
@@ -479,48 +503,111 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildStatItem(String value, String unit, String label) {
+  Future<void> _showHistoryDialog(String title, String fieldType) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final authService = AuthService.instance;
+      if (!authService.isLoggedIn) {
+        Navigator.of(context).pop(); // Close loading
+        return;
+      }
+
+      final userId = authService.currentUser!.id;
+      final healthRepository = ServiceLocator.get<HealthRepository>();
+      
+      // Fetch real data from database
+      final logs = await healthRepository.getHealthHistoryLog(userId, fieldType);
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading
+        
+        showDialog(
+          context: context,
+          barrierColor: Colors.black.withOpacity(0.2), // Dim background slightly
+          builder: (context) => HealthHistoryDialog(
+            title: 'ประวัติ$title',
+            historyLogs: logs,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เกิดข้อผิดพลาดในการดึงข้อมูล: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildStatItem(String value, String unit, String label, {VoidCallback? onTap}) {
     bool isPlaceholder = value == 'ระบุ';
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: RichText(
-            textAlign: TextAlign.center,
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: value,
-                  style: AppTextStyles.heading2.copyWith(
-                    color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
-                    fontWeight: FontWeight.bold,
-                    fontSize: isPlaceholder ? 14 : 24,
-                  ),
-                ),
-                if (!isPlaceholder && unit.isNotEmpty)
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                children: [
                   TextSpan(
-                    text: ' $unit',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: const Color(0xFF58910F),
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
+                    text: value,
+                    style: AppTextStyles.heading2.copyWith(
+                      color: isPlaceholder ? const Color(0xFF7FA2C2) : const Color(0xFF58910F),
+                      fontWeight: FontWeight.bold,
+                      fontSize: isPlaceholder ? 14 : 24,
+                      decoration: onTap != null ? TextDecoration.underline : null,
+                      decorationColor: const Color(0xFF58910F).withOpacity(0.3),
+                      decorationStyle: TextDecorationStyle.dashed,
                     ),
                   ),
-              ],
+                  if (!isPlaceholder && unit.isNotEmpty)
+                    TextSpan(
+                      text: ' $unit',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: const Color(0xFF58910F),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: const Color(0xFF7FA2C2),
-            fontWeight: FontWeight.w500,
-            fontSize: 12,
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: const Color(0xFF7FA2C2),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.history,
+                  size: 12,
+                  color: Color(0xFF7FA2C2),
+                ),
+              ],
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
