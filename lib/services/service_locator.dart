@@ -8,6 +8,7 @@ import 'sync_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../features/auth/data/repositories/user_repository.dart';
 import '../features/health/data/repositories/health_repository.dart';
+import '../features/health/data/repositories/health_article_repository.dart';
 import 'auth_service.dart';
 
 /// Service Locator สำหรับจัดการ Dependencies
@@ -23,6 +24,7 @@ class ServiceLocator {
   SyncService? _syncService;
   UserRepository? _userRepository;
   HealthRepository? _healthRepository;
+  HealthArticleRepository? _healthArticleRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -136,6 +138,7 @@ class ServiceLocator {
       final supabaseClient = Supabase.instance.client;
       _userRepository = UserRepository(supabaseClient);
       _healthRepository = HealthRepository(supabaseClient);
+      _healthArticleRepository = HealthArticleRepository(supabaseClient);
     }
 
     _isInitialized = true;
@@ -154,6 +157,13 @@ class ServiceLocator {
       _healthRepository = HealthRepository(Supabase.instance.client);
     }
     return _healthRepository!;
+  }
+
+  HealthArticleRepository get healthArticleRepository {
+    if (_healthArticleRepository == null) {
+      _healthArticleRepository = HealthArticleRepository(Supabase.instance.client);
+    }
+    return _healthArticleRepository!;
   }
 
   /// Get Unified Repository (recommended)

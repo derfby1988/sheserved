@@ -893,9 +893,13 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
     
     return GestureDetector(
       onTap: () {
-        setState(() {
-          _selectedTabIndex = index;
-        });
+        if (index == 3) {
+          Navigator.pushNamed(context, '/health/article');
+        } else {
+          setState(() {
+            _selectedTabIndex = index;
+          });
+        }
       },
       child: Padding(
         padding: EdgeInsets.only(

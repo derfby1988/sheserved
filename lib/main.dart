@@ -13,6 +13,7 @@ import 'features/auth/presentation/pages/register_page.dart';
 import 'features/auth/presentation/pages/register_wizard_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
 import 'features/health/presentation/pages/health_data_entry_page.dart';
+import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
@@ -102,6 +103,7 @@ class SheservedApp extends StatelessWidget {
         '/register-simple': (context) => const RegisterPage(),
         '/health': (context) => const HealthPage(),
         '/health-data-entry': (context) => const HealthDataEntryPage(),
+        '/health/article': (context) => const HealthArticlePage(),
         '/articles': (context) => const ArticlesPage(),
         '/test': (context) => const TestWebSocketWidget(),
         '/admin/professions': (context) => const ProfessionAdminPage(),

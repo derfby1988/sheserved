@@ -141,7 +141,7 @@ class _HomePageState extends State<HomePage> {
                                     headerText: ServiceLocator.instance.currentUser != null 
                                       ? 'ข้อมูลสุขภาพ' 
                                       : 'ตรวจสุขภาพ',
-                                    onHealthTap: () => Navigator.pushNamed(context, '/health'),
+                                    onHealthTap: () => Navigator.pushNamed(context, '/health/article'),
                                     onProfileTap: () => Navigator.pushNamed(
                                       context, 
                                       '/login',
