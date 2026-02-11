@@ -143,7 +143,6 @@ class TlzAppTopBar extends StatelessWidget {
         // Leading Widget (Hamburger Menu or Custom)
         leading ?? TlzHamburgerMenu(
           onPressed: onMenuPressed,
-          scaffoldContext: context,
         ),
         
         const SizedBox(width: 12),

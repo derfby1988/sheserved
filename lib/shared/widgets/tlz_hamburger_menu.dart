@@ -21,11 +21,15 @@ class TlzHamburgerMenu extends StatelessWidget {
         child: InkWell(
           onTap: onPressed ??
               () {
-                try {
-                  Scaffold.of(scaffoldContext ?? builderContext).openDrawer();
-                } catch (e) {
-                  // Drawer ยังไม่ได้สร้าง
-                  debugPrint('Drawer not available: $e');
+                // ค้นหา Scaffold ที่ใกล้ที่สุด
+                final scaffold = Scaffold.maybeOf(scaffoldContext ?? builderContext);
+                if (scaffold != null && scaffold.hasDrawer) {
+                  scaffold.openDrawer();
+                } else {
+                  // ถ้าไม่พบ Drawer ใน Scaffold ปัจจุบัน อาจจะลองหา ScaffoldState อื่นๆ 
+                  // หรือตรวจสอบในระดับลึกขึ้น
+                  debugPrint('Drawer not available on this page');
+                  // ถ้านี่ไม่ใช่หน้าแรก เราอาจจะให้กลับหน้าหลัก หรือทำอย่างอื่น
                 }
               },
           borderRadius: BorderRadius.circular(8),

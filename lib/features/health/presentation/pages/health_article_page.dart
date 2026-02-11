@@ -240,6 +240,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: const TlzDrawer(),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
