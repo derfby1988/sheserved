@@ -50,7 +50,7 @@ class HomeRecommendedSection extends StatelessWidget {
         
         // Horizontal Scrollable List
         SizedBox(
-          height: 200,
+          height: 220,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),

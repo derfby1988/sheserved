@@ -77,306 +77,310 @@ class _RegisterPageState extends State<RegisterPage>
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Top Section - Back Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
-                    Icons.arrow_back_ios,
-                    color: AppColors.textOnPrimary,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-
-            // Bottom Card - Register Form
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(32),
-                        topRight: Radius.circular(32),
-                      ),
-                    ),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Title
-                            Text(
-                              'ลงทะเบียน',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.heading3.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'สร้างบัญชีใหม่เพื่อเริ่มต้นใช้งาน',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-
-                            // Name Field
-                            _buildInputField(
-                              controller: _nameController,
-                              hintText: 'ชื่อ-นามสกุล',
-                              prefixIcon: Icons.person_outline,
-                              keyboardType: TextInputType.name,
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Phone Field (Primary identifier - Required)
-                            _buildInputField(
-                              controller: _phoneController,
-                              hintText: 'เบอร์โทรศัพท์ *',
-                              prefixIcon: Icons.phone_outlined,
-                              keyboardType: TextInputType.phone,
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Email Field (Optional)
-                            _buildInputField(
-                              controller: _emailController,
-                              hintText: 'อีเมล์ (ไม่บังคับ)',
-                              prefixIcon: Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Password Field
-                            _buildInputField(
-                              controller: _passwordController,
-                              hintText: 'รหัสผ่าน',
-                              prefixIcon: Icons.lock_outline,
-                              obscureText: _obscurePassword,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
-                                },
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                  color: AppColors.textHint,
-                                  size: 22,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Confirm Password Field
-                            _buildInputField(
-                              controller: _confirmPasswordController,
-                              hintText: 'ยืนยันรหัสผ่าน',
-                              prefixIcon: Icons.lock_outline,
-                              obscureText: _obscureConfirmPassword,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _obscureConfirmPassword = !_obscureConfirmPassword;
-                                  });
-                                },
-                                icon: Icon(
-                                  _obscureConfirmPassword
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                  color: AppColors.textHint,
-                                  size: 22,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Terms Checkbox
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: Checkbox(
-                                    value: _acceptTerms,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _acceptTerms = value ?? false;
-                                      });
-                                    },
-                                    activeColor: AppColors.primary,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _acceptTerms = !_acceptTerms;
-                                      });
-                                    },
-                                    child: RichText(
-                                      text: TextSpan(
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.textSecondary,
-                                        ),
-                                        children: [
-                                          const TextSpan(text: 'ฉันยอมรับ '),
-                                          TextSpan(
-                                            text: 'ข้อกำหนดการใช้งาน',
-                                            style: TextStyle(
-                                              color: AppColors.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const TextSpan(text: ' และ '),
-                                          TextSpan(
-                                            text: 'นโยบายความเป็นส่วนตัว',
-                                            style: TextStyle(
-                                              color: AppColors.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-
-                            // Register Button - BLACK
-                            SizedBox(
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: (_isLoading || !_acceptTerms)
-                                    ? null
-                                    : _handleRegister,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.black,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey[400],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(26),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                            Colors.white,
-                                          ),
-                                        ),
-                                      )
-                                    : Text(
-                                        'ลงทะเบียน',
-                                        style: AppTextStyles.button.copyWith(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-
-                            // Divider with "หรือ"
-                            Text(
-                              'หรือลงทะเบียนด้วย',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Social Login Icons
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildSocialButton(
-                                  SocialProvider.google,
-                                  onPressed: () =>
-                                      _handleSocialRegister(SocialProvider.google),
-                                ),
-                                const SizedBox(width: 16),
-                                _buildSocialButton(
-                                  SocialProvider.facebook,
-                                  onPressed: () =>
-                                      _handleSocialRegister(SocialProvider.facebook),
-                                ),
-                                const SizedBox(width: 16),
-                                _buildSocialButton(
-                                  SocialProvider.apple,
-                                  onPressed: () =>
-                                      _handleSocialRegister(SocialProvider.apple),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-
-                            // Login Link
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'มีบัญชีอยู่แล้ว? ',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: _handleGoToLogin,
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    'เข้าสู่ระบบ',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.warning,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                          ],
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Column(
+                children: [
+                  // Top Section - Back Button
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          color: AppColors.textOnPrimary,
+                          size: 24,
                         ),
                       ),
                     ),
                   ),
-                ),
+      
+                  // Bottom Card - Register Form
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: Container(
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(32),
+                            topRight: Radius.circular(32),
+                          ),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Title
+                              Text(
+                                'ลงทะเบียน',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.heading3.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'สร้างบัญชีใหม่เพื่อเริ่มต้นใช้งาน',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 28),
+      
+                              // Name Field
+                              _buildInputField(
+                                controller: _nameController,
+                                hintText: 'ชื่อ-นามสกุล',
+                                prefixIcon: Icons.person_outline,
+                                keyboardType: TextInputType.name,
+                              ),
+                              const SizedBox(height: 16),
+      
+                              // Phone Field (Primary identifier - Required)
+                              _buildInputField(
+                                controller: _phoneController,
+                                hintText: 'เบอร์โทรศัพท์ *',
+                                prefixIcon: Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                              ),
+                              const SizedBox(height: 16),
+      
+                              // Email Field (Optional)
+                              _buildInputField(
+                                controller: _emailController,
+                                hintText: 'อีเมล์ (ไม่บังคับ)',
+                                prefixIcon: Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                              ),
+                              const SizedBox(height: 16),
+      
+                              // Password Field
+                              _buildInputField(
+                                controller: _passwordController,
+                                hintText: 'รหัสผ่าน',
+                                prefixIcon: Icons.lock_outline,
+                                obscureText: _obscurePassword,
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.textHint,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+      
+                              // Confirm Password Field
+                              _buildInputField(
+                                controller: _confirmPasswordController,
+                                hintText: 'ยืนยันรหัสผ่าน',
+                                prefixIcon: Icons.lock_outline,
+                                obscureText: _obscureConfirmPassword,
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.textHint,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+      
+                              // Terms Checkbox
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: Checkbox(
+                                      value: _acceptTerms,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _acceptTerms = value ?? false;
+                                        });
+                                      },
+                                      activeColor: AppColors.primary,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _acceptTerms = !_acceptTerms;
+                                        });
+                                      },
+                                      child: RichText(
+                                        text: TextSpan(
+                                          style: AppTextStyles.bodySmall.copyWith(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          children: [
+                                            const TextSpan(text: 'ฉันยอมรับ '),
+                                            TextSpan(
+                                              text: 'ข้อกำหนดการใช้งาน',
+                                              style: TextStyle(
+                                                color: AppColors.primary,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const TextSpan(text: ' และ '),
+                                            TextSpan(
+                                              text: 'นโยบายความเป็นส่วนตัว',
+                                              style: TextStyle(
+                                                color: AppColors.primary,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+      
+                              // Register Button - BLACK
+                              SizedBox(
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed: (_isLoading || !_acceptTerms)
+                                      ? null
+                                      : _handleRegister,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: Colors.grey[400],
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(26),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      : Text(
+                                          'ลงทะเบียน',
+                                          style: AppTextStyles.button.copyWith(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+      
+                              // Divider with "หรือ"
+                              Text(
+                                'หรือลงทะเบียนด้วย',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+      
+                              // Social Login Icons
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    SocialProvider.google,
+                                    onPressed: () =>
+                                        _handleSocialRegister(SocialProvider.google),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    SocialProvider.facebook,
+                                    onPressed: () =>
+                                        _handleSocialRegister(SocialProvider.facebook),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    SocialProvider.apple,
+                                    onPressed: () =>
+                                        _handleSocialRegister(SocialProvider.apple),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+      
+                              // Login Link
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'มีบัญชีอยู่แล้ว? ',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _handleGoToLogin,
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      'เข้าสู่ระบบ',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.warning,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

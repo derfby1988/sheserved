@@ -89,170 +89,175 @@ class _LoginPageState extends State<LoginPage>
         children: [
           // Content
           SafeArea(
-            child: Column(
-              children: [
-                // Spacer to push card to bottom
-                const Spacer(),
-
-                // Bottom Card - Login Form
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(32),
-                          topRight: Radius.circular(32),
-                        ),
-                      ),
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Title
-                              Text(
-                                'ลงชื่อเข้าใช้',
-                                textAlign: TextAlign.center,
-                                style: AppTextStyles.heading3.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+            child: CustomScrollView(
+              slivers: [
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Column(
+                    children: [
+                      // Spacer to push card to bottom
+                      const Spacer(),
+      
+                      // Bottom Card - Login Form
+                      FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: SlideTransition(
+                          position: _slideAnimation,
+                          child: Container(
+                            width: double.infinity,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(32),
+                                topRight: Radius.circular(32),
                               ),
-                              const SizedBox(height: 32),
-
-                              // Username/Phone Field
-                              _buildInputField(
-                                controller: _usernameController,
-                                hintText: 'ชื่อผู้ใช้ หรือ เบอร์โทรศัพท์',
-                                prefixIcon: Icons.person_outline,
-                                keyboardType: TextInputType.text,
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Password Field
-                              _buildInputField(
-                                controller: _passwordController,
-                                hintText: 'รหัสผ่าน',
-                                prefixIcon: Icons.lock_outline,
-                                obscureText: _obscurePassword,
-                                suffixIcon: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                    color: AppColors.textHint,
-                                    size: 22,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-
-                              // Submit Button - BLACK
-                              SizedBox(
-                                height: 52,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _handleLogin,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    foregroundColor: Colors.white,
-                                    disabledBackgroundColor: Colors.grey[400],
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(26),
-                                    ),
-                                    elevation: 0,
-                                  ),
-                                  child: _isLoading
-                                      ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                          ),
-                                        )
-                                      : Text(
-                                          'ตกลง',
-                                          style: AppTextStyles.button.copyWith(
-                                            color: Colors.white,
-                                            fontSize: 18,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-
-                              // Divider with "หรือ"
-                              Text(
-                                'หรือ',
-                                textAlign: TextAlign.center,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-
-                              // Social Login Icons
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                            ),
+                            padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  _buildSocialButton(
-                                    SocialProvider.google,
-                                    onPressed: () =>
-                                        _handleSocialLogin(SocialProvider.google),
+                                  // Title
+                                  Text(
+                                    'ลงชื่อเข้าใช้',
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.heading3.copyWith(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  _buildSocialButton(
-                                    SocialProvider.facebook,
-                                    onPressed: () =>
-                                        _handleSocialLogin(SocialProvider.facebook),
+                                  const SizedBox(height: 32),
+      
+                                  // Username/Phone Field
+                                  _buildInputField(
+                                    controller: _usernameController,
+                                    hintText: 'ชื่อผู้ใช้ หรือ เบอร์โทรศัพท์',
+                                    prefixIcon: Icons.person_outline,
+                                    keyboardType: TextInputType.text,
                                   ),
-                                  const SizedBox(width: 12),
-                                  _buildSocialButton(
-                                    SocialProvider.apple,
-                                    onPressed: () =>
-                                        _handleSocialLogin(SocialProvider.apple),
+                                  const SizedBox(height: 16),
+      
+                                  // Password Field
+                                  _buildInputField(
+                                    controller: _passwordController,
+                                    hintText: 'รหัสผ่าน',
+                                    prefixIcon: Icons.lock_outline,
+                                    obscureText: _obscurePassword,
+                                    suffixIcon: IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        color: AppColors.textHint,
+                                        size: 22,
+                                      ),
+                                    ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  _buildSocialButton(
-                                    SocialProvider.line,
-                                    onPressed: () =>
-                                        _handleSocialLogin(SocialProvider.line),
+                                  const SizedBox(height: 24),
+      
+                                  // Submit Button - BLACK
+                                  SizedBox(
+                                    height: 52,
+                                    child: ElevatedButton(
+                                      onPressed: _isLoading ? null : _handleLogin,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.white,
+                                        disabledBackgroundColor: Colors.grey[400],
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(26),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      child: _isLoading
+                                          ? const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                              ),
+                                            )
+                                          : Text(
+                                              'ตกลง',
+                                              style: AppTextStyles.button.copyWith(
+                                                color: Colors.white,
+                                                fontSize: 18,
+                                              ),
+                                            ),
+                                    ),
                                   ),
+                                  const SizedBox(height: 24),
+      
+                                  // Divider with "หรือ"
+                                  Text(
+                                    'หรือ',
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+      
+                                  // Social Login Icons
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _buildSocialButton(
+                                        SocialProvider.google,
+                                        onPressed: () =>
+                                            _handleSocialLogin(SocialProvider.google),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _buildSocialButton(
+                                        SocialProvider.facebook,
+                                        onPressed: () =>
+                                            _handleSocialLogin(SocialProvider.facebook),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _buildSocialButton(
+                                        SocialProvider.apple,
+                                        onPressed: () =>
+                                            _handleSocialLogin(SocialProvider.apple),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      _buildSocialButton(
+                                        SocialProvider.line,
+                                        onPressed: () =>
+                                            _handleSocialLogin(SocialProvider.line),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 24),
+      
+                                  // Register Link
+                                  TextButton(
+                                    onPressed: _handleSignUp,
+                                    child: Text(
+                                      'ลงทะเบียนสำหรับผู้ใช้ใหม่',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.warning,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
                                 ],
                               ),
-                              const SizedBox(height: 24),
-
-                              // Register Link
-                              TextButton(
-                                onPressed: _handleSignUp,
-                                child: Text(
-                                  'ลงทะเบียนสำหรับผู้ใช้ใหม่',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.warning,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                            ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ],

@@ -385,7 +385,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   Widget _buildArea2ControlBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      height: 40,
+      height: 44, // Increased slightly for better tap target
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(8),
@@ -395,12 +395,23 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           IconButton(
             icon: const Icon(Icons.arrow_back, color: Color(0xFFC4E0A5), size: 24),
             onPressed: () => Navigator.pop(context),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            constraints: const BoxConstraints(),
           ),
-          const Expanded(child: SizedBox()),
-          _buildNavButton('หัวข้อ', _activeSection == 'article'),
-          _buildNavButton('สินค้า', _activeSection == 'products'),
-          _buildNavButton('ความคิดเห็น', _activeSection == 'comments'),
-          _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about'),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  _buildNavButton('หัวข้อ', _activeSection == 'article'),
+                  _buildNavButton('สินค้า', _activeSection == 'products'),
+                  _buildNavButton('ความคิดเห็น', _activeSection == 'comments'),
+                  _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about'),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
