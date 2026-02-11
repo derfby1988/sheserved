@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
+import 'package:sheserved/features/health/data/models/health_article_models.dart';
 
 /// Article Detail Page - หน้ารายละเอียดบทความ
 class ArticleDetailPage extends StatefulWidget {
-  final Map<String, dynamic> article;
+  final HealthArticle article;
 
   const ArticleDetailPage({
     super.key,
@@ -176,6 +178,8 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
   }
 
   Widget _buildArticleContent(BuildContext context) {
+    final dateFormat = DateFormat('EEEE d เม.ย. yy', 'th');
+    
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -186,6 +190,43 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Author Header
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundImage: widget.article.authorImage != null 
+                  ? NetworkImage(widget.article.authorImage!)
+                  : null,
+                child: widget.article.authorImage == null 
+                  ? const Icon(Icons.person)
+                  : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.article.authorName ?? 'Expert',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Expert in Women Health',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
           // Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -193,7 +234,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
               // Title
               Expanded(
                 child: Text(
-                  'Head Topic 1',
+                  widget.article.title,
                   style: AppTextStyles.heading5.copyWith(
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.bold,
@@ -211,7 +252,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'พฤหัสบดี 17 เม.ย. 64',
+                    dateFormat.format(widget.article.createdAt),
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.primary,
                     ),
@@ -220,7 +261,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
                   Container(
                     width: 32,
                     height: 32,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
@@ -239,7 +280,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
           
           // Views & Comments
           Text(
-            'xxx เปิดดู   3 แสดงความคิดเห็น',
+            '${widget.article.viewCount} เปิดดู   ${widget.article.likeCount} ถูกใจ',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -247,21 +288,28 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
           
           const SizedBox(height: 16),
           
+          if (widget.article.imageUrl != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                widget.article.imageUrl!,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          
           // Detail Content
           Text(
-            'detail',
+            widget.article.content,
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textPrimary,
             ),
           ),
           
-          // Dotted lines placeholder for content
-          ...List.generate(5, (index) => Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: _buildDottedLine(),
-          )),
-          
-          const SizedBox(height: 100), // Extra space for content
+          const SizedBox(height: 32),
         ],
       ),
     );

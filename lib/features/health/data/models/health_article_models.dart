@@ -67,6 +67,40 @@ class HealthArticle {
       'updated_at': updatedAt.toIso8601String(),
     };
   }
+
+  HealthArticle copyWith({
+    String? id,
+    String? title,
+    String? content,
+    String? authorId,
+    String? authorName,
+    String? authorImage,
+    int? viewCount,
+    int? likeCount,
+    int? shareCount,
+    int? bookmarkCount,
+    String? category,
+    String? imageUrl,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return HealthArticle(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      authorId: authorId ?? this.authorId,
+      authorName: authorName ?? this.authorName,
+      authorImage: authorImage ?? this.authorImage,
+      viewCount: viewCount ?? this.viewCount,
+      likeCount: likeCount ?? this.likeCount,
+      shareCount: shareCount ?? this.shareCount,
+      bookmarkCount: bookmarkCount ?? this.bookmarkCount,
+      category: category ?? this.category,
+      imageUrl: imageUrl ?? this.imageUrl,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 }
 
 class HealthArticleProduct {

@@ -8,7 +8,12 @@ import '../widgets/health_article_skeleton.dart';
 /// Health Article Page
 /// Feature-rich forum and article viewer with stacked sticky headers and nested comments.
 class HealthArticlePage extends StatefulWidget {
-  const HealthArticlePage({super.key});
+  final HealthArticle? article;
+
+  const HealthArticlePage({
+    super.key,
+    this.article,
+  });
 
   @override
   State<HealthArticlePage> createState() => _HealthArticlePageState();
@@ -59,8 +64,14 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
       
-      // 1. Fetch Latest Article
-      final article = await repository.getLatestArticle();
+      // 1. Fetch Article (either passed or latest)
+      HealthArticle? article = widget.article;
+      if (article == null) {
+        print('HealthArticlePage: Fetching latest article...');
+        article = await repository.getLatestArticle();
+      } else {
+        print('HealthArticlePage: Using passed article: ${article.id}');
+      }
       
       if (article != null) {
         // 2. Fetch Products and Total Comments
@@ -342,21 +353,37 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           const Icon(Icons.menu, color: Colors.white, size: 32),
           const SizedBox(width: 12),
           Expanded(
-            child: Container(
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.5)),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Icon(Icons.search, color: Colors.white.withOpacity(0.8)),
-                  const Expanded(child: SizedBox()),
-                  Icon(Icons.qr_code_scanner, color: Colors.white.withOpacity(0.8)),
-                ],
-              ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _showStickyTitle && _article != null
+                ? Container(
+                    key: const ValueKey('sticky_title'),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _article!.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  )
+                : Container(
+                    key: const ValueKey('search_bar'),
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withOpacity(0.5)),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.search, color: Colors.white.withOpacity(0.8)),
+                        const Expanded(child: SizedBox()),
+                        Icon(Icons.qr_code_scanner, color: Colors.white.withOpacity(0.8)),
+                      ],
+                    ),
+                  ),
             ),
           ),
           const SizedBox(width: 12),
@@ -520,7 +547,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'xxx เปิดดู  ${_article!.viewCount} แสดงความคิดเห็น',
+                            'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น',
                             style: const TextStyle(fontSize: 12, color: Colors.white70),
                           ),
                         ],
@@ -534,22 +561,29 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                             const Icon(Icons.access_time, size: 14, color: Colors.white70),
                             const SizedBox(width: 4),
                             Text(
-                              'พฤหัสบดี 17 เม.ย. 64', // Styled as per image
+                              _formatThaiDate(_article!.createdAt),
                               style: const TextStyle(fontSize: 12, color: Colors.white),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: const BoxDecoration(
-                            color: Colors.white70,
-                            shape: BoxShape.circle,
+                        GestureDetector(
+                          onTap: _showAuthorProfile,
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white70,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: _article!.authorImage != null 
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(24), 
+                                  child: Image.network(_article!.authorImage!, fit: BoxFit.cover)
+                                )
+                              : const Icon(Icons.person, color: Colors.grey),
                           ),
-                          child: _article!.authorImage != null 
-                            ? ClipRRect(borderRadius: BorderRadius.circular(24), child: Image.network(_article!.authorImage!))
-                            : const Icon(Icons.person, color: Colors.grey),
                         ),
                       ],
                     ),
@@ -567,7 +601,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Text(
-                      _isContentExpanded ? 'แสดงน้อยลง' : 'detail................................................................',
+                      _isContentExpanded ? 'แสดงน้อยลง' : 'อ่านรายละเอียดเพิ่มเติม...',
                       style: const TextStyle(color: Colors.white54, fontSize: 14),
                     ),
                   ),
@@ -589,8 +623,21 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+  String _formatThaiDate(DateTime date) {
+    const months = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    const days = [
+      'อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'
+    ];
+    
+    // Thai year is Buddhist Era (BE) which is AD + 543
+    final thaiYearBE = date.year + 543;
+    final yearString = thaiYearBE.toString().substring(2);
+    final dayName = days[date.weekday % 7];
+    
+    return '$dayName ${date.day} ${months[date.month - 1]} $yearString';
   }
 
   Widget _buildCommentSystemHeader() {
@@ -637,42 +684,69 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.white.withOpacity(0.5)),
+              color: Colors.white.withOpacity(0.05),
+              border: Border.all(color: Colors.white.withOpacity(0.2)),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Reply................................................................\n' + comment.content,
+                  comment.content,
                   style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Text('อ่านเพิ่ม', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
+                    TextButton(
+                      onPressed: () {},
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text('อ่านเพิ่ม', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                    ),
                     const SizedBox(width: 16),
-                    const Text('ตอบกลับ', style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)),
+                    GestureDetector(
+                      onTap: () => _handleReply(comment.id),
+                      child: const Text('ตอบกลับ', style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Row(
                   children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white24,
+                        shape: BoxShape.circle,
+                      ),
+                      child: comment.userImage != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.network(comment.userImage!, fit: BoxFit.cover),
+                          )
+                        : const Icon(Icons.person, size: 20, color: Colors.white70),
+                    ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'สมาชิกหมายเลข xxx',
-                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12),
+                            comment.username ?? 'สมาชิกหมายเลข ${comment.userId.substring(0, 4)}',
+                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                           Row(
                             children: [
-                              const Icon(Icons.access_time, size: 12, color: Color(0xFFF1AE27)),
+                              const Icon(Icons.access_time, size: 10, color: Color(0xFFF1AE27)),
                               const SizedBox(width: 4),
                               Text(
-                                'พฤหัสบดี 18 เม.ย. 64',
+                                _formatThaiDate(comment.createdAt),
                                 style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 10),
                               ),
                             ],
@@ -680,10 +754,9 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                         ],
                       ),
                     ),
-                    _buildStatIcon(Icons.favorite, '${comment.likeCount}'),
-                    _buildStatIcon(Icons.remove_circle, '78'),
-                    _buildStatIcon(Icons.cached, '12'),
-                    _buildStatIcon(Icons.bookmark, '34'),
+                    _buildStatIcon(Icons.favorite_border, '${comment.likeCount}'),
+                    _buildStatIcon(Icons.chat_bubble_outline, '0'),
+                    _buildStatIcon(Icons.bookmark_border, '0'),
                   ],
                 ),
               ],
@@ -695,12 +768,12 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1C40F).withOpacity(0.8),
-                borderRadius: BorderRadius.circular(4),
+                color: const Color(0xFFF1C40F).withOpacity(0.9),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'ความคิดเห็นที่ ${index + 1}',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                'ความคิดเห็นที่ ${comment.commentNumber}',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
             ),
           ),
@@ -820,13 +893,25 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
               children: [
                 _buildPageIcon(Icons.first_page, _currentPage > 1, () => _changePage(1)),
                 _buildPageIcon(Icons.chevron_left, _currentPage > 1, () => _changePage(_currentPage - 1)),
+                
+                // First Page
                 _buildPageButton('1', _currentPage == 1, () => _changePage(1)),
+                
                 if (_currentPage > 3) _buildPageButton('...', false, null),
-                if (_currentPage > 2 && _currentPage < totalPages - 1) 
-                  _buildPageButton(_currentPage.toString(), true, null),
+                
+                // Pages around current
+                ...List.generate(3, (index) {
+                  final page = _currentPage - 1 + index;
+                  if (page <= 1 || page >= totalPages) return const SizedBox.shrink();
+                  return _buildPageButton(page.toString(), _currentPage == page, () => _changePage(page));
+                }),
+                
                 if (_currentPage < totalPages - 2) _buildPageButton('...', false, null),
+                
+                // Last Page
                 if (totalPages > 1)
                   _buildPageButton(totalPages.toString(), _currentPage == totalPages, () => _changePage(totalPages)),
+                
                 _buildPageIcon(Icons.chevron_right, _currentPage < totalPages, () => _changePage(_currentPage + 1)),
                 _buildPageIcon(Icons.last_page, _currentPage < totalPages, () => _changePage(totalPages)),
               ],
