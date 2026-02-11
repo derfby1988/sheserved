@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
@@ -212,7 +213,9 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                 _buildTopNavigationBar(context),
                 
                 // Health Stats Card - อยู่กับที่ (ไม่ scroll)
-                _buildHealthStatsCard(context),
+                _isLoadingProfile 
+                  ? _buildShimmerStatsCard(context)
+                  : _buildHealthStatsCard(context),
                 
                 // Content Section - Make it scrollable and center components
                 Expanded(
@@ -230,13 +233,17 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                                 const SizedBox(height: 16),
                                 
                                 // Connected Devices Section
-                                _buildConnectedDevicesSection(context),
+                                _isLoadingProfile
+                                  ? _buildShimmerDevicesSection(context)
+                                  : _buildConnectedDevicesSection(context),
                                 
                                 // Dynamic Spacer to push Health Score to center of remaining space
                                 const Spacer(),
                                 
                                 // Health Score Section
-                                _buildHealthScoreSection(context),
+                                _isLoadingProfile
+                                  ? _buildShimmerScoreSection(context)
+                                  : _buildHealthScoreSection(context),
                                 
                                 // Dynamic Spacer at bottom to keep it centered
                                 const Spacer(),
@@ -944,6 +951,101 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+  /// Shimmer for Health Stats Card
+  Widget _buildShimmerStatsCard(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        height: 180,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+    );
+  }
+
+  /// Shimmer for Connected Devices Section
+  Widget _buildShimmerDevicesSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 150,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: List.generate(4, (index) => Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Shimmer.fromColors(
+                baseColor: Colors.grey[300]!,
+                highlightColor: Colors.grey[100]!,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 40,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Shimmer for Health Score Section
+  Widget _buildShimmerScoreSection(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final circleSize = screenWidth * 0.55;
+
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Center(
+        child: Container(
+          width: circleSize,
+          height: circleSize,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
         ),
       ),
     );

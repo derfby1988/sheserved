@@ -38,6 +38,9 @@ class TlzAppTopBar extends StatelessWidget {
   /// Widget ทางซ้ายสุด (ถ้าไม่กำหนดจะใช้ Hamburger Menu)
   final Widget? leading;
 
+  /// Widget ตรงกลาง (ถ้าไม่กำหนดจะใช้ TlzAnimatedSearchBar)
+  final Widget? middle;
+
   const TlzAppTopBar({
     super.key,
     this.onMenuPressed,
@@ -54,6 +57,7 @@ class TlzAppTopBar extends StatelessWidget {
     this.searchHistory,
     this.searchSuggestions,
     this.leading,
+    this.middle,
   });
 
   /// สร้าง Top Bar สำหรับพื้นหลังสีเข้ม (primary)
@@ -72,6 +76,7 @@ class TlzAppTopBar extends StatelessWidget {
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
+    Widget? middle,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -89,6 +94,7 @@ class TlzAppTopBar extends StatelessWidget {
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
       leading: leading,
+      middle: middle,
     );
   }
 
@@ -108,6 +114,7 @@ class TlzAppTopBar extends StatelessWidget {
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
+    Widget? middle,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -125,6 +132,7 @@ class TlzAppTopBar extends StatelessWidget {
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
       leading: leading,
+      middle: middle,
     );
   }
 
@@ -140,9 +148,9 @@ class TlzAppTopBar extends StatelessWidget {
         
         const SizedBox(width: 12),
         
-        // Animated Search Bar
+        // Animated Search Bar or Custom Middle Widget
         Expanded(
-          child: TlzAnimatedSearchBar(
+          child: middle ?? TlzAnimatedSearchBar(
             hintText: searchHintText,
             theme: searchBarTheme,
             onQRTap: onQRTap,

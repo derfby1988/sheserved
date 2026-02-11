@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../shared/widgets/widgets.dart';
 import '../widgets/widgets.dart';
+import 'package:shimmer/shimmer.dart';
+import '../../../../shared/widgets/widgets.dart';
+import '../../../health/data/models/health_article_models.dart';
 import '../../../../services/service_locator.dart';
 
 /// Home Page - Medical App Design
@@ -20,6 +22,10 @@ class _HomePageState extends State<HomePage> {
   final GlobalKey _headerSectionKey = GlobalKey();
   double _headerSectionHeight = 0;
   bool _showTopBarBorderRadius = false;
+  
+  List<HealthArticle> _recommendedArticles = [];
+  List<HealthArticle> _interestingArticles = [];
+  bool _isLoadingArticles = true;
 
   @override
   void initState() {
@@ -31,6 +37,34 @@ class _HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
     });
+
+    _loadHomeData();
+  }
+
+  Future<void> _loadHomeData() async {
+    setState(() => _isLoadingArticles = true);
+    
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      
+      // Fetch recommended articles
+      final recommended = await repository.getAllArticles(category: 'แนะนำ', pageSize: 5);
+      
+      // Fetch interesting/popular articles
+      final interesting = await repository.getAllArticles(category: 'ยอดนิยม', pageSize: 5);
+      
+      if (mounted) {
+        setState(() {
+          _recommendedArticles = recommended;
+          _interestingArticles = interesting;
+          _isLoadingArticles = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingArticles = false);
+      }
+    }
   }
 
   @override
@@ -118,15 +152,33 @@ class _HomePageState extends State<HomePage> {
                                     child: Column(
                                       children: [
                                         const SizedBox(height: 100),
-                                        HomeRecommendedSection(
-                                          onMoreTap: () => _showSnackBar(context, 'ดูเพิ่มเติม'),
-                                          onItemTap: (index) => _showSnackBar(context, 'เลือกรายการ $index'),
-                                        ),
+                                        _isLoadingArticles
+                                          ? _buildSectionSkeleton()
+                                          : HomeRecommendedSection(
+                                              articles: _recommendedArticles,
+                                              onMoreTap: () => Navigator.pushNamed(context, '/articles'),
+                                              onItemTap: (article) {
+                                                Navigator.pushNamed(
+                                                  context, 
+                                                  '/health/article',
+                                                  arguments: article,
+                                                );
+                                              },
+                                            ),
                                         const SizedBox(height: 24),
-                                        HomeInterestingSection(
-                                          onMoreTap: () => _showSnackBar(context, 'ดูเพิ่มเติม'),
-                                          onItemTap: (index) => _showSnackBar(context, 'เลือกรายการ $index'),
-                                        ),
+                                        _isLoadingArticles
+                                          ? _buildSectionSkeleton()
+                                          : HomeInterestingSection(
+                                              articles: _interestingArticles,
+                                              onMoreTap: () => Navigator.pushNamed(context, '/health/article'),
+                                              onItemTap: (article) {
+                                                Navigator.pushNamed(
+                                                  context, 
+                                                  '/health/article',
+                                                  arguments: article,
+                                                );
+                                              },
+                                            ),
                                         const SizedBox(height: 32),
                                       ],
                                     ),
@@ -141,7 +193,17 @@ class _HomePageState extends State<HomePage> {
                                     headerText: ServiceLocator.instance.currentUser != null 
                                       ? 'ข้อมูลสุขภาพ' 
                                       : 'ตรวจสุขภาพ',
-                                    onHealthTap: () => Navigator.pushNamed(context, '/health/article'),
+                                    onHealthTap: () {
+                                      if (ServiceLocator.instance.currentUser != null) {
+                                        Navigator.pushNamed(context, '/health');
+                                      } else {
+                                        Navigator.pushNamed(
+                                          context, 
+                                          '/login',
+                                          arguments: '/health',
+                                        );
+                                      }
+                                    },
                                     onProfileTap: () => Navigator.pushNamed(
                                       context, 
                                       '/login',
@@ -262,6 +324,52 @@ class _HomePageState extends State<HomePage> {
         onCartTap: () => _showSnackBar(context, 'ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้'),
         onResultTap: (item) => _showSnackBar(context, 'เลือก: ${item['title']}'),
       ),
+    );
+  }
+
+  Widget _buildSectionSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 180,
+              height: 20,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 260,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: 3,
+            itemBuilder: (context, index) {
+              return Shimmer.fromColors(
+                baseColor: Colors.grey[300]!,
+                highlightColor: Colors.grey[100]!,
+                child: Container(
+                  width: 300,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

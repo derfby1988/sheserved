@@ -348,63 +348,40 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   Widget _buildArea1TopBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          const Icon(Icons.menu, color: Colors.white, size: 32),
-          const SizedBox(width: 12),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _showStickyTitle && _article != null
-                ? Container(
-                    key: const ValueKey('sticky_title'),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      _article!.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  )
-                : Container(
-                    key: const ValueKey('search_bar'),
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withOpacity(0.5)),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, color: Colors.white.withOpacity(0.8)),
-                        const Expanded(child: SizedBox()),
-                        Icon(Icons.qr_code_scanner, color: Colors.white.withOpacity(0.8)),
-                      ],
-                    ),
+      child: TlzAppTopBar.onPrimary(
+        notificationCount: 1,
+        onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้')),
+        ),
+        onCartTap: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้')),
+        ),
+        middle: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _showStickyTitle && _article != null
+            ? Container(
+                key: const ValueKey('sticky_title'),
+                padding: const EdgeInsets.only(left: 8),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _article!.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white, 
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 15,
                   ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Stack(
-            children: [
-              const Icon(Icons.notifications_none, color: Colors.white, size: 32),
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(color: Color(0xFFF1AE27), shape: BoxShape.circle),
-                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                  child: const Text('1', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                ),
+              )
+            : TlzAnimatedSearchBar.onPrimary(
+                key: const ValueKey('search_bar'),
+                hintText: 'ค้นหายา ร้านยา หมอ...',
+                onQRTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('QR Scanner จะเปิดใช้งานเร็วๆ นี้')),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 32),
-        ],
+        ),
       ),
     );
   }

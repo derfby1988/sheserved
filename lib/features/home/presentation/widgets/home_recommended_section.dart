@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../health/data/models/health_article_models.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Recommended Section Widget - แนะนำโดยผู้เชี่ยวชาญ
 class HomeRecommendedSection extends StatelessWidget {
   final VoidCallback? onMoreTap;
-  final Function(int index)? onItemTap;
+  final Function(HealthArticle article)? onItemTap;
+  final List<HealthArticle> articles;
 
   const HomeRecommendedSection({
     super.key,
     this.onMoreTap,
     this.onItemTap,
+    required this.articles,
   });
 
   @override
@@ -50,15 +54,16 @@ class HomeRecommendedSection extends StatelessWidget {
         
         // Horizontal Scrollable List
         SizedBox(
-          height: 220,
+          height: 260,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: 5,
+            itemCount: articles.length,
             itemBuilder: (context, index) {
+              final article = articles[index];
               return GestureDetector(
-                onTap: () => onItemTap?.call(index),
-                child: _buildRecommendedCard(index),
+                onTap: () => onItemTap?.call(article),
+                child: _buildRecommendedCard(article),
               );
             },
           ),
@@ -67,7 +72,7 @@ class HomeRecommendedSection extends StatelessWidget {
     );
   }
 
-  Widget _buildRecommendedCard(int index) {
+  Widget _buildRecommendedCard(HealthArticle article) {
     return Container(
       width: 300,
       margin: const EdgeInsets.only(right: 12),
@@ -86,7 +91,7 @@ class HomeRecommendedSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Placeholder Image
+          // Article Image
           Container(
             height: 120,
             decoration: BoxDecoration(
@@ -95,14 +100,22 @@ class HomeRecommendedSection extends StatelessWidget {
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
               ),
+              image: article.imageUrl != null
+                ? DecorationImage(
+                    image: CachedNetworkImageProvider(article.imageUrl!),
+                    fit: BoxFit.cover,
+                  )
+                : null,
             ),
-            child: const Center(
-              child: Icon(
-                Icons.image,
-                size: 48,
-                color: AppColors.textHint,
-              ),
-            ),
+            child: article.imageUrl == null
+                ? const Center(
+                    child: Icon(
+                      Icons.image,
+                      size: 48,
+                      color: AppColors.textHint,
+                    ),
+                  )
+                : null,
           ),
           
           Padding(
@@ -111,7 +124,7 @@ class HomeRecommendedSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'ชื่อผู้เชี่ยวชาญ',
+                  article.title,
                   style: AppTextStyles.bodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -120,7 +133,15 @@ class HomeRecommendedSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'คำอธิบายสั้นๆ',
+                  article.authorName ?? 'ผู้เชี่ยวชาญ',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  article.content,
                   style: AppTextStyles.caption,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

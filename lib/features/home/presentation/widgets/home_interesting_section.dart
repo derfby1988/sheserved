@@ -1,46 +1,23 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../health/data/models/health_article_models.dart';
 
 /// Interesting Section Widget - น่าสนใจ
 class HomeInterestingSection extends StatelessWidget {
   final VoidCallback? onMoreTap;
-  final Function(int index)? onItemTap;
-  final List<InterestingItem> items;
+  final Function(HealthArticle article)? onItemTap;
+  final List<HealthArticle> articles;
 
   const HomeInterestingSection({
     super.key,
     this.onMoreTap,
     this.onItemTap,
-    this.items = const [],
+    required this.articles,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Default items if not provided
-    final displayItems = items.isEmpty
-        ? [
-            const InterestingItem(
-              title: 'จัดอันดับการบริจาค',
-              subtitle: 'สังคม ผู้สูงอายุ',
-              value1: '85%',
-              value2: '99%',
-            ),
-            const InterestingItem(
-              title: 'จัดอันดับการบริจาค',
-              subtitle: 'สังคม ผู้สูงอายุ',
-              value1: '85%',
-              value2: '99%',
-            ),
-            const InterestingItem(
-              title: 'อาสาสมัคร',
-              subtitle: 'ชุมชน สิ่งแวดล้อม',
-              value1: '72%',
-              value2: '88%',
-            ),
-          ]
-        : items;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -80,12 +57,12 @@ class HomeInterestingSection extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              for (int i = 0; i < displayItems.length; i++) ...[
+              for (int i = 0; i < articles.length; i++) ...[
                 GestureDetector(
-                  onTap: () => onItemTap?.call(i),
-                  child: _buildInterestingCard(displayItems[i]),
+                  onTap: () => onItemTap?.call(articles[i]),
+                  child: _buildInterestingCard(articles[i]),
                 ),
-                if (i < displayItems.length - 1) const SizedBox(width: 12),
+                if (i < articles.length - 1) const SizedBox(width: 12),
               ],
             ],
           ),
@@ -94,7 +71,7 @@ class HomeInterestingSection extends StatelessWidget {
     );
   }
 
-  Widget _buildInterestingCard(InterestingItem item) {
+  Widget _buildInterestingCard(HealthArticle article) {
     return Container(
       width: 160, // Fixed width
       padding: const EdgeInsets.all(16),
@@ -112,7 +89,7 @@ class HomeInterestingSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Icon
+          // Icon Container
           Container(
             width: 48,
             height: 48,
@@ -122,7 +99,7 @@ class HomeInterestingSection extends StatelessWidget {
             ),
             child: const Icon(
               Icons.trending_up,
-              color: AppColors.textPrimary,
+              color: AppColors.primary,
               size: 24,
             ),
           ),
@@ -131,7 +108,7 @@ class HomeInterestingSection extends StatelessWidget {
           
           // Title
           Text(
-            item.title,
+            article.title,
             style: AppTextStyles.bodyMedium.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -141,33 +118,47 @@ class HomeInterestingSection extends StatelessWidget {
           
           const SizedBox(height: 4),
           
-          // Subtitle
+          // Subtitle (Category)
           Text(
-            item.subtitle,
-            style: AppTextStyles.caption,
+            article.category ?? 'ทั่วไป',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           
           const SizedBox(height: 8),
           
-          // Values
+          // Values (Likes & Views)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                item.value1,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.favorite, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${article.likeCount}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                item.value2,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.success,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.visibility, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${article.viewCount}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -175,19 +166,4 @@ class HomeInterestingSection extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Data model for Interesting Item
-class InterestingItem {
-  final String title;
-  final String subtitle;
-  final String value1;
-  final String value2;
-
-  const InterestingItem({
-    required this.title,
-    required this.subtitle,
-    required this.value1,
-    required this.value2,
-  });
 }
