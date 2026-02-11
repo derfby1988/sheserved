@@ -20,6 +20,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   bool _showStickyTitle = false;
   String _activeSection = 'article';
   int _currentPage = 1;
+  bool _isContentExpanded = false;
   
   // Data State
   HealthArticle? _article;
@@ -186,86 +187,99 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // AREA 1: Top Navigation Bar (Fixed)
-            _buildArea1TopBar(),
-            
-            // AREA 2: Fixed Control Bar (Fixed)
-            _buildArea2ControlBar(),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFE6B980), // Warm beige/gold top
+              Color(0xFF8EBAE3), // Light blue middle
+              Color(0xFF5D9CDB), // Main blue bottom
+            ],
+            stops: [0.0, 0.2, 0.5],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // AREA 1: Top Navigation Bar
+              _buildArea1TopBar(),
+              
+              // AREA 2: Fixed Control Bar
+              _buildArea2ControlBar(),
 
-            // SCROLLABLE AREA (3, 4, 5) or LOADING/ERROR
-            Expanded(
-              child: _isLoading 
-                ? const HealthArticleSkeleton()
-                : _article == null
-                  ? const Center(child: Text('ไม่พบบทความ', style: TextStyle(fontSize: 18, color: Colors.grey)))
-                  : CustomScrollView(
-                      controller: _scrollController,
-                      slivers: [
-                        // AREA 3: Article Head Section
-                        SliverToBoxAdapter(
-                          key: _articleHeadKey,
-                          child: _buildArea3ArticleHead(),
-                        ),
-      
-                        // AREA 4: Stacked Sticky Product Tagging List
-                        if (_products.isNotEmpty)
-                          SliverPersistentHeader(
-                            pinned: true,
-                            delegate: _ProductSectionDelegate(
-                              products: _products,
-                              key: _productsKey,
-                            ),
-                          ),
-      
-                        // AREA 5: Nested Comment System
-                        SliverToBoxAdapter(
-                          key: _commentsKey,
-                          child: _buildCommentSystemHeader(),
-                        ),
-                        
-                        if (_comments.isEmpty)
-                          const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.all(32.0),
-                              child: Center(child: Text('ยังไม่มีความคิดเห็น', style: TextStyle(color: Colors.grey))),
-                            ),
-                          )
-                        else
-                          SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _buildCommentItem(index),
-                              childCount: _comments.length,
-                            ),
-                          ),
-                        
-                        // Pagination Section (Only show if comments exist)
-                        if (_comments.isNotEmpty)
+              // SCROLLABLE AREA
+              Expanded(
+                child: _isLoading 
+                  ? const HealthArticleSkeleton()
+                  : _article == null
+                    ? const Center(child: Text('ไม่พบบทความ', style: TextStyle(fontSize: 18, color: Colors.white)))
+                    : CustomScrollView(
+                        controller: _scrollController,
+                        slivers: [
+                          // AREA 3: Article Card
                           SliverToBoxAdapter(
-                            child: _buildPaginationSection(),
+                            key: _articleHeadKey,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: _buildArea3ArticleHead(),
+                            ),
                           ),
-                        
-                        // Bottom Padding
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: 80),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+        
+                          // AREA 4: Horizontal Product Pills
+                          if (_products.isNotEmpty)
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _ProductSectionDelegate(
+                                products: _products,
+                                key: _productsKey,
+                              ),
+                            ),
+        
+                          // AREA 5: Comment Section Header
+                          SliverToBoxAdapter(
+                            key: _commentsKey,
+                            child: _buildCommentSystemHeader(),
+                          ),
+                          
+                          if (_comments.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(32.0),
+                                child: Center(child: Text('ยังไม่มีความคิดเห็น', style: TextStyle(color: Colors.white70))),
+                              ),
+                            )
+                          else
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => _buildCommentItem(index),
+                                childCount: _comments.length,
+                              ),
+                            ),
+                          
+                          // Pagination Section
+                          if (_comments.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: _buildPaginationSection(),
+                            ),
+                          
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 80),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
-      // AREA 6: Floating Back to Top Button
       floatingActionButton: _showStickyTitle 
         ? FloatingActionButton(
             onPressed: () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut),
-            backgroundColor: Colors.white.withOpacity(0.8),
-            elevation: 2,
-            mini: true,
-            child: const Icon(Icons.keyboard_arrow_up, color: AppColors.primary),
+            backgroundColor: const Color(0xFF6CB0C5).withOpacity(0.9),
+            elevation: 4,
+            child: const Icon(Icons.arrow_upward, color: Colors.white),
           )
         : null,
     );
@@ -273,84 +287,90 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
 
   Widget _buildArea1TopBar() {
     return Container(
-      color: AppColors.primary,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TlzAppTopBar.onPrimary(
-        notificationCount: 3,
-        searchHintText: 'ค้นหาบทความสุขภาพ...',
-        onNotificationTap: () {},
-        onCartTap: () {},
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          const Icon(Icons.menu, color: Colors.white, size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withOpacity(0.5)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(Icons.search, color: Colors.white.withOpacity(0.8)),
+                  const Expanded(child: SizedBox()),
+                  Icon(Icons.qr_code_scanner, color: Colors.white.withOpacity(0.8)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Stack(
+            children: [
+              const Icon(Icons.notifications_none, color: Colors.white, size: 32),
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(color: Color(0xFFF1AE27), shape: BoxShape.circle),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: const Text('1', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 32),
+        ],
       ),
     );
   }
 
   Widget _buildArea2ControlBar() {
     return Container(
-      height: 56,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      height: 40,
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+            icon: const Icon(Icons.arrow_back, color: Color(0xFFC4E0A5), size: 24),
             onPressed: () => Navigator.pop(context),
           ),
-          if (_showStickyTitle && _article != null)
-            Expanded(
-              child: Text(
-                _article!.title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-              ),
-            )
-          else
-            const Spacer(),
-          // Navigation Shortcuts
-          if (_products.isNotEmpty)
-            _buildNavButton(
-              'สินค้า', 
-              _activeSection == 'products' ? Icons.shopping_bag : Icons.shopping_bag_outlined, 
-              () => _scrollToSection(_productsKey),
-              isActive: _activeSection == 'products',
-            ),
-          _buildNavButton(
-            'คอมเมนต์', 
-            _activeSection == 'comments' ? Icons.chat_bubble : Icons.chat_bubble_outline, 
-            () => _scrollToSection(_commentsKey),
-            isActive: _activeSection == 'comments',
-          ),
-          _buildNavButton(
-            'เกี่ยวกับ', 
-            Icons.info, 
-            () => _scrollToSection(_articleHeadKey),
-            isActive: _activeSection == 'article',
-          ),
-          const SizedBox(width: 8),
+          const Expanded(child: SizedBox()),
+          _buildNavButton('หัวข้อ', _activeSection == 'article'),
+          _buildNavButton('สินค้า', _activeSection == 'products'),
+          _buildNavButton('ความคิดเห็น', _activeSection == 'comments'),
+          _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about'),
         ],
       ),
     );
   }
 
-  Widget _buildNavButton(String label, IconData icon, VoidCallback onTap, {bool isActive = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: TextButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 16, color: isActive ? AppColors.primary : Colors.grey),
-        label: Text(
-          label, 
-          style: TextStyle(
-            fontSize: 12, 
-            color: isActive ? AppColors.primary : Colors.grey,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          )
-        ),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          backgroundColor: isActive ? AppColors.primary.withOpacity(0.05) : Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  Widget _buildNavButton(String label, bool isActive) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: isActive ? Colors.white.withOpacity(0.3) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isActive ? Colors.white : Colors.black87,
+          fontSize: 12,
+          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
         ),
       ),
     );
@@ -409,82 +429,96 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     if (_article == null) return const SizedBox.shrink();
     
     return Container(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6CB0C5).withOpacity(0.8),
+        borderRadius: BorderRadius.circular(32),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Text(
-            _article!.title,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, height: 1.3),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _showAuthorProfile,
-                child: Hero(
-                  tag: 'author_avatar',
-                  child: CircleAvatar(
-                    radius: 24,
-                    backgroundImage: _article!.authorImage != null 
-                        ? NetworkImage(_article!.authorImage!) 
-                        : const NetworkImage('https://i.pravatar.cc/100'),
-                    backgroundColor: Colors.grey.shade200,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          _article!.authorName ?? 'ไม่ระบุชื่อ', 
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.verified, size: 14, color: AppColors.primary),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _article!.title,
+                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'xxx เปิดดู  ${_article!.viewCount} แสดงความคิดเห็น',
+                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_formatDate(_article!.createdAt)} • อ่าน ${_article!.viewCount} • ${_comments.length} คอมเมนต์',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12)
+                    const SizedBox(width: 12),
+                    Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              'พฤหัสบดี 17 เม.ย. 64', // Styled as per image
+                              style: const TextStyle(fontSize: 12, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: const BoxDecoration(
+                            color: Colors.white70,
+                            shape: BoxShape.circle,
+                          ),
+                          child: _article!.authorImage != null 
+                            ? ClipRRect(borderRadius: BorderRadius.circular(24), child: Image.network(_article!.authorImage!))
+                            : const Icon(Icons.person, color: Colors.grey),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.bookmark_border, color: AppColors.primary),
-                onPressed: () {},
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            _article!.content,
-            style: const TextStyle(fontSize: 16, height: 1.6, color: Color(0xFF444444)),
-          ),
-          const SizedBox(height: 16),
-          // Dynamic Article Image
-          if (_article!.imageUrl != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.network(
-                _article!.imageUrl!,
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 200, 
-                  color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                const SizedBox(height: 24),
+                Text(
+                  _article!.content,
+                  maxLines: _isContentExpanded ? null : 5,
+                  overflow: _isContentExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 16, height: 1.6, color: Colors.white.withOpacity(0.8)),
                 ),
-              ),
+                GestureDetector(
+                  onTap: () => setState(() => _isContentExpanded = !_isContentExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      _isContentExpanded ? 'แสดงน้อยลง' : 'detail................................................................',
+                      style: const TextStyle(color: Colors.white54, fontSize: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
-          const SizedBox(height: 24),
+          ),
+          Positioned(
+            top: 0,
+            right: 24,
+            child: CustomPaint(
+              size: const Size(20, 30),
+              painter: _RibbonPainter(),
+            ),
+          ),
         ],
       ),
     );
@@ -495,27 +529,30 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   }
 
   Widget _buildCommentSystemHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'ความคิดเห็น (${_comments.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: 'latest',
-              items: const [
-                DropdownMenuItem(value: 'latest', child: Text('ล่าสุด', style: TextStyle(fontSize: 13))),
-                DropdownMenuItem(value: 'popular', child: Text('ยอดนิยม', style: TextStyle(fontSize: 13))),
-                DropdownMenuItem(value: 'oldest', child: Text('เก่าสุด', style: TextStyle(fontSize: 13))),
-              ],
-              onChanged: (value) {},
-              style: const TextStyle(color: AppColors.primary),
-              icon: const Icon(Icons.sort, size: 18, color: AppColors.primary),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'การแสดงความคิดเห็น',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF4A89C8)),
+              ),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: 'latest',
+                  items: const [
+                    DropdownMenuItem(value: 'latest', child: Text('สนใจมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white70))),
+                  ],
+                  onChanged: (value) {},
+                  dropdownColor: const Color(0xFF5D9CDB),
+                  icon: const Icon(Icons.keyboard_arrow_down, size: 20, color: Color(0xFFF1AE27)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -526,63 +563,95 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     if (index >= _comments.length) return const SizedBox.shrink();
     
     final comment = _comments[index];
-    final bool isReply = comment.parentId != null;
     
     return Container(
-      padding: EdgeInsets.fromLTRB(isReply ? 48 : 20, 12, 20, 12),
-      decoration: BoxDecoration(
-        color: isReply ? Colors.grey.shade50 : Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Stack(
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.grey.shade200,
-                backgroundImage: comment.userImage != null 
-                    ? NetworkImage(comment.userImage!) 
-                    : null,
-                child: comment.userImage == null 
-                    ? const Icon(Icons.person, size: 20, color: Colors.grey)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    comment.username ?? 'ผู้ใช้ทั่วไป', 
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: isReply ? AppColors.primary : Colors.black87,
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white.withOpacity(0.5)),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reply................................................................\n' + comment.content,
+                  style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text('อ่านเพิ่ม', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
+                    const SizedBox(width: 16),
+                    const Text('ตอบกลับ', style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'สมาชิกหมายเลข xxx',
+                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12),
+                          ),
+                          Row(
+                            children: [
+                              const Icon(Icons.access_time, size: 12, color: Color(0xFFF1AE27)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'พฤหัสบดี 18 เม.ย. 64',
+                                style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 10),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Text(_formatTimeAgo(comment.createdAt), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
+                    _buildStatIcon(Icons.favorite, '${comment.likeCount}'),
+                    _buildStatIcon(Icons.remove_circle, '78'),
+                    _buildStatIcon(Icons.cached, '12'),
+                    _buildStatIcon(Icons.bookmark, '34'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1C40F).withOpacity(0.8),
+                borderRadius: BorderRadius.circular(4),
               ),
-              const Spacer(),
-              const Icon(Icons.more_vert, size: 18, color: Colors.grey),
-            ],
+              child: Text(
+                'ความคิดเห็นที่ ${index + 1}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            comment.content,
-            style: const TextStyle(fontSize: 14, height: 1.5, color: Colors.black87),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildInteractionButton(Icons.favorite_border, '${comment.likeCount}', () {}),
-              const SizedBox(width: 20),
-              _buildInteractionButton(Icons.chat_bubble_outline, 'ตอบกลับ', () => _handleReply(comment.id)),
-              const Spacer(),
-              if (!isReply) _buildInteractionButton(Icons.share_outlined, '', () {}),
-            ],
-          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatIcon(IconData icon, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 2),
+          Text(value, style: const TextStyle(fontSize: 10, color: Colors.white)),
         ],
       ),
     );
@@ -828,143 +897,69 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       key: key,
-      height: 120,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: overlapsContent 
-          ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))]
-          : null,
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Text('สินค้าที่เกี่ยวข้อง', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                SizedBox(width: 8),
-                Icon(Icons.shopping_bag, size: 14, color: AppColors.primary),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: products.isEmpty 
-              ? const Padding(
-                  padding: EdgeInsets.only(left: 20),
-                  child: Text('ไม่มีสินค้าที่แนะนำ', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                )
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: products.length,
-                  itemBuilder: (context, index) {
-                    final product = products[index];
-                    return _buildProductCard(
-                      product.name, 
-                      product.imageUrl ?? '', 
-                      _getTagColor(product.tagType), 
-                      product.tagType == 'author' ? 'ผู้เชี่ยวชาญ' : (product.tagType == 'sponsor' ? 'สปอนเซอร์' : 'ผู้ใช้')
-                    );
-                  },
-                ),
-          ),
-        ],
-      ),
-    );
-  }
+      height: 60,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: products.isEmpty ? 3 : products.length,
+        itemBuilder: (context, index) {
+          final colors = [const Color(0xFFCDE4F5), const Color(0xFFFEF3D3), const Color(0xFFFDE4D3)];
+          final textColors = [const Color(0xFF5D9CDB), const Color(0xFFF1AE27), const Color(0xFFD3856E)];
+          
+          String label = 'รายการ ${index + 1}';
+          if (index < products.length) label = products[index].name;
 
-  Color _getTagColor(String type) {
-    switch (type) {
-      case 'author': return const Color(0xFF6CB0C5);
-      case 'sponsor': return const Color(0xFFF1AE27);
-      default: return const Color(0xFFD3856E);
-    }
-  }
-
-  Widget _buildProductCard(String name, String imageUrl, Color tagColor, String tagLabel) {
-    return Container(
-      width: 180,
-      margin: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Row(
-          children: [
-            Container(
-              width: 6,
-              color: tagColor,
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            decoration: BoxDecoration(
+              color: colors[index % colors.length].withOpacity(0.9),
+              borderRadius: BorderRadius.circular(20),
             ),
-            if (imageUrl.isNotEmpty)
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(imageUrl, fit: BoxFit.cover),
-                  ),
-                ),
-              )
-            else
-              Container(
-                width: 60,
-                height: 60,
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.shopping_bag, size: 20, color: Colors.grey),
-              ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 10, top: 10, bottom: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: tagColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        tagLabel,
-                        style: TextStyle(fontSize: 9, color: tagColor, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: textColors[index % textColors.length],
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
   @override
-  double get maxExtent => 120;
+  double get maxExtent => 60;
 
   @override
-  double get minExtent => 120;
+  double get minExtent => 60;
 
   @override
   bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) => true;
+}
+
+class _RibbonPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFF1AE27)
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    path.moveTo(0, 0);
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width, size.height);
+    path.lineTo(size.width / 2, size.height * 0.8);
+    path.lineTo(0, size.height);
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
