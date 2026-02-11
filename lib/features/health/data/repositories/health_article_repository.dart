@@ -125,14 +125,22 @@ class HealthArticleRepository {
     }
   }
 
-  /// Fetch comments for an article with user details
-  Future<List<HealthArticleComment>> getArticleComments(String articleId) async {
+  /// Fetch comments for an article with user details and pagination
+  Future<List<HealthArticleComment>> getArticleComments(
+    String articleId, {
+    int page = 1,
+    int pageSize = 10,
+  }) async {
     try {
+      final from = (page - 1) * pageSize;
+      final to = from + pageSize - 1;
+
       final response = await _client
           .from('health_article_comments')
           .select('*, users(username, profile_image_url)')
           .eq('article_id', articleId)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .range(from, to);
 
       if (response != null && (response as List).isNotEmpty) {
         return (response as List)
@@ -168,6 +176,22 @@ class HealthArticleRepository {
       return [];
     } catch (e) {
       return [];
+    }
+  }
+
+  /// Get total comment count for an article
+  Future<int> getArticleCommentCount(String articleId) async {
+    try {
+      final response = await _client
+          .from('health_article_comments')
+          .select('id')
+          .eq('article_id', articleId);
+      
+      return (response as List).length;
+    } catch (e) {
+      // Fallback to 0 on error, as per the instruction to use list length as a reliable fallback.
+      // The original instruction's code snippet for this part was malformed and contained UI logic.
+      return 0;
     }
   }
 

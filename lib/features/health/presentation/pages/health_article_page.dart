@@ -21,12 +21,15 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   String _activeSection = 'article';
   int _currentPage = 1;
   bool _isContentExpanded = false;
+  bool _isTitleExpanded = false;
   
   // Data State
   HealthArticle? _article;
   List<HealthArticleProduct> _products = [];
   List<HealthArticleComment> _comments = [];
+  int _totalComments = 0;
   bool _isLoading = true;
+  bool _isCommentsLoading = false;
 
   // Keys for Section Navigation
   final GlobalKey _articleHeadKey = GlobalKey();
@@ -60,20 +63,25 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
       final article = await repository.getLatestArticle();
       
       if (article != null) {
-        // 2. Fetch Related Data
-        // Run in parallel for better performance
+        // 2. Fetch Products and Total Comments
         final results = await Future.wait([
           repository.getArticleProducts(article.id),
-          repository.getArticleComments(article.id),
+          repository.getArticleCommentCount(article.id),
         ]);
         
         if (mounted) {
           setState(() {
             _article = article;
             _products = results[0] as List<HealthArticleProduct>;
-            _comments = results[1] as List<HealthArticleComment>;
-            _isLoading = false;
+            _totalComments = results[1] as int;
           });
+          
+          // 3. Fetch Initial Page of Comments
+          await _fetchComments(1);
+          
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
         }
       } else {
         if (mounted) {
@@ -86,6 +94,40 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _fetchComments(int page) async {
+    if (_article == null) return;
+    
+    setState(() => _isCommentsLoading = true);
+    
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      final comments = await repository.getArticleComments(
+        _article!.id, 
+        page: page,
+        pageSize: 10,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _comments = comments;
+          _currentPage = page;
+          _isCommentsLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching comments: $e');
+      if (mounted) {
+        setState(() => _isCommentsLoading = false);
+      }
+    }
+  }
+
+  void _changePage(int page) {
+    if (page == _currentPage || page < 1) return;
+    _fetchComments(page);
+    _scrollToSection(_commentsKey);
   }
 
   @override
@@ -159,16 +201,16 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     
     // Determine current section based on scroll offset or context positions
     if (_commentsKey.currentContext != null) {
-      final RenderBox? commentsBox = _commentsKey.currentContext!.findRenderObject() as RenderBox?;
-      if (commentsBox != null) {
-        final position = commentsBox.localToGlobal(Offset.zero).dy;
+      final renderObject = _commentsKey.currentContext!.findRenderObject();
+      if (renderObject is RenderBox) {
+        final position = renderObject.localToGlobal(Offset.zero).dy;
         // If comments section top is near the control bar
         if (position < 150) {
           newSection = 'comments';
         } else if (_productsKey.currentContext != null) {
-          final RenderBox? productsBox = _productsKey.currentContext!.findRenderObject() as RenderBox?;
-          if (productsBox != null) {
-            final prodPosition = productsBox.localToGlobal(Offset.zero).dy;
+          final prodRenderObject = _productsKey.currentContext!.findRenderObject();
+          if (prodRenderObject is RenderBox) {
+            final prodPosition = prodRenderObject.localToGlobal(Offset.zero).dy;
             if (prodPosition < 150) {
               newSection = 'products';
             }
@@ -243,26 +285,33 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                             child: _buildCommentSystemHeader(),
                           ),
                           
-                          if (_comments.isEmpty)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.all(32.0),
-                                child: Center(child: Text('ยังไม่มีความคิดเห็น', style: TextStyle(color: Colors.white70))),
-                              ),
-                            )
-                          else
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) => _buildCommentItem(index),
-                                childCount: _comments.length,
-                              ),
+                          if (_isCommentsLoading)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.all(40.0),
+                              child: Center(child: CircularProgressIndicator(color: Colors.white)),
                             ),
-                          
-                          // Pagination Section
-                          if (_comments.isNotEmpty)
-                            SliverToBoxAdapter(
-                              child: _buildPaginationSection(),
+                          )
+                        else if (_comments.isEmpty)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.all(32.0),
+                              child: Center(child: Text('ยังไม่มีความคิดเห็น', style: TextStyle(color: Colors.white70))),
                             ),
+                          )
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildCommentItem(index),
+                              childCount: _comments.length,
+                            ),
+                          ),
+                        
+                        // Pagination Section (Only show if total comments > pageSize)
+                        if (_totalComments > 10)
+                          SliverToBoxAdapter(
+                            child: _buildPaginationSection(),
+                          ),
                           
                           const SliverToBoxAdapter(
                             child: SizedBox(height: 80),
@@ -449,9 +498,14 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _article!.title,
-                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                          GestureDetector(
+                            onTap: () => setState(() => _isTitleExpanded = !_isTitleExpanded),
+                            child: Text(
+                              _article!.title,
+                              maxLines: _isTitleExpanded ? null : 2,
+                              overflow: _isTitleExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -741,8 +795,8 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   }
 
   Widget _buildPaginationSection() {
-    if (_comments.isEmpty) return const SizedBox.shrink();
-    const int totalPages = 10;
+    final int totalPages = (_totalComments / 10).ceil();
+    if (totalPages <= 1) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
@@ -753,24 +807,17 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildPageIcon(Icons.first_page, _currentPage > 1, () {
-                  setState(() => _currentPage = 1);
-                }),
-                _buildPageIcon(Icons.chevron_left, _currentPage > 1, () {
-                  setState(() => _currentPage--);
-                }),
-                _buildPageButton('1', _currentPage == 1, () => setState(() => _currentPage = 1)),
+                _buildPageIcon(Icons.first_page, _currentPage > 1, () => _changePage(1)),
+                _buildPageIcon(Icons.chevron_left, _currentPage > 1, () => _changePage(_currentPage - 1)),
+                _buildPageButton('1', _currentPage == 1, () => _changePage(1)),
                 if (_currentPage > 3) _buildPageButton('...', false, null),
                 if (_currentPage > 2 && _currentPage < totalPages - 1) 
                   _buildPageButton(_currentPage.toString(), true, null),
                 if (_currentPage < totalPages - 2) _buildPageButton('...', false, null),
-                _buildPageButton(totalPages.toString(), _currentPage == totalPages, () => setState(() => _currentPage = totalPages)),
-                _buildPageIcon(Icons.chevron_right, _currentPage < totalPages, () {
-                  setState(() => _currentPage++);
-                }),
-                _buildPageIcon(Icons.last_page, _currentPage < totalPages, () {
-                  setState(() => _currentPage = totalPages);
-                }),
+                if (totalPages > 1)
+                  _buildPageButton(totalPages.toString(), _currentPage == totalPages, () => _changePage(totalPages)),
+                _buildPageIcon(Icons.chevron_right, _currentPage < totalPages, () => _changePage(_currentPage + 1)),
+                _buildPageIcon(Icons.last_page, _currentPage < totalPages, () => _changePage(totalPages)),
               ],
             ),
           ),
@@ -779,33 +826,32 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'แสดง ${(_currentPage - 1) * 10 + 1}-${_currentPage * 10} จากทั้งหมด ${totalPages * 10} ความคิดเห็น', 
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                'แสดง ${(_currentPage - 1) * 10 + 1}-${(_currentPage * 10).clamp(0, _totalComments)} จากทั้งหมด $_totalComments ความคิดเห็น', 
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(width: 16),
               Container(
                 height: 32,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(color: Colors.white30),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
                     value: _currentPage,
+                    dropdownColor: const Color(0xFF5D9CDB),
                     items: List.generate(totalPages, (index) => index + 1)
                         .map((page) => DropdownMenuItem(
                               value: page,
-                              child: Text('หน้า $page', style: const TextStyle(fontSize: 12)),
+                              child: Text('หน้า $page', style: const TextStyle(fontSize: 12, color: Colors.white)),
                             ))
                         .toList(),
                     onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _currentPage = value);
-                      }
+                      if (value != null) _changePage(value);
                     },
-                    icon: const Icon(Icons.arrow_drop_down, size: 16),
-                    style: const TextStyle(color: AppColors.primary),
+                    icon: const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white),
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
               ),
