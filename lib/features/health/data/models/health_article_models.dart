@@ -9,6 +9,7 @@ class HealthArticle {
   final int likeCount;
   final int shareCount;
   final int bookmarkCount;
+  final int commentCount; // Added
   final String? category;
   final String? imageUrl;
   final DateTime createdAt;
@@ -27,6 +28,7 @@ class HealthArticle {
     this.likeCount = 0,
     this.shareCount = 0,
     this.bookmarkCount = 0,
+    this.commentCount = 0, // Added
     this.category,
     this.imageUrl,
     required this.createdAt,
@@ -48,6 +50,7 @@ class HealthArticle {
       likeCount: json['like_count'] ?? 0,
       shareCount: json['share_count'] ?? 0,
       bookmarkCount: json['bookmark_count'] ?? 0,
+      commentCount: json['comment_count'] ?? 0,
       category: json['category'],
       imageUrl: json['image_url'],
       createdAt: DateTime.parse(json['created_at']),
@@ -67,6 +70,7 @@ class HealthArticle {
       'like_count': likeCount,
       'share_count': shareCount,
       'bookmark_count': bookmarkCount,
+      'comment_count': commentCount, // Added
       'category': category,
       'image_url': imageUrl,
       'created_at': createdAt.toIso8601String(),
@@ -85,6 +89,7 @@ class HealthArticle {
     int? likeCount,
     int? shareCount,
     int? bookmarkCount,
+    int? commentCount, // Added
     String? category,
     String? imageUrl,
     DateTime? createdAt,
@@ -103,6 +108,7 @@ class HealthArticle {
       likeCount: likeCount ?? this.likeCount,
       shareCount: shareCount ?? this.shareCount,
       bookmarkCount: bookmarkCount ?? this.bookmarkCount,
+      commentCount: commentCount ?? this.commentCount, // Added
       category: category ?? this.category,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,

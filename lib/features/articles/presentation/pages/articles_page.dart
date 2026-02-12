@@ -337,13 +337,17 @@ class _ArticlesPageState extends State<ArticlesPage> {
 
   Widget _buildArticleCard(BuildContext context, HealthArticle article) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => HealthArticlePage(article: article),
           ),
         );
+        // Refresh when returning to update like counts/bookmark status
+        if (mounted) {
+          _loadInitialArticles();
+        }
       },
       child: Container(
         decoration: BoxDecoration(
@@ -412,7 +416,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${article.viewCount}', 
+                        '${article.commentCount}', 
                         style: AppTextStyles.caption.copyWith(
                           color: Colors.white,
                         ),

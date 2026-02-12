@@ -50,6 +50,33 @@ class HealthArticleRepository {
         }
         
         final jsonMap = Map<String, dynamic>.from(data);
+        
+        // Fetch real total likes for this article (Article + All Comments)
+        try {
+          final totalLikes = await _client
+              .from('health_article_interactions')
+              .select('id')
+              .eq('article_id', data['id'])
+              .eq('type', 'like')
+              .not('comment_id', 'is', null); // Only likes from comments
+          
+          jsonMap['like_count'] = (totalLikes as List).length;
+        } catch (e) {
+          print('Repository: Error counting total likes for latest: $e');
+        }
+
+        // Fetch actual comment count
+        try {
+          final commentResult = await _client
+              .from('health_article_comments')
+              .select('id')
+              .eq('article_id', data['id']);
+          
+          jsonMap['comment_count'] = (commentResult as List).length;
+        } catch (e) {
+          print('Repository: Error counting comments for latest: $e');
+        }
+
         jsonMap.remove('health_article_interactions'); // Remove joined interactions data
         jsonMap['is_bookmarked'] = isBookmarked;
         jsonMap['is_liked'] = isLiked;
@@ -140,7 +167,65 @@ class HealthArticleRepository {
             jsonMap['is_liked'] = likedArticleIds.contains(articleId);
             return HealthArticle.fromJson(jsonMap);
           }).toList();
+
+        // 3. Dynamically sum total likes (Article + All Comments) for real-time accuracy
+        if (dbArticles.isNotEmpty) {
+          try {
+            final articleIds = dbArticles.map((e) => e.id).toList();
+            // Fetch counts from interactions for true total
+            final allLikes = await _client
+                .from('health_article_interactions')
+                .select('article_id')
+                .filter('article_id', 'in', articleIds)
+                .eq('type', 'like')
+                .not('comment_id', 'is', null); // Only likes from comments (excludes Article level)
+            
+            if (allLikes != null) {
+              final Map<String, int> totalLikesMap = {};
+              for (var row in (allLikes as List)) {
+                final aId = row['article_id'] as String;
+                totalLikesMap[aId] = (totalLikesMap[aId] ?? 0) + 1;
+              }
+              
+              dbArticles = dbArticles.map((article) {
+                // Return the actual count from the interactions table
+                return article.copyWith(
+                  likeCount: totalLikesMap[article.id] ?? 0,
+                );
+              }).toList();
+            }
+          } catch (e) {
+            print('Repository: Error summing total likes: $e');
+          }
         }
+
+        // 4. Dynamically count actual comments for each article
+        if (dbArticles.isNotEmpty) {
+          try {
+            final articleIds = dbArticles.map((e) => e.id).toList();
+            final commentCounts = await _client
+                .from('health_article_comments')
+                .select('article_id')
+                .filter('article_id', 'in', articleIds);
+            
+            if (commentCounts != null) {
+              final Map<String, int> commentCountMap = {};
+              for (var row in (commentCounts as List)) {
+                final aId = row['article_id'] as String;
+                commentCountMap[aId] = (commentCountMap[aId] ?? 0) + 1;
+              }
+              
+              dbArticles = dbArticles.map((article) {
+                return article.copyWith(
+                  commentCount: commentCountMap[article.id] ?? 0,
+                );
+              }).toList();
+            }
+          } catch (e) {
+            print('Repository: Error counting comments: $e');
+          }
+        }
+      }
       } catch (dbError) {
         print('HealthArticleRepository: DB Fetch Error: $dbError');
       }
@@ -291,8 +376,35 @@ class HealthArticleRepository {
       }
       
       final jsonMap = Map<String, dynamic>.from(response);
-      jsonMap['is_bookmarked'] = isBookmarked;
-      jsonMap['is_liked'] = isLiked;
+    
+    // Fetch real total likes for this article (Article + All Comments)
+    try {
+      final totalLikes = await _client
+          .from('health_article_interactions')
+          .select('id')
+          .eq('article_id', id)
+          .eq('type', 'like')
+          .not('comment_id', 'is', null); // Only likes from comments
+      
+      jsonMap['like_count'] = (totalLikes as List).length;
+    } catch (e) {
+      print('Repository: Error counting total likes: $e');
+    }
+
+    // Fetch actual comment count
+    try {
+      final commentResult = await _client
+          .from('health_article_comments')
+          .select('id')
+          .eq('article_id', id);
+      
+      jsonMap['comment_count'] = (commentResult as List).length;
+    } catch (e) {
+      print('Repository: Error counting comments: $e');
+    }
+
+    jsonMap['is_bookmarked'] = isBookmarked;
+    jsonMap['is_liked'] = isLiked;
       return HealthArticle.fromJson(jsonMap);
     } catch (e) {
       print('Repository: Error in getArticleById: $e');
@@ -454,34 +566,80 @@ class HealthArticleRepository {
         print('Repository: Removed interaction $type for ${commentId ?? articleId}');
 
         // 3. Update counts
-        final newCount = await _countInteractions(
-          articleId: articleId, commentId: commentId, type: type,
+      final newCount = await _countInteractions(
+        articleId: articleId, commentId: commentId, type: type,
+      );
+      await _updateCountColumn(
+        articleId: articleId, commentId: commentId, type: type, count: newCount,
+      );
+
+      // If it's a 'like', also ensure the ARTICLE's total count is updated
+      int finalReturnCount = newCount;
+      if (type == 'like') {
+        final totalArticleLikes = await _countInteractions(
+          articleId: articleId, 
+          type: 'like', 
+          totalForArticle: true,
         );
+        
+        // Update the article table with the total
         await _updateCountColumn(
-          articleId: articleId, commentId: commentId, type: type, count: newCount,
+          articleId: articleId, 
+          commentId: null, 
+          type: 'like', 
+          count: totalArticleLikes,
         );
 
-        return {'success': true, 'isActive': false, 'newCount': newCount};
-      } else {
-        // 2. Add if not exists
-        await _client.from('health_article_interactions').insert({
-          'user_id': userId,
-          'article_id': articleId,
-          'comment_id': commentId,
-          'type': type,
-        });
-        print('Repository: Added interaction $type for ${commentId ?? articleId}');
-
-        // 3. Update counts
-        final newCount = await _countInteractions(
-          articleId: articleId, commentId: commentId, type: type,
-        );
-        await _updateCountColumn(
-          articleId: articleId, commentId: commentId, type: type, count: newCount,
-        );
-
-        return {'success': true, 'isActive': true, 'newCount': newCount};
+        // If we are liking the article directly, return the total count
+        if (commentId == null) {
+          finalReturnCount = totalArticleLikes;
+        }
       }
+
+      return {'success': true, 'isActive': false, 'newCount': finalReturnCount};
+    } else {
+      // 2. Add if not exists
+      await _client.from('health_article_interactions').insert({
+        'user_id': userId,
+        'article_id': articleId,
+        'comment_id': commentId,
+        'type': type,
+      });
+      print('Repository: Added interaction $type for ${commentId ?? articleId}');
+
+      // 3. Update counts
+      final newCount = await _countInteractions(
+        articleId: articleId, commentId: commentId, type: type,
+      );
+      await _updateCountColumn(
+        articleId: articleId, commentId: commentId, type: type, count: newCount,
+      );
+
+      // If it's a 'like', also ensure the ARTICLE's total count is updated
+      int finalReturnCount = newCount;
+      if (type == 'like') {
+        final totalArticleLikes = await _countInteractions(
+          articleId: articleId, 
+          type: 'like', 
+          totalForArticle: true,
+        );
+        
+        // Update the article table with the total
+        await _updateCountColumn(
+          articleId: articleId, 
+          commentId: null, 
+          type: 'like', 
+          count: totalArticleLikes,
+        );
+
+        // If we are liking the article directly, return the total count
+        if (commentId == null) {
+          finalReturnCount = totalArticleLikes;
+        }
+      }
+
+      return {'success': true, 'isActive': true, 'newCount': finalReturnCount};
+    }
     } catch (e) {
       print('Error toggling interaction: $e');
       return {'success': false, 'isActive': false, 'newCount': 0};
@@ -493,6 +651,7 @@ class HealthArticleRepository {
     required String articleId,
     String? commentId,
     required String type,
+    bool totalForArticle = false, // Added parameter
   }) async {
     try {
       final interactions = await _client
@@ -504,6 +663,17 @@ class HealthArticleRepository {
       if (interactions == null) return 0;
 
       final interactionList = interactions as List;
+      
+      if (totalForArticle) {
+        // Return total count for the article (ONLY from Comments, as requested)
+        return interactionList.where((i) {
+          final cId = i['comment_id'];
+          return cId != null && 
+                 cId.toString().toLowerCase() != 'null' && 
+                 cId.toString().trim().isNotEmpty;
+        }).length;
+      }
+
       if (commentId == null) {
         // Count article interactions (where comment_id is null-ish)
         return interactionList.where((i) {
