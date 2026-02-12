@@ -225,6 +225,22 @@ class HealthArticleRepository {
             print('Repository: Error counting comments: $e');
           }
         }
+
+        // 5. Final Sorting and Filtering based on requested filter
+        if (category == 'ยอดนิยม') {
+          // Filter out articles with 0 likes
+          dbArticles = dbArticles.where((a) => a.likeCount > 0).toList();
+          // Sort by total likes (sum of likes from all comments)
+          dbArticles.sort((a, b) => b.likeCount.compareTo(a.likeCount));
+        } else if (category == 'แนะนำ') {
+          // Filter out articles with 0 comments
+          dbArticles = dbArticles.where((a) => a.commentCount > 0).toList();
+          // Sort by total comment count
+          dbArticles.sort((a, b) => b.commentCount.compareTo(a.commentCount));
+        } else {
+          // Default sorting (Latest): Includes 'ล่าสุด', 'ทั้งหมด', and specific topic categories
+          dbArticles.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
       }
       } catch (dbError) {
         print('HealthArticleRepository: DB Fetch Error: $dbError');
@@ -784,8 +800,23 @@ class HealthArticleRepository {
           .select('*, users(username, profile_image_url)')
           .single();
 
-      return HealthArticleComment.fromJson(response);
+      if (response != null) {
+        // Update the comment count in the health_articles table for fast sorting later
+        try {
+          final newCount = await getArticleCommentCount(articleId);
+          await _client
+              .from('health_articles')
+              .update({'comment_count': newCount})
+              .eq('id', articleId);
+        } catch (updateError) {
+          print('Repository: Failed to sync comment count to article table: $updateError');
+        }
+        
+        return HealthArticleComment.fromJson(response);
+      }
+      return null;
     } catch (e) {
+      print('Repository: Error posting comment: $e');
       return null;
     }
   }

@@ -19,9 +19,9 @@ class ArticlesPage extends StatefulWidget {
 }
 
 class _ArticlesPageState extends State<ArticlesPage> {
-  String _selectedFilter = 'ทั้งหมด';
+  String _selectedFilter = 'ล่าสุด';
   String _searchQuery = '';
-  final List<String> _filters = ['ทั้งหมด', 'ยอดนิยม', 'ล่าสุด', 'แนะนำ'];
+  final List<String> _filters = ['ล่าสุด', 'ยอดนิยม', 'แนะนำ'];
   
   final List<HealthArticle> _articles = [];
   final ScrollController _scrollController = ScrollController();
@@ -243,23 +243,22 @@ class _ArticlesPageState extends State<ArticlesPage> {
         ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Text(
-              'หมวดหมู่: $_selectedFilter',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
+          Text(
+            _selectedFilter,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w500,
             ),
           ),
+          const SizedBox(width: 4),
           // Filter Icon
           PopupMenuButton<String>(
             icon: Icon(
               Icons.tune,
               color: AppColors.textSecondary,
+              size: 20,
             ),
             onSelected: _onFilterChanged,
             itemBuilder: (context) => _filters.map((filter) {
