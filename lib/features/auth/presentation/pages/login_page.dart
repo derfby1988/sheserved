@@ -499,11 +499,18 @@ class _LoginPageState extends State<LoginPage>
           if (!mounted) return;
           
           // Get the redirect argument if it exists
-          final redirectRoute = ModalRoute.of(context)?.settings.arguments as String?;
+          final args = ModalRoute.of(context)?.settings.arguments;
           
-          if (redirectRoute != null && redirectRoute.isNotEmpty) {
-            // If there's a redirect route, go there and replace the login page
-            Navigator.pushReplacementNamed(context, redirectRoute);
+          if (args is String && args.isNotEmpty) {
+            Navigator.pushReplacementNamed(context, args);
+          } else if (args is Map<String, dynamic>) {
+            final route = args['route'] as String?;
+            final routeArgs = args['arguments'];
+            if (route != null) {
+              Navigator.pushReplacementNamed(context, route, arguments: routeArgs);
+            } else {
+              Navigator.pop(context);
+            }
           } else if (Navigator.canPop(context)) {
             // If no redirect but can pop, go back to previous page
             Navigator.pop(context);

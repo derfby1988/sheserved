@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -8,12 +9,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 class HomeRecommendedSection extends StatelessWidget {
   final VoidCallback? onMoreTap;
   final Function(HealthArticle article)? onItemTap;
+  final Function(HealthArticle article)? onBookmarkTap;
   final List<HealthArticle> articles;
 
   const HomeRecommendedSection({
     super.key,
     this.onMoreTap,
     this.onItemTap,
+    this.onBookmarkTap,
     required this.articles,
   });
 
@@ -107,15 +110,27 @@ class HomeRecommendedSection extends StatelessWidget {
                   )
                 : null,
             ),
-            child: article.imageUrl == null
-                ? const Center(
+            child: Stack(
+              children: [
+                if (article.imageUrl == null)
+                  const Center(
                     child: Icon(
                       Icons.image,
                       size: 48,
                       color: AppColors.textHint,
                     ),
-                  )
-                : null,
+                  ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: RibbonBookmark(
+                    isBookmarked: article.isBookmarked,
+                    inactiveColor: Colors.black26,
+                    onTap: () => onBookmarkTap?.call(article),
+                  ),
+                ),
+              ],
+            ),
           ),
           
           Padding(

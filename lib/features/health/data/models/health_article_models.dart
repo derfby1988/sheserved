@@ -13,6 +13,7 @@ class HealthArticle {
   final String? imageUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool isBookmarked;
 
   HealthArticle({
     required this.id,
@@ -29,6 +30,7 @@ class HealthArticle {
     this.imageUrl,
     required this.createdAt,
     required this.updatedAt,
+    this.isBookmarked = false,
   });
 
   factory HealthArticle.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,7 @@ class HealthArticle {
       imageUrl: json['image_url'],
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
+      isBookmarked: json['is_bookmarked'] == true,
     );
   }
 
@@ -83,6 +86,7 @@ class HealthArticle {
     String? imageUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isBookmarked,
   }) {
     return HealthArticle(
       id: id ?? this.id,
@@ -99,6 +103,7 @@ class HealthArticle {
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isBookmarked: isBookmarked ?? this.isBookmarked,
     );
   }
 }
@@ -153,6 +158,8 @@ class HealthArticleComment {
   final int viewCount;
   final int likeCount;
   final DateTime createdAt;
+  final bool isLiked; // Added
+  final bool isBookmarked; // Added
 
   HealthArticleComment({
     required this.id,
@@ -166,10 +173,18 @@ class HealthArticleComment {
     this.viewCount = 0,
     this.likeCount = 0,
     required this.createdAt,
+    this.isLiked = false, // Added
+    this.isBookmarked = false, // Added
   });
 
   factory HealthArticleComment.fromJson(Map<String, dynamic> json) {
     final userData = json['users'] as Map<String, dynamic>?;
+    
+    // Check if the comment is liked by the current user 
+    // This assumes the API returns a 'is_liked' boolean or we check if interactions list contains current user
+    // For now, we look for a field 'is_liked' which we will populate in the repository
+    final isLiked = json['is_liked'] == true;
+
     return HealthArticleComment(
       id: json['id'],
       articleId: json['article_id'],
@@ -182,6 +197,40 @@ class HealthArticleComment {
       viewCount: json['view_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       createdAt: DateTime.parse(json['created_at']),
+      isLiked: json['is_liked'] == true,
+      isBookmarked: json['is_bookmarked'] == true,
+    );
+  }
+
+  HealthArticleComment copyWith({
+    String? id,
+    String? articleId,
+    String? userId,
+    String? username,
+    String? userImage,
+    String? parentId,
+    String? content,
+    int? commentNumber,
+    int? viewCount,
+    int? likeCount,
+    DateTime? createdAt,
+    bool? isLiked,
+    bool? isBookmarked,
+  }) {
+    return HealthArticleComment(
+      id: id ?? this.id,
+      articleId: articleId ?? this.articleId,
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      userImage: userImage ?? this.userImage,
+      parentId: parentId ?? this.parentId,
+      content: content ?? this.content,
+      commentNumber: commentNumber ?? this.commentNumber,
+      viewCount: viewCount ?? this.viewCount,
+      likeCount: likeCount ?? this.likeCount,
+      createdAt: createdAt ?? this.createdAt,
+      isLiked: isLiked ?? this.isLiked,
+      isBookmarked: isBookmarked ?? this.isBookmarked,
     );
   }
 }

@@ -42,7 +42,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadHomeData() async {
-    setState(() => _isLoadingArticles = true);
+    // Only show loading indicator if it's the initial load to avoid flashing on return
+    if (_recommendedArticles.isEmpty) {
+      setState(() => _isLoadingArticles = true);
+    }
     
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
@@ -64,6 +67,45 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() => _isLoadingArticles = false);
       }
+    }
+  }
+
+  Future<void> _onToggleBookmark(HealthArticle article) async {
+    final currentUser = ServiceLocator.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
+      );
+      // Pass null as argument or handle redirection properly
+      Navigator.pushNamed(context, '/login'); 
+      return;
+    }
+    
+    // Optimistic Update
+    setState(() {
+      final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+      if (recIndex != -1) {
+        final current = _recommendedArticles[recIndex];
+        _recommendedArticles[recIndex] = current.copyWith(isBookmarked: !current.isBookmarked);
+      }
+      
+      final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+      if (intIndex != -1) {
+        final current = _interestingArticles[intIndex];
+        _interestingArticles[intIndex] = current.copyWith(isBookmarked: !current.isBookmarked);
+      }
+    });
+
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      await repository.toggleInteraction(
+        articleId: article.id,
+        userId: currentUser.id,
+        type: 'bookmark',
+      );
+    } catch (e) {
+      // Revert or reload on error
+      _loadHomeData();
     }
   }
 
@@ -157,13 +199,15 @@ class _HomePageState extends State<HomePage> {
                                           : HomeRecommendedSection(
                                               articles: _recommendedArticles,
                                               onMoreTap: () => Navigator.pushNamed(context, '/articles'),
-                                              onItemTap: (article) {
-                                                Navigator.pushNamed(
+                                              onItemTap: (article) async {
+                                                await Navigator.pushNamed(
                                                   context, 
                                                   '/health/article',
                                                   arguments: article,
                                                 );
+                                                _loadHomeData();
                                               },
+                                              onBookmarkTap: _onToggleBookmark,
                                             ),
                                         const SizedBox(height: 24),
                                         _isLoadingArticles
@@ -171,13 +215,15 @@ class _HomePageState extends State<HomePage> {
                                           : HomeInterestingSection(
                                               articles: _interestingArticles,
                                               onMoreTap: () => Navigator.pushNamed(context, '/health/article'),
-                                              onItemTap: (article) {
-                                                Navigator.pushNamed(
+                                              onItemTap: (article) async {
+                                                await Navigator.pushNamed(
                                                   context, 
                                                   '/health/article',
                                                   arguments: article,
                                                 );
+                                                _loadHomeData();
                                               },
+                                              onBookmarkTap: _onToggleBookmark,
                                             ),
                                         const SizedBox(height: 32),
                                       ],

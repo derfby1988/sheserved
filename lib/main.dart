@@ -113,9 +113,24 @@ class SheservedApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         // Handle routes with arguments
         if (settings.name == '/health/article') {
-          final article = settings.arguments as HealthArticle?;
+          final args = settings.arguments;
+          if (args is HealthArticle) {
+            return MaterialPageRoute(
+              builder: (context) => HealthArticlePage(article: args),
+            );
+          } else if (args is Map<String, dynamic>) {
+            return MaterialPageRoute(
+              builder: (context) => HealthArticlePage(
+                article: args['article'] as HealthArticle?,
+                targetPage: args['targetPage'] as int?,
+                targetCommentId: args['targetCommentId'] as String?,
+                pendingAction: args['pendingAction'] as String?,
+                pendingCommentId: args['pendingCommentId'] as String?,
+              ),
+            );
+          }
           return MaterialPageRoute(
-            builder: (context) => HealthArticlePage(article: article),
+            builder: (context) => const HealthArticlePage(),
           );
         }
         

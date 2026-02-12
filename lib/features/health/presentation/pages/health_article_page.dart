@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
+import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../data/models/health_article_models.dart';
 import '../widgets/health_article_skeleton.dart';
@@ -9,10 +10,18 @@ import '../widgets/health_article_skeleton.dart';
 /// Feature-rich forum and article viewer with stacked sticky headers and nested comments.
 class HealthArticlePage extends StatefulWidget {
   final HealthArticle? article;
+  final int? targetPage;
+  final String? targetCommentId;
+  final String? pendingAction; // 'like' or 'bookmark'
+  final String? pendingCommentId;
 
   const HealthArticlePage({
     super.key,
     this.article,
+    this.targetPage,
+    this.targetCommentId,
+    this.pendingAction,
+    this.pendingCommentId,
   });
 
   @override
@@ -27,6 +36,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   int _currentPage = 1;
   bool _isContentExpanded = false;
   bool _isTitleExpanded = false;
+  String _currentSort = 'oldest';
   
   // Data State
   HealthArticle? _article;
@@ -40,6 +50,8 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   final GlobalKey _articleHeadKey = GlobalKey();
   final GlobalKey _productsKey = GlobalKey();
   final GlobalKey _commentsKey = GlobalKey();
+  final Map<String, GlobalKey> _commentKeys = {}; // Keys for individual comments
+  bool _hasInitialScrolled = false;
 
   void _scrollToSection(GlobalKey key) {
     final context = key.currentContext;
@@ -65,12 +77,28 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
       final repository = ServiceLocator.instance.healthArticleRepository;
       
       // 1. Fetch Article (either passed or latest)
+      // 1. Fetch Article (either passed or latest)
       HealthArticle? article = widget.article;
-      if (article == null) {
+      
+      if (article != null) {
+        // Use passed article initially for fast UI
+        if (mounted) {
+           setState(() => _article = article);
+        }
+        
+        // Then re-fetch to get latest interaction status (isBookmarked, etc.)
+        try {
+          print('HealthArticlePage: Refreshing article data for ${article.id}...');
+          final freshArticle = await repository.getArticleById(article.id);
+          if (freshArticle != null) {
+            article = freshArticle;
+          }
+        } catch (e) {
+          print('HealthArticlePage: Error refreshing article: $e');
+        }
+      } else {
         print('HealthArticlePage: Fetching latest article...');
         article = await repository.getLatestArticle();
-      } else {
-        print('HealthArticlePage: Using passed article: ${article.id}');
       }
       
       if (article != null) {
@@ -87,11 +115,36 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
             _totalComments = results[1] as int;
           });
           
-          // 3. Fetch Initial Page of Comments
-          await _fetchComments(1);
+          // 3. Fetch Initial Page of Comments (or target page)
+          final initialPage = widget.targetPage ?? 1;
+          await _fetchComments(initialPage);
           
           if (mounted) {
-            setState(() => _isLoading = false);
+            
+            // If target comment is provided, scroll to it after content is built
+            if (widget.targetCommentId != null && !_hasInitialScrolled) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _scrollToTargetComment();
+                
+                // If there's a pending action, execute it
+                if (widget.pendingAction != null) {
+                  if (widget.pendingAction == 'like') {
+                    _onToggleLike(widget.pendingCommentId);
+                  } else if (widget.pendingAction == 'bookmark') {
+                    _onToggleBookmark(commentId: widget.pendingCommentId);
+                  }
+                }
+              });
+            } else if (widget.pendingAction != null) {
+              // If no scroll needed but action exists (e.g. article bookmark)
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (widget.pendingAction == 'like') {
+                  _onToggleLike(widget.pendingCommentId);
+                } else if (widget.pendingAction == 'bookmark') {
+                  _onToggleBookmark(commentId: widget.pendingCommentId);
+                }
+              });
+            }
           }
         }
       } else {
@@ -114,10 +167,14 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
+      final currentUser = ServiceLocator.instance.currentUser;
+      
       final comments = await repository.getArticleComments(
         _article!.id, 
+        currentUserId: currentUser?.id,
         page: page,
         pageSize: 10,
+        sort: _currentSort,
       );
       
       if (mounted) {
@@ -126,6 +183,16 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           _currentPage = page;
           _isCommentsLoading = false;
         });
+        
+        // If we just loaded the page containing the target comment, scroll to it
+        if (widget.targetCommentId != null && !_hasInitialScrolled) {
+          final containsTarget = comments.any((c) => c.id == widget.targetCommentId);
+          if (containsTarget) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scrollToTargetComment();
+            });
+          }
+        }
       }
     } catch (e) {
       debugPrint('Error fetching comments: $e');
@@ -135,10 +202,153 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     }
   }
 
+  void _scrollToTargetComment() {
+    if (widget.targetCommentId == null) return;
+    
+    // First, try to find the key in current context
+    final key = _commentKeys[widget.targetCommentId];
+    if (key != null && key.currentContext != null) {
+      Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: const Duration(seconds: 1),
+        curve: Curves.easeInOut,
+      );
+      setState(() => _hasInitialScrolled = true);
+    } else {
+      // If not visible yet, scroll to the comments section first to bring it into view and force building
+      _scrollToSection(_commentsKey);
+      
+      // Wait for it to build then try again
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+          final retryKey = _commentKeys[widget.targetCommentId];
+          if (retryKey != null && retryKey.currentContext != null) {
+            Scrollable.ensureVisible(
+              retryKey.currentContext!,
+              duration: const Duration(seconds: 1),
+              curve: Curves.easeInOut,
+            );
+            setState(() => _hasInitialScrolled = true);
+          }
+        }
+      });
+    }
+  }
+
   void _changePage(int page) {
     if (page == _currentPage || page < 1) return;
     _fetchComments(page);
     _scrollToSection(_commentsKey);
+  }
+
+  Future<void> _onToggleLike(String? commentId) async {
+    if (_article == null) return;
+    
+    final currentUser = ServiceLocator.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อกดไลก์')),
+      );
+      
+      // Navigate to login with redirect info to return here after login
+      Navigator.pushNamed(
+        context, 
+        '/login',
+        arguments: {
+          'route': '/health/article',
+          'arguments': {
+            'article': _article,
+            'targetPage': _currentPage,
+            'targetCommentId': commentId,
+            'pendingAction': 'like',
+            'pendingCommentId': commentId,
+          }
+        },
+      );
+      return;
+    }
+
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      
+      // Update UI optimistically
+      setState(() {
+        if (commentId != null) {
+          final index = _comments.indexWhere((c) => c.id == commentId);
+          if (index != -1) {
+            final comment = _comments[index];
+            final newIsLiked = !comment.isLiked;
+            _comments[index] = comment.copyWith(
+              isLiked: newIsLiked,
+              likeCount: newIsLiked ? comment.likeCount + 1 : (comment.likeCount - 1).clamp(0, 999999),
+            );
+          }
+        }
+      });
+
+      await repository.toggleInteraction(
+        articleId: _article!.id,
+        commentId: commentId,
+        userId: currentUser.id,
+        type: 'like',
+      );
+    } catch (e) {
+      debugPrint('Error toggling like: $e');
+    }
+  }
+
+  Future<void> _onToggleBookmark({String? commentId}) async {
+    if (_article == null) return;
+    
+    final currentUser = ServiceLocator.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
+      );
+      
+      Navigator.pushNamed(
+        context, 
+        '/login',
+        arguments: {
+          'route': '/health/article',
+          'arguments': {
+            'article': _article,
+            'targetPage': _currentPage,
+            'targetCommentId': commentId,
+            'pendingAction': 'bookmark',
+            'pendingCommentId': commentId,
+          }
+        },
+      );
+      return;
+    }
+
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      
+      // Update UI optimistically
+      setState(() {
+        if (commentId != null) {
+          final index = _comments.indexWhere((c) => c.id == commentId);
+          if (index != -1) {
+            final comment = _comments[index];
+            _comments[index] = comment.copyWith(isBookmarked: !comment.isBookmarked);
+          }
+        } else {
+          // Article bookmark toggle
+          _article = _article!.copyWith(isBookmarked: !_article!.isBookmarked);
+        }
+      });
+
+      await repository.toggleInteraction(
+        articleId: _article!.id,
+        commentId: commentId,
+        userId: currentUser.id,
+        type: 'bookmark',
+      );
+    } catch (e) {
+      debugPrint('Error toggling bookmark: $e');
+    }
   }
 
   @override
@@ -163,11 +373,17 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           userId: currentUser.id,
           username: 'คุณ (จำลอง)',
           content: content,
-          commentNumber: _comments.length + 1,
+          // Since we changed to Ascending (Oldest First), the new number is total + 1
+          commentNumber: _totalComments + 1,
           createdAt: DateTime.now(),
         );
         setState(() {
-          _comments.insert(0, mockComment);
+          // If we are showing "Oldest First", the new comment should be at the END.
+          // But to give immediate feedback, we might want to reload or just append.
+          // Appending is safer for "Chat like" view, but if paginated, it belongs on last page.
+          // For simplicity, let's append it here and increment total.
+          _comments.add(mockComment);
+          _totalComments++;
         });
         return;
       }
@@ -178,12 +394,14 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
         userId: currentUser.id,
         content: content,
         parentId: parentId,
-        commentNumber: _comments.length + 1,
+        commentNumber: _totalComments + 1,
       );
 
       if (newComment != null && mounted) {
         setState(() {
-          _comments.insert(0, newComment);
+          // Append for Ascending order
+          _comments.add(newComment);
+          _totalComments++;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ส่งความคิดเห็นเรียบร้อยแล้ว')),
@@ -531,6 +749,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                         ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     const SizedBox(width: 12),
                     Column(
                       children: [
@@ -579,7 +798,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Text(
-                      _isContentExpanded ? 'แสดงน้อยลง' : 'อ่านรายละเอียดเพิ่มเติม...',
+                      _isContentExpanded ? 'แสดงน้อยลง' : 'อ่านเพิ่ม...',
                       style: const TextStyle(color: Colors.white54, fontSize: 14),
                     ),
                   ),
@@ -591,9 +810,10 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           Positioned(
             top: 0,
             right: 24,
-            child: CustomPaint(
-              size: const Size(20, 30),
-              painter: _RibbonPainter(),
+            child: RibbonBookmark(
+              isBookmarked: _article?.isBookmarked ?? false,
+              onTap: () => _onToggleBookmark(),
+              height: 30,
             ),
           ),
         ],
@@ -633,13 +853,22 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
               ),
               DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: 'latest',
+                  value: _currentSort,
                   items: const [
-                    DropdownMenuItem(value: 'latest', child: Text('สนใจมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white70))),
+                    DropdownMenuItem(value: 'oldest', child: Text('เก่าที่สุด (ค่าเริ่มต้น)', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'newest', child: Text('ใหม่ที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'likes', child: Text('ถูกใจมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'bookmarks', child: Text('บุ๊กมาร์กมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
                   ],
-                  onChanged: (value) {},
+                  onChanged: (value) {
+                    if (value != null && value != _currentSort) {
+                      setState(() => _currentSort = value);
+                      _fetchComments(1); // Reset to page 1 on sort change
+                    }
+                  },
                   dropdownColor: const Color(0xFF5D9CDB),
                   icon: const Icon(Icons.keyboard_arrow_down, size: 20, color: Color(0xFFF1AE27)),
+                  style: const TextStyle(color: Colors.white), // Ensure text is visible in dropdown button
                 ),
               ),
             ],
@@ -653,8 +882,10 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     if (index >= _comments.length) return const SizedBox.shrink();
     
     final comment = _comments[index];
+    final commentKey = _commentKeys.putIfAbsent(comment.id, () => GlobalKey());
     
     return Container(
+      key: commentKey,
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Stack(
         children: [
@@ -732,9 +963,19 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                         ],
                       ),
                     ),
-                    _buildStatIcon(Icons.favorite_border, '${comment.likeCount}'),
+                    _buildStatIcon(
+                      comment.isLiked ? Icons.favorite : Icons.favorite_border, 
+                      '${comment.likeCount}',
+                      color: comment.isLiked ? Colors.pinkAccent : Colors.white,
+                      onTap: () => _onToggleLike(comment.id),
+                    ),
                     _buildStatIcon(Icons.chat_bubble_outline, '0'),
-                    _buildStatIcon(Icons.bookmark_border, '0'),
+                    _buildStatIcon(
+                      comment.isBookmarked ? Icons.bookmark : Icons.bookmark_border, 
+                      '', // No count for comments as per request or just keep 0
+                      color: comment.isBookmarked ? const Color(0xFFFFD700) : Colors.white,
+                      onTap: () => _onToggleBookmark(commentId: comment.id),
+                    ),
                   ],
                 ),
               ],
@@ -760,15 +1001,18 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     );
   }
 
-  Widget _buildStatIcon(IconData icon, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: Colors.white),
-          const SizedBox(width: 2),
-          Text(value, style: const TextStyle(fontSize: 10, color: Colors.white)),
-        ],
+  Widget _buildStatIcon(IconData icon, String value, {Color color = Colors.white, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 2),
+            Text(value, style: TextStyle(fontSize: 10, color: color)),
+          ],
+        ),
       ),
     );
   }

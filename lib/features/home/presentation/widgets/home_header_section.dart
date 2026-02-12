@@ -100,7 +100,7 @@ class HomeHeaderSection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  'ได้รับความนิยม',
+                  'เกิดเหตุด่วน 3 แห่ง',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.textOnPrimary,
                     fontWeight: FontWeight.w600,
