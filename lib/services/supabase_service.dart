@@ -42,14 +42,17 @@ class SupabaseService {
     return _client!;
   }
 
-  /// Check if user is logged in
-  static bool get isLoggedIn => _client?.auth.currentUser != null;
+  /// Check if user is logged in (DEPRECATED: Use AuthService.isLoggedIn)
+  @Deprecated('Use AuthService.instance.isLoggedIn')
+  static bool get isLoggedIn => false;
 
-  /// Get current user
-  static User? get currentUser => _client?.auth.currentUser;
+  /// Get current user (DEPRECATED: Use ServiceLocator.instance.currentUser)
+  @Deprecated('Use ServiceLocator.instance.currentUser')
+  static User? get currentUser => null;
 
-  /// Get current session
-  static Session? get currentSession => _client?.auth.currentSession;
+  /// Get current session (DEPRECATED: We do not use Supabase sessions)
+  @Deprecated('Supabase sessions are not used in this project')
+  static Session? get currentSession => null;
 
   // ============ AUTH METHODS ============
 

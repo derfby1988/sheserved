@@ -7,41 +7,58 @@ class HealthArticleRepository {
   HealthArticleRepository(this._client);
 
   /// Fetch the latest health article with author details
-  Future<HealthArticle?> getLatestArticle() async {
+  Future<HealthArticle?> getLatestArticle({String? userId}) async {
     try {
-      print('HealthArticleRepository: Fetching latest article...');
+      print('HealthArticleRepository: Fetching latest article for user: $userId...');
       final response = await _client
           .from('health_articles')
-          .select('*, users(username, profile_image_url), health_article_interactions(type, user_id)')
+          .select('*, users(username, profile_image_url)')
           .order('created_at', ascending: false)
           .limit(1);
 
       print('HealthArticleRepository: Response: $response');
       
-      if (response != null && (response as List).isNotEmpty) {
+        if (response != null && (response as List).isNotEmpty) {
         final data = response.first;
-        final currentUserId = _client.auth.currentUser?.id;
+        final currentUserId = userId;
         
         bool isBookmarked = false;
+        bool isLiked = false;
         if (currentUserId != null) {
-          final interactions = data['health_article_interactions'] as List?;
-          isBookmarked = interactions?.any((i) => 
-            i['type'] == 'bookmark' && i['user_id'] == currentUserId
-          ) ?? false;
+          try {
+            // Fetch interactions for this user and this article
+            final interactions = await _client
+                .from('health_article_interactions')
+                .select('type, comment_id')
+                .eq('article_id', data['id'])
+                .eq('user_id', currentUserId);
+                
+            if (interactions != null) {
+              for (var i in (interactions as List)) {
+                // Check comment_id locally for reliability
+                final rawCommentId = i['comment_id'];
+                if (rawCommentId != null && rawCommentId.toString().toLowerCase() != 'null') continue;
+
+                final type = i['type'] as String;
+                if (type == 'bookmark') isBookmarked = true;
+                if (type == 'like') isLiked = true;
+              }
+            }
+          } catch (e) {
+            print('Repository: Error checking latest article interactions: $e');
+          }
         }
         
         final jsonMap = Map<String, dynamic>.from(data);
+        jsonMap.remove('health_article_interactions'); // Remove joined interactions data
         jsonMap['is_bookmarked'] = isBookmarked;
+        jsonMap['is_liked'] = isLiked;
         return HealthArticle.fromJson(jsonMap);
       }
       
-      // Fallback to mock data if DB is empty for development
-      print('HealthArticleRepository: No article found in DB, using mock data');
-      return _getMockArticle();
     } catch (e) {
       print('HealthArticleRepository: Error: $e');
-      // Fallback to mock data on error as well for development
-      return _getMockArticle();
+      return null;
     }
   }
 
@@ -51,9 +68,10 @@ class HealthArticleRepository {
     String? searchQuery,
     int page = 1, 
     int pageSize = 12,
+    String? userId,
   }) async {
     try {
-      print('HealthArticleRepository: Fetching articles from DB and Mocks (Page $page)...');
+      print('HealthArticleRepository: Fetching articles from DB (Page $page) for user: $userId...');
       
       // 1. Get from Supabase
       List<HealthArticle> dbArticles = [];
@@ -73,45 +91,61 @@ class HealthArticleRepository {
 
         final response = await query.order('created_at', ascending: false);
         if (response != null) {
-          dbArticles = (response as List).map((e) => HealthArticle.fromJson(e)).toList();
+          // 2. Check bookmark/like status for current user (Optimized with .in_)
+          final currentUserId = userId;
+          Set<String> bookmarkedArticleIds = {};
+          Set<String> likedArticleIds = {};
+
+          if (currentUserId != null) {
+            try {
+              // Extract article IDs to optimize query
+              final articleIds = (response as List).map((e) => e['id'] as String).toList();
+              
+              if (articleIds.isNotEmpty) {
+                final interactions = await _client
+                    .from('health_article_interactions')
+                    .select('article_id, type, comment_id')
+                    .eq('user_id', currentUserId)
+                    .filter('article_id', 'in', articleIds); // Fetch only relevant interactions
+
+                if (interactions != null) {
+                  print('DEBUG: Found ${(interactions as List).length} interactions for these ${articleIds.length} articles');
+                  for (var i in (interactions as List)) {
+                    // Filter locally for reliability
+                    final rawCommentId = i['comment_id'];
+                    // If it has a value, isn't 'null', AND isn't empty string -> It's a comment bookmark, skip it
+                    if (rawCommentId != null && 
+                        rawCommentId.toString().toLowerCase() != 'null' && 
+                        rawCommentId.toString().trim().isNotEmpty) {
+                      continue;
+                    }
+
+                    final articleId = i['article_id'].toString();
+                    final type = i['type'] as String;
+                    
+                    if (type == 'bookmark') bookmarkedArticleIds.add(articleId);
+                    if (type == 'like') likedArticleIds.add(articleId);
+                  }
+                }
+              }
+            } catch (e) {
+              print('Repository: Error fetching article interactions: $e');
+            }
+          }
+
+          dbArticles = (response as List).map((e) {
+            final jsonMap = Map<String, dynamic>.from(e);
+            final articleId = jsonMap['id'] as String;
+            jsonMap['is_bookmarked'] = bookmarkedArticleIds.contains(articleId);
+            jsonMap['is_liked'] = likedArticleIds.contains(articleId);
+            return HealthArticle.fromJson(jsonMap);
+          }).toList();
         }
       } catch (dbError) {
-        print('HealthArticleRepository: DB Fetch Error (falling back to mocks): $dbError');
+        print('HealthArticleRepository: DB Fetch Error: $dbError');
       }
 
-      // 2. Get Mock Articles
-      var mockArticles = _getMockArticlesList();
-      
-      // 3. Filter Mocks
-      if (category != null && category != 'ทั้งหมด') {
-        if (['ยอดนิยม', 'ล่าสุด', 'แนะนำ'].contains(category)) {
-          // Special tags logic (for demo, just scramble or take specific range)
-          if (category == 'ยอดนิยม') mockArticles.sort((a, b) => b.viewCount.compareTo(a.viewCount));
-          if (category == 'ล่าสุด') mockArticles.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        } else {
-          mockArticles = mockArticles.where((a) => a.category == category).toList();
-        }
-      }
-      
-      if (searchQuery != null && searchQuery.isNotEmpty) {
-        final query = searchQuery.toLowerCase();
-        mockArticles = mockArticles.where((a) => 
-          a.title.toLowerCase().contains(query) || 
-          a.content.toLowerCase().contains(query)).toList();
-      }
-
-      // 4. Combine (DB First, then Mocks)
-      final List<HealthArticle> allCombined = [...dbArticles, ...mockArticles];
-      
-      // 5. Apply Pagination
-      final start = (page - 1) * pageSize;
-      if (start >= allCombined.length) return [];
-      final end = start + pageSize;
-      
-      return allCombined.sublist(
-        start, 
-        end > allCombined.length ? allCombined.length : end
-      );
+      return dbArticles;
     } catch (e) {
       print('HealthArticleRepository: Critical Error: $e');
       return [];
@@ -202,7 +236,7 @@ class HealthArticleRepository {
   }
 
   /// Fetch article by ID
-  Future<HealthArticle?> getArticleById(String id) async {
+  Future<HealthArticle?> getArticleById(String id, {String? userId}) async {
     try {
       final response = await _client
           .from('health_articles')
@@ -210,37 +244,58 @@ class HealthArticleRepository {
           .eq('id', id)
           .single();
 
-      final currentUserId = _client.auth.currentUser?.id;
+      final currentUserId = userId;
+      print('DEBUG: getArticleById - Article: $id, userId arg: $userId');
+      
       bool isBookmarked = false;
+      bool isLiked = false;
       
       if (currentUserId != null) {
-        // Robust fetch: Check explicitly for bookmark interaction
         try {
-          final interaction = await _client
+          // Fetch all interactions for this user and article
+          final interactions = await _client
               .from('health_article_interactions')
-              .select('id')
+              .select() // Select ALL fields including comment_id
               .eq('article_id', id)
-              .eq('user_id', currentUserId)
-              .eq('type', 'bookmark')
-              .filter('comment_id', 'is', null) // Only article bookmarks
-              .maybeSingle();
+              .eq('user_id', currentUserId);
               
-          if (interaction != null) {
-            isBookmarked = true;
+          if (interactions != null) {
+            print('DEBUG: getArticleById - Found ${(interactions as List).length} interactions for Article $id');
+            for (var i in (interactions as List)) {
+              print('DEBUG: Interaction Record: $i');
+              print('DEBUG: comment_id raw value: ${i['comment_id']} (Type: ${i['comment_id'].runtimeType})');
+
+              // Check comment_id locally for reliability
+              final rawCommentId = i['comment_id'];
+              // If it has a value, isn't 'null', AND isn't empty string -> It's a comment
+              if (rawCommentId != null && 
+                  rawCommentId.toString().toLowerCase() != 'null' && 
+                  rawCommentId.toString().trim().isNotEmpty) {
+                 print('DEBUG: Skipped because comment_id is comment: $rawCommentId');
+                 continue;
+              }
+
+              final type = i['type'] as String;
+              if (type == 'bookmark') {
+                 isBookmarked = true;
+                 print('DEBUG: HIT! Bookmark found. isBookmarked set to true.');
+              }
+              if (type == 'like') isLiked = true;
+            }
+          } else {
+             print('DEBUG: getArticleById - No interactions found (null response)');
           }
         } catch (e) {
-          print('Repository: Error checking article bookmark: $e');
+          print('Repository: Error checking article interactions: $e');
         }
       }
       
       final jsonMap = Map<String, dynamic>.from(response);
       jsonMap['is_bookmarked'] = isBookmarked;
+      jsonMap['is_liked'] = isLiked;
       return HealthArticle.fromJson(jsonMap);
     } catch (e) {
-      if (id.startsWith('mock-')) {
-        final allMocks = await getAllArticles();
-        return allMocks.firstWhere((element) => element.id == id, orElse: () => _getMockArticle());
-      }
+      print('Repository: Error in getArticleById: $e');
       return null;
     }
   }
@@ -260,29 +315,6 @@ class HealthArticleRepository {
             .toList();
       }
       
-      // Fallback to mock brands/products
-      if (articleId.startsWith('mock-')) {
-        return [
-          HealthArticleProduct(
-            id: 'p1',
-            articleId: articleId,
-            name: 'วิตามิน C 1000mg',
-            imageUrl: 'https://images.unsplash.com/photo-1550575110-59f2394d1450?q=80&w=200',
-            tagType: 'author',
-            isApproved: true,
-            createdAt: DateTime.now(),
-          ),
-          HealthArticleProduct(
-            id: 'p2',
-            articleId: articleId,
-            name: 'อาหารเสริม Zinc',
-            imageUrl: 'https://images.unsplash.com/photo-1584017962801-debd996a7c37?q=80&w=200',
-            tagType: 'sponsor',
-            isApproved: true,
-            createdAt: DateTime.now(),
-          ),
-        ];
-      }
       return [];
     } catch (e) {
       return [];
@@ -361,103 +393,77 @@ class HealthArticleRepository {
         }).toList();
       }
 
-      // Fallback to mock comments
-      if (articleId.startsWith('mock-')) {
-        var allComments = _getMockComments(articleId);
-        
-        // Apply Mock Sorting
-        if (sort == 'newest') {
-          allComments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        } else if (sort == 'likes') {
-          allComments.sort((a, b) => b.likeCount.compareTo(a.likeCount));
-        } else if (sort == 'bookmarks') {
-          // Mock doesn't have bookmarkCount on model, maybe imply from likeCount or random?
-          // For now, let's just reverse of likes for variety or same as likes
-          allComments.sort((a, b) => b.likeCount.compareTo(a.likeCount));
-        } else {
-          // oldest (default) - by commentNumber
-          allComments.sort((a, b) => a.commentNumber.compareTo(b.commentNumber));
-        }
-
-        final start = (page - 1) * pageSize;
-        if (start >= allComments.length) return [];
-        final end = start + pageSize;
-        return allComments.sublist(start, end > allComments.length ? allComments.length : end);
-      }
       return [];
     } catch (e) {
       print('Repository: Error fetching comments: $e');
-      if (articleId.startsWith('mock-')) {
-        return _getMockComments(articleId).take(pageSize).toList();
-      }
       return [];
     }
   }
 
   /// Toggle interaction (like, bookmark, share)
-  Future<bool> toggleInteraction({
+  /// Returns a Map with:
+  ///   'success': bool - whether the operation succeeded
+  ///   'isActive': bool - whether the interaction is now active (true) or removed (false)
+  ///   'newCount': int - the new total count for this interaction type on the target
+  Future<Map<String, dynamic>> toggleInteraction({
     required String articleId,
     String? commentId,
     required String userId,
     required String type,
   }) async {
-    // Check if we are in mock mode
-    if (articleId.startsWith('mock-')) {
-      print('Repository: Mock toggle interaction - $type for ${commentId ?? articleId}');
-      return true; // Assume success for mocks
-    }
-
     try {
-      // 1. Check if it already exists
-      var query = _client
+      // 1. Fetch all interactions for this user/article/type (without comment filter first)
+      final existingList = await _client
           .from('health_article_interactions')
           .select()
           .eq('user_id', userId)
           .eq('article_id', articleId)
           .eq('type', type);
       
-      if (commentId != null) {
-        query = query.eq('comment_id', commentId);
-      } else {
-        query = query.filter('comment_id', 'is', null);
-      }
+      Map<String, dynamic>? targetInteraction;
 
-      final existing = await query;
-      
-      if (existing != null && (existing as List).isNotEmpty) {
-        // 2. Remove if exists
-        var deleteQuery = _client
-            .from('health_article_interactions')
-            .delete()
-            .eq('user_id', userId)
-            .eq('article_id', articleId)
-            .eq('type', type);
-        
-        if (commentId != null) {
-          deleteQuery = deleteQuery.eq('comment_id', commentId);
-        } else {
-          deleteQuery = deleteQuery.filter('comment_id', 'is', null);
-        }
-        
-        await deleteQuery;
-        print('Repository: Removed interaction $type for ${commentId ?? articleId}');
-
-        // Try to decrement like count in DB (non-blocking)
-        try {
-          if (type == 'like') {
-            if (commentId != null) {
-              await _client.rpc('decrement_comment_like', params: {'comment_uuid': commentId});
-            } else {
-              await _client.rpc('decrement_article_like', params: {'article_uuid': articleId});
+      if (existingList != null) {
+        for (var i in (existingList as List)) {
+          final cId = i['comment_id'];
+          // Robust check for matching comment_id
+          if (commentId == null) {
+            // Looking for article interaction (comment_id should be null, "null", or empty)
+            if (cId == null || 
+                cId.toString().toLowerCase() == 'null' || 
+                cId.toString().trim().isEmpty) {
+              targetInteraction = i;
+              break;
+            }
+          } else {
+            // Looking for comment interaction
+            if (cId.toString() == commentId.toString()) {
+              targetInteraction = i;
+              break;
             }
           }
-        } catch (rpcError) {
-          print('RPC Error (decrement): $rpcError');
         }
+      }
+      
+      if (targetInteraction != null) {
+        // 2. Remove if exists
+        await _client
+            .from('health_article_interactions')
+            .delete()
+            .eq('id', targetInteraction['id']);
+        
+        print('Repository: Removed interaction $type for ${commentId ?? articleId}');
 
-        return false;
+        // 3. Update counts
+        final newCount = await _countInteractions(
+          articleId: articleId, commentId: commentId, type: type,
+        );
+        await _updateCountColumn(
+          articleId: articleId, commentId: commentId, type: type, count: newCount,
+        );
+
+        return {'success': true, 'isActive': false, 'newCount': newCount};
       } else {
-        // 3. Add if not exists
+        // 2. Add if not exists
         await _client.from('health_article_interactions').insert({
           'user_id': userId,
           'article_id': articleId,
@@ -466,26 +472,83 @@ class HealthArticleRepository {
         });
         print('Repository: Added interaction $type for ${commentId ?? articleId}');
 
-        // Try to increment like count in DB (non-blocking)
-        try {
-          if (type == 'like') {
-            if (commentId != null) {
-              await _client.rpc('increment_comment_like', params: {'comment_uuid': commentId});
-            } else {
-              await _client.rpc('increment_article_like', params: {'article_uuid': articleId});
-            }
-          }
-        } catch (rpcError) {
-          print('RPC Error (increment): $rpcError');
-        }
+        // 3. Update counts
+        final newCount = await _countInteractions(
+          articleId: articleId, commentId: commentId, type: type,
+        );
+        await _updateCountColumn(
+          articleId: articleId, commentId: commentId, type: type, count: newCount,
+        );
 
-        return true;
+        return {'success': true, 'isActive': true, 'newCount': newCount};
       }
     } catch (e) {
       print('Error toggling interaction: $e');
-      // Rethrow to let UI know something went wrong, or return false to indicate no change? 
-      // Current behavior is return false.
-      return false;
+      return {'success': false, 'isActive': false, 'newCount': 0};
+    }
+  }
+
+  /// Count the actual number of interactions of a given type on an article or comment
+  Future<int> _countInteractions({
+    required String articleId,
+    String? commentId,
+    required String type,
+  }) async {
+    try {
+      final interactions = await _client
+          .from('health_article_interactions')
+          .select('comment_id')
+          .eq('article_id', articleId)
+          .eq('type', type);
+
+      if (interactions == null) return 0;
+
+      final interactionList = interactions as List;
+      if (commentId == null) {
+        // Count article interactions (where comment_id is null-ish)
+        return interactionList.where((i) {
+          final cId = i['comment_id'];
+          return cId == null || 
+                 cId.toString().toLowerCase() == 'null' || 
+                 cId.toString().trim().isEmpty;
+        }).length;
+      } else {
+        // Count specific comment interactions
+        return interactionList.where((i) {
+          final cId = i['comment_id'];
+          return cId != null && cId.toString() == commentId.toString();
+        }).length;
+      }
+    } catch (e) {
+      print('Error counting interactions: $e');
+      return 0;
+    }
+  }
+
+  /// Directly update the count column in the target table
+  Future<void> _updateCountColumn({
+    required String articleId,
+    String? commentId,
+    required String type,
+    required int count,
+  }) async {
+    try {
+      final columnName = '${type}_count'; // like_count or bookmark_count
+
+      if (commentId != null) {
+        await _client
+            .from('health_article_comments')
+            .update({columnName: count})
+            .eq('id', commentId);
+      } else {
+        await _client
+            .from('health_articles')
+            .update({columnName: count})
+            .eq('id', articleId);
+      }
+      print('Repository: Updated $columnName = $count for ${commentId ?? articleId}');
+    } catch (e) {
+      print('Error updating count column: $e');
     }
   }
 
@@ -524,15 +587,8 @@ class HealthArticleRepository {
       if (response != null && (response as List).isNotEmpty) {
         return (response as List).length;
       }
-      
-      if (articleId.startsWith('mock-')) {
-        return _getMockComments(articleId).length;
-      }
       return 0;
     } catch (e) {
-      if (articleId.startsWith('mock-')) {
-        return _getMockComments(articleId).length;
-      }
       return 0;
     }
   }

@@ -42,6 +42,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadHomeData() async {
+    debugPrint('HomePage: _loadHomeData called. Reloading articles...');
+    
     // Only show loading indicator if it's the initial load to avoid flashing on return
     if (_recommendedArticles.isEmpty) {
       setState(() => _isLoadingArticles = true);
@@ -50,11 +52,21 @@ class _HomePageState extends State<HomePage> {
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
       
+      final currentUserId = ServiceLocator.instance.currentUser?.id;
+      
       // Fetch recommended articles
-      final recommended = await repository.getAllArticles(category: 'แนะนำ', pageSize: 5);
+      final recommended = await repository.getAllArticles(
+        category: 'แนะนำ', 
+        pageSize: 5,
+        userId: currentUserId,
+      );
       
       // Fetch interesting/popular articles
-      final interesting = await repository.getAllArticles(category: 'ยอดนิยม', pageSize: 5);
+      final interesting = await repository.getAllArticles(
+        category: 'ยอดนิยม', 
+        pageSize: 5,
+        userId: currentUserId,
+      );
       
       if (mounted) {
         setState(() {
@@ -76,10 +88,12 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
       );
-      // Pass null as argument or handle redirection properly
       Navigator.pushNamed(context, '/login'); 
       return;
     }
+    
+    // Save previous state for revert
+    final prevIsBookmarked = article.isBookmarked;
     
     // Optimistic Update
     setState(() {
@@ -98,11 +112,54 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
-      await repository.toggleInteraction(
+      final result = await repository.toggleInteraction(
         articleId: article.id,
         userId: currentUser.id,
         type: 'bookmark',
       );
+
+      if (mounted && result['success'] == true) {
+        // Update with real state from DB
+        final isActive = result['isActive'] as bool;
+        setState(() {
+          final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+          if (recIndex != -1) {
+            _recommendedArticles[recIndex] = _recommendedArticles[recIndex].copyWith(
+              isBookmarked: isActive,
+              bookmarkCount: result['newCount'] as int,
+            );
+          }
+          final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+          if (intIndex != -1) {
+            _interestingArticles[intIndex] = _interestingArticles[intIndex].copyWith(
+              isBookmarked: isActive,
+              bookmarkCount: result['newCount'] as int,
+            );
+          }
+        });
+        
+        ScaffoldMessenger.of(context).clearSnackBars(); // Clear existing to prevent stacking
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(
+            content: Text(isActive ? 'บันทึกบทความแล้ว' : 'ยกเลิกการบันทึกแล้ว'),
+            duration: const Duration(seconds: 1),
+            backgroundColor: isActive ? const Color(0xFFF1AE27) : Colors.grey[800],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else if (mounted && result['success'] == false) {
+        // Revert on failure
+        setState(() {
+          final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+          if (recIndex != -1) {
+            _recommendedArticles[recIndex] = _recommendedArticles[recIndex].copyWith(isBookmarked: prevIsBookmarked);
+          }
+          final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+          if (intIndex != -1) {
+            _interestingArticles[intIndex] = _interestingArticles[intIndex].copyWith(isBookmarked: prevIsBookmarked);
+          }
+        });
+      }
     } catch (e) {
       // Revert or reload on error
       _loadHomeData();
@@ -205,7 +262,8 @@ class _HomePageState extends State<HomePage> {
                                                   '/health/article',
                                                   arguments: article,
                                                 );
-                                                _loadHomeData();
+                                                debugPrint('HomePage: Returning from Recommended Article, reloading data...');
+                                                await _loadHomeData();
                                               },
                                               onBookmarkTap: _onToggleBookmark,
                                             ),
@@ -221,7 +279,8 @@ class _HomePageState extends State<HomePage> {
                                                   '/health/article',
                                                   arguments: article,
                                                 );
-                                                _loadHomeData();
+                                                debugPrint('HomePage: Returning from Interesting Article, reloading data...');
+                                                await _loadHomeData();
                                               },
                                               onBookmarkTap: _onToggleBookmark,
                                             ),

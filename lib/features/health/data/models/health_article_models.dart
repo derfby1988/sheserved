@@ -14,6 +14,7 @@ class HealthArticle {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isBookmarked;
+  final bool isLiked;
 
   HealthArticle({
     required this.id,
@@ -31,6 +32,7 @@ class HealthArticle {
     required this.createdAt,
     required this.updatedAt,
     this.isBookmarked = false,
+    this.isLiked = false,
   });
 
   factory HealthArticle.fromJson(Map<String, dynamic> json) {
@@ -51,6 +53,7 @@ class HealthArticle {
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
       isBookmarked: json['is_bookmarked'] == true,
+      isLiked: json['is_liked'] == true,
     );
   }
 
@@ -87,6 +90,7 @@ class HealthArticle {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isBookmarked,
+    bool? isLiked,
   }) {
     return HealthArticle(
       id: id ?? this.id,
@@ -104,6 +108,7 @@ class HealthArticle {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isBookmarked: isBookmarked ?? this.isBookmarked,
+      isLiked: isLiked ?? this.isLiked,
     );
   }
 }

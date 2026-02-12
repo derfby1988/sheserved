@@ -62,11 +62,13 @@ class _ArticlesPageState extends State<ArticlesPage> {
     });
 
     try {
+      final currentUserId = ServiceLocator.instance.currentUser?.id;
       final articles = await ServiceLocator.instance.healthArticleRepository.getAllArticles(
         category: _selectedFilter,
         searchQuery: _searchQuery,
         page: _page,
         pageSize: _pageSize,
+        userId: currentUserId,
       );
 
       if (mounted) {
@@ -93,11 +95,13 @@ class _ArticlesPageState extends State<ArticlesPage> {
 
     try {
       _page++;
+      final currentUserId = ServiceLocator.instance.currentUser?.id;
       final articles = await ServiceLocator.instance.healthArticleRepository.getAllArticles(
         category: _selectedFilter,
         searchQuery: _searchQuery,
         page: _page,
         pageSize: _pageSize,
+        userId: currentUserId,
       );
 
       if (mounted) {

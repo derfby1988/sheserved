@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
-import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../data/models/health_article_models.dart';
 import '../widgets/health_article_skeleton.dart';
@@ -29,7 +28,8 @@ class HealthArticlePage extends StatefulWidget {
 }
 
 
-class _HealthArticlePageState extends State<HealthArticlePage> {
+class _HealthArticlePageState extends State<HealthArticlePage>
+    with TickerProviderStateMixin {
   late ScrollController _scrollController;
   bool _showStickyTitle = false;
   String _activeSection = 'article';
@@ -45,6 +45,11 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
   int _totalComments = 0;
   bool _isLoading = true;
   bool _isCommentsLoading = false;
+
+  // Animation state for visual feedback
+  final Map<String, AnimationController> _likeAnimControllers = {};
+  final Map<String, GlobalKey> _iconKeys = {}; // Keys for icon positions
+  OverlayEntry? _floatingOverlay;
 
   // Keys for Section Navigation
   final GlobalKey _articleHeadKey = GlobalKey();
@@ -89,7 +94,8 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
         // Then re-fetch to get latest interaction status (isBookmarked, etc.)
         try {
           print('HealthArticlePage: Refreshing article data for ${article.id}...');
-          final freshArticle = await repository.getArticleById(article.id);
+          final currentUserId = ServiceLocator.instance.currentUser?.id;
+          final freshArticle = await repository.getArticleById(article.id, userId: currentUserId);
           if (freshArticle != null) {
             article = freshArticle;
           }
@@ -98,7 +104,8 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
         }
       } else {
         print('HealthArticlePage: Fetching latest article...');
-        article = await repository.getLatestArticle();
+        final currentUserId = ServiceLocator.instance.currentUser?.id;
+        article = await repository.getLatestArticle(userId: currentUserId);
       }
       
       if (article != null) {
@@ -120,6 +127,7 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           await _fetchComments(initialPage);
           
           if (mounted) {
+            setState(() => _isLoading = false);
             
             // If target comment is provided, scroll to it after content is built
             if (widget.targetCommentId != null && !_hasInitialScrolled) {
@@ -250,7 +258,6 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อกดไลก์')),
       );
       
-      // Navigate to login with redirect info to return here after login
       Navigator.pushNamed(
         context, 
         '/login',
@@ -268,30 +275,75 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
       return;
     }
 
+    // Optimistic UI update
+    bool previousIsLiked = false;
+    int previousCount = 0;
+    setState(() {
+      if (commentId != null) {
+        final index = _comments.indexWhere((c) => c.id == commentId);
+        if (index != -1) {
+          final comment = _comments[index];
+          previousIsLiked = comment.isLiked;
+          previousCount = comment.likeCount;
+          final newIsLiked = !comment.isLiked;
+          _comments[index] = comment.copyWith(
+            isLiked: newIsLiked,
+            likeCount: newIsLiked ? comment.likeCount + 1 : (comment.likeCount - 1).clamp(0, 999999),
+          );
+        }
+      }
+    });
+
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
-      
-      // Update UI optimistically
-      setState(() {
-        if (commentId != null) {
-          final index = _comments.indexWhere((c) => c.id == commentId);
-          if (index != -1) {
-            final comment = _comments[index];
-            final newIsLiked = !comment.isLiked;
-            _comments[index] = comment.copyWith(
-              isLiked: newIsLiked,
-              likeCount: newIsLiked ? comment.likeCount + 1 : (comment.likeCount - 1).clamp(0, 999999),
-            );
-          }
-        }
-      });
-
-      await repository.toggleInteraction(
+      final result = await repository.toggleInteraction(
         articleId: _article!.id,
         commentId: commentId,
         userId: currentUser.id,
         type: 'like',
       );
+
+      if (mounted && result['success'] == true) {
+        // Update with real count from DB
+        setState(() {
+          if (commentId != null) {
+            final index = _comments.indexWhere((c) => c.id == commentId);
+            if (index != -1) {
+              _comments[index] = _comments[index].copyWith(
+                isLiked: result['isActive'] as bool,
+                likeCount: result['newCount'] as int,
+              );
+            }
+          }
+        });
+
+        // Show visual effect over the icon
+        final iconKey = _iconKeys['like-${commentId ?? "article"}'];
+        if (result['isActive'] == true) {
+          _showHeartBounceEffect(commentId);
+          _showFloatingText(iconKey, '❤️', Colors.pinkAccent);
+        } else {
+          _showFloatingText(iconKey, '-❤️', Colors.white54);
+        }
+      } else if (mounted && result['success'] == false) {
+        // Revert on failure
+        setState(() {
+          if (commentId != null) {
+            final index = _comments.indexWhere((c) => c.id == commentId);
+            if (index != -1) {
+              _comments[index] = _comments[index].copyWith(
+                isLiked: previousIsLiked,
+                likeCount: previousCount,
+              );
+            }
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('เกิดข้อผิดพลาด กรุณาลองใหม่'), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
     } catch (e) {
       debugPrint('Error toggling like: $e');
     }
@@ -323,38 +375,197 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
       return;
     }
 
+    // Optimistic UI update
+    bool previousIsBookmarked = false;
+    setState(() {
+      if (commentId != null) {
+        final index = _comments.indexWhere((c) => c.id == commentId);
+        if (index != -1) {
+          final comment = _comments[index];
+          previousIsBookmarked = comment.isBookmarked;
+          _comments[index] = comment.copyWith(isBookmarked: !comment.isBookmarked);
+        }
+      } else {
+        previousIsBookmarked = _article!.isBookmarked;
+        _article = _article!.copyWith(isBookmarked: !_article!.isBookmarked);
+      }
+    });
+
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
-      
-      // Update UI optimistically
-      setState(() {
-        if (commentId != null) {
-          final index = _comments.indexWhere((c) => c.id == commentId);
-          if (index != -1) {
-            final comment = _comments[index];
-            _comments[index] = comment.copyWith(isBookmarked: !comment.isBookmarked);
-          }
-        } else {
-          // Article bookmark toggle
-          _article = _article!.copyWith(isBookmarked: !_article!.isBookmarked);
-        }
-      });
-
-      await repository.toggleInteraction(
+      final result = await repository.toggleInteraction(
         articleId: _article!.id,
         commentId: commentId,
         userId: currentUser.id,
         type: 'bookmark',
       );
+
+      if (mounted && result['success'] == true) {
+        // Update with real state from DB
+        setState(() {
+          if (commentId != null) {
+            final index = _comments.indexWhere((c) => c.id == commentId);
+            if (index != -1) {
+              _comments[index] = _comments[index].copyWith(
+                isBookmarked: result['isActive'] as bool,
+              );
+            }
+          } else {
+            _article = _article!.copyWith(
+              isBookmarked: result['isActive'] as bool,
+              bookmarkCount: result['newCount'] as int,
+            );
+          }
+        });
+
+        // Show visual effect over the icon
+        final iconKey = _iconKeys['bm-${commentId ?? "article"}'];
+        if (result['isActive'] == true) {
+          _showFloatingText(iconKey, '🔖 +1', const Color(0xFFFFD700));
+        } else {
+          _showFloatingText(iconKey, '-1', Colors.white54);
+        }
+      } else if (mounted && result['success'] == false) {
+        // Revert on failure
+        setState(() {
+          if (commentId != null) {
+            final index = _comments.indexWhere((c) => c.id == commentId);
+            if (index != -1) {
+              _comments[index] = _comments[index].copyWith(isBookmarked: previousIsBookmarked);
+            }
+          } else {
+            _article = _article!.copyWith(isBookmarked: previousIsBookmarked);
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('เกิดข้อผิดพลาด กรุณาลองใหม่'), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
     } catch (e) {
       debugPrint('Error toggling bookmark: $e');
     }
+  }
+
+  /// Show a bouncing heart animation on the like icon for a comment
+  void _showHeartBounceEffect(String? commentId) {
+    final key = commentId ?? 'article';
+    // Dispose old controller if exists
+    _likeAnimControllers[key]?.dispose();
+
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _likeAnimControllers[key] = controller;
+
+    // Trigger animation: scale up then back to normal
+    controller.forward().then((_) {
+      if (mounted) {
+        controller.reverse();
+      }
+    });
+  }
+
+  /// Show a floating text effect (e.g. "+1 ❤️" or "🔖 บันทึกแล้ว!")
+  /// [iconKey] is the GlobalKey of the icon that was tapped
+  void _showFloatingText(GlobalKey? iconKey, String text, Color textColor) {
+    // Remove any existing overlay
+    _floatingOverlay?.remove();
+    _floatingOverlay = null;
+
+    final overlay = Overlay.of(context);
+
+    // Find position of the tapped icon, or fall back to screen center
+    final screenSize = MediaQuery.of(context).size;
+    Offset position;
+
+    if (iconKey?.currentContext != null) {
+      final renderBox = iconKey!.currentContext!.findRenderObject() as RenderBox;
+      final pos = renderBox.localToGlobal(Offset.zero);
+      // Center over the icon
+      position = Offset(pos.dx + renderBox.size.width / 2, pos.dy);
+    } else {
+      position = Offset(screenSize.width / 2, screenSize.height * 0.4);
+    }
+
+    final animController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    final fadeAnim = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: animController, curve: const Interval(0.5, 1.0)),
+    );
+    final slideAnim = Tween<Offset>(begin: Offset.zero, end: const Offset(0, -50)).animate(
+      CurvedAnimation(parent: animController, curve: Curves.easeOut),
+    );
+    final scaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.5, end: 1.6), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 1.6, end: 1.0), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: animController, curve: Curves.easeOut));
+
+    _floatingOverlay = OverlayEntry(
+      builder: (context) => AnimatedBuilder(
+        animation: animController,
+        builder: (context, child) => Positioned(
+          left: position.dx - 40,
+          top: position.dy - 10 + slideAnim.value.dy,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: fadeAnim.value,
+              child: Transform.scale(
+                scale: scaleAnim.value,
+                child: Container(
+                  width: 80,
+                  alignment: Alignment.center,
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withOpacity(0.8),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(_floatingOverlay!);
+    animController.forward().then((_) {
+      _floatingOverlay?.remove();
+      _floatingOverlay = null;
+      animController.dispose();
+    });
+  }
+
+  /// Helper to get or create a GlobalKey for a specific icon
+  GlobalKey _getIconKey(String id) {
+    return _iconKeys.putIfAbsent(id, () => GlobalKey());
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    // Clean up animation controllers
+    for (final controller in _likeAnimControllers.values) {
+      controller.dispose();
+    }
+    _likeAnimControllers.clear();
+    _floatingOverlay?.remove();
+    _floatingOverlay = null;
     super.dispose();
   }
 
@@ -810,10 +1021,13 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
           Positioned(
             top: 0,
             right: 24,
-            child: RibbonBookmark(
-              isBookmarked: _article?.isBookmarked ?? false,
-              onTap: () => _onToggleBookmark(),
-              height: 30,
+            child: Container(
+              key: _getIconKey('bm-article'),
+              child: RibbonBookmark(
+                isBookmarked: _article?.isBookmarked ?? false,
+                onTap: () => _onToggleBookmark(),
+                height: 30,
+              ),
             ),
           ),
         ],
@@ -968,13 +1182,15 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
                       '${comment.likeCount}',
                       color: comment.isLiked ? Colors.pinkAccent : Colors.white,
                       onTap: () => _onToggleLike(comment.id),
+                      iconKey: _getIconKey('like-${comment.id}'),
                     ),
                     _buildStatIcon(Icons.chat_bubble_outline, '0'),
                     _buildStatIcon(
                       comment.isBookmarked ? Icons.bookmark : Icons.bookmark_border, 
-                      '', // No count for comments as per request or just keep 0
+                      '',
                       color: comment.isBookmarked ? const Color(0xFFFFD700) : Colors.white,
                       onTap: () => _onToggleBookmark(commentId: comment.id),
+                      iconKey: _getIconKey('bm-${comment.id}'),
                     ),
                   ],
                 ),
@@ -1001,8 +1217,9 @@ class _HealthArticlePageState extends State<HealthArticlePage> {
     );
   }
 
-  Widget _buildStatIcon(IconData icon, String value, {Color color = Colors.white, VoidCallback? onTap}) {
+  Widget _buildStatIcon(IconData icon, String value, {Color color = Colors.white, VoidCallback? onTap, GlobalKey? iconKey}) {
     return GestureDetector(
+      key: iconKey,
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.only(left: 8),
