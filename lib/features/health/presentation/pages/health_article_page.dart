@@ -140,6 +140,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                     _onToggleLike(widget.pendingCommentId);
                   } else if (widget.pendingAction == 'bookmark') {
                     _onToggleBookmark(commentId: widget.pendingCommentId);
+                  } else if (widget.pendingAction == 'reply') {
+                    _handleReply(widget.pendingCommentId!);
                   }
                 }
               });
@@ -258,7 +260,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อกดไลก์')),
       );
       
-      Navigator.pushNamed(
+      Navigator.pushReplacementNamed(
         context, 
         '/login',
         arguments: {
@@ -358,7 +360,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
       );
       
-      Navigator.pushNamed(
+      Navigator.pushReplacementNamed(
         context, 
         '/login',
         arguments: {
@@ -1262,17 +1264,21 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     final currentUser = ServiceLocator.instance.currentUser;
     
     if (currentUser == null) {
-      // Not logged in: Redirect to Login Page with return argument
-      Navigator.pushNamed(
+      // Not logged in: Redirect to Login Page using replacement to avoid Redundant Stack
+      Navigator.pushReplacementNamed(
         context, 
         '/login',
-        arguments: '/health/article',
-      ).then((_) {
-        // Check again after returning from login
-        if (ServiceLocator.instance.currentUser != null) {
-          _showReplyDialog(commentId);
-        }
-      });
+        arguments: {
+          'route': '/health/article',
+          'arguments': {
+            'article': _article,
+            'targetPage': _currentPage,
+            'targetCommentId': commentId,
+            'pendingAction': 'reply',
+            'pendingCommentId': commentId,
+          }
+        },
+      );
     } else {
       // Logged in: Show Reply Dialog
       _showReplyDialog(commentId);
