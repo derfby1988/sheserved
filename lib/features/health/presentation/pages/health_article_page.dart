@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../../core/constants/app_colors.dart';
-import '../../../../shared/widgets/widgets.dart';
-import '../../../../services/service_locator.dart';
-import '../../data/models/health_article_models.dart';
-import '../widgets/health_article_skeleton.dart';
+import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/widgets.dart';
+import 'package:sheserved/services/service_locator.dart';
+import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/features/auth/data/models/user_model.dart';
+import 'package:sheserved/features/health/data/models/health_article_models.dart';
+import 'package:sheserved/features/health/presentation/widgets/health_article_skeleton.dart';
 
 /// Health Article Page
 /// Feature-rich forum and article viewer with stacked sticky headers and nested comments.
@@ -43,6 +45,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   List<HealthArticleProduct> _products = [];
   List<HealthArticleComment> _comments = [];
   int _totalComments = 0;
+  int _totalRootComments = 0;
   bool _isLoading = true;
   bool _isCommentsLoading = false;
 
@@ -112,7 +115,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         // 2. Fetch Products and Total Comments
         final results = await Future.wait([
           repository.getArticleProducts(article.id),
-          repository.getArticleCommentCount(article.id),
+          repository.getArticleCommentCount(article.id), // All
+          repository.getArticleCommentCount(article.id, rootsOnly: true), // Roots for pagination
         ]);
         
         if (mounted) {
@@ -120,6 +124,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
             _article = article;
             _products = results[0] as List<HealthArticleProduct>;
             _totalComments = results[1] as int;
+            _totalRootComments = results[2] as int;
           });
           
           // 3. Fetch Initial Page of Comments (or target page)
@@ -191,6 +196,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         setState(() {
           _comments = comments;
           _currentPage = page;
+          _applyLocalThreading();
           _isCommentsLoading = false;
         });
         
@@ -646,9 +652,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
 
       if (newComment != null && mounted) {
         setState(() {
-          // Append for Ascending order
-          _comments.add(newComment);
           _totalComments++;
+          if (parentId == null) {
+            _totalRootComments++;
+          }
+          
+          _comments.add(newComment);
+          _applyLocalThreading();
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ส่งความคิดเห็นเรียบร้อยแล้ว')),
@@ -656,6 +666,62 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       }
     } catch (e) {
       debugPrint('Error posting comment: $e');
+    }
+  }
+
+  void _applyLocalThreading() {
+    if (_comments.isEmpty) return;
+    
+    // Get all root comments
+    final roots = _comments.where((c) => c.parentId == null).toList();
+    
+    // Sort roots based on current sort criteria
+    if (_currentSort == 'newest') {
+      roots.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else if (_currentSort == 'likes') {
+      roots.sort((a, b) => b.likeCount.compareTo(a.likeCount));
+    } else if (_currentSort == 'bookmarks') {
+      // Assuming we have a bookmarkCount or similar if needed, else fallback
+      roots.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else {
+      // Default: oldest
+      roots.sort((a, b) => a.commentNumber.compareTo(b.commentNumber));
+    }
+
+    final threaded = <HealthArticleComment>[];
+    for (var root in roots) {
+      threaded.add(root);
+      // Find all replies for this root and sort them by date (always oldest first for conversation flow)
+      final replies = _comments.where((c) => c.parentId == root.id).toList();
+      replies.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      threaded.addAll(replies);
+    }
+
+    // Include any remaining comments (orphans or newly added that might not fit the filter yet)
+    final threadedIds = threaded.map((e) => e.id).toSet();
+    final orphans = _comments.where((c) => !threadedIds.contains(c.id)).toList();
+    // Sort orphans too
+    orphans.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    threaded.addAll(orphans);
+
+    setState(() {
+      _comments = threaded;
+    });
+  }
+
+  String _getCommentDisplayNumber(HealthArticleComment comment) {
+    if (comment.parentId == null) {
+      return '${comment.commentNumber}';
+    }
+
+    try {
+      final parent = _comments.firstWhere((c) => c.id == comment.parentId);
+      final siblings = _comments.where((c) => c.parentId == comment.parentId).toList();
+      siblings.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final index = siblings.indexWhere((c) => c.id == comment.id);
+      return '${parent.commentNumber}-${index + 1}';
+    } catch (e) {
+      return '${comment.commentNumber}';
     }
   }
 
@@ -1134,9 +1200,12 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     final comment = _comments[index];
     final commentKey = _commentKeys.putIfAbsent(comment.id, () => GlobalKey());
     
+    final isReply = comment.parentId != null;
+    final displayNumber = _getCommentDisplayNumber(comment);
+    
     return Container(
       key: commentKey,
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      margin: EdgeInsets.fromLTRB(isReply ? 60 : 20, 8, 20, 8),
       child: Stack(
         children: [
           Container(
@@ -1243,7 +1312,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'ความคิดเห็นที่ ${comment.commentNumber}',
+                'ความคิดเห็นที่ $displayNumber',
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
             ),
@@ -1321,44 +1390,163 @@ class _HealthArticlePageState extends State<HealthArticlePage>
 
   void _showReplyDialog(String commentId) {
     final controller = TextEditingController();
+    final parentComment = _comments.firstWhere((c) => c.id == commentId);
+    final UserModel? authCurrentUser = AuthService.instance.currentUser;
+    bool isSubmitting = false;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('ตอบกลับความคิดเห็น'),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: 'เขียนความคิดเห็นของคุณ...',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ยกเลิก'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final content = controller.text;
-              Navigator.pop(context);
-              if (content.isNotEmpty) {
-                _submitComment(content, parentId: commentId);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.fromLTRB(20, 32, 20, 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3B5D).withOpacity(0.95),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ตอบกลับความคิดเห็นของ ${parentComment.username ?? 'สมาชิก'}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        child: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          enabled: !isSubmitting,
+                          style: const TextStyle(color: Colors.black, fontSize: 15),
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: 'เขียนความคิดเห็นของคุณที่นี่...',
+                            hintStyle: TextStyle(color: Colors.black.withOpacity(0.4), fontSize: 14),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            margin: const EdgeInsets.only(right: 12),
+                            decoration: const BoxDecoration(
+                              color: Colors.white24,
+                              shape: BoxShape.circle,
+                            ),
+                            child: authCurrentUser?.profileImageUrl != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.network(authCurrentUser!.profileImageUrl!, fit: BoxFit.cover),
+                                )
+                              : const Icon(Icons.person, size: 20, color: Colors.white70),
+                          ),
+                          Text(
+                            authCurrentUser?.username ?? 'คุณ',
+                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                            child: const Text('ยกเลิก', style: TextStyle(color: Colors.white54)),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: isSubmitting ? null : () async {
+                              final content = controller.text;
+                              if (content.trim().isNotEmpty) {
+                                setDialogState(() => isSubmitting = true);
+                                try {
+                                  await _submitComment(content, parentId: commentId);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    // เลื่อนไปที่ส่วนคอมเมนต์เพื่อให้เห็นผลลัพธ์
+                                    Scrollable.ensureVisible(
+                                      _commentsKey.currentContext!,
+                                      duration: const Duration(milliseconds: 500),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  }
+                                } catch (e) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF1AE27),
+                              foregroundColor: Colors.black87,
+                              disabledBackgroundColor: const Color(0xFFF1AE27).withOpacity(0.5),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ),
+                            child: isSubmitting 
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
+                              : const Text('ส่งคำตอบ', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1C40F),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      'ตอบกลับ คห.ที่ ${parentComment.commentNumber}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            child: const Text('ส่ง'),
-          ),
-        ],
+          );
+        }
       ),
     );
   }
 
   Widget _buildPaginationSection() {
-    final int totalPages = (_totalComments / 10).ceil();
+    final int totalPages = (_totalRootComments / 10).ceil();
     if (totalPages <= 1) return const SizedBox.shrink();
 
     return Padding(
@@ -1401,7 +1589,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'แสดง ${(_currentPage - 1) * 10 + 1}-${(_currentPage * 10).clamp(0, _totalComments)} จากทั้งหมด $_totalComments ความคิดเห็น', 
+                'แสดง ${(_currentPage - 1) * 10 + 1}-${(_currentPage * 10).clamp(0, _totalRootComments)} จากทั้งหมด $_totalRootComments หัวข้อสนทนา ($_totalComments ความคิดเห็น)', 
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(width: 16),

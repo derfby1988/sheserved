@@ -461,26 +461,52 @@ class HealthArticleRepository {
       final from = (page - 1) * pageSize;
       final to = from + pageSize - 1;
 
-      // Select comments with user details
+      // To handle hierarchy correctly during pagination, we paginate by ROOT comments
+      // and then fetch all replies for those roots.
+      
+      // 1. Fetch Root Comments for this page
+      dynamic rootQuery = _client
+          .from('health_article_comments')
+          .select('id')
+          .eq('article_id', articleId)
+          .filter('parent_id', 'is', null);
+
+      if (sort == 'newest') {
+        rootQuery = rootQuery.order('created_at', ascending: false);
+      } else if (sort == 'likes') {
+        rootQuery = rootQuery.order('like_count', ascending: false);
+      } else if (sort == 'bookmarks') {
+        rootQuery = rootQuery.order('bookmark_count', ascending: false);
+      } else {
+        rootQuery = rootQuery.order('comment_number', ascending: true);
+      }
+
+      final rootResponse = await rootQuery.range(from, to);
+      
+      if (rootResponse == null || (rootResponse as List).isEmpty) {
+        return [];
+      }
+
+      final rootIds = (rootResponse as List).map((e) => e['id'] as String).toList();
+
+      // 2. Fetch all comments (roots + their replies)
+      // We fetch where id in rootIds OR parent_id in rootIds
       dynamic query = _client
           .from('health_article_comments')
           .select('*, users(username, profile_image_url)')
-          .eq('article_id', articleId);
-          
-      // Apply sorting
+          .or('id.in.(${rootIds.map((id) => "\"$id\"").join(",")}),parent_id.in.(${rootIds.map((id) => "\"$id\"").join(",")})');
+
       if (sort == 'newest') {
         query = query.order('created_at', ascending: false);
       } else if (sort == 'likes') {
         query = query.order('like_count', ascending: false);
       } else if (sort == 'bookmarks') {
-        // Assuming bookmark_count exists in the table as per model
         query = query.order('bookmark_count', ascending: false);
       } else {
-        // Default: 'oldest' (by comment_number ascending as requested)
         query = query.order('comment_number', ascending: true);
       }
-      
-      final response = await query.range(from, to);
+
+      final response = await query;
 
       if (response != null && (response as List).isNotEmpty) {
         // Fetch all interactions for this user on this article (efficient simplified query)
@@ -763,18 +789,21 @@ class HealthArticleRepository {
   }
 
   /// Get total comment count for an article
-  Future<int> getArticleCommentCount(String articleId) async {
+  Future<int> getArticleCommentCount(String articleId, {bool rootsOnly = false}) async {
     try {
-      final response = await _client
+      dynamic query = _client
           .from('health_article_comments')
           .select('id')
           .eq('article_id', articleId);
       
-      if (response != null && (response as List).isNotEmpty) {
-        return (response as List).length;
+      if (rootsOnly) {
+        query = query.filter('parent_id', 'is', null);
       }
-      return 0;
+
+      final response = await query.count(CountOption.exact);
+      return response.count ?? 0;
     } catch (e) {
+      print('Repository: Error getting comment count: $e');
       return 0;
     }
   }
