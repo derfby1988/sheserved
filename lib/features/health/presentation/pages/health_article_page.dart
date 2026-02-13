@@ -3,6 +3,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
+import '../../../auth/data/models/user_model.dart';
 import '../../data/models/health_article_models.dart';
 import '../widgets/health_article_skeleton.dart';
 
