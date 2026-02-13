@@ -198,9 +198,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       final repository = ServiceLocator.instance.healthArticleRepository;
       final currentUser = ServiceLocator.instance.currentUser;
       
+      // Check if current user is the article author
+      final isArticleAuthor = _article!.authorId == currentUser?.id;
+      
       final comments = await repository.getArticleComments(
         _article!.id, 
         currentUserId: currentUser?.id,
+        isArticleAuthor: isArticleAuthor,
         page: page,
         pageSize: 10,
         sort: _currentSort,
@@ -779,16 +783,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     final threaded = <HealthArticleComment>[];
     for (var root in roots) {
       threaded.add(root);
-      // Find all replies for this root and sort them by date (always oldest first for conversation flow)
-      final replies = _comments.where((c) => c.parentId == root.id).toList();
-      replies.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      threaded.addAll(replies);
+      // Recursively add all descendants in cronological order
+      _addDescendants(root.id, threaded);
     }
 
-    // Include any remaining comments (orphans or newly added that might not fit the filter yet)
+    // Include any remaining comments (orphans)
     final threadedIds = threaded.map((e) => e.id).toSet();
     final orphans = _comments.where((c) => !threadedIds.contains(c.id)).toList();
-    // Sort orphans too
     orphans.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     threaded.addAll(orphans);
 
@@ -797,19 +798,45 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     });
   }
 
+  void _addDescendants(String parentId, List<HealthArticleComment> targetList) {
+    final directReplies = _comments.where((c) => c.parentId == parentId).toList();
+    directReplies.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    
+    for (var reply in directReplies) {
+      targetList.add(reply);
+      _addDescendants(reply.id, targetList);
+    }
+  }
+
   String _getCommentDisplayNumber(HealthArticleComment comment) {
     if (comment.parentId == null) {
       return '${comment.commentNumber}';
     }
 
     try {
-      final parent = _comments.firstWhere((c) => c.id == comment.parentId);
-      final siblings = _comments.where((c) => c.parentId == comment.parentId).toList();
-      siblings.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      final index = siblings.indexWhere((c) => c.id == comment.id);
-      return '${parent.commentNumber}-${index + 1}';
+      // Find the ultimate root parent
+      HealthArticleComment? root;
+      String? currentParentId = comment.parentId;
+      
+      while (currentParentId != null) {
+        final parent = _comments.firstWhere((c) => c.id == currentParentId);
+        if (parent.parentId == null) {
+          root = parent;
+          break;
+        }
+        currentParentId = parent.parentId;
+      }
+
+      if (root == null) return '0-0';
+
+      // Find all descendants of this root to calculate sequence number
+      final descendants = <HealthArticleComment>[];
+      _addDescendants(root.id, descendants);
+      
+      final sequenceIndex = descendants.indexWhere((c) => c.id == comment.id);
+      return '${root.commentNumber}-${sequenceIndex + 1}';
     } catch (e) {
-      return '${comment.commentNumber}';
+      return '0-0';
     }
   }
 
@@ -1306,6 +1333,17 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     final isReply = comment.parentId != null;
     final displayNumber = _getCommentDisplayNumber(comment);
     
+    // Get parent display number for "Reply to X" text
+    String? parentDisplayNumber;
+    if (isReply) {
+      try {
+        final parent = _comments.firstWhere((c) => c.id == comment.parentId);
+        parentDisplayNumber = _getCommentDisplayNumber(parent);
+      } catch (e) {
+        parentDisplayNumber = null;
+      }
+    }
+    
     return Container(
       key: commentKey,
       margin: EdgeInsets.fromLTRB(isReply ? 60 : 20, 8, 20, 8),
@@ -1330,15 +1368,36 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 12),
-                Text(
-                  comment.content,
-                  maxLines: _expandedCommentIds.contains(comment.id) ? null : 3,
-                  overflow: _expandedCommentIds.contains(comment.id) ? TextOverflow.visible : TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14, 
-                    color: isOwnComment ? const Color(0xFF1A3B5D) : Colors.white, 
-                    height: 1.5,
-                    fontWeight: FontWeight.normal,
+                GestureDetector(
+                  onTap: () {
+                    // Show edit history if user is article author and comment has been edited
+                    final isArticleAuthor = _article?.authorId == AuthService.instance.currentUser?.id;
+                    if (isArticleAuthor && comment.editCount > 0) {
+                      _showEditHistoryDialog(comment);
+                    }
+                  },
+                  child: Text(
+                    comment.content,
+                    maxLines: _expandedCommentIds.contains(comment.id) ? null : 3,
+                    overflow: _expandedCommentIds.contains(comment.id) ? TextOverflow.visible : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: () {
+                        // Red if article author and comment has been edited
+                        final isArticleAuthor = _article?.authorId == AuthService.instance.currentUser?.id;
+                        if (isArticleAuthor && comment.editCount > 0) {
+                          return Colors.red;
+                        }
+                        // Blue if own comment
+                        if (isOwnComment) {
+                          return const Color(0xFF1A3B5D);
+                        }
+                        // White otherwise
+                        return Colors.white;
+                      }(),
+                      height: 1.5,
+                      fontWeight: FontWeight.normal,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1369,7 +1428,17 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                     const SizedBox(width: 16),
                     GestureDetector(
                       onTap: () => _handleReply(comment.id),
-                      child: const Text('ตอบกลับ', style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.reply, size: 14, color: Color(0xFFF1AE27)),
+                          SizedBox(width: 4),
+                          Text(
+                            'ตอบกลับ', 
+                            style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1432,19 +1501,67 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ],
             ),
           ),
+          // Visibility control button for article author (bottom-right)
+          if (_article?.authorId == AuthService.instance.currentUser?.id)
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () => _toggleCommentVisibility(comment),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        comment.isHidden ? Icons.visibility_off : Icons.visibility,
+                        size: 14,
+                        color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        comment.isHidden ? 'ปิดกั้น' : 'เปิดเผย',
+                        style: TextStyle(
+                          color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             left: 0,
             top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1C40F).withOpacity(0.9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'ความคิดเห็นที่ $displayNumber',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
-              ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1C40F).withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'ความคิดเห็นที่ $displayNumber',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                ),
+                if (parentDisplayNumber != null) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.reply, size: 12, color: Colors.white70),
+                  const SizedBox(width: 4),
+                  Text(
+                    parentDisplayNumber,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white70,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           if (isOwnComment)
@@ -1454,22 +1571,19 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               child: GestureDetector(
                 onTap: () => _showEditDialog(comment),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF1AE27),
-                    borderRadius: BorderRadius.only(
-                      topRight: Radius.circular(20),
-                      bottomLeft: Radius.circular(12),
-                    ),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.edit, size: 12, color: Colors.black87),
+                      Icon(Icons.edit, size: 14, color: Color(0xFFF1AE27)),
                       SizedBox(width: 4),
                       Text(
                         'แก้ไข',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFF1AE27),
+                        ),
                       ),
                     ],
                   ),
@@ -1870,6 +1984,196 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       ),
     );
   }
+
+  Future<void> _toggleCommentVisibility(HealthArticleComment comment) async {
+    try {
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      final success = await repository.toggleCommentVisibility(
+        commentId: comment.id,
+        isHidden: !comment.isHidden,
+      );
+
+      if (success && mounted) {
+        setState(() {
+          final index = _comments.indexWhere((c) => c.id == comment.id);
+          if (index != -1) {
+            _comments[index] = comment.copyWith(isHidden: !comment.isHidden);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              comment.isHidden ? 'เปิดเผยความคิดเห็นแล้ว' : 'ปิดกั้นความคิดเห็นแล้ว'
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error toggling visibility: $e');
+    }
+  }
+
+  void _showEditHistoryDialog(HealthArticleComment comment) async {
+    final repository = ServiceLocator.instance.healthArticleRepository;
+    final history = await repository.getCommentEditHistory(comment.id);
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 500),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A3B5D),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1AE27).withOpacity(0.2),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.history, color: Color(0xFFF1AE27)),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'ประวัติการแก้ไข',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              // Edit history list
+              if (history.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Text(
+                    'ไม่มีประวัติการแก้ไข',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: history.length,
+                    itemBuilder: (context, index) {
+                      final edit = history[index];
+                      return _buildEditHistoryItem(edit);
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditHistoryItem(CommentEditHistory edit) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1AE27),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'ครั้งที่ ${edit.editNumber}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _formatThaiDate(edit.editedAt),
+                style: const TextStyle(color: Colors.white54, fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Old content
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.remove_circle_outline, size: 14, color: Colors.red),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    edit.oldContent,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // New content
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.add_circle_outline, size: 14, color: Colors.green),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    edit.newContent,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   Widget _buildPaginationSection() {
     final int totalPages = (_totalRootComments / 10).ceil();

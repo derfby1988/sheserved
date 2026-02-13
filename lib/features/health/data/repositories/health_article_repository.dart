@@ -453,6 +453,7 @@ class HealthArticleRepository {
   Future<List<HealthArticleComment>> getArticleComments(
     String articleId, {
     String? currentUserId, // Added to check for likes
+    bool isArticleAuthor = false, // Whether the current user is the article author
     int page = 1,
     int pageSize = 10,
     String sort = 'oldest', // oldest, newest, likes, bookmarks
@@ -535,7 +536,20 @@ class HealthArticleRepository {
           }
         }
 
-        return (response as List).map((e) {
+        // Filter comments based on visibility rules
+        final filteredComments = (response as List).where((e) {
+          final isHidden = e['is_hidden'] == true;
+          final commentUserId = e['user_id'] as String;
+          
+          // Article author sees everything
+          if (isArticleAuthor) return true;
+          
+          // Comment author sees their own comments even if hidden
+          if (currentUserId != null && commentUserId == currentUserId) return true;
+          
+          // Everyone else only sees non-hidden comments
+          return !isHidden;
+        }).map((e) {
           final commentId = e['id'] as String;
           final jsonMap = Map<String, dynamic>.from(e);
           
@@ -545,6 +559,8 @@ class HealthArticleRepository {
           
           return HealthArticleComment.fromJson(jsonMap);
         }).toList();
+
+        return filteredComments;
       }
 
       return [];
@@ -855,20 +871,84 @@ class HealthArticleRepository {
     required String content,
   }) async {
     try {
-      final response = await _client
+      // First, get the current comment to store the old content
+      final currentComment = await _client
           .from('health_article_comments')
-          .update({'content': content})
+          .select()
           .eq('id', commentId)
-          .select('*, users(username, profile_image_url)')
           .single();
 
-      if (response != null) {
-        return HealthArticleComment.fromJson(response);
+      if (currentComment != null) {
+        final oldContent = currentComment['content'];
+        final currentEditCount = currentComment['edit_count'] ?? 0;
+        final newEditCount = currentEditCount + 1;
+
+        // Create edit history record
+        await _client.from('health_article_comment_history').insert({
+          'comment_id': commentId,
+          'old_content': oldContent,
+          'new_content': content,
+          'edit_number': newEditCount,
+          'edited_at': DateTime.now().toIso8601String(),
+        });
+
+        // Update the comment with new content and increment edit count
+        final response = await _client
+            .from('health_article_comments')
+            .update({
+              'content': content,
+              'edit_count': newEditCount,
+            })
+            .eq('id', commentId)
+            .select('*, users(username, profile_image_url)')
+            .single();
+
+        if (response != null) {
+          return HealthArticleComment.fromJson(response);
+        }
       }
       return null;
     } catch (e) {
       print('Repository: Error updating comment: $e');
       return null;
+    }
+  }
+
+  /// Get edit history for a comment
+  Future<List<CommentEditHistory>> getCommentEditHistory(String commentId) async {
+    try {
+      final response = await _client
+          .from('health_article_comment_history')
+          .select()
+          .eq('comment_id', commentId)
+          .order('edit_number', ascending: true);
+
+      if (response != null && (response as List).isNotEmpty) {
+        return (response as List)
+            .map((e) => CommentEditHistory.fromJson(e))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('Repository: Error fetching comment edit history: $e');
+      return [];
+    }
+  }
+
+  /// Toggle comment visibility (for article authors)
+  Future<bool> toggleCommentVisibility({
+    required String commentId,
+    required bool isHidden,
+  }) async {
+    try {
+      await _client
+          .from('health_article_comments')
+          .update({'is_hidden': isHidden})
+          .eq('id', commentId);
+      return true;
+    } catch (e) {
+      print('Repository: Error toggling comment visibility: $e');
+      return false;
     }
   }
 }

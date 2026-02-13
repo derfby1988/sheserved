@@ -169,8 +169,10 @@ class HealthArticleComment {
   final int viewCount;
   final int likeCount;
   final DateTime createdAt;
-  final bool isLiked; // Added
-  final bool isBookmarked; // Added
+  final bool isLiked;
+  final bool isBookmarked;
+  final int editCount; // Number of times this comment has been edited
+  final bool isHidden; // Whether the article author has hidden this comment
 
   HealthArticleComment({
     required this.id,
@@ -184,17 +186,14 @@ class HealthArticleComment {
     this.viewCount = 0,
     this.likeCount = 0,
     required this.createdAt,
-    this.isLiked = false, // Added
-    this.isBookmarked = false, // Added
+    this.isLiked = false,
+    this.isBookmarked = false,
+    this.editCount = 0,
+    this.isHidden = false,
   });
 
   factory HealthArticleComment.fromJson(Map<String, dynamic> json) {
     final userData = json['users'] as Map<String, dynamic>?;
-    
-    // Check if the comment is liked by the current user 
-    // This assumes the API returns a 'is_liked' boolean or we check if interactions list contains current user
-    // For now, we look for a field 'is_liked' which we will populate in the repository
-    final isLiked = json['is_liked'] == true;
 
     return HealthArticleComment(
       id: json['id'],
@@ -210,6 +209,8 @@ class HealthArticleComment {
       createdAt: DateTime.parse(json['created_at']),
       isLiked: json['is_liked'] == true,
       isBookmarked: json['is_bookmarked'] == true,
+      editCount: json['edit_count'] ?? 0,
+      isHidden: json['is_hidden'] == true,
     );
   }
 
@@ -227,6 +228,8 @@ class HealthArticleComment {
     DateTime? createdAt,
     bool? isLiked,
     bool? isBookmarked,
+    int? editCount,
+    bool? isHidden,
   }) {
     return HealthArticleComment(
       id: id ?? this.id,
@@ -242,6 +245,48 @@ class HealthArticleComment {
       createdAt: createdAt ?? this.createdAt,
       isLiked: isLiked ?? this.isLiked,
       isBookmarked: isBookmarked ?? this.isBookmarked,
+      editCount: editCount ?? this.editCount,
+      isHidden: isHidden ?? this.isHidden,
     );
+  }
+}
+
+class CommentEditHistory {
+  final String id;
+  final String commentId;
+  final String oldContent;
+  final String newContent;
+  final DateTime editedAt;
+  final int editNumber; // 1st edit, 2nd edit, etc.
+
+  CommentEditHistory({
+    required this.id,
+    required this.commentId,
+    required this.oldContent,
+    required this.newContent,
+    required this.editedAt,
+    required this.editNumber,
+  });
+
+  factory CommentEditHistory.fromJson(Map<String, dynamic> json) {
+    return CommentEditHistory(
+      id: json['id'],
+      commentId: json['comment_id'],
+      oldContent: json['old_content'],
+      newContent: json['new_content'],
+      editedAt: DateTime.parse(json['edited_at']),
+      editNumber: json['edit_number'] ?? 1,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'comment_id': commentId,
+      'old_content': oldContent,
+      'new_content': newContent,
+      'edited_at': editedAt.toIso8601String(),
+      'edit_number': editNumber,
+    };
   }
 }
