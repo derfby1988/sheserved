@@ -148,6 +148,20 @@ class _ArticlesPageState extends State<ArticlesPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          if (AuthService.instance.currentUser == null) {
+            // Navigate to login and wait for result
+            await Navigator.pushNamed(context, '/login');
+            
+            // Re-check auth state after returning
+            if (AuthService.instance.currentUser == null) return;
+          }
+          _showCreateArticleDialog();
+        },
+        backgroundColor: AppColors.primary,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -167,6 +181,329 @@ class _ArticlesPageState extends State<ArticlesPage> {
                   : _buildArticlesGrid(context),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreateArticleDialog() {
+    final titleController = TextEditingController();
+    final contentController = TextEditingController();
+    bool isSaving = false;
+    List<String> images = []; // Placeholder for image paths
+    List<String> productLinks = []; // Placeholder for product links
+    
+    const int maxTitleLength = 100;
+    const int maxContentLength = 2000;
+    const int maxImages = 5;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.edit_document, color: Colors.white),
+                      const SizedBox(width: 12),
+                      Text(
+                        'สร้างบทความสุขภาพ',
+                        style: AppTextStyles.heading5.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Content
+                Flexible(
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Title Field
+                          Text('หัวข้อบทความ', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: titleController,
+                            maxLength: maxTitleLength,
+                            onChanged: (_) => setDialogState(() {}),
+                            decoration: InputDecoration(
+                              hintText: 'กรอกหัวข้อบทความ...',
+                              counterText: 'คงเหลือ ${maxTitleLength - titleController.text.length} ตัวอักษร',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Content Field
+                          Text('เนื้อหาบทความ', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: contentController,
+                            maxLength: maxContentLength,
+                            maxLines: 8,
+                            onChanged: (_) => setDialogState(() {}),
+                            decoration: InputDecoration(
+                              hintText: 'บอกเล่าสาระสุขภาพดีๆ ของคุณ...',
+                              counterText: 'คงเหลือ ${maxContentLength - contentController.text.length} ตัวอักษร',
+                              alignLabelWithHint: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Images Section
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('รูปภาพประกอบ (${images.length}/$maxImages)', 
+                                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                              if (images.length < maxImages)
+                                TextButton.icon(
+                                  onPressed: () {
+                                    // Placeholder for image picker
+                                    setDialogState(() {
+                                      images.add('https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/400/300');
+                                    });
+                                  },
+                                  icon: const Icon(Icons.add_a_photo, size: 18),
+                                  label: const Text('เพิ่มรูป'),
+                                  style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (images.isEmpty)
+                            Container(
+                              height: 100,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.image_outlined, color: Colors.grey[400]),
+                                  const SizedBox(height: 4),
+                                  Text('ยังไม่มีรูปภาพ', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                                ],
+                              ),
+                            )
+                          else
+                            SizedBox(
+                              height: 100,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: images.length,
+                                itemBuilder: (context, index) => Container(
+                                  width: 100,
+                                  margin: const EdgeInsets.only(right: 8),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    image: DecorationImage(image: NetworkImage(images[index]), fit: BoxFit.cover),
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.topRight,
+                                    child: GestureDetector(
+                                      onTap: () => setDialogState(() => images.removeAt(index)),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 24),
+
+                          // Product Links Section
+                          Text('สินค้าที่เกี่ยวข้อง', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                // Placeholder for product selector
+                                setDialogState(() {
+                                  productLinks.add('Product ${productLinks.length + 1}');
+                                });
+                              },
+                              icon: const Icon(Icons.link, size: 18),
+                              label: const Text('เพิ่มสินค้าที่เกี่ยวข้อง'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.primary),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                          if (productLinks.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: productLinks.map((link) => Chip(
+                                label: Text(link, style: const TextStyle(fontSize: 11)),
+                                deleteIcon: const Icon(Icons.close, size: 14),
+                                onDeleted: () => setDialogState(() => productLinks.remove(link)),
+                                backgroundColor: AppColors.primaryLight.withOpacity(0.3),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              )).toList(),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Footer Actions
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+                    border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: isSaving ? null : () => Navigator.pop(context),
+                          child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: isSaving ? null : () async {
+                            // Validation
+                            if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('กรุณากรอกหัวข้อและเนื้อหาบทความ')),
+                              );
+                              return;
+                            }
+
+                            setDialogState(() => isSaving = true);
+
+                            try {
+                              final repository = ServiceLocator.instance.healthArticleRepository;
+                              final currentUser = AuthService.instance.currentUser;
+                              
+                              if (currentUser == null) {
+                                Navigator.pop(context);
+                                return;
+                              }
+
+                              final newArticle = await repository.createArticle(
+                                userId: currentUser.id,
+                                title: titleController.text.trim(),
+                                content: contentController.text.trim(),
+                                imageUrl: images.isNotEmpty ? images.first : null,
+                              );
+
+                              if (newArticle != null && mounted) {
+                                Navigator.pop(context); // Close dialog
+                                
+                                // Navigate to the new article page
+                                if (mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => HealthArticlePage(article: newArticle),
+                                    ),
+                                  );
+                                  
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('เผยแพร่บทความสำเร็จ')),
+                                  );
+                                  
+                                  // Refresh the list in the background
+                                  _loadInitialArticles();
+                                }
+                              } else {
+                                if (mounted) {
+                                  setDialogState(() => isSaving = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('ไม่สามารถบันทึกข้อมูลได้ กรุณาตรวจสอบการเชื่อมต่อหรือสิทธิ์การใช้งาน'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                setDialogState(() => isSaving = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('ขออภัย เกิดข้อผิดพลาด: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                          child: isSaving 
+                            ? const SizedBox(
+                                height: 20, 
+                                width: 20, 
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Text('เผยแพร่บทความ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

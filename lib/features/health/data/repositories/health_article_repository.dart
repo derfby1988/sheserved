@@ -951,4 +951,47 @@ class HealthArticleRepository {
       return false;
     }
   }
+
+  /// Create a new health article
+  Future<HealthArticle?> createArticle({
+    required String userId,
+    required String title,
+    required String content,
+    String? imageUrl,
+  }) async {
+    try {
+      print('Repository: Attempting minimal insert for article. User: $userId');
+      
+      // Perform insert with only core fields to avoid "column does not exist" errors
+      // if count columns are not yet in the schema
+      final response = await _client
+          .from('health_articles')
+          .insert({
+            'author_id': userId,
+            'title': title,
+            'content': content,
+            'image_url': imageUrl,
+            'category': 'ทั้งหมด',
+          })
+          .select('*, users(username, profile_image_url)')
+          .single();
+
+      if (response != null) {
+        print('Repository: Success! Article ID: ${response['id']}');
+        return HealthArticle.fromJson(response);
+      }
+      return null;
+    } catch (e) {
+      print('Repository: Error creating article: $e');
+      if (e is PostgrestException) {
+        print('Postgrest Details: ${e.message}, ${e.details}');
+        
+        // If it's a 42703 (Undefined Column), it confirms our theory
+        if (e.code == '42703') {
+          print('REPOSITORY HINT: One or more columns like view_count/like_count might be missing in DB.');
+        }
+      }
+      rethrow; // Rethrow to let the UI catch and show the actual error
+    }
+  }
 }

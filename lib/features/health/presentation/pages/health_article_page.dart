@@ -1058,10 +1058,10 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  _buildNavButton('หัวข้อ', _activeSection == 'article'),
-                  _buildNavButton('สินค้า', _activeSection == 'products'),
-                  _buildNavButton('ความคิดเห็น', _activeSection == 'comments'),
-                  _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about'),
+                  _buildNavButton('หัวข้อ', _activeSection == 'article', onTap: () => _scrollToSection(_articleHeadKey)),
+                  _buildNavButton('สินค้า', _activeSection == 'products', onTap: () => _scrollToSection(_productsKey)),
+                  _buildNavButton('ความคิดเห็น', _activeSection == 'comments', onTap: () => _scrollToSection(_commentsKey)),
+                  _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about', onTap: _showAuthorProfile),
                 ],
               ),
             ),
@@ -1071,20 +1071,23 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     );
   }
 
-  Widget _buildNavButton(String label, bool isActive) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white.withOpacity(0.3) : Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isActive ? Colors.white : Colors.black87,
-          fontSize: 12,
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+  Widget _buildNavButton(String label, bool isActive, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white.withOpacity(0.3) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.black87.withOpacity(0.7),
+            fontSize: 12,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
       ),
     );
