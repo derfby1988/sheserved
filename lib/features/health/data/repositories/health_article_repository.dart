@@ -843,9 +843,31 @@ class HealthArticleRepository {
         
         return HealthArticleComment.fromJson(response);
       }
-      return null;
     } catch (e) {
       print('Repository: Error posting comment: $e');
+      return null;
+    }
+  }
+
+  /// Update a comment
+  Future<HealthArticleComment?> updateComment({
+    required String commentId,
+    required String content,
+  }) async {
+    try {
+      final response = await _client
+          .from('health_article_comments')
+          .update({'content': content})
+          .eq('id', commentId)
+          .select('*, users(username, profile_image_url)')
+          .single();
+
+      if (response != null) {
+        return HealthArticleComment.fromJson(response);
+      }
+      return null;
+    } catch (e) {
+      print('Repository: Error updating comment: $e');
       return null;
     }
   }

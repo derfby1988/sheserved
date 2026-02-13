@@ -48,6 +48,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   int _totalRootComments = 0;
   bool _isLoading = true;
   bool _isCommentsLoading = false;
+  final Set<String> _expandedCommentIds = {};
 
   // Animation state for visual feedback
   final Map<String, AnimationController> _likeAnimControllers = {};
@@ -58,6 +59,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   final GlobalKey _articleHeadKey = GlobalKey();
   final GlobalKey _productsKey = GlobalKey();
   final GlobalKey _commentsKey = GlobalKey();
+  final GlobalKey _paginationKey = GlobalKey();
   final Map<String, GlobalKey> _commentKeys = {}; // Keys for individual comments
   bool _hasInitialScrolled = false;
 
@@ -263,10 +265,38 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     }
   }
 
-  void _changePage(int page) {
+  Future<void> _changePage(int page) async {
     if (page == _currentPage || page < 1) return;
-    _fetchComments(page);
+    await _fetchComments(page);
     _scrollToSection(_commentsKey);
+  }
+
+  void _scrollToSpecificComment(String commentId) {
+    // Give a small delay to ensure the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _commentKeys[commentId];
+      if (key != null && key.currentContext != null) {
+        Scrollable.ensureVisible(
+          key.currentContext!,
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        // Retry once after a short delay if not found
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            final retryKey = _commentKeys[commentId];
+            if (retryKey != null && retryKey.currentContext != null) {
+              Scrollable.ensureVisible(
+                retryKey.currentContext!,
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeInOut,
+              );
+            }
+          }
+        });
+      }
+    });
   }
 
   Future<void> _onToggleLike(String? commentId) async {
@@ -475,7 +505,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         // Show visual effect over the icon
         final iconKey = _iconKeys['bm-${commentId ?? "article"}'];
         if (result['isActive'] == true) {
-          _showFloatingText(iconKey, '🔖 +1', const Color(0xFFFFD700));
+          _showFloatingText(iconKey, '🔖', const Color(0xFFFFD700));
         } else {
           _showFloatingText(iconKey, '-1', Colors.white54);
         }
@@ -624,11 +654,11 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     super.dispose();
   }
 
-  Future<void> _submitComment(String content, {String? parentId}) async {
-    if (content.trim().isEmpty || _article == null) return;
+  Future<HealthArticleComment?> _submitComment(String content, {String? parentId}) async {
+    if (content.trim().isEmpty || _article == null) return null;
     
     final currentUser = ServiceLocator.instance.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null) return null;
 
     try {
       if (_article!.id.startsWith('mock-')) {
@@ -651,7 +681,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           _comments.add(mockComment);
           _totalComments++;
         });
-        return;
+        return mockComment;
       }
 
       final repository = ServiceLocator.instance.healthArticleRepository;
@@ -676,9 +706,54 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ส่งความคิดเห็นเรียบร้อยแล้ว')),
         );
+        return newComment;
       }
+      return null;
     } catch (e) {
       debugPrint('Error posting comment: $e');
+      return null;
+    }
+  }
+
+  Future<HealthArticleComment?> _updateComment(String commentId, String content) async {
+    if (content.trim().isEmpty) return null;
+
+    try {
+      if (commentId.startsWith('mock-')) {
+        // Handle mock update
+        final commentIndex = _comments.indexWhere((c) => c.id == commentId);
+        if (commentIndex != -1) {
+          final updatedComment = _comments[commentIndex].copyWith(content: content);
+          setState(() {
+            _comments[commentIndex] = updatedComment;
+          });
+          return updatedComment;
+        }
+        return null;
+      }
+
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      final updatedComment = await repository.updateComment(
+        commentId: commentId,
+        content: content,
+      );
+
+      if (updatedComment != null && mounted) {
+        setState(() {
+          final index = _comments.indexWhere((c) => c.id == commentId);
+          if (index != -1) {
+            _comments[index] = updatedComment;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('แก้ไขความคิดเห็นเรียบร้อยแล้ว')),
+        );
+        return updatedComment;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error updating comment: $e');
+      return null;
     }
   }
 
@@ -866,6 +941,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                         // Pagination Section (Only show if total comments > pageSize)
                         if (_totalComments > 10)
                           SliverToBoxAdapter(
+                            key: _paginationKey,
                             child: _buildPaginationSection(),
                           ),
                           
@@ -950,8 +1026,10 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              reverse: true, // Scroll from right to left or keep right-aligned
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   _buildNavButton('หัวข้อ', _activeSection == 'article'),
                   _buildNavButton('สินค้า', _activeSection == 'products'),
@@ -1119,13 +1197,24 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                   overflow: _isContentExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 16, height: 1.6, color: Colors.white.withOpacity(0.8)),
                 ),
-                GestureDetector(
-                  onTap: () => setState(() => _isContentExpanded = !_isContentExpanded),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text(
-                      _isContentExpanded ? 'แสดงน้อยลง' : 'อ่านเพิ่ม...',
-                      style: const TextStyle(color: Colors.white54, fontSize: 14),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: GestureDetector(
+                    onTap: () => _handleReply(null),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.reply, size: 16, color: Color(0xFFF1AE27)),
+                          SizedBox(width: 4),
+                          Text(
+                            'ตอบกลับ', 
+                            style: TextStyle(color: Color(0xFFF1AE27), fontSize: 13, fontWeight: FontWeight.bold)
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1184,10 +1273,10 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                 child: DropdownButton<String>(
                   value: _currentSort,
                   items: const [
-                    DropdownMenuItem(value: 'oldest', child: Text('เก่าที่สุด (ค่าเริ่มต้น)', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'oldest', child: Text('เก่าที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
                     DropdownMenuItem(value: 'newest', child: Text('ใหม่ที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
-                    DropdownMenuItem(value: 'likes', child: Text('ถูกใจมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
-                    DropdownMenuItem(value: 'bookmarks', child: Text('บุ๊กมาร์กมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'likes', child: Text('สนใจมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
+                    DropdownMenuItem(value: 'bookmarks', child: Text('แนะนำมากที่สุด', style: TextStyle(fontSize: 13, color: Colors.white))),
                   ],
                   onChanged: (value) {
                     if (value != null && value != _currentSort) {
@@ -1213,6 +1302,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     final comment = _comments[index];
     final commentKey = _commentKeys.putIfAbsent(comment.id, () => GlobalKey());
     
+    final isOwnComment = AuthService.instance.currentUser?.id == comment.userId;
     final isReply = comment.parentId != null;
     final displayNumber = _getCommentDisplayNumber(comment);
     
@@ -1225,30 +1315,57 @@ class _HealthArticlePageState extends State<HealthArticlePage>
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              color: isOwnComment 
+                  ? Colors.white.withOpacity(0.15) // Slightly brighter for own comment
+                  : Colors.white.withOpacity(0.05),
+              border: Border.all(
+                color: isOwnComment 
+                    ? const Color(0xFF5D9CDB).withOpacity(0.5) // Blue border for own comment
+                    : Colors.white.withOpacity(0.2),
+                width: isOwnComment ? 1.5 : 1,
+              ),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const SizedBox(height: 12),
                 Text(
                   comment.content,
-                  style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
+                  maxLines: _expandedCommentIds.contains(comment.id) ? null : 3,
+                  overflow: _expandedCommentIds.contains(comment.id) ? TextOverflow.visible : TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14, 
+                    color: isOwnComment ? const Color(0xFF1A3B5D) : Colors.white, 
+                    height: 1.5,
+                    fontWeight: FontWeight.normal,
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      onPressed: () {},
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    if (comment.content.length > 100)
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            if (_expandedCommentIds.contains(comment.id)) {
+                              _expandedCommentIds.remove(comment.id);
+                            } else {
+                              _expandedCommentIds.add(comment.id);
+                            }
+                          });
+                        },
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          _expandedCommentIds.contains(comment.id) ? 'ย่อกลับ' : 'อ่านเพิ่ม', 
+                          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)
+                        ),
                       ),
-                      child: Text('อ่านเพิ่ม', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
-                    ),
                     const SizedBox(width: 16),
                     GestureDetector(
                       onTap: () => _handleReply(comment.id),
@@ -1330,6 +1447,35 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ),
             ),
           ),
+          if (isOwnComment)
+            Positioned(
+              top: 10,
+              right: 0,
+              child: GestureDetector(
+                onTap: () => _showEditDialog(comment),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1AE27),
+                    borderRadius: BorderRadius.only(
+                      topRight: Radius.circular(20),
+                      bottomLeft: Radius.circular(12),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit, size: 12, color: Colors.black87),
+                      SizedBox(width: 4),
+                      Text(
+                        'แก้ไข',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1375,7 +1521,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     );
   }
 
-  void _handleReply(String commentId) {
+  void _handleReply(String? commentId) {
     // Check if user is logged in
     final currentUser = ServiceLocator.instance.currentUser;
     
@@ -1401,9 +1547,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     }
   }
 
-  void _showReplyDialog(String commentId) {
+  void _showReplyDialog(String? commentId) {
     final controller = TextEditingController();
-    final parentComment = _comments.firstWhere((c) => c.id == commentId);
+    HealthArticleComment? parentComment;
+    if (commentId != null) {
+      parentComment = _comments.firstWhere((c) => c.id == commentId);
+    }
+    
     final UserModel? authCurrentUser = AuthService.instance.currentUser;
     bool isSubmitting = false;
     
@@ -1438,7 +1588,9 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'ตอบกลับความคิดเห็นของ ${parentComment.username ?? 'สมาชิก'}',
+                        commentId != null 
+                          ? 'ตอบกลับความคิดเห็นของ ${parentComment?.username ?? 'สมาชิก'}'
+                          : 'แสดงความคิดเห็นต่อบทความนี้',
                         style: const TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                       const SizedBox(height: 12),
@@ -1496,15 +1648,23 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                               if (content.trim().isNotEmpty) {
                                 setDialogState(() => isSubmitting = true);
                                 try {
-                                  await _submitComment(content, parentId: commentId);
-                                  if (mounted) {
+                                  final newComment = await _submitComment(content, parentId: commentId);
+                                  if (mounted && newComment != null) {
                                     Navigator.pop(context);
-                                    // เลื่อนไปที่ส่วนคอมเมนต์เพื่อให้เห็นผลลัพธ์
-                                    Scrollable.ensureVisible(
-                                      _commentsKey.currentContext!,
-                                      duration: const Duration(milliseconds: 500),
-                                      curve: Curves.easeInOut,
-                                    );
+                                    
+                                    if (commentId == null) {
+                                      // Article Reply: Go to the page where the newest comment is
+                                      final totalRootPages = (_totalRootComments / 10).ceil();
+                                      
+                                      if (_currentSort == 'oldest' && _currentPage != totalRootPages) {
+                                        await _changePage(totalRootPages);
+                                      } else if (_currentSort == 'newest' && _currentPage != 1) {
+                                        await _changePage(1);
+                                      }
+                                    }
+                                    
+                                    // Precisely scroll to the new comment
+                                    _scrollToSpecificComment(newComment.id);
                                   }
                                 } catch (e) {
                                   setDialogState(() => isSubmitting = false);
@@ -1545,8 +1705,161 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                       ],
                     ),
                     child: Text(
-                      'ตอบกลับ คห.ที่ ${parentComment.commentNumber}',
+                      commentId != null 
+                        ? 'ตอบกลับ คห.ที่ ${parentComment?.commentNumber}'
+                        : 'ตอบกลับบทความ',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      ),
+    );
+  }
+
+  void _showEditDialog(HealthArticleComment comment) {
+    final controller = TextEditingController(text: comment.content);
+    final UserModel? authCurrentUser = AuthService.instance.currentUser;
+    bool isSubmitting = false;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.fromLTRB(20, 32, 20, 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3B5D).withOpacity(0.95),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'แก้ไขความคิดเห็นของคุณ',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        child: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          enabled: !isSubmitting,
+                          style: const TextStyle(color: Colors.black, fontSize: 15),
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: 'เขียนความคิดเห็นของคุณที่นี่...',
+                            hintStyle: TextStyle(color: Colors.black.withOpacity(0.4), fontSize: 14),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            margin: const EdgeInsets.only(right: 12),
+                            decoration: const BoxDecoration(
+                              color: Colors.white24,
+                              shape: BoxShape.circle,
+                            ),
+                            child: authCurrentUser?.profileImageUrl != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.network(authCurrentUser!.profileImageUrl!, fit: BoxFit.cover),
+                                )
+                              : const Icon(Icons.person, size: 20, color: Colors.white70),
+                          ),
+                          Text(
+                            authCurrentUser?.username ?? 'คุณ',
+                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                            child: const Text('ยกเลิก', style: TextStyle(color: Colors.white54)),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: isSubmitting ? null : () async {
+                              final content = controller.text;
+                              if (content.trim().isNotEmpty) {
+                                setDialogState(() => isSubmitting = true);
+                                try {
+                                  final updatedComment = await _updateComment(comment.id, content);
+                                  if (mounted && updatedComment != null) {
+                                    Navigator.pop(context);
+                                    _scrollToSpecificComment(comment.id);
+                                  }
+                                } catch (e) {
+                                  setDialogState(() => isSubmitting = false);
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF1AE27),
+                              foregroundColor: Colors.black87,
+                              disabledBackgroundColor: const Color(0xFFF1AE27).withOpacity(0.5),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ),
+                            child: isSubmitting 
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
+                              : const Text('บันทึกการแก้ไข', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1C40F),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'แก้ไขคำตอบ',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
                     ),
                   ),
                 ),
@@ -1734,7 +2047,8 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
 
           return Container(
             margin: const EdgeInsets.symmetric(horizontal: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            constraints: const BoxConstraints(maxWidth: 160),
             decoration: BoxDecoration(
               color: colors[index % colors.length].withOpacity(0.9),
               borderRadius: BorderRadius.circular(20),
@@ -1742,10 +2056,12 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
             alignment: Alignment.center,
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: textColors[index % textColors.length],
                 fontWeight: FontWeight.bold,
-                fontSize: 14,
+                fontSize: 11,
               ),
             ),
           );
