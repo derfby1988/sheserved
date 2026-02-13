@@ -5,6 +5,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
 
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
@@ -33,6 +34,9 @@ class _HomePageState extends State<HomePage> {
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     
+    // Listen for auth state changes to refresh data (e.g., after login)
+    AuthService.instance.addListener(_loadHomeData);
+    
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
@@ -44,10 +48,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadHomeData() async {
     debugPrint('HomePage: _loadHomeData called. Reloading articles...');
     
-    // Only show loading indicator if it's the initial load to avoid flashing on return
-    if (_recommendedArticles.isEmpty) {
-      setState(() => _isLoadingArticles = true);
-    }
+    // Show loading indicator
+    setState(() => _isLoadingArticles = true);
     
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
@@ -170,6 +172,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    AuthService.instance.removeListener(_loadHomeData);
     super.dispose();
   }
 

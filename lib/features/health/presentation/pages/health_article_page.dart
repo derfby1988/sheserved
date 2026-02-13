@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
-import 'package:sheserved/shared/widgets/widgets.dart';
-import 'package:sheserved/services/service_locator.dart';
-import 'package:sheserved/services/auth_service.dart';
-import 'package:sheserved/features/auth/data/models/user_model.dart';
-import 'package:sheserved/features/health/data/models/health_article_models.dart';
-import 'package:sheserved/features/health/presentation/widgets/health_article_skeleton.dart';
+import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/widgets/widgets.dart';
+import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
+import '../../data/models/health_article_models.dart';
+import '../widgets/health_article_skeleton.dart';
 
 /// Health Article Page
 /// Feature-rich forum and article viewer with stacked sticky headers and nested comments.
@@ -77,10 +76,22 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    
+    // Listen for auth state changes to refresh article data
+    AuthService.instance.addListener(_loadData);
+    
     _loadData();
   }
 
   Future<void> _loadData() async {
+    // Show loading state if we are doing a full reload
+    if (mounted && _article == null) {
+      setState(() => _isLoading = true);
+    } else if (mounted) {
+      // If we already have an article, we still want to show loading 
+      // when refreshing from login to update counts/bookmarks
+      setState(() => _isLoading = true);
+    }
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
       
@@ -608,6 +619,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     _likeAnimControllers.clear();
     _floatingOverlay?.remove();
     _floatingOverlay = null;
+    AuthService.instance.removeListener(_loadData);
     super.dispose();
   }
 

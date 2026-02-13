@@ -48,12 +48,16 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
       end: 0,
     ).animate(_scoreController);
 
+    // Listen for auth state changes to refresh profile
+    AuthService.instance.addListener(_loadUserProfile);
+
     _loadUserProfile();
   }
   
   @override
   void dispose() {
     _scoreController.dispose();
+    AuthService.instance.removeListener(_loadUserProfile);
     super.dispose();
   }
 

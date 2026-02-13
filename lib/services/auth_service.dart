@@ -3,7 +3,7 @@ import '../features/auth/data/models/user_model.dart';
 
 /// Simple Auth Service to store current user session
 /// This is a temporary solution until we fully integrate Supabase Auth
-class AuthService {
+class AuthService extends ChangeNotifier {
   static AuthService? _instance;
   
   UserModel? _currentUser;
@@ -28,12 +28,14 @@ class AuthService {
   void login(UserModel user) {
     _currentUser = user;
     debugPrint('AuthService: User logged in - ${user.username} (Phone: ${user.phone})');
+    notifyListeners();
   }
   
   /// Logout user (clear current user)
   void logout() {
     _currentUser = null;
     debugPrint('AuthService: User logged out');
+    notifyListeners();
   }
   
   /// Get user ID

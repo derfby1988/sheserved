@@ -5,6 +5,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import 'package:sheserved/services/service_locator.dart';
+import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/features/health/data/models/health_article_models.dart';
 import 'package:sheserved/features/health/presentation/pages/health_article_page.dart';
 // import 'article_detail_page.dart'; // Unused
@@ -37,11 +38,15 @@ class _ArticlesPageState extends State<ArticlesPage> {
     super.initState();
     _loadInitialArticles();
     _scrollController.addListener(_onScroll);
+    
+    // Refresh articles when auth state changes
+    AuthService.instance.addListener(_loadInitialArticles);
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    AuthService.instance.removeListener(_loadInitialArticles);
     super.dispose();
   }
 
