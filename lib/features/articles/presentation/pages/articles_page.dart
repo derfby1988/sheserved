@@ -8,7 +8,39 @@ import 'package:sheserved/services/service_locator.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/features/health/data/models/health_article_models.dart';
 import 'package:sheserved/features/health/presentation/pages/health_article_page.dart';
-// import 'article_detail_page.dart'; // Unused
+import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:sheserved/services/supabase_service.dart';
+import 'dart:typed_data';
+
+// ── Theme Colors ──
+const Color _blue = Color(0xFF2563EB);
+const Color _blueDark = Color(0xFF1E40AF);
+const Color _bgPage = Color(0xFFF1F5F9);
+const Color _cardWhite = Colors.white;
+
+/// Helper class for Block-based Editor
+class ArticleBlock {
+  final String id;
+  String type; // 'text' or 'image'
+  String content;
+  TextEditingController? controller;
+  FocusNode? focusNode;
+
+  ArticleBlock({
+    required this.id,
+    required this.type,
+    required this.content,
+    this.controller,
+    this.focusNode,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'content': type == 'text' ? controller?.text ?? content : content,
+  };
+}
 
 /// Articles Page - บทความเพื่อสุขภาพ
 /// แสดงรายการบทความแนะนำโดยผู้เชี่ยวชาญ
@@ -20,6 +52,7 @@ class ArticlesPage extends StatefulWidget {
 }
 
 class _ArticlesPageState extends State<ArticlesPage> {
+  final ImagePicker _picker = ImagePicker();
   String _selectedFilter = 'ล่าสุด';
   String _searchQuery = '';
   final List<String> _filters = ['ล่าสุด', 'ยอดนิยม', 'แนะนำ'];
@@ -95,6 +128,70 @@ class _ArticlesPageState extends State<ArticlesPage> {
     }
   }
 
+  Future<String?> _pickAndUploadImage(BuildContext context, ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        imageQuality: 100, // We'll compress manually for better control
+      );
+      
+      if (image == null) return null;
+      
+      if (!mounted) return null;
+      
+      // Perform compression
+      final Uint8List? compressedBytes = await FlutterImageCompress.compressWithFile(
+        image.path,
+        minWidth: 1024,
+        minHeight: 1024,
+        quality: 70,
+        format: CompressFormat.jpeg,
+      );
+
+      if (compressedBytes == null) return null;
+      
+      final fileName = 'article_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      
+      try {
+        final url = await SupabaseService.uploadFile(
+          bucket: 'images',
+          path: 'articles/$fileName',
+          fileBytes: compressedBytes,
+          contentType: 'image/jpeg',
+        );
+        return url;
+      } catch (e) {
+        debugPrint('Upload failed with exception: $e');
+        if (mounted) {
+          String errorMsg = e.toString();
+          if (errorMsg.contains('403')) {
+            errorMsg = 'สิทธิ์ถูกปฏิเสธ (403): ตรวจสอบว่าล็อกอินหรือยัง หรือตรวจสอบ Storage Policy';
+          } else if (errorMsg.contains('409')) {
+            errorMsg = 'ไฟล์ซ้ำซ้อน (409): กรุณาลองใหม่ด้วยชื่อไฟล์อื่น';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ $errorMsg'), 
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(label: 'ตกลง', textColor: Colors.white, onPressed: () {}),
+            ),
+          );
+        }
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _loadMoreArticles() async {
     setState(() => _isLoadingMore = true);
 
@@ -145,42 +242,178 @@ class _ArticlesPageState extends State<ArticlesPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Set background to white/light-grey so the blue header's rounded corners show this color behind them
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: _bgPage, 
       drawer: const TlzDrawer(),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           if (AuthService.instance.currentUser == null) {
-            // Navigate to login and wait for result
             await Navigator.pushNamed(context, '/login');
-            
-            // Re-check auth state after returning
             if (AuthService.instance.currentUser == null) return;
           }
           _showCreateArticleDialog();
         },
-        backgroundColor: AppColors.primary,
+        backgroundColor: _blue,
+        elevation: 4,
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Navigation Bar
-            _buildTopNavigationBar(context),
-            
-            // Green Header with title
-            _buildHeader(context),
-            
-            // Filter Bar
-            _buildFilterBar(context),
-            
-            // Articles Grid
-            Expanded(
-              child: _isLoading 
-                  ? _buildSkeletonGrid()
-                  : _buildArticlesGrid(context),
+      body: Column(
+        children: [
+          // Blue Header with Rounded Bottom Corners
+          _buildCustomHeader(context),
+          
+          // Scrollable Content
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadInitialArticles,
+              color: _blue,
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  // Page Title
+                  SliverToBoxAdapter(
+                    child: _buildPageHeader(context),
+                  ),
+                  
+                  // Filter Bar
+                  SliverToBoxAdapter(
+                    child: _buildFilterBar(context),
+                  ),
+                  
+                  // Articles Grid
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    sliver: _isLoading 
+                        ? SliverToBoxAdapter(child: _buildSkeletonGrid())
+                        : _buildArticlesGrid(context),
+                  ),
+
+                  // Loading More Loader
+                  if (_isLoadingMore)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator(color: _blue)),
+                      ),
+                    ),
+                  
+                  // Bottom spacing
+                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                ],
+              ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomHeader(BuildContext context) {
+    final user = AuthService.instance.currentUser;
+    final hasUser = user != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(bottom: 24), // Space for the bottom curve
+      decoration: const BoxDecoration(
+        color: _blue,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(56)), // Large rounded corners
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // User Profile Pill
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  children: [
+                    // Avatar
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        image: (hasUser && user.profileImageUrl != null && user.profileImageUrl!.isNotEmpty)
+                            ? DecorationImage(
+                                image: NetworkImage(user.profileImageUrl!), 
+                                fit: BoxFit.cover,
+                                onError: (_, __) {},
+                              )
+                            : null,
+                      ),
+                      child: (!hasUser || user.profileImageUrl == null || user.profileImageUrl!.isEmpty)
+                          ? const Icon(Icons.person, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    // Heart Icon
+                    InkWell(
+                      onTap: () {
+                        // Navigate to favorites
+                      },
+                      child: const Icon(Icons.favorite, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                ),
+              ),
+
+              // Notification Circle
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: () {},
+                      icon: const Icon(Icons.shopping_bag_outlined, color: Colors.white),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Text(
+                          '4',
+                          style: TextStyle(
+                            color: _blue,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -188,382 +421,543 @@ class _ArticlesPageState extends State<ArticlesPage> {
 
   void _showCreateArticleDialog() {
     final titleController = TextEditingController();
-    final contentController = TextEditingController();
+    final List<ArticleBlock> blocks = [
+      ArticleBlock(
+        id: DateTime.now().toString(),
+        type: 'text',
+        content: '',
+        controller: TextEditingController(),
+        focusNode: FocusNode(),
+      ),
+    ];
+    
     bool isSaving = false;
-    List<String> images = []; // Placeholder for image paths
-    List<String> productLinks = []; // Placeholder for product links
+    List<String> productLinks = [];
     
     const int maxTitleLength = 100;
-    const int maxContentLength = 2000;
-    const int maxImages = 5;
+    const int maxImages = 10;
+
+    // Formatting Helpers
+    void formatText(ArticleBlock block, String prefix, String suffix) {
+      final controller = block.controller;
+      if (controller == null) return;
+      
+      final text = controller.text;
+      final selection = controller.selection;
+      
+      if (selection.start == -1 || selection.end == -1) {
+        // Just append if no selection
+        controller.text = text + prefix + suffix;
+        return;
+      }
+
+      final selectedText = text.substring(selection.start, selection.end);
+      final newText = text.replaceRange(selection.start, selection.end, '$prefix$selectedText$suffix');
+      
+      controller.text = newText;
+      controller.selection = TextSelection.collapsed(offset: selection.start + prefix.length + selectedText.length + suffix.length);
+    }
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
-          child: Container(
-            width: double.infinity,
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit_document, color: Colors.white),
-                      const SizedBox(width: 12),
-                      Text(
-                        'สร้างบทความสุขภาพ',
-                        style: AppTextStyles.heading5.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                      ),
-                    ],
-                  ),
+        builder: (context, setDialogState) {
+          
+          Widget buildBlock(ArticleBlock block, int index) {
+            if (block.type == 'text') {
+              return Container(
+                key: ValueKey(block.id),
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
                 ),
-
-                // Content
-                Flexible(
-                  child: Scrollbar(
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Title Field
-                          Text('หัวข้อบทความ', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: titleController,
-                            maxLength: maxTitleLength,
-                            onChanged: (_) => setDialogState(() {}),
-                            decoration: InputDecoration(
-                              hintText: 'กรอกหัวข้อบทความ...',
-                              counterText: 'คงเหลือ ${maxTitleLength - titleController.text.length} ตัวอักษร',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Content Field
-                          Text('เนื้อหาบทความ', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: contentController,
-                            maxLength: maxContentLength,
-                            maxLines: 8,
-                            onChanged: (_) => setDialogState(() {}),
-                            decoration: InputDecoration(
-                              hintText: 'บอกเล่าสาระสุขภาพดีๆ ของคุณ...',
-                              counterText: 'คงเหลือ ${maxContentLength - contentController.text.length} ตัวอักษร',
-                              alignLabelWithHint: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Images Section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.text_fields, size: 16, color: Colors.grey[400]),
+                        const SizedBox(width: 8),
+                        Text('ข้อความ (#${index + 1})', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        const Spacer(),
+                        const Icon(Icons.drag_handle, size: 20, color: Colors.grey),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                          onPressed: () => setDialogState(() => blocks.removeAt(index)),
+                        ),
+                      ],
+                    ),
+                    TextField(
+                      controller: block.controller,
+                      focusNode: block.focusNode,
+                      maxLines: null,
+                      decoration: const InputDecoration(
+                        hintText: 'เริ่มพิมพ์เนื้อหาที่นี่...',
+                        border: InputBorder.none,
+                      ),
+                      style: const TextStyle(fontSize: 15, height: 1.6),
+                    ),
+                  ],
+                ),
+              );
+            } else {
+              final isLoading = block.content == 'LOADING';
+              final isError = block.content == 'ERROR';
+              
+              return Container(
+                key: ValueKey(block.id),
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Stack(
+                  children: [
+                    if (isLoading)
+                      const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 12),
+                            Text('กำลังอัปโหลด...', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    else if (isError)
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 40),
+                            const SizedBox(height: 8),
+                            const Text('อัปโหลดไม่สำเร็จ', style: TextStyle(color: Colors.red)),
+                            TextButton(
+                              onPressed: () => setDialogState(() => blocks.removeAt(index)),
+                              child: const Text('ลบออก'),
+                            )
+                          ],
+                        ),
+                      )
+                    else
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: block.content,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                          errorWidget: (context, url, error) => Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('รูปภาพประกอบ (${images.length}/$maxImages)', 
-                                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                              if (images.length < maxImages)
-                                TextButton.icon(
-                                  onPressed: () {
-                                    // Placeholder for image picker
-                                    setDialogState(() {
-                                      images.add('https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/400/300');
-                                    });
-                                  },
-                                  icon: const Icon(Icons.add_a_photo, size: 18),
-                                  label: const Text('เพิ่มรูป'),
-                                  style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-                                ),
+                              const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                              const SizedBox(height: 8),
+                              Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                              TextButton(
+                                onPressed: () => setDialogState(() {}),
+                                child: const Text('ลองใหม่'),
+                              )
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          if (images.isEmpty)
+                        ),
+                      ),
+                    if (!isLoading)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Row(
+                          children: [
                             Container(
-                              height: 100,
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                              child: IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.white, size: 20),
+                                onPressed: () => setDialogState(() => blocks.removeAt(index)),
                               ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.image_outlined, color: Colors.grey[400]),
-                                  const SizedBox(height: 4),
-                                  Text('ยังไม่มีรูปภาพ', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                                ],
-                              ),
-                            )
-                          else
-                            SizedBox(
-                              height: 100,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: images.length,
-                                itemBuilder: (context, index) => Container(
-                                  width: 100,
-                                  margin: const EdgeInsets.only(right: 8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    image: DecorationImage(image: NetworkImage(images[index]), fit: BoxFit.cover),
-                                  ),
-                                  child: Align(
-                                    alignment: Alignment.topRight,
-                                    child: GestureDetector(
-                                      onTap: () => setDialogState(() => images.removeAt(index)),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                                        child: const Icon(Icons.close, size: 16, color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 24),
-
-                          // Product Links Section
-                          Text('สินค้าที่เกี่ยวข้อง', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                // Placeholder for product selector
-                                setDialogState(() {
-                                  productLinks.add('Product ${productLinks.length + 1}');
-                                });
-                              },
-                              icon: const Icon(Icons.link, size: 18),
-                              label: const Text('เพิ่มสินค้าที่เกี่ยวข้อง'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: const BorderSide(color: AppColors.primary),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                            ),
-                          ),
-                          if (productLinks.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: productLinks.map((link) => Chip(
-                                label: Text(link, style: const TextStyle(fontSize: 11)),
-                                deleteIcon: const Icon(Icons.close, size: 14),
-                                onDeleted: () => setDialogState(() => productLinks.remove(link)),
-                                backgroundColor: AppColors.primaryLight.withOpacity(0.3),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              )).toList(),
                             ),
                           ],
+                        ),
+                      ),
+                    if (!isLoading)
+                      const Center(child: Icon(Icons.drag_handle, color: Colors.white70, size: 40)),
+                  ],
+                ),
+              );
+            }
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+            child: Container(
+              width: double.infinity,
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: _blue,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.edit_note, color: Colors.white),
+                        const SizedBox(width: 12),
+                        Text(
+                          'เขียนบทความแบบบล็อก',
+                          style: AppTextStyles.heading5.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Toolbar
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.grey[100],
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _ToolbarButton(
+                            icon: Icons.format_bold, 
+                            tooltip: 'ตัวหนา',
+                            onPressed: () {
+                              final focused = blocks.firstWhere((b) => b.focusNode?.hasFocus ?? false, orElse: () => blocks.first);
+                              formatText(focused, '**', '**');
+                            },
+                          ),
+                          _ToolbarButton(
+                            icon: Icons.format_underlined, 
+                            tooltip: 'ขีดเส้นใต้',
+                            onPressed: () {
+                              final focused = blocks.firstWhere((b) => b.focusNode?.hasFocus ?? false, orElse: () => blocks.first);
+                              formatText(focused, '<u>', '</u>');
+                            },
+                          ),
+                          _ToolbarButton(
+                            icon: Icons.border_color, 
+                            tooltip: 'ไฮไลท์',
+                            onPressed: () {
+                              final focused = blocks.firstWhere((b) => b.focusNode?.hasFocus ?? false, orElse: () => blocks.first);
+                              formatText(focused, '<mark>', '</mark>');
+                            },
+                          ),
+                          _ToolbarButton(
+                            icon: Icons.emoji_emotions_outlined, 
+                            tooltip: 'ใส่อิโมจิ',
+                            onPressed: () {
+                              final focused = blocks.firstWhere((b) => b.focusNode?.hasFocus ?? false, orElse: () => blocks.first);
+                              formatText(focused, '😊', '');
+                            },
+                          ),
+                          const VerticalDivider(),
+                          _ToolbarButton(
+                            icon: Icons.add_comment_outlined, 
+                            label: 'เพิ่มข้อความ',
+                            color: Colors.green,
+                            onPressed: () => setDialogState(() {
+                              blocks.add(ArticleBlock(
+                                id: DateTime.now().toString(),
+                                type: 'text',
+                                content: '',
+                                controller: TextEditingController(),
+                                focusNode: FocusNode(),
+                              ));
+                            }),
+                          ),
+                          _ToolbarButton(
+                            icon: Icons.add_photo_alternate_outlined, 
+                            label: 'เพิ่มรูปภาพ',
+                            color: Colors.orange,
+                            onPressed: () {
+                              if (blocks.where((b) => b.type == 'image').length >= maxImages) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณเพิ่มรูปภาพครบจำนวนที่กำหนดแล้ว')));
+                                return;
+                              }
+                              
+                              showModalBottomSheet(
+                                context: context,
+                                builder: (bottomSheetContext) => SafeArea(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ListTile(
+                                        leading: const Icon(Icons.photo_library, color: _blue),
+                                        title: const Text('เลือกจากคลังภาพ'),
+                                        onTap: () async {
+                                          Navigator.pop(bottomSheetContext);
+                                          final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+                                          
+                                          // Add temporary loading block
+                                          setDialogState(() {
+                                            blocks.add(ArticleBlock(
+                                              id: tempId,
+                                              type: 'image',
+                                              content: 'LOADING', // Special flag
+                                            ));
+                                          });
+
+                                          final url = await _pickAndUploadImage(context, ImageSource.gallery);
+                                          
+                                          if (url != null) {
+                                            setDialogState(() {
+                                              final index = blocks.indexWhere((b) => b.id == tempId);
+                                              if (index != -1) {
+                                                blocks[index].content = url;
+                                                blocks.insert(index + 1, ArticleBlock(
+                                                  id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
+                                                  type: 'text',
+                                                  content: '',
+                                                  controller: TextEditingController(),
+                                                  focusNode: FocusNode(),
+                                                ));
+                                              }
+                                            });
+                                          } else {
+                                            // ALWAYS remove the temporary loading block if we don't get a URL
+                                            // The _pickAndUploadImage will show a SnackBar if there was a real error
+                                            setDialogState(() {
+                                              blocks.removeWhere((b) => b.id == tempId);
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      ListTile(
+                                        leading: const Icon(Icons.camera_alt, color: Colors.orange),
+                                        title: const Text('ถ่ายรูป'),
+                                        onTap: () async {
+                                          Navigator.pop(bottomSheetContext);
+                                          final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+                                          
+                                          setDialogState(() {
+                                            blocks.add(ArticleBlock(
+                                              id: tempId,
+                                              type: 'image',
+                                              content: 'LOADING',
+                                            ));
+                                          });
+
+                                          final url = await _pickAndUploadImage(context, ImageSource.camera);
+                                          
+                                          if (url != null) {
+                                            setDialogState(() {
+                                              final index = blocks.indexWhere((b) => b.id == tempId);
+                                              if (index != -1) {
+                                                blocks[index].content = url;
+                                                blocks.insert(index + 1, ArticleBlock(
+                                                  id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
+                                                  type: 'text',
+                                                  content: '',
+                                                  controller: TextEditingController(),
+                                                  focusNode: FocusNode(),
+                                                ));
+                                              }
+                                            });
+                                          } else {
+                                            setDialogState(() {
+                                              blocks.removeWhere((b) => b.id == tempId);
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
                   ),
-                ),
 
-                // Footer Actions
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
-                    border: Border(top: BorderSide(color: Colors.grey[200]!)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: isSaving ? null : () => Navigator.pop(context),
-                          child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
-                        ),
+                  // Content Area
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          // Title (Fixed at top of content)
+                          TextField(
+                            controller: titleController,
+                            maxLength: maxTitleLength,
+                            decoration: InputDecoration(
+                              hintText: 'หัวข้อบทความของคุณ...',
+                              hintStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey),
+                              counterText: '',
+                              border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[300]!)),
+                              focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: _blue, width: 2)),
+                            ),
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 12),
+                          
+                          // Blocks List
+                          Expanded(
+                            child: ReorderableListView.builder(
+                              padding: const EdgeInsets.only(bottom: 100),
+                              itemCount: blocks.length,
+                              onReorder: (oldIndex, newIndex) {
+                                setDialogState(() {
+                                  if (newIndex > oldIndex) newIndex -= 1;
+                                  final item = blocks.removeAt(oldIndex);
+                                  blocks.insert(newIndex, item);
+                                });
+                              },
+                              itemBuilder: (context, index) => buildBlock(blocks[index], index),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton(
-                          onPressed: isSaving ? null : () async {
-                            // Validation
-                            if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('กรุณากรอกหัวข้อและเนื้อหาบทความ')),
-                              );
-                              return;
-                            }
+                    ),
+                  ),
 
-                            setDialogState(() => isSaving = true);
-
-                            try {
-                              final repository = ServiceLocator.instance.healthArticleRepository;
-                              final currentUser = AuthService.instance.currentUser;
-                              
-                              if (currentUser == null) {
-                                Navigator.pop(context);
+                  // Footer Actions
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+                      border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSaving ? null : () => Navigator.pop(context),
+                            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              final String contentJson = jsonEncode(blocks.map((b) => b.toJson()).toList());
+                              _showPreviewDialog(titleController.text, contentJson);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: _blue),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text('ดูตัวอย่าง', style: TextStyle(color: _blue, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: isSaving ? null : () async {
+                              // Validation
+                              if (titleController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณากรอกหัวข้อบทความ')));
                                 return;
                               }
 
-                              final newArticle = await repository.createArticle(
-                                userId: currentUser.id,
-                                title: titleController.text.trim(),
-                                content: contentController.text.trim(),
-                                imageUrl: images.isNotEmpty ? images.first : null,
-                              );
+                              setDialogState(() => isSaving = true);
 
-                              if (newArticle != null && mounted) {
-                                Navigator.pop(context); // Close dialog
+                              try {
+                                final repository = ServiceLocator.instance.healthArticleRepository;
+                                final currentUser = AuthService.instance.currentUser;
                                 
-                                // Navigate to the new article page
-                                if (mounted) {
+                                if (currentUser == null) {
+                                  Navigator.pop(context);
+                                  return;
+                                }
+
+                                // Serialize blocks to JSON
+                                final String contentJson = jsonEncode(blocks.map((b) => b.toJson()).toList());
+                                final firstImage = blocks.firstWhere((b) => b.type == 'image', orElse: () => ArticleBlock(id: '', type: '', content: '')).content;
+
+                                final newArticle = await repository.createArticle(
+                                  userId: currentUser.id,
+                                  title: titleController.text.trim(),
+                                  content: contentJson, // Save as JSON
+                                  imageUrl: firstImage.isNotEmpty ? firstImage : null,
+                                );
+
+                                if (newArticle != null && mounted) {
+                                  Navigator.pop(context);
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(
-                                      builder: (context) => HealthArticlePage(article: newArticle),
-                                    ),
+                                    MaterialPageRoute(builder: (context) => HealthArticlePage(article: newArticle)),
                                   );
-                                  
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('เผยแพร่บทความสำเร็จ')),
-                                  );
-                                  
-                                  // Refresh the list in the background
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เผยแพร่บทความสำเร็จ')));
                                   _loadInitialArticles();
                                 }
-                              } else {
+                              } catch (e) {
                                 if (mounted) {
                                   setDialogState(() => isSaving = false);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('ไม่สามารถบันทึกข้อมูลได้ กรุณาตรวจสอบการเชื่อมต่อหรือสิทธิ์การใช้งาน'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ข้อผิดพลาด: $e'), backgroundColor: Colors.red));
                                 }
                               }
-                            } catch (e) {
-                              if (mounted) {
-                                setDialogState(() => isSaving = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('ขออภัย เกิดข้อผิดพลาด: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _blue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            child: isSaving 
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text('เผยแพร่บทความ', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
-                          child: isSaving 
-                            ? const SizedBox(
-                                height: 20, 
-                                width: 20, 
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                            : const Text('เผยแพร่บทความ', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopNavigationBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: AppColors.background,
-      child: TlzAppTopBar.onPrimary(
-        notificationCount: 1,
-        searchHintText: 'ค้นหาบทความ...',
-        onQRTap: () {},
-        onNotificationTap: () {},
-        onCartTap: () {},
-        onSearch: _onSearch,
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: const BoxDecoration(
-        color: AppColors.primary,
-      ),
-      child: Row(
-        children: [
-          // Back Button
-          GestureDetector(
-            onTap: () {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              } else {
-                Navigator.pushReplacementNamed(context, '/');
-              }
-            },
-            child: const Icon(
-              Icons.arrow_back,
-              color: Colors.white,
-              size: 24,
-            ),
-          ),
-          
-          const SizedBox(width: 16),
-          
-          // Title
-          Expanded(
-            child: Text(
-              'แนะนำโดยผู้เชี่ยวชาญ',
-              style: AppTextStyles.heading4.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+                ],
               ),
-              textAlign: TextAlign.center,
+            ),
+          );
+        },
+      ),
+    );
+  }
+  // --- Sub Helper for Toolbar ---
+  // (Moved below ArticlesPage class)
+
+
+
+
+  Widget _buildPageHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'บทความเพื่อสุขภาพ',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E293B), // Dark text for white bg
+              letterSpacing: -0.5,
             ),
           ),
-          
-          const SizedBox(width: 40), // Balance for back button
+          const SizedBox(height: 8),
+          Text(
+            'รวบรวมสาระดีๆ จากผู้เชี่ยวชาญเพื่อคุณ',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
         ],
       ),
     );
@@ -571,77 +965,74 @@ class _ArticlesPageState extends State<ArticlesPage> {
 
   Widget _buildFilterBar(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            _selectedFilter,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w500,
+      height: 44,
+      margin: const EdgeInsets.only(top: 20, bottom: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: _filters.length,
+        itemBuilder: (context, index) {
+          final filter = _filters[index];
+          final bool isActive = _selectedFilter == filter;
+          
+          return GestureDetector(
+            onTap: () {
+              if (isActive) return;
+              setState(() {
+                _selectedFilter = filter;
+                _loadInitialArticles();
+              });
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isActive ? _blue : Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: isActive ? _blue : Colors.grey.shade200,
+                ),
+                boxShadow: isActive ? [
+                  BoxShadow(
+                    color: _blue.withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  )
+                ] : null,
+              ),
+              child: Text(
+                filter,
+                style: TextStyle(
+                  color: isActive ? Colors.white : Colors.grey.shade600,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 4),
-          // Filter Icon
-          PopupMenuButton<String>(
-            icon: Icon(
-              Icons.tune,
-              color: AppColors.textSecondary,
-              size: 20,
-            ),
-            onSelected: _onFilterChanged,
-            itemBuilder: (context) => _filters.map((filter) {
-              return PopupMenuItem<String>(
-                value: filter,
-                child: Text(filter),
-              );
-            }).toList(),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildArticlesGrid(BuildContext context) {
     if (_articles.isEmpty) {
-      return const Center(child: Text('ไม่พบข้อมูลบทความ'));
+      return const SliverFillRemaining(
+        child: Center(child: Text('ไม่พบบทความ')),
+      );
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: RefreshIndicator(
-        onRefresh: _loadInitialArticles,
-        child: GridView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 24),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.7,
-          ),
-          itemCount: _articles.length + (_isLoadingMore ? 2 : 0),
-          itemBuilder: (context, index) {
-            if (index < _articles.length) {
-              return _buildArticleCard(context, _articles[index]);
-            } else {
-              return _buildSkeletonCard();
-            }
-          },
-        ),
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.72,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _buildArticleCard(context, _articles[index]),
+        childCount: _articles.length,
       ),
     );
   }
@@ -692,114 +1083,104 @@ class _ArticlesPageState extends State<ArticlesPage> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.primaryLight.withOpacity(0.5),
-          borderRadius: BorderRadius.circular(16),
-          image: article.imageUrl != null 
-            ? DecorationImage(
-                image: CachedNetworkImageProvider(article.imageUrl!),
-                fit: BoxFit.cover,
-                colorFilter: ColorFilter.mode(
-                  Colors.black.withOpacity(0.3),
-                  BlendMode.darken,
-                ),
-              )
-            : null,
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        child: Stack(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (article.imageUrl == null) ...[
-              // Decorative Circles
-              Positioned(
-                top: 20,
-                left: 20,
-                child: _buildDecorativeCircle(60, AppColors.primary.withOpacity(0.3)),
-              ),
-              Positioned(
-                top: 10,
-                right: 40,
-                child: _buildDecorativeCircle(70, AppColors.primary.withOpacity(0.2)),
-              ),
-              Positioned(
-                top: 30,
-                right: 20,
-                child: _buildDecorativeCircleOutline(50),
-              ),
-            ],
-            
-            // Content
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // Image Section
+            Expanded(
+              flex: 5,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  const Spacer(),
-                  
-                  // Stats Row
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.favorite_border,
-                        color: Colors.white,
-                        size: 16,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _blue.withOpacity(0.05),
+                    ),
+                    child: article.imageUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: article.imageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Center(child: CircularProgressIndicator(color: _blue.withOpacity(0.3), strokeWidth: 2)),
+                            errorWidget: (context, url, error) => const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                          )
+                        : const Icon(Icons.article_outlined, color: _blue, size: 40),
+                  ),
+                  // Category Tag
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${article.likeCount}',
-                        style: AppTextStyles.caption.copyWith(
-                          color: Colors.white,
+                      child: Text(
+                        article.category ?? 'สุขภาพ',
+                        style: const TextStyle(
+                          color: _blue, 
+                          fontSize: 9, 
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Icon(
-                        Icons.chat_bubble_outline,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${article.commentCount}', 
-                        style: AppTextStyles.caption.copyWith(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  // Title
-                  Text(
-                    article.title,
-                    style: AppTextStyles.heading5.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  
-                  const SizedBox(height: 4),
-                  
-                  // Views & Author
-                  Text(
-                    '${article.viewCount} views • ${article.authorName ?? 'Expert'}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: Colors.orangeAccent,
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  // Detail (Content preview)
-                  Text(
-                    article.content,
-                    style: AppTextStyles.caption.copyWith(
-                      color: Colors.white.withOpacity(0.8),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
+              ),
+            ),
+            // Content Section
+            Expanded(
+              flex: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      article.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                        height: 1.3,
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Icon(Icons.favorite, size: 14, color: Colors.pinkAccent),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${article.likeCount}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${article.commentCount}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -808,29 +1189,180 @@ class _ArticlesPageState extends State<ArticlesPage> {
     );
   }
 
-  Widget _buildDecorativeCircle(double size, Color color) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+  void _showPreviewDialog(String title, String contentJson) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final List<dynamic> blocks = jsonDecode(contentJson);
+        final contentStyle = TextStyle(
+          fontSize: 16, 
+          height: 1.6, 
+          color: Colors.black.withOpacity(0.8),
+        );
+
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('ตัวอย่างบทความ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _blue)),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                  ],
+                ),
+                const Divider(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title.isEmpty ? '(ไม่มีหัวข้อ)' : title,
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                        ),
+                        const SizedBox(height: 20),
+                        ...blocks.map((block) {
+                          final type = block['type'];
+                          final val = block['content'] as String;
+
+                          if (type == 'text') {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: _RichTextRenderer(
+                                text: val, 
+                                style: contentStyle,
+                              ),
+                            );
+                          } else if (type == 'image') {
+                            return Container(
+                              margin: const EdgeInsets.symmetric(vertical: 16),
+                              width: double.infinity,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.grey[100],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: CachedNetworkImage(
+                                  imageUrl: val,
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                                  errorWidget: (context, url, error) => const Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                                        SizedBox(height: 8),
+                                        Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
+}
 
-  Widget _buildDecorativeCircleOutline(double size) {
+class _ToolbarButton extends StatelessWidget {
+  final IconData icon;
+  final String? label;
+  final String? tooltip;
+  final VoidCallback onPressed;
+  final Color? color;
+
+  const _ToolbarButton({
+    required this.icon,
+    this.label,
+    this.tooltip,
+    required this.onPressed,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: Colors.white.withOpacity(0.5),
-          width: 2,
-        ),
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      child: tooltip != null 
+        ? IconButton(
+            onPressed: onPressed,
+            icon: Icon(icon, color: color ?? Colors.black87),
+            tooltip: tooltip,
+            visualDensity: VisualDensity.compact,
+          )
+        : TextButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon, size: 20, color: color),
+            label: Text(label!, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+          ),
     );
+  }
+}
+
+
+class _RichTextRenderer extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+  final int? maxLines;
+
+  const _RichTextRenderer({required this.text, required this.style, this.maxLines});
+
+  @override
+  Widget build(BuildContext context) {
+    List<TextSpan> spans = [];
+    final regExp = RegExp(r'(\*\*.*?\*\*|<u>.*?</u>|<mark>.*?</mark>)');
+    int lastMatchEnd = 0;
+    final matches = regExp.allMatches(text).toList();
+    
+    if (matches.isEmpty) {
+      return Text(text, style: style, maxLines: maxLines, overflow: maxLines != null ? TextOverflow.ellipsis : null);
+    }
+
+    for (final match in matches) {
+      if (match.start > lastMatchEnd) {
+        spans.add(TextSpan(text: text.substring(lastMatchEnd, match.start), style: style));
+      }
+      final matchText = match.group(0)!;
+      if (matchText.startsWith('**')) {
+        spans.add(TextSpan(text: matchText.substring(2, matchText.length - 2), style: style.copyWith(fontWeight: FontWeight.bold)));
+      } else if (matchText.startsWith('<u>')) {
+        spans.add(TextSpan(text: matchText.substring(3, matchText.length - 4), style: style.copyWith(decoration: TextDecoration.underline)));
+      } else if (matchText.startsWith('<mark>')) {
+        spans.add(TextSpan(
+          text: matchText.substring(6, matchText.length - 7),
+          style: style.copyWith(backgroundColor: const Color(0xFFF1AE27).withOpacity(0.4), color: Colors.black, fontWeight: FontWeight.bold),
+        ));
+      }
+      lastMatchEnd = match.end;
+    }
+    if (lastMatchEnd < text.length) spans.add(TextSpan(text: text.substring(lastMatchEnd), style: style));
+
+    return Text.rich(TextSpan(children: spans), style: style, maxLines: maxLines, overflow: maxLines != null ? TextOverflow.ellipsis : null);
   }
 }
 

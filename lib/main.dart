@@ -24,6 +24,7 @@ import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
+import 'services/supabase_service.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -54,20 +55,8 @@ void main() async {
     ),
   );
 
-  // Initialize Supabase first (if configured)
-  if (AppConfig.isSupabaseConfigured) {
-    try {
-      await Supabase.initialize(
-        url: AppConfig.supabaseUrl,
-        anonKey: AppConfig.supabaseAnonKey,
-      );
-      debugPrint('Main: Supabase initialized successfully');
-    } catch (e) {
-      debugPrint('Main: Failed to initialize Supabase - $e');
-    }
-  } else {
-    debugPrint('Main: Supabase not configured (using Local only)');
-  }
+  // Initialize Supabase Service
+  await SupabaseService.initialize();
 
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();

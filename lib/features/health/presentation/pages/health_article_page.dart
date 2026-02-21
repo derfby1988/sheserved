@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
+import 'dart:convert';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
@@ -49,6 +51,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   bool _isLoading = true;
   bool _isCommentsLoading = false;
   final Set<String> _expandedCommentIds = {};
+  final Set<String> _visibilityLoadingIds = {};
 
   // Animation state for visual feedback
   final Map<String, AnimationController> _likeAnimControllers = {};
@@ -1221,11 +1224,58 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                   ],
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  _article!.content,
-                  maxLines: _isContentExpanded ? null : 5,
-                  overflow: _isContentExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 16, height: 1.6, color: Colors.white.withOpacity(0.8)),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final contentStyle = TextStyle(
+                      fontSize: 16, 
+                      height: 1.6, 
+                      color: Colors.white.withOpacity(0.8),
+                    );
+                    
+                    // Simple check if it's block-based (JSON)
+                    bool isBlockBased = _article!.content.trim().startsWith('[') && _article!.content.trim().endsWith(']');
+                    
+                    if (_isContentExpanded) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _renderArticleContent(_article!.content, contentStyle),
+                          const SizedBox(height: 12),
+                          GestureDetector(
+                            onTap: () => setState(() => _isContentExpanded = false),
+                            child: const Text(
+                              'ย่อเนื้อหา',
+                              style: TextStyle(
+                                color: Color(0xFFF1AE27),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // When collapsed, we show first few lines of the first text block or content
+                        _renderArticleContent(_article!.content, contentStyle, maxLines: 3),
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () => setState(() => _isContentExpanded = true),
+                          child: const Text(
+                            'แสดงเนื้อหาทั้งหมด...',
+                            style: TextStyle(
+                              color: Color(0xFFF1AE27),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 Align(
@@ -1267,6 +1317,49 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         ],
       ),
     );
+  }
+
+  Widget _renderArticleContent(String content, TextStyle style, {int? maxLines}) {
+    try {
+      final List<dynamic> blocks = jsonDecode(content);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: blocks.take(maxLines != null ? 1 : blocks.length).map((block) {
+          final type = block['type'];
+          final val = block['content'] as String;
+
+          if (type == 'text') {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: _RichTextRenderer(
+                text: val, 
+                style: style, 
+                maxLines: maxLines,
+              ),
+            );
+          } else if (type == 'image') {
+            return Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: double.infinity,
+              height: 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                image: DecorationImage(image: NetworkImage(val), fit: BoxFit.cover),
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }).toList(),
+      );
+    } catch (e) {
+      // Legacy or plain text
+      return Text(
+        content,
+        style: style,
+        maxLines: maxLines,
+        overflow: maxLines != null ? TextOverflow.ellipsis : null,
+      );
+    }
   }
 
   String _formatThaiDate(DateTime date) {
@@ -1429,20 +1522,6 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                         ),
                       ),
                     const SizedBox(width: 16),
-                    GestureDetector(
-                      onTap: () => _handleReply(comment.id),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.reply, size: 14, color: Color(0xFFF1AE27)),
-                          SizedBox(width: 4),
-                          Text(
-                            'ตอบกลับ', 
-                            style: TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold)
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1504,34 +1583,41 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ],
             ),
           ),
-          // Visibility control button for article author (bottom-right)
           if (_article?.authorId == AuthService.instance.currentUser?.id)
             Positioned(
               bottom: 0,
               right: 0,
               child: GestureDetector(
-                onTap: () => _toggleCommentVisibility(comment),
+                onTap: _visibilityLoadingIds.contains(comment.id) 
+                  ? null 
+                  : () => _toggleCommentVisibility(comment),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        comment.isHidden ? Icons.visibility_off : Icons.visibility,
-                        size: 14,
-                        color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                  child: _visibilityLoadingIds.contains(comment.id)
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFF1AE27)),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            comment.isHidden ? Icons.visibility_off : Icons.visibility,
+                            size: 14,
+                            color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            comment.isHidden ? 'ปิดกั้น' : 'เปิดเผย',
+                            style: TextStyle(
+                              color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        comment.isHidden ? 'ปิดกั้น' : 'เปิดเผย',
-                        style: TextStyle(
-                          color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ),
@@ -1564,6 +1650,28 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                     ),
                   ),
                 ],
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => _handleReply(comment.id),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1AE27).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.reply, size: 14, color: Color(0xFFF1AE27)),
+                        SizedBox(width: 4),
+                        Text(
+                          'ตอบกลับ', 
+                          style: TextStyle(color: Color(0xFFF1AE27), fontSize: 11, fontWeight: FontWeight.bold)
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1989,6 +2097,12 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   }
 
   Future<void> _toggleCommentVisibility(HealthArticleComment comment) async {
+    if (_visibilityLoadingIds.contains(comment.id)) return;
+
+    setState(() {
+      _visibilityLoadingIds.add(comment.id);
+    });
+
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
       final success = await repository.toggleCommentVisibility(
@@ -2013,6 +2127,12 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       }
     } catch (e) {
       debugPrint('Error toggling visibility: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _visibilityLoadingIds.remove(comment.id);
+        });
+      }
     }
   }
 
@@ -2407,4 +2527,74 @@ class _RibbonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
+}
+
+class _RichTextRenderer extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+  final int? maxLines;
+
+  const _RichTextRenderer({required this.text, required this.style, this.maxLines});
+
+  @override
+  Widget build(BuildContext context) {
+    List<TextSpan> spans = [];
+    
+    // A more robust parser that handles non-nested tags
+    final regExp = RegExp(r'(\*\*.*?\*\*|<u>.*?</u>|<mark>.*?</mark>)');
+    int lastMatchEnd = 0;
+    
+    final matches = regExp.allMatches(text).toList();
+    
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: style,
+        maxLines: maxLines,
+        overflow: maxLines != null ? TextOverflow.ellipsis : null,
+      );
+    }
+
+    for (final match in matches) {
+      // Add text before match
+      if (match.start > lastMatchEnd) {
+        spans.add(TextSpan(text: text.substring(lastMatchEnd, match.start), style: style));
+      }
+      
+      final matchText = match.group(0)!;
+      if (matchText.startsWith('**')) {
+        spans.add(TextSpan(
+          text: matchText.substring(2, matchText.length - 2),
+          style: style.copyWith(fontWeight: FontWeight.bold),
+        ));
+      } else if (matchText.startsWith('<u>')) {
+        spans.add(TextSpan(
+          text: matchText.substring(3, matchText.length - 4),
+          style: style.copyWith(decoration: TextDecoration.underline),
+        ));
+      } else if (matchText.startsWith('<mark>')) {
+        spans.add(TextSpan(
+          text: matchText.substring(6, matchText.length - 7),
+          style: style.copyWith(
+            backgroundColor: const Color(0xFFF1AE27).withOpacity(0.4),
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ));
+      }
+      
+      lastMatchEnd = match.end;
+    }
+    
+    if (lastMatchEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastMatchEnd), style: style));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      style: style,
+      maxLines: maxLines,
+      overflow: maxLines != null ? TextOverflow.ellipsis : null,
+    );
+  }
 }

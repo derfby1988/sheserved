@@ -305,39 +305,68 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     super.dispose();
   }
 
+  // Dark Gold Theme Colors
+  static const Color _bgDark = Color(0xFF1A1200);
+  static const Color _goldAccent = Color(0xFFF5A623);
+  static const Color _goldBright = Color(0xFFFFBF00);
+  static const Color _cardBg = Color(0xFFFFFDF5);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Column(
-                children: [
-                  // Top Section - Back Button
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: IconButton(
-                        onPressed: _handleBack,
-                        icon: const Icon(
-                          Icons.arrow_back_ios,
-                          color: AppColors.textOnPrimary,
-                          size: 24,
+      body: Stack(
+        children: [
+          // ── Background Gradient: Gold (top) → Dark (bottom) ──
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFD4900A),
+                  Color(0xFF8B6000),
+                  _bgDark,
+                ],
+                stops: [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
+
+          // ── Main Content ──
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Top: Title on gold background ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(56, 16, 24, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _getStepTitle(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _getStepSubtitle(),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.75),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
 
-                  // Spacer to push content down (Maximize green area)
-                  const Spacer(),
-
-                  // Bottom Card - Form
-                  Container(
-                    width: double.infinity,
+                // ── Bottom White Card: Form ──
+                Expanded(
+                  child: Container(
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.only(
@@ -345,10 +374,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                         topRight: Radius.circular(32),
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                       child: Column(
-                        mainAxisSize: MainAxisSize.min, // Shrink vertically
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildCurrentStep(),
                           const SizedBox(height: 24),
@@ -357,14 +386,54 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                       ),
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+
+          // ── Back Button (overlaid) ──
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _handleBack,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  String _getStepTitle() {
+    switch (_currentStep) {
+      case 0: return 'ข้อมูลทั่วไป';
+      case 1: return 'ข้อมูลเข้าสู่ระบบ';
+      case 2: return 'ข้อมูลเพิ่มเติม';
+      case 3: return 'ยืนยันข้อมูล';
+      default: return 'ลงทะเบียน';
+    }
+  }
+
+  String _getStepSubtitle() {
+    switch (_currentStep) {
+      case 0: return 'กรอกชื่อและเลือกประเภทการลงทะเบียน';
+      case 1: return 'ตั้งชื่อผู้ใช้และรหัสผ่านสำหรับเข้าสู่ระบบ';
+      case 2: return 'กรอกข้อมูลเพิ่มเติมตามประเภทที่เลือก';
+      case 3: return 'ตรวจสอบข้อมูลก่อนยืนยันการลงทะเบียน';
+      default: return '';
+    }
+  }
+
 
   Widget _buildCurrentStep() {
     switch (_currentStep) {
@@ -386,33 +455,25 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'ข้อมูลทั่วไป',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.heading4.copyWith(
-            color: AppColors.primary, // Green title
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 28),
-
-        // ชื่อ (จริง)
-        _buildInputField(
+        // ชื่อจริง
+        _buildLabeledInputField(
+          label: 'ชื่อจริง',
           controller: _firstNameController,
-          hintText: 'ชื่อจริง (ไม่ต้องใช้คำนำหน้า)',
+          hintText: 'David',
           prefixIcon: Icons.person_outline,
         ),
         const SizedBox(height: 16),
 
         // นามสกุล
-        _buildInputField(
+        _buildLabeledInputField(
+          label: 'นามสกุล',
           controller: _lastNameController,
-          hintText: 'นามสกุล',
+          hintText: 'Johnson',
           prefixIcon: Icons.person_outline,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
 
-        // เลือกประเภท/อาชีพ (Dropdown)
+        // เลือกประเภท/อาชีพ
         if (_isLoadingProfessions)
           const Center(child: CircularProgressIndicator())
         else
@@ -428,18 +489,25 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: AppColors.primary,
+          color: Colors.grey[200]!,
           width: 1.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<Profession>(
           value: _selectedProfession,
           hint: Text(
             'เลือกประเภทการลงทะเบียน',
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+            style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey[400]),
           ),
-          icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+          icon: Icon(Icons.arrow_drop_down, color: _goldAccent),
           isExpanded: true,
           onChanged: (Profession? newValue) {
             if (newValue != null) {
@@ -456,7 +524,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                 children: [
                   Icon(
                     _getIconForProfession(value.iconName),
-                    color: AppColors.primary,
+                    color: _goldAccent,
                     size: 20,
                   ),
                   const SizedBox(width: 12),
@@ -482,65 +550,46 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'ข้อมูลสำหรับเข้าสู่ระบบ',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.heading4.copyWith(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 28),
-
-        // ชื่อผู้ใช้ (นามแฝง)
-        _buildInputField(
+        // ชื่อผู้ใช้
+        _buildLabeledInputField(
+          label: 'ชื่อในระบบ',
           controller: _usernameController,
-          hintText: 'ชื่อในระบบ',
+          hintText: 'username',
           prefixIcon: Icons.alternate_email,
         ),
         const SizedBox(height: 16),
 
         // รหัสผ่าน
-        _buildInputField(
+        _buildLabeledInputField(
+          label: 'รหัสผ่าน',
           controller: _passwordController,
-          hintText: 'รหัสผ่าน',
+          hintText: 'xxxxxxxxxx',
           prefixIcon: Icons.lock_outline,
           obscureText: _obscurePassword,
           suffixIcon: IconButton(
-            onPressed: () {
-              setState(() {
-                _obscurePassword = !_obscurePassword;
-              });
-            },
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
             icon: Icon(
-              _obscurePassword
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              color: AppColors.textHint,
-              size: 22,
+              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              color: Colors.grey[400],
+              size: 20,
             ),
           ),
         ),
         const SizedBox(height: 16),
 
         // ยืนยันรหัสผ่าน
-        _buildInputField(
+        _buildLabeledInputField(
+          label: 'ยืนยันรหัสผ่าน',
           controller: _confirmPasswordController,
-          hintText: 'ยืนยัน รหัสผ่าน',
+          hintText: 'xxxxxxxxxx',
           prefixIcon: Icons.lock_outline,
           obscureText: _obscureConfirmPassword,
           suffixIcon: IconButton(
-            onPressed: () {
-              setState(() {
-                _obscureConfirmPassword = !_obscureConfirmPassword;
-              });
-            },
+            onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
             icon: Icon(
-              _obscureConfirmPassword
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              color: AppColors.textHint,
-              size: 22,
+              _obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              color: Colors.grey[400],
+              size: 20,
             ),
           ),
         ),
@@ -977,7 +1026,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                     _acceptTerms = value ?? false;
                   });
                 },
-                activeColor: AppColors.primary,
+                activeColor: _goldBright,
+                checkColor: Colors.black,
+                side: BorderSide(color: Colors.grey[400]!, width: 1.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -1001,7 +1052,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                       TextSpan(
                         text: 'ข้อกำหนดการใช้งาน',
                         style: TextStyle(
-                          color: AppColors.primary,
+                          color: _goldAccent,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1009,7 +1060,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                       TextSpan(
                         text: 'นโยบายความเป็นส่วนตัว',
                         style: TextStyle(
-                          color: AppColors.primary,
+                          color: _goldAccent,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1052,7 +1103,68 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     );
   }
 
-  /// Build input field with green border
+  /// Build labeled input field - matches reference design (label above, flat white bg)
+  Widget _buildLabeledInputField({
+    required String label,
+    required TextEditingController controller,
+    required String hintText,
+    required IconData prefixIcon,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+    Widget? suffixIcon,
+    int maxLines = 1,
+    ValueChanged<String>? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.grey[200]!, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            obscureText: obscureText,
+            maxLines: maxLines,
+            onChanged: onChanged,
+            style: const TextStyle(
+              color: Color(0xFF1A1A1A),
+              fontSize: 15,
+            ),
+            decoration: InputDecoration(
+              hintText: hintText,
+              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+              prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
+              suffixIcon: suffixIcon,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build input field (legacy - used by dynamic fields)
   Widget _buildInputField({
     required TextEditingController controller,
     required String hintText,
@@ -1065,11 +1177,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }) {
     return Container(
       decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: AppColors.primary,
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.grey[200]!, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: TextField(
         controller: controller,
@@ -1077,25 +1194,14 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         obscureText: obscureText,
         maxLines: maxLines,
         onChanged: onChanged,
-        style: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.textPrimary,
-        ),
+        style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 15),
         decoration: InputDecoration(
           hintText: hintText,
-          hintStyle: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.textHint,
-          ),
-          prefixIcon: Icon(
-            prefixIcon,
-            color: AppColors.primary,
-            size: 24,
-          ),
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+          prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       ),
     );
@@ -1114,9 +1220,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: AppColors.primary,
+            color: Colors.grey[200]!,
             width: 1.5,
           ),
         ),
@@ -1184,67 +1290,54 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
   /// Build bottom section with button and progress
   Widget _buildBottomSection() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Next/Submit Button
-          SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _handleNext,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey[400],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                elevation: 0,
+    return Column(
+      children: [
+        // Next/Submit Button
+        SizedBox(
+          height: 54,
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _handleNext,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _goldBright,
+              foregroundColor: Colors.black,
+              disabledBackgroundColor: Colors.grey[300],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.white,
-                        ),
-                      ),
-                    )
-                  : Text(
-                      _currentStep == _totalSteps - 1 ? 'ยืนยันลงทะเบียน' : 'ต่อไป',
-                      style: AppTextStyles.button.copyWith(
-                        color: Colors.white,
-                        fontSize: 18,
-                      ),
+              elevation: 4,
+              shadowColor: _goldAccent.withOpacity(0.4),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.black54),
                     ),
-            ),
+                  )
+                : Text(
+                    _currentStep == _totalSteps - 1 ? 'ยืนยันลงทะเบียน' : 'ถัดไป',
+                    style: AppTextStyles.button.copyWith(
+                      color: Colors.black,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
-          const SizedBox(height: 12),
+        ),
+        const SizedBox(height: 12),
 
-          // Progress indicator
-          Text(
-            '${_currentStep + 1}/$_totalSteps',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.warning,
-              fontWeight: FontWeight.w600,
-            ),
+        // Progress indicator
+        Text(
+          'ขั้นตอนที่ ${_currentStep + 1} จาก $_totalSteps',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: _goldAccent,
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

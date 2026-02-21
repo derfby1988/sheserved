@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_config.dart';
 
@@ -37,7 +38,12 @@ class SupabaseService {
   /// Get Supabase Client (throws if not initialized)
   static SupabaseClient get client {
     if (_client == null) {
-      throw Exception('Supabase not initialized. Call SupabaseService.initialize() first or check isInitialized.');
+      try {
+        _client = Supabase.instance.client;
+        _isInitialized = true;
+      } catch (e) {
+        throw Exception('Supabase not initialized. Call SupabaseService.initialize() first or check isInitialized. Error: $e');
+      }
     }
     return _client!;
   }
@@ -153,8 +159,11 @@ class SupabaseService {
   }) async {
     await client.storage.from(bucket).uploadBinary(
       path,
-      fileBytes as dynamic,
-      fileOptions: FileOptions(contentType: contentType),
+      Uint8List.fromList(fileBytes),
+      fileOptions: FileOptions(
+        contentType: contentType,
+        upsert: true,
+      ),
     );
     return client.storage.from(bucket).getPublicUrl(path);
   }
