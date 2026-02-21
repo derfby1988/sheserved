@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'dart:convert';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:diff_match_patch/diff_match_patch.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../auth/data/models/user_model.dart';
 import '../../data/models/health_article_models.dart';
+import '../../data/repositories/health_article_repository.dart';
 import '../widgets/health_article_skeleton.dart';
 
 /// Health Article Page
@@ -43,12 +45,15 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   bool _isTitleExpanded = false;
   String _currentSort = 'oldest';
   
+  late HealthArticleRepository _repository;
+  
   // Data State
   HealthArticle? _article;
   List<HealthArticleProduct> _products = [];
   List<HealthArticleComment> _comments = [];
   int _totalComments = 0;
   int _totalRootComments = 0;
+  List<ArticleEditHistory> _articleEditHistory = [];
   bool _isLoading = true;
   bool _isCommentsLoading = false;
   final Set<String> _expandedCommentIds = {};
@@ -83,6 +88,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    _repository = ServiceLocator.instance.healthArticleRepository;
     
     // Listen for auth state changes to refresh article data
     AuthService.instance.addListener(_loadData);
@@ -100,7 +106,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       setState(() => _isLoading = true);
     }
     try {
-      final repository = ServiceLocator.instance.healthArticleRepository;
+      final repository = _repository;
       
       // 1. Fetch Article (either passed or latest)
       // 1. Fetch Article (either passed or latest)
@@ -130,11 +136,12 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       }
       
       if (article != null) {
-        // 2. Fetch Products and Total Comments
-        final results = await Future.wait([
+        // 2. Fetch Products and Total Comments and Edit History
+        final results = await Future.wait<dynamic>([
           repository.getArticleProducts(article.id),
           repository.getArticleCommentCount(article.id), // All
           repository.getArticleCommentCount(article.id, rootsOnly: true), // Roots for pagination
+          repository.getArticleEditHistory(article.id), // Add history fetch
         ]);
         
         if (mounted) {
@@ -143,6 +150,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
             _products = results[0] as List<HealthArticleProduct>;
             _totalComments = results[1] as int;
             _totalRootComments = results[2] as int;
+            _articleEditHistory = results[3] as List<ArticleEditHistory>;
           });
           
           // 3. Fetch Initial Page of Comments (or target page)
@@ -1184,6 +1192,36 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                             'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น',
                             style: const TextStyle(fontSize: 12, color: Colors.white70),
                           ),
+                          if (AuthService.instance.currentUser?.id == _article!.authorId)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: TextButton.icon(
+                                onPressed: _showEditArticleDialog,
+                                icon: const Icon(Icons.edit, size: 16, color: Color(0xFFF1AE27)),
+                                label: const Text('แก้ไขบทความ', style: TextStyle(fontSize: 12, color: Color(0xFFF1AE27))),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  alignment: Alignment.centerLeft,
+                                ),
+                              ),
+                            ),
+                          if (_article!.editCount > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'แก้ไขแล้ว',
+                                  style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1330,12 +1368,37 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           final val = block['content'] as String;
 
           if (type == 'text') {
+            final history = _articleEditHistory.isNotEmpty ? _articleEditHistory.first : null;
+            String? oldText;
+            if (history != null) {
+              try {
+                final oldBlocks = jsonDecode(history.oldContent) as List;
+                // Find corresponding text block index
+                int textIndex = 0;
+                for (int i = 0; i < blocks.indexOf(block); i++) {
+                  if (blocks[i]['type'] == 'text') textIndex++;
+                }
+                
+                int currentIdx = 0;
+                for (var ob in oldBlocks) {
+                  if (ob['type'] == 'text') {
+                    if (currentIdx == textIndex) {
+                      oldText = ob['content'];
+                      break;
+                    }
+                    currentIdx++;
+                  }
+                }
+              } catch (_) {}
+            }
+
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: _RichTextRenderer(
                 text: val, 
                 style: style, 
                 maxLines: maxLines,
+                oldText: oldText,
               ),
             );
           } else if (type == 'image') {
@@ -1847,11 +1910,15 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                 )
                               : const Icon(Icons.person, size: 20, color: Colors.white70),
                           ),
-                          Text(
-                            authCurrentUser?.username ?? 'คุณ',
-                            style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold),
+                          Expanded(
+                            child: Text(
+                              authCurrentUser?.username ?? 'คุณ',
+                              style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           TextButton(
                             onPressed: isSubmitting ? null : () => Navigator.pop(context),
                             child: const Text('ยกเลิก', style: TextStyle(color: Colors.white54)),
@@ -1892,7 +1959,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                               disabledBackgroundColor: const Color(0xFFF1AE27).withOpacity(0.5),
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                             child: isSubmitting 
                               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
@@ -2013,11 +2080,15 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                 )
                               : const Icon(Icons.person, size: 20, color: Colors.white70),
                           ),
-                          Text(
+                        Expanded(
+                          child: Text(
                             authCurrentUser?.username ?? 'คุณ',
                             style: const TextStyle(color: Color(0xFFF1AE27), fontSize: 12, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                          const Spacer(),
+                        ),
+                        const SizedBox(width: 8),
                           TextButton(
                             onPressed: isSubmitting ? null : () => Navigator.pop(context),
                             child: const Text('ยกเลิก', style: TextStyle(color: Colors.white54)),
@@ -2045,7 +2116,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                               disabledBackgroundColor: const Color(0xFFF1AE27).withOpacity(0.5),
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                             child: isSubmitting 
                               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
@@ -2437,6 +2508,257 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       ),
     );
   }
+
+  void _showEditArticleDialog() {
+    if (_article == null) return;
+    
+    // Check if the current user is the author
+    final isAuthor = AuthService.instance.currentUser?.id == _article!.authorId;
+    if (!isAuthor) return;
+
+    if (_article!.editCount >= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('คุณได้ทำการแก้ไขบทความไปแล้ว 1 ครั้ง ไม่สามารถแก้ไขได้อีก'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          title: const Text('แก้ไขบทความ', style: TextStyle(color: Color(0xFF1A3B5D), fontWeight: FontWeight.bold)),
+          content: const Text(
+            'คุณได้รับอนุญาติให้แก้ไขเฉพาะข้อความได้เพียงครั้งเดียวเท่านั้น โดยจะมีการแจ้งเตือนการแก้ไขไปที่เจ้าของสินค้าที่ฝากไว้กับร้านคุณ',
+            style: TextStyle(color: Colors.black87, fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก', style: TextStyle(color: Colors.black54)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _openEditArticleScreen(); // Screen to edit texts
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF1AE27),
+                foregroundColor: Colors.black87,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('ดำเนินการต่อ', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _openEditArticleScreen() {
+    if (_article == null) return;
+    
+    List<dynamic> parsedBlocks;
+    try {
+      parsedBlocks = jsonDecode(_article!.content);
+    } catch (e) {
+      parsedBlocks = [{'type': 'text', 'content': _article!.content}];
+    }
+
+    final List<TextEditingController> controllers = [];
+    final originalBlocks = parsedBlocks;
+
+    for (var block in originalBlocks) {
+      if (block['type'] == 'text') {
+        controllers.add(TextEditingController(text: block['content']));
+      }
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'EditArticle',
+      barrierColor: Colors.black87,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        bool isSubmitting = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Scaffold(
+              backgroundColor: Colors.white,
+              appBar: AppBar(
+                backgroundColor: Colors.white,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.black),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: const Text('แก้ไขข้อความบทความ', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                actions: [
+                  TextButton(
+                    onPressed: isSubmitting ? null : () async {
+                      setModalState(() => isSubmitting = true);
+                      
+                      int textIndex = 0;
+                      final List<Map<String, dynamic>> newBlocks = [];
+                      for (var block in originalBlocks) {
+                        if (block['type'] == 'text') {
+                          newBlocks.add({
+                            ...block as Map<String, dynamic>,
+                            'content': controllers[textIndex].text,
+                          });
+                          textIndex++;
+                        } else {
+                          newBlocks.add(block as Map<String, dynamic>);
+                        }
+                      }
+                      
+                      final newContentJson = jsonEncode(newBlocks);
+                      final success = await _repository.editArticleText(
+                        article: _article!,
+                        newContent: newContentJson,
+                      );
+                      
+                      if (success) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('บันทึกการแก้ไขสำเร็จ', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green),
+                          );
+                          _loadData(); // Reload to fetch fresh history and diffs
+                        }
+                      } else {
+                        setModalState(() => isSubmitting = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('เกิดข้อผิดพลาดในการบันทึก', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+                    child: isSubmitting
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Color(0xFFF1AE27), strokeWidth: 2))
+                      : const Text('บันทึก', style: TextStyle(color: Color(0xFFF1AE27), fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                ],
+              ),
+              body: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: originalBlocks.length,
+                itemBuilder: (context, index) {
+                  final block = originalBlocks[index];
+                  if (block['type'] == 'text') {
+                    // Find which controller corresponds to this block
+                    int controllerIndex = 0;
+                    for (int i = 0; i < index; i++) {
+                      if (originalBlocks[i]['type'] == 'text') controllerIndex++;
+                    }
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: TextField(
+                        controller: controllers[controllerIndex],
+                        maxLines: null,
+                        style: const TextStyle(color: Colors.black, fontSize: 14, height: 1.6),
+                        decoration: InputDecoration(
+                          hintText: 'พิมพ์ข้อความ...',
+                          hintStyle: TextStyle(color: Colors.black.withOpacity(0.3)),
+                          contentPadding: const EdgeInsets.all(16),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    );
+                  } else if (block['type'] == 'image') {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      height: 100,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        image: DecorationImage(image: NetworkImage(block['content']), fit: BoxFit.cover),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('(ไม่สามารถแก้ไขรูปภาพได้)', style: TextStyle(color: Colors.white70)),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDiffDialog(String current, String original) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A3B5D),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('ประวัติการแก้ไข', style: TextStyle(color: Color(0xFFF1AE27), fontWeight: FontWeight.bold)),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+            maxWidth: MediaQuery.of(context).size.width,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('ข้อความเดิม:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(original, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                ),
+                const SizedBox(height: 16),
+                const Text('ข้อความปัจจุบัน:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(current, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ปิด', style: TextStyle(color: Color(0xFFF1AE27))),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
@@ -2521,13 +2843,54 @@ class _RibbonPainter extends CustomPainter {
 
 class _RichTextRenderer extends StatelessWidget {
   final String text;
+  final String? oldText;
   final TextStyle style;
   final int? maxLines;
 
-  const _RichTextRenderer({required this.text, required this.style, this.maxLines});
+  const _RichTextRenderer({
+    required this.text, 
+    required this.style, 
+    this.maxLines,
+    this.oldText,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (oldText != null && oldText != text) {
+      final diffs = diff(oldText!, text);
+      cleanupSemantic(diffs);
+      
+      List<InlineSpan> spans = [];
+      for (var d in diffs) {
+        if (d.operation == 0) { // Unchanged
+          spans.add(TextSpan(text: d.text, style: style));
+        } else if (d.operation == 1) { // Added/New
+          spans.add(WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: GestureDetector(
+              onTap: () {
+                final state = context.findAncestorStateOfType<_HealthArticlePageState>();
+                state?._showDiffDialog(text, oldText!);
+              },
+              child: Text(
+                d.text,
+                style: style.copyWith(
+                  color: style.color?.withOpacity(0.5) ?? Colors.grey,
+                ),
+              ),
+            ),
+          ));
+        }
+      }
+      
+      return Text.rich(
+        TextSpan(children: spans),
+        style: style,
+        maxLines: maxLines,
+        overflow: maxLines != null ? TextOverflow.ellipsis : null,
+      );
+    }
+
     List<TextSpan> spans = [];
     
     // A more robust parser that handles non-nested tags

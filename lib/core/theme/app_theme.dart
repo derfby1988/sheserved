@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 
 /// App Theme for Sheserved
 class AppTheme {
   AppTheme._();
 
+  /// Font family constant สำหรับใช้ทั่วแอป
+  static const String fontFamily = 'SukhumvitSet';
+
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: fontFamily,
 
       // Color Scheme
       colorScheme: const ColorScheme.light(
@@ -30,17 +33,18 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.background,
 
       // AppBar
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: GoogleFonts.sarabun(
+        titleTextStyle: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: AppColors.textOnPrimary,
         ),
-        iconTheme: const IconThemeData(
+        iconTheme: IconThemeData(
           color: AppColors.textOnPrimary,
         ),
       ),
@@ -66,7 +70,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: GoogleFonts.sarabun(
+          textStyle: const TextStyle(
+            fontFamily: fontFamily,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -82,7 +87,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: GoogleFonts.sarabun(
+          textStyle: const TextStyle(
+            fontFamily: fontFamily,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -94,7 +100,8 @@ class AppTheme {
         style: TextButton.styleFrom(
           foregroundColor: AppColors.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          textStyle: GoogleFonts.sarabun(
+          textStyle: const TextStyle(
+            fontFamily: fontFamily,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -122,11 +129,13 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.error),
         ),
-        hintStyle: GoogleFonts.sarabun(
+        hintStyle: const TextStyle(
+          fontFamily: fontFamily,
           color: AppColors.textHint,
           fontSize: 14,
         ),
-        labelStyle: GoogleFonts.sarabun(
+        labelStyle: const TextStyle(
+          fontFamily: fontFamily,
           color: AppColors.textSecondary,
           fontSize: 14,
         ),
@@ -140,15 +149,17 @@ class AppTheme {
       ),
 
       // Bottom Navigation Bar
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: AppColors.surface,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,
-        selectedLabelStyle: GoogleFonts.sarabun(
+        selectedLabelStyle: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelStyle: GoogleFonts.sarabun(
+        unselectedLabelStyle: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 12,
         ),
         type: BottomNavigationBarType.fixed,
@@ -169,75 +180,90 @@ class AppTheme {
       ),
 
       // Text Theme
-      textTheme: GoogleFonts.sarabunTextTheme().copyWith(
-        displayLarge: GoogleFonts.sarabun(
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 32,
           fontWeight: FontWeight.bold,
           color: AppColors.textPrimary,
         ),
-        displayMedium: GoogleFonts.sarabun(
+        displayMedium: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 28,
           fontWeight: FontWeight.bold,
           color: AppColors.textPrimary,
         ),
-        displaySmall: GoogleFonts.sarabun(
+        displaySmall: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 24,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        headlineLarge: GoogleFonts.sarabun(
+        headlineLarge: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        headlineMedium: GoogleFonts.sarabun(
+        headlineMedium: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        headlineSmall: GoogleFonts.sarabun(
+        headlineSmall: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        titleLarge: GoogleFonts.sarabun(
+        titleLarge: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        titleMedium: GoogleFonts.sarabun(
+        titleMedium: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 14,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
-        titleSmall: GoogleFonts.sarabun(
+        titleSmall: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 12,
           fontWeight: FontWeight.w500,
           color: AppColors.textSecondary,
         ),
-        bodyLarge: GoogleFonts.sarabun(
+        bodyLarge: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 16,
           color: AppColors.textPrimary,
         ),
-        bodyMedium: GoogleFonts.sarabun(
+        bodyMedium: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 14,
           color: AppColors.textPrimary,
         ),
-        bodySmall: GoogleFonts.sarabun(
+        bodySmall: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 12,
           color: AppColors.textSecondary,
         ),
-        labelLarge: GoogleFonts.sarabun(
+        labelLarge: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 14,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
-        labelMedium: GoogleFonts.sarabun(
+        labelMedium: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 12,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
-        labelSmall: GoogleFonts.sarabun(
+        labelSmall: TextStyle(
+          fontFamily: fontFamily,
           fontSize: 11,
           fontWeight: FontWeight.w500,
           color: AppColors.textSecondary,

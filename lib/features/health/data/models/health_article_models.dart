@@ -10,6 +10,7 @@ class HealthArticle {
   final int shareCount;
   final int bookmarkCount;
   final int commentCount; // Added
+  final int editCount; // Added for article edit tracking
   final String? category;
   final String? imageUrl;
   final DateTime createdAt;
@@ -29,6 +30,7 @@ class HealthArticle {
     this.shareCount = 0,
     this.bookmarkCount = 0,
     this.commentCount = 0, // Added
+    this.editCount = 0,
     this.category,
     this.imageUrl,
     required this.createdAt,
@@ -51,6 +53,7 @@ class HealthArticle {
       shareCount: json['share_count'] ?? 0,
       bookmarkCount: json['bookmark_count'] ?? 0,
       commentCount: json['comment_count'] ?? 0,
+      editCount: json['edit_count'] ?? 0,
       category: json['category'],
       imageUrl: json['image_url'],
       createdAt: DateTime.parse(json['created_at']),
@@ -71,6 +74,7 @@ class HealthArticle {
       'share_count': shareCount,
       'bookmark_count': bookmarkCount,
       'comment_count': commentCount, // Added
+      'edit_count': editCount,
       'category': category,
       'image_url': imageUrl,
       'created_at': createdAt.toIso8601String(),
@@ -90,6 +94,7 @@ class HealthArticle {
     int? shareCount,
     int? bookmarkCount,
     int? commentCount, // Added
+    int? editCount,
     String? category,
     String? imageUrl,
     DateTime? createdAt,
@@ -109,6 +114,7 @@ class HealthArticle {
       shareCount: shareCount ?? this.shareCount,
       bookmarkCount: bookmarkCount ?? this.bookmarkCount,
       commentCount: commentCount ?? this.commentCount, // Added
+      editCount: editCount ?? this.editCount,
       category: category ?? this.category,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
@@ -283,6 +289,46 @@ class CommentEditHistory {
     return {
       'id': id,
       'comment_id': commentId,
+      'old_content': oldContent,
+      'new_content': newContent,
+      'edited_at': editedAt.toIso8601String(),
+      'edit_number': editNumber,
+    };
+  }
+}
+
+class ArticleEditHistory {
+  final String id;
+  final String articleId;
+  final String oldContent;
+  final String newContent;
+  final DateTime editedAt;
+  final int editNumber;
+
+  ArticleEditHistory({
+    required this.id,
+    required this.articleId,
+    required this.oldContent,
+    required this.newContent,
+    required this.editedAt,
+    required this.editNumber,
+  });
+
+  factory ArticleEditHistory.fromJson(Map<String, dynamic> json) {
+    return ArticleEditHistory(
+      id: json['id'],
+      articleId: json['article_id'],
+      oldContent: json['old_content'],
+      newContent: json['new_content'],
+      editedAt: DateTime.parse(json['edited_at']),
+      editNumber: json['edit_number'] ?? 1,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'article_id': articleId,
       'old_content': oldContent,
       'new_content': newContent,
       'edited_at': editedAt.toIso8601String(),

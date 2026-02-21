@@ -58,6 +58,7 @@ dependencies:
   # Thai BE Date Picker
   thai_buddhist_date_pickers: ^0.1.6
   flutter_slidable: ^4.0.3
+  diff_match_patch: ^0.4.1
 
 dev_dependencies:
   flutter_test:
@@ -67,19 +68,23 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets (uncomment when files are added)
-  # assets:
-  #   - assets/images/
-  #   - assets/icons/
+  # Assets
+  assets:
+    - assets/fonts/
 
-  # Fonts - using Google Fonts package instead
-  # fonts:
-  #   - family: Sarabun
-  #     fonts:
-  #       - asset: assets/fonts/Sarabun-Regular.ttf
-  #       - asset: assets/fonts/Sarabun-Medium.ttf
-  #         weight: 500
-  #       - asset: assets/fonts/Sarabun-SemiBold.ttf
-  #         weight: 600
-  #       - asset: assets/fonts/Sarabun-Bold.ttf
-  #         weight: 700
+  # Fonts - Sukhumvit Set
+  fonts:
+    - family: SukhumvitSet
+      fonts:
+        - asset: assets/fonts/SukhumvitSet-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/SukhumvitSet-Light.ttf
+          weight: 300
+        - asset: assets/fonts/SukhumvitSet-Text.ttf
+          weight: 400
+        - asset: assets/fonts/SukhumvitSet-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/SukhumvitSet-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/SukhumvitSet-Bold.ttf
+          weight: 700

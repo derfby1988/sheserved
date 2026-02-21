@@ -944,4 +944,73 @@ class HealthArticleRepository {
       rethrow; // Rethrow to let the UI catch and show the actual error
     }
   }
+
+  /// Update article content (edit only text, max 1 time)
+  Future<bool> editArticleText({
+    required HealthArticle article,
+    required String newContent,
+  }) async {
+    try {
+      // 1. Insert into history table
+      await _client.from('health_article_edits').insert({
+        'article_id': article.id,
+        'old_content': article.content,
+        'new_content': newContent,
+        'edit_number': article.editCount + 1,
+      });
+
+      // 2. Update the article content and edit count
+      await _client.from('health_articles').update({
+        'content': newContent,
+        'edit_count': article.editCount + 1,
+      }).eq('id', article.id);
+
+      // 3. Fetch products tagged in the article
+      final products = await getArticleProducts(article.id);
+      
+      // 4. Notify product owners (taggedById)
+      final Set<String> notifiedUsers = {}; // Prevent duplicate notifications
+      for (var product in products) {
+        final targetUserId = product.taggedById;
+        if (targetUserId != null && targetUserId != article.authorId && !notifiedUsers.contains(targetUserId)) {
+          try {
+            await _client.from('health_notifications').insert({
+              'recipient_id': targetUserId,
+              'type': 'article_edited',
+              'message': 'บทความ "${article.title}" ที่คุณฝากสินค้าไว้มีการแก้ไขข้อความ',
+              'article_id': article.id,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+            notifiedUsers.add(targetUserId);
+          } catch (e) {
+            print('Repository: Failed to send notification to product owner ${product.taggedById}: $e');
+          }
+        }
+      }
+
+      return true;
+    } catch (e) {
+      print('Repository: Error editing article text: $e');
+      return false;
+    }
+  }
+
+  /// Get article edit history
+  Future<List<ArticleEditHistory>> getArticleEditHistory(String articleId) async {
+    try {
+      final response = await _client
+          .from('health_article_edits')
+          .select()
+          .eq('article_id', articleId)
+          .order('edited_at', ascending: false);
+
+      if (response != null && (response as List).isNotEmpty) {
+        return (response as List).map((e) => ArticleEditHistory.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Repository: Error fetching article edit history: $e');
+      return [];
+    }
+  }
 }
