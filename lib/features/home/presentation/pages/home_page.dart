@@ -6,6 +6,7 @@ import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
+import '../../../consultation/presentation/logic/consultation_guard.dart';
 
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
@@ -320,7 +321,7 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                   const SizedBox(height: 16),
                                   HomeConsultationWidget(
-                                    onTap: () => _showSnackBar(context, 'เปิดหน้าปรึกษาแพทย์'),
+                                    onTap: () => ConsultationGuard.startConsultation(context),
                                   ),
                                   const SizedBox(height: 24),
                                   HomePharmacyCard(

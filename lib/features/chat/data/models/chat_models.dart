@@ -136,6 +136,7 @@ class ChatMessage {
     String? type,
     String? attachmentUrl,
     String? attachmentType,
+    Map<String, DateTime>? readBy,
   }) {
     return ChatMessage(
       id: id ?? this.id,

@@ -310,7 +310,6 @@ class ExpertProfile {
     this.rating,
     this.reviewCount = 0,
     this.isAvailable = true,
-    this.workingHours,
     this.verificationStatus = VerificationStatus.pending,
     required this.createdAt,
     required this.updatedAt,
@@ -332,7 +331,7 @@ class ExpertProfile {
       'rating': rating,
       'review_count': reviewCount,
       'is_available': isAvailable,
-      'working_hours': workingHours,
+      // 'working_hours': workingHours, // not present in class
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -354,7 +353,7 @@ class ExpertProfile {
       rating: json['rating']?.toDouble(),
       reviewCount: json['review_count'] ?? 0,
       isAvailable: json['is_available'] ?? true,
-      workingHours: json['working_hours'],
+      // workingHours: json['working_hours'], // not present in class
       verificationStatus: json['users'] != null && json['users']['verification_status'] != null
           ? VerificationStatusExtension.fromString(json['users']['verification_status'])
           : VerificationStatusExtension.fromString(json['verification_status'] ?? 'pending'),

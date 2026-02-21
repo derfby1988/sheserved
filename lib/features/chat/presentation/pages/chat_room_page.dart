@@ -10,6 +10,7 @@ import '../../../../services/service_locator.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/chat_models.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../services/auth_service.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final String roomId;
@@ -22,7 +23,7 @@ class ChatRoomPage extends StatefulWidget {
 class _ChatRoomPageState extends State<ChatRoomPage> {
   final _chatRepository = ServiceLocator.instance.chatRepository;
   final _currentUser = ServiceLocator.instance.currentUser;
-  final _webSocketService = ServiceLocator.instance.webSocketService;
+  final _webSocketService = ServiceLocator.instance.websocketService;
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
@@ -131,12 +132,13 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     });
 
     _callAcceptSub = _webSocketService.callAcceptStream.listen((data) {
-      if (data['roomId'] == widget.roomId && data['calleeId'] == _otherParticipant?.id) {
+      final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
+      if (data['roomId'] == widget.roomId && data['calleeId'] == otherParticipant?.id) {
         // Navigate to LiveVdoPage as caller
         Navigator.pushNamed(context, '/live-vdo', arguments: {
           'roomId': widget.roomId,
           'isCaller': true,
-          'otherParticipantName': _otherParticipant?.fullName ?? 'Expert',
+          'otherParticipantName': otherParticipant?.firstName ?? 'Expert',
         });
       }
     });
@@ -228,13 +230,19 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   void _startVideoCall() {
-    if (_currentUser == null || _otherParticipant == null) return;
+    final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
+    if (_currentUser == null || otherParticipant == null) return;
     
+    // We get profile details from AuthService directly
+    final currentProfile = AuthService.instance.currentUser;
+    final fullName = currentProfile != null ? '${currentProfile.firstName} ${currentProfile.lastName}' : 'User';
+    final profileImageUrl = currentProfile?.profileImageUrl ?? '';
+
     _webSocketService.sendCallInvite(
       widget.roomId,
       _currentUser!.id,
-      '${_currentUser!.firstName} ${_currentUser!.lastName}',
-      _currentUser!.profileImageUrl,
+      fullName,
+      profileImageUrl,
     );
 
     ScaffoldMessenger.of(context).showSnackBar(

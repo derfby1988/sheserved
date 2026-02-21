@@ -23,9 +23,13 @@ import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
 import 'features/chat/presentation/pages/chat_list_page.dart';
-import 'features/chat/presentation/pages/chat_room_page.dart';
 import 'features/chat/presentation/pages/contact_list_page.dart';
+import 'features/chat/presentation/pages/chat_room_page.dart';
 import 'features/chat/presentation/pages/live_vdo_page.dart';
+import 'features/consultation/presentation/pages/package_healthcare_page.dart';
+import 'features/consultation/presentation/pages/analyze_body_area_page.dart';
+import 'features/consultation/presentation/pages/chart_board_page.dart';
+import 'features/consultation/data/models/consultation_request_model.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
 import 'services/supabase_service.dart';
@@ -111,13 +115,14 @@ class SheservedApp extends StatelessWidget {
         '/register-simple': (context) => const RegisterPage(),
         '/health': (context) => const HealthPage(),
         '/health-data-entry': (context) => const HealthDataEntryPage(),
+        '/package-healthcare': (context) => const PackageHealthCarePage(),
         '/test': (context) => const TestWebSocketWidget(),
 
         '/admin/professions': (context) => const ProfessionAdminPage(),
         '/admin/applications': (context) => const ApplicationReviewPage(),
         '/settings/sync': (context) => const SyncSettingsPage(),
         '/chat-list': (context) => const ChatListPage(),
-        '/chat-contacts': (context) => const ContactListPage(),
+        '/chat-contacts': (context) => ContactListPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {
@@ -135,6 +140,20 @@ class SheservedApp extends StatelessWidget {
               isCaller: args['isCaller'],
               otherParticipantName: args['otherParticipantName'],
             ),
+          );
+        }
+
+        if (settings.name == '/analyze-body') {
+          final request = settings.arguments as ConsultationRequestModel;
+          return MaterialPageRoute(
+            builder: (context) => AnalyzeBodyAreaPage(request: request),
+          );
+        }
+
+        if (settings.name == '/chart-board') {
+          final request = settings.arguments as ConsultationRequestModel;
+          return MaterialPageRoute(
+            builder: (context) => ChartBoardPage(request: request),
           );
         }
 

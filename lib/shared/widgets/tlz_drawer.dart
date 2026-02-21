@@ -4,6 +4,8 @@ import 'dart:ui';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../services/auth_service.dart';
+import '../../features/consultation/presentation/logic/consultation_guard.dart';
+
 
 /// Drawer Menu Item Model
 class DrawerMenuItem {
@@ -324,7 +326,10 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               icon: Icons.people_outline,
                               isUnderlined: true,
                               underlineText: 'ปรึกษา',
-                              onTap: () => _navigateTo(context, '/consult-doctor'),
+                              onTap: () {
+                                Navigator.pop(context); // close drawer first
+                                ConsultationGuard.startConsultation(context);
+                              },
                               isSubItem: true,
                             ),
                             _buildMenuItem(

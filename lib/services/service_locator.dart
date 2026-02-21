@@ -11,6 +11,7 @@ import '../features/health/data/repositories/health_repository.dart';
 import '../features/health/data/repositories/health_article_repository.dart';
 import '../features/chat/data/repositories/chat_repository.dart';
 import '../features/chat/data/models/chat_models.dart';
+import '../features/consultation/data/repositories/consultation_repository.dart';
 import 'package:hive/hive.dart';
 import 'auth_service.dart';
 
@@ -29,6 +30,7 @@ class ServiceLocator {
   HealthRepository? _healthRepository;
   HealthArticleRepository? _healthArticleRepository;
   ChatRepository? _chatRepository;
+  ConsultationRepository? _consultationRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -149,8 +151,10 @@ class ServiceLocator {
         Hive.box<ChatRoom>('chat_rooms'),
         Hive.box<ChatMessage>('chat_messages'),
         Hive.box<ChatParticipant>('chat_participants'),
-        _webSocketService,
+        _websocketService,
       );
+      
+      _consultationRepository = ConsultationRepository(supabaseClient);
     }
 
 
@@ -186,12 +190,18 @@ class ServiceLocator {
         Hive.box<ChatRoom>('chat_rooms'),
         Hive.box<ChatMessage>('chat_messages'),
         Hive.box<ChatParticipant>('chat_participants'),
-        _webSocketService,
+        _websocketService,
       );
     }
     return _chatRepository!;
   }
 
+  ConsultationRepository get consultationRepository {
+    if (_consultationRepository == null) {
+      _consultationRepository = ConsultationRepository(Supabase.instance.client);
+    }
+    return _consultationRepository!;
+  }
 
   /// Get Unified Repository (recommended)
   UnifiedRepository get repository {

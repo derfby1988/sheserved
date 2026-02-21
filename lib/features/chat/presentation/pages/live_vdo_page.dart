@@ -20,7 +20,7 @@ class LiveVdoPage extends StatefulWidget {
 }
 
 class _LiveVdoPageState extends State<LiveVdoPage> {
-  final _webSocketService = ServiceLocator.instance.webSocketService;
+  final _webSocketService = ServiceLocator.instance.websocketService;
   final _currentUser = ServiceLocator.instance.currentUser;
   
   final _localRenderer = RTCVideoRenderer();
