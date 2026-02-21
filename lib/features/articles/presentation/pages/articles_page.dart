@@ -25,6 +25,8 @@ class ArticleBlock {
   final String id;
   String type; // 'text' or 'image'
   String content;
+  String alignment; // 'left', 'center', 'right', 'full'
+  double height;
   TextEditingController? controller;
   FocusNode? focusNode;
 
@@ -32,6 +34,8 @@ class ArticleBlock {
     required this.id,
     required this.type,
     required this.content,
+    this.alignment = 'center',
+    this.height = 100,
     this.controller,
     this.focusNode,
   });
@@ -39,6 +43,8 @@ class ArticleBlock {
   Map<String, dynamic> toJson() => {
     'type': type,
     'content': type == 'text' ? controller?.text ?? content : content,
+    'alignment': alignment,
+    'height': height,
   };
 }
 
@@ -126,6 +132,14 @@ class _ArticlesPageState extends State<ArticlesPage> {
         );
       }
     }
+  }
+
+  Widget _buildAlignmentBtn(BuildContext context, StateSetter setDialogState, ArticleBlock block, String alignment, IconData icon) {
+    final isActive = block.alignment == alignment;
+    return IconButton(
+      icon: Icon(icon, color: isActive ? AppColors.primary : Colors.grey, size: 20),
+      onPressed: () => setDialogState(() => block.alignment = alignment),
+    );
   }
 
   Future<String?> _pickAndUploadImage(BuildContext context, ImageSource source) async {
@@ -243,23 +257,25 @@ class _ArticlesPageState extends State<ArticlesPage> {
   @override
   Widget build(BuildContext context) {
     // Set background to white/light-grey so the blue header's rounded corners show this color behind them
-    return Scaffold(
-      backgroundColor: _bgPage, 
-      drawer: const TlzDrawer(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          if (AuthService.instance.currentUser == null) {
-            await Navigator.pushNamed(context, '/login');
-            if (AuthService.instance.currentUser == null) return;
-          }
-          _showCreateArticleDialog();
-        },
-        backgroundColor: _blue,
-        elevation: 4,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-      body: Column(
-        children: [
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: _bgPage, 
+        drawer: const TlzDrawer(),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () async {
+            if (AuthService.instance.currentUser == null) {
+              await Navigator.pushNamed(context, '/login');
+              if (AuthService.instance.currentUser == null) return;
+            }
+            _showCreateArticleDialog();
+          },
+          backgroundColor: _blue,
+          elevation: 4,
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+        body: Column(
+          children: [
           // Blue Header with Rounded Bottom Corners
           _buildCustomHeader(context),
           
@@ -306,8 +322,9 @@ class _ArticlesPageState extends State<ArticlesPage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildCustomHeader(BuildContext context) {
     final user = AuthService.instance.currentUser;
@@ -506,90 +523,159 @@ class _ArticlesPageState extends State<ArticlesPage> {
               final isLoading = block.content == 'LOADING';
               final isError = block.content == 'ERROR';
               
-              return Container(
+              Alignment widgetAlignment;
+              double widgetWidth;
+              switch (block.alignment) {
+                case 'left': 
+                  widgetAlignment = Alignment.centerLeft; 
+                  widgetWidth = 0.6;
+                  break;
+                case 'right': 
+                  widgetAlignment = Alignment.centerRight; 
+                  widgetWidth = 0.6;
+                  break;
+                case 'center': 
+                  widgetAlignment = Alignment.center; 
+                  widgetWidth = 0.8;
+                  break;
+                default: 
+                  widgetAlignment = Alignment.center; 
+                  widgetWidth = 1.0;
+              }
+
+              return Column(
                 key: ValueKey(block.id),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                height: 180,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Stack(
-                  children: [
-                    if (isLoading)
-                      const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 12),
-                            Text('กำลังอัปโหลด...', style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      )
-                    else if (isError)
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.error_outline, color: Colors.red, size: 40),
-                            const SizedBox(height: 8),
-                            const Text('อัปโหลดไม่สำเร็จ', style: TextStyle(color: Colors.red)),
-                            TextButton(
-                              onPressed: () => setDialogState(() => blocks.removeAt(index)),
-                              child: const Text('ลบออก'),
-                            )
-                          ],
-                        ),
-                      )
-                    else
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: block.content,
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                          errorWidget: (context, url, error) => Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isLoading && !isError)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              const Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                              const SizedBox(height: 8),
-                              Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                              TextButton(
-                                onPressed: () => setDialogState(() {}),
-                                child: const Text('ลองใหม่'),
-                              )
+                              _buildAlignmentBtn(context, setDialogState, block, 'left', Icons.format_align_left),
+                              _buildAlignmentBtn(context, setDialogState, block, 'center', Icons.format_align_center),
+                              _buildAlignmentBtn(context, setDialogState, block, 'right', Icons.format_align_right),
+                              _buildAlignmentBtn(context, setDialogState, block, 'full', Icons.format_align_justify),
+                              const Spacer(),
+                              Text('ความสูง: ${block.height.toInt()}px', 
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)
+                              ),
                             ],
                           ),
-                        ),
-                      ),
-                    if (!isLoading)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Row(
-                          children: [
-                            Container(
-                              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                              child: IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.white, size: 20),
-                                onPressed: () => setDialogState(() => blocks.removeAt(index)),
+                          SizedBox(
+                            height: 30,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 2,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                              ),
+                              child: Slider(
+                                value: block.height,
+                                min: 100,
+                                max: 400,
+                                divisions: 6,
+                                activeColor: AppColors.primary,
+                                inactiveColor: Colors.grey[300],
+                                onChanged: (val) => setDialogState(() => block.height = val),
                               ),
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Align(
+                    alignment: widgetAlignment,
+                    child: FractionallySizedBox(
+                      widthFactor: widgetWidth,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        height: block.height,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Stack(
+                          children: [
+                            if (isLoading)
+                              const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 12),
+                                    Text('กำลังอัปโหลด...', style: TextStyle(color: Colors.grey)),
+                                  ],
+                                ),
+                              )
+                            else if (isError)
+                              Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error_outline, color: Colors.red, size: 40),
+                                    const SizedBox(height: 8),
+                                    const Text('อัปโหลดไม่สำเร็จ', style: TextStyle(color: Colors.red)),
+                                    TextButton(
+                                      onPressed: () => setDialogState(() => blocks.removeAt(index)),
+                                      child: const Text('ลบออก'),
+                                    )
+                                  ],
+                                ),
+                              )
+                            else
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: CachedNetworkImage(
+                                  imageUrl: block.content,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                                  errorWidget: (context, url, error) => Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                                      const SizedBox(height: 8),
+                                      Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                                      TextButton(
+                                        onPressed: () => setDialogState(() {}),
+                                        child: const Text('ลองใหม่'),
+                                      )
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (!isLoading)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.white, size: 20),
+                                    onPressed: () => setDialogState(() => blocks.removeAt(index)),
+                                  ),
+                                ),
+                              ),
+                            if (!isLoading)
+                              const Center(child: Icon(Icons.drag_handle, color: Colors.white70, size: 40)),
                           ],
                         ),
                       ),
-                    if (!isLoading)
-                      const Center(child: Icon(Icons.drag_handle, color: Colors.white70, size: 40)),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               );
             }
           }
 
-          return Dialog(
+          return GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Dialog(
             backgroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
@@ -706,6 +792,8 @@ class _ArticlesPageState extends State<ArticlesPage> {
                                               id: tempId,
                                               type: 'image',
                                               content: 'LOADING', // Special flag
+                                              alignment: 'center',
+                                              height: 100,
                                             ));
                                           });
 
@@ -746,6 +834,8 @@ class _ArticlesPageState extends State<ArticlesPage> {
                                               id: tempId,
                                               type: 'image',
                                               content: 'LOADING',
+                                              alignment: 'center',
+                                              height: 100,
                                             ));
                                           });
 
@@ -854,7 +944,10 @@ class _ArticlesPageState extends State<ArticlesPage> {
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: Text('ดูตัวอย่าง', style: TextStyle(color: _blue, fontWeight: FontWeight.bold)),
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('ดูตัวอย่าง', style: TextStyle(color: _blue, fontWeight: FontWeight.bold)),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -915,7 +1008,10 @@ class _ArticlesPageState extends State<ArticlesPage> {
                             ),
                             child: isSaving 
                               ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : const Text('เผยแพร่บทความ', style: TextStyle(fontWeight: FontWeight.bold)),
+                              : const FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('เผยแพร่บทความ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                ),
                           ),
                         ),
                       ],
@@ -924,7 +1020,8 @@ class _ArticlesPageState extends State<ArticlesPage> {
                 ],
               ),
             ),
-          );
+          ),
+        );
         },
       ),
     );
@@ -1200,7 +1297,9 @@ class _ArticlesPageState extends State<ArticlesPage> {
           color: Colors.black.withOpacity(0.8),
         );
 
-        return Dialog(
+        return GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Dialog(
           insetPadding: const EdgeInsets.all(16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           child: Container(
@@ -1243,28 +1342,45 @@ class _ArticlesPageState extends State<ArticlesPage> {
                               ),
                             );
                           } else if (type == 'image') {
-                            return Container(
-                              margin: const EdgeInsets.symmetric(vertical: 16),
-                              width: double.infinity,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: Colors.grey[100],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: CachedNetworkImage(
-                                  imageUrl: val,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                                  errorWidget: (context, url, error) => const Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                                        SizedBox(height: 8),
-                                        Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey)),
-                                      ],
+                            final alignment = block['alignment'] ?? 'full';
+                            final height = (block['height'] ?? 200).toDouble();
+                            
+                            Alignment widgetAlignment;
+                            double widgetWidth;
+                            switch (alignment) {
+                              case 'left': widgetAlignment = Alignment.centerLeft; widgetWidth = 0.6; break;
+                              case 'right': widgetAlignment = Alignment.centerRight; widgetWidth = 0.6; break;
+                              case 'center': widgetAlignment = Alignment.center; widgetWidth = 0.8; break;
+                              default: widgetAlignment = Alignment.center; widgetWidth = 1.0;
+                            }
+
+                            return Align(
+                              alignment: widgetAlignment,
+                              child: FractionallySizedBox(
+                                widthFactor: widgetWidth,
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 16),
+                                  height: height,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    color: Colors.grey[100],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: CachedNetworkImage(
+                                      imageUrl: val,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                                      errorWidget: (context, url, error) => const Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                                            SizedBox(height: 8),
+                                            Text('โหลดรูปภาพไม่สำเร็จ', style: TextStyle(color: Colors.grey)),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1280,6 +1396,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
               ],
             ),
           ),
+        ),
         );
       },
     );

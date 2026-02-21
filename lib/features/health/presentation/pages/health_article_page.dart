@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'dart:convert';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
@@ -1338,13 +1339,30 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ),
             );
           } else if (type == 'image') {
-            return Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: double.infinity,
-              height: 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                image: DecorationImage(image: NetworkImage(val), fit: BoxFit.cover),
+            final alignment = block['alignment'] ?? 'full';
+            final height = (block['height'] ?? 200).toDouble();
+            
+            Alignment widgetAlignment;
+            double widgetWidthFactor;
+            switch (alignment) {
+              case 'left': widgetAlignment = Alignment.centerLeft; widgetWidthFactor = 0.6; break;
+              case 'right': widgetAlignment = Alignment.centerRight; widgetWidthFactor = 0.6; break;
+              case 'center': widgetAlignment = Alignment.center; widgetWidthFactor = 0.8; break;
+              default: widgetAlignment = Alignment.center; widgetWidthFactor = 1.0;
+            }
+
+            return Align(
+              alignment: widgetAlignment,
+              child: FractionallySizedBox(
+                widthFactor: widgetWidthFactor,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  height: height,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    image: DecorationImage(image: NetworkImage(val), fit: BoxFit.cover),
+                  ),
+                ),
               ),
             );
           }
@@ -1440,10 +1458,45 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       }
     }
     
+    final bool canEdit = isOwnComment;
+    final bool canHideShow = _article?.authorId == AuthService.instance.currentUser?.id;
+
     return Container(
       key: commentKey,
       margin: EdgeInsets.fromLTRB(isReply ? 60 : 20, 8, 20, 8),
-      child: Stack(
+      child: Slidable(
+        key: ValueKey(comment.id),
+        endActionPane: (canEdit || canHideShow) ? ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: (canEdit && canHideShow) ? 0.45 : 0.25,
+          children: [
+            if (canHideShow)
+              SlidableAction(
+                onPressed: (context) {
+                  if (!_visibilityLoadingIds.contains(comment.id)) {
+                    _toggleCommentVisibility(comment);
+                  }
+                },
+                backgroundColor: comment.isHidden ? const Color(0xFF4CAF50) : Colors.red.shade400,
+                foregroundColor: Colors.white,
+                icon: comment.isHidden ? Icons.visibility : Icons.visibility_off,
+                label: comment.isHidden ? 'เปิดเผย' : 'ปิดกั้น',
+                autoClose: true,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+            if (canEdit)
+              SlidableAction(
+                onPressed: (context) => _showEditDialog(comment),
+                backgroundColor: const Color(0xFFF1AE27),
+                foregroundColor: Colors.white,
+                icon: Icons.edit,
+                label: 'แก้ไข',
+                autoClose: true,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+          ],
+        ) : null,
+        child: Stack(
         children: [
           Container(
             margin: const EdgeInsets.only(top: 10),
@@ -1583,44 +1636,6 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ],
             ),
           ),
-          if (_article?.authorId == AuthService.instance.currentUser?.id)
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: _visibilityLoadingIds.contains(comment.id) 
-                  ? null 
-                  : () => _toggleCommentVisibility(comment),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: _visibilityLoadingIds.contains(comment.id)
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFF1AE27)),
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            comment.isHidden ? Icons.visibility_off : Icons.visibility,
-                            size: 14,
-                            color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            comment.isHidden ? 'ปิดกั้น' : 'เปิดเผย',
-                            style: TextStyle(
-                              color: comment.isHidden ? Colors.red.shade400 : const Color(0xFF4CAF50),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                ),
-              ),
-            ),
           Positioned(
             left: 0,
             top: 0,
@@ -1675,33 +1690,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               ],
             ),
           ),
-          if (isOwnComment)
-            Positioned(
-              top: 10,
-              right: 0,
-              child: GestureDetector(
-                onTap: () => _showEditDialog(comment),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.edit, size: 14, color: Color(0xFFF1AE27)),
-                      SizedBox(width: 4),
-                      Text(
-                        'แก้ไข',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFF1AE27),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
+      ),
       ),
     );
   }

@@ -57,6 +57,7 @@ dependencies:
   
   # Thai BE Date Picker
   thai_buddhist_date_pickers: ^0.1.6
+  flutter_slidable: ^4.0.3
 
 dev_dependencies:
   flutter_test:
