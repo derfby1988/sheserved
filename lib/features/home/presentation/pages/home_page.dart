@@ -258,7 +258,7 @@ class _HomePageState extends State<HomePage> {
                                           ? _buildSectionSkeleton()
                                           : HomeRecommendedSection(
                                               articles: _recommendedArticles,
-                                              onMoreTap: () => Navigator.pushNamed(context, '/articles'),
+                                              onMoreTap: () => Navigator.pushNamed(context, '/articles', arguments: 'แนะนำ'),
                                               onItemTap: (article) async {
                                                 await Navigator.pushNamed(
                                                   context, 

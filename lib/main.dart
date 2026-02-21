@@ -22,9 +22,15 @@ import 'features/admin/presentation/pages/application_review_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
+import 'features/chat/presentation/pages/chat_list_page.dart';
+import 'features/chat/presentation/pages/chat_room_page.dart';
+import 'features/chat/presentation/pages/contact_list_page.dart';
+import 'features/chat/presentation/pages/live_vdo_page.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
 import 'services/supabase_service.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'features/chat/data/models/chat_models.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -57,6 +63,18 @@ void main() async {
 
   // Initialize Supabase Service
   await SupabaseService.initialize();
+
+  // Initialize Hive
+  await Hive.initFlutter();
+  Hive.registerAdapter(ChatRoomAdapter());
+  Hive.registerAdapter(MessageStatusAdapter());
+  Hive.registerAdapter(ChatMessageAdapter());
+  Hive.registerAdapter(ChatParticipantAdapter());
+  
+  // Open Boxes
+  await Hive.openBox<ChatRoom>('chat_rooms');
+  await Hive.openBox<ChatMessage>('chat_messages');
+  await Hive.openBox<ChatParticipant>('chat_participants');
 
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();
@@ -93,13 +111,33 @@ class SheservedApp extends StatelessWidget {
         '/register-simple': (context) => const RegisterPage(),
         '/health': (context) => const HealthPage(),
         '/health-data-entry': (context) => const HealthDataEntryPage(),
-        '/articles': (context) => const ArticlesPage(),
         '/test': (context) => const TestWebSocketWidget(),
+
         '/admin/professions': (context) => const ProfessionAdminPage(),
         '/admin/applications': (context) => const ApplicationReviewPage(),
         '/settings/sync': (context) => const SyncSettingsPage(),
+        '/chat-list': (context) => const ChatListPage(),
+        '/chat-contacts': (context) => const ContactListPage(),
       },
       onGenerateRoute: (settings) {
+        if (settings.name == '/chat-room') {
+          final roomId = settings.arguments as String;
+          return MaterialPageRoute(
+            builder: (context) => ChatRoomPage(roomId: roomId),
+          );
+        }
+
+        if (settings.name == '/live-vdo') {
+          final args = settings.arguments as Map<String, dynamic>;
+          return MaterialPageRoute(
+            builder: (context) => LiveVdoPage(
+              roomId: args['roomId'],
+              isCaller: args['isCaller'],
+              otherParticipantName: args['otherParticipantName'],
+            ),
+          );
+        }
+
         // Handle routes with arguments
         if (settings.name == '/health/article') {
           final args = settings.arguments;
@@ -115,6 +153,7 @@ class SheservedApp extends StatelessWidget {
                 targetCommentId: args['targetCommentId'] as String?,
                 pendingAction: args['pendingAction'] as String?,
                 pendingCommentId: args['pendingCommentId'] as String?,
+                openBookmarks: args['openBookmarks'] as bool? ?? false,
               ),
             );
           }
@@ -129,6 +168,14 @@ class SheservedApp extends StatelessWidget {
             builder: (context) => RegistrationFieldAdminPage(profession: profession),
           );
         }
+
+        if (settings.name == '/articles') {
+          final initialFilter = settings.arguments as String?;
+          return MaterialPageRoute(
+            builder: (context) => ArticlesPage(initialFilter: initialFilter),
+          );
+        }
+
         return null;
       },
     );

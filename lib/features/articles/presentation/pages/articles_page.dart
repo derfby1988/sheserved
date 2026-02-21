@@ -51,11 +51,13 @@ class ArticleBlock {
 /// Articles Page - บทความเพื่อสุขภาพ
 /// แสดงรายการบทความแนะนำโดยผู้เชี่ยวชาญ
 class ArticlesPage extends StatefulWidget {
-  const ArticlesPage({super.key});
+  final String? initialFilter;
+  const ArticlesPage({super.key, this.initialFilter});
 
   @override
   State<ArticlesPage> createState() => _ArticlesPageState();
 }
+
 
 class _ArticlesPageState extends State<ArticlesPage> {
   final ImagePicker _picker = ImagePicker();
@@ -75,12 +77,16 @@ class _ArticlesPageState extends State<ArticlesPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialFilter != null && _filters.contains(widget.initialFilter)) {
+      _selectedFilter = widget.initialFilter!;
+    }
     _loadInitialArticles();
     _scrollController.addListener(_onScroll);
     
     // Refresh articles when auth state changes
     AuthService.instance.addListener(_loadInitialArticles);
   }
+
 
   @override
   void dispose() {
@@ -349,8 +355,15 @@ class _ArticlesPageState extends State<ArticlesPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              // Drawer Menu Button
+              TlzHamburgerMenu(
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+              
+              const Spacer(),
+
+
               // User Profile Pill
               Container(
                 padding: const EdgeInsets.all(4),
@@ -391,6 +404,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                   ],
                 ),
               ),
+
 
               // Notification Circle
               Container(
@@ -1264,7 +1278,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                         const Icon(Icons.favorite, size: 14, color: Colors.pinkAccent),
                         const SizedBox(width: 4),
                         Text(
-                          '${article.likeCount}',
+                          '${article.bookmarkCount}',
                           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                         ),
                         const SizedBox(width: 12),

@@ -20,6 +20,7 @@ class HealthArticlePage extends StatefulWidget {
   final String? targetCommentId;
   final String? pendingAction; // 'like' or 'bookmark'
   final String? pendingCommentId;
+  final bool openBookmarks;
 
   const HealthArticlePage({
     super.key,
@@ -28,6 +29,7 @@ class HealthArticlePage extends StatefulWidget {
     this.targetCommentId,
     this.pendingAction,
     this.pendingCommentId,
+    this.openBookmarks = false,
   });
 
   @override
@@ -184,6 +186,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                 } else if (widget.pendingAction == 'bookmark') {
                   _onToggleBookmark(commentId: widget.pendingCommentId);
                 }
+              });
+            }
+
+            // 4. Auto-open bookmarks dialog if requested
+            if (widget.openBookmarks) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _showBookmarksDialog();
               });
             }
           }
@@ -475,21 +484,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       return;
     }
 
-    // Optimistic UI update
-    bool previousIsBookmarked = false;
-    setState(() {
-      if (commentId != null) {
-        final index = _comments.indexWhere((c) => c.id == commentId);
-        if (index != -1) {
-          final comment = _comments[index];
-          previousIsBookmarked = comment.isBookmarked;
-          _comments[index] = comment.copyWith(isBookmarked: !comment.isBookmarked);
-        }
-      } else {
-        previousIsBookmarked = _article!.isBookmarked;
-        _article = _article!.copyWith(isBookmarked: !_article!.isBookmarked);
-      }
-    });
+    // State will be updated after successful API response
+
 
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
@@ -526,17 +522,6 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           _showFloatingText(iconKey, '-1', Colors.white54);
         }
       } else if (mounted && result['success'] == false) {
-        // Revert on failure
-        setState(() {
-          if (commentId != null) {
-            final index = _comments.indexWhere((c) => c.id == commentId);
-            if (index != -1) {
-              _comments[index] = _comments[index].copyWith(isBookmarked: previousIsBookmarked);
-            }
-          } else {
-            _article = _article!.copyWith(isBookmarked: previousIsBookmarked);
-          }
-        });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('เกิดข้อผิดพลาด กรุณาลองใหม่'), backgroundColor: Colors.redAccent),
@@ -568,7 +553,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     });
   }
 
-  /// Show a floating text effect (e.g. "+1 ❤️" or "🔖 บันทึกแล้ว!")
+  /// Show a floating text effect (e.g. "+❤️" or "🔖 บันทึกแล้ว!")
   /// [iconKey] is the GlobalKey of the icon that was tapped
   void _showFloatingText(GlobalKey? iconKey, String text, Color textColor) {
     // Remove any existing overlay
@@ -1009,7 +994,9 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: TlzAppTopBar.onPrimary(
+        onMenuPressed: () => Scaffold.of(context).openDrawer(),
         notificationCount: 1,
+
         onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้')),
         ),
@@ -1073,7 +1060,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                   _buildNavButton('หัวข้อ', _activeSection == 'article', onTap: () => _scrollToSection(_articleHeadKey)),
                   _buildNavButton('สินค้า', _activeSection == 'products', onTap: () => _scrollToSection(_productsKey)),
                   _buildNavButton('ความคิดเห็น', _activeSection == 'comments', onTap: () => _scrollToSection(_commentsKey)),
-                  _buildNavButton('เกี่ยวกับฉัน', _activeSection == 'about', onTap: _showAuthorProfile),
+                  _buildNavButton('ที่บันทึกไว้', _activeSection == 'bookmarks', onTap: _showBookmarksDialog),
                 ],
               ),
             ),
@@ -1102,6 +1089,34 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           ),
         ),
       ),
+    );
+  }
+
+  void _showBookmarksDialog() {
+    if (!AuthService.instance.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อดูรายการที่บันทึกไว้')),
+      );
+      Navigator.pushNamed(
+        context, 
+        '/login',
+        arguments: {
+          'route': '/health/article',
+          'arguments': {
+            'article': _article,
+            'openBookmarks': true,
+          },
+        },
+      );
+      return;
+    }
+
+    setState(() {
+      _activeSection = 'bookmarks';
+    });
+    showDialog(
+      context: context,
+      builder: (context) => const BookmarkedArticlesDialog(),
     );
   }
 
@@ -1189,7 +1204,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น',
+                            'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น • ${_article!.bookmarkCount} ท่านสนใจบทความนี้',
                             style: const TextStyle(fontSize: 12, color: Colors.white70),
                           ),
                           if (AuthService.instance.currentUser?.id == _article!.authorId)
@@ -2947,7 +2962,140 @@ class _RichTextRenderer extends StatelessWidget {
       TextSpan(children: spans),
       style: style,
       maxLines: maxLines,
-      overflow: maxLines != null ? TextOverflow.ellipsis : null,
+    );
+  }
+}
+
+class BookmarkedArticlesDialog extends StatefulWidget {
+  const BookmarkedArticlesDialog({super.key});
+
+  @override
+  State<BookmarkedArticlesDialog> createState() => _BookmarkedArticlesDialogState();
+}
+
+class _BookmarkedArticlesDialogState extends State<BookmarkedArticlesDialog> {
+  bool _isLoading = true;
+  List<HealthArticle> _articles = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchBookmarks();
+  }
+
+  Future<void> _fetchBookmarks() async {
+    final user = ServiceLocator.instance.currentUser;
+    if (user != null) {
+      final repo = ServiceLocator.instance.healthArticleRepository;
+      final articles = await repo.getBookmarkedArticles(user.id);
+      if (mounted) {
+        setState(() {
+          _articles = articles;
+          _isLoading = false;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year + 543}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'บทความที่บันทึกไว้',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                )
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              )
+            else if (_articles.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text('ยังไม่มีบทความที่บันทึกไว้', style: TextStyle(color: Colors.grey)),
+                ),
+              )
+            else
+              Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.6,
+                ),
+                child: Scrollbar(
+                  thumbVisibility: _articles.length > 5,
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _articles.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final article = _articles[index];
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        title: Text(
+                          article.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            'วันที่สร้างบทความ: ${_formatDate(article.createdAt)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => HealthArticlePage(article: article),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

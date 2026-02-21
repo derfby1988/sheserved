@@ -17,6 +17,11 @@ class WebSocketService {
   final _connectionController = StreamController<bool>.broadcast();
   final _locationController = StreamController<Map<String, dynamic>>.broadcast();
   final _errorController = StreamController<String>.broadcast();
+  final _typingController = StreamController<Map<String, dynamic>>.broadcast();
+  final _callInviteController = StreamController<Map<String, dynamic>>.broadcast();
+  final _callAcceptController = StreamController<Map<String, dynamic>>.broadcast();
+  final _callRejectController = StreamController<Map<String, dynamic>>.broadcast();
+  final _webrtcSignalController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -24,6 +29,11 @@ class WebSocketService {
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
   Stream<String> get errorStream => _errorController.stream;
+  Stream<Map<String, dynamic>> get typingStream => _typingController.stream;
+  Stream<Map<String, dynamic>> get callInviteStream => _callInviteController.stream;
+  Stream<Map<String, dynamic>> get callAcceptStream => _callAcceptController.stream;
+  Stream<Map<String, dynamic>> get callRejectStream => _callRejectController.stream;
+  Stream<Map<String, dynamic>> get webrtcSignalStream => _webrtcSignalController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -114,6 +124,26 @@ class WebSocketService {
         debugPrint('Location updated: $data');
         _locationController.add(Map<String, dynamic>.from(data));
       });
+
+      _socket!.on('typing-status', (data) {
+        _typingController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('call-invite', (data) {
+        _callInviteController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('call-accept', (data) {
+        _callAcceptController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('call-reject', (data) {
+        _callRejectController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('webrtc-signal', (data) {
+        _webrtcSignalController.add(Map<String, dynamic>.from(data));
+      });
       
       _socket!.on('error', (error) {
         if (kDebugMode) {
@@ -199,6 +229,54 @@ class WebSocketService {
     
     _socket!.emit('leave-room', {'roomId': roomId});
   }
+
+  /// Send typing status to a room
+  void sendTypingStatus(String roomId, String userId, bool isTyping) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('typing', {
+      'roomId': roomId,
+      'userId': userId,
+      'isTyping': isTyping,
+    });
+  }
+
+  /// Send call invitation
+  void sendCallInvite(String roomId, String callerId, String callerName, String? callerAvatar) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('call-invite', {
+      'roomId': roomId,
+      'callerId': callerId,
+      'callerName': callerName,
+      'callerAvatar': callerAvatar,
+    });
+  }
+
+  /// Accept call
+  void acceptCall(String roomId, String calleeId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('call-accept', {
+      'roomId': roomId,
+      'calleeId': calleeId,
+    });
+  }
+
+  /// Reject or end call
+  void rejectCall(String roomId, String userId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('call-reject', {
+      'roomId': roomId,
+      'userId': userId,
+    });
+  }
+
+  /// Send WebRTC signaling data
+  void sendWebRTCSignal(String roomId, Map<String, dynamic> signalData) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('webrtc-signal', {
+      'roomId': roomId,
+      'signal': signalData,
+    });
+  }
   
   /// Disconnect from server
   void disconnect() {
@@ -217,5 +295,10 @@ class WebSocketService {
     _connectionController.close();
     _locationController.close();
     _errorController.close();
+    _typingController.close();
+    _callInviteController.close();
+    _callAcceptController.close();
+    _callRejectController.close();
+    _webrtcSignalController.close();
   }
 }

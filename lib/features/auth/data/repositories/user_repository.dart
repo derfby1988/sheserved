@@ -381,7 +381,7 @@ class UserRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    var query = _client.from('expert_profiles').select();
+    var query = _client.from('expert_profiles').select('*, users(verification_status)');
 
     if (specialty != null) {
       query = query.eq('specialty', specialty);

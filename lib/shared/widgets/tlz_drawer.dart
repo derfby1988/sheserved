@@ -350,6 +350,21 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             ),
                             _buildMenuItem(
                               context,
+                              title: 'แชท / สนทนา',
+                              icon: Icons.chat_bubble_outline,
+                              isUnderlined: true,
+                              underlineText: 'แชท',
+                              onTap: () {
+                                _animationController.forward().then((_) {
+                                  Navigator.of(context).pop();
+                                  Navigator.pushNamed(context, '/chat-list');
+                                });
+                              },
+                              isSubItem: true,
+                            ),
+
+                            _buildMenuItem(
+                              context,
                               title: 'สินค้า',
                               icon: Icons.people_outline,
                               onTap: () => _navigateTo(context, '/products'),

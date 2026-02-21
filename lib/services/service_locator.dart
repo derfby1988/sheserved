@@ -9,6 +9,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../features/auth/data/repositories/user_repository.dart';
 import '../features/health/data/repositories/health_repository.dart';
 import '../features/health/data/repositories/health_article_repository.dart';
+import '../features/chat/data/repositories/chat_repository.dart';
+import '../features/chat/data/models/chat_models.dart';
+import 'package:hive/hive.dart';
 import 'auth_service.dart';
 
 /// Service Locator สำหรับจัดการ Dependencies
@@ -25,6 +28,7 @@ class ServiceLocator {
   UserRepository? _userRepository;
   HealthRepository? _healthRepository;
   HealthArticleRepository? _healthArticleRepository;
+  ChatRepository? _chatRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -139,7 +143,16 @@ class ServiceLocator {
       _userRepository = UserRepository(supabaseClient);
       _healthRepository = HealthRepository(supabaseClient);
       _healthArticleRepository = HealthArticleRepository(supabaseClient);
+      
+      _chatRepository = ChatRepository(
+        supabaseClient,
+        Hive.box<ChatRoom>('chat_rooms'),
+        Hive.box<ChatMessage>('chat_messages'),
+        Hive.box<ChatParticipant>('chat_participants'),
+        _webSocketService,
+      );
     }
+
 
     _isInitialized = true;
     debugPrint('ServiceLocator: Initialized successfully');
@@ -165,6 +178,20 @@ class ServiceLocator {
     }
     return _healthArticleRepository!;
   }
+
+  ChatRepository get chatRepository {
+    if (_chatRepository == null) {
+      _chatRepository = ChatRepository(
+        Supabase.instance.client,
+        Hive.box<ChatRoom>('chat_rooms'),
+        Hive.box<ChatMessage>('chat_messages'),
+        Hive.box<ChatParticipant>('chat_participants'),
+        _webSocketService,
+      );
+    }
+    return _chatRepository!;
+  }
+
 
   /// Get Unified Repository (recommended)
   UnifiedRepository get repository {

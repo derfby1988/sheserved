@@ -57,7 +57,7 @@ class HealthArticleRepository {
               .from('health_article_interactions')
               .select('id')
               .eq('article_id', data['id'])
-              .eq('type', 'like')
+              .eq('type', 'bookmark')
               .filter('comment_id', 'is', null); // ONLY Article-level likes
           
           jsonMap['like_count'] = (totalLikes as List).length;
@@ -177,7 +177,7 @@ class HealthArticleRepository {
                 .from('health_article_interactions')
                 .select('article_id')
                 .filter('article_id', 'in', articleIds)
-                .eq('type', 'like')
+                .eq('type', 'bookmark')
                 .filter('comment_id', 'is', null); // ONLY Article-level likes
             
             if (allLikes != null) {
@@ -1010,6 +1010,62 @@ class HealthArticleRepository {
       return [];
     } catch (e) {
       print('Repository: Error fetching article edit history: $e');
+      return [];
+    }
+  }
+
+  /// Fetch articles bookmarked by the user
+  Future<List<HealthArticle>> getBookmarkedArticles(String userId) async {
+    try {
+      // 1. Get bookmarked article IDs for the user
+      final interactions = await _client
+          .from('health_article_interactions')
+          .select('article_id, created_at')
+          .eq('user_id', userId)
+          .eq('type', 'bookmark')
+          .filter('comment_id', 'is', null) // Only article bookmarks
+          .order('created_at', ascending: false);
+
+      if (interactions == null || (interactions as List).isEmpty) {
+        return [];
+      }
+
+      // Keep the mapping of article_id to interaction created_at to sort later
+      final Map<String, DateTime> bookmarkDates = {};
+      final List<String> articleIds = [];
+      
+      for (var i in (interactions as List)) {
+        final aId = i['article_id'] as String;
+        articleIds.add(aId);
+        bookmarkDates[aId] = DateTime.parse(i['created_at']);
+      }
+
+      // 2. Fetch the actual articles
+      final response = await _client
+          .from('health_articles')
+          .select('*, users(username, profile_image_url)')
+          .filter('id', 'in', articleIds);
+
+      if (response != null && (response as List).isNotEmpty) {
+        List<HealthArticle> articles = (response as List).map((e) {
+          final jsonMap = Map<String, dynamic>.from(e);
+          jsonMap['is_bookmarked'] = true; // We know it's bookmarked
+          
+          return HealthArticle.fromJson(jsonMap);
+        }).toList();
+
+        // 3. Sort by bookmark date (newest first)
+        articles.sort((a, b) {
+          final dateA = bookmarkDates[a.id] ?? a.createdAt;
+          final dateB = bookmarkDates[b.id] ?? b.createdAt;
+          return dateB.compareTo(dateA);
+        });
+
+        return articles;
+      }
+      return [];
+    } catch (e) {
+      print('Repository: Error fetching bookmarked articles: $e');
       return [];
     }
   }

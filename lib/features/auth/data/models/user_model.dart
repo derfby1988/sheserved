@@ -291,7 +291,7 @@ class ExpertProfile {
   final double? rating;
   final int reviewCount;
   final bool isAvailable;
-  final Map<String, dynamic>? workingHours;
+  final VerificationStatus verificationStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -311,6 +311,7 @@ class ExpertProfile {
     this.reviewCount = 0,
     this.isAvailable = true,
     this.workingHours,
+    this.verificationStatus = VerificationStatus.pending,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -354,6 +355,9 @@ class ExpertProfile {
       reviewCount: json['review_count'] ?? 0,
       isAvailable: json['is_available'] ?? true,
       workingHours: json['working_hours'],
+      verificationStatus: json['users'] != null && json['users']['verification_status'] != null
+          ? VerificationStatusExtension.fromString(json['users']['verification_status'])
+          : VerificationStatusExtension.fromString(json['verification_status'] ?? 'pending'),
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
