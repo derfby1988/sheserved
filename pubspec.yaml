@@ -60,6 +60,7 @@ dependencies:
   flutter_slidable: ^4.0.3
   flutter_webrtc: ^0.12.3
   record: ^6.0.0
+  model_viewer_plus: ^1.7.0
 
   audioplayers: ^6.1.0
   diff_match_patch: ^0.4.1
@@ -76,9 +77,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets
   assets:
     - assets/fonts/
+    - assets/models/
 
   # Fonts - Sukhumvit Set
   fonts:

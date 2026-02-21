@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/consultation_request_model.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
+
 
 class AnalyzeBodyAreaPage extends StatefulWidget {
   final ConsultationRequestModel request;
@@ -19,13 +21,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage> {
     return widget.request.bodyArea['gender']?.toString().toLowerCase() ?? 'unknown';
   }
 
-  String get _bodyImageUrl {
+  String get _bodyModelUrl {
     if (_gender == 'male' || _gender == 'ชาย' || _gender == 'm') {
-      // Male Anatomy Placeholder
-      return 'https://cdn-icons-png.flaticon.com/512/2965/2965410.png';
+      return 'assets/models/male_anatomy.glb';
     }
     // Female Anatomy Placeholder
-    return 'https://cdn-icons-png.flaticon.com/512/2965/2965494.png';
+    return 'assets/models/female_anatomy.glb';
   }
 
   @override
@@ -72,22 +73,16 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage> {
               children: [
                 // Mock body image
                 // In production, we add a real anatomical wireframe image or 3D model (e.g., using `model_viewer_plus`) here.
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.network(
-                      _bodyImageUrl, 
-                      height: MediaQuery.of(context).size.height * 0.45,
-                      fit: BoxFit.contain,
-                      color: Colors.grey.shade400, // Make it look like a wireframe or subtle background
-                      errorBuilder: (context, error, stackTrace) => Icon(Icons.accessibility_new, size: MediaQuery.of(context).size.height * 0.45, color: Colors.grey.shade300),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '(พื้นที่สำหรับแทรกภาพ 3D Model ทางการแพทย์)',
-                      style: TextStyle(fontSize: 10, color: Colors.grey),
-                    ),
-                  ],
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.55,
+                  child: ModelViewer(
+                    src: _bodyModelUrl,
+                    alt: "A 3D model of human anatomy",
+                    ar: false,
+                    autoRotate: true,
+                    cameraControls: true,
+                    disableZoom: true,
+                  ),
                 ),
                 // Height lines
                 Positioned.fill(
