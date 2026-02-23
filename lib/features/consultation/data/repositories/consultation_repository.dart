@@ -7,7 +7,7 @@ class ConsultationRepository {
 
   ConsultationRepository(this._client);
 
-  /// Create a new consultation request
+  /// Create a new consultation request with child symptoms
   Future<ConsultationRequestModel> createRequest({
     required String userId,
     String? packageId,
@@ -15,6 +15,7 @@ class ConsultationRepository {
     required double price,
     Map<String, dynamic> bodyArea = const {},
     Map<String, dynamic> symptomsChart = const {},
+    List<SymptomPoint> symptoms = const [],
   }) async {
     final now = DateTime.now();
     final data = {
@@ -29,23 +30,38 @@ class ConsultationRepository {
       'updated_at': now.toIso8601String(),
     };
 
-    if (AppConfig.databaseMode == DatabaseMode.localOnly) {
-      // Local setup logic if needed.
-    }
-
-    final response = await _client
+    // 1. Insert parent request
+    final parentResponse = await _client
         .from('consultation_requests')
         .insert(data)
         .select()
         .single();
-    return ConsultationRequestModel.fromJson(response);
+    
+    final String requestId = parentResponse['id'];
+
+    // 2. Insert child symptoms if any
+    if (symptoms.isNotEmpty) {
+      final symptomsData = symptoms.map((s) => s.toJson(requestId)).toList();
+      await _client.from('consultation_symptoms').insert(symptomsData);
+    }
+
+    // Return the model with symptoms populated
+    final fullData = Map<String, dynamic>.from(parentResponse);
+    fullData['symptoms'] = symptoms.map((s) => {
+      'region_id': s.regionId,
+      'side': s.side,
+      'symptom': s.symptom,
+      'display_label': s.displayLabel,
+    }).toList();
+    
+    return ConsultationRequestModel.fromJson(fullData);
   }
 
-  /// Get consultation requests for a user
+  /// Get consultation requests for a user including symptoms
   Future<List<ConsultationRequestModel>> getUserRequests(String userId) async {
     final response = await _client
         .from('consultation_requests')
-        .select()
+        .select('*, symptoms:consultation_symptoms(*)')
         .eq('user_id', userId)
         .order('created_at', ascending: false);
 
@@ -61,7 +77,7 @@ class ConsultationRepository {
         .from('consultation_requests')
         .update(data)
         .eq('id', id)
-        .select()
+        .select('*, symptoms:consultation_symptoms(*)')
         .single();
     return ConsultationRequestModel.fromJson(response);
   }
@@ -74,6 +90,7 @@ class ConsultationRepository {
           .select('''
             id, user_id, package_id, package_name, price,
             body_area, symptoms_chart, status, created_at, updated_at,
+            symptoms:consultation_symptoms(*),
             users:user_id (first_name, last_name, profile_image_url)
           ''')
           .order('created_at', ascending: false)
