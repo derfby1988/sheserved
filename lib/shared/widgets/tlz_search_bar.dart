@@ -128,7 +128,7 @@ class TlzSearchBar extends StatelessWidget {
     if (backgroundColor != null) return backgroundColor!;
     switch (theme) {
       case TlzSearchBarColorTheme.onPrimary:
-        return AppColors.primaryLight.withOpacity(0.3);
+        return AppColors.primaryLight.withValues(alpha: 0.3);
       case TlzSearchBarColorTheme.onLight:
         return AppColors.surface;
       case TlzSearchBarColorTheme.custom:
@@ -164,7 +164,7 @@ class TlzSearchBar extends StatelessWidget {
     if (hintColor != null) return hintColor!;
     switch (theme) {
       case TlzSearchBarColorTheme.onPrimary:
-        return AppColors.textOnPrimary.withOpacity(0.6);
+        return AppColors.textOnPrimary.withValues(alpha: 0.6);
       case TlzSearchBarColorTheme.onLight:
         return AppColors.textHint;
       case TlzSearchBarColorTheme.custom:
@@ -176,7 +176,7 @@ class TlzSearchBar extends StatelessWidget {
     if (borderColor != null) return borderColor!;
     switch (theme) {
       case TlzSearchBarColorTheme.onPrimary:
-        return AppColors.textOnPrimary.withOpacity(0.1);
+        return AppColors.textOnPrimary.withValues(alpha: 0.1);
       case TlzSearchBarColorTheme.onLight:
         return AppColors.border;
       case TlzSearchBarColorTheme.custom:

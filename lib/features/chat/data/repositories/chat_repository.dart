@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive/hive.dart';
+import 'package:flutter/foundation.dart';
 import '../models/chat_models.dart';
 import '../../../../services/websocket_service.dart';
 
@@ -44,7 +45,7 @@ class ChatRepository {
       await _participantBox.put(userId, participant);
       return participant;
     } catch (e) {
-      print('ChatRepository: Error fetching participant info: $e');
+      debugPrint('ChatRepository: Error fetching participant info: $e');
       return null;
     }
   }
@@ -55,25 +56,33 @@ class ChatRepository {
 
   /// Fetch all chat rooms for the current user
   Future<List<ChatRoom>> getChatRooms(String userId) async {
+    debugPrint('ChatRepository: Fetching rooms for user: $userId');
+    
+    // 1. Get Local Rooms first as fallback
     final localRooms = _roomBox.values.where((room) => 
       room.participantIds.contains(userId)
     ).toList();
     
     try {
+      // 2. Fetch from Supabase with timeout
       final response = await _supabase
           .from('chat_rooms')
           .select()
-          .contains('participant_ids', [userId]);
+          .contains('participant_ids', [userId])
+          .timeout(const Duration(seconds: 10));
       
       final dbRooms = (response as List).map((json) => ChatRoom.fromJson(json)).toList();
       
+      debugPrint('ChatRepository: Successfully fetched ${dbRooms.length} rooms from Supabase');
+      
+      // 3. Update Cache
       for (var room in dbRooms) {
         await _roomBox.put(room.id, room);
       }
       
       return dbRooms;
     } catch (e) {
-      print('ChatRepository: Error fetching rooms: $e');
+      debugPrint('ChatRepository: Error fetching rooms (returning local): $e');
       return localRooms;
     }
   }
@@ -111,7 +120,7 @@ class ChatRepository {
         await _roomBox.put(newRoom.id, newRoom);
         return newRoom;
       } catch (e2) {
-        print('ChatRepository: Error creating room: $e2');
+        debugPrint('ChatRepository: Error creating room: $e2');
         return null;
       }
     }
@@ -140,7 +149,7 @@ class ChatRepository {
       
       return dbMessages;
     } catch (e) {
-      print('ChatRepository: Error fetching messages: $e');
+      debugPrint('ChatRepository: Error fetching messages: $e');
       return localMessages;
     }
   }
@@ -160,7 +169,7 @@ class ChatRepository {
       
       return true;
     } catch (e) {
-      print('ChatRepository: Error sending message: $e');
+      debugPrint('ChatRepository: Error sending message: $e');
       return false;
     }
   }
@@ -176,7 +185,7 @@ class ChatRepository {
       final url = _supabase.storage.from('chat_attachments').getPublicUrl(fullPath);
       return url;
     } catch (e) {
-      print('ChatRepository: Error uploading file: $e');
+      debugPrint('ChatRepository: Error uploading file: $e');
       return null;
     }
   }
@@ -203,7 +212,7 @@ class ChatRepository {
         await _messageBox.put(messageId, currentMsg.copyWith(readBy: readBy));
       }
     } catch (e) {
-      print('ChatRepository: Error marking message as read: $e');
+      debugPrint('ChatRepository: Error marking message as read: $e');
     }
   }
 

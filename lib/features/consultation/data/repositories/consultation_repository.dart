@@ -65,4 +65,34 @@ class ConsultationRepository {
         .single();
     return ConsultationRequestModel.fromJson(response);
   }
+
+  /// Get ALL consultation requests — for expert/admin dashboard
+  Future<List<Map<String, dynamic>>> getAllRequestsWithUserInfo() async {
+    try {
+      final response = await _client
+          .from('consultation_requests')
+          .select('''
+            id, user_id, package_id, package_name, price,
+            body_area, symptoms_chart, status, created_at, updated_at,
+            users:user_id (first_name, last_name, profile_image_url)
+          ''')
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Update status of a consultation request
+  Future<void> updateStatus(String requestId, String status) async {
+    await _client
+        .from('consultation_requests')
+        .update({
+          'status': status,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', requestId);
+  }
 }
+

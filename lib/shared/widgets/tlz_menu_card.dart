@@ -49,7 +49,7 @@ class TlzMenuCard extends StatelessWidget {
               Container(
                 padding: EdgeInsets.all(isLarge ? 16 : 12),
                 decoration: BoxDecoration(
-                  color: (iconColor ?? AppColors.primary).withOpacity(0.1),
+                  color: (iconColor ?? AppColors.primary).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -127,7 +127,7 @@ class TlzMenuItem extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: (iconColor ?? AppColors.primary).withOpacity(0.1),
+                  color: (iconColor ?? AppColors.primary).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(

@@ -3,6 +3,8 @@ import '../../../../services/service_locator.dart';
 import '../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/chat_models.dart';
+import '../../data/repositories/chat_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_room_page.dart';
 
 class ChatListPage extends StatefulWidget {
@@ -13,9 +15,11 @@ class ChatListPage extends StatefulWidget {
 }
 
 class _ChatListPageState extends State<ChatListPage> {
-  final _chatRepository = services.chatRepository;
-  final _currentUser = services.currentUser;
+  ChatRepository get _chatRepository => services.chatRepository;
+  User? get _currentUser => services.currentUser;
+  
   bool _isLoading = true;
+  String? _errorMessage;
   List<ChatRoom> _rooms = [];
   List<ChatRoom> _filteredRooms = [];
   String _searchQuery = '';
@@ -27,17 +31,40 @@ class _ChatListPageState extends State<ChatListPage> {
   }
 
   Future<void> _loadRooms() async {
-    if (_currentUser == null) return;
+    final user = _currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'กรุณาเข้าสู่ระบบเพื่อดูรายการสนทนา';
+        });
+      }
+      return;
+    }
     
-    setState(() => _isLoading = true);
-    final rooms = await _chatRepository.getChatRooms(_currentUser!.id);
-    
-    if (mounted) {
-      setState(() {
-        _rooms = rooms;
-        _filteredRooms = rooms;
-        _isLoading = false;
-      });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final rooms = await _chatRepository.getChatRooms(user.id);
+      
+      if (mounted) {
+        setState(() {
+          _rooms = rooms;
+          _filteredRooms = rooms;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ChatListPage: Error loading rooms: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'เกิดข้อผิดพลาดในการโหลดข้อมูล: $e';
+        });
+      }
     }
   }
 
@@ -74,28 +101,34 @@ class _ChatListPageState extends State<ChatListPage> {
             ),
 
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _filteredRooms.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _filteredRooms.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final room = _filteredRooms[index];
-                            return _ChatRoomTile(
-                              room: room,
-                              currentUserId: _currentUser?.id ?? '',
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ChatRoomPage(roomId: room.id),
-                                ),
+              child: RefreshIndicator(
+                onRefresh: _loadRooms,
+                color: AppColors.primary,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _errorMessage != null
+                        ? _buildErrorState()
+                        : _filteredRooms.isEmpty
+                            ? _buildEmptyState()
+                            : ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _filteredRooms.length,
+                                separatorBuilder: (context, index) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final room = _filteredRooms[index];
+                                  return _ChatRoomTile(
+                                    room: room,
+                                    currentUserId: _currentUser?.id ?? '',
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ChatRoomPage(roomId: room.id),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
+              ),
             ),
           ],
         ),
@@ -108,40 +141,83 @@ class _ChatListPageState extends State<ChatListPage> {
     );
   }
 
+  Widget _buildErrorState() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  _errorMessage ?? 'เกิดข้อผิดพลาด',
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _loadRooms,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+                child: const Text('ลองใหม่อีกครั้ง', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            'ยังไม่มีการสนทนา',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
+              const SizedBox(height: 16),
+              Text(
+                'ยังไม่มีการสนทนา',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'เริ่มคุยกับผู้เชี่ยวชาญหรือเพื่อนๆ เลย!',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[400],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, '/chat-contacts'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+                child: const Text('หาผู้เชี่ยวชาญ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'เริ่มคุยกับผู้เชี่ยวชาญหรือเพื่อนๆ เลย!',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[400],
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => Navigator.pushNamed(context, '/chat-contacts'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('หาผู้เชี่ยวชาญ', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -192,7 +268,7 @@ class _ChatRoomTileState extends State<_ChatRoomTile> {
       contentPadding: const EdgeInsets.symmetric(vertical: 8),
       leading: CircleAvatar(
         radius: 28,
-        backgroundColor: AppColors.primary.withOpacity(0.1),
+        backgroundColor: AppColors.primary.withValues(alpha: 0.1),
         backgroundImage: (_participants.isNotEmpty && _participants.first.profileImageUrl != null)
             ? NetworkImage(_participants.first.profileImageUrl!)
             : null,

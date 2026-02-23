@@ -72,13 +72,14 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       type: fields[6] as String,
       attachmentUrl: fields[7] as String?,
       attachmentType: fields[8] as String?,
+      readBy: (fields[9] as Map).cast<String, DateTime>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -96,7 +97,9 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(7)
       ..write(obj.attachmentUrl)
       ..writeByte(8)
-      ..write(obj.attachmentType);
+      ..write(obj.attachmentType)
+      ..writeByte(9)
+      ..write(obj.readBy);
   }
 
   @override

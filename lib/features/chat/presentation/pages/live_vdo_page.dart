@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../../../services/service_locator.dart';
-import '../../../../core/constants/app_colors.dart';
 
 class LiveVdoPage extends StatefulWidget {
   final String roomId;

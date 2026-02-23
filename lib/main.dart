@@ -29,6 +29,7 @@ import 'features/chat/presentation/pages/live_vdo_page.dart';
 import 'features/consultation/presentation/pages/package_healthcare_page.dart';
 import 'features/consultation/presentation/pages/analyze_body_area_page.dart';
 import 'features/consultation/presentation/pages/chart_board_page.dart';
+import 'features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import 'features/consultation/data/models/consultation_request_model.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
@@ -123,6 +124,7 @@ class SheservedApp extends StatelessWidget {
         '/settings/sync': (context) => const SyncSettingsPage(),
         '/chat-list': (context) => const ChatListPage(),
         '/chat-contacts': (context) => ContactListPage(),
+        '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

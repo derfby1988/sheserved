@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/health_article_models.dart';
 
@@ -9,16 +10,16 @@ class HealthArticleRepository {
   /// Fetch the latest health article with author details
   Future<HealthArticle?> getLatestArticle({String? userId}) async {
     try {
-      print('HealthArticleRepository: Fetching latest article for user: $userId...');
+      debugPrint('HealthArticleRepository: Fetching latest article for user: $userId...');
       final response = await _client
           .from('health_articles')
           .select('*, users(username, profile_image_url)')
           .order('created_at', ascending: false)
           .limit(1);
 
-      print('HealthArticleRepository: Response: $response');
+      debugPrint('HealthArticleRepository: Response: $response');
       
-        if (response != null && (response as List).isNotEmpty) {
+        if ((response as List).isNotEmpty) {
         final data = response.first;
         final currentUserId = userId;
         
@@ -45,7 +46,7 @@ class HealthArticleRepository {
               }
             }
           } catch (e) {
-            print('Repository: Error checking latest article interactions: $e');
+            debugPrint('Repository: Error checking latest article interactions: $e');
           }
         }
         
@@ -84,7 +85,7 @@ class HealthArticleRepository {
       }
       
     } catch (e) {
-      print('HealthArticleRepository: Error: $e');
+      debugPrint('HealthArticleRepository: Error: $e');
       return null;
     }
   }
@@ -98,7 +99,7 @@ class HealthArticleRepository {
     String? userId,
   }) async {
     try {
-      print('HealthArticleRepository: Fetching articles from DB (Page $page) for user: $userId...');
+      debugPrint('HealthArticleRepository: Fetching articles from DB (Page $page) for user: $userId...');
       
       // 1. Get from Supabase
       List<HealthArticle> dbArticles = [];
@@ -117,7 +118,7 @@ class HealthArticleRepository {
         }
 
         final response = await query.order('created_at', ascending: false);
-        if (response != null) {
+        if ((response as List).isNotEmpty) {
           // 2. Check bookmark/like status for current user (Optimized with .in_)
           final currentUserId = userId;
           Set<String> bookmarkedArticleIds = {};
@@ -135,9 +136,9 @@ class HealthArticleRepository {
                     .eq('user_id', currentUserId)
                     .filter('article_id', 'in', articleIds); // Fetch only relevant interactions
 
-                if (interactions != null) {
-                  print('DEBUG: Found ${(interactions as List).length} interactions for these ${articleIds.length} articles');
-                  for (var i in (interactions as List)) {
+                if ((interactions as List).isNotEmpty) {
+                  debugPrint('DEBUG: Found ${interactions.length} interactions for these ${articleIds.length} articles');
+                  for (var i in interactions) {
                     // Filter locally for reliability
                     final rawCommentId = i['comment_id'];
                     // If it has a value, isn't 'null', AND isn't empty string -> It's a comment bookmark, skip it
@@ -156,7 +157,7 @@ class HealthArticleRepository {
                 }
               }
             } catch (e) {
-              print('Repository: Error fetching article interactions: $e');
+              debugPrint('Repository: Error fetching article interactions: $e');
             }
           }
 
@@ -180,9 +181,9 @@ class HealthArticleRepository {
                 .eq('type', 'bookmark')
                 .filter('comment_id', 'is', null); // ONLY Article-level likes
             
-            if (allLikes != null) {
+            if ((allLikes as List).isNotEmpty) {
               final Map<String, int> totalLikesMap = {};
-              for (var row in (allLikes as List)) {
+              for (var row in allLikes) {
                 final aId = row['article_id'] as String;
                 totalLikesMap[aId] = (totalLikesMap[aId] ?? 0) + 1;
               }
@@ -195,7 +196,7 @@ class HealthArticleRepository {
               }).toList();
             }
           } catch (e) {
-            print('Repository: Error summing total likes: $e');
+            debugPrint('Repository: Error summing total likes: $e');
           }
         }
 
@@ -208,9 +209,9 @@ class HealthArticleRepository {
                 .select('article_id')
                 .filter('article_id', 'in', articleIds);
             
-            if (commentCounts != null) {
+            if ((commentCounts as List).isNotEmpty) {
               final Map<String, int> commentCountMap = {};
-              for (var row in (commentCounts as List)) {
+              for (var row in commentCounts) {
                 final aId = row['article_id'] as String;
                 commentCountMap[aId] = (commentCountMap[aId] ?? 0) + 1;
               }
@@ -222,7 +223,7 @@ class HealthArticleRepository {
               }).toList();
             }
           } catch (e) {
-            print('Repository: Error counting comments: $e');
+            debugPrint('Repository: Error counting comments: $e');
           }
         }
 
@@ -243,100 +244,17 @@ class HealthArticleRepository {
         }
       }
       } catch (dbError) {
-        print('HealthArticleRepository: DB Fetch Error: $dbError');
+        debugPrint('HealthArticleRepository: DB Fetch Error: $dbError');
       }
 
       return dbArticles;
     } catch (e) {
-      print('HealthArticleRepository: Critical Error: $e');
+      debugPrint('HealthArticleRepository: Critical Error: $e');
       return [];
     }
   }
 
-  List<HealthArticle> _getMockArticlesList() {
-    final List<HealthArticle> baseArticles = [
-      _getMockArticle().copyWith(
-        id: 'mock-article-1',
-        title: 'เคล็ดลับการดูแลสุขภาพเชิงรุกสำหรับผู้หญิง: เริ่มต้นวันนี้เพื่ออนาคตที่ยั่งยืน',
-        category: 'สุขภาพผู้หญิง',
-      ),
-      _getMockArticle().copyWith(
-        id: 'mock-article-2',
-        title: 'การตรวจสุขภาพเบื้องต้นที่บ้าน: สิ่งที่คุณควรรู้',
-        category: 'สมรรถภาพทางกาย',
-        imageUrl: 'https://images.unsplash.com/photo-1576091160550-217359f4ecf8?q=80&w=1000',
-      ),
-      _getMockArticle().copyWith(
-        id: 'mock-article-3',
-        title: 'อาหาร 10 ชนิดบำรุงหัวใจและหลอดเลือด',
-        category: 'โภชนาการ',
-        imageUrl: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=1000',
-      ),
-      _getMockArticle().copyWith(
-        id: 'mock-article-4',
-        title: 'โยคะลดปวดหลังจากการทำงาน (Office Syndrome)',
-        category: 'สมรรถภาพทางกาย',
-        imageUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=1000',
-      ),
-      _getMockArticle().copyWith(
-        id: 'mock-article-5',
-        title: 'การนอนหลับที่มีคุณภาพสำคัญต่อสมองอย่างไร',
-        category: 'สุขภาพจิต',
-        imageUrl: 'https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?q=80&w=1000',
-      ),
-    ];
-
-    final List<HealthArticle> allArticles = [...baseArticles];
-    
-    // Generate 35 more articles for pagination testing (Total 40)
-    final categories = ['โภชนาการ', 'สมรรถภาพทางกาย', 'สุขภาพจิต', 'สุขภาพผู้หญิง', 'ความงามและผิวพรรณ', 'การแพทย์'];
-    final titles = [
-      'วิตามินที่จำเป็นสำหรับวัยทำงาน',
-      'วิธีลดน้ำหนักแบบยั่งยืน',
-      'การดูแลหัวใจด้วยการเดิน',
-      'สมุนไพรไทยแก้เจ็บคอร้อนใน',
-      'เทคนิคการหายใจลดความเครียด',
-      'สัญญาณเตือนโรคมะเร็ง',
-      'การกินแบบ Intermittent Fasting (IF)',
-      'โปรตีนพืช vs โปรตีนสัตว์',
-      'การดูแลสายตาจากหน้าจอคอมพิวเตอร์',
-      'วิธีเลือกครีมกันแดดให้เหมาะกับผิว',
-    ];
-
-    for (int i = 6; i <= 40; i++) {
-      allArticles.add(
-        _getMockArticle().copyWith(
-          id: 'mock-article-$i',
-          title: '${titles[i % titles.length]} (Part ${i ~/ 10 + 1}) #$i',
-          category: categories[i % categories.length],
-          imageUrl: 'https://picsum.photos/seed/art$i/800/600',
-          viewCount: 100 + (i * 20),
-          likeCount: 10 + (i % 30),
-          createdAt: DateTime.now().subtract(Duration(days: i)),
-        ),
-      );
-    }
-
-    return allArticles;
-  }
-
-  HealthArticle _getMockArticle() {
-    return HealthArticle(
-      id: 'mock-article-1',
-      title: 'เคล็ดลับการดูแลสุขภาพเชิงรุกสำหรับผู้หญิง: เริ่มต้นวันนี้เพื่ออนาคตที่ยั่งยืน',
-      content: 'การดูแลสุขภาพเชิงรุก (Proactive Health) คือหัวใจสำคัญของการมีชีวิตที่ยืนยาวและมีคุณภาพ โดยเฉพาะในผู้หญิงที่มีการเปลี่ยนแปลงของฮอร์โมนและร่างกายแตกต่างกันไปในแต่ละช่วงวัย บทความนี้จะเจาะลึก 5 เคล็ดลับที่จะช่วยให้คุณก้าวทันปัญหาสุขภาพก่อนที่จะสายเกินไป...\n\n1. ตรวจสุขภาพสม่ำเสมอ\n2. อาหารที่สมดุล\n3. การออกกำลังกายที่เหมาะสม\n4. การจัดการความเครียด\n5. การนอนหลับที่มีคุณภาพ',
-      authorId: 'mock-author-1',
-      authorName: 'พญ. สมศรี สวยงาม',
-      authorImage: 'https://i.pravatar.cc/150?u=mock-author',
-      imageUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=1000',
-      viewCount: 1250,
-      likeCount: 45,
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      updatedAt: DateTime.now().subtract(const Duration(days: 2)),
-    );
-  }
-
-  /// Fetch article by ID
+  /// Fetch all health articles with author details with pagination
   Future<HealthArticle?> getArticleById(String id, {String? userId}) async {
     try {
       final response = await _client
@@ -346,7 +264,7 @@ class HealthArticleRepository {
           .single();
 
       final currentUserId = userId;
-      print('DEBUG: getArticleById - Article: $id, userId arg: $userId');
+      debugPrint('DEBUG: getArticleById - Article: $id, userId arg: $userId');
       
       bool isBookmarked = false;
       bool isLiked = false;
@@ -360,11 +278,11 @@ class HealthArticleRepository {
               .eq('article_id', id)
               .eq('user_id', currentUserId);
               
-          if (interactions != null) {
-            print('DEBUG: getArticleById - Found ${(interactions as List).length} interactions for Article $id');
-            for (var i in (interactions as List)) {
-              print('DEBUG: Interaction Record: $i');
-              print('DEBUG: comment_id raw value: ${i['comment_id']} (Type: ${i['comment_id'].runtimeType})');
+          if ((interactions as List).isNotEmpty) {
+            debugPrint('DEBUG: getArticleById - Found ${interactions.length} interactions for Article $id');
+            for (var i in interactions) {
+              debugPrint('DEBUG: Interaction Record: $i');
+              debugPrint('DEBUG: comment_id raw value: ${i['comment_id']} (Type: ${i['comment_id'].runtimeType})');
 
               // Check comment_id locally for reliability
               final rawCommentId = i['comment_id'];
@@ -372,22 +290,20 @@ class HealthArticleRepository {
               if (rawCommentId != null && 
                   rawCommentId.toString().toLowerCase() != 'null' && 
                   rawCommentId.toString().trim().isNotEmpty) {
-                 print('DEBUG: Skipped because comment_id is comment: $rawCommentId');
+                 debugPrint('DEBUG: Skipped because comment_id is comment: $rawCommentId');
                  continue;
               }
 
               final type = i['type'] as String;
               if (type == 'bookmark') {
                  isBookmarked = true;
-                 print('DEBUG: HIT! Bookmark found. isBookmarked set to true.');
+                 debugPrint('DEBUG: HIT! Bookmark found. isBookmarked set to true.');
               }
               if (type == 'like') isLiked = true;
             }
-          } else {
-             print('DEBUG: getArticleById - No interactions found (null response)');
           }
         } catch (e) {
-          print('Repository: Error checking article interactions: $e');
+          debugPrint('Repository: Error checking article interactions: $e');
         }
       }
       
@@ -404,7 +320,7 @@ class HealthArticleRepository {
       
       jsonMap['like_count'] = (totalLikes as List).length;
     } catch (e) {
-      print('Repository: Error counting total likes: $e');
+      debugPrint('Repository: Error counting total likes: $e');
     }
 
     // Fetch actual comment count
@@ -416,14 +332,14 @@ class HealthArticleRepository {
       
       jsonMap['comment_count'] = (commentResult as List).length;
     } catch (e) {
-      print('Repository: Error counting comments: $e');
+      debugPrint('Repository: Error counting comments: $e');
     }
 
     jsonMap['is_bookmarked'] = isBookmarked;
     jsonMap['is_liked'] = isLiked;
       return HealthArticle.fromJson(jsonMap);
     } catch (e) {
-      print('Repository: Error in getArticleById: $e');
+      debugPrint('Repository: Error in getArticleById: $e');
       return null;
     }
   }
@@ -437,7 +353,7 @@ class HealthArticleRepository {
           .eq('article_id', articleId)
           .order('created_at', ascending: false);
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         return (response as List)
             .map((e) => HealthArticleProduct.fromJson(e))
             .toList();
@@ -484,11 +400,11 @@ class HealthArticleRepository {
 
       final rootResponse = await rootQuery.range(from, to);
       
-      if (rootResponse == null || (rootResponse as List).isEmpty) {
+      if ((rootResponse as List).isEmpty) {
         return [];
       }
 
-      final rootIds = (rootResponse as List).map((e) => e['id'] as String).toList();
+      final rootIds = rootResponse.map((e) => e['id'] as String).toList();
 
       // 2. Fetch all comments (roots + their replies)
       // We fetch where id in rootIds OR parent_id in rootIds
@@ -509,7 +425,7 @@ class HealthArticleRepository {
 
       final response = await query;
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         // Fetch all interactions for this user on this article (efficient simplified query)
         Set<String> likedCommentIds = {};
         Set<String> bookmarkedCommentIds = {};
@@ -523,8 +439,8 @@ class HealthArticleRepository {
                 .eq('user_id', currentUserId)
                 .not('comment_id', 'is', null); // Only care about comment interactions here
                 
-            if (interactions != null) {
-              for (var i in (interactions as List)) {
+            if ((interactions as List).isNotEmpty) {
+              for (var i in interactions) {
                 final cId = i['comment_id'] as String;
                 final type = i['type'] as String;
                 if (type == 'like') likedCommentIds.add(cId);
@@ -532,12 +448,12 @@ class HealthArticleRepository {
               }
             }
           } catch (e) {
-            print('Repository: Error fetching interactions for comments: $e');
+            debugPrint('Repository: Error fetching interactions for comments: $e');
           }
         }
 
         // Filter comments based on visibility rules
-        final filteredComments = (response as List).where((e) {
+        final filteredComments = response.where((e) {
           final isHidden = e['is_hidden'] == true;
           final commentUserId = e['user_id'] as String;
           
@@ -565,7 +481,7 @@ class HealthArticleRepository {
 
       return [];
     } catch (e) {
-      print('Repository: Error fetching comments: $e');
+      debugPrint('Repository: Error fetching comments: $e');
       return [];
     }
   }
@@ -592,8 +508,8 @@ class HealthArticleRepository {
       
       Map<String, dynamic>? targetInteraction;
 
-      if (existingList != null) {
-        for (var i in (existingList as List)) {
+      if ((existingList as List).isNotEmpty) {
+        for (var i in existingList) {
           final cId = i['comment_id'];
           if (commentId == null) {
             if (cId == null || cId.toString().toLowerCase() == 'null' || cId.toString().trim().isEmpty) {
@@ -617,7 +533,7 @@ class HealthArticleRepository {
             .delete()
             .eq('id', targetInteraction['id']);
         isNowActive = false;
-        print('Repository: Removed interaction $type for ${commentId ?? articleId}');
+        debugPrint('Repository: Removed interaction $type for ${commentId ?? articleId}');
       } else {
         // Add if not exists
         await _client.from('health_article_interactions').insert({
@@ -627,7 +543,7 @@ class HealthArticleRepository {
           'type': type,
         });
         isNowActive = true;
-        print('Repository: Added interaction $type for ${commentId ?? articleId}');
+        debugPrint('Repository: Added interaction $type for ${commentId ?? articleId}');
       }
 
       // 3. Update the specific target count column (Article or Comment)
@@ -653,7 +569,7 @@ class HealthArticleRepository {
         'newCount': specificCount,
       };
     } catch (e) {
-      print('Error toggling interaction: $e');
+      debugPrint('Error toggling interaction: $e');
       return {'success': false, 'isActive': false, 'newCount': 0};
     }
   }
@@ -673,8 +589,6 @@ class HealthArticleRepository {
           .eq('type', type);
 
       final interactions = await query;
-      if (interactions == null) return 0;
-
       final interactionList = interactions as List;
       
       if (totalForArticle) {
@@ -698,7 +612,7 @@ class HealthArticleRepository {
         }).length;
       }
     } catch (e) {
-      print('Error counting interactions: $e');
+      debugPrint('Error counting interactions: $e');
       return 0;
     }
   }
@@ -724,35 +638,12 @@ class HealthArticleRepository {
             .update({columnName: count})
             .eq('id', articleId);
       }
-      print('Repository: Updated $columnName = $count for ${commentId ?? articleId}');
+      debugPrint('Repository: Updated $columnName = $count for ${commentId ?? articleId}');
     } catch (e) {
-      print('Error updating count column: $e');
+      debugPrint('Error updating count column: $e');
     }
   }
 
-  List<HealthArticleComment> _getMockComments(String articleId) {
-    // Generate 12-25 comments for each mock article
-    final count = articleId == 'mock-article-1' ? 25 : 12;
-    return List.generate(count, (i) {
-      // Logic reversed to match "ascending=true" (Oldest First)
-      // i=0 is Comment #1, should be oldest (e.g. 5 days ago)
-      // i=count-1 is Comment #N, should be newest (e.g. today)
-      final hoursAgo = (count - 1 - i) * 2;
-      
-      return HealthArticleComment(
-        id: 'mock-c-$articleId-$i',
-        articleId: articleId,
-        userId: 'u$i',
-        username: 'สมาชิกหมายเลข ${100 + i}',
-        content: i % 2 == 0 
-          ? 'ข้อมูลมีประโยชน์มากครับ ขอบคุณสำหรับการแบ่งปันสาระดีๆ แบบนี้' 
-          : 'อยากให้ทำบทความเกี่ยวกับหัวข้อนี้เพิ่มเติมจังเลยค่ะ สนใจมาก',
-        commentNumber: i + 1,
-        likeCount: (10 - i).clamp(0, 50),
-        createdAt: DateTime.now().subtract(Duration(hours: hoursAgo)),
-      );
-    });
-  }
 
   /// Get total comment count for an article
   Future<int> getArticleCommentCount(String articleId, {bool rootsOnly = false}) async {
@@ -769,7 +660,7 @@ class HealthArticleRepository {
       final response = await query.count(CountOption.exact);
       return response.count ?? 0;
     } catch (e) {
-      print('Repository: Error getting comment count: $e');
+      debugPrint('Repository: Error getting comment count: $e');
       return 0;
     }
   }
@@ -795,7 +686,6 @@ class HealthArticleRepository {
           .select('*, users(username, profile_image_url)')
           .single();
 
-      if (response != null) {
         // Update the comment count in the health_articles table for fast sorting later
         try {
           final newCount = await getArticleCommentCount(articleId);
@@ -804,13 +694,12 @@ class HealthArticleRepository {
               .update({'comment_count': newCount})
               .eq('id', articleId);
         } catch (updateError) {
-          print('Repository: Failed to sync comment count to article table: $updateError');
+          debugPrint('Repository: Failed to sync comment count to article table: $updateError');
         }
         
         return HealthArticleComment.fromJson(response);
-      }
     } catch (e) {
-      print('Repository: Error posting comment: $e');
+      debugPrint('Repository: Error posting comment: $e');
       return null;
     }
   }
@@ -828,7 +717,6 @@ class HealthArticleRepository {
           .eq('id', commentId)
           .single();
 
-      if (currentComment != null) {
         final oldContent = currentComment['content'];
         final currentEditCount = currentComment['edit_count'] ?? 0;
         final newEditCount = currentEditCount + 1;
@@ -853,13 +741,9 @@ class HealthArticleRepository {
             .select('*, users(username, profile_image_url)')
             .single();
 
-        if (response != null) {
-          return HealthArticleComment.fromJson(response);
-        }
-      }
-      return null;
+        return HealthArticleComment.fromJson(response);
     } catch (e) {
-      print('Repository: Error updating comment: $e');
+      debugPrint('Repository: Error updating comment: $e');
       return null;
     }
   }
@@ -873,14 +757,14 @@ class HealthArticleRepository {
           .eq('comment_id', commentId)
           .order('edit_number', ascending: true);
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         return (response as List)
             .map((e) => CommentEditHistory.fromJson(e))
             .toList();
       }
       return [];
     } catch (e) {
-      print('Repository: Error fetching comment edit history: $e');
+      debugPrint('Repository: Error fetching comment edit history: $e');
       return [];
     }
   }
@@ -897,12 +781,11 @@ class HealthArticleRepository {
           .eq('id', commentId);
       return true;
     } catch (e) {
-      print('Repository: Error toggling comment visibility: $e');
+      debugPrint('Repository: Error toggling comment visibility: $e');
       return false;
     }
   }
 
-  /// Create a new health article
   Future<HealthArticle?> createArticle({
     required String userId,
     required String title,
@@ -910,10 +793,8 @@ class HealthArticleRepository {
     String? imageUrl,
   }) async {
     try {
-      print('Repository: Attempting minimal insert for article. User: $userId');
+      debugPrint('Repository: Attempting minimal insert for article. User: $userId');
       
-      // Perform insert with only core fields to avoid "column does not exist" errors
-      // if count columns are not yet in the schema
       final response = await _client
           .from('health_articles')
           .insert({
@@ -926,19 +807,16 @@ class HealthArticleRepository {
           .select('*, users(username, profile_image_url)')
           .single();
 
-      if (response != null) {
-        print('Repository: Success! Article ID: ${response['id']}');
-        return HealthArticle.fromJson(response);
-      }
-      return null;
+      debugPrint('Repository: Success! Article ID: ${response['id']}');
+      return HealthArticle.fromJson(response);
     } catch (e) {
-      print('Repository: Error creating article: $e');
+      debugPrint('Repository: Error creating article: $e');
       if (e is PostgrestException) {
-        print('Postgrest Details: ${e.message}, ${e.details}');
+        debugPrint('Postgrest Details: ${e.message}, ${e.details}');
         
         // If it's a 42703 (Undefined Column), it confirms our theory
         if (e.code == '42703') {
-          print('REPOSITORY HINT: One or more columns like view_count/like_count might be missing in DB.');
+          debugPrint('REPOSITORY HINT: One or more columns like view_count/like_count might be missing in DB.');
         }
       }
       rethrow; // Rethrow to let the UI catch and show the actual error
@@ -983,19 +861,18 @@ class HealthArticleRepository {
             });
             notifiedUsers.add(targetUserId);
           } catch (e) {
-            print('Repository: Failed to send notification to product owner ${product.taggedById}: $e');
+            debugPrint('Repository: Failed to send notification to product owner ${product.taggedById}: $e');
           }
         }
       }
 
       return true;
     } catch (e) {
-      print('Repository: Error editing article text: $e');
+      debugPrint('Repository: Error editing article text: $e');
       return false;
     }
   }
 
-  /// Get article edit history
   Future<List<ArticleEditHistory>> getArticleEditHistory(String articleId) async {
     try {
       final response = await _client
@@ -1004,17 +881,16 @@ class HealthArticleRepository {
           .eq('article_id', articleId)
           .order('edited_at', ascending: false);
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         return (response as List).map((e) => ArticleEditHistory.fromJson(e)).toList();
       }
       return [];
     } catch (e) {
-      print('Repository: Error fetching article edit history: $e');
+      debugPrint('Repository: Error fetching article edit history: $e');
       return [];
     }
   }
 
-  /// Fetch articles bookmarked by the user
   Future<List<HealthArticle>> getBookmarkedArticles(String userId) async {
     try {
       // 1. Get bookmarked article IDs for the user
@@ -1026,7 +902,7 @@ class HealthArticleRepository {
           .filter('comment_id', 'is', null) // Only article bookmarks
           .order('created_at', ascending: false);
 
-      if (interactions == null || (interactions as List).isEmpty) {
+      if ((interactions as List).isEmpty) {
         return [];
       }
 
@@ -1046,7 +922,7 @@ class HealthArticleRepository {
           .select('*, users(username, profile_image_url)')
           .filter('id', 'in', articleIds);
 
-      if (response != null && (response as List).isNotEmpty) {
+      if ((response as List).isNotEmpty) {
         List<HealthArticle> articles = (response as List).map((e) {
           final jsonMap = Map<String, dynamic>.from(e);
           jsonMap['is_bookmarked'] = true; // We know it's bookmarked
@@ -1065,7 +941,7 @@ class HealthArticleRepository {
       }
       return [];
     } catch (e) {
-      print('Repository: Error fetching bookmarked articles: $e');
+      debugPrint('Repository: Error fetching bookmarked articles: $e');
       return [];
     }
   }

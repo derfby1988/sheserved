@@ -37,6 +37,7 @@ class _ContactListPageState extends State<ContactListPage> {
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('เกิดข้อผิดพลาดในการโหลดข้อมูล: $e')),
       );
@@ -67,7 +68,7 @@ class _ContactListPageState extends State<ContactListPage> {
     final currentUserId = ServiceLocator.instance.currentUser?.id;
     if (currentUserId == null || _selectedUserIds.isEmpty) return;
 
-    final allParticipants = [currentUserId, ..._selectedUserIds.toList()];
+    final allParticipants = [currentUserId, ..._selectedUserIds];
     
     final room = await ServiceLocator.instance.chatRepository.getOrCreateRoom(allParticipants);
 
@@ -216,7 +217,7 @@ class _ContactTile extends StatelessWidget {
       leading: Stack(
         children: [
           CircleAvatar(
-            backgroundColor: AppColors.primary.withOpacity(0.1),
+            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
             child: const Icon(Icons.person, color: AppColors.primary),
           ),
           if (isSelected)
@@ -249,7 +250,7 @@ class _ContactTile extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(

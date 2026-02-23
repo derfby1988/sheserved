@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../features/consultation/presentation/logic/consultation_guard.dart';
+import '../../features/consultation/presentation/pages/health_program_request_dashboard.dart';
 
 
 /// Drawer Menu Item Model
@@ -524,6 +525,20 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/admin/applications'),
                               isSubItem: true,
                             ),
+                            _buildMenuItem(
+                              context,
+                              title: 'คำขอโปรแกรมรักษา',
+                              icon: Icons.assignment_outlined,
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const HealthProgramRequestDashboard(),
+                                  ),
+                                );
+                              },
+                              isSubItem: true,
+                            ),
                           ],
                             const SizedBox(height: 32),
                           ],
@@ -706,7 +721,7 @@ class _DrawerCurvePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.primary.withOpacity(0.9) // ปรับให้โปร่งใสแบบแก้ว
+      ..color = AppColors.primary.withValues(alpha: 0.9) // ปรับให้โปร่งใสแบบแก้ว
       ..style = PaintingStyle.fill;
 
     final path = Path();

@@ -408,7 +408,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             offset: const Offset(0, -2),
             blurRadius: 10,
           ),
@@ -419,7 +419,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           children: [
             IconButton(
               onPressed: _pickAndSendImage,
-              icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+              icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
             ),
             Expanded(
               child: Container(
@@ -470,7 +470,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
               )
             else
               Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
@@ -494,7 +494,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     _callInviteSub?.cancel();
     _callAcceptSub?.cancel();
     if (_currentUser != null) {
-      _chatRepository.sendTypingStatus(widget.roomId, _currentUser!.id, false);
+      _chatRepository.sendTypingStatus(widget.roomId, _currentUser.id, false);
     }
     _msgController.dispose();
     _scrollController.dispose();
@@ -532,7 +532,7 @@ class _MessageBubble extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               offset: const Offset(0, 1),
               blurRadius: 4,
             ),
@@ -560,7 +560,7 @@ class _MessageBubble extends StatelessWidget {
                 Text(
                   '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                    color: (isMe ? Colors.white : Colors.black54).withOpacity(0.6),
+                    color: (isMe ? Colors.white : Colors.black54).withValues(alpha: 0.6),
                     fontSize: 10,
                   ),
                 ),
@@ -658,10 +658,12 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
     });
 
     _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() {
-        _isPlaying = false;
-        _position = Duration.zero;
-      });
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
+      }
     });
   }
 
@@ -703,14 +705,14 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
                 value: _duration.inMilliseconds > 0 
                   ? _position.inMilliseconds / _duration.inMilliseconds 
                   : 0.0,
-                backgroundColor: color.withOpacity(0.2),
+                backgroundColor: color.withValues(alpha: 0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
             ),
             const SizedBox(height: 4),
             Text(
               _formatDuration(_isPlaying ? _position : _duration),
-              style: TextStyle(color: color.withOpacity(0.7), fontSize: 10),
+              style: TextStyle(color: color.withValues(alpha: 0.7), fontSize: 10),
             ),
           ],
         ),
