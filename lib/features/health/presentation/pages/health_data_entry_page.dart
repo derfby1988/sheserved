@@ -375,7 +375,16 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
-        Navigator.pushReplacementNamed(context, '/health'); 
+        final args = ModalRoute.of(context)?.settings.arguments;
+        String nextRoute = '/health';
+        
+        if (args is String && args.isNotEmpty) {
+          nextRoute = args;
+        } else if (args is Map<String, dynamic>) {
+          nextRoute = (args['redirect'] ?? args['route'] ?? '/health') as String;
+        }
+
+        Navigator.pushReplacementNamed(context, nextRoute); 
       }
 
     } catch (e) {

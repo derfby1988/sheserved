@@ -98,11 +98,31 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  void _loadFieldsForProfession(Profession profession) {
+  Future<void> _loadFieldsForProfession(Profession profession) async {
     setState(() {
-      _professionFields = _getDefaultFieldsForProfession(profession.id);
-      _dynamicFieldValues.clear();
+      _isLoadingProfessions = true; // Use this or add _isLoadingFields
     });
+    
+    try {
+      final repository = ProfessionRepository(Supabase.instance.client);
+      final fields = await repository.getFieldConfigsForProfession(profession.id);
+      if (mounted) {
+        setState(() {
+          // Fallback to default if no fields in DB yet for this profession
+          _professionFields = fields.isNotEmpty ? fields : _getDefaultFieldsForProfession(profession.id);
+          _dynamicFieldValues.clear();
+          _isLoadingProfessions = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _professionFields = _getDefaultFieldsForProfession(profession.id);
+          _dynamicFieldValues.clear();
+          _isLoadingProfessions = false;
+        });
+      }
+    }
   }
 
   // Helper method for icon mapping (moved from build)

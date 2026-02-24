@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/consultation_request_model.dart';
 import 'package:sheserved/config/app_config.dart';
@@ -110,6 +111,28 @@ class ConsultationRepository {
           'updated_at': DateTime.now().toIso8601String(),
         })
         .eq('id', requestId);
+  }
+
+  /// Get statistics for organ usage frequency
+  Future<Map<String, int>> getSymptomStatistics() async {
+    try {
+      // Fetch only region_id from consultation_symptoms
+      final List<dynamic> response = await _client
+          .from('consultation_symptoms')
+          .select('region_id');
+
+      final Map<String, int> stats = {};
+      for (var row in response) {
+        final String? regionId = row['region_id'];
+        if (regionId != null) {
+          stats[regionId] = (stats[regionId] ?? 0) + 1;
+        }
+      }
+      return stats;
+    } catch (e) {
+      debugPrint('Error fetching symptom stats: $e');
+      return {};
+    }
   }
 }
 

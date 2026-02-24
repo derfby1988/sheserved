@@ -32,7 +32,7 @@ class ConsultationGuard {
     if (profile == null || profile.healthInfo == null || profile.healthInfo!.isEmpty) {
       // No health info, redirect to Health Data Entry
       // Update the route according to the actual app routing
-      Navigator.pushNamed(context, '/health-data-setup', arguments: {
+      Navigator.pushNamed(context, '/health-data-entry', arguments: {
         'redirect': '/package-healthcare'
       });
       return;

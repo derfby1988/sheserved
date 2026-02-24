@@ -3,6 +3,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../models/profession.dart';
 import '../../models/registration_field_config.dart';
+import '../../data/repositories/profession_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Admin Page สำหรับจัดการ Field ลงทะเบียนของอาชีพ
 class RegistrationFieldAdminPage extends StatefulWidget {
@@ -32,15 +34,21 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
 
   Future<void> _loadFields() async {
     setState(() => _isLoading = true);
-
-    // TODO: Load from repository
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // For now, use default fields based on profession
-    setState(() {
-      _fields = _getDefaultFields(_profession.id);
-      _isLoading = false;
-    });
+    try {
+      final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+      final fields = await repo.getFieldConfigsForProfession(_profession.id);
+      if (mounted) {
+        setState(() {
+          _fields = fields;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading fields: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   List<RegistrationFieldConfig> _getDefaultFields(String professionId) {
@@ -256,18 +264,29 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
     return ReorderableListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _fields.length,
-      onReorder: (oldIndex, newIndex) {
+      onReorder: (oldIndex, newIndex) async {
         setState(() {
           if (oldIndex < newIndex) {
             newIndex -= 1;
           }
           final item = _fields.removeAt(oldIndex);
           _fields.insert(newIndex, item);
-          // Update order values
           for (int i = 0; i < _fields.length; i++) {
             _fields[i] = _fields[i].copyWith(order: i);
           }
         });
+        
+        // Update in DB
+        try {
+          final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+          for (final field in _fields) {
+            await repo.updateFieldConfig(field.id, {
+              'field_order': field.order,
+            });
+          }
+        } catch (e) {
+          debugPrint('Error reordering fields: $e');
+        }
       },
       itemBuilder: (context, index) {
         final field = _fields[index];
@@ -424,10 +443,28 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
       context: context,
       builder: (context) => FieldEditorDialog(
         professionId: _profession.id,
-        onSave: (field) {
-          setState(() {
-            _fields.add(field.copyWith(order: _fields.length));
-          });
+        onSave: (field) async {
+          try {
+            final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+            final newField = await repo.addFieldConfig(
+              professionId: field.professionId,
+              fieldId: field.fieldId,
+              label: field.label,
+              hint: field.hint,
+              fieldType: field.fieldType,
+              isRequired: field.isRequired,
+              order: _fields.length,
+            );
+            setState(() {
+              _fields.add(newField);
+            });
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('เกิดข้อผิดพลาดในการเพิ่มฟิลด์: $e')),
+              );
+            }
+          }
         },
       ),
     );
@@ -439,13 +476,28 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
       builder: (context) => FieldEditorDialog(
         professionId: _profession.id,
         existingField: field,
-        onSave: (updatedField) {
-          setState(() {
-            final index = _fields.indexWhere((f) => f.id == field.id);
-            if (index != -1) {
-              _fields[index] = updatedField;
+        onSave: (updatedField) async {
+          try {
+            final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+            await repo.updateFieldConfig(updatedField.id, {
+              'label': updatedField.label,
+              'hint': updatedField.hint,
+              'field_type': updatedField.fieldType.name,
+              'is_required': updatedField.isRequired,
+            });
+            setState(() {
+              final index = _fields.indexWhere((f) => f.id == updatedField.id);
+              if (index != -1) {
+                _fields[index] = updatedField;
+              }
+            });
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('เกิดข้อผิดพลาดในการแก้ไขฟิลด์: $e')),
+              );
             }
-          });
+          }
         },
       ),
     );
@@ -463,14 +515,26 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
             child: const Text('ยกเลิก'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _fields.removeWhere((f) => f.id == field.id);
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('ลบฟิลด์ "${field.label}" แล้ว')),
-              );
+            onPressed: () async {
+              try {
+                final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+                await repo.deleteFieldConfig(field.id);
+                setState(() {
+                  _fields.removeWhere((f) => f.id == field.id);
+                });
+                Navigator.pop(context);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('ลบฟิลด์ "${field.label}" แล้ว')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('อัพเดตไม่สำเร็จ: $e')),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('ลบ'),

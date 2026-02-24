@@ -23,7 +23,7 @@ class SymptomRulerPicker extends StatefulWidget {
 }
 
 class _SymptomRulerPickerState extends State<SymptomRulerPicker> {
-  static const int _virtualItemCount = 10000;
+  static const int _virtualItemCount = 1000;
   late ScrollController _scrollController;
   int _virtualIndex = 0;
   bool _isDragging = false;

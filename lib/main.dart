@@ -18,6 +18,7 @@ import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
+import 'features/admin/presentation/pages/body_region_admin_page.dart';
 import 'features/admin/presentation/pages/application_review_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
@@ -121,6 +122,7 @@ class SheservedApp extends StatelessWidget {
 
         '/admin/professions': (context) => const ProfessionAdminPage(),
         '/admin/applications': (context) => const ApplicationReviewPage(),
+        '/admin/body_regions': (context) => const BodyRegionAdminPage(),
         '/settings/sync': (context) => const SyncSettingsPage(),
         '/chat-list': (context) => const ChatListPage(),
         '/chat-contacts': (context) => ContactListPage(),

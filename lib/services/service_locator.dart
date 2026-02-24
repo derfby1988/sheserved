@@ -12,6 +12,7 @@ import '../features/health/data/repositories/health_article_repository.dart';
 import '../features/chat/data/repositories/chat_repository.dart';
 import '../features/chat/data/models/chat_models.dart';
 import '../features/consultation/data/repositories/consultation_repository.dart';
+import '../features/admin/data/repositories/body_region_repository.dart';
 import 'package:hive/hive.dart';
 import 'auth_service.dart';
 
@@ -31,6 +32,7 @@ class ServiceLocator {
   HealthArticleRepository? _healthArticleRepository;
   ChatRepository? _chatRepository;
   ConsultationRepository? _consultationRepository;
+  BodyRegionRepository? _bodyRegionRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -155,6 +157,7 @@ class ServiceLocator {
       );
       
       _consultationRepository = ConsultationRepository(supabaseClient);
+      _bodyRegionRepository = BodyRegionRepository(supabaseClient);
     }
 
 
@@ -201,6 +204,13 @@ class ServiceLocator {
       _consultationRepository = ConsultationRepository(Supabase.instance.client);
     }
     return _consultationRepository!;
+  }
+
+  BodyRegionRepository get bodyRegionRepository {
+    if (_bodyRegionRepository == null) {
+      _bodyRegionRepository = BodyRegionRepository(Supabase.instance.client);
+    }
+    return _bodyRegionRepository!;
   }
 
   /// Get Unified Repository (recommended)

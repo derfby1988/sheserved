@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../widgets/symptom_ruler_picker.dart';
+import '../../../../services/service_locator.dart';
 
 // ─── Data model for a body region selection ────────────────────────────────
 class _BodyRegion {
@@ -23,7 +25,7 @@ class _BodyRegion {
   });
 }
 
-const List<_BodyRegion> _bodyRegions = [
+List<_BodyRegion> _bodyRegions = [
   _BodyRegion(id: 'top_head',   nameTh: 'ศีรษะด้านบน',  nameEn: 'Top of Head',   yRatio: 0.04, xRatio: 0.50, icon: Icons.face),
   _BodyRegion(id: 'forehead',   nameTh: 'หน้าผาก',      nameEn: 'Forehead',      yRatio: 0.07, xRatio: 0.50, icon: Icons.face_retouching_natural),
   _BodyRegion(id: 'eyes',       nameTh: 'ดวงตา',        nameEn: 'Eyes',          yRatio: 0.09, xRatio: 0.50, icon: Icons.remove_red_eye_outlined),
@@ -139,6 +141,53 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     return widget.request.bodyArea['gender']?.toString().toLowerCase() ?? 'unknown';
   }
 
+  IconData _getIconData(String? iconName) {
+    if (iconName == null) return Icons.circle;
+    // Map existing icons for backward compatibility
+    switch (iconName) {
+      case 'face': return Icons.face;
+      case 'face_retouching_natural': return Icons.face_retouching_natural;
+      case 'remove_red_eye_outlined': return Icons.remove_red_eye_outlined;
+      case 'hearing_outlined': return Icons.hearing_outlined;
+      case 'record_voice_over_outlined': return Icons.record_voice_over_outlined;
+      case 'compress': return Icons.compress;
+      case 'accessibility_new': return Icons.accessibility_new;
+      case 'horizontal_rule': return Icons.horizontal_rule;
+      case 'monitor_heart_outlined': return Icons.monitor_heart_outlined;
+      case 'fitness_center': return Icons.fitness_center;
+      case 'favorite_border': return Icons.favorite_border;
+      case 'restaurant_menu': return Icons.restaurant_menu;
+      case 'adjust': return Icons.adjust;
+      case 'radio_button_checked': return Icons.radio_button_checked;
+      case 'pan_tool_alt_outlined': return Icons.pan_tool_alt_outlined;
+      case 'water_drop_outlined': return Icons.water_drop_outlined;
+      case 'watch_outlined': return Icons.watch_outlined;
+      case 'trip_origin': return Icons.trip_origin;
+      case 'back_hand_outlined': return Icons.back_hand_outlined;
+      case 'directions_walk': return Icons.directions_walk;
+      case 'directions_run': return Icons.directions_run;
+      case 'lens_outlined': return Icons.lens_outlined;
+      case 'linear_scale': return Icons.linear_scale;
+      case 'align_vertical_bottom': return Icons.align_vertical_bottom;
+      case 'radio_button_unchecked': return Icons.radio_button_unchecked;
+      case 'run_circle_outlined': return Icons.run_circle_outlined;
+      case 'linear_scale_outlined': return Icons.linear_scale_outlined;
+      default: return Icons.accessibility;
+    }
+  }
+
+  // Symptom frequency stats for heatmap effect
+  Map<String, int> _symptomStats = {};
+  int _maxSymptomCount = 0;
+
+  // Scanning state
+  bool _isScanning = true;
+  double _scanProgress = 0.0;
+  late AnimationController _scanController;
+
+  // Popup opening state for UI feedback
+  bool _isOpeningPopup = false;
+
   @override
   void initState() {
     super.initState();
@@ -152,32 +201,111 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       duration: const Duration(milliseconds: 8000),
     )..repeat();
 
+    _scanController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    );
+
+    _scanController.addListener(() {
+      setState(() {
+        _scanProgress = _scanController.value;
+      });
+    });
+
     _pulseAnim = Tween<double>(begin: 0.8, end: 1.4).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _rippleAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _rippleController, curve: Curves.linear),
     );
+
+    _loadSymptomStats();
+  }
+
+  Future<void> _loadSymptomStats() async {
+    // Start scan animation
+    _scanController.forward();
+    
+    try {
+      final stats = await ServiceLocator.instance.consultationRepository.getSymptomStatistics();
+      final dbRegions = await ServiceLocator.instance.bodyRegionRepository.getAllRegions();
+      
+      // Wait for at least some animation progress for better UX
+      if (_scanController.value < 0.6) {
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+
+      if (mounted) {
+        setState(() {
+          _symptomStats = stats;
+          if (stats.isNotEmpty) {
+            _maxSymptomCount = stats.values.reduce((a, b) => a > b ? a : b);
+          }
+          if (dbRegions.isNotEmpty) {
+            _bodyRegions = dbRegions.where((r) {
+              if (r.gender == 'both') return true;
+              return r.gender == _gender;
+            }).map((r) => _BodyRegion(
+              id: r.id,
+              nameTh: r.nameTh,
+              nameEn: r.nameEn,
+              yRatio: r.yRatio,
+              xRatio: r.xRatio,
+              icon: _getIconData(r.iconName),
+            )).toList();
+          }
+        });
+        
+        // Complete the scan
+        await _scanController.forward(from: _scanController.value);
+        if (mounted) {
+          setState(() => _isScanning = false);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading symptom stats: $e');
+      if (mounted) setState(() => _isScanning = false);
+    }
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
     _rippleController.dispose();
+    _scanController.dispose();
     super.dispose();
   }
 
-  void _onRegionTapped(_BodyRegion region) {
+  void _onRegionTapped(_BodyRegion region) async {
+    // Provide immediate haptic feedback
+    HapticFeedback.mediumImpact();
+    
+    // Phase 1: Show loading indicator immediately
+    setState(() {
+      _isOpeningPopup = true;
+      // Update ripple position immediately for visual response
+      _rippleCenterX = region.xRatio;
+      _rippleCenterY = region.yRatio;
+    });
+
+    // Phase 2: Wait for one frame so the loading indicator can be painted
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    if (!mounted) return;
+
+    // Phase 3: Set the expensive state (popup build)
     setState(() {
       _hoveredRegion = region;
       _popupDragRatio = region.yRatio;
       _selectedSide = null;
       _currentSymptom = _medicalSymptoms[0];
-      // Update ripple center to the tapped organ's position
-      _rippleCenterX = region.xRatio;
-      _rippleCenterY = region.yRatio;
     });
-    // Restart ripple animation from the new center
+
+    // Phase 4: Reset opening state after the expensive build frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _isOpeningPopup = false);
+    });
+
     _rippleController.reset();
     _rippleController.repeat();
   }
@@ -198,8 +326,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           closest = r;
         }
       }
-      if (closest != null) {
+      if (closest != null && closest != _hoveredRegion) {
         _hoveredRegion = closest;
+        // RESET selection states when organ changes via drag
+        _selectedSide = null;
+        _currentSymptom = _medicalSymptoms[0];
+        
         // Update ripple center to follow drag
         _rippleCenterY = closest.yRatio;
         _rippleCenterX = closest.xRatio + _xOffsetForSide(_selectedSide);
@@ -312,6 +444,9 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               ],
             ),
           ),
+
+          // ── Scanning Overlay ───────────────────────────────────────────
+          if (_isScanning) _buildScanningOverlay(),
         ],
       ),
     );
@@ -555,10 +690,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
               // Human silhouette
               Positioned.fill(
-                child: CustomPaint(
-                  painter: _HumanSilhouettePainter(
-                    color: AppColors.primary.withValues(alpha: 0.08),
-                    gender: _gender,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _HumanSilhouettePainter(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      gender: _gender,
+                    ),
                   ),
                 ),
               ),
@@ -570,19 +707,43 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 
                 return Positioned(
                   top: topY - 20,
-                  left: 12, // ← ชิดซ้าย
+                  left: 12,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    child: Text(
-                      region.nameTh,
-                      style: TextStyle(
-                        fontSize: isHovered ? 12 : 10,
-                        fontWeight: isHovered ? FontWeight.bold : FontWeight.w500,
-                        color: isHovered 
-                          ? AppColors.primary 
-                          : Colors.grey.withValues(alpha: 0.4),
-                        letterSpacing: 0.5,
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        final count = _symptomStats[region.id] ?? 0;
+                        // Intensity calculations:
+                        // Opacity from 0.4 (rare) to 1.0 (very frequent)
+                        double intensity = 0.45;
+                        if (_maxSymptomCount > 0) {
+                          intensity = 0.45 + (count / _maxSymptomCount) * 0.55;
+                        }
+                        
+                        // Font weight based on frequency
+                        FontWeight weight = FontWeight.w400;
+                        if (count > 0) {
+                          if (count >= _maxSymptomCount * 0.7) {
+                            weight = FontWeight.w800;
+                          } else if (count >= _maxSymptomCount * 0.3) {
+                            weight = FontWeight.w600;
+                          } else {
+                            weight = FontWeight.w500;
+                          }
+                        }
+
+                        return Text(
+                          region.nameTh,
+                          style: TextStyle(
+                            fontSize: isHovered ? 12 : 10,
+                            fontWeight: isHovered ? FontWeight.bold : weight,
+                            color: isHovered 
+                              ? AppColors.primary 
+                              : Colors.grey.shade800.withValues(alpha: intensity),
+                            letterSpacing: 0.5,
+                          ),
+                        );
+                      }
                     ),
                   ),
                 );
@@ -648,6 +809,19 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               // Hovered region: draggable label + confirm button
               if (_hoveredRegion != null)
                 _buildHoveredLabel(h),
+
+              // Feedback if popup is still 'opening' (busy UI thread)
+              if (_isOpeningPopup)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
 
               // Confirmed points: small dot indicators on body
               ..._selectedPoints.map((point) {
@@ -761,6 +935,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
                   // 3. Symptom Ruler ─────────────────────────────
                   SymptomRulerPicker(
+                    key: ValueKey('ruler_${region.id}'), // Force reset when region changes
                     symptoms: _medicalSymptoms,
                     initialSymptom: _currentSymptom,
                     onChanged: (val) {
@@ -984,58 +1159,62 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           const SizedBox(height: 14),
 
           // Proceed button
-          GestureDetector(
-            onTap: _proceed,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                gradient: _selectedPoints.isNotEmpty
-                    ? const LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryLight],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      )
-                    : LinearGradient(
-                        colors: [
-                          Colors.grey.shade300,
-                          Colors.grey.shade200,
-                        ],
-                      ),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: _selectedPoints.isNotEmpty
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.35),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ]
-                    : [],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _selectedPoints.isEmpty
-                        ? 'เลือกบริเวณที่พบอาการ'
-                        : 'ถัดไป (${_selectedPoints.length} จุด)',
-                    style: TextStyle(
-                      color: _selectedPoints.isNotEmpty
-                          ? Colors.white
-                          : Colors.grey.shade400,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      letterSpacing: 0.5,
-                    ),
+          Center(
+            child: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.5,
+              child: GestureDetector(
+                onTap: _proceed,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: _selectedPoints.isNotEmpty
+                        ? const LinearGradient(
+                            colors: [AppColors.primary, AppColors.primaryLight],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          )
+                        : LinearGradient(
+                            colors: [
+                              Colors.grey.shade300,
+                              Colors.grey.shade200,
+                            ],
+                          ),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: _selectedPoints.isNotEmpty
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.35),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ]
+                        : [],
                   ),
-                  if (_selectedPoints.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_forward_rounded,
-                        color: Colors.white, size: 18),
-                  ],
-                ],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _selectedPoints.isEmpty
+                            ? 'เลือกบริเวณที่พบอาการ'
+                            : 'ถัดไป (${_selectedPoints.length} จุด)',
+                        style: TextStyle(
+                          color: _selectedPoints.isNotEmpty
+                              ? Colors.white
+                              : Colors.grey.shade400,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      if (_selectedPoints.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded,
+                            color: Colors.white, size: 18),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -1053,6 +1232,94 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       case _BodySide.center:
         return AppColors.primary; // green
     }
+  }
+
+  // ─── Scanning Overlay Component ──────────────────────────────────────────
+  Widget _buildScanningOverlay() {
+    return Positioned.fill(
+      child: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            color: Colors.white.withValues(alpha: 0.8),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Animated Scanner Eye
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.2),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 100,
+                        height: 100,
+                        child: CircularProgressIndicator(
+                          value: _scanProgress,
+                          strokeWidth: 6,
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                          color: AppColors.primary,
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${(_scanProgress * 100).toInt()}%',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const Text(
+                            'SCANNING',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'กำลังวิเคราะห์ข้อมูลอวัยวะ...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A4D10),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'กำลังดึงสถิติจากฐานข้อมูลสุขภาพส่วนกลาง',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

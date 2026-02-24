@@ -613,12 +613,14 @@ class _LoginPageState extends State<LoginPage>
           if (args is String && args.isNotEmpty) {
             Navigator.pushReplacementNamed(context, args);
           } else if (args is Map<String, dynamic>) {
-            final route = args['route'] as String?;
+            final route = (args['route'] ?? args['redirect']) as String?;
             final routeArgs = args['arguments'];
             if (route != null) {
               Navigator.pushReplacementNamed(context, route, arguments: routeArgs);
-            } else {
+            } else if (Navigator.canPop(context)) {
               Navigator.pop(context);
+            } else {
+              Navigator.pushReplacementNamed(context, '/');
             }
           } else if (Navigator.canPop(context)) {
             Navigator.pop(context);
@@ -698,11 +700,20 @@ class _LoginPageState extends State<LoginPage>
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final redirectRoute =
-              ModalRoute.of(context)?.settings.arguments as String?;
+          final args = ModalRoute.of(context)?.settings.arguments;
 
-          if (redirectRoute != null && redirectRoute.isNotEmpty) {
-            Navigator.pushReplacementNamed(context, redirectRoute);
+          if (args is String && args.isNotEmpty) {
+            Navigator.pushReplacementNamed(context, args);
+          } else if (args is Map<String, dynamic>) {
+            final route = (args['route'] ?? args['redirect']) as String?;
+            final routeArgs = args['arguments'];
+            if (route != null) {
+              Navigator.pushReplacementNamed(context, route, arguments: routeArgs);
+            } else if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacementNamed(context, '/');
+            }
           } else if (Navigator.canPop(context)) {
             Navigator.pop(context);
           } else {

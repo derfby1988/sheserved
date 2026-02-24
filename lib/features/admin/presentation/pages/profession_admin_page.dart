@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../models/profession.dart';
+import '../../data/repositories/profession_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'group_members_admin_page.dart';
 
 /// Admin Page สำหรับจัดการอาชีพ
 class ProfessionAdminPage extends StatefulWidget {
@@ -24,15 +27,23 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
 
   Future<void> _loadProfessions() async {
     setState(() => _isLoading = true);
-
-    // TODO: Load from repository
-    // For now, use default professions
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    setState(() {
-      _professions = Profession.defaultProfessions;
-      _isLoading = false;
-    });
+    try {
+      final repository = ProfessionRepository(Supabase.instance.client);
+      final professions = await repository.getAllProfessions();
+      if (mounted) {
+        setState(() {
+          _professions = professions;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading professions: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -292,6 +303,20 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                     children: [
                       if (!profession.isBuiltIn) ...[
                         IconButton(
+                          icon: const Icon(Icons.people_outline), // จัดการสิทธิ 3 ระดับ
+                          color: Colors.blue,
+                          iconSize: 20,
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => GroupMembersAdminPage(profession: profession),
+                              ),
+                            );
+                          },
+                          tooltip: 'จัดการสมาชิกและสิทธิกลุ่ม',
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.edit_outlined),
                           color: AppColors.primary,
                           iconSize: 20,
@@ -307,7 +332,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                         ),
                       ],
                       Icon(
-                        Icons.chevron_right,
+                        Icons.settings_outlined, // ไปจัดการฟีลด์
                         color: AppColors.textHint,
                       ),
                     ],
@@ -404,14 +429,26 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
             child: const Text('ยกเลิก'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _professions.removeWhere((p) => p.id == profession.id);
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('ลบอาชีพ "${profession.name}" แล้ว')),
-              );
+            onPressed: () async {
+              try {
+                final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+                await repo.deleteProfession(profession.id);
+                setState(() {
+                  _professions.removeWhere((p) => p.id == profession.id);
+                });
+                Navigator.pop(context);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('ลบอาชีพ "${profession.name}" แล้ว')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('ลบ'),
@@ -445,6 +482,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   late bool _requiresVerification;
   String _selectedIcon = 'work';
   String? _copyFromProfessionId;
+  bool get isEditing => widget.existingProfession != null;
 
   final List<Map<String, dynamic>> _availableIcons = [
     {'name': 'work', 'icon': Icons.work, 'label': 'งานทั่วไป'},
@@ -487,8 +525,6 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isEditing = widget.existingProfession != null;
-
     return AlertDialog(
       title: Text(isEditing ? 'แก้ไขอาชีพ' : 'เพิ่มอาชีพใหม่'),
       content: SingleChildScrollView(
@@ -711,9 +747,38 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
       updatedAt: now,
     );
 
-    widget.onSave(profession);
-    Navigator.pop(context);
-
-    // TODO: If _copyFromProfessionId is set, copy fields from that profession
+    if (isEditing) {
+      final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+      repo.updateProfession(profession.id, {
+        'name': profession.name,
+        'name_en': profession.nameEn,
+        'description': profession.description,
+        'icon_name': profession.iconName,
+        'category': profession.category.value,
+        'requires_verification': profession.requiresVerification,
+      }).then((updatedProfession) {
+        widget.onSave(updatedProfession);
+        Navigator.pop(context);
+      }).catchError((e) {
+        // error handling
+        Navigator.pop(context);
+      });
+    } else {
+      final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+      repo.createProfession(
+        name: profession.name,
+        nameEn: profession.nameEn,
+        description: profession.description,
+        iconName: profession.iconName,
+        category: profession.category,
+        requiresVerification: profession.requiresVerification,
+        displayOrder: profession.displayOrder,
+      ).then((newProfession) {
+        widget.onSave(newProfession);
+        Navigator.pop(context);
+      }).catchError((e) {
+        Navigator.pop(context);
+      });
+    }
   }
 }

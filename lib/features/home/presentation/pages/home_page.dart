@@ -178,8 +178,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _measureHeaderSectionHeight() {
+    if (!mounted) return;
     final RenderBox? renderBox = _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox != null) {
+    if (renderBox != null && renderBox.hasSize) {
       setState(() {
         _headerSectionHeight = renderBox.size.height;
       });

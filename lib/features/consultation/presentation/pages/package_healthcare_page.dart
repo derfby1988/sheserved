@@ -26,7 +26,19 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   @override
   void initState() {
     super.initState();
-    _loadGender();
+    
+    // Safety check: ensure user is logged in
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ServiceLocator.instance.currentUser == null) {
+        Navigator.pushReplacementNamed(
+          context, 
+          '/login', 
+          arguments: '/package-healthcare'
+        );
+        return;
+      }
+      _loadGender();
+    });
   }
 
   Future<void> _loadGender() async {
@@ -34,13 +46,23 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
       final user = ServiceLocator.instance.currentUser;
       if (user != null) {
         final profile = await ServiceLocator.instance.userRepository.getConsumerProfile(user.id);
-        if (profile != null && profile.healthInfo != null) {
+        if (profile != null && profile.healthInfo != null && profile.healthInfo!.isNotEmpty) {
           final gender = profile.healthInfo!['gender']?.toString().toLowerCase() ?? 'unknown';
           if (mounted) {
             setState(() {
               _gender = gender;
               _isLoading = false;
             });
+            return;
+          }
+        } else {
+          // No health info, redirect to Health Data Entry
+          if (mounted) {
+            Navigator.pushReplacementNamed(
+              context, 
+              '/health-data-entry',
+              arguments: { 'redirect': '/package-healthcare' }
+            );
             return;
           }
         }
