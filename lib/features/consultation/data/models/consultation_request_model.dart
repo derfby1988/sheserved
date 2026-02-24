@@ -10,6 +10,7 @@ class ConsultationRequestModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<SymptomPoint> symptoms; // Normalized child list
+  final bool useAI; // NEW: Flag for Vega AI Pre-consultation
 
   ConsultationRequestModel({
     required this.id,
@@ -23,6 +24,7 @@ class ConsultationRequestModel {
     required this.createdAt,
     required this.updatedAt,
     this.symptoms = const [],
+    this.useAI = false,
   });
 
   factory ConsultationRequestModel.fromJson(Map<String, dynamic> json) {
@@ -45,6 +47,7 @@ class ConsultationRequestModel {
               ?.map((e) => SymptomPoint.fromJson(e))
               .toList() ??
           [],
+      useAI: json['use_ai'] ?? false,
     );
   }
 
@@ -60,13 +63,14 @@ class ConsultationRequestModel {
       'status': status,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
-      // symptoms usually handled separately for inserts
+      'use_ai': useAI,
     };
   }
 
   ConsultationRequestModel copyWith({
     Map<String, dynamic>? bodyArea,
     List<SymptomPoint>? symptoms,
+    bool? useAI,
   }) {
     return ConsultationRequestModel(
       id: id,
@@ -80,6 +84,7 @@ class ConsultationRequestModel {
       createdAt: createdAt,
       updatedAt: updatedAt,
       symptoms: symptoms ?? this.symptoms,
+      useAI: useAI ?? this.useAI,
     );
   }
 }

@@ -90,6 +90,25 @@ class AppConfig {
   static const int otpMaxRetries = 3;
 
   // =====================================================
+  // VEGA AI (EIDY) CONFIGURATION
+  // =====================================================
+  
+  /// โหมดการทำงานของ Vega AI
+  /// - mock: ใช้ข้อมูลจำลอง (ฟรี 100% สำหรับ Development)
+  /// - live: เชื่อมต่อ API จริงของ Vega (ใช้โควตา Free Tier/เสียเงิน)
+  static const VegaAiMode vegaAiMode = VegaAiMode.mock;
+
+  /// ขีดจำกัดจำนวนครั้งที่เรียกใช้ AI ต่อวันต่อผู้ใช้ (Free Tier Protection)
+  static const int maxDailyVegaQueries = 5;
+
+  /// ปุ่มตัดการทำงานฉุกเฉิน (Kill-Switch)
+  /// หากเป็น true ระบบ AI จะหยุดทำงานทันทีเพื่อป้องกันค่าใช้จ่ายส่วนเกิน
+  static const bool vegaAiKillSwitch = false;
+
+  /// API Key สำหรับ Vega (เก็บไว้ใน Environment Variables จะดีกว่า)
+  static const String vegaApiKey = 'DEVELOPMENT_MOCK_KEY';
+
+  // =====================================================
   // LEGACY SUPPORT
   // =====================================================
   
@@ -109,4 +128,13 @@ enum DatabaseMode {
   
   /// ใช้แค่ Supabase Cloud
   supabaseOnly,
+}
+
+/// Vega AI Mode
+enum VegaAiMode {
+  /// ใช้ข้อมูลจำลอง (ฟรี 100%)
+  mock,
+  
+  /// เชื่อมต่อ API จริง (ใช้โควตา)
+  live,
 }

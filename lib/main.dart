@@ -19,6 +19,7 @@ import 'features/articles/presentation/pages/articles_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
+import 'features/admin/presentation/pages/package_admin_page.dart';
 import 'features/admin/presentation/pages/application_review_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
@@ -30,6 +31,7 @@ import 'features/chat/presentation/pages/live_vdo_page.dart';
 import 'features/consultation/presentation/pages/package_healthcare_page.dart';
 import 'features/consultation/presentation/pages/analyze_body_area_page.dart';
 import 'features/consultation/presentation/pages/chart_board_page.dart';
+import 'features/consultation/presentation/pages/vega_ai_chat_page.dart';
 import 'features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import 'features/consultation/data/models/consultation_request_model.dart';
 import 'services/service_locator.dart';
@@ -127,6 +129,7 @@ class SheservedApp extends StatelessWidget {
         '/chat-list': (context) => const ChatListPage(),
         '/chat-contacts': (context) => ContactListPage(),
         '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
+        '/admin/packages': (context) => const PackageAdminPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {
@@ -151,6 +154,13 @@ class SheservedApp extends StatelessWidget {
           final request = settings.arguments as ConsultationRequestModel;
           return MaterialPageRoute(
             builder: (context) => AnalyzeBodyAreaPage(request: request),
+          );
+        }
+
+        if (settings.name == '/vega-ai-chat') {
+          final request = settings.arguments as ConsultationRequestModel;
+          return MaterialPageRoute(
+            builder: (context) => VegaAiChatPage(request: request),
           );
         }
 

@@ -14,12 +14,13 @@ class PackageHealthCarePage extends StatefulWidget {
 class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   // Mock packages for demonstration
   final List<Map<String, dynamic>> _packages = [
-    {'name': 'แพ็คเกจ สำหรับปรึกษาผู้เชี่ยวชาญระดับอาจารย์แพทย์', 'short': 'อาจารย์หมอ', 'price': 2990.0},
-    {'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์เฉพาะทาง', 'short': 'หมอเฉพาะทาง', 'price': 799.0},
-    {'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์ทั่วไป/เภสัช', 'short': 'หมอ/เภสัช', 'price': 299.0},
+    {'name': 'แพ็คเกจ ปรึกษาผู้เชี่ยวชาญระดับอาจารย์แพทย์ + AI', 'short': 'อาจารย์หมอ + AI', 'price': 3290.0, 'useAI': true},
+    {'name': 'แพ็คเกจ สำหรับปรึกษาผู้เชี่ยวชาญระดับอาจารย์แพทย์', 'short': 'อาจารย์หมอ', 'price': 2990.0, 'useAI': false},
+    {'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์เฉพาะทาง', 'short': 'หมอเฉพาะทาง', 'price': 799.0, 'useAI': false},
+    {'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์ทั่วไป/เภสัช', 'short': 'หมอ/เภสัช', 'price': 299.0, 'useAI': false},
   ];
 
-  int _selectedIndex = 2; // Default to 299.0
+  int _selectedIndex = 3; // Default to 299.0
   bool _isLoading = true;
   String _gender = 'unknown';
 
@@ -256,6 +257,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                       packageName: selectedPackage['name'],
                       price: selectedPackage['price'],
                       bodyArea: {'gender': _gender}, // pass down gender
+                      useAI: selectedPackage['useAI'] ?? false,
                       createdAt: DateTime.now(),
                       updatedAt: DateTime.now(),
                     );

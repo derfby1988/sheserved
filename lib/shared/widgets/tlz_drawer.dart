@@ -534,6 +534,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             ),
                             _buildMenuItem(
                               context,
+                              title: 'จัดการแพ็คเกจ',
+                              icon: Icons.inventory_2_outlined,
+                              onTap: () => _navigateTo(context, '/admin/packages'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
                               title: 'คำขอโปรแกรมรักษา',
                               icon: Icons.assignment_outlined,
                               onTap: () {

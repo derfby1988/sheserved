@@ -78,30 +78,66 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   }
 
   Widget _buildProfessionList() {
+    if (_professions.isEmpty && !_isLoading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.work_off_outlined, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text(
+              'ไม่พบรายการอาชีพในขณะนี้',
+              style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'กรุณากดปุ่ม "เพิ่มอาชีพใหม่" หรือตรวจสอบการเชื่อมต่อ',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadProfessions,
+              icon: const Icon(Icons.refresh),
+              label: const Text('โหลดใหม่'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Separate built-in and custom professions
     final builtInProfessions =
         _professions.where((p) => p.isBuiltIn).toList();
     final customProfessions =
         _professions.where((p) => !p.isBuiltIn).toList();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Built-in professions section
-        _buildSectionHeader('อาชีพหลัก (Built-in)', Icons.lock_outline),
-        const SizedBox(height: 8),
-        ...builtInProfessions.map((p) => _buildProfessionCard(p)),
-
-        // Custom professions section
-        if (customProfessions.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _buildSectionHeader('อาชีพที่เพิ่มเอง', Icons.add_circle_outline),
-          const SizedBox(height: 8),
-          ...customProfessions.map((p) => _buildProfessionCard(p)),
+    return RefreshIndicator(
+      onRefresh: _loadProfessions,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Built-in professions section
+          if (builtInProfessions.isNotEmpty) ...[
+            _buildSectionHeader('อาชีพหลัก (Built-in)', Icons.lock_outline),
+            const SizedBox(height: 8),
+            ...builtInProfessions.map((p) => _buildProfessionCard(p)),
+          ],
+    
+          // Custom professions section
+          if (customProfessions.isNotEmpty) ...[
+            if (builtInProfessions.isNotEmpty) const SizedBox(height: 24),
+            _buildSectionHeader('อาชีพที่เพิ่มเอง', Icons.add_circle_outline),
+            const SizedBox(height: 8),
+            ...customProfessions.map((p) => _buildProfessionCard(p)),
+          ],
+    
+          const SizedBox(height: 80), // Space for FAB
         ],
-
-        const SizedBox(height: 80), // Space for FAB
-      ],
+      ),
     );
   }
 
@@ -389,11 +425,18 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   void _showAddProfessionDialog() {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => ProfessionEditorDialog(
         onSave: (profession) {
-          setState(() {
-            _professions.add(profession);
-          });
+          _loadProfessions(); // Reload from server to get correct state
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('เพิ่มอาชีพ "${profession.name}" สำเร็จ'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          }
         },
       ),
     );
@@ -402,15 +445,19 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   void _showEditProfessionDialog(Profession profession) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => ProfessionEditorDialog(
         existingProfession: profession,
         onSave: (updatedProfession) {
-          setState(() {
-            final index = _professions.indexWhere((p) => p.id == profession.id);
-            if (index != -1) {
-              _professions[index] = updatedProfession;
-            }
-          });
+          _loadProfessions(); // Reload from server
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('แก้ไขอาชีพ "${updatedProfession.name}" เรียบร้อย'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          }
         },
       ),
     );
@@ -479,9 +526,10 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   late TextEditingController _nameEnController;
   late TextEditingController _descriptionController;
   late UserCategory _selectedCategory;
-  late bool _requiresVerification;
+  bool _requiresVerification = true;
   String _selectedIcon = 'work';
   String? _copyFromProfessionId;
+  bool _isSaving = false;
   bool get isEditing => widget.existingProfession != null;
 
   final List<Map<String, dynamic>> _availableIcons = [
@@ -709,76 +757,89 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           child: const Text('ยกเลิก'),
         ),
         ElevatedButton(
-          onPressed: _saveProfession,
+          onPressed: _isSaving ? null : _saveProfession,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
           ),
-          child: Text(isEditing ? 'บันทึก' : 'เพิ่ม'),
+          child: _isSaving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(isEditing ? 'บันทึก' : 'เพิ่ม'),
         ),
       ],
     );
   }
 
-  void _saveProfession() {
-    if (_nameController.text.isEmpty) {
+  void _saveProfession() async {
+    if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กรุณากรอกชื่ออาชีพ')),
       );
       return;
     }
 
-    final now = DateTime.now();
-    final profession = Profession(
-      id: widget.existingProfession?.id ??
-          DateTime.now().millisecondsSinceEpoch.toString(),
-      name: _nameController.text,
-      nameEn: _nameEnController.text.isNotEmpty ? _nameEnController.text : null,
-      description: _descriptionController.text.isNotEmpty
-          ? _descriptionController.text
-          : null,
-      iconName: _selectedIcon,
-      category: _selectedCategory,
-      isBuiltIn: false,
-      isActive: true,
-      requiresVerification: _requiresVerification,
-      displayOrder: widget.existingProfession?.displayOrder ?? 999,
-      createdAt: widget.existingProfession?.createdAt ?? now,
-      updatedAt: now,
-    );
+    final name = _nameController.text.trim();
+    final nameEn = _nameEnController.text.trim().isNotEmpty ? _nameEnController.text.trim() : null;
+    final description = _descriptionController.text.trim().isNotEmpty ? _descriptionController.text.trim() : null;
 
-    if (isEditing) {
+    setState(() => _isSaving = true);
+
+    try {
       final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
-      repo.updateProfession(profession.id, {
-        'name': profession.name,
-        'name_en': profession.nameEn,
-        'description': profession.description,
-        'icon_name': profession.iconName,
-        'category': profession.category.value,
-        'requires_verification': profession.requiresVerification,
-      }).then((updatedProfession) {
-        widget.onSave(updatedProfession);
-        Navigator.pop(context);
-      }).catchError((e) {
-        // error handling
-        Navigator.pop(context);
-      });
-    } else {
-      final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
-      repo.createProfession(
-        name: profession.name,
-        nameEn: profession.nameEn,
-        description: profession.description,
-        iconName: profession.iconName,
-        category: profession.category,
-        requiresVerification: profession.requiresVerification,
-        displayOrder: profession.displayOrder,
-      ).then((newProfession) {
+      
+      if (isEditing) {
+        final updated = await repo.updateProfession(widget.existingProfession!.id, {
+          'name': name,
+          'name_en': nameEn,
+          'description': description,
+          'icon_name': _selectedIcon,
+          'category': _selectedCategory.value,
+          'requires_verification': _requiresVerification,
+        });
+        widget.onSave(updated);
+        if (mounted) Navigator.pop(context);
+      } else {
+        // Create new profession
+        final newProfession = await repo.createProfession(
+          name: name,
+          nameEn: nameEn,
+          description: description,
+          iconName: _selectedIcon,
+          category: _selectedCategory,
+          requiresVerification: _requiresVerification,
+        );
+
+        // If copy fields from another profession is selected
+        if (_copyFromProfessionId != null) {
+          try {
+            await repo.copyFieldsFromProfession(_copyFromProfessionId!, newProfession.id);
+          } catch (e) {
+            debugPrint('Error copying fields: $e');
+            // We ignore field copy error but show the profession
+          }
+        }
+
         widget.onSave(newProfession);
-        Navigator.pop(context);
-      }).catchError((e) {
-        Navigator.pop(context);
-      });
+        if (mounted) Navigator.pop(context);
+      }
+    } catch (e) {
+      debugPrint('Error saving profession: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ไม่สามารถบันทึกข้อมูลได้: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 }

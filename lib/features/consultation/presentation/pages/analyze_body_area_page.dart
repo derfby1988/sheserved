@@ -408,7 +408,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       symptoms: symptoms,
     );
 
-    Navigator.pushNamed(context, '/chart-board', arguments: updatedRequest);
+    if (updatedRequest.useAI) {
+      Navigator.pushNamed(context, '/vega-ai-chat', arguments: updatedRequest);
+    } else {
+      Navigator.pushNamed(context, '/chart-board', arguments: updatedRequest);
+    }
   }
 
   @override
