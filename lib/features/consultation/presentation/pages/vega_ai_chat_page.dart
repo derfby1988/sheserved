@@ -105,7 +105,7 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
         title: Row(
           children: [
             CircleAvatar(
-              backgroundColor: AppColors.primary.withOpacity(0.1),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
               child: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 20),
             ),
             const SizedBox(width: 12),
@@ -150,27 +150,40 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                           padding: const EdgeInsets.only(right: 8),
                           child: CircleAvatar(
                             radius: 12,
-                            backgroundColor: AppColors.primary.withOpacity(0.1),
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
                             child: const Icon(Icons.auto_awesome, size: 12, color: AppColors.primary),
                           ),
                         ),
                       Flexible(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                           decoration: BoxDecoration(
-                            color: isMe ? AppColors.primary : Colors.grey.shade100,
+                            gradient: isMe ? AppColors.primaryGradient : null,
+                            color: isMe ? null : Colors.white,
                             borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(20),
-                              topRight: const Radius.circular(20),
-                              bottomLeft: Radius.circular(isMe ? 20 : 4),
-                              bottomRight: Radius.circular(isMe ? 4 : 20),
+                              topLeft: const Radius.circular(24),
+                              topRight: const Radius.circular(24),
+                              bottomLeft: Radius.circular(isMe ? 24 : 4),
+                              bottomRight: Radius.circular(isMe ? 4 : 24),
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: isMe 
+                                  ? AppColors.primary.withValues(alpha: 0.3) 
+                                  : Colors.black.withValues(alpha: 0.06),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                            border: isMe ? null : Border.all(color: Colors.grey.shade100, width: 1),
                           ),
                           child: Text(
                             msg['text'],
                             style: TextStyle(
                               color: isMe ? Colors.white : Colors.black87,
-                              fontSize: 14,
+                              fontSize: 15,
+                              height: 1.4,
+                              fontWeight: isMe ? FontWeight.w500 : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -197,7 +210,7 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5)),
               ],
             ),
             child: Column(

@@ -277,6 +277,14 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   }
 
   void _onRegionTapped(_BodyRegion region) async {
+    // If it's the same region, don't reset the current selection states
+    if (_hoveredRegion?.id == region.id) {
+      // Just update ripple position if needed and return
+      _rippleCenterX = region.xRatio + _xOffsetForSide(_selectedSide);
+      _rippleCenterY = region.yRatio;
+      return;
+    }
+
     // Provide immediate haptic feedback
     HapticFeedback.mediumImpact();
     
@@ -431,14 +439,8 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 Expanded(
                   child: Row(
                     children: [
-                      // ── Left side selector ──────────────────────────────
-                      _buildSidePanel(_BodySide.left),
-
                       // ── Center: Body silhouette ──────────────────────────
                       Expanded(child: _buildBodySilhouette()),
-
-                      // ── Right side selector ─────────────────────────────
-                      _buildSidePanel(_BodySide.right),
                     ],
                   ),
                 ),
@@ -535,91 +537,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     );
   }
 
-  // ─── Side panel (Left / Right) ────────────────────────────────────────────
-  Widget _buildSidePanel(_BodySide side) {
-    final isSelected = _selectedSide == side;
-    final bool isLeft = side == _BodySide.left;
 
-    return GestureDetector(
-      onTap: () => setState(() => _selectedSide = side),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-        width: 52,
-        margin: EdgeInsets.only(
-          left: isLeft ? 8 : 0,
-          right: isLeft ? 0 : 8,
-          top: 16,
-          bottom: 16,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.12)
-              : Colors.white.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primary.withValues(alpha: 0.5)
-                : Colors.grey.shade200,
-            width: isSelected ? 2 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isSelected
-                  ? AppColors.primary.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isLeft ? Icons.arrow_back : Icons.arrow_forward,
-              color: isSelected ? AppColors.primary : Colors.grey.shade400,
-              size: 18,
-            ),
-            const SizedBox(height: 6),
-            RotatedBox(
-              quarterTurns: isLeft ? 3 : 1,
-              child: Text(
-                isLeft ? 'ซ้าย' : 'ขวา',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? AppColors.primary : Colors.grey.shade500,
-                  letterSpacing: 2,
-                ),
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(height: 8),
-              AnimatedBuilder(
-                animation: _pulseAnim,
-                builder: (_, __) => Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.6),
-                        blurRadius: 4 * _pulseAnim.value,
-                        spreadRadius: 1 * _pulseAnim.value,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   // ─── Body silhouette with tap regions ────────────────────────────────────
   Widget _buildBodySilhouette() {
@@ -632,43 +550,54 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           if (_silhouetteH != h) _silhouetteH = h;
         });
 
-        return GestureDetector(
-          onTapDown: (details) {
-            // Find closest region by y position
-            final tapY = details.localPosition.dy;
-            final ratio = tapY / h;
-            _BodyRegion? closest;
-            double minDist = double.infinity;
-            for (final r in _bodyRegions) {
-              final dist = (r.yRatio - ratio).abs();
-              if (dist < minDist) {
-                minDist = dist;
-                closest = r;
-              }
-            }
-            if (closest != null) _onRegionTapped(closest);
-          },
-          child: Stack(
-            clipBehavior: Clip.none, // Allow popup to overflow side panels
-            children: [
+        return Stack(
+          clipBehavior: Clip.none, // Allow popup to overflow side panels
+          children: [
+            // ─── Background GestureDetector (Catch taps only when child doesn't) ───
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) {
+                  // Find closest region by y position
+                  final tapY = details.localPosition.dy;
+                  final ratio = tapY / h;
+                  _BodyRegion? closest;
+                  double minDist = double.infinity;
+                  for (final r in _bodyRegions) {
+                    final dist = (r.yRatio - ratio).abs();
+                    if (dist < minDist) {
+                      minDist = dist;
+                      closest = r;
+                    }
+                  }
+                  if (closest != null) _onRegionTapped(closest);
+                },
+              ),
+            ),
               // Background glass card
               Positioned.fill(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.08),
-                        blurRadius: 24,
-                        spreadRadius: 4,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(32),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.06),
+                            blurRadius: 30,
+                            spreadRadius: 2,
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -679,7 +608,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   borderRadius: BorderRadius.circular(32),
                   child: AnimatedBuilder(
                     animation: _rippleAnim,
-                    builder: (_, __) {
+                    builder: (context, child) {
                       return CustomPaint(
                         painter: _RipplePainter(
                           progress: _rippleAnim.value,
@@ -692,12 +621,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 ),
               ),
 
-              // Human silhouette
+              // Human silhouette - Premium Gradient
               Positioned.fill(
                 child: RepaintBoundary(
                   child: CustomPaint(
                     painter: _HumanSilhouettePainter(
-                      color: AppColors.primary.withValues(alpha: 0.08),
+                      color: AppColors.primary.withValues(alpha: 0.12),
                       gender: _gender,
                     ),
                   ),
@@ -851,8 +780,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   ),
                 );
               }),
-            ],
-          ),
+          ],
         );
       },
     );
@@ -892,101 +820,123 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
     return Positioned(
       top: labelTop,
-      right: 8,
+      right: 12, // More padding from edge
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onVerticalDragUpdate: _onPopupDrag,
+        onTap: () {}, // Absorb taps to prevent them from reaching the background silhouette
         onVerticalDragEnd: (_) {},
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), // Reduced vertical padding
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(20),
+                color: Colors.white.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  width: 1.2,
+                  color: Colors.white.withValues(alpha: 0.5),
+                  width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.18),
-                    blurRadius: 18,
-                    offset: const Offset(0, 4),
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    blurRadius: 25,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1. Icon (Moved to far left as requested) ──────
+                  // Drag indicator handle - More subtle
                   Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: Colors.white, // Solid opaque white for icon
-                      shape: BoxShape.circle,
+                    width: 30,
+                    height: 3,
+                    margin: const EdgeInsets.only(bottom: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    child: Icon(region.icon, color: AppColors.primary, size: 18),
                   ),
-
-                  const SizedBox(width: 10),
-
-                  // 2. Side Selector ─────────────────────────────
-                  _buildInlineSideSelector(),
-
-                  const SizedBox(width: 8),
-
-                  // 3. Symptom Ruler ─────────────────────────────
-                  SymptomRulerPicker(
-                    key: ValueKey('ruler_${region.id}'), // Force reset when region changes
-                    symptoms: _medicalSymptoms,
-                    initialSymptom: _currentSymptom,
-                    onChanged: (val) {
-                      setState(() => _currentSymptom = val);
-                    },
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // 4. Gold 'เพิ่ม' pill button
-                  GestureDetector(
-                    onTap: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0]) 
-                        ? _confirmSelection 
-                        : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        gradient: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
-                          ? const LinearGradient(
-                              colors: [Color(0xFFFFB300), Color(0xFFFFD54F)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : const LinearGradient(
-                              colors: [Color(0xFFE0E0E0), Color(0xFFF5F5F5)], // Solid grey gradient
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 1. Icon (Circular accent)
+                      Container(
+                        padding: const EdgeInsets.all(6), // Reduced padding
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
-                          ? [
-                              BoxShadow(
-                                color: const Color(0xFFFFB300).withValues(alpha: 0.4),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ]
-                          : null,
+                          ],
+                        ),
+                        child: Icon(region.icon, color: Colors.white, size: 18), // Smaller icon
                       ),
-                      child: const Text(
-                        'เพิ่ม',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          letterSpacing: 0.5,
+
+                      const SizedBox(width: 12),
+
+                      // 2. Side Selector
+                      _buildInlineSideSelector(),
+
+                      const SizedBox(width: 8),
+
+                      // 3. Symptom Ruler
+                      SymptomRulerPicker(
+                        key: ValueKey('ruler_${region.id}'),
+                        symptoms: _medicalSymptoms,
+                        initialSymptom: _currentSymptom,
+                        onChanged: (val) {
+                          setState(() => _currentSymptom = val);
+                        },
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // 4. Premium 'เพิ่ม' Action
+                      GestureDetector(
+                        onTap: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0]) 
+                            ? _confirmSelection 
+                            : null,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7), // Reduced vertical padding
+                          decoration: BoxDecoration(
+                            gradient: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
+                              ? AppColors.goldGradient
+                              : const LinearGradient(
+                                  colors: [Color(0xFFE0E0E0), Color(0xFFF0F0F0)],
+                                ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.accent.withValues(alpha: 0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ]
+                              : null,
+                          ),
+                          child: Text(
+                            'เพิ่ม',
+                            style: TextStyle(
+                              color: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0]) 
+                                  ? Colors.white 
+                                  : Colors.grey.shade500,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -1338,7 +1288,7 @@ class _PulsingDot extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: pulseAnim,
-      builder: (_, __) => Stack(
+      builder: (context, child) => Stack(
         alignment: Alignment.center,
         children: [
           Container(
@@ -1434,23 +1384,41 @@ class _HumanSilhouettePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
     final paint = Paint()
-      ..color = color
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          color.withValues(alpha: 0.05),
+          color.withValues(alpha: 0.2),
+          color.withValues(alpha: 0.05),
+        ],
+      ).createShader(rect)
       ..style = PaintingStyle.fill;
+
+    final strokePaint = Paint()
+      ..color = color.withValues(alpha: 0.15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
 
     final cx = size.width / 2;
     final h = size.height;
 
+    void drawShape(Path path) {
+      canvas.drawPath(path, paint);
+      canvas.drawPath(path, strokePaint);
+    }
+
     // === HEAD ===
     final headRadius = size.width * 0.095;
-    canvas.drawOval(
-      Rect.fromCenter(
+    final headPath = Path()
+      ..addOval(Rect.fromCenter(
         center: Offset(cx, h * 0.07),
         width: headRadius * 2,
         height: headRadius * 2.2,
-      ),
-      paint,
-    );
+      ));
+    drawShape(headPath);
 
     // === NECK ===
     final neckPath = Path()
@@ -1459,7 +1427,7 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx + size.width * 0.05, h * 0.19)
       ..lineTo(cx - size.width * 0.05, h * 0.19)
       ..close();
-    canvas.drawPath(neckPath, paint);
+    drawShape(neckPath);
 
     // === TORSO (wider for male) ===
     final shoulderW = _isMale ? 0.22 : 0.18;
@@ -1475,26 +1443,22 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx - size.width * hipW, h * 0.55)
       ..lineTo(cx - size.width * waistW, h * 0.47)
       ..close();
-    canvas.drawPath(torsoPath, paint);
+    drawShape(torsoPath);
 
     // === ARMS ===
     final armW = _isMale ? 0.06 : 0.05;
     // Left arm
-    _drawArm(canvas, paint, size, cx, h,
+    _drawArm(canvas, paint, strokePaint, size, cx, h,
         startX: cx - size.width * shoulderW,
         isLeft: true,
         armW: armW);
     // Right arm
-    _drawArm(canvas, paint, size, cx, h,
+    _drawArm(canvas, paint, strokePaint, size, cx, h,
         startX: cx + size.width * shoulderW,
         isLeft: false,
         armW: armW);
 
     // === LEGS ===
-    final Paint strokePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
     // Left leg
     final leftLegPath = Path()
       ..moveTo(cx - size.width * hipW, h * 0.55)
@@ -1505,7 +1469,7 @@ class _HumanSilhouettePainter extends CustomPainter {
           cx - size.width * 0.06, h * 0.78)
       ..lineTo(cx - size.width * 0.15, h * 0.57)
       ..close();
-    canvas.drawPath(leftLegPath, strokePaint);
+    drawShape(leftLegPath);
 
     // Right leg
     final rightLegPath = Path()
@@ -1517,7 +1481,7 @@ class _HumanSilhouettePainter extends CustomPainter {
           cx + size.width * 0.06, h * 0.78)
       ..lineTo(cx + size.width * 0.15, h * 0.57)
       ..close();
-    canvas.drawPath(rightLegPath, strokePaint);
+    drawShape(rightLegPath);
 
     // Left shin + foot
     final leftShinPath = Path()
@@ -1526,7 +1490,7 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx - size.width * 0.05, h * 0.96)
       ..lineTo(cx - size.width * 0.07, h * 0.96)
       ..close();
-    canvas.drawPath(leftShinPath, strokePaint);
+    drawShape(leftShinPath);
 
     // Right shin + foot
     final rightShinPath = Path()
@@ -1535,23 +1499,22 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx + size.width * 0.07, h * 0.96)
       ..lineTo(cx + size.width * 0.05, h * 0.96)
       ..close();
-    canvas.drawPath(rightShinPath, strokePaint);
+    drawShape(rightShinPath);
 
     // Feet
     for (final foot in [-1, 1]) {
       final fCx = cx + foot * size.width * 0.06;
-      canvas.drawOval(
-        Rect.fromCenter(
+      final footPath = Path()
+        ..addOval(Rect.fromCenter(
           center: Offset(fCx, h * 0.97),
           width: size.width * 0.075,
           height: size.height * 0.02,
-        ),
-        paint,
-      );
+        ));
+      drawShape(footPath);
     }
   }
 
-  void _drawArm(Canvas canvas, Paint paint, Size size, double cx, double h,
+  void _drawArm(Canvas canvas, Paint paint, Paint strokePaint, Size size, double cx, double h,
       {required double startX, required bool isLeft, required double armW}) {
     final direction = isLeft ? -1 : 1;
     final elbowX = startX + direction * size.width * 0.06;
@@ -1566,7 +1529,9 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(elbowX, h * 0.47)
       ..lineTo(startX, h * 0.22)
       ..close();
+      
     canvas.drawPath(path, paint);
+    canvas.drawPath(path, strokePaint);
   }
 
   @override

@@ -4,52 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../admin/models/profession.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
-
-// ─── Package Model ────────────────────────────────────────────────────────────
-
-class ConsultationPackage {
-  final String id;
-  String name;
-  String shortName;
-  String description;
-  double price;
-  bool includesAI;
-  bool isActive;
-  List<ExpertGroup> expertGroups;
-  int displayOrder;
-  DateTime createdAt;
-  DateTime updatedAt;
-
-  ConsultationPackage({
-    required this.id,
-    required this.name,
-    required this.shortName,
-    this.description = '',
-    required this.price,
-    this.includesAI = false,
-    this.isActive = true,
-    this.expertGroups = const [],
-    this.displayOrder = 0,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-}
-
-class ExpertGroup {
-  String id;
-  String name;
-  String role; // e.g. 'doctor', 'professor', 'pharmacist'
-  int maxExperts; // -1 = unlimited
-  bool isRequired;
-
-  ExpertGroup({
-    required this.id,
-    required this.name,
-    required this.role,
-    this.maxExperts = -1,
-    this.isRequired = false,
-  });
-}
+import '../../../consultation/data/models/consultation_package.dart';
 
 // ─── Package Admin Page ───────────────────────────────────────────────────────
 
@@ -64,7 +19,6 @@ class _PackageAdminPageState extends State<PackageAdminPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late List<ConsultationPackage> _packages;
-  bool _isLoading = false;
   List<Profession> _providerProfessions = [];
 
   @override
@@ -73,8 +27,35 @@ class _PackageAdminPageState extends State<PackageAdminPage>
     _animController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 400));
     _animController.forward();
-    _packages = _buildDefaultPackages();
+    _packages = _buildDefaultPackages(); // show mock immediately
+    _loadPackages(); // then load real data
     _loadProfessions();
+  }
+
+  /// โหลดแพ็คเกจจาก Supabase จริง
+  Future<void> _loadPackages() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('consultation_packages')
+          .select()
+          .order('display_order');
+      
+      final List<ConsultationPackage> loaded = (response as List)
+          .map((e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+          
+      if (mounted) {
+        setState(() {
+          _packages = loaded; // ใช้ข้อมูลจาก DB (อาจจะเป็นลิสต์ว่างถ้าลบออกหมดแล้ว)
+        });
+      }
+    } catch (e) {
+      debugPrint('Database error (Using mock fallback): $e');
+      // หากเกิด error เช่น ตารางไม่มีอยู่จริง หรือยังไม่ได้รัน SQL ให้ใช้ Mock
+      if (mounted && _packages.isEmpty) {
+        setState(() => _packages = _buildDefaultPackages());
+      }
+    }
   }
 
   Future<void> _loadProfessions() async {
@@ -188,8 +169,10 @@ class _PackageAdminPageState extends State<PackageAdminPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
-      body: CustomScrollView(
-        slivers: [
+      body: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: CustomScrollView(
+          slivers: [
           // ── App Bar ──────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 140,
@@ -318,8 +301,9 @@ class _PackageAdminPageState extends State<PackageAdminPage>
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildStatChip({required String label, required String value, required IconData icon, required Color color}) {
     return Expanded(
@@ -610,33 +594,99 @@ class _PackageAdminPageState extends State<PackageAdminPage>
   void _confirmDelete(ConsultationPackage pkg) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('ยืนยันการลบ'),
-          ],
-        ),
-        content: Text('ต้องการลบแพ็คเกจ\n"${pkg.name}" หรือไม่?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => _packages.removeWhere((p) => p.id == pkg.id));
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('ลบแพ็คเกจ "${pkg.shortName}" แล้ว'), backgroundColor: Colors.red),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('ลบ'),
-          ),
-        ],
-      ),
-    );
-  }
+      barrierDismissible: false,
+      builder: (ctx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('ยืนยันการลบ'),
+              ],
+            ),
+            content: Text('ต้องการลบแพ็คเกจ\n"${pkg.name}" หรือไม่?'),
+            actions: [
+              TextButton(
+                onPressed: isDeleting ? null : () => Navigator.pop(ctx),
+                child: const Text('ยกเลิก'),
+              ),
+              ElevatedButton(
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDlgState(() => isDeleting = true);
+                        try {
+                          // ดำเนินการลบจากตารางจริง (Supabase) และตรวจสอบผล (ใช้ select เพื่อยืนยัน)
+                          final deletedRows = await Supabase.instance.client
+                              .from('consultation_packages')
+                              .delete()
+                              .eq('id', pkg.id)
+                              .select();
+                          
+                          if (mounted) {
+                            if (deletedRows.isNotEmpty) {
+                              // ลบสำเร็จจริงใน DB
+                              setState(() => _packages.removeWhere((p) => p.id == pkg.id));
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+                                      const SizedBox(width: 10),
+                                      Expanded(child: Text('ลบแพ็คเกจ "${pkg.shortName}" สำเร็จ')),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              );
+                            } else {
+                              // คำสั่งสำเร็จแต่ไม่มีแถวถูกลบ (อาจเพราะใช้ Mock data หรือสิทธิ์ไม่พอ)
+                              setDlgState(() => isDeleting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('ไม่พบข้อมูลในฐานข้อมูล (อาจเป็นข้อมูล Mock)'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          setDlgState(() => isDeleting = false);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('เกิดข้อผิดพลาดในการลบ: $e'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: isDeleting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('ลบ'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   void _showPackageEditor(BuildContext context, ConsultationPackage? existing) async {
     // Reload professions before showing the editor to catch any newly added ones
@@ -650,16 +700,31 @@ class _PackageAdminPageState extends State<PackageAdminPage>
       backgroundColor: Colors.transparent,
       builder: (ctx) => PackageEditorSheet(
         existing: existing,
-        professions: _providerProfessions, // Pass fresh real professions
-        onSave: (pkg) {
-          setState(() {
+        professions: _providerProfessions,
+        onSave: (pkg) async {
+          // Upsert to Supabase
+          try {
+            final data = pkg.toJson();
             if (existing == null) {
-              _packages.add(pkg);
-            } else {
-              final idx = _packages.indexWhere((p) => p.id == existing.id);
-              if (idx != -1) _packages[idx] = pkg;
+              data['created_at'] = pkg.createdAt.toIso8601String();
             }
-          });
+            await Supabase.instance.client
+                .from('consultation_packages')
+                .upsert(data);
+          } catch (e) {
+            debugPrint('Failed to upsert package to Supabase (table may not exist): $e');
+          }
+          // Update local list regardless
+          if (mounted) {
+            setState(() {
+              if (existing == null) {
+                _packages.add(pkg);
+              } else {
+                final idx = _packages.indexWhere((p) => p.id == existing.id);
+                if (idx != -1) _packages[idx] = pkg;
+              }
+            });
+          }
         },
       ),
     );
@@ -715,18 +780,19 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = false;
     final isEditing = widget.existing != null;
-    return DraggableScrollableSheet(
-      initialChildSize: 0.92,
-      minChildSize: 0.6,
-      maxChildSize: 0.97,
-      builder: (ctx, scrollCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFFF7F9FC),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.6,
+        maxChildSize: 0.97,
+        builder: (ctx, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF7F9FC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
           children: [
             // Handle
             Container(
@@ -762,11 +828,12 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
             ),
             const Divider(height: 1),
 
-            // Form
             Expanded(
-              child: ListView(
-                controller: scrollCtrl,
-                padding: const EdgeInsets.all(24),
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                child: ListView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.all(24),
                 children: [
                   // ── Basic Info ──────────────────────────────────────────
                   _sectionHeader('ข้อมูลพื้นฐาน', Icons.info_outline),
@@ -941,11 +1008,13 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   Widget _buildExpertGroupCard(int idx, ExpertGroup group) {
     // Look up profession name from loaded professions list by role (which stores profession id)
@@ -1090,18 +1159,21 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
         builder: (ctx, setDlgState) {
           final bool isNameValid = nameCtrl.text.trim().isNotEmpty;
 
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            title: Row(
-              children: [
-                Icon(editIdx == null ? Icons.group_add : Icons.edit_note, color: const Color(0xFF1a1a2e)),
-                const SizedBox(width: 12),
-                Text(editIdx == null ? 'เพิ่มกลุ่มผู้เชี่ยวชาญ' : 'แก้ไขกลุ่ม'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+          return GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            behavior: HitTestBehavior.opaque,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: Row(
+                children: [
+                  Icon(editIdx == null ? Icons.group_add : Icons.edit_note, color: const Color(0xFF1a1a2e)),
+                  const SizedBox(width: 12),
+                  Text(editIdx == null ? 'เพิ่มกลุ่มผู้เชี่ยวชาญ' : 'แก้ไขกลุ่ม'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   TextFormField(
                     controller: nameCtrl,
                     autofocus: editIdx == null,
@@ -1232,11 +1304,12 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                 child: const Text('บันทึก', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
-          );
-        },
-      ),
-    );
-  }
+          ),
+        );
+      },
+    ),
+  );
+}
 
   void _save() {
     if (_nameCtrl.text.isEmpty || _priceCtrl.text.isEmpty || _shortNameCtrl.text.isEmpty) {

@@ -75,10 +75,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   void _markMessagesAsRead(List<ChatMessage> messages) {
-    if (_currentUser == null) return;
+    final user = _currentUser;
+    if (user == null) return;
     for (var msg in messages) {
-      if (msg.senderId != _currentUser!.id && !msg.readBy.containsKey(_currentUser!.id)) {
-        _chatRepository.markMessageAsRead(msg.id, _currentUser!.id);
+      if (msg.senderId != user.id && !msg.readBy.containsKey(user.id)) {
+        _chatRepository.markMessageAsRead(msg.id, user.id);
       }
     }
   }
@@ -87,10 +88,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     
-    if (image != null && _currentUser != null) {
+    final user = _currentUser;
+    if (image != null && user != null) {
       final file = File(image.path);
       
       // Show loading indicator
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กำลังอัปโหลดรูปภาพ...')),
       );
@@ -101,7 +104,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         final newMessage = ChatMessage(
           id: const Uuid().v4(),
           roomId: widget.roomId,
-          senderId: _currentUser!.id,
+          senderId: user.id,
           content: '[รูปภาพ]',
           createdAt: DateTime.now(),
           type: 'image',
@@ -135,6 +138,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
       if (data['roomId'] == widget.roomId && data['calleeId'] == otherParticipant?.id) {
         // Navigate to LiveVdoPage as caller
+        if (!mounted) return;
         Navigator.pushNamed(context, '/live-vdo', arguments: {
           'roomId': widget.roomId,
           'isCaller': true,
@@ -165,10 +169,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       final path = await _audioRecorder.stop();
       setState(() => _isRecording = false);
 
-      if (path != null && _currentUser != null) {
+      final user = _currentUser;
+      if (path != null && user != null) {
         final file = File(path);
         
         // Upload to Supabase
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('กำลังส่งข้อความเสียง...')),
         );
@@ -179,7 +185,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           final newMessage = ChatMessage(
             id: const Uuid().v4(),
             roomId: widget.roomId,
-            senderId: _currentUser!.id,
+            senderId: user.id,
             content: '[ข้อความเสียง]',
             createdAt: DateTime.now(),
             type: 'voice',
@@ -231,7 +237,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   void _startVideoCall() {
     final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
-    if (_currentUser == null || otherParticipant == null) return;
+    final user = _currentUser;
+    if (user == null || otherParticipant == null) return;
     
     // We get profile details from AuthService directly
     final currentProfile = AuthService.instance.currentUser;
@@ -240,7 +247,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
     _webSocketService.sendCallInvite(
       widget.roomId,
-      _currentUser!.id,
+      user.id,
       fullName,
       profileImageUrl,
     );
@@ -263,7 +270,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   Future<void> _sendMessage() async {
-    if (_msgController.text.trim().isEmpty || _currentUser == null) return;
+    final user = _currentUser;
+    if (_msgController.text.trim().isEmpty || user == null) return;
 
     final content = _msgController.text.trim();
     _msgController.clear();
@@ -271,7 +279,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     final newMessage = ChatMessage(
       id: const Uuid().v4(),
       roomId: widget.roomId,
-      senderId: _currentUser!.id,
+      senderId: user.id,
       content: content,
       createdAt: DateTime.now(),
       status: MessageStatus.sent,
@@ -369,7 +377,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
                         final msg = _messages[index];
-                        final isMe = msg.senderId == _currentUser?.id;
+                        final user = _currentUser;
+                        final isMe = msg.senderId == user?.id;
                         return _MessageBubble(
                           message: msg, 
                           isMe: isMe,
@@ -382,7 +391,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 // Typing Indicator Stream
                 if (_currentUser != null)
                   StreamBuilder<bool>(
-                    stream: _chatRepository.streamAnyTyping(widget.roomId, _currentUser!.id),
+                    stream: _chatRepository.streamAnyTyping(widget.roomId, _currentUser.id),
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data != _isOtherTyping) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -438,11 +447,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                     fillColor: Colors.transparent,
                   ),
                   onChanged: (text) {
-                    if (_currentUser == null) return;
-                    _chatRepository.sendTypingStatus(widget.roomId, _currentUser!.id, true);
+                    final user = _currentUser;
+                    if (user == null) return;
+                    _chatRepository.sendTypingStatus(widget.roomId, user.id, true);
                     _typingTimer?.cancel();
                     _typingTimer = Timer(const Duration(seconds: 2), () {
-                      _chatRepository.sendTypingStatus(widget.roomId, _currentUser!.id, false);
+                      _chatRepository.sendTypingStatus(widget.roomId, user.id, false);
                     });
                   },
                   onSubmitted: (_) => _sendMessage(),
@@ -477,8 +487,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 child: IconButton(
                   onPressed: () {
                     _sendMessage();
-                    if (_currentUser != null) {
-                      _chatRepository.sendTypingStatus(widget.roomId, _currentUser!.id, false);
+                    final user = _currentUser;
+                    if (user != null) {
+                      _chatRepository.sendTypingStatus(widget.roomId, user.id, false);
                     }
                   },
                   icon: const Icon(Icons.send, color: Colors.white, size: 20),
@@ -489,6 +500,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       ),
     );
   }
+  @override
   void dispose() {
     _typingTimer?.cancel();
     _callInviteSub?.cancel();
@@ -523,20 +535,24 @@ class _MessageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isMe ? AppColors.primary : Colors.white,
+          gradient: isMe ? AppColors.primaryGradient : null,
+          color: isMe ? null : Colors.white,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isMe ? 16 : 0),
-            bottomRight: Radius.circular(isMe ? 0 : 16),
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMe ? 20 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 20),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              offset: const Offset(0, 1),
-              blurRadius: 4,
+              color: isMe 
+                ? AppColors.primary.withValues(alpha: 0.25) 
+                : Colors.black.withValues(alpha: 0.05),
+              offset: const Offset(0, 4),
+              blurRadius: 10,
             ),
           ],
+          border: isMe ? null : Border.all(color: Colors.grey.shade100, width: 1),
         ),
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
