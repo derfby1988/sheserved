@@ -199,6 +199,7 @@ class UserModel {
 
   UserModel copyWith({
     String? id,
+    String? professionId,
     UserType? userType,
     String? firstName,
     String? lastName,
@@ -216,6 +217,7 @@ class UserModel {
   }) {
     return UserModel(
       id: id ?? this.id,
+      professionId: professionId ?? this.professionId,
       userType: userType ?? this.userType,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,

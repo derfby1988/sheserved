@@ -91,6 +91,7 @@ class ConsultationRepository {
           .select('''
             id, user_id, package_id, package_name, price,
             body_area, symptoms_chart, status, created_at, updated_at,
+            provider_id,
             symptoms:consultation_symptoms(*),
             users:user_id (first_name, last_name, profile_image_url)
           ''')
@@ -98,6 +99,7 @@ class ConsultationRepository {
           .timeout(const Duration(seconds: 10));
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
+      debugPrint('ConsultationRepository.getAllRequestsWithUserInfo error: $e');
       return [];
     }
   }
@@ -115,12 +117,13 @@ class ConsultationRepository {
   Future<List<Map<String, dynamic>>> getRequestsForProfession(
       List<String> packageIds) async {
     try {
-      final String selectFields = '''
-            id, user_id, package_id, package_name, price,
-            body_area, symptoms_chart, status, created_at, updated_at,
-            provider_id,
-            users:user_id (first_name, last_name, profile_image_url)
-          ''';
+      final selectFields = '''
+      id, user_id, package_id, package_name, price,
+      body_area, symptoms_chart, status, created_at, updated_at,
+      provider_id,
+      symptoms:consultation_symptoms(*),
+      users:user_id (first_name, last_name, profile_image_url)
+    ''';
 
       // Apply in_() filter BEFORE .order() to stay on PostgrestFilterBuilder
       final response = packageIds.isNotEmpty
@@ -155,31 +158,75 @@ class ConsultationRepository {
   /// ดึง packageId ทั้งหมดที่ตรงกับ professionId
   Future<List<String>> getPackageIdsForProfession(String professionId) async {
     try {
-      // ดึง packages ทั้งหมดที่ active
+      // 1. Fetch the actual profession name/key to match legacy roles like 'doctor', 'pharmacist'
+      String professionName = '';
+      try {
+        final profResponse = await _client
+            .from('professions')
+            .select('name')
+            .eq('id', professionId)
+            .maybeSingle();
+        if (profResponse != null) {
+          professionName = profResponse['name']?.toString().toLowerCase() ?? '';
+        }
+      } catch (e) {
+        debugPrint('getPackageIdsForProfession: failed to get profession name: $e');
+      }
+
+      // 2. Fetch all active packages
       final response = await _client
           .from('consultation_packages')
-          .select('id, expert_groups')
-          .eq('is_active', true);
+          .select('id, name, expert_groups')
+          .eq('is_active', true)
+          .timeout(const Duration(seconds: 10));
 
       final List<String> matchedIds = [];
       for (final row in response) {
         final groups = row['expert_groups'];
         if (groups is List) {
-          // ตรวจว่า expert_groups มี professionId นั้นหรือเปล่า
           final hasMatch = groups.any((g) {
-            final gMap = g as Map<String, dynamic>;
-            return gMap['id'] == professionId ||
+            if (g is! Map) return false;
+            final gMap = g;
+            
+            // Match by ID (UUID)
+            final idMatch = gMap['role'] == professionId ||
+                gMap['id'] == professionId ||
                 gMap['profession_id'] == professionId;
+            
+            if (idMatch) return true;
+
+            // Match by Name/Role string (Case-insensitive)
+            // e.g. "doctor" matches user with profession named "แพทย์" or "หมอ"
+            final role = gMap['role']?.toString().toLowerCase() ?? '';
+            if (role.isEmpty) return false;
+
+            if (professionName.isNotEmpty) {
+              // Legacy role matching
+              if (role == 'doctor' && (professionName.contains('หมอ') || professionName.contains('แพทย์'))) return true;
+              if (role == 'pharmacist' && professionName.contains('เภสัช')) return true;
+              if (role == 'specialist' && professionName.contains('เฉพาะทาง')) return true;
+              if (role == 'professor' && professionName.contains('อาจารย์')) return true;
+              
+              // Direct name match
+              if (professionName.contains(role) || role.contains(professionName)) return true;
+            }
+            
+            return false;
           });
+          
           if (hasMatch) {
             matchedIds.add(row['id'] as String);
           }
         }
       }
-      // ถ้าไม่มี expert_groups match เลย = provider นี้รับทุก packages
-      return matchedIds.isEmpty
-          ? (response as List).map((r) => r['id'] as String).toList()
-          : matchedIds;
+      
+      // Log for debugging
+      debugPrint('ConsultationRepo: Profession ($professionId : $professionName) matched packages: $matchedIds');
+      
+      // Fallback: If no specific match, for safety in dev, return all or empty?
+      // For now, return all if empty to avoid empty dashboard during setup, 
+      // but only if profession is valid.
+      return matchedIds;
     } catch (e) {
       debugPrint('getPackageIdsForProfession error: $e');
       return [];

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/profession.dart';
 import '../../models/registration_field_config.dart';
@@ -14,34 +15,49 @@ class ProfessionRepository {
 
   /// ดึงรายการอาชีพทั้งหมด
   Future<List<Profession>> getAllProfessions({bool activeOnly = true}) async {
-    var query = _client.from('professions').select('''
-      *,
-      field_count:registration_field_configs(count),
-      member_count:users(count)
-    ''');
+    try {
+      var query = _client.from('professions').select('''
+        *,
+        field_count:registration_field_configs(count),
+        member_count:users(count)
+      ''');
 
-    if (activeOnly) {
-      query = query.eq('is_active', true);
+      if (activeOnly) {
+        query = query.eq('is_active', true);
+      }
+
+      final response = await query.order('display_order').timeout(const Duration(seconds: 10));
+
+      return (response as List).map((json) {
+        // Handle field_count
+        if (json['field_count'] is List && (json['field_count'] as List).isNotEmpty) {
+          json['field_count'] = (json['field_count'] as List).first['count'] ?? 0;
+        } else {
+          json['field_count'] = 0;
+        }
+        
+        // Handle member_count
+        if (json['member_count'] is List && (json['member_count'] as List).isNotEmpty) {
+          json['member_count'] = (json['member_count'] as List).first['count'] ?? 0;
+        } else {
+          json['member_count'] = 0;
+        }
+
+        return Profession.fromJson(json);
+      }).toList();
+    } catch (e) {
+      debugPrint('ProfessionRepository.getAllProfessions error: $e');
+      // If aggregate fails, try simple select as fallback to at least show professions
+      try {
+        final simpleResponse = await _client.from('professions')
+            .select()
+            .order('display_order');
+        return (simpleResponse as List).map((e) => Profession.fromJson(e)).toList();
+      } catch (e2) {
+        debugPrint('Fallback getAllProfessions error: $e2');
+        rethrow;
+      }
     }
-
-    final response = await query.order('display_order');
-
-    return (response as List).map((json) {
-      // Handle field_count from aggregate
-      if (json['field_count'] is List && (json['field_count'] as List).isNotEmpty) {
-        json['field_count'] = (json['field_count'] as List).first['count'] ?? 0;
-      } else {
-        json['field_count'] = 0;
-      }
-      
-      // Handle member_count from aggregate
-      if (json['member_count'] is List && (json['member_count'] as List).isNotEmpty) {
-        json['member_count'] = (json['member_count'] as List).first['count'] ?? 0;
-      } else {
-        json['member_count'] = 0;
-      }
-      return Profession.fromJson(json);
-    }).toList();
   }
 
   /// ดึงอาชีพตาม ID

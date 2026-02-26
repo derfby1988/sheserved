@@ -13,6 +13,9 @@ import '../features/chat/data/repositories/chat_repository.dart';
 import '../features/chat/data/models/chat_models.dart';
 import '../features/consultation/data/repositories/consultation_repository.dart';
 import '../features/admin/data/repositories/body_region_repository.dart';
+import '../features/admin/data/repositories/profession_repository.dart';
+import '../features/admin/data/repositories/registration_repository.dart';
+import '../features/admin/data/repositories/group_role_repository.dart';
 import 'package:hive/hive.dart';
 import 'auth_service.dart';
 
@@ -33,6 +36,9 @@ class ServiceLocator {
   ChatRepository? _chatRepository;
   ConsultationRepository? _consultationRepository;
   BodyRegionRepository? _bodyRegionRepository;
+  ProfessionRepository? _professionRepository;
+  RegistrationRepository? _registrationRepository;
+  GroupRoleRepository? _groupRoleRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -158,6 +164,9 @@ class ServiceLocator {
       
       _consultationRepository = ConsultationRepository(supabaseClient);
       _bodyRegionRepository = BodyRegionRepository(supabaseClient);
+      _professionRepository = ProfessionRepository(supabaseClient);
+      _registrationRepository = RegistrationRepository(supabaseClient);
+      _groupRoleRepository = GroupRoleRepository(supabaseClient);
     }
 
 
@@ -211,6 +220,27 @@ class ServiceLocator {
       _bodyRegionRepository = BodyRegionRepository(Supabase.instance.client);
     }
     return _bodyRegionRepository!;
+  }
+
+  ProfessionRepository get professionRepository {
+    if (_professionRepository == null) {
+      _professionRepository = ProfessionRepository(Supabase.instance.client);
+    }
+    return _professionRepository!;
+  }
+
+  RegistrationRepository get registrationRepository {
+    if (_registrationRepository == null) {
+      _registrationRepository = RegistrationRepository(Supabase.instance.client);
+    }
+    return _registrationRepository!;
+  }
+
+  GroupRoleRepository get groupRoleRepository {
+    if (_groupRoleRepository == null) {
+      _groupRoleRepository = GroupRoleRepository(Supabase.instance.client);
+    }
+    return _groupRoleRepository!;
   }
 
   /// Get Unified Repository (recommended)

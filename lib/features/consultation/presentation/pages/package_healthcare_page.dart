@@ -410,7 +410,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                     final request = ConsultationRequestModel(
                       id: '',
                       userId: '', // populated at the end
-                      packageId: null,
+                      packageId: selectedPackage['id'],
                       packageName: selectedPackage['name'],
                       price: selectedPackage['price'],
                       bodyArea: {'gender': _gender}, // pass down gender

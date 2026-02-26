@@ -77,7 +77,24 @@ class UserRepository {
     try {
       final response =
           await _client.from('users').select().eq('id', id).single();
-      return UserModel.fromJson(response);
+      var user = UserModel.fromJson(response);
+      
+      if (user.professionId == null) {
+        try {
+          final groupResponse = await _client
+              .from('user_group_roles')
+              .select('profession_id')
+              .eq('user_id', user.id)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 5));
+          if (groupResponse != null) {
+            user = user.copyWith(professionId: groupResponse['profession_id']);
+          }
+        } catch (e) {
+          debugPrint('getUserById: Optional user_group_roles check failed: $e');
+        }
+      }
+      return user;
     } catch (e) {
       return null;
     }
@@ -131,24 +148,42 @@ class UserRepository {
           .eq('is_active', true)
           .maybeSingle();
 
+      UserModel? user;
       if (response != null) {
-        return UserModel.fromJson(response);
+        user = UserModel.fromJson(response);
+      } else {
+        // 2. Try finding by phone
+        response = await _client
+            .from('users')
+            .select()
+            .eq('phone', identifier)
+            .eq('password_hash', hashedPassword)
+            .eq('is_active', true)
+            .maybeSingle();
+            
+        if (response != null) {
+          user = UserModel.fromJson(response);
+        }
       }
 
-      // 2. Try finding by phone
-      response = await _client
-          .from('users')
-          .select()
-          .eq('phone', identifier)
-          .eq('password_hash', hashedPassword)
-          .eq('is_active', true)
-          .maybeSingle();
-
-      if (response != null) {
-        return UserModel.fromJson(response);
+      if (user != null && user.professionId == null) {
+        try {
+          // Fallback: check user_group_roles table if profession_id is null in users table
+          final groupResponse = await _client
+              .from('user_group_roles')
+              .select('profession_id')
+              .eq('user_id', user.id)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 5));
+          if (groupResponse != null) {
+            user = user.copyWith(professionId: groupResponse['profession_id']);
+          }
+        } catch (e) {
+          debugPrint('login: Optional user_group_roles check failed: $e');
+        }
       }
 
-      return null;
+      return user;
     } catch (e) {
       debugPrint('UserRepository.login error: $e');
       return null;
@@ -573,24 +608,55 @@ class UserRepository {
         .subtract(const Duration(minutes: 2))
         .toIso8601String();
 
-    final response = await _client
-        .from('users')
-        .select('profession_id')
-        .eq('is_active', true)
-        .not('profession_id', 'is', null)
-        // ไม่รวม consumer (id 00...0001)
-        .neq('profession_id', '00000000-0000-0000-0000-000000000001')
-        .gte('last_seen_at', threshold)
-        // กรองเฉพาะ online หรือ null (ไม่อนุญาต busy)
-        .or('availability_status.eq.online,availability_status.is.null');
-
     final Map<String, int> counts = {};
-    for (final row in response) {
-      final profId = row['profession_id'] as String?;
-      if (profId != null) {
-        counts[profId] = (counts[profId] ?? 0) + 1;
+    final Set<String> processedUsers = {};
+
+    try {
+      // 1. Try Fetch from user_group_roles
+      final roleResponse = await _client
+          .from('user_group_roles')
+          .select('profession_id, users!inner(id, last_seen_at, availability_status, is_active)')
+          .eq('users.is_active', true)
+          .gte('users.last_seen_at', threshold)
+          .or('availability_status.eq.online,availability_status.is.null', referencedTable: 'users')
+          .timeout(const Duration(seconds: 5));
+
+      for (final row in roleResponse) {
+        final profId = row['profession_id'] as String?;
+        final userMap = row['users'] as Map?;
+        if (profId != null && userMap != null) {
+          final userId = userMap['id'] as String;
+          counts[profId] = (counts[profId] ?? 0) + 1;
+          processedUsers.add(userId);
+        }
       }
+    } catch (e) {
+      debugPrint('Optional user_group_roles count failed (skipping): $e');
     }
+
+    try {
+      // 2. Fetch from users table directly
+      final userResponse = await _client
+          .from('users')
+          .select('id, profession_id')
+          .eq('is_active', true)
+          .not('profession_id', 'is', null)
+          .neq('profession_id', '00000000-0000-0000-0000-000000000001')
+          .gte('last_seen_at', threshold)
+          .or('availability_status.eq.online,availability_status.is.null')
+          .timeout(const Duration(seconds: 5));
+
+      for (final row in userResponse) {
+        final profId = row['profession_id'] as String?;
+        final userId = row['id'] as String;
+        if (profId != null && !processedUsers.contains(userId)) {
+          counts[profId] = (counts[profId] ?? 0) + 1;
+        }
+      }
+    } catch (e) {
+      debugPrint('Primary users profession count failed: $e');
+    }
+
     return counts;
   }
 
@@ -645,30 +711,7 @@ class UserRepository {
   /// นับจำนวนผู้ให้บริการที่ online+available แยกตาม profession_id
   /// (ไม่รวม busy, offline)
   Future<Map<String, int>> getAvailableProviderCounts() async {
-    final threshold = DateTime.now()
-        .toUtc()
-        .subtract(const Duration(minutes: 2))
-        .toIso8601String();
-
-    final response = await _client
-        .from('users')
-        .select('profession_id')
-        .eq('is_active', true)
-        .not('profession_id', 'is', null)
-        .neq('profession_id', '00000000-0000-0000-0000-000000000001')
-        .gte('last_seen_at', threshold)
-        // ถ้ามี column availability_status ให้กรองเฉพาะ online
-        // ใช้ or เพื่อ backward-compat กับ row ที่ยังไม่มีค่า
-        .or('availability_status.eq.online,availability_status.is.null');
-
-    final Map<String, int> counts = {};
-    for (final row in response) {
-      final profId = row['profession_id'] as String?;
-      if (profId != null) {
-        counts[profId] = (counts[profId] ?? 0) + 1;
-      }
-    }
-    return counts;
+    return getOnlineProviderCounts(); // They use the same logic now
   }
 
   /// Stream real-time สำหรับ available (ไม่ busy) provider counts

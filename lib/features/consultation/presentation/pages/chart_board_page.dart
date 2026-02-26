@@ -7,6 +7,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../data/models/consultation_request_model.dart';
@@ -86,9 +87,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      // Try to get or create a real consultation room
-      // Using a deterministic room name based on user
-      final roomId = 'consult_${currentUserId.substring(0, 8)}';
+      // Use the patient's ID (request.userId) for the deterministic room ID
+      final patientId = widget.request.userId;
+      final roomId = 'consult_${patientId.substring(0, 8)}';
+
+      // Ensure the chat room record exists in the DB
+      await _ensureConsultationRoom(roomId, currentUserId);
 
       // Load messages (with fallback to empty if room doesn't exist yet)
       List<ChatMessage> messages = [];
@@ -126,6 +130,36 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _fadeController.forward();
         _slideController.forward();
       }
+    }
+  }
+
+  /// Ensure the consultation chat room exists in chat_rooms table
+  Future<void> _ensureConsultationRoom(String roomId, String currentUserId) async {
+    try {
+      final supabase = Supabase.instance.client;
+      // Check if room already exists
+      final existing = await supabase
+          .from('chat_rooms')
+          .select('id')
+          .eq('id', roomId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+
+      if (existing == null) {
+        // Create room with the patient's ID as participant
+        await supabase.from('chat_rooms').insert({
+          'id': roomId,
+          'participant_ids': [currentUserId],
+          'last_message': null,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).timeout(const Duration(seconds: 5));
+        debugPrint('ChartBoardPage: Created consultation room: $roomId');
+      } else {
+        debugPrint('ChartBoardPage: Room already exists: $roomId');
+      }
+    } catch (e) {
+      debugPrint('ChartBoardPage: Could not ensure room (non-blocking): $e');
+      // Non-blocking — messages can still be sent even if room record fails
     }
   }
 
@@ -705,72 +739,76 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildPaymentCard() {
-    final hasSelected = _selectedPain != null;
+    final bool isReady = _selectedPain != null;
+    final color = isReady ? const Color(0xFF4A8B2C) : Colors.white;
+    final textColor = isReady ? Colors.white : Colors.black;
+
     return Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 16),
-      child: GestureDetector(
-        onTap: _submitConsultationRequest,
+      child: InkWell(
+        onTap: isReady ? _submitConsultationRequest : null,
+        borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: color,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(hasSelected ? 0.2 : 0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: isReady 
+                    ? const Color(0xFF4A8B2C).withOpacity(0.3) 
+                    : Colors.black.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
               ),
             ],
             border: Border.all(
-              color: hasSelected
-                  ? const Color(0xFF4A8B2C).withOpacity(0.3)
-                  : Colors.transparent,
+              color: isReady 
+                  ? const Color(0xFF4A8B2C).withOpacity(0.5)
+                  : Colors.grey.shade200,
             ),
           ),
           child: Row(
             children: [
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4A8B2C), Color(0xFF2D6A1F)],
-                  ),
+                  color: isReady ? Colors.white.withOpacity(0.2) : Colors.grey.shade100,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4A8B2C).withOpacity(0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    )
-                  ],
                 ),
-                child: const Icon(Icons.check_rounded, color: Colors.white, size: 22),
+                child: Icon(
+                  isReady ? Icons.check_circle : Icons.check_circle_outline,
+                  color: isReady ? Colors.white : Colors.grey.shade300,
+                  size: 24,
+                ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       '${widget.request.price.toInt()} บาท',
-                      style: const TextStyle(
-                        fontSize: 18,
+                      style: TextStyle(
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                        color: textColor,
                       ),
                     ),
                     Text(
-                      hasSelected
-                          ? 'ชำระเงินและเริ่มปรึกษากับผู้เชี่ยวชาญ'
+                      isReady 
+                          ? 'ยืนยันและส่งคำรักษา' 
                           : 'กรุณาเลือกระดับความเจ็บปวดก่อน',
                       style: TextStyle(
-                        fontSize: 11,
-                        color:
-                            hasSelected ? Colors.grey.shade600 : Colors.orange,
-                        fontWeight: hasSelected ? FontWeight.normal : FontWeight.w500,
+                        fontSize: 13,
+                        color: isReady 
+                            ? Colors.white.withOpacity(0.9) 
+                            : Colors.orange.shade800,
+                        fontWeight: isReady ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -778,10 +816,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
               Icon(
                 Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: hasSelected
-                    ? const Color(0xFF4A8B2C)
-                    : Colors.grey.shade400,
+                color: isReady ? Colors.white.withOpacity(0.5) : Colors.grey.shade300,
+                size: 18,
               ),
             ],
           ),
@@ -995,12 +1031,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('ส่งคำปรึกษาสำเร็จ! ผู้เชี่ยวชาญจะติดต่อกลับเร็วๆ นี้'),
+            content: Text('ส่งคำปรึกษาสำเร็จ! กรุณารอผู้เชี่ยวชาญเข้าห้องแชทครับ'),
             backgroundColor: Color(0xFF4A8B2C),
           ),
         );
-        // After sending request, redirect back Home or a "Waiting Room"
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+        // STAY in the current page instead of redirecting to home
+        setState(() {
+          // You might want to update a UI flag here to show "Waiting for Expert"
+        });
       }
     } catch (e) {
       if (mounted) {

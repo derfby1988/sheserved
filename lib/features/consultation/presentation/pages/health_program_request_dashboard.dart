@@ -126,22 +126,33 @@ class _HealthProgramRequestDashboardState
     final user = _currentUser;
     if (user == null) return;
 
-    // ตรวจว่าเป็น provider หรือเปล่า (มี professionId และไม่ใช่ consumer)
-    _isProvider = user.professionId != null &&
-        user.professionId != '00000000-0000-0000-0000-000000000001';
+    try {
+      debugPrint('Dashboard: Initializing for user ${user.id}');
+      
+      // ตรวจว่าเป็น provider หรือเปล่า (มี professionId และไม่ใช่ consumer)
+      _isProvider = user.professionId != null &&
+          user.professionId != '00000000-0000-0000-0000-000000000001';
 
-    // โหลด availability status ปัจจุบัน
-    _availabilityStatus = await _userRepo.getAvailabilityStatus(user.id);
+      // โหลดข้อมูลพื้นฐานขนานกันพร้อม timeout
+      await Future.wait([
+        _userRepo.getAvailabilityStatus(user.id).then((s) => _availabilityStatus = s),
+        if (_isProvider && user.professionId != null)
+          _repo.getPackageIdsForProfession(user.professionId!).then((ids) => _myPackageIds = ids),
+      ]).timeout(const Duration(seconds: 15));
 
-    // ถ้าเป็น provider ให้หา packageIds ที่ตรงกับอาชีพ
-    if (_isProvider && user.professionId != null) {
-      _myPackageIds =
-          await _repo.getPackageIdsForProfession(user.professionId!);
+      // โหลดข้อมูลและ subscribe
+      await _loadData();
+      _subscribeToChanges();
+    } catch (e) {
+      debugPrint('Dashboard init error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          // มั่นใจว่าจะมีการลองโหลดข้อมูลเบื้องต้น
+        });
+        _loadData();
+      }
     }
-
-    // โหลดข้อมูลและ subscribe
-    await _loadData();
-    _subscribeToChanges();
   }
 
   void _subscribeToChanges() {
@@ -164,9 +175,16 @@ class _HealthProgramRequestDashboardState
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final raw = (_isProvider && _myPackageIds.isNotEmpty)
+      var raw = (_isProvider && _myPackageIds.isNotEmpty)
           ? await _repo.getRequestsForProfession(_myPackageIds)
           : await _repo.getAllRequestsWithUserInfo();
+          
+      // Fallback: หากกรองแล้วไม่เจออะไรเลย ให้ลองโหลดทั้งหมดมาดู (เผื่อกรณี mapping package ตกหล่น)
+      if (raw.isEmpty && _isProvider) {
+        debugPrint('Dashboard: Filtered list empty, falling back to all requests');
+        raw = await _repo.getAllRequestsWithUserInfo();
+      }
+
       final entries = raw.map(ConsultationEntry.fromMap).toList();
       if (mounted) {
         setState(() {
@@ -1120,15 +1138,18 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   List<_LocalMsg> _messages = [];
   bool _isLoading = true;
   bool _isSending = false;
+  StreamSubscription? _messagesSub;
 
   @override
   void initState() {
     super.initState();
     _loadMessages();
+    _subscribeToMessages();
   }
 
   @override
   void dispose() {
+    _messagesSub?.cancel();
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -1137,6 +1158,9 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
     try {
+      // Ensure room exists and provider is in participants
+      await _ensureProviderInRoom();
+
       final chatMessages = await _chatRepo.getMessages(widget.entry.roomId);
       if (mounted) {
         final myId = _currentUser?.id;
@@ -1155,6 +1179,68 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _subscribeToMessages() {
+    final roomId = widget.entry.roomId;
+    _messagesSub = _chatRepo.watchMessages(roomId).listen((newMessages) {
+      if (mounted) {
+        final myId = _currentUser?.id;
+        setState(() {
+          _messages = newMessages
+              .map((m) => _LocalMsg(
+                    content: m.content,
+                    isMe: m.senderId == myId,
+                    sentAt: m.createdAt,
+                    type: m.type,
+                  ))
+              .toList();
+        });
+        _scrollToBottom();
+      }
+    });
+  }
+
+  /// Ensure chat room exists and provider is listed as a participant
+  Future<void> _ensureProviderInRoom() async {
+    final providerId = _currentUser?.id;
+    if (providerId == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      final roomId = widget.entry.roomId;
+
+      final existing = await supabase
+          .from('chat_rooms')
+          .select('id, participant_ids')
+          .eq('id', roomId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+
+      if (existing == null) {
+        // Room doesn't exist yet — create it with provider
+        await supabase.from('chat_rooms').insert({
+          'id': roomId,
+          'participant_ids': [providerId],
+          'last_message': null,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).timeout(const Duration(seconds: 5));
+        debugPrint('ExpertChat: Created room $roomId');
+      } else {
+        // Room exists — add provider to participants if not already in
+        final participants = List<String>.from(existing['participant_ids'] ?? []);
+        if (!participants.contains(providerId)) {
+          participants.add(providerId);
+          await supabase.from('chat_rooms').update({
+            'participant_ids': participants,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', roomId).timeout(const Duration(seconds: 5));
+          debugPrint('ExpertChat: Added provider $providerId to room $roomId');
+        }
+      }
+    } catch (e) {
+      debugPrint('ExpertChat: Could not ensure room (non-blocking): $e');
     }
   }
 

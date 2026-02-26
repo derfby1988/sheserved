@@ -118,12 +118,8 @@ class _GroupMembersAdminPageState extends State<GroupMembersAdminPage> {
                     final name = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
                     final profileUrl = user['profile_image_url'] as String?;
 
-                    // Get role level from nested list or default to 3 (Member)
-                    int roleLevel = 3;
-                    final roles = user['user_group_roles'] as List?;
-                    if (roles != null && roles.isNotEmpty) {
-                      roleLevel = roles.first['role_level'] as int? ?? 3;
-                    }
+                    // role_level is now a direct key in the map from getGroupMembers
+                    final roleLevel = user['role_level'] as int? ?? 3;
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),

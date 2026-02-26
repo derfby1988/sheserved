@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../services/service_locator.dart';
 import '../../models/profession.dart';
 
 /// หน้าตรวจสอบผู้สมัครลงทะเบียน
@@ -14,6 +15,7 @@ class ApplicationReviewPage extends StatefulWidget {
 class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final _repo = ServiceLocator.instance.registrationRepository;
   List<RegistrationApplication> _applications = [];
   bool _isLoading = true;
   VerificationStatus _selectedStatus = VerificationStatus.pending;
@@ -40,16 +42,21 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 
   Future<void> _loadApplications() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
-    // TODO: Load from repository
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Mock data
-    setState(() {
-      _applications = _getMockApplications();
-      _isLoading = false;
-    });
+    try {
+      final apps = await _repo.getApplications(_selectedStatus);
+      if (mounted) {
+        setState(() {
+          _applications = apps;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+      debugPrint('Error loading applications: $e');
+    }
   }
 
   List<RegistrationApplication> _getMockApplications() {
@@ -471,36 +478,28 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 
   void _approveApplication(RegistrationApplication application) async {
-    // TODO: Call repository to approve
-    setState(() {
-      final index = _applications.indexWhere((a) => a.id == application.id);
-      if (index != -1) {
-        // Update status in local list
-        _applications[index] = RegistrationApplication(
-          id: application.id,
-          oderId: application.oderId,
-          professionId: application.professionId,
-          profession: application.profession,
-          firstName: application.firstName,
-          lastName: application.lastName,
-          username: application.username,
-          phone: application.phone,
-          registrationData: application.registrationData,
-          status: VerificationStatus.approved,
-          reviewNote: 'อนุมัติแล้ว',
-          reviewedAt: DateTime.now(),
-          createdAt: application.createdAt,
-          updatedAt: DateTime.now(),
+    try {
+      await _repo.approveApplication(application);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('อนุมัติ ${application.fullName} แล้ว'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _loadApplications(); // Refresh list
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการอนุมัติ: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('อนุมัติ ${application.fullName} แล้ว'),
-        backgroundColor: AppColors.success,
-      ),
-    );
+    }
   }
 
   void _showRejectDialog(RegistrationApplication application) {
@@ -555,35 +554,28 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 
   void _rejectApplication(RegistrationApplication application, String note) async {
-    // TODO: Call repository to reject
-    setState(() {
-      final index = _applications.indexWhere((a) => a.id == application.id);
-      if (index != -1) {
-        _applications[index] = RegistrationApplication(
-          id: application.id,
-          oderId: application.oderId,
-          professionId: application.professionId,
-          profession: application.profession,
-          firstName: application.firstName,
-          lastName: application.lastName,
-          username: application.username,
-          phone: application.phone,
-          registrationData: application.registrationData,
-          status: VerificationStatus.rejected,
-          reviewNote: note,
-          reviewedAt: DateTime.now(),
-          createdAt: application.createdAt,
-          updatedAt: DateTime.now(),
+    try {
+      await _repo.rejectApplication(application, note);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ปฏิเสธ ${application.fullName} แล้ว'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        _loadApplications(); // Refresh list
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการปฏิเสธ: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('ปฏิเสธ ${application.fullName} แล้ว'),
-        backgroundColor: AppColors.error,
-      ),
-    );
+    }
   }
 }
 
