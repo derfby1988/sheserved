@@ -5,6 +5,8 @@ import '../../models/profession.dart';
 import '../../data/repositories/profession_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'group_members_admin_page.dart';
+import '../../../../shared/widgets/tlz_drawer.dart';
+import '../../../../shared/widgets/tlz_hamburger_menu.dart';
 
 /// Admin Page สำหรับจัดการอาชีพ
 class ProfessionAdminPage extends StatefulWidget {
@@ -50,7 +52,9 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      drawer: const TlzDrawer(),
       appBar: AppBar(
+        leading: const TlzHamburgerMenu(),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,
         title: const Text('จัดการอาชีพและฟิลด์ลงทะเบียน'),
@@ -175,13 +179,13 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         onTap: () => _navigateToFieldConfig(profession),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               // Icon
               Container(
-                width: 56,
-                height: 56,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: _getCategoryColor(profession.category).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -189,10 +193,10 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                 child: Icon(
                   _getIconData(profession.iconName),
                   color: _getCategoryColor(profession.category),
-                  size: 28,
+                  size: 24,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
 
               // Content
               Expanded(
@@ -241,55 +245,70 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         // Field count
-                        Icon(
-                          Icons.list_alt,
-                          size: 14,
-                          color: AppColors.textHint,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.list_alt,
+                              size: 14,
+                              color: AppColors.textHint,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${profession.fieldCount} ฟิลด์',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${profession.fieldCount} ฟิลด์',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
 
                         // Category
-                        Icon(
-                          profession.category == UserCategory.consumer
-                              ? Icons.person
-                              : Icons.business,
-                          size: 14,
-                          color: AppColors.textHint,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          profession.category.displayName,
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              profession.category == UserCategory.consumer
+                                  ? Icons.person
+                                  : Icons.business,
+                              size: 14,
+                              color: AppColors.textHint,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              profession.category.displayName,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
 
                         // Requires verification badge
-                        if (profession.requiresVerification) ...[
-                          const SizedBox(width: 16),
-                          Icon(
-                            Icons.verified_user,
-                            size: 14,
-                            color: AppColors.warning,
+                        if (profession.requiresVerification)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.verified_user,
+                                size: 14,
+                                color: AppColors.warning,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'ต้องตรวจสอบ',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.warning,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'ต้องตรวจสอบ',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.warning,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                     if (profession.description != null) ...[
@@ -307,10 +326,11 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                 ),
               ),
 
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
 
               // Actions
               Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   // Pending count badge
                   if (pendingCount > 0)
@@ -338,10 +358,9 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (!profession.isBuiltIn) ...[
-                        IconButton(
-                          icon: const Icon(Icons.people_outline), // จัดการสิทธิ 3 ระดับ
+                        _buildCompactIconButton(
+                          icon: Icons.people_outline,
                           color: Colors.blue,
-                          iconSize: 20,
                           onPressed: () {
                             Navigator.push(
                               context,
@@ -352,24 +371,26 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                           },
                           tooltip: 'จัดการสมาชิกและสิทธิกลุ่ม',
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
+                        _buildCompactIconButton(
+                          icon: Icons.edit_outlined,
                           color: AppColors.primary,
-                          iconSize: 20,
                           onPressed: () => _showEditProfessionDialog(profession),
                           tooltip: 'แก้ไข',
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
+                        _buildCompactIconButton(
+                          icon: Icons.delete_outline,
                           color: AppColors.error,
-                          iconSize: 20,
                           onPressed: () => _confirmDeleteProfession(profession),
                           tooltip: 'ลบ',
                         ),
                       ],
-                      Icon(
-                        Icons.settings_outlined, // ไปจัดการฟีลด์
-                        color: AppColors.textHint,
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Icon(
+                          Icons.settings_outlined,
+                          color: AppColors.textHint,
+                          size: 20,
+                        ),
                       ),
                     ],
                   ),
@@ -379,6 +400,23 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCompactIconButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+    String? tooltip,
+  }) {
+    return IconButton(
+      icon: Icon(icon),
+      color: color,
+      iconSize: 20,
+      padding: const EdgeInsets.all(4),
+      constraints: const BoxConstraints(),
+      onPressed: onPressed,
+      tooltip: tooltip,
     );
   }
 

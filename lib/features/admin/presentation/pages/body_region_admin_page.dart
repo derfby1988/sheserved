@@ -8,6 +8,8 @@ import '../../data/repositories/body_region_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../../shared/widgets/tlz_drawer.dart';
+import '../../../../shared/widgets/tlz_hamburger_menu.dart';
 
 class BodyRegionAdminPage extends StatefulWidget {
   const BodyRegionAdminPage({super.key});
@@ -177,7 +179,9 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      drawer: const TlzDrawer(),
       appBar: AppBar(
+        leading: const TlzHamburgerMenu(),
         title: const Text('จัดการอวัยวะ (Body Regions)'),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,

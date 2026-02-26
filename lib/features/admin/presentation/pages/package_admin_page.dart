@@ -5,6 +5,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../admin/models/profession.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
 import '../../../consultation/data/models/consultation_package.dart';
+import '../../../../shared/widgets/tlz_drawer.dart';
+import '../../../../shared/widgets/tlz_hamburger_menu.dart';
 
 // ─── Package Admin Page ───────────────────────────────────────────────────────
 
@@ -169,6 +171,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
+      drawer: const TlzDrawer(),
       body: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
         child: CustomScrollView(
@@ -232,10 +235,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
                 ),
               ),
             ),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ),
+            leading: const TlzHamburgerMenu(),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 16),
