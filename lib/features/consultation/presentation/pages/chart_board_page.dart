@@ -92,7 +92,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ? widget.request.userId 
           : currentUserId;
       final roomId = 'consult_${patientId.substring(0, 8)}';
-      debugPrint('ChartBoardPage: Entering roomId: $roomId for patientId: $patientId');
 
       // Ensure the chat room record exists in the DB
       await _ensureConsultationRoom(roomId, currentUserId);

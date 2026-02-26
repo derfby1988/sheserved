@@ -1158,7 +1158,6 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
     try {
-      debugPrint('ExpertChat: Entering roomId: ${widget.entry.roomId}');
       // Ensure room exists and provider is in participants
       await _ensureProviderInRoom();
 
