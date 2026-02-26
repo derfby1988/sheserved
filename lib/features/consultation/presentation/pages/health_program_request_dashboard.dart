@@ -1158,6 +1158,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('ExpertChat: Entering roomId: ${widget.entry.roomId}');
       // Ensure room exists and provider is in participants
       await _ensureProviderInRoom();
 
@@ -1184,7 +1185,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
 
   void _subscribeToMessages() {
     final roomId = widget.entry.roomId;
-    _messagesSub = _chatRepo.watchMessages(roomId).listen((newMessages) {
+    _messagesSub = _chatRepo.streamMessages(roomId).listen((newMessages) {
       if (mounted) {
         final myId = _currentUser?.id;
         setState(() {

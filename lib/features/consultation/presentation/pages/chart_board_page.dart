@@ -87,9 +87,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      // Use the patient's ID (request.userId) for the deterministic room ID
-      final patientId = widget.request.userId;
+      // Use the current user's ID if the request hasn't been saved with a UID yet
+      final patientId = widget.request.userId.isNotEmpty 
+          ? widget.request.userId 
+          : currentUserId;
       final roomId = 'consult_${patientId.substring(0, 8)}';
+      debugPrint('ChartBoardPage: Entering roomId: $roomId for patientId: $patientId');
 
       // Ensure the chat room record exists in the DB
       await _ensureConsultationRoom(roomId, currentUserId);
