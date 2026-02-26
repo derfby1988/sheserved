@@ -1,23 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../features/auth/data/repositories/user_repository.dart';
 import 'home_painters.dart';
 
 /// Consultation Widget - วงกลมปรึกษาแพทย์และเภสัช
-class HomeConsultationWidget extends StatelessWidget {
+class HomeConsultationWidget extends StatefulWidget {
   final VoidCallback? onTap;
-  final int availableCount;
+  final int? availableCount;
+  final bool useRealtime;
 
   const HomeConsultationWidget({
     super.key,
     this.onTap,
-    this.availableCount = 20,
+    this.availableCount,
+    this.useRealtime = true,
   });
+
+  @override
+  State<HomeConsultationWidget> createState() => _HomeConsultationWidgetState();
+}
+
+class _HomeConsultationWidgetState extends State<HomeConsultationWidget> {
+  int _count = 0;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.availableCount != null) {
+      _count = widget.availableCount!;
+      _isLoading = false;
+    } else if (widget.useRealtime) {
+      _loadCount();
+    }
+  }
+
+  Future<void> _loadCount() async {
+    try {
+      final repo = UserRepository(Supabase.instance.client);
+      final count = await repo.getTotalOnlineProviderCount();
+      if (mounted) {
+        setState(() {
+          _count = count;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Stack(
@@ -34,7 +72,7 @@ class HomeConsultationWidget extends StatelessWidget {
                   Container(
                     width: 280,
                     height: 280,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: AppColors.primary,
                       shape: BoxShape.circle,
                     ),
@@ -55,7 +93,7 @@ class HomeConsultationWidget extends StatelessWidget {
                     child: Container(
                       width: 16,
                       height: 16,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
@@ -67,7 +105,7 @@ class HomeConsultationWidget extends StatelessWidget {
                     child: Container(
                       width: 16,
                       height: 16,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
@@ -159,26 +197,18 @@ class HomeConsultationWidget extends StatelessWidget {
                       const SizedBox(height: 8),
                       
                       // Count
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$availableCount ราย',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                      widget.useRealtime && widget.availableCount == null
+                        ? StreamBuilder<Map<String, int>>(
+                            stream: UserRepository(Supabase.instance.client).watchOnlineProviderCounts(),
+                            builder: (context, snapshot) {
+                              final onlineCount = snapshot.hasData 
+                                ? snapshot.data!.values.fold<int>(0, (a, b) => a + b)
+                                : _count;
+                                
+                              return _buildOnlineCount(onlineCount);
+                            }
+                          )
+                        : _buildOnlineCount(_count),
                     ],
                   ),
                 ],
@@ -187,6 +217,37 @@ class HomeConsultationWidget extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildOnlineCount(int onlineCount) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: onlineCount > 0 ? AppColors.success : AppColors.textHint,
+            shape: BoxShape.circle,
+            boxShadow: onlineCount > 0 ? [
+              BoxShadow(
+                color: AppColors.success.withOpacity(0.4),
+                blurRadius: 4,
+                spreadRadius: 1,
+              )
+            ] : null,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '$onlineCount ราย',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+            fontWeight: onlineCount > 0 ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ],
     );
   }
 }

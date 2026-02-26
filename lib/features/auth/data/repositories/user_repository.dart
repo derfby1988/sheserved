@@ -548,4 +548,62 @@ class UserRepository {
     }
     return result;
   }
+
+  // =====================================================
+  // PRESENCE / ONLINE STATUS
+  // =====================================================
+
+  /// อัปเดต last_seen_at ของผู้ใช้ปัจจุบัน (เรียกจาก heartbeat)
+  Future<void> updateLastSeen(String userId) async {
+    try {
+      await _client
+          .from('users')
+          .update({'last_seen_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', userId);
+    } catch (e) {
+      debugPrint('updateLastSeen error: \$e');
+    }
+  }
+
+  /// นับจำนวนผู้ให้บริการ online แยกตาม profession_id
+  /// Online = last_seen_at ภายใน 2 นาทีที่ผ่านมา
+  Future<Map<String, int>> getOnlineProviderCounts() async {
+    final threshold = DateTime.now()
+        .toUtc()
+        .subtract(const Duration(minutes: 2))
+        .toIso8601String();
+
+    final response = await _client
+        .from('users')
+        .select('profession_id')
+        .eq('is_active', true)
+        .not('profession_id', 'is', null)
+        // ไม่รวม consumer (id 00...0001)
+        .neq('profession_id', '00000000-0000-0000-0000-000000000001')
+        .gte('last_seen_at', threshold);
+
+    final Map<String, int> counts = {};
+    for (final row in response) {
+      final profId = row['profession_id'] as String?;
+      if (profId != null) {
+        counts[profId] = (counts[profId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// Stream สำหรับ real-time อัปเดต online counts
+  /// subscribe ต่อตาราง users แล้วคำนวณใหม่ทุกครั้งที่มีการเปลี่ยนแปลง
+  Stream<Map<String, int>> watchOnlineProviderCounts() {
+    return _client
+        .from('users')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) => getOnlineProviderCounts());
+  }
+
+  /// นับจำนวนผู้ให้บริการ online ทั้งหมด
+  Future<int> getTotalOnlineProviderCount() async {
+    final counts = await getOnlineProviderCounts();
+    return counts.values.fold<int>(0, (int a, int b) => a + b);
+  }
 }

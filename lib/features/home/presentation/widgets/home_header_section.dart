@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/online_providers_badge.dart';
 
 /// Header Section Widget สำหรับหน้า Home
 /// แสดงข้อมูลสถานะสุขภาพ, โปรไฟล์, และข้อมูลทานยา
@@ -89,8 +90,14 @@ class HomeHeaderSection extends StatelessWidget {
                 textAlign: TextAlign.right,
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textOnPrimary,
-                  height: 1.4,
                 ),
+              ),
+              const SizedBox(height: 8),
+              // Real-time Online Badge
+              const OnlineProvidersBadge(
+                compact: true,
+                textColor: AppColors.textOnPrimary,
+                color: Colors.white, // จุดเป็นสีขาวเพื่อให้เด่นบนพื้นเขียว
               ),
               const SizedBox(height: 8),
               Container(

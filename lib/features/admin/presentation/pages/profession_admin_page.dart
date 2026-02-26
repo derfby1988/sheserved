@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'group_members_admin_page.dart';
 import '../../../../shared/widgets/tlz_drawer.dart';
 import '../../../../shared/widgets/tlz_hamburger_menu.dart';
+import '../../../../shared/widgets/online_providers_badge.dart';
 
 /// Admin Page สำหรับจัดการอาชีพ
 class ProfessionAdminPage extends StatefulWidget {
@@ -124,6 +125,10 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // === Online Providers Panel (Real-time) ===
+          AllGroupsOnlinePanel(professions: _professions, isAdminView: true),
+          const SizedBox(height: 20),
+
           // Built-in professions section
           if (builtInProfessions.isNotEmpty) ...[
             _buildSectionHeader('อาชีพหลัก (Built-in)', Icons.lock_outline),

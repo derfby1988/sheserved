@@ -102,8 +102,15 @@ class UserModel {
   final VerificationStatus verificationStatus;
   final bool isActive;
   final DateTime? lastLoginAt;
+  final DateTime? lastSeenAt; // Real-time presence tracking
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา
+  bool get isOnline {
+    if (lastSeenAt == null) return false;
+    return DateTime.now().difference(lastSeenAt!).inMinutes < 2;
+  }
 
   const UserModel({
     required this.id,
@@ -120,6 +127,7 @@ class UserModel {
     this.verificationStatus = VerificationStatus.pending,
     this.isActive = true,
     this.lastLoginAt,
+    this.lastSeenAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -145,6 +153,7 @@ class UserModel {
       'verification_status': verificationStatus.value,
       'is_active': isActive,
       'last_login_at': lastLoginAt?.toIso8601String(),
+      'last_seen_at': lastSeenAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -182,6 +191,7 @@ class UserModel {
           VerificationStatusExtension.fromString(json['verification_status'] ?? 'pending'),
       isActive: json['is_active'] ?? true,
       lastLoginAt: json['last_login_at'] != null ? DateTime.parse(json['last_login_at']) : null,
+      lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
@@ -200,6 +210,7 @@ class UserModel {
     VerificationStatus? verificationStatus,
     bool? isActive,
     DateTime? lastLoginAt,
+    DateTime? lastSeenAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -216,6 +227,7 @@ class UserModel {
       verificationStatus: verificationStatus ?? this.verificationStatus,
       isActive: isActive ?? this.isActive,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
