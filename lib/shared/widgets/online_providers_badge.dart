@@ -145,9 +145,9 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
               boxShadow: _onlineCount > 0
                   ? [
                       BoxShadow(
-                        color: color.withOpacity(0.4 * _pulseAnimation.value),
-                        blurRadius: 6,
-                        spreadRadius: 1,
+                        color: color.withOpacity(0.6 * _pulseAnimation.value),
+                        blurRadius: 8,
+                        spreadRadius: 2,
                       )
                     ]
                   : null,
@@ -205,9 +205,9 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
                 boxShadow: _onlineCount > 0
                     ? [
                         BoxShadow(
-                          color: color.withOpacity(0.5 * _pulseAnimation.value),
-                          blurRadius: 8,
-                          spreadRadius: 2,
+                          color: color.withOpacity(0.6 * _pulseAnimation.value),
+                          blurRadius: 10,
+                          spreadRadius: 3,
                         )
                       ]
                     : null,
@@ -575,6 +575,7 @@ class _ProfessionOnlineRow extends StatelessWidget {
 
   IconData _iconFor(String? name) {
     switch (name) {
+      case 'person': return Icons.person;
       case 'store': return Icons.store;
       case 'local_hospital': return Icons.local_hospital;
       case 'medical_services': return Icons.medical_services;

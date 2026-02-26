@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../features/auth/data/repositories/user_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../chat/data/models/chat_models.dart';
 import '../../data/repositories/consultation_repository.dart';
 
@@ -11,22 +16,26 @@ class ConsultationEntry {
   final String patientName;
   final String? patientAvatar;
   final String packageName;
+  final String? packageId;
   final double price;
   final String bodyArea;
   final String status;
   final DateTime requestedAt;
   final String roomId;
+  final String? providerId; // ผู้ให้บริการที่รับงานแล้ว
 
   ConsultationEntry({
     required this.id,
     required this.patientName,
     this.patientAvatar,
     required this.packageName,
+    this.packageId,
     required this.price,
     required this.bodyArea,
     required this.status,
     required this.requestedAt,
     required this.roomId,
+    this.providerId,
   });
 
   factory ConsultationEntry.fromMap(Map<String, dynamic> map) {
@@ -43,8 +52,7 @@ class ConsultationEntry {
         (bodyAreaMap.keys.isNotEmpty ? bodyAreaMap.keys.join(', ') : 'ไม่ระบุ');
 
     final userId = map['user_id'] as String? ?? 'unknown';
-    final shortId =
-        userId.length >= 8 ? userId.substring(0, 8) : userId;
+    final shortId = userId.length >= 8 ? userId.substring(0, 8) : userId;
     final roomId = 'consult_$shortId';
 
     return ConsultationEntry(
@@ -52,13 +60,17 @@ class ConsultationEntry {
       patientName: patientName,
       patientAvatar: user['profile_image_url'] as String?,
       packageName: map['package_name'] as String? ?? 'ไม่ระบุแพ็คเกจ',
+      packageId: map['package_id'] as String?,
       price: (map['price'] as num?)?.toDouble() ?? 0,
       bodyArea: bodyArea,
       status: map['status'] as String? ?? 'pending',
       requestedAt: DateTime.parse(map['created_at'] as String),
       roomId: roomId,
+      providerId: map['provider_id'] as String?,
     );
   }
+
+  bool get isAssigned => providerId != null && providerId!.isNotEmpty;
 }
 
 // ─── Dashboard Page ────────────────────────────────────────────────────────────
@@ -75,12 +87,21 @@ class _HealthProgramRequestDashboardState
     with SingleTickerProviderStateMixin {
   ConsultationRepository get _repo =>
       ServiceLocator.instance.consultationRepository;
+  UserRepository get _userRepo =>
+      UserRepository(Supabase.instance.client);
+
+  final _currentUser = AuthService.instance.currentUser;
 
   List<ConsultationEntry> _all = [];
   List<ConsultationEntry> _filtered = [];
   bool _isLoading = true;
   String _searchQuery = '';
   String _filterStatus = 'all';
+  List<String> _myPackageIds = []; // package IDs ที่ตรงกับอาชีพ provider
+  bool _isProvider = false;
+  String _availabilityStatus = 'online'; // สถานะตัวเอง
+
+  StreamSubscription? _subscription;
 
   static const _tabs = [
     {'value': 'all', 'label': 'ทั้งหมด'},
@@ -92,13 +113,60 @@ class _HealthProgramRequestDashboardState
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _init();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    final user = _currentUser;
+    if (user == null) return;
+
+    // ตรวจว่าเป็น provider หรือเปล่า (มี professionId และไม่ใช่ consumer)
+    _isProvider = user.professionId != null &&
+        user.professionId != '00000000-0000-0000-0000-000000000001';
+
+    // โหลด availability status ปัจจุบัน
+    _availabilityStatus = await _userRepo.getAvailabilityStatus(user.id);
+
+    // ถ้าเป็น provider ให้หา packageIds ที่ตรงกับอาชีพ
+    if (_isProvider && user.professionId != null) {
+      _myPackageIds =
+          await _repo.getPackageIdsForProfession(user.professionId!);
+    }
+
+    // โหลดข้อมูลและ subscribe
+    await _loadData();
+    _subscribeToChanges();
+  }
+
+  void _subscribeToChanges() {
+    final stream = (_isProvider && _myPackageIds.isNotEmpty)
+        ? _repo.watchRequestsForProfession(_myPackageIds)
+        : _repo.watchAllRequestsWithUserInfo();
+
+    _subscription = stream.listen((raw) {
+      final entries = raw.map(ConsultationEntry.fromMap).toList();
+      if (mounted) {
+        setState(() {
+          _all = entries;
+          _applyFilter();
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final raw = await _repo.getAllRequestsWithUserInfo();
+      final raw = (_isProvider && _myPackageIds.isNotEmpty)
+          ? await _repo.getRequestsForProfession(_myPackageIds)
+          : await _repo.getAllRequestsWithUserInfo();
       final entries = raw.map(ConsultationEntry.fromMap).toList();
       if (mounted) {
         setState(() {
@@ -131,10 +199,127 @@ class _HealthProgramRequestDashboardState
   int get _inProgress => _all.where((e) => e.status == 'in_progress').length;
   int get _completed => _all.where((e) => e.status == 'completed').length;
 
+  // ─── Provider รับงาน ────────────────────────────────────────────────────────
+  Future<void> _joinRequest(ConsultationEntry entry) async {
+    final user = _currentUser;
+    if (user == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('รับงานนี้?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ผู้ป่วย: ${entry.patientName}'),
+            const SizedBox(height: 4),
+            Text('แพ็คเกจ: ${entry.packageName}'),
+            const SizedBox(height: 4),
+            Text('ราคา: ${entry.price.toInt()} บาท'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.warning, size: 16),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'สถานะของคุณจะเปลี่ยนเป็น "ไม่ว่าง" หลังจากรับงาน',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('ยกเลิก',
+                style: TextStyle(color: Colors.grey.shade600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('รับงาน'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // 1. Assign provider ใน consultation_requests
+      await _repo.assignProvider(
+        requestId: entry.id,
+        providerId: user.id,
+      );
+
+      // 2. เปลี่ยนสถานะตัวเองเป็น busy
+      await _userRepo.setAvailabilityStatus(user.id, 'busy');
+      if (mounted) setState(() => _availabilityStatus = 'busy');
+
+      // 3. นำทางเข้าห้องแชท
+      if (mounted) {
+        _openChat(entry);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ─── Provider เปลี่ยนสถานะตัวเอง ────────────────────────────────────────────
+  Future<void> _toggleAvailability() async {
+    final user = _currentUser;
+    if (user == null) return;
+
+    final newStatus = _availabilityStatus == 'busy' ? 'online' : 'busy';
+    await _userRepo.setAvailabilityStatus(user.id, newStatus);
+    if (mounted) setState(() => _availabilityStatus = newStatus);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newStatus == 'online'
+              ? '✅ เปลี่ยนเป็นพร้อมรับงานแล้ว'
+              : '🔴 เปลี่ยนเป็นไม่ว่างแล้ว'),
+          backgroundColor:
+              newStatus == 'online' ? AppColors.success : AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F4F0),
+      backgroundColor: AppColors.background,
       body: NestedScrollView(
         headerSliverBuilder: (ctx, _) => [_buildAppBar()],
         body: _isLoading ? _buildLoading() : _buildBody(),
@@ -145,16 +330,25 @@ class _HealthProgramRequestDashboardState
   // ─── Sliver App Bar ────
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
-      expandedHeight: 240,
+      expandedHeight: _isProvider ? 270 : 240,
       pinned: true,
       stretch: true,
-      backgroundColor: const Color(0xFF2D6A1F),
+      backgroundColor: AppColors.primary,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_new_rounded,
             color: Colors.white, size: 20),
         onPressed: () => Navigator.pop(context),
       ),
       actions: [
+        // ปุ่มเปลี่ยนสถานะ (เฉพาะ provider)
+        if (_isProvider)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: _AvailabilityToggleButton(
+              status: _availabilityStatus,
+              onToggle: _toggleAvailability,
+            ),
+          ),
         IconButton(
           icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           onPressed: _loadData,
@@ -162,33 +356,56 @@ class _HealthProgramRequestDashboardState
       ],
       flexibleSpace: FlexibleSpaceBar(
         titlePadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        title: const Text(
-          'ร้องขอโปรแกรมรักษาสุขภาพ',
-          style: TextStyle(
-              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'ร้องขอโปรแกรมรักษาสุขภาพ',
+              style: TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            if (_isProvider)
+              Text(
+                'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
+                style: TextStyle(
+                    color: Colors.white.withOpacity(0.75), fontSize: 9),
+              ),
+          ],
         ),
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF4A8B2C), Color(0xFF2D6A1F), Color(0xFF1A4D10)],
+              colors: [AppColors.primary, Color(0xFF5A9B08), Color(0xFF437A05)],
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 85, 16, 55),
-            child: Row(
+            padding: EdgeInsets.fromLTRB(
+                16, _isProvider ? 95 : 85, 16, _isProvider ? 60 : 55),
+            child: Column(
               children: [
-                _statChip('ทั้งหมด', _total, Icons.list_alt, Colors.white),
-                const SizedBox(width: 8),
-                _statChip('รอดำเนินการ', _pending,
-                    Icons.pending_outlined, Colors.orangeAccent),
-                const SizedBox(width: 8),
-                _statChip('กำลังดำเนินการ', _inProgress,
-                    Icons.forum_outlined, Colors.lightBlueAccent),
-                const SizedBox(width: 8),
-                _statChip('เสร็จสิ้น', _completed,
-                    Icons.check_circle_outline, Colors.greenAccent),
+                // Stat chips
+                Row(
+                  children: [
+                    _statChip('ทั้งหมด', _total, Icons.list_alt, Colors.white),
+                    const SizedBox(width: 8),
+                    _statChip('รอดำเนินการ', _pending,
+                        Icons.pending_outlined, AppColors.warning),
+                    const SizedBox(width: 8),
+                    _statChip('กำลังดำเนินการ', _inProgress,
+                        Icons.forum_outlined, AppColors.info),
+                    const SizedBox(width: 8),
+                    _statChip('เสร็จสิ้น', _completed,
+                        Icons.check_circle_outline, AppColors.success),
+                  ],
+                ),
+                // Provider availability banner
+                if (_isProvider) ...[
+                  const SizedBox(height: 10),
+                  _AvailabilityBanner(status: _availabilityStatus),
+                ],
               ],
             ),
           ),
@@ -202,9 +419,9 @@ class _HealthProgramRequestDashboardState
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(0.25)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -238,7 +455,7 @@ class _HealthProgramRequestDashboardState
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Color(0xFF4A8B2C)),
+            CircularProgressIndicator(color: AppColors.primary),
             SizedBox(height: 16),
             Text('กำลังโหลดรายการ...', style: TextStyle(color: Colors.grey)),
           ],
@@ -254,7 +471,7 @@ class _HealthProgramRequestDashboardState
               ? _buildEmpty()
               : RefreshIndicator(
                   onRefresh: _loadData,
-                  color: const Color(0xFF4A8B2C),
+                  color: AppColors.primary,
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: _filtered.length,
@@ -268,7 +485,7 @@ class _HealthProgramRequestDashboardState
 
   Widget _buildSearchFilter() {
     return Container(
-      color: const Color(0xFFF0F4F0),
+      color: AppColors.background,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
         children: [
@@ -293,10 +510,9 @@ class _HealthProgramRequestDashboardState
               style: const TextStyle(fontSize: 14, color: Colors.black87),
               decoration: InputDecoration(
                 hintText: 'ค้นหาผู้ป่วย แพ็คเกจ บริเวณอาการ...',
-                hintStyle:
-                    TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
                 prefixIcon: const Icon(Icons.search,
-                    color: Color(0xFF4A8B2C), size: 20),
+                    color: AppColors.primary, size: 20),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -323,20 +539,17 @@ class _HealthProgramRequestDashboardState
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
-                      color: active
-                          ? const Color(0xFF4A8B2C)
-                          : Colors.white,
+                      color: active ? AppColors.primary : Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: active
-                            ? const Color(0xFF4A8B2C)
+                            ? AppColors.primary
                             : Colors.grey.shade300,
                       ),
                       boxShadow: active
                           ? [
                               BoxShadow(
-                                  color:
-                                      const Color(0xFF4A8B2C).withOpacity(0.3),
+                                  color: AppColors.primary.withOpacity(0.3),
                                   blurRadius: 6,
                                   offset: const Offset(0, 2))
                             ]
@@ -362,23 +575,33 @@ class _HealthProgramRequestDashboardState
   }
 
   Widget _buildCard(ConsultationEntry e, int index) {
+    final myUserId = _currentUser?.id;
+    final isMyJob = e.providerId == myUserId;
+    final isBusy = e.isAssigned && !isMyJob; // งานถูก provider อื่นรับแล้ว
+
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 300 + index * 60),
       curve: Curves.easeOut,
       builder: (ctx, v, child) => Opacity(
           opacity: v,
-          child:
-              Transform.translate(offset: Offset(0, 20 * (1 - v)), child: child)),
+          child: Transform.translate(
+              offset: Offset(0, 20 * (1 - v)), child: child)),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
+          border: isMyJob
+              ? Border.all(color: AppColors.primary.withOpacity(0.5), width: 1.5)
+              : null,
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.07),
+                color: isMyJob
+                    ? AppColors.primary.withOpacity(0.12)
+                    : Colors.black.withOpacity(0.07),
                 blurRadius: 12,
+                spreadRadius: isMyJob ? 2 : 0,
                 offset: const Offset(0, 4))
           ],
         ),
@@ -399,7 +622,7 @@ class _HealthProgramRequestDashboardState
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
-                                color: Color(0xFF1A1A1A))),
+                                color: AppColors.textPrimary)),
                         const SizedBox(height: 2),
                         Text(
                           DateFormat('d MMM yyyy  HH:mm').format(e.requestedAt),
@@ -409,7 +632,28 @@ class _HealthProgramRequestDashboardState
                       ],
                     ),
                   ),
-                  _statusBadge(e.status),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _statusBadge(e.status),
+                      if (isMyJob) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('งานของคุณ',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -425,13 +669,13 @@ class _HealthProgramRequestDashboardState
               child: Column(
                 children: [
                   _infoRow(Icons.spa_outlined, 'แพ็คเกจ',
-                      e.packageName, const Color(0xFF4A8B2C)),
+                      e.packageName, AppColors.primary),
                   const SizedBox(height: 8),
                   _infoRow(Icons.location_on_outlined, 'บริเวณที่พบอาการ',
-                      e.bodyArea, Colors.orange),
+                      e.bodyArea, AppColors.warning),
                   const SizedBox(height: 8),
                   _infoRow(Icons.payments_outlined, 'ราคา',
-                      '${e.price.toInt()} บาท', Colors.blue),
+                      '${e.price.toInt()} บาท', AppColors.info),
                 ],
               ),
             ),
@@ -439,33 +683,110 @@ class _HealthProgramRequestDashboardState
             // Action buttons
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _actionBtn(
-                      icon: Icons.edit_note_rounded,
-                      label: 'อัปเดตสถานะ',
-                      textColor: Colors.grey.shade700,
-                      bgColor: Colors.grey.shade100,
-                      onTap: () => _showStatusSheet(e),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: _actionBtn(
-                      icon: Icons.chat_rounded,
-                      label: 'เข้าห้องแชทผู้ป่วย',
-                      textColor: Colors.white,
-                      bgColor: const Color(0xFF4A8B2C),
-                      onTap: () => _openChat(e),
-                    ),
-                  ),
-                ],
-              ),
+              child: _buildActionRow(e, isMyJob: isMyJob, isBusy: isBusy),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionRow(ConsultationEntry e,
+      {required bool isMyJob, required bool isBusy}) {
+    // --- admin / all-view mode ---
+    if (!_isProvider) {
+      return Row(
+        children: [
+          Expanded(
+            child: _actionBtn(
+              icon: Icons.edit_note_rounded,
+              label: 'อัปเดตสถานะ',
+              textColor: Colors.grey.shade700,
+              bgColor: Colors.grey.shade100,
+              onTap: () => _showStatusSheet(e),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: _actionBtn(
+              icon: Icons.chat_rounded,
+              label: 'เข้าห้องแชทผู้ป่วย',
+              textColor: Colors.white,
+              bgColor: AppColors.primary,
+              onTap: () => _openChat(e),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // --- provider mode ---
+    if (isMyJob) {
+      // งานของตัวเอง → เข้าแชทได้เลย
+      return _actionBtn(
+        icon: Icons.chat_rounded,
+        label: 'เข้าห้องแชทผู้ป่วย',
+        textColor: Colors.white,
+        bgColor: AppColors.primary,
+        onTap: () => _openChat(e),
+      );
+    }
+
+    if (e.status == 'pending' && !isBusy) {
+      // ยังไม่มีใครรับ + ตัวเองว่างอยู่
+      final canJoin = _availabilityStatus != 'busy';
+      return _actionBtn(
+        icon: canJoin ? Icons.volunteer_activism_rounded : Icons.do_not_disturb_rounded,
+        label: canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่',
+        textColor: Colors.white,
+        bgColor: canJoin ? AppColors.primary : Colors.grey.shade400,
+        onTap: canJoin ? () => _joinRequest(e) : null,
+      );
+    }
+
+    if (isBusy || e.status == 'in_progress') {
+      return Container(
+        height: 42,
+        decoration: BoxDecoration(
+          color: AppColors.warning.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_outline_rounded,
+                size: 15, color: AppColors.warning),
+            const SizedBox(width: 6),
+            Text('มีผู้ให้บริการรับงานแล้ว',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.warning)),
+          ],
+        ),
+      );
+    }
+
+    // completed
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.success.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.check_circle_outline, size: 15, color: AppColors.success),
+          const SizedBox(width: 6),
+          Text('เสร็จสิ้นแล้ว',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.success)),
+        ],
       ),
     );
   }
@@ -475,16 +796,16 @@ class _HealthProgramRequestDashboardState
       return CircleAvatar(
         radius: 24,
         backgroundImage: NetworkImage(e.patientAvatar!),
-        backgroundColor: const Color(0xFF4A8B2C).withOpacity(0.1),
+        backgroundColor: AppColors.primary.withOpacity(0.1),
       );
     }
     return CircleAvatar(
       radius: 24,
-      backgroundColor: const Color(0xFF4A8B2C).withOpacity(0.15),
+      backgroundColor: AppColors.primary.withOpacity(0.15),
       child: Text(
         e.patientName.isNotEmpty ? e.patientName[0].toUpperCase() : 'P',
         style: const TextStyle(
-            color: Color(0xFF2D6A1F),
+            color: AppColors.primary,
             fontWeight: FontWeight.bold,
             fontSize: 18),
       ),
@@ -507,14 +828,11 @@ class _HealthProgramRequestDashboardState
           Container(
               width: 6,
               height: 6,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle)),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 5),
           Text(cfg['label'] as String,
               style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: color)),
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
         ],
       ),
     );
@@ -541,7 +859,7 @@ class _HealthProgramRequestDashboardState
             style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A)),
+                color: AppColors.textPrimary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -555,7 +873,7 @@ class _HealthProgramRequestDashboardState
     required String label,
     required Color textColor,
     required Color bgColor,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -564,10 +882,10 @@ class _HealthProgramRequestDashboardState
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: bgColor == const Color(0xFF4A8B2C)
+          boxShadow: bgColor == AppColors.primary
               ? [
                   BoxShadow(
-                      color: const Color(0xFF4A8B2C).withOpacity(0.35),
+                      color: AppColors.primary.withOpacity(0.35),
                       blurRadius: 8,
                       offset: const Offset(0, 3))
                 ]
@@ -615,8 +933,7 @@ class _HealthProgramRequestDashboardState
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
@@ -644,11 +961,11 @@ class _HealthProgramRequestDashboardState
                 leading: Container(
                     width: 10,
                     height: 10,
-                    decoration: BoxDecoration(
-                        color: color, shape: BoxShape.circle)),
+                    decoration:
+                        BoxDecoration(color: color, shape: BoxShape.circle)),
                 title: Text(cfg['label'] as String),
                 trailing: entry.status == s
-                    ? const Icon(Icons.check, color: Color(0xFF4A8B2C))
+                    ? const Icon(Icons.check, color: AppColors.primary)
                     : null,
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -667,13 +984,11 @@ class _HealthProgramRequestDashboardState
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (ctx, anim, _) =>
-            ExpertChatRoomPage(entry: entry),
+        pageBuilder: (ctx, anim, _) => ExpertChatRoomPage(entry: entry),
         transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-                  begin: const Offset(1, 0), end: Offset.zero)
-              .animate(CurvedAnimation(
-                  parent: anim, curve: Curves.easeOut)),
+          position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+              .animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOut)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 350),
@@ -684,16 +999,109 @@ class _HealthProgramRequestDashboardState
   Map<String, dynamic> _statusConfig(String status) {
     switch (status) {
       case 'in_progress':
-        return {'label': 'กำลังดำเนินการ', 'color': Colors.blue};
+        return {'label': 'กำลังดำเนินการ', 'color': AppColors.info};
       case 'completed':
-        return {'label': 'เสร็จสิ้น', 'color': const Color(0xFF4A8B2C)};
+        return {'label': 'เสร็จสิ้น', 'color': AppColors.success};
       default:
-        return {'label': 'รอดำเนินการ', 'color': Colors.orange};
+        return {'label': 'รอดำเนินการ', 'color': AppColors.warning};
     }
   }
 }
 
-// ─── Expert Chat Room Page ──────────────────────────────────────────────────────
+// ─── Availability Banner ──────────────────────────────────────────────────────
+class _AvailabilityBanner extends StatelessWidget {
+  final String status;
+  const _AvailabilityBanner({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final isBusy = status == 'busy';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isBusy
+            ? AppColors.warning.withOpacity(0.2)
+            : AppColors.success.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isBusy
+              ? AppColors.warning.withOpacity(0.5)
+              : AppColors.success.withOpacity(0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isBusy ? AppColors.warning : AppColors.success,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            isBusy ? '🔴 สถานะ: ไม่ว่าง (กำลังให้บริการ)' : '🟢 สถานะ: พร้อมรับงาน',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Availability Toggle Button ───────────────────────────────────────────────
+class _AvailabilityToggleButton extends StatelessWidget {
+  final String status;
+  final VoidCallback onToggle;
+  const _AvailabilityToggleButton(
+      {required this.status, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final isBusy = status == 'busy';
+    return GestureDetector(
+      onTap: onToggle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isBusy
+              ? AppColors.warning.withOpacity(0.25)
+              : AppColors.success.withOpacity(0.25),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isBusy
+                ? AppColors.warning.withOpacity(0.6)
+                : Colors.white.withOpacity(0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isBusy ? Icons.do_not_disturb_rounded : Icons.circle,
+              size: 10,
+              color: isBusy ? AppColors.warning : AppColors.success,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              isBusy ? 'ไม่ว่าง' : 'ว่าง',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Expert Chat Room Page ─────────────────────────────────────────────────────
 class ExpertChatRoomPage extends StatefulWidget {
   final ConsultationEntry entry;
   const ExpertChatRoomPage({super.key, required this.entry});
@@ -729,17 +1137,18 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   Future<void> _loadMessages() async {
     setState(() => _isLoading = true);
     try {
-      final chatMessages =
-          await _chatRepo.getMessages(widget.entry.roomId);
+      final chatMessages = await _chatRepo.getMessages(widget.entry.roomId);
       if (mounted) {
         final myId = _currentUser?.id;
         setState(() {
-          _messages = chatMessages.map((m) => _LocalMsg(
-                content: m.content,
-                isMe: m.senderId == myId,
-                sentAt: m.createdAt,
-                type: m.type,
-              )).toList();
+          _messages = chatMessages
+              .map((m) => _LocalMsg(
+                    content: m.content,
+                    isMe: m.senderId == myId,
+                    sentAt: m.createdAt,
+                    type: m.type,
+                  ))
+              .toList();
           _isLoading = false;
         });
         _scrollToBottom();
@@ -790,12 +1199,67 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     if (mounted) setState(() => _isSending = false);
   }
 
+  // Provider เสร็จงาน → คืนสถานะ online + เปลี่ยน request เป็น completed
+  Future<void> _finishJob() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('เสร็จสิ้นการให้บริการ?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+            'สถานะของคุณจะกลับเป็น "พร้อมรับงาน" และคำร้องจะถูกปิด'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                Text('ยกเลิก', style: TextStyle(color: Colors.grey.shade600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('เสร็จสิ้น'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null) return;
+
+    final userRepo = UserRepository(Supabase.instance.client);
+    final consultRepo = ServiceLocator.instance.consultationRepository;
+
+    // อัปเดต request → completed
+    await consultRepo.updateStatus(widget.entry.id, 'completed');
+    // คืนสถานะ provider → online
+    await userRepo.setAvailabilityStatus(authUser.id, 'online');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ เสร็จสิ้น! สถานะของคุณกลับเป็นพร้อมรับงานแล้ว'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F4F0),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2D6A1F),
+        backgroundColor: AppColors.primary,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -837,6 +1301,14 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           ],
         ),
         actions: [
+          // ปุ่มเสร็จงาน
+          TextButton.icon(
+            onPressed: _finishJob,
+            icon: const Icon(Icons.done_all_rounded,
+                color: Colors.white, size: 18),
+            label: const Text('เสร็จงาน',
+                style: TextStyle(color: Colors.white, fontSize: 12)),
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline_rounded,
                 color: Colors.white, size: 22),
@@ -853,17 +1325,14 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: Color(0xFF4A8B2C)))
+                    child: CircularProgressIndicator(color: AppColors.primary))
                 : _messages.isEmpty
                     ? _buildEmptyChat()
                     : ListView.builder(
                         controller: _scrollController,
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                         itemCount: _messages.length,
-                        itemBuilder: (ctx, i) =>
-                            _buildBubble(_messages[i]),
+                        itemBuilder: (ctx, i) => _buildBubble(_messages[i]),
                       ),
           ),
 
@@ -890,7 +1359,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       child: Row(
         children: [
           const Icon(Icons.medical_services_outlined,
-              color: Color(0xFF4A8B2C), size: 18),
+              color: AppColors.primary, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: RichText(
@@ -899,18 +1368,16 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                   children: [
                     TextSpan(
                         text: widget.entry.patientName,
-                        style:
-                            const TextStyle(fontWeight: FontWeight.bold)),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                     const TextSpan(text: ' · '),
                     TextSpan(
                         text: widget.entry.packageName,
-                        style:
-                            const TextStyle(color: Color(0xFF4A8B2C))),
+                        style: const TextStyle(color: AppColors.primary)),
                     const TextSpan(text: ' · '),
                     TextSpan(
                         text: widget.entry.bodyArea,
                         style: const TextStyle(
-                            color: Colors.orange,
+                            color: AppColors.warning,
                             fontWeight: FontWeight.w500)),
                   ]),
             ),
@@ -924,17 +1391,13 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Align(
-        alignment:
-            msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
           constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.72),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: msg.isMe
-                ? const Color(0xFF4A8B2C)
-                : Colors.white,
+            color: msg.isMe ? AppColors.primary : Colors.white,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(16),
               topRight: const Radius.circular(16),
@@ -949,9 +1412,8 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
             ],
           ),
           child: Column(
-            crossAxisAlignment: msg.isMe
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
+            crossAxisAlignment:
+                msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
               if (!msg.isMe)
                 Padding(
@@ -961,14 +1423,13 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                     style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF4A8B2C)),
+                        color: AppColors.primary),
                   ),
                 ),
               Text(
                 msg.content,
                 style: TextStyle(
-                    color:
-                        msg.isMe ? Colors.white : Colors.black87,
+                    color: msg.isMe ? Colors.white : Colors.black87,
                     fontSize: 14,
                     height: 1.4),
               ),
@@ -997,18 +1458,18 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: const Color(0xFF4A8B2C).withOpacity(0.1),
+              color: AppColors.primary.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.chat_bubble_outline,
-                color: Color(0xFF4A8B2C), size: 36),
+                color: AppColors.primary, size: 36),
           ),
           const SizedBox(height: 16),
           const Text('เริ่มต้นการสนทนากับผู้ป่วย',
               style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
-                  color: Color(0xFF2D6A1F))),
+                  color: AppColors.primary)),
           const SizedBox(height: 6),
           Text('พิมพ์คำแนะนำได้เลยด้านล่างครับ',
               style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
@@ -1064,15 +1525,12 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
               height: 46,
               width: 46,
               decoration: BoxDecoration(
-                color: hasText
-                    ? const Color(0xFF4A8B2C)
-                    : Colors.grey.shade300,
+                color: hasText ? AppColors.primary : Colors.grey.shade300,
                 shape: BoxShape.circle,
                 boxShadow: hasText
                     ? [
                         BoxShadow(
-                            color:
-                                const Color(0xFF4A8B2C).withOpacity(0.4),
+                            color: AppColors.primary.withOpacity(0.4),
                             blurRadius: 8,
                             offset: const Offset(0, 3))
                       ]
@@ -1098,8 +1556,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
@@ -1114,8 +1571,8 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                         borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             const Text('ข้อมูลผู้ป่วย',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 18)),
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 16),
             _infoTile(Icons.person_outline, 'ชื่อ-นามสกุล',
                 widget.entry.patientName),
@@ -1145,11 +1602,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: const Color(0xFF4A8B2C).withOpacity(0.08),
+              color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(10),
             ),
-            child:
-                Icon(icon, color: const Color(0xFF4A8B2C), size: 18),
+            child: Icon(icon, color: AppColors.primary, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1171,7 +1627,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   }
 }
 
-// ─── Local message model ────────────────────────────────────────────────────────
+// ─── Local message model ──────────────────────────────────────────────────────
 class _LocalMsg {
   final String content;
   final bool isMe;

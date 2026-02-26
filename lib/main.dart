@@ -121,6 +121,7 @@ class SheservedApp extends StatelessWidget {
         '/health-data-entry': (context) => const HealthDataEntryPage(),
         '/package-healthcare': (context) => const PackageHealthCarePage(),
         '/test': (context) => const TestWebSocketWidget(),
+        '/home': (context) => const HomePage(),
 
         '/admin/professions': (context) => const ProfessionAdminPage(),
         '/admin/applications': (context) => const ApplicationReviewPage(),

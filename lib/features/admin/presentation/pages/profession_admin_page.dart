@@ -274,6 +274,25 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                           ],
                         ),
 
+                        // Member count
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.people_outline,
+                              size: 14,
+                              color: AppColors.textHint,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${profession.memberCount} คน',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+
                         // Category
                         Row(
                           mainAxisSize: MainAxisSize.min,

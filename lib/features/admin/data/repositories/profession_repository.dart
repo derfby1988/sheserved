@@ -16,7 +16,8 @@ class ProfessionRepository {
   Future<List<Profession>> getAllProfessions({bool activeOnly = true}) async {
     var query = _client.from('professions').select('''
       *,
-      field_count:registration_field_configs(count)
+      field_count:registration_field_configs(count),
+      member_count:users(count)
     ''');
 
     if (activeOnly) {
@@ -31,6 +32,13 @@ class ProfessionRepository {
         json['field_count'] = (json['field_count'] as List).first['count'] ?? 0;
       } else {
         json['field_count'] = 0;
+      }
+      
+      // Handle member_count from aggregate
+      if (json['member_count'] is List && (json['member_count'] as List).isNotEmpty) {
+        json['member_count'] = (json['member_count'] as List).first['count'] ?? 0;
+      } else {
+        json['member_count'] = 0;
       }
       return Profession.fromJson(json);
     }).toList();

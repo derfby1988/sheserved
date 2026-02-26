@@ -37,15 +37,17 @@ class GroupRoleRepository {
   }
 
   Future<List<Map<String, dynamic>>> getGroupMembers(String professionId) async {
-    final response = await _client
-        .from('user_group_roles')
-        .select('''
-          *,
-          users:user_id(id, email, raw_user_meta_data)
-        ''')
-        .eq('profession_id', professionId)
-        .order('role_level', ascending: true);
-        
-    return List<Map<String, dynamic>>.from(response);
+    try {
+      // Simplest possible query to rule out join errors
+      final response = await _client
+          .from('users')
+          .select('id, email, first_name, last_name, profile_image_url')
+          .eq('profession_id', professionId)
+          .order('first_name', ascending: true);
+          
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      rethrow;
+    }
   }
 }

@@ -92,6 +92,7 @@ class Profession {
   final bool requiresVerification; // ต้องตรวจสอบก่อนใช้งาน
   final int displayOrder;
   final int fieldCount; // จำนวน fields (calculated)
+  final int memberCount; // จำนวนสมาชิกทั้งหมด (calculated)
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -107,6 +108,7 @@ class Profession {
     this.requiresVerification = true,
     this.displayOrder = 0,
     this.fieldCount = 0,
+    this.memberCount = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -195,6 +197,7 @@ class Profession {
       requiresVerification: json['requires_verification'] ?? true,
       displayOrder: json['display_order'] ?? 0,
       fieldCount: json['field_count'] ?? 0,
+      memberCount: json['member_count'] ?? 0,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : DateTime.now(),
@@ -216,6 +219,7 @@ class Profession {
     bool? requiresVerification,
     int? displayOrder,
     int? fieldCount,
+    int? memberCount,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -231,6 +235,7 @@ class Profession {
       requiresVerification: requiresVerification ?? this.requiresVerification,
       displayOrder: displayOrder ?? this.displayOrder,
       fieldCount: fieldCount ?? this.fieldCount,
+      memberCount: memberCount ?? this.memberCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

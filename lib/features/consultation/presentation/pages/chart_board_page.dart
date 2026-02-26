@@ -949,7 +949,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  void _submitConsultationRequest() {
+  void _submitConsultationRequest() async {
     if (_selectedPain == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -960,6 +960,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       return;
     }
 
+    // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -968,18 +969,50 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       ),
     );
 
-    Future.delayed(const Duration(seconds: 1), () {
+    try {
+      final currentUserId = _currentUser?.id;
+      if (currentUserId == null) {
+        throw Exception('กรุณาเลือกเข้าสู่ระบบใหม่อีกครั้ง');
+      }
+
+      // 1. Prepare final data
+      final finalSymptomsChart = Map<String, dynamic>.from(widget.request.symptomsChart);
+      finalSymptomsChart['pain_level'] = _selectedPain;
+
+      // 2. Save to Repository
+      final repo = ServiceLocator.instance.consultationRepository;
+      await repo.createRequest(
+        userId: currentUserId,
+        packageId: widget.request.packageId,
+        packageName: widget.request.packageName,
+        price: widget.request.price,
+        bodyArea: widget.request.bodyArea,
+        symptomsChart: finalSymptomsChart,
+        symptoms: widget.request.symptoms,
+      );
+
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('ส่งคำปรึกษาสำเร็จ! ผู้เชี่ยวชาญจะติดต่อกลับเร็วๆ นี้'),
             backgroundColor: Color(0xFF4A8B2C),
           ),
         );
+        // After sending request, redirect back Home or a "Waiting Room"
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -566,7 +566,7 @@ class UserRepository {
   }
 
   /// นับจำนวนผู้ให้บริการ online แยกตาม profession_id
-  /// Online = last_seen_at ภายใน 2 นาทีที่ผ่านมา
+  /// Online = last_seen_at ภายใน 2 นาทีที่ผ่านมา และไม่อยู่ในสถานะ busy
   Future<Map<String, int>> getOnlineProviderCounts() async {
     final threshold = DateTime.now()
         .toUtc()
@@ -580,7 +580,9 @@ class UserRepository {
         .not('profession_id', 'is', null)
         // ไม่รวม consumer (id 00...0001)
         .neq('profession_id', '00000000-0000-0000-0000-000000000001')
-        .gte('last_seen_at', threshold);
+        .gte('last_seen_at', threshold)
+        // กรองเฉพาะ online หรือ null (ไม่อนุญาต busy)
+        .or('availability_status.eq.online,availability_status.is.null');
 
     final Map<String, int> counts = {};
     for (final row in response) {
@@ -601,9 +603,79 @@ class UserRepository {
         .asyncMap((_) => getOnlineProviderCounts());
   }
 
+
   /// นับจำนวนผู้ให้บริการ online ทั้งหมด
   Future<int> getTotalOnlineProviderCount() async {
     final counts = await getOnlineProviderCounts();
     return counts.values.fold<int>(0, (int a, int b) => a + b);
+  }
+
+  // =====================================================
+  // AVAILABILITY STATUS
+  // =====================================================
+
+  /// อัปเดต availability_status ของผู้ใช้
+  /// status: 'online', 'busy', 'offline'
+  Future<void> setAvailabilityStatus(String userId, String status) async {
+    try {
+      await _client.from('users').update({
+        'availability_status': status,
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', userId);
+      debugPrint('UserRepository: availability_status → $status for $userId');
+    } catch (e) {
+      debugPrint('setAvailabilityStatus error: $e');
+    }
+  }
+
+  /// ดึง availability_status ของผู้ใช้ปัจจุบัน
+  Future<String> getAvailabilityStatus(String userId) async {
+    try {
+      final response = await _client
+          .from('users')
+          .select('availability_status')
+          .eq('id', userId)
+          .single();
+      return response['availability_status'] as String? ?? 'online';
+    } catch (e) {
+      return 'online';
+    }
+  }
+
+  /// นับจำนวนผู้ให้บริการที่ online+available แยกตาม profession_id
+  /// (ไม่รวม busy, offline)
+  Future<Map<String, int>> getAvailableProviderCounts() async {
+    final threshold = DateTime.now()
+        .toUtc()
+        .subtract(const Duration(minutes: 2))
+        .toIso8601String();
+
+    final response = await _client
+        .from('users')
+        .select('profession_id')
+        .eq('is_active', true)
+        .not('profession_id', 'is', null)
+        .neq('profession_id', '00000000-0000-0000-0000-000000000001')
+        .gte('last_seen_at', threshold)
+        // ถ้ามี column availability_status ให้กรองเฉพาะ online
+        // ใช้ or เพื่อ backward-compat กับ row ที่ยังไม่มีค่า
+        .or('availability_status.eq.online,availability_status.is.null');
+
+    final Map<String, int> counts = {};
+    for (final row in response) {
+      final profId = row['profession_id'] as String?;
+      if (profId != null) {
+        counts[profId] = (counts[profId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// Stream real-time สำหรับ available (ไม่ busy) provider counts
+  Stream<Map<String, int>> watchAvailableProviderCounts() {
+    return _client
+        .from('users')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) => getAvailableProviderCounts());
   }
 }
