@@ -149,6 +149,8 @@ class _ContactListPageState extends State<ContactListPage> {
                               isVerified: expert.verificationStatus == VerificationStatus.verified,
                               isSelected: _selectedUserIds.contains(expert.userId),
                               isGroupMode: _isGroupMode,
+                              isOnline: expert.isOnline,
+                              isBusy: expert.isBusy,
                               onTap: () {
                                 if (_isGroupMode) {
                                   _toggleSelection(expert.userId);
@@ -168,6 +170,8 @@ class _ContactListPageState extends State<ContactListPage> {
                               subtitle: clinic.serviceType ?? 'ศูนย์บริการสุขภาพ',
                               isSelected: _selectedUserIds.contains(clinic.userId),
                               isGroupMode: _isGroupMode,
+                              isOnline: clinic.isOnline,
+                              isBusy: clinic.isBusy,
                               onTap: () {
                                 if (_isGroupMode) {
                                   _toggleSelection(clinic.userId);
@@ -198,7 +202,9 @@ class _ContactTile extends StatelessWidget {
   final bool isSelected;
   final bool isGroupMode;
   final String? specialty;
-  final bool isVerified;
+   final bool isVerified;
+  final bool isOnline;
+  final bool isBusy;
 
   const _ContactTile({
     required this.title,
@@ -208,6 +214,8 @@ class _ContactTile extends StatelessWidget {
     this.isGroupMode = false,
     this.specialty,
     this.isVerified = false,
+    this.isOnline = false,
+    this.isBusy = false,
   });
 
   @override
@@ -228,6 +236,20 @@ class _ContactTile extends StatelessWidget {
                 radius: 8,
                 backgroundColor: Colors.white,
                 child: Icon(Icons.check_circle, color: Colors.green, size: 16),
+              ),
+            )
+          else if (isOnline || isBusy)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: isBusy ? Colors.orange : Colors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
               ),
             ),
         ],

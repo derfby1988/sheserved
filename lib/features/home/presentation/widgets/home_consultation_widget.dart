@@ -5,6 +5,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../features/auth/data/repositories/user_repository.dart';
 import '../../../../features/consultation/data/repositories/consultation_repository.dart';
 import 'home_painters.dart';
+import '../../../../services/auth_service.dart';
 
 /// Consultation Widget - วงกลมปรึกษาแพทย์และเภสัช
 class HomeConsultationWidget extends StatefulWidget {
@@ -92,6 +93,16 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
       _initStreams();
       _loadInitialData();
     }
+
+    // Listen for auth changes to refresh counts immediately (e.g. after provider login)
+    AuthService.instance.addListener(_handleAuthChange);
+  }
+
+  void _handleAuthChange() {
+    if (mounted) {
+      debugPrint('HomeConsultationWidget: Auth change detected, refreshing counts...');
+      _loadInitialData();
+    }
   }
 
   void _initStreams() {
@@ -104,6 +115,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
 
   @override
   void dispose() {
+    AuthService.instance.removeListener(_handleAuthChange);
     _rotationController.dispose();
     _pulseController.dispose();
     _scaleController.dispose();

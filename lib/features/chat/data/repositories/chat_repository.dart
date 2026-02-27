@@ -35,7 +35,7 @@ class ChatRepository {
     try {
       final response = await _supabase
           .from('users')
-          .select('id, first_name, last_name, profile_image_url')
+          .select('id, first_name, last_name, profile_image_url, last_seen_at, availability_status')
           .eq('id', userId)
           .single();
       

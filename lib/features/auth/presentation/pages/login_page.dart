@@ -597,7 +597,7 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (user != null) {
-        AuthService.instance.login(user);
+        await AuthService.instance.login(user);
         _showSnackBar('เข้าสู่ระบบสำเร็จ');
         await Future.delayed(const Duration(milliseconds: 500));
 
@@ -682,7 +682,7 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (result.success && result.user != null) {
-        AuthService.instance.login(result.user!);
+        await AuthService.instance.login(result.user!);
 
         if (result.isNewUser) {
           _showSnackBar('ยินดีต้อนรับ ${result.user!.fullName}');

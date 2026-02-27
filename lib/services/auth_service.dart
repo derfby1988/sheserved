@@ -26,18 +26,19 @@ class AuthService extends ChangeNotifier {
   bool get isLoggedIn => _currentUser != null;
   
   /// Login user (set current user) - auto starts presence heartbeat
-  void login(UserModel user) {
+  Future<void> login(UserModel user) async {
     _currentUser = user;
     debugPrint('AuthService: User logged in - ${user.username} (Phone: ${user.phone})');
     // เริ่ม heartbeat เพื่อ track สถานะ online แบบ real-time
-    PresenceService.instance.start(user.id);
+    // await เพื่อให้แน่ใจว่า last_seen_at ถูกอัปเดตใน DB ทันที
+    await PresenceService.instance.start(user.id);
     notifyListeners();
   }
   
   /// Logout user (clear current user) - auto stops presence heartbeat
-  void logout() {
+  Future<void> logout() async {
     // หยุด heartbeat ก่อน logout
-    PresenceService.instance.stop();
+    await PresenceService.instance.stop();
     _currentUser = null;
     debugPrint('AuthService: User logged out');
     notifyListeners();

@@ -103,6 +103,7 @@ class UserModel {
   final bool isActive;
   final DateTime? lastLoginAt;
   final DateTime? lastSeenAt; // Real-time presence tracking
+  final String availabilityStatus; // 'online', 'busy', 'offline'
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -128,6 +129,7 @@ class UserModel {
     this.isActive = true,
     this.lastLoginAt,
     this.lastSeenAt,
+    this.availabilityStatus = 'online',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -154,6 +156,7 @@ class UserModel {
       'is_active': isActive,
       'last_login_at': lastLoginAt?.toIso8601String(),
       'last_seen_at': lastSeenAt?.toIso8601String(),
+      'availability_status': availabilityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -192,6 +195,7 @@ class UserModel {
       isActive: json['is_active'] ?? true,
       lastLoginAt: json['last_login_at'] != null ? DateTime.parse(json['last_login_at']) : null,
       lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
+      availabilityStatus: json['availability_status'] ?? 'online',
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
@@ -212,6 +216,7 @@ class UserModel {
     bool? isActive,
     DateTime? lastLoginAt,
     DateTime? lastSeenAt,
+    String? availabilityStatus,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -230,6 +235,7 @@ class UserModel {
       isActive: isActive ?? this.isActive,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      availabilityStatus: availabilityStatus ?? this.availabilityStatus,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -306,8 +312,20 @@ class ExpertProfile {
   final int reviewCount;
   final bool isAvailable;
   final VerificationStatus verificationStatus;
+  final DateTime? lastSeenAt;
+  final String availabilityStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา และไม่อยู่ในสถานะ busy/offline
+  bool get isOnline {
+    if (lastSeenAt == null) return false;
+    if (availabilityStatus == 'busy' || availabilityStatus == 'offline') return false;
+    return DateTime.now().toUtc().difference(lastSeenAt!).inMinutes < 2;
+  }
+
+  bool get isBusy => availabilityStatus == 'busy';
+
 
   const ExpertProfile({
     required this.id,
@@ -325,6 +343,8 @@ class ExpertProfile {
     this.reviewCount = 0,
     this.isAvailable = true,
     this.verificationStatus = VerificationStatus.pending,
+    this.lastSeenAt,
+    this.availabilityStatus = 'online',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -345,6 +365,8 @@ class ExpertProfile {
       'rating': rating,
       'review_count': reviewCount,
       'is_available': isAvailable,
+      'last_seen_at': lastSeenAt?.toIso8601String(),
+      'availability_status': availabilityStatus,
       // 'working_hours': workingHours, // not present in class
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -371,6 +393,12 @@ class ExpertProfile {
       verificationStatus: json['users'] != null && json['users']['verification_status'] != null
           ? VerificationStatusExtension.fromString(json['users']['verification_status'])
           : VerificationStatusExtension.fromString(json['verification_status'] ?? 'pending'),
+      lastSeenAt: json['users'] != null && json['users']['last_seen_at'] != null
+          ? DateTime.parse(json['users']['last_seen_at'])
+          : (json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null),
+      availabilityStatus: json['users'] != null && json['users']['availability_status'] != null
+          ? json['users']['availability_status']
+          : (json['availability_status'] ?? 'online'),
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
@@ -398,8 +426,20 @@ class ClinicProfile {
   final bool isOpen;
   final Map<String, dynamic>? workingHours;
   final List<String>? services;
+  final DateTime? lastSeenAt;
+  final String availabilityStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา และไม่อยู่ในสถานะ busy/offline
+  bool get isOnline {
+    if (lastSeenAt == null) return false;
+    if (availabilityStatus == 'busy' || availabilityStatus == 'offline') return false;
+    return DateTime.now().toUtc().difference(lastSeenAt!).inMinutes < 2;
+  }
+
+  bool get isBusy => availabilityStatus == 'busy';
+
 
   const ClinicProfile({
     required this.id,
@@ -421,6 +461,8 @@ class ClinicProfile {
     this.isOpen = true,
     this.workingHours,
     this.services,
+    this.lastSeenAt,
+    this.availabilityStatus = 'online',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -446,6 +488,8 @@ class ClinicProfile {
       'is_open': isOpen,
       'working_hours': workingHours,
       'services': services,
+      'last_seen_at': lastSeenAt?.toIso8601String(),
+      'availability_status': availabilityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -472,6 +516,12 @@ class ClinicProfile {
       isOpen: json['is_open'] ?? true,
       workingHours: json['working_hours'],
       services: json['services'] != null ? List<String>.from(json['services']) : null,
+      lastSeenAt: json['users'] != null && json['users']['last_seen_at'] != null
+          ? DateTime.parse(json['users']['last_seen_at'])
+          : (json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null),
+      availabilityStatus: json['users'] != null && json['users']['availability_status'] != null
+          ? json['users']['availability_status']
+          : (json['availability_status'] ?? 'online'),
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );

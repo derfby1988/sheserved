@@ -93,13 +93,6 @@ class HomeHeaderSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              // Real-time Online Badge
-              const OnlineProvidersBadge(
-                compact: true,
-                textColor: AppColors.textOnPrimary,
-                color: Colors.white, // จุดเป็นสีขาวเพื่อให้เด่นบนพื้นเขียว
-              ),
-              const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(

@@ -21,16 +21,18 @@ class PresenceService {
   static const Duration _heartbeatInterval = Duration(seconds: 60);
 
   /// เริ่ม heartbeat สำหรับ userId ที่ล็อกอิน
-  void start(String userId) {
+  Future<void> start(String userId) async {
     if (_isRunning && _currentUserId == userId) return;
 
-    stop(); // หยุด timer เดิมถ้ามี
+    await stop(); // หยุด timer เดิมถ้ามี
 
     _currentUserId = userId;
     _isRunning = true;
 
-    // อัปเดตทันทีเมื่อ start
-    _sendHeartbeat();
+    // อัปเดตทันทีเมื่อ start (await เพื่อให้แน่ใจว่าสถานะใน DB เปลี่ยนก่อนทำขั้นตอนอื่น)
+    final repo = UserRepository(Supabase.instance.client);
+    await repo.setAvailabilityStatus(userId, 'online');
+    await _sendHeartbeat();
 
     // ตั้ง timer ส่งทุก 60 วินาที
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
@@ -41,11 +43,23 @@ class PresenceService {
   }
 
   /// หยุด heartbeat (เมื่อ logout หรือปิดแอป)
-  void stop() {
+  Future<void> stop() async {
+    if (_heartbeatTimer == null && _currentUserId == null) return;
+    
+    final userId = _currentUserId;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _isRunning = false;
     _currentUserId = null;
+
+    if (userId != null) {
+      try {
+        final repo = UserRepository(Supabase.instance.client);
+        await repo.setAvailabilityStatus(userId, 'offline');
+      } catch (e) {
+        debugPrint('PresenceService: Error setting offline status: $e');
+      }
+    }
     debugPrint('PresenceService: Stopped heartbeat');
   }
 

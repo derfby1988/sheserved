@@ -21,6 +21,7 @@ import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
 import 'features/admin/presentation/pages/package_admin_page.dart';
 import 'features/admin/presentation/pages/application_review_page.dart';
+import 'features/admin/presentation/pages/user_category_admin_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
@@ -131,6 +132,7 @@ class SheservedApp extends StatelessWidget {
         '/chat-contacts': (context) => ContactListPage(),
         '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
         '/admin/packages': (context) => const PackageAdminPage(),
+        '/admin/user-categories': (context) => const UserCategoryAdminPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

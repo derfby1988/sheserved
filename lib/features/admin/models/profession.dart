@@ -1,39 +1,85 @@
-/// หมวดหมู่หลักของผู้ใช้
-enum UserCategory {
-  consumer, // ผู้ซื้อ/ผู้รับบริการ
-  provider, // ผู้ให้บริการ (มี sub-professions)
-}
+/// หมวดหมู่หลักของผู้ใช้ (Dynamic Model)
+class UserCategory {
+  final String id;
+  final String name;
+  final String? nameEn;
+  final String? description;
+  final String? iconName;
+  final int displayOrder;
+  final bool isActive;
 
-extension UserCategoryExtension on UserCategory {
-  String get value {
-    switch (this) {
-      case UserCategory.consumer:
-        return 'consumer';
-      case UserCategory.provider:
-        return 'provider';
-    }
+  const UserCategory({
+    required this.id,
+    required this.name,
+    this.nameEn,
+    this.description,
+    this.iconName,
+    this.displayOrder = 0,
+    this.isActive = true,
+  });
+
+  /// ค่าคงที่สำหรับหมวดหมู่หลัก (เพื่อความปลอดภัยในการอ้างอิงโค้ดส่วนอื่น)
+  static const String consumerId = 'consumer';
+  static const String providerId = 'provider';
+
+  static const UserCategory consumer = UserCategory(
+    id: consumerId,
+    name: 'ผู้ซื้อ/ผู้รับบริการ',
+  );
+
+  static const UserCategory provider = UserCategory(
+    id: providerId,
+    name: 'ผู้ให้บริการ',
+  );
+
+  String get value => id;
+  String get displayName => name;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'name_en': nameEn,
+      'description': description,
+      'icon_name': iconName,
+      'display_order': displayOrder,
+      'is_active': isActive,
+    };
   }
 
-  String get displayName {
-    switch (this) {
-      case UserCategory.consumer:
-        return 'ผู้ซื้อ/ผู้รับบริการ';
-      case UserCategory.provider:
-        return 'ผู้ให้บริการ';
-    }
+  factory UserCategory.fromJson(Map<String, dynamic> json) {
+    return UserCategory(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      nameEn: json['name_en'],
+      description: json['description'],
+      iconName: json['icon_name'],
+      displayOrder: json['display_order'] ?? 0,
+      isActive: json['is_active'] ?? true,
+    );
   }
 
+  /// แปลงจาก String (สำหรับความเข้ากันได้กับข้อมูลเดิม)
   static UserCategory fromString(String value) {
-    switch (value) {
-      case 'consumer':
-        return UserCategory.consumer;
-      case 'provider':
-        return UserCategory.provider;
-      default:
-        return UserCategory.consumer;
+    if (value == consumerId || value == 'consumer') {
+      return const UserCategory(id: consumerId, name: 'ผู้ซื้อ/ผู้รับบริการ');
+    } else if (value == providerId || value == 'provider') {
+      return const UserCategory(id: providerId, name: 'ผู้ให้บริการ');
     }
+    return UserCategory(id: value, name: value);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserCategory &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
+
 
 /// สถานะการยืนยัน
 enum VerificationStatus {
@@ -185,13 +231,20 @@ class Profession {
   }
 
   factory Profession.fromJson(Map<String, dynamic> json) {
+    UserCategory category;
+    if (json['category_data'] != null) {
+      category = UserCategory.fromJson(json['category_data']);
+    } else {
+      category = UserCategory.fromString(json['category'] ?? 'consumer');
+    }
+
     return Profession(
       id: json['id'],
       name: json['name'],
       nameEn: json['name_en'],
       description: json['description'],
       iconName: json['icon_name'],
-      category: UserCategoryExtension.fromString(json['category'] ?? 'consumer'),
+      category: category,
       isBuiltIn: json['is_built_in'] ?? false,
       isActive: json['is_active'] ?? true,
       requiresVerification: json['requires_verification'] ?? true,
@@ -206,6 +259,7 @@ class Profession {
           : DateTime.now(),
     );
   }
+
 
   Profession copyWith({
     String? id,

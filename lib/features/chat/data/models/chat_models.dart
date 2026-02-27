@@ -163,13 +163,28 @@ class ChatParticipant {
   final String lastName;
   @HiveField(3)
   final String? profileImageUrl;
+  @HiveField(4)
+  final DateTime? lastSeenAt;
+  @HiveField(5)
+  final String availabilityStatus;
 
   ChatParticipant({
     required this.id,
     required this.firstName,
     required this.lastName,
     this.profileImageUrl,
+    this.lastSeenAt,
+    this.availabilityStatus = 'online',
   });
+
+  /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา และไม่อยู่ในสถานะ busy/offline
+  bool get isOnline {
+    if (lastSeenAt == null) return false;
+    if (availabilityStatus == 'busy' || availabilityStatus == 'offline') return false;
+    return DateTime.now().toUtc().difference(lastSeenAt!).inMinutes < 2;
+  }
+
+  bool get isBusy => availabilityStatus == 'busy';
 
   String get fullName => '$firstName $lastName';
 
@@ -179,6 +194,8 @@ class ChatParticipant {
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       profileImageUrl: json['profile_image_url'],
+      lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
+      availabilityStatus: json['availability_status'] ?? 'online',
     );
   }
 
@@ -188,6 +205,8 @@ class ChatParticipant {
       'first_name': firstName,
       'last_name': lastName,
       'profile_image_url': profileImageUrl,
+      'last_seen_at': lastSeenAt?.toIso8601String(),
+      'availability_status': availabilityStatus,
     };
   }
 }

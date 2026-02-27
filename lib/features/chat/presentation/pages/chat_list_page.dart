@@ -266,15 +266,33 @@ class _ChatRoomTileState extends State<_ChatRoomTile> {
     return ListTile(
       onTap: widget.onTap,
       contentPadding: const EdgeInsets.symmetric(vertical: 8),
-      leading: CircleAvatar(
-        radius: 28,
-        backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-        backgroundImage: (_participants.isNotEmpty && _participants.first.profileImageUrl != null)
-            ? NetworkImage(_participants.first.profileImageUrl!)
-            : null,
-        child: (_participants.isEmpty || _participants.first.profileImageUrl == null)
-            ? Icon(_participants.length > 1 ? Icons.group : Icons.person, color: AppColors.primary, size: 32)
-            : null,
+      leading: Stack(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+            backgroundImage: (_participants.isNotEmpty && _participants.first.profileImageUrl != null)
+                ? NetworkImage(_participants.first.profileImageUrl!)
+                : null,
+            child: (_participants.isEmpty || _participants.first.profileImageUrl == null)
+                ? Icon(_participants.length > 1 ? Icons.group : Icons.person, color: AppColors.primary, size: 32)
+                : null,
+          ),
+          if (_participants.isNotEmpty && (_participants.first.isOnline || _participants.first.isBusy))
+            Positioned(
+              right: 2,
+              bottom: 2,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: _participants.first.isBusy ? Colors.orange : Colors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                ),
+              ),
+            ),
+        ],
       ),
       title: Text(
         _participants.length > 1 

@@ -400,7 +400,7 @@ class UserRepository {
     try {
       final response = await _client
           .from('expert_profiles')
-          .select()
+          .select('*, users(verification_status, last_seen_at, availability_status)')
           .eq('user_id', userId)
           .single();
       return ExpertProfile.fromJson(response);
@@ -416,7 +416,7 @@ class UserRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    var query = _client.from('expert_profiles').select('*, users(verification_status)');
+    var query = _client.from('expert_profiles').select('*, users(verification_status, last_seen_at, availability_status)');
 
     if (specialty != null) {
       query = query.eq('specialty', specialty);
@@ -501,7 +501,7 @@ class UserRepository {
     try {
       final response = await _client
           .from('clinic_profiles')
-          .select()
+          .select('*, users(verification_status, last_seen_at, availability_status)')
           .eq('user_id', userId)
           .single();
       return ClinicProfile.fromJson(response);
@@ -517,7 +517,7 @@ class UserRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    var query = _client.from('clinic_profiles').select();
+    var query = _client.from('clinic_profiles').select('*, users(verification_status, last_seen_at, availability_status)');
 
     if (serviceType != null) {
       query = query.eq('service_type', serviceType);
@@ -614,6 +614,9 @@ class UserRepository {
           .select('profession_id')
           .eq('is_active', true)
           .not('profession_id', 'is', null)
+          // ต้องไม่อยู่ในสถานะ busy หรือ offline
+          .neq('availability_status', 'busy')
+          .neq('availability_status', 'offline')
           // ไม่รวม consumer (id 00...0001)
           .neq('profession_id', '00000000-0000-0000-0000-000000000001')
           .gte('last_seen_at', threshold);

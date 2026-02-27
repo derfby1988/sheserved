@@ -69,6 +69,12 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         final professions = await repository.getAllProfessions();
         
         setState(() {
+          // Sort professions by category's display_order first, then by profession's display_order
+          professions.sort((a, b) {
+            int catComp = a.category.displayOrder.compareTo(b.category.displayOrder);
+            if (catComp != 0) return catComp;
+            return a.displayOrder.compareTo(b.displayOrder);
+          });
           _professions = professions;
           _isLoadingProfessions = false;
         });

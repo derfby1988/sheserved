@@ -61,6 +61,11 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         title: const Text('จัดการอาชีพและฟิลด์ลงทะเบียน'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.category),
+            onPressed: () => Navigator.pushNamed(context, '/admin/user-categories'),
+            tooltip: 'จัดการหมวดหมู่ผู้ใช้',
+          ),
+          IconButton(
             icon: const Icon(Icons.history),
             onPressed: () => Navigator.pushNamed(context, '/admin/applications'),
             tooltip: 'ดูผู้สมัครรอตรวจสอบ',
@@ -297,13 +302,13 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              profession.category == UserCategory.consumer
-                                  ? Icons.person
-                                  : Icons.business,
-                              size: 14,
-                              color: AppColors.textHint,
-                            ),
+                             Icon(
+                               profession.category.id == UserCategory.consumerId
+                                   ? Icons.person
+                                   : Icons.business,
+                               size: 14,
+                               color: AppColors.textHint,
+                             ),
                             const SizedBox(width: 4),
                             Text(
                               profession.category.displayName,
@@ -445,12 +450,12 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   }
 
   Color _getCategoryColor(UserCategory category) {
-    switch (category) {
-      case UserCategory.consumer:
-        return Colors.blue;
-      case UserCategory.provider:
-        return AppColors.primary;
+    if (category.id == UserCategory.consumerId) {
+      return Colors.blue;
+    } else if (category.id == UserCategory.providerId) {
+      return AppColors.primary;
     }
+    return Colors.purple; // Default for new custom categories
   }
 
   IconData _getIconData(String? iconName) {
@@ -587,6 +592,8 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   late TextEditingController _nameController;
   late TextEditingController _nameEnController;
   late TextEditingController _descriptionController;
+  final List<UserCategory> _categories = [];
+  bool _isCategoriesLoading = true;
   late UserCategory _selectedCategory;
   bool _requiresVerification = true;
   String _selectedIcon = 'work';
@@ -618,11 +625,54 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
         TextEditingController(text: widget.existingProfession?.nameEn ?? '');
     _descriptionController =
         TextEditingController(text: widget.existingProfession?.description ?? '');
-    _selectedCategory =
-        widget.existingProfession?.category ?? UserCategory.provider;
+    
+    // Set initial category (temp, will be refined once loaded)
+    _selectedCategory = widget.existingProfession?.category ?? 
+        const UserCategory(id: 'provider', name: 'ผู้ให้บริการ');
+        
     _requiresVerification =
         widget.existingProfession?.requiresVerification ?? true;
     _selectedIcon = widget.existingProfession?.iconName ?? 'work';
+
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() => _isCategoriesLoading = true);
+    try {
+      final repository = ProfessionRepository(Supabase.instance.client);
+      final categories = await repository.getAllUserCategories();
+      
+      if (mounted) {
+        setState(() {
+          _categories.clear();
+          // Sort by display_order explicitly
+          categories.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+          _categories.addAll(categories);
+          
+          // Re-match selected category with loaded list to ensure object identity
+          if (widget.existingProfession != null) {
+            _selectedCategory = _categories.firstWhere(
+              (c) => c.id == widget.existingProfession!.category.id,
+              orElse: () => _categories.isNotEmpty ? _categories.first : _selectedCategory,
+            );
+          } else if (_categories.isNotEmpty) {
+            // Default to provider or first available
+            _selectedCategory = _categories.firstWhere(
+              (c) => c.id == 'provider',
+              orElse: () => _categories.first,
+            );
+          }
+          
+          _isCategoriesLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading categories: $e');
+      if (mounted) {
+        setState(() => _isCategoriesLoading = false);
+      }
+    }
   }
 
   @override
@@ -737,27 +787,34 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               ),
               const SizedBox(height: 16),
 
-              // Category
-              DropdownButtonFormField<UserCategory>(
-                value: _selectedCategory,
-                decoration: const InputDecoration(
-                  labelText: 'หมวดหมู่',
-                  border: OutlineInputBorder(),
+              // User Category
+              if (_isCategoriesLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: LinearProgressIndicator(),
+                )
+              else
+                DropdownButtonFormField<UserCategory>(
+                  value: _selectedCategory,
+                  decoration: const InputDecoration(
+                    labelText: 'หมวดหมู่ผู้ใช้',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.category),
+                  ),
+                  items: _categories.map((category) {
+                    return DropdownMenuItem(
+                      value: category,
+                      child: Text(category.displayName),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _selectedCategory = value;
+                      });
+                    }
+                  },
                 ),
-                items: UserCategory.values.map((category) {
-                  return DropdownMenuItem(
-                    value: category,
-                    child: Text(category.displayName),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedCategory = value;
-                    });
-                  }
-                },
-              ),
               const SizedBox(height: 16),
 
               // Requires verification

@@ -520,6 +520,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             ),
                             _buildMenuItem(
                               context,
+                              title: 'จัดการหมวดหมู่ผู้ใช้',
+                              icon: Icons.category_outlined,
+                              onTap: () => _navigateTo(context, '/admin/user-categories'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
                               title: 'ตรวจสอบผู้สมัคร',
                               icon: Icons.verified_user_outlined,
                               onTap: () => _navigateTo(context, '/admin/applications'),

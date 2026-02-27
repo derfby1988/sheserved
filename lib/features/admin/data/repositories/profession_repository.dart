@@ -10,6 +10,89 @@ class ProfessionRepository {
   ProfessionRepository(this._client);
 
   // =====================================================
+  // USER CATEGORY CRUD
+  // =====================================================
+
+  /// ดึงรายการหมวดหมู่ผู้ใช้ทั้งหมด
+  Future<List<UserCategory>> getAllUserCategories() async {
+    try {
+      final response = await _client
+          .from('user_categories')
+          .select()
+          .eq('is_active', true)
+          .order('display_order');
+      
+      return (response as List).map((e) => UserCategory.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('ProfessionRepository.getAllUserCategories error: $e');
+      // Fallback
+      return [
+        const UserCategory(id: 'consumer', name: 'ผู้ซื้อ/ผู้รับบริการ'),
+        const UserCategory(id: 'provider', name: 'ผู้ให้บริการ'),
+      ];
+    }
+  }
+
+  /// สร้างหมวดหมู่ผู้ใช้ใหม่
+  Future<UserCategory> createUserCategory(Map<String, dynamic> data) async {
+    data['created_at'] = DateTime.now().toIso8601String();
+    data['updated_at'] = DateTime.now().toIso8601String();
+    final response = await _client
+        .from('user_categories')
+        .insert(data)
+        .select()
+        .single();
+    return UserCategory.fromJson(response);
+  }
+
+  /// อัปเดตหมวดหมู่ผู้ใช้
+  Future<UserCategory> updateUserCategory(String id, Map<String, dynamic> data) async {
+    data['updated_at'] = DateTime.now().toIso8601String();
+    final response = await _client
+        .from('user_categories')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+    return UserCategory.fromJson(response);
+  }
+
+  /// ลบหมวดหมู่ผู้ใช้ (Soft Delete)
+  Future<void> deleteUserCategory(String id) async {
+    // ป้องกันการลบหมวดพื้นฐาน
+    if (id == UserCategory.consumerId || id == UserCategory.providerId) {
+      throw Exception('ไม่สามารถลบหมวดหมู่พื้นฐานได้');
+    }
+    
+    await _client
+        .from('user_categories')
+        .update({
+          'is_active': false,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', id);
+  }
+
+  /// บันทึกลำดับการแสดงผลใหม่ (Bulk Update)
+  Future<void> reorderUserCategories(List<UserCategory> categories) async {
+    final now = DateTime.now().toIso8601String();
+    final data = <Map<String, dynamic>>[];
+    
+    for (int i = 0; i < categories.length; i++) {
+      data.add({
+        'id': categories[i].id,
+        'name': categories[i].name, // เพิ่มฟิลด์นี้เพื่อไม่ให้ติด Not-Null Constraint
+        'display_order': i,
+        'updated_at': now,
+      });
+    }
+
+    // ใช้ upsert เพื่ออัปเดตข้อมูลหลายบรรทัดในคำสั่งเดียว
+    await _client.from('user_categories').upsert(data);
+  }
+
+
+  // =====================================================
   // PROFESSION CRUD
   // =====================================================
 
@@ -18,6 +101,7 @@ class ProfessionRepository {
     try {
       var query = _client.from('professions').select('''
         *,
+        category_data:user_categories!professions_category_fkey(*),
         field_count:registration_field_configs(count),
         member_count:users(count)
       ''');

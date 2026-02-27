@@ -300,15 +300,33 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white24,
-              backgroundImage: (_otherParticipants.isNotEmpty && _otherParticipants.first.profileImageUrl != null)
-                  ? NetworkImage(_otherParticipants.first.profileImageUrl!)
-                  : null,
-              child: (_otherParticipants.isEmpty || _otherParticipants.first.profileImageUrl == null)
-                  ? const Icon(Icons.group, color: Colors.white, size: 20)
-                  : null,
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white24,
+                  backgroundImage: (_otherParticipants.isNotEmpty && _otherParticipants.first.profileImageUrl != null)
+                      ? NetworkImage(_otherParticipants.first.profileImageUrl!)
+                      : null,
+                  child: (_otherParticipants.isEmpty || _otherParticipants.first.profileImageUrl == null)
+                      ? const Icon(Icons.group, color: Colors.white, size: 20)
+                      : null,
+                ),
+                if (_otherParticipants.length == 1 && (_otherParticipants.first.isOnline || _otherParticipants.first.isBusy))
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _otherParticipants.first.isBusy ? Colors.orange : Colors.greenAccent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.primary, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -329,10 +347,14 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                       ? 'ใครบางคนกำลังพิมพ์...' 
                       : _otherParticipants.length > 1 
                         ? _otherParticipants.map((p) => p.firstName).join(', ')
-                        : 'Online',
+                        : _otherParticipants.isNotEmpty
+                          ? (_otherParticipants.first.isOnline 
+                              ? 'พร้อมให้บริการ' 
+                              : (_otherParticipants.first.isBusy ? 'ไม่ว่าง' : 'ออฟไลน์'))
+                          : 'กำลังโหลด...',
                     style: TextStyle(
                       fontSize: 11,
-                      color: _isOtherTyping ? Colors.white : Colors.greenAccent,
+                      color: _isOtherTyping ? Colors.white : (_otherParticipants.isNotEmpty && _otherParticipants.first.isOnline ? Colors.greenAccent : Colors.white70),
                       fontStyle: _isOtherTyping ? FontStyle.italic : FontStyle.normal,
                     ),
                     overflow: TextOverflow.ellipsis,
