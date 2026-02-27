@@ -994,7 +994,6 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: TlzAppTopBar.onPrimary(
-        onMenuPressed: () => Scaffold.of(context).openDrawer(),
         notificationCount: 1,
 
         onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(

@@ -575,15 +575,17 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                       context,
                       title: AuthService.instance.isLoggedIn ? 'ออกจากระบบ' : 'ลงชื่อเข้าใช้',
                       icon: AuthService.instance.isLoggedIn ? Icons.exit_to_app : Icons.login,
-                      onTap: () {
-                        _animationController.forward().then((_) {
+                      onTap: () async {
+                        _animationController.forward().then((_) async {
                           if (AuthService.instance.isLoggedIn) {
                             if (widget.onLogout != null) {
                               widget.onLogout!();
                             } else {
-                              AuthService.instance.logout();
-                              Navigator.of(context).pop();
-                              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                              await AuthService.instance.logout();
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                              }
                             }
                           } else {
                             Navigator.of(context).pop();

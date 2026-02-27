@@ -33,9 +33,8 @@ class TlzHamburgerMenu extends StatelessWidget {
                 }
               },
           borderRadius: BorderRadius.circular(8),
-          // เพิ่ม padding เพื่อให้พื้นที่กดใหญ่ขึ้น (48x48 = ขนาดที่แนะนำสำหรับ touch target)
           child: Padding(
-            padding: const EdgeInsets.all(16.0), // เพิ่ม padding ให้มากขึ้น
+            padding: const EdgeInsets.fromLTRB(0, 10, 16, 10), // ชิดซ้าย – padding ขวา/บน/ล่างปกติ
             child: Container(
               width: 29,
               height: 20,

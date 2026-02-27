@@ -125,11 +125,15 @@ class RatioCirclePainter extends CustomPainter {
   final Color providerColor;
   final Color recipientColor;
   final double strokeWidth;
+  final String providerLabel;
+  final String recipientLabel;
 
   RatioCirclePainter({
     required this.providerRatio,
     required this.providerColor,
     required this.recipientColor,
+    required this.providerLabel,
+    required this.recipientLabel,
     this.strokeWidth = 10.0,
   });
 
@@ -151,15 +155,140 @@ class RatioCirclePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    const startAngle = -math.pi / 2; // Start from top
+    const gap = 0.15; // Gap between arcs in radians (about 8.5 degrees)
+    const totalAvailableAngle = 2 * math.pi - (2 * gap);
     
-    // Draw total background (Recipient color or grey)
-    canvas.drawCircle(center, radius, recipientPaint);
-
-    // Draw Provider arc
-    if (providerRatio > 0.01) {
-      final sweepAngle = 2 * math.pi * providerRatio;
+    // Draw Provider arc (Top Half Focus)
+    if (providerRatio > 0.05) {
+      final sweepAngle = totalAvailableAngle * providerRatio;
+      // Start from top-center and expand outwards symmetrically
+      final startAngle = (-math.pi / 2) - (sweepAngle / 2);
+      
       canvas.drawArc(rect, startAngle, sweepAngle, false, providerPaint);
+
+      _drawCapCircle(canvas, center, radius, startAngle, providerColor);
+      _drawCapCircle(canvas, center, radius, startAngle + sweepAngle, providerColor);
+
+      if (providerLabel.isNotEmpty && providerRatio > 0.15) {
+        _drawTextOnArc(canvas, providerLabel, radius, center, -math.pi / 2, Colors.white, strokeWidth);
+      }
+    }
+
+    // Draw Recipient arc (Bottom Half Focus)
+    if (providerRatio < 0.95) {
+      final sweepAngleRecipient = totalAvailableAngle * (1 - providerRatio);
+      // Start from bottom-center and expand outwards symmetrically
+      final startAngleRecipient = (math.pi / 2) - (sweepAngleRecipient / 2);
+      
+      canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, recipientPaint);
+
+      _drawCapCircle(canvas, center, radius, startAngleRecipient, recipientColor);
+      _drawCapCircle(canvas, center, radius, startAngleRecipient + sweepAngleRecipient, recipientColor);
+
+      if (recipientLabel.isNotEmpty && (1 - providerRatio) > 0.15) {
+        _drawTextOnArc(canvas, recipientLabel, radius, center, math.pi / 2, Colors.white, strokeWidth);
+      }
+    }
+  }
+
+  void _drawCapCircle(Canvas canvas, Offset center, double radius, double angle, Color color) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    
+    final x = center.dx + radius * math.cos(angle);
+    final y = center.dy + radius * math.sin(angle);
+    
+    canvas.drawCircle(Offset(x, y), strokeWidth / 2, paint);
+  }
+
+  void _drawTextOnArc(
+    Canvas canvas, 
+    String text, 
+    double radius, 
+    Offset center, 
+    double midAngle, 
+    Color color,
+    double strokeWidth,
+  ) {
+    if (text.isEmpty) return;
+
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+
+    // แยกกลุ่มตัวอักษรภาษาไทยให้พยัญชนะ สระ และวรรณยุกต์อยู่ด้วยกัน
+    final List<String> charList = text.runes.map((r) => String.fromCharCode(r)).toList();
+    // หมายเหตุ: เพื่อความแม่นยำสูงสุดในภาษาไทย เราจะพยายามจับกลุ่มตัวอักษรที่มีสระ/วรรณยุกต์ติดกัน
+    final List<String> clusters = [];
+    String currentCluster = '';
+    
+    // Logic พื้นฐานในการรวมวรรณยุกต์และสระในภาษาไทย
+    for (int i = 0; i < text.length; i++) {
+      int charCode = text.codeUnitAt(i);
+      // ช่วงรหัสสระและวรรณยุกต์ไทย (บน/ล่าง)
+      bool isThaiMark = (charCode >= 0x0E31 && charCode <= 0x0E3A) || // สระบน/ล่าง
+                        (charCode >= 0x0E47 && charCode <= 0x0E4E);   // วรรณยุกต์
+      
+      if (isThaiMark && clusters.isNotEmpty) {
+        clusters[clusters.length - 1] += text[i];
+      } else {
+        clusters.add(text[i]);
+      }
+    }
+
+    const double fontSize = 11.0;
+    // ปรับระยะห่างตามจำนวนกลุ่มตัวอักษร
+    final double charAngleSpan = (fontSize * 0.85) / radius;
+    final double totalTextAngle = clusters.length * charAngleSpan;
+    
+    double currentAngle = midAngle - (totalTextAngle / 2);
+
+    // ตรวจสอบว่าเป็นส่วนล่างของวงกลมหรือไม่ (สำหรับกลับหัวตัวหนังสือให้อ่านง่าย)
+    bool isBottom = midAngle > 0 && midAngle < math.pi;
+
+    for (int i = 0; i < clusters.length; i++) {
+      textPainter.text = TextSpan(
+        text: clusters[i],
+        style: TextStyle(
+          fontFamily: 'SukhumvitSet',
+          color: color,
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          height: 1.0,
+          shadows: [
+            Shadow(color: Colors.black.withOpacity(0.4), blurRadius: 4),
+          ],
+        ),
+      );
+      textPainter.layout();
+
+      // คำนวณความเบี่ยงเบนของมุมเล็กน้อย (สำหรับสระ/วรรณยุกต์จะไม่เพิ่มระยะห่าง)
+      double angle = currentAngle;
+      
+      // ถ้าเป็นส่วนล่าง เราจะหมุนข้อความ 180 องศาเพื่อไม่ให้กลับหัว
+      if (isBottom) {
+        // วาดสลับลำดับจากขวาไปซ้าย หรือหมุนตัวอักษรแต่ละตัว
+        angle = midAngle + (midAngle - currentAngle);
+      }
+
+      final double x = center.dx + radius * math.cos(angle);
+      final double y = center.dy + radius * math.sin(angle);
+
+      canvas.save();
+      canvas.translate(x, y);
+      
+      if (isBottom) {
+        canvas.rotate(angle - math.pi / 2); // หมุนตัวอักษรยืนขึ้นสำหรับด้านล่าง
+      } else {
+        canvas.rotate(angle + math.pi / 2);
+      }
+      
+      textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
+      canvas.restore();
+
+      currentAngle += charAngleSpan;
     }
   }
 

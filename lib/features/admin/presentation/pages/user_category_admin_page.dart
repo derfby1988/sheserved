@@ -151,6 +151,11 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
       case 'business': return Icons.business;
       case 'volunteer_activism': return Icons.volunteer_activism;
       case 'group': return Icons.group;
+      case 'home': return Icons.home;
+      case 'school': return Icons.school;
+      case 'favorite': return Icons.favorite;
+      case 'star': return Icons.star;
+      case 'pets': return Icons.pets;
       default: return Icons.category;
     }
   }
@@ -242,8 +247,24 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
   late TextEditingController _idController;
   late TextEditingController _nameController;
   late TextEditingController _descriptionController;
+  String _selectedIcon = 'category';
   bool _isSaving = false;
   bool get isEditing => widget.category != null;
+
+  final List<Map<String, dynamic>> _availableIcons = [
+    {'name': 'category', 'icon': Icons.category},
+    {'name': 'shopping_cart', 'icon': Icons.shopping_cart},
+    {'name': 'medical_services', 'icon': Icons.medical_services},
+    {'name': 'person', 'icon': Icons.person},
+    {'name': 'business', 'icon': Icons.business},
+    {'name': 'volunteer_activism', 'icon': Icons.volunteer_activism},
+    {'name': 'group', 'icon': Icons.group},
+    {'name': 'home', 'icon': Icons.home},
+    {'name': 'school', 'icon': Icons.school},
+    {'name': 'favorite', 'icon': Icons.favorite},
+    {'name': 'star', 'icon': Icons.star},
+    {'name': 'pets', 'icon': Icons.pets},
+  ];
 
   @override
   void initState() {
@@ -251,6 +272,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
     _idController = TextEditingController(text: widget.category?.id ?? '');
     _nameController = TextEditingController(text: widget.category?.name ?? '');
     _descriptionController = TextEditingController(text: widget.category?.description ?? '');
+    _selectedIcon = widget.category?.iconName ?? 'category';
   }
 
   @override
@@ -284,6 +306,59 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
                 labelText: 'คำอธิบาย (ไม่บังคับ)',
               ),
             ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                const Icon(Icons.palette_outlined, size: 20, color: AppColors.textSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  'เลือกไอคอนหมวดหมู่',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 180,
+              width: double.maxFinite,
+              child: GridView.builder(
+                shrinkWrap: true,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemCount: _availableIcons.length,
+                itemBuilder: (context, index) {
+                  final iconData = _availableIcons[index];
+                  final bool isSelected = _selectedIcon == iconData['name'];
+                  
+                  return InkWell(
+                    onTap: () => setState(() => _selectedIcon = iconData['name']),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected 
+                            ? AppColors.primary.withOpacity(0.1) 
+                            : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.border,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Icon(
+                        iconData['icon'] as IconData,
+                        color: isSelected ? AppColors.primary : AppColors.textHint,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -311,6 +386,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
         'id': _idController.text.trim().toLowerCase(),
         'name': _nameController.text.trim(),
         'description': _descriptionController.text.trim(),
+        'icon_name': _selectedIcon,
         'is_active': true,
       };
 

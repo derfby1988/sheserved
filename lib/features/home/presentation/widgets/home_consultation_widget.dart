@@ -100,12 +100,16 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
 
   void _handleAuthChange() {
     if (mounted) {
-      debugPrint('HomeConsultationWidget: Auth change detected, refreshing counts...');
-      _loadInitialData();
+      debugPrint('HomeConsultationWidget: Auth change detected, RE-INITIALIZING streams and refreshing...');
+      setState(() {
+        _initStreams(); // Connect new streams as auth context might have changed (RLS)
+        _loadInitialData();
+      });
     }
   }
 
   void _initStreams() {
+    debugPrint('HomeConsultationWidget: Initializing real-time streams (Providers & Recipients)...');
     final userRepo = UserRepository(Supabase.instance.client);
     final consulRepo = ConsultationRepository(Supabase.instance.client);
     
@@ -196,9 +200,11 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                     child: CustomPaint(
                       painter: RatioCirclePainter(
                         providerRatio: _ratioAnimation.value,
-                        providerColor: AppColors.primary.withOpacity(0.8),
-                        recipientColor: AppColors.secondary.withOpacity(0.2), // Subtle background ring
-                        strokeWidth: 12 * (baseSize / 280),
+                        providerColor: AppColors.primary.withOpacity(0.4),
+                        recipientColor: AppColors.accent.withOpacity(0.4),
+                        providerLabel: 'ผู้ให้บริการ',
+                        recipientLabel: 'รอปรึกษา',
+                        strokeWidth: 14 * (baseSize / 280),
                       ),
                     ),
                   );
@@ -263,6 +269,10 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                       ? providerSnapshot.data!.values.fold<int>(0, (a, b) => a + b)
                                       : _count;
                                     final recipients = recipientSnapshot.data ?? 0;
+                                    
+                                    if (providerSnapshot.hasData) {
+                                      debugPrint('HomeConsultationWidget: Stream update - providers: $providers, recipients: $recipients');
+                                    }
                                     
                                     // Update ratio animation target if changed
                                     WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -8,8 +8,7 @@ import '../../data/repositories/body_region_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import '../../../../shared/widgets/tlz_drawer.dart';
-import '../../../../shared/widgets/tlz_hamburger_menu.dart';
+import '../../../../shared/widgets/widgets.dart';
 
 class BodyRegionAdminPage extends StatefulWidget {
   const BodyRegionAdminPage({super.key});
@@ -180,38 +179,20 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
-      appBar: AppBar(
-        leading: const TlzHamburgerMenu(),
-        title: const Text('จัดการอวัยวะ (Body Regions)'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textOnPrimary,
-        actions: [
-          IconButton(
-            icon: Icon(_showMap ? Icons.list : Icons.map),
-            onPressed: () => setState(() => _showMap = !_showMap),
-            tooltip: _showMap ? 'ดูแบบรายการ' : 'ดูแบบแผนที่',
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight + 16),
+        child: Container(
+          color: AppColors.primary,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TlzAppTopBar.onPrimary(
+                searchHintText: 'ค้นหาอวัยวะ...',
+              ),
+            ),
           ),
-          TextButton.icon(
-            onPressed: _seedData,
-            icon: const Icon(Icons.auto_fix_high, color: Colors.white),
-            label: const Text('ดึงข้อมูลเริ่มต้น', style: TextStyle(color: Colors.white)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () async {
-              setState(() => _isLoading = true);
-              try {
-                await Supabase.instance.client.rpc('reload_schema_cache');
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reloaded schema cache')));
-                _loadRegions();
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reload failed: $e')));
-                setState(() => _isLoading = false);
-              }
-            },
-            tooltip: 'Reload Schema Cache',
-          ),
-        ],
+        ),
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())

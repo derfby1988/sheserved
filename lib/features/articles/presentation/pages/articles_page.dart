@@ -333,15 +333,11 @@ class _ArticlesPageState extends State<ArticlesPage> {
 }
 
   Widget _buildCustomHeader(BuildContext context) {
-    final user = AuthService.instance.currentUser;
-    final hasUser = user != null;
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.only(bottom: 24), // Space for the bottom curve
       decoration: const BoxDecoration(
         color: _blue,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(56)), // Large rounded corners
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
         boxShadow: [
           BoxShadow(
             color: Colors.black12,
@@ -353,97 +349,17 @@ class _ArticlesPageState extends State<ArticlesPage> {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Row(
-            children: [
-              // Drawer Menu Button
-              TlzHamburgerMenu(
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
-              
-              const Spacer(),
-
-
-              // User Profile Pill
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  children: [
-                    // Avatar
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        image: (hasUser && user.profileImageUrl != null && user.profileImageUrl!.isNotEmpty)
-                            ? DecorationImage(
-                                image: NetworkImage(user.profileImageUrl!), 
-                                fit: BoxFit.cover,
-                                onError: (_, __) {},
-                              )
-                            : null,
-                      ),
-                      child: (!hasUser || user.profileImageUrl == null || user.profileImageUrl!.isEmpty)
-                          ? const Icon(Icons.person, color: Colors.white)
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    // Heart Icon
-                    InkWell(
-                      onTap: () {
-                        // Navigate to favorites
-                      },
-                      child: const Icon(Icons.favorite, color: Colors.white),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                ),
-              ),
-
-
-              // Notification Circle
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.shopping_bag_outlined, color: Colors.white),
-                    ),
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Text(
-                          '4',
-                          style: TextStyle(
-                            color: _blue,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: TlzAppTopBar.onPrimary(
+            searchHintText: 'ค้นหาบทความสุขภาพ...',
+            notificationCount: 0,
+            onSearch: _onSearch,
+            onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้')),
+            ),
+            onCartTap: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้')),
+            ),
           ),
         ),
       ),

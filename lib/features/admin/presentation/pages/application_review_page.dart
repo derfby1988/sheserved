@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../models/profession.dart';
 
@@ -129,29 +130,44 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textOnPrimary,
-        title: const Text('ตรวจสอบผู้สมัคร'),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.textOnPrimary,
-          labelColor: AppColors.textOnPrimary,
-          unselectedLabelColor: AppColors.textOnPrimary.withOpacity(0.6),
-          tabs: [
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('รอตรวจสอบ'),
-                  const SizedBox(width: 4),
-                  _buildBadge(_getPendingCount()),
+      drawer: const TlzDrawer(),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight + 48 + 16),
+        child: Container(
+          color: AppColors.primary,
+          child: Column(
+            children: [
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: TlzAppTopBar.onPrimary(
+                    searchHintText: 'ค้นหาผู้สมัคร...',
+                  ),
+                ),
+              ),
+              TabBar(
+                controller: _tabController,
+                indicatorColor: AppColors.textOnPrimary,
+                labelColor: AppColors.textOnPrimary,
+                unselectedLabelColor: AppColors.textOnPrimary.withOpacity(0.6),
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('รอตรวจสอบ'),
+                        const SizedBox(width: 4),
+                        _buildBadge(_getPendingCount()),
+                      ],
+                    ),
+                  ),
+                  const Tab(text: 'อนุมัติแล้ว'),
+                  const Tab(text: 'ถูกปฏิเสธ'),
                 ],
               ),
-            ),
-            const Tab(text: 'อนุมัติแล้ว'),
-            const Tab(text: 'ถูกปฏิเสธ'),
-          ],
+            ],
+          ),
         ),
       ),
       body: _isLoading

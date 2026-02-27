@@ -177,7 +177,9 @@ class _TlzAnimatedSearchBarState extends State<TlzAnimatedSearchBar>
               Expanded(
                 child: Text(
                   widget.hintText ?? 'ค้นหา...',
-                  style: TextStyle(color: _hintColor, fontSize: 14),
+                  style: TextStyle(color: _hintColor, fontSize: 12.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (widget.showQRButton)
@@ -528,7 +530,7 @@ class _SearchOverlayState extends State<_SearchOverlay>
                   hintText: widget.hintText,
                   hintStyle: TextStyle(
                     color: AppColors.textHint,
-                    fontSize: 14,
+                    fontSize: 12.5,
                   ),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,

@@ -145,7 +145,7 @@ class TlzAppTopBar extends StatelessWidget {
           onPressed: onMenuPressed,
         ),
         
-        const SizedBox(width: 12),
+        const SizedBox(width: 4),
         
         // Animated Search Bar or Custom Middle Widget
         Expanded(

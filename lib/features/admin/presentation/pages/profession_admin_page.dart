@@ -5,8 +5,7 @@ import '../../models/profession.dart';
 import '../../data/repositories/profession_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'group_members_admin_page.dart';
-import '../../../../shared/widgets/tlz_drawer.dart';
-import '../../../../shared/widgets/tlz_hamburger_menu.dart';
+import '../../../../shared/widgets/widgets.dart';
 import '../../../../shared/widgets/online_providers_badge.dart';
 
 /// Admin Page สำหรับจัดการอาชีพ
@@ -54,23 +53,20 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
-      appBar: AppBar(
-        leading: const TlzHamburgerMenu(),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textOnPrimary,
-        title: const Text('จัดการอาชีพและฟิลด์ลงทะเบียน'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.category),
-            onPressed: () => Navigator.pushNamed(context, '/admin/user-categories'),
-            tooltip: 'จัดการหมวดหมู่ผู้ใช้',
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight + 16),
+        child: Container(
+          color: AppColors.primary,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TlzAppTopBar.onPrimary(
+                searchHintText: 'ค้นหาอาชีพ...',
+              ),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            onPressed: () => Navigator.pushNamed(context, '/admin/applications'),
-            tooltip: 'ดูผู้สมัครรอตรวจสอบ',
-          ),
-        ],
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -119,9 +115,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
       );
     }
 
-    // Separate built-in and custom professions
-    final builtInProfessions =
-        _professions.where((p) => p.isBuiltIn).toList();
+    // Only show custom professions in management list
     final customProfessions =
         _professions.where((p) => !p.isBuiltIn).toList();
 
@@ -131,23 +125,22 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         padding: const EdgeInsets.all(16),
         children: [
           // === Online Providers Panel (Real-time) ===
-          AllGroupsOnlinePanel(professions: _professions, isAdminView: true),
+          AllGroupsOnlinePanel(professions: customProfessions, isAdminView: true),
           const SizedBox(height: 20),
-
-          // Built-in professions section
-          if (builtInProfessions.isNotEmpty) ...[
-            _buildSectionHeader('อาชีพหลัก (Built-in)', Icons.lock_outline),
-            const SizedBox(height: 8),
-            ...builtInProfessions.map((p) => _buildProfessionCard(p)),
-          ],
     
-          // Custom professions section
+          // Professionals list (Custom only)
           if (customProfessions.isNotEmpty) ...[
-            if (builtInProfessions.isNotEmpty) const SizedBox(height: 24),
-            _buildSectionHeader('อาชีพที่เพิ่มเอง', Icons.add_circle_outline),
-            const SizedBox(height: 8),
             ...customProfessions.map((p) => _buildProfessionCard(p)),
-          ],
+          ] else
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Text(
+                  'ยังไม่มีอาชีพที่เพิ่มเองในขณะนี้',
+                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+                ),
+              ),
+            ),
     
           const SizedBox(height: 80), // Space for FAB
         ],
@@ -190,237 +183,142 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: _getCategoryColor(profession.category).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _getIconData(profession.iconName),
-                  color: _getCategoryColor(profession.category),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Icon
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _getCategoryColor(profession.category).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      _getIconData(profession.iconName),
+                      color: _getCategoryColor(profession.category),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
 
-              // Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  // Main Content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            profession.name,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (profession.isBuiltIn)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.lock,
-                                  size: 12,
-                                  color: AppColors.primary,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                profession.name,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (profession.isBuiltIn)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
                                   'Built-in',
                                   style: AppTextStyles.caption.copyWith(
                                     color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 2,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        // Field count
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.list_alt,
-                              size: 14,
-                              color: AppColors.textHint,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${profession.fieldCount} ฟิลด์',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
                               ),
-                            ),
                           ],
                         ),
-
-                        // Member count
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                        const SizedBox(height: 6),
+                        
+                        // Stats & Category in Wrap
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
                           children: [
-                            Icon(
-                              Icons.people_outline,
-                              size: 14,
-                              color: AppColors.textHint,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${profession.memberCount} คน',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        // Category
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                             Icon(
-                               profession.category.id == UserCategory.consumerId
-                                   ? Icons.person
-                                   : Icons.business,
-                               size: 14,
-                               color: AppColors.textHint,
-                             ),
-                            const SizedBox(width: 4),
-                            Text(
+                            _buildCompactStat(Icons.list_alt, '${profession.fieldCount} ฟิลด์'),
+                            _buildCompactStat(Icons.people_outline, '${profession.memberCount} คน'),
+                            _buildCompactStat(
+                              profession.category.id == UserCategory.consumerId ? Icons.person : Icons.business,
                               profession.category.displayName,
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
                             ),
+                            if (profession.requiresVerification)
+                              _buildCompactStat(Icons.verified_user, 'ต้องตรวจสอบ', color: AppColors.warning),
                           ],
                         ),
-
-                        // Requires verification badge
-                        if (profession.requiresVerification)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.verified_user,
-                                size: 14,
-                                color: AppColors.warning,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'ต้องตรวจสอบ',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.warning,
-                                ),
-                              ),
-                            ],
-                          ),
                       ],
                     ),
-                    if (profession.description != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        profession.description!,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textHint,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
-
-              const SizedBox(width: 4),
-
-              // Actions
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              
+              const Divider(height: 20),
+              
+              // Bottom Action Bar
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Pending count badge
+                  // Pending Info
                   if (pendingCount > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: AppColors.error,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text(
-                        '$pendingCount รอตรวจ',
-                        style: AppTextStyles.caption.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.notification_important, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$pendingCount รายการรอตรวจ',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  const SizedBox(height: 8),
+                    )
+                  else
+                    const SizedBox.shrink(),
 
-                  // Actions row
+                  // Action Buttons
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (!profession.isBuiltIn) ...[
-                        _buildCompactIconButton(
-                          icon: Icons.people_outline,
-                          color: Colors.blue,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => GroupMembersAdminPage(profession: profession),
-                              ),
-                            );
-                          },
-                          tooltip: 'จัดการสมาชิกและสิทธิกลุ่ม',
+                        _buildActionIcon(
+                          Icons.group_add_outlined, 
+                          Colors.blue, 
+                          () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupMembersAdminPage(profession: profession))),
                         ),
-                        _buildCompactIconButton(
-                          icon: Icons.edit_outlined,
-                          color: AppColors.primary,
-                          onPressed: () => _showEditProfessionDialog(profession),
-                          tooltip: 'แก้ไข',
+                        _buildActionIcon(
+                          Icons.edit_outlined, 
+                          AppColors.primary, 
+                          () => _showEditProfessionDialog(profession),
                         ),
-                        _buildCompactIconButton(
-                          icon: Icons.delete_outline,
-                          color: AppColors.error,
-                          onPressed: () => _confirmDeleteProfession(profession),
-                          tooltip: 'ลบ',
+                        _buildActionIcon(
+                          Icons.delete_outline, 
+                          AppColors.error, 
+                          () => _confirmDeleteProfession(profession),
                         ),
                       ],
-                      Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: Icon(
-                          Icons.settings_outlined,
-                          color: AppColors.textHint,
-                          size: 20,
-                        ),
-                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.settings_outlined, color: AppColors.textHint, size: 18),
                     ],
                   ),
                 ],
@@ -432,20 +330,34 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
     );
   }
 
-  Widget _buildCompactIconButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-    String? tooltip,
-  }) {
-    return IconButton(
-      icon: Icon(icon),
-      color: color,
-      iconSize: 20,
-      padding: const EdgeInsets.all(4),
-      constraints: const BoxConstraints(),
-      onPressed: onPressed,
-      tooltip: tooltip,
+  Widget _buildCompactStat(IconData icon, String label, {Color? color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color ?? AppColors.textHint),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: color ?? AppColors.textSecondary,
+            fontSize: 11,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionIcon(IconData icon, Color color, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Icon(icon, color: color, size: 20),
+        ),
+      ),
     );
   }
 

@@ -609,17 +609,19 @@ class UserRepository {
         .toIso8601String();
 
     try {
+      // ดึงข้อมูลผู้ใช้ที่มีความเคลื่อนไหว โดยจอยกับตารางอาชีพและหมวดหมู่
+      // เพื่อตรวจสอบว่าอาชีพนั้นๆ อยู่ในหมวดหมู่ 'provider' หรือไม่
       final response = await _client
           .from('users')
-          .select('profession_id')
+          .select('profession_id, professions!inner(category)')
           .eq('is_active', true)
+          .eq('professions.category', 'provider')
           .not('profession_id', 'is', null)
-          // ต้องไม่อยู่ในสถานะ busy หรือ offline
           .neq('availability_status', 'busy')
           .neq('availability_status', 'offline')
-          // ไม่รวม consumer (id 00...0001)
-          .neq('profession_id', '00000000-0000-0000-0000-000000000001')
           .gte('last_seen_at', threshold);
+
+      debugPrint('UserRepository: getOnlineProviderCounts found ${response.length} active providers');
 
       final Map<String, int> counts = {};
       for (final row in response) {
@@ -642,6 +644,49 @@ class UserRepository {
         .from('users')
         .stream(primaryKey: ['id'])
         .asyncMap((_) => getOnlineProviderCounts());
+  }
+
+  /// ดึงจำนวนผู้ใช้ที่ออนไลน์แยกตามหมวดหมู่ (id:provider, id:consumer)
+  Future<Map<String, int>> getOnlineCategoryCounts() async {
+    final threshold = DateTime.now()
+        .toUtc()
+        .subtract(const Duration(minutes: 5))
+        .toIso8601String();
+
+    try {
+      final response = await _client
+          .from('users')
+          .select('professions!inner(category)')
+          .eq('is_active', true)
+          .neq('availability_status', 'busy')
+          .neq('availability_status', 'offline')
+          .gte('last_seen_at', threshold);
+
+      final Map<String, int> counts = {
+        'provider': 0,
+        'consumer': 0,
+      };
+      
+      for (final row in (response as List)) {
+        final professions = row['professions'] as Map<String, dynamic>?;
+        final category = professions?['category'] as String?;
+        if (category != null) {
+          counts[category] = (counts[category] ?? 0) + 1;
+        }
+      }
+      return counts;
+    } catch (e) {
+      debugPrint('getOnlineCategoryCounts error: $e');
+      return {'provider': 0, 'consumer': 0};
+    }
+  }
+
+  /// Stream สำหรับ real-time อัปเดตจำนวนแยกตามหมวดหมู่
+  Stream<Map<String, int>> watchOnlineCategoryCounts() {
+    return _client
+        .from('users')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) => getOnlineCategoryCounts());
   }
 
 

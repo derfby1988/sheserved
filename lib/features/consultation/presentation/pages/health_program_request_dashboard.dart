@@ -9,6 +9,7 @@ import '../../../../features/auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../chat/data/models/chat_models.dart';
 import '../../data/repositories/consultation_repository.dart';
+import '../../../../shared/widgets/widgets.dart';
 
 // ─── Model: Rich consultation entry with patient info ─────────────────────────
 class ConsultationEntry {
@@ -338,6 +339,7 @@ class _HealthProgramRequestDashboardState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      drawer: const TlzDrawer(),
       body: NestedScrollView(
         headerSliverBuilder: (ctx, _) => [_buildAppBar()],
         body: _isLoading ? _buildLoading() : _buildBody(),
@@ -352,13 +354,18 @@ class _HealthProgramRequestDashboardState
       pinned: true,
       stretch: true,
       backgroundColor: AppColors.primary,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-            color: Colors.white, size: 20),
-        onPressed: () => Navigator.pop(context),
+      automaticallyImplyLeading: false,
+      title: TlzAppTopBar.onPrimary(
+        searchHintText: 'ค้นหาคำร้องขอ...',
+        notificationCount: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
       ),
       actions: [
-        // ปุ่มเปลี่ยนสถานะ (เฉพาะ provider)
         if (_isProvider)
           Padding(
             padding: const EdgeInsets.only(right: 4),
@@ -373,24 +380,7 @@ class _HealthProgramRequestDashboardState
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'ร้องขอโปรแกรมรักษาสุขภาพ',
-              style: TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            if (_isProvider)
-              Text(
-                'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
-                style: TextStyle(
-                    color: Colors.white.withOpacity(0.75), fontSize: 9),
-              ),
-          ],
-        ),
+        titlePadding: EdgeInsets.zero,
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -404,6 +394,13 @@ class _HealthProgramRequestDashboardState
                 16, _isProvider ? 95 : 85, 16, _isProvider ? 60 : 55),
             child: Column(
               children: [
+                if (_isProvider) ...[
+                  Text(
+                    'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
+                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 11),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // Stat chips
                 Row(
                   children: [
@@ -419,7 +416,6 @@ class _HealthProgramRequestDashboardState
                         Icons.check_circle_outline, AppColors.success),
                   ],
                 ),
-                // Provider availability banner
                 if (_isProvider) ...[
                   const SizedBox(height: 10),
                   _AvailabilityBanner(status: _availabilityStatus),
@@ -431,6 +427,7 @@ class _HealthProgramRequestDashboardState
       ),
     );
   }
+
 
   Widget _statChip(String label, int count, IconData icon, Color accent) {
     return Expanded(
