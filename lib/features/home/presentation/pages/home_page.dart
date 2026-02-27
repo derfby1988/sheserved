@@ -212,15 +212,6 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
       drawerEnableOpenDragGesture: true,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/test'),
-        backgroundColor: AppColors.primary,
-        tooltip: 'ทดสอบ WebSocket',
-        child: const Icon(
-          Icons.bug_report,
-          color: AppColors.textOnPrimary,
-        ),
-      ),
       body: Builder(
         builder: (context) => GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -228,34 +219,31 @@ class _HomePageState extends State<HomePage> {
           onHorizontalDragUpdate: (details) => _onHorizontalDragUpdate(details, context),
           onHorizontalDragEnd: (details) => _onHorizontalDragEnd(details, context),
           child: Container(
-            color: Colors.transparent, // โปร่งใสเพื่อให้เห็นเนื้อหาด้านหลังมุมโค้ง
+            color: Colors.transparent, 
             child: SafeArea(
-              child: Stack( // ใช้ Stack แทน Column เพื่อให้ Top Bar ลอยทับเนื้อหา
+              child: Stack(
                 children: [
-                  // Main Content - Scrollable (วางเป็นลำดับแรกเพื่อให้ Header ทับ)
                   Positioned.fill(
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       child: Column(
                         children: [
-                          // เพิ่มพื้นที่ด้านบนสำหรับ Header ที่ Fixed
                           const SizedBox(height: 70), 
                           Stack(
                             children: [
-                              // Background Layer - Map
                               Column(
                                 children: [
                                   const SizedBox(
                                     height: 500,
                                     child: HomeMapBackground(),
                                   ),
-                                  // Content below map
                                   Container(
                                     width: double.infinity,
                                     color: const Color(0xFFEDF5DA),
                                     child: Column(
                                       children: [
                                         const SizedBox(height: 100),
+                                        // Article Sections with separate loading state
                                         _isLoadingArticles
                                           ? _buildSectionSkeleton()
                                           : HomeRecommendedSection(
@@ -267,7 +255,6 @@ class _HomePageState extends State<HomePage> {
                                                   '/health/article',
                                                   arguments: article,
                                                 );
-                                                debugPrint('HomePage: Returning from Recommended Article, reloading data...');
                                                 await _loadHomeData();
                                               },
                                               onBookmarkTap: _onToggleBookmark,
@@ -284,7 +271,6 @@ class _HomePageState extends State<HomePage> {
                                                   '/health/article',
                                                   arguments: article,
                                                 );
-                                                debugPrint('HomePage: Returning from Interesting Article, reloading data...');
                                                 await _loadHomeData();
                                               },
                                               onBookmarkTap: _onToggleBookmark,
@@ -295,7 +281,7 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                 ],
                               ),
-                              // Foreground Layer - Header, Consultation, Pharmacy
+                              // Foreground Layer - Actions (Consultation, Pharmacy) are NOT blocked by article loading
                               Column(
                                 children: [
                                   HomeHeaderSection(
@@ -338,7 +324,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   
-                  // Top Navigation Bar - Fixed Overlay
                   Positioned(
                     top: 0,
                     left: 0,

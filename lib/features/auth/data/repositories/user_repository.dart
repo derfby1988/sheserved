@@ -605,59 +605,31 @@ class UserRepository {
   Future<Map<String, int>> getOnlineProviderCounts() async {
     final threshold = DateTime.now()
         .toUtc()
-        .subtract(const Duration(minutes: 2))
+        .subtract(const Duration(minutes: 5)) // Increased to 5 mins for stability
         .toIso8601String();
 
-    final Map<String, int> counts = {};
-    final Set<String> processedUsers = {};
-
     try {
-      // 1. Try Fetch from user_group_roles
-      final roleResponse = await _client
-          .from('user_group_roles')
-          .select('profession_id, users!inner(id, last_seen_at, availability_status, is_active)')
-          .eq('users.is_active', true)
-          .gte('users.last_seen_at', threshold)
-          .or('availability_status.eq.online,availability_status.is.null', referencedTable: 'users')
-          .timeout(const Duration(seconds: 5));
-
-      for (final row in roleResponse) {
-        final profId = row['profession_id'] as String?;
-        final userMap = row['users'] as Map?;
-        if (profId != null && userMap != null) {
-          final userId = userMap['id'] as String;
-          counts[profId] = (counts[profId] ?? 0) + 1;
-          processedUsers.add(userId);
-        }
-      }
-    } catch (e) {
-      debugPrint('Optional user_group_roles count failed (skipping): $e');
-    }
-
-    try {
-      // 2. Fetch from users table directly
-      final userResponse = await _client
+      final response = await _client
           .from('users')
-          .select('id, profession_id')
+          .select('profession_id')
           .eq('is_active', true)
           .not('profession_id', 'is', null)
+          // ไม่รวม consumer (id 00...0001)
           .neq('profession_id', '00000000-0000-0000-0000-000000000001')
-          .gte('last_seen_at', threshold)
-          .or('availability_status.eq.online,availability_status.is.null')
-          .timeout(const Duration(seconds: 5));
+          .gte('last_seen_at', threshold);
 
-      for (final row in userResponse) {
+      final Map<String, int> counts = {};
+      for (final row in response) {
         final profId = row['profession_id'] as String?;
-        final userId = row['id'] as String;
-        if (profId != null && !processedUsers.contains(userId)) {
+        if (profId != null) {
           counts[profId] = (counts[profId] ?? 0) + 1;
         }
       }
+      return counts;
     } catch (e) {
-      debugPrint('Primary users profession count failed: $e');
+      debugPrint('getOnlineProviderCounts error: $e');
+      return {};
     }
-
-    return counts;
   }
 
   /// Stream สำหรับ real-time อัปเดต online counts

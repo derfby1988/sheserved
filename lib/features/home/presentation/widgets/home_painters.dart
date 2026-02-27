@@ -118,3 +118,53 @@ class MapSkeletonPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+/// Custom Painter for Ratio Circle (Online Providers vs Recipients)
+class RatioCirclePainter extends CustomPainter {
+  final double providerRatio; // 0.0 to 1.0
+  final Color providerColor;
+  final Color recipientColor;
+  final double strokeWidth;
+
+  RatioCirclePainter({
+    required this.providerRatio,
+    required this.providerColor,
+    required this.recipientColor,
+    this.strokeWidth = 10.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - strokeWidth) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final providerPaint = Paint()
+      ..color = providerColor
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final recipientPaint = Paint()
+      ..color = recipientColor
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    const startAngle = -math.pi / 2; // Start from top
+    
+    // Draw total background (Recipient color or grey)
+    canvas.drawCircle(center, radius, recipientPaint);
+
+    // Draw Provider arc
+    if (providerRatio > 0.01) {
+      final sweepAngle = 2 * math.pi * providerRatio;
+      canvas.drawArc(rect, startAngle, sweepAngle, false, providerPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant RatioCirclePainter oldDelegate) {
+    return oldDelegate.providerRatio != providerRatio;
+  }
+}

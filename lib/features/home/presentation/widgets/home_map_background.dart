@@ -78,6 +78,41 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     }
   }
 
+  Marker _buildPharmacyMarker(LatLng point, String name) {
+    return Marker(
+      point: point,
+      width: 40,
+      height: 40,
+      child: GestureDetector(
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('เลือก: $name'), duration: const Duration(seconds: 1)),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.local_pharmacy,
+              color: Color(0xFF4A8B2C),
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -115,6 +150,13 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                       tileProvider: CancellableNetworkTileProvider(),
                       errorTileCallback: _onMapTileError,
                       evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        _buildPharmacyMarker(const LatLng(13.7570, 100.5025), 'ร้านยาเอ'),
+                        _buildPharmacyMarker(const LatLng(13.7555, 100.5005), 'ร้านยาบี'),
+                        _buildPharmacyMarker(const LatLng(13.7580, 100.4990), 'ร้านยาสามย่าน'),
+                      ],
                     ),
                   ],
                 ),

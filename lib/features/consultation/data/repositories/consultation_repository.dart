@@ -277,5 +277,29 @@ class ConsultationRepository {
       return {};
     }
   }
+
+  /// Get total count of active consultation requests (recipients)
+  Future<int> getActiveRecipientCount() async {
+    try {
+      final response = await _client
+          .from('consultation_requests')
+          .select('id')
+          .inFilter('status', ['pending', 'in_progress'])
+          .count(CountOption.exact);
+      
+      return response.count ?? 0;
+    } catch (e) {
+      debugPrint('getActiveRecipientCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Stream active recipient count
+  Stream<int> watchActiveRecipientCount() {
+    return _client
+        .from('consultation_requests')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) => getActiveRecipientCount());
+  }
 }
 
