@@ -560,6 +560,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               },
                               isSubItem: true,
                             ),
+                            _buildMenuItem(
+                              context,
+                              title: 'จัดการระบบบริจาค',
+                              icon: Icons.volunteer_activism_outlined,
+                              onTap: () => _navigateTo(context, '/admin/donations'),
+                              isSubItem: true,
+                            ),
                           ],
                             const SizedBox(height: 32),
                           ],

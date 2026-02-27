@@ -35,6 +35,8 @@ import 'features/consultation/presentation/pages/chart_board_page.dart';
 import 'features/consultation/presentation/pages/vega_ai_chat_page.dart';
 import 'features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import 'features/consultation/data/models/consultation_request_model.dart';
+import 'features/donation/presentation/pages/donation_dashboard_page.dart';
+import 'features/donation/presentation/pages/donation_admin_page.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
 import 'services/supabase_service.dart';
@@ -133,6 +135,8 @@ class SheservedApp extends StatelessWidget {
         '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
         '/admin/packages': (context) => const PackageAdminPage(),
         '/admin/user-categories': (context) => const UserCategoryAdminPage(),
+        '/donate': (context) => const DonationDashboardPage(),
+        '/admin/donations': (context) => const DonationAdminPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

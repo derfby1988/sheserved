@@ -84,6 +84,7 @@ flutter:
   assets:
     - assets/fonts/
     - assets/models/
+    - assets/images/
 
   # Fonts - Sukhumvit Set
   fonts:
