@@ -6,7 +6,12 @@ import '../widgets/category_icon.dart';
 import '../widgets/donation_stats_row.dart';
 import '../widgets/trending_donation_card.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../../../shared/widgets/widgets.dart';
+import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../core/constants/app_colors.dart';
 import 'donation_detail_page.dart';
+import 'donation_create_page.dart';
 
 class DonationDashboardPage extends StatefulWidget {
   const DonationDashboardPage({super.key});
@@ -23,7 +28,46 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
   void initState() {
     super.initState();
     _repository = DonationRepository(Supabase.instance.client);
+    AuthService.instance.addListener(_onAuthChanged);
     _loadData();
+    
+    // Check for auto-create argument (redirected from login)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args == 'auto_create' && ServiceLocator.instance.currentUser != null) {
+        _handleAutoCreateAfterLogin();
+      }
+    });
+  }
+
+  void _handleAutoCreateAfterLogin() {
+    // Show a snackbar to inform the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('กำลังนำคุณไปยังหน้าสร้างคำร้องขอ...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+    
+    // Wait for 1 second as requested before navigating
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+        );
+      }
+    });
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -42,6 +86,30 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      drawer: const TlzDrawer(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          if (ServiceLocator.instance.currentUser != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+            );
+          } else {
+            // Guest mode: Redirect to login and return here to auto-create
+            Navigator.pushNamed(
+              context, 
+              '/login',
+              arguments: {
+                'route': '/donate',
+                'arguments': 'auto_create',
+              },
+            );
+          }
+        },
+        backgroundColor: AppColors.primary,
+        icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+        label: const Text('สร้างคำร้องขอ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
       body: StreamBuilder<List<DonationCategory>>(
         stream: _repository.watchCategories(),
         builder: (context, catSnapshot) {
@@ -57,43 +125,45 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
               final trendingRequests = reqSnapshot.data?.where((r) => r.isTrending).toList() ?? [];
               
               return CustomScrollView(
-            slivers: [
-              // Hero Banner with Back Button
-              SliverToBoxAdapter(
-                child: Stack(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: 189,
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage("assets/images/donation_banner.png"),
-                          fit: BoxFit.cover,
-                        ),
-                        borderRadius: BorderRadius.only(
-                          bottomLeft: Radius.circular(18),
-                          bottomRight: Radius.circular(18),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 40,
-                      left: 16,
-                      child: GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
+                slivers: [
+                  // Hero Banner with TlzAppTopBar
+                  SliverToBoxAdapter(
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          height: 220, // Increased height to accommodate TopBar
                           decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
+                            image: DecorationImage(
+                              image: AssetImage("assets/images/donation_banner.png"),
+                              fit: BoxFit.cover,
+                            ),
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: Radius.circular(32),
+                              bottomRight: Radius.circular(32),
+                            ),
                           ),
-                          child: const Icon(Icons.arrow_back, color: Color(0xFF76A5A5), size: 20),
                         ),
-                      ),
+                        // Top Bar Overlay
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: SafeArea(
+                            bottom: false,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: TlzAppTopBar.onLight(
+                                onMenuPressed: () => Scaffold.of(context).openDrawer(),
+                                searchHintText: 'ค้นหาการบริจาค...',
+                                showQRButton: false,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
 
               // Emergency Section
               SliverToBoxAdapter(
@@ -170,9 +240,9 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                       const Text(
                         'หมวดหมู่',
                         style: TextStyle(
-                          color: Color(0xFF7FA2C2),
+                          color: Color(0xFF4A6A8A),
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -192,6 +262,7 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                             label: cat.name,
                             icon: _getIconData(cat.iconName),
                             iconColor: const Color(0xFF76A5A5),
+                            labelColor: const Color(0xFF4A6A8A), // Dark blue for contrast on white bg
                             onTap: () {},
                           );
                         },
@@ -211,9 +282,9 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                       const Text(
                         'กำลังได้รับความนิยม',
                         style: TextStyle(
-                          color: Color(0xFF7FA2C2),
+                          color: Color(0xFF4A6A8A),
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 12),

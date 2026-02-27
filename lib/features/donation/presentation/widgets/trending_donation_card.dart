@@ -61,8 +61,11 @@ class TrendingDonationCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.bodyMedium.copyWith(
-                      color: const Color(0xFFF8B619), // Gold color from design
-                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      shadows: [
+                        Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1)),
+                      ],
                     ),
                   ),
                 ),

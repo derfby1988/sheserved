@@ -6,6 +6,7 @@ class CategoryIcon extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color iconColor;
+  final Color? labelColor;
   final VoidCallback onTap;
 
   const CategoryIcon({
@@ -13,6 +14,7 @@ class CategoryIcon extends StatelessWidget {
     required this.label,
     required this.icon,
     this.iconColor = const Color(0xFF76A5A5),
+    this.labelColor,
     required this.onTap,
   });
 
@@ -61,7 +63,7 @@ class CategoryIcon extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.caption.copyWith(
-                  color: Colors.white,
+                  color: labelColor ?? Colors.white,
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                   height: 1.1,

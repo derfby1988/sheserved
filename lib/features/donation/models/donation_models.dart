@@ -13,6 +13,39 @@ enum DonationApprovalStatus {
   }
 }
 
+class DonationCategoryField {
+  final String id;
+  final String label;
+  final String type; // 'text', 'number', 'long_text', 'date'
+  final bool isRequired;
+
+  const DonationCategoryField({
+    required this.id,
+    required this.label,
+    required this.type,
+    this.isRequired = false,
+  });
+
+  factory DonationCategoryField.fromJson(Map<String, dynamic> json) {
+    return DonationCategoryField(
+      id: json['id'] ?? '',
+      label: json['label'] ?? '',
+      type: json['type'] ?? 'text',
+      isRequired: json['is_required'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'label': label,
+      'type': type,
+      'is_required': isRequired,
+    };
+  }
+}
+
+
 /// หมวดหมู่การบริจาค/ขอความช่วยเหลือ
 class DonationCategory {
   final String id;
@@ -21,6 +54,7 @@ class DonationCategory {
   final String? iconName;
   final bool isEmergency;
   final int displayOrder;
+  final List<DonationCategoryField> customFields;
 
   const DonationCategory({
     required this.id,
@@ -29,9 +63,16 @@ class DonationCategory {
     this.iconName,
     this.isEmergency = false,
     this.displayOrder = 0,
+    this.customFields = const [],
   });
 
   factory DonationCategory.fromJson(Map<String, dynamic> json) {
+    List<DonationCategoryField> fields = [];
+    if (json['custom_fields'] != null) {
+      final list = json['custom_fields'] as List;
+      fields = list.map((e) => DonationCategoryField.fromJson(e)).toList();
+    }
+
     return DonationCategory(
       id: json['id'],
       name: json['name'] ?? '',
@@ -39,6 +80,7 @@ class DonationCategory {
       iconName: json['icon_name'],
       isEmergency: json['is_emergency'] ?? false,
       displayOrder: json['display_order'] ?? 0,
+      customFields: fields,
     );
   }
 
@@ -50,6 +92,7 @@ class DonationCategory {
       'icon_name': iconName,
       'is_emergency': isEmergency,
       'display_order': displayOrder,
+      'custom_fields': customFields.map((e) => e.toJson()).toList(),
     };
   }
 }
@@ -76,6 +119,7 @@ class DonationRequest {
   final String? localLeaderId;
   final String? communityId;
   final DateTime? localVerifiedAt;
+  final Map<String, dynamic> customData;
 
   const DonationRequest({
     required this.id,
@@ -98,6 +142,7 @@ class DonationRequest {
     this.localLeaderId,
     this.communityId,
     this.localVerifiedAt,
+    this.customData = const {},
   });
 
   factory DonationRequest.fromJson(Map<String, dynamic> json) {
@@ -124,6 +169,7 @@ class DonationRequest {
       localLeaderId: json['local_leader_id'],
       communityId: json['community_id'],
       localVerifiedAt: json['local_verified_at'] != null ? DateTime.parse(json['local_verified_at']) : null,
+      customData: json['custom_data'] as Map<String, dynamic>? ?? {},
     );
   }
 
@@ -148,6 +194,7 @@ class DonationRequest {
       'local_leader_id': localLeaderId,
       'community_id': communityId,
       'local_verified_at': localVerifiedAt?.toIso8601String(),
+      'custom_data': customData,
     };
   }
 

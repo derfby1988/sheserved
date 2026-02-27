@@ -181,6 +181,160 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     );
   }
 
+  void _showCustomFieldsDialog(DonationCategory category) {
+    List<DonationCategoryField> fields = List.from(category.customFields);
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('จัดการฟิลด์เพิ่มเติม'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (fields.isEmpty) const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text('ยังไม่มีฟิลด์เพิ่มเติม'),
+                  ),
+                  if (fields.isNotEmpty) Expanded(
+                    child: ReorderableListView.builder(
+                      shrinkWrap: true,
+                      itemCount: fields.length,
+                      onReorder: (oldIndex, newIndex) {
+                        setDialogState(() {
+                          if (newIndex > oldIndex) {
+                            newIndex -= 1;
+                          }
+                          final item = fields.removeAt(oldIndex);
+                          fields.insert(newIndex, item);
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        final field = fields[index];
+                        return ListTile(
+                          key: ValueKey(field.id),
+                          leading: const Icon(Icons.drag_handle, color: Colors.grey),
+                          title: Text(field.label),
+                          subtitle: Text('ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              setDialogState(() {
+                                fields.removeAt(index);
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final newField = await _showAddFieldDialog();
+                      if (newField != null) {
+                        setDialogState(() {
+                          fields.add(newField);
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('เพิ่มฟิลด์'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await widget.repository.updateCategory(category.id, {
+                      'custom_fields': fields.map((e) => e.toJson()).toList(),
+                    });
+                    if (context.mounted) Navigator.pop(context);
+                    _loadCategories();
+                  } catch (e) {
+                    debugPrint('Error saving custom fields: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('บันทึกไม่สำเร็จ: $e'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('บันทึก'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<DonationCategoryField?> _showAddFieldDialog() {
+    final labelController = TextEditingController();
+    final idController = TextEditingController();
+    String type = 'text';
+    bool isRequired = false;
+
+    return showDialog<DonationCategoryField>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('เพิ่มฟิลด์ใหม่'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: idController, decoration: const InputDecoration(labelText: 'ID (ภาษาอังกฤษห้ามเว้นวรรค)')),
+                TextField(controller: labelController, decoration: const InputDecoration(labelText: 'ชื่อฟิลด์ (Label)')),
+                DropdownButtonFormField<String>(
+                  value: type,
+                  decoration: const InputDecoration(labelText: 'ประเภทข้อมูล'),
+                  items: const [
+                    DropdownMenuItem(value: 'text', child: Text('ข้อความสั้น (Text)')),
+                    DropdownMenuItem(value: 'long_text', child: Text('ข้อความยาว (Long Text)')),
+                    DropdownMenuItem(value: 'number', child: Text('ตัวเลข (Number)')),
+                    DropdownMenuItem(value: 'date', child: Text('วันที่ (Date)')),
+                  ],
+                  onChanged: (val) => setDialogState(() => type = val!),
+                ),
+                SwitchListTile(
+                  title: const Text('จำเป็นต้องกรอก?'),
+                  value: isRequired,
+                  onChanged: (val) => setDialogState(() => isRequired = val),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+              TextButton(
+                onPressed: () {
+                  if (idController.text.isEmpty || labelController.text.isEmpty) return;
+                  Navigator.pop(context, DonationCategoryField(
+                    id: idController.text,
+                    label: labelController.text,
+                    type: type,
+                    isRequired: isRequired,
+                  ));
+                },
+                child: const Text('เพิ่ม'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -212,8 +366,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(icon: const Icon(Icons.edit), onPressed: () => _showCategoryDialog(cat)),
-                          IconButton(icon: const Icon(Icons.delete, color: Colors.red), 
+                          IconButton(icon: const Icon(Icons.list_alt, color: Colors.green), tooltip: 'จัดการฟิลด์เพิ่มเติม', onPressed: () => _showCustomFieldsDialog(cat)),
+                          IconButton(icon: const Icon(Icons.edit), tooltip: 'แก้ไขหมวดหมู่', onPressed: () => _showCategoryDialog(cat)),
+                          IconButton(icon: const Icon(Icons.delete, color: Colors.red), tooltip: 'ลบหมวดหมู่',
                                      onPressed: () async {
                                        await widget.repository.deleteCategory(cat.id);
                                        _loadCategories();
