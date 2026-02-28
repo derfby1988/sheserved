@@ -6,7 +6,7 @@ import '../../core/constants/app_text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../features/consultation/presentation/logic/consultation_guard.dart';
 import '../../features/consultation/presentation/pages/health_program_request_dashboard.dart';
-
+import '../../features/pharmacy/presentation/pages/pharmacy_products_page.dart';
 
 /// Drawer Menu Item Model
 class DrawerMenuItem {
@@ -373,7 +373,14 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               context,
                               title: 'สินค้า',
                               icon: Icons.people_outline,
-                              onTap: () => _navigateTo(context, '/products'),
+                              onTap: () {
+                                Navigator.of(context).pop(); // ปิด Drawer ก่อนเปิดหน้าถัดไป
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const PharmacyProductsPage(),
+                                  ),
+                                );
+                              },
                               isSubItem: true,
                             ),
                             _buildMenuItem(
