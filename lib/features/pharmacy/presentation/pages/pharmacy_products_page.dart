@@ -385,7 +385,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
               color: const Color(0xFFF7F9EE), // สีพื้นหลังขาวขุ่น
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2)),
               ],
             ),
             child: Column(
@@ -628,7 +628,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: const Color(0xFF58910F).withOpacity(0.5)),
+                        borderSide: BorderSide(color: const Color(0xFF58910F).withValues(alpha: 0.5)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
@@ -654,7 +654,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: const Color(0xFF58910F).withOpacity(0.5)),
+                        borderSide: BorderSide(color: const Color(0xFF58910F).withValues(alpha: 0.5)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
