@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Interesting Section Widget - น่าสนใจ
-class HomeInterestingSection extends StatelessWidget {
+class HomeInterestingSection extends StatefulWidget {
   final VoidCallback? onMoreTap;
   final Function(HealthArticle article)? onItemTap;
   final Function(HealthArticle article)? onBookmarkTap;
   final List<HealthArticle> articles;
+  
+  // Pagination
+  final VoidCallback? onLoadMore;
+  final bool hasMore;
+  final bool isLoadingMore;
 
   const HomeInterestingSection({
     super.key,
@@ -17,7 +24,40 @@ class HomeInterestingSection extends StatelessWidget {
     this.onItemTap,
     this.onBookmarkTap,
     required this.articles,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.isLoadingMore = false,
   });
+
+  @override
+  State<HomeInterestingSection> createState() => _HomeInterestingSectionState();
+}
+
+class _HomeInterestingSectionState extends State<HomeInterestingSection> {
+  late ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (widget.onLoadMore != null && 
+        widget.hasMore && 
+        !widget.isLoadingMore &&
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      widget.onLoadMore!();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +80,7 @@ class HomeInterestingSection extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: onMoreTap,
+                onPressed: widget.onMoreTap,
                 child: Text(
                   'เพิ่มเติม',
                   style: AppTextStyles.bodySmall.copyWith(
@@ -56,17 +96,27 @@ class HomeInterestingSection extends StatelessWidget {
         
         // Cards - Fixed width, horizontal scroll
         SingleChildScrollView(
+          controller: _scrollController,
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (int i = 0; i < articles.length; i++) ...[
+              for (int i = 0; i < widget.articles.length; i++) ...[
                 GestureDetector(
-                  onTap: () => onItemTap?.call(articles[i]),
-                  child: _buildInterestingCard(articles[i]),
+                  onTap: () => widget.onItemTap?.call(widget.articles[i]),
+                  child: _buildInterestingCard(widget.articles[i]),
                 ),
-                if (i < articles.length - 1) const SizedBox(width: 12),
+                if (i < widget.articles.length - 1 || widget.isLoadingMore) 
+                  const SizedBox(width: 12),
               ],
+              if (widget.isLoadingMore)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: CupertinoActivityIndicator(radius: 12.0),
+                  ),
+                ),
             ],
           ),
         ),
@@ -76,106 +126,151 @@ class HomeInterestingSection extends StatelessWidget {
 
   Widget _buildInterestingCard(HealthArticle article) {
     return Container(
-      width: 160, // Fixed width
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.shadow,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      width: 312,
+      height: 160,
+      margin: const EdgeInsets.only(right: 12),
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Icon Container
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.trending_up,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // Title
-              Text(
-                article.title,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              
-              const SizedBox(height: 4),
-              
-              // Subtitle (Category)
-              Text(
-                article.category ?? 'ทั่วไป',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              
-              const SizedBox(height: 8),
-              
-              // Values (Likes & Views)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.favorite, size: 14, color: AppColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${article.likeCount}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Icon(Icons.visibility, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${article.viewCount}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+          // 1. พื้นหลังการ์ดสีขาว (Frame หลักของข้อมูล) 276x150
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: Container(
+              width: 276,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1A000000), // เงาบางๆ 10%
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
-            ],
+              // เผื่อขวาไว้ 100px เพื่อไม่ให้ข้อความทับรูปวงกลมที่ลอยอยู่ 
+              // และปรับลด top/bottom เพื่อไม่ให้ล้น
+              padding: const EdgeInsets.only(left: 20, top: 14, bottom: 14, right: 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Title
+                  Text(
+                    article.title.isNotEmpty ? article.title : 'รายการที่ ${article.id.hashCode % 100}',
+                    style: const TextStyle(
+                      fontFamily: 'Sukhumvit Set',
+                      fontSize: 22, // ขนาดใหญ่หน่อยตามดีไซน์
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF5B8E21), // สีเขียวเหมือนใน Figma
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  
+                  // Subtitle 
+                  Text(
+                    article.category ?? '100 - 200 น.',
+                    style: const TextStyle(
+                      fontFamily: 'Sukhumvit Set',
+                      fontSize: 16,
+                      color: Color(0xFF8B8B8B), // สีเทา
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  
+                  // Stars
+                  Row(
+                    children: List.generate(5, (index) => const Padding(
+                      padding: EdgeInsets.only(right: 2),
+                      child: Icon(
+                        Icons.star,
+                        color: Color(0xFFC0CA33), // สีเหลืองอมเขียว
+                        size: 18,
+                      ),
+                    )),
+                  ),
+                  
+                  // Add to Cart Button 
+                  Container(
+                    width: 72,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8A8A8A), // สีเทา
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.add_shopping_cart, // ไอคอนตะกร้าแบบมีบวก
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          
+          // 2. รูปภาพวงกลม (Circle Image) 129x129
           Positioned(
-            top: 0,
             right: 0,
-            child: RibbonBookmark(
-              isBookmarked: article.isBookmarked,
-              inactiveColor: Colors.grey.withOpacity(0.3),
-              onTap: () => onBookmarkTap?.call(article),
+            top: 0,
+            child: Container(
+              width: 129,
+              height: 129,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x33000000), // เงา 20%
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: article.imageUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: article.imageUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => const CupertinoActivityIndicator(),
+                      errorWidget: (context, url, error) => const Icon(Icons.image, color: Colors.grey, size: 40),
+                    )
+                  : const Center(child: Icon(Icons.image, color: Colors.grey, size: 40)),
+              ),
+            ),
+          ),
+
+          // 3. ป้าย Bookmark (เปลี่ยนเป็นรูปหัวใจบนรูปวงกลมมุมขวาบน)
+          Positioned(
+            right: 10,
+            top: 10,
+            child: GestureDetector(
+              onTap: () => widget.onBookmarkTap?.call(article),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.8), // เพิ่มความโปร่งใส (80%)
+                  shape: BoxShape.circle,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1A000000), // เงาบางๆ 10%
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  article.isBookmarked ? Icons.favorite : Icons.favorite_border,
+                  color: article.isBookmarked ? const Color(0xFFE91E63) : const Color(0xFFBDBDBD), // สีชมพูแดงตอนที่กด แล้วเป็นสีเทาตอนไม่ได้กด
+                  size: 20,
+                ),
+              ),
             ),
           ),
         ],

@@ -18,3 +18,6 @@ export 'otp_verification_dialog.dart';
 
 // Bookmark Widgets
 export 'ribbon_bookmark.dart';
+
+// Sections & Cards
+export 'recommended_article_section.dart';

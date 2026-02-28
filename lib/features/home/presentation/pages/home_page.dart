@@ -22,12 +22,27 @@ class _HomePageState extends State<HomePage> {
   bool _isDraggingFromLeft = false;
   late ScrollController _scrollController;
   final GlobalKey _headerSectionKey = GlobalKey();
+  final GlobalKey _consultationKey = GlobalKey();
+  final GlobalKey _pharmacyKey = GlobalKey();
   double _headerSectionHeight = 0;
+  double _consultationHeight = 0;
+  double _pharmacyHeight = 0;
+  double _mapHeight = 500; // ค่าเริ่มต้น จะถูกอัปเดตหลัง build
   bool _showTopBarBorderRadius = false;
   
   List<HealthArticle> _recommendedArticles = [];
   List<HealthArticle> _interestingArticles = [];
   bool _isLoadingArticles = true;
+
+  // Pagination for Recommended section
+  int _recommendedPage = 1;
+  bool _hasMoreRecommended = true;
+  bool _isLoadingMoreRecommended = false;
+
+  // Pagination for Interesting section
+  int _interestingPage = 1;
+  bool _hasMoreInteresting = true;
+  bool _isLoadingMoreInteresting = false;
 
   @override
   void initState() {
@@ -50,7 +65,15 @@ class _HomePageState extends State<HomePage> {
     debugPrint('HomePage: _loadHomeData called. Reloading articles...');
     
     // Show loading indicator
-    setState(() => _isLoadingArticles = true);
+    setState(() {
+      _isLoadingArticles = true;
+      _recommendedPage = 1;
+      _hasMoreRecommended = true;
+      _isLoadingMoreRecommended = false;
+      _interestingPage = 1;
+      _hasMoreInteresting = true;
+      _isLoadingMoreInteresting = false;
+    });
     
     try {
       final repository = ServiceLocator.instance.healthArticleRepository;
@@ -73,6 +96,12 @@ class _HomePageState extends State<HomePage> {
       
       if (mounted) {
         setState(() {
+          if (recommended.length < 5) {
+            _hasMoreRecommended = false;
+          }
+          if (interesting.length < 5) {
+            _hasMoreInteresting = false;
+          }
           _recommendedArticles = recommended;
           _interestingArticles = interesting;
           _isLoadingArticles = false;
@@ -81,6 +110,84 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingArticles = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreRecommended() async {
+    if (_isLoadingMoreRecommended || !_hasMoreRecommended) return;
+
+    if (mounted) {
+      setState(() {
+        _isLoadingMoreRecommended = true;
+      });
+    }
+
+    try {
+      _recommendedPage++;
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      final currentUserId = ServiceLocator.instance.currentUser?.id;
+
+      final newArticles = await repository.getAllArticles(
+        category: 'แนะนำ',
+        page: _recommendedPage,
+        pageSize: 5,
+        userId: currentUserId,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (newArticles.length < 5) {
+            _hasMoreRecommended = false;
+          }
+          _recommendedArticles.addAll(newArticles);
+          _isLoadingMoreRecommended = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingMoreRecommended = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMoreInteresting() async {
+    if (_isLoadingMoreInteresting || !_hasMoreInteresting) return;
+
+    if (mounted) {
+      setState(() {
+        _isLoadingMoreInteresting = true;
+      });
+    }
+
+    try {
+      _interestingPage++;
+      final repository = ServiceLocator.instance.healthArticleRepository;
+      final currentUserId = ServiceLocator.instance.currentUser?.id;
+
+      final newArticles = await repository.getAllArticles(
+        category: 'ยอดนิยม',
+        page: _interestingPage,
+        pageSize: 5,
+        userId: currentUserId,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (newArticles.length < 5) {
+            _hasMoreInteresting = false;
+          }
+          _interestingArticles.addAll(newArticles);
+          _isLoadingMoreInteresting = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingMoreInteresting = false;
+        });
       }
     }
   }
@@ -179,11 +286,31 @@ class _HomePageState extends State<HomePage> {
 
   void _measureHeaderSectionHeight() {
     if (!mounted) return;
-    final RenderBox? renderBox = _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox != null && renderBox.hasSize) {
-      setState(() {
-        _headerSectionHeight = renderBox.size.height;
-      });
+    final RenderBox? headerBox = _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? consultBox = _consultationKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? pharmacyBox = _pharmacyKey.currentContext?.findRenderObject() as RenderBox?;
+
+    if (headerBox != null && headerBox.hasSize) {
+      _headerSectionHeight = headerBox.size.height;
+    }
+    if (consultBox != null && consultBox.hasSize) {
+      _consultationHeight = consultBox.size.height;
+    }
+    if (pharmacyBox != null && pharmacyBox.hasSize) {
+      _pharmacyHeight = pharmacyBox.size.height;
+    }
+
+    // คำนวณความสูงแผนที่อัตโนมัติ:
+    // Map ถูก shift ลงมาด้วย SizedBox(headerHeight / 2) แล้ว
+    // ดังนั้น mapHeight = ระยะจากกึ่งกลาง Header ถึงกึ่งกลาง Pharmacy
+    // = (headerHeight / 2) + spacing(16) + consultHeight + spacing(24) + (pharmacyHeight / 2)
+    if (_headerSectionHeight > 0 && _consultationHeight > 0 && _pharmacyHeight > 0) {
+      final calculatedHeight = (_headerSectionHeight / 2) + 16 + _consultationHeight + 24 + (_pharmacyHeight / 2);
+      if (calculatedHeight > 0 && calculatedHeight != _mapHeight) {
+        setState(() {
+          _mapHeight = calculatedHeight;
+        });
+      }
     }
   }
 
@@ -219,10 +346,18 @@ class _HomePageState extends State<HomePage> {
           onHorizontalDragUpdate: (details) => _onHorizontalDragUpdate(details, context),
           onHorizontalDragEnd: (details) => _onHorizontalDragEnd(details, context),
           child: Container(
-            color: Colors.transparent, 
+            color: AppColors.primary, 
             child: SafeArea(
               child: Stack(
                 children: [
+                  // พื้นหลังสี primary กันช่องว่างเมื่อ overscroll
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 300,
+                    child: Container(color: AppColors.primary),
+                  ),
                   Positioned.fill(
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -233,9 +368,11 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               Column(
                                 children: [
-                                  const SizedBox(
-                                    height: 500,
-                                    child: HomeMapBackground(),
+                                  // เลื่อน Map ลงมาเริ่มที่กึ่งกลาง HeaderSection
+                                  SizedBox(height: _headerSectionHeight / 2),
+                                  SizedBox(
+                                    height: _mapHeight,
+                                    child: const HomeMapBackground(),
                                   ),
                                   Container(
                                     width: double.infinity,
@@ -246,8 +383,11 @@ class _HomePageState extends State<HomePage> {
                                         // Article Sections with separate loading state
                                         _isLoadingArticles
                                           ? _buildSectionSkeleton()
-                                          : HomeRecommendedSection(
+                                          : RecommendedArticleSection(
                                               articles: _recommendedArticles,
+                                              hasMore: _hasMoreRecommended,
+                                              isLoadingMore: _isLoadingMoreRecommended,
+                                              onLoadMore: _loadMoreRecommended,
                                               onMoreTap: () => Navigator.pushNamed(context, '/articles', arguments: 'แนะนำ'),
                                               onItemTap: (article) async {
                                                 await Navigator.pushNamed(
@@ -264,7 +404,10 @@ class _HomePageState extends State<HomePage> {
                                           ? _buildSectionSkeleton()
                                           : HomeInterestingSection(
                                               articles: _interestingArticles,
-                                              onMoreTap: () => Navigator.pushNamed(context, '/health/article'),
+                                              hasMore: _hasMoreInteresting,
+                                              isLoadingMore: _isLoadingMoreInteresting,
+                                              onLoadMore: _loadMoreInteresting,
+                                              onMoreTap: () => Navigator.pushNamed(context, '/articles', arguments: 'น่าสนใจ'),
                                               onItemTap: (article) async {
                                                 await Navigator.pushNamed(
                                                   context, 
@@ -308,10 +451,12 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                   const SizedBox(height: 16),
                                   HomeConsultationWidget(
+                                    key: _consultationKey,
                                     onTap: () => ConsultationGuard.startConsultation(context),
                                   ),
                                   const SizedBox(height: 24),
                                   HomePharmacyCard(
+                                    key: _pharmacyKey,
                                     onSearchTap: () => _showSnackBar(context, 'ค้นหาร้านยา'),
                                   ),
                                   const SizedBox(height: 24),
