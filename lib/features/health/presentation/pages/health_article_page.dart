@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 import 'dart:convert';
+import 'dart:ui';
+import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:diff_match_patch/diff_match_patch.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -12,6 +12,10 @@ import '../../data/models/health_article_models.dart';
 import '../../data/repositories/health_article_repository.dart';
 import '../widgets/health_article_skeleton.dart';
 import '../../../pharmacy/data/models/medication_models.dart';
+import '../../../pharmacy/presentation/pages/pharmacy_products_page.dart';
+import '../../../../shared/widgets/tlz_app_top_bar.dart';
+import 'package:intl/intl.dart';
+import 'article_tag_requests_page.dart';
 
 /// Health Article Page
 /// Feature-rich forum and article viewer with stacked sticky headers and nested comments.
@@ -216,6 +220,18 @@ class _HealthArticlePageState extends State<HealthArticlePage>
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _fetchProducts() async {
+    if (_article == null) return;
+    try {
+      final products = await _repository.getArticleProducts(_article!.id);
+      if (mounted) {
+        setState(() => _products = products);
+      }
+    } catch (e) {
+      debugPrint('Error fetching products: $e');
     }
   }
 
@@ -970,15 +986,24 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                           ),
 
                           // AREA 4: Horizontal Product Pills
-                          if (_products.isNotEmpty)
-                            SliverPersistentHeader(
-                              pinned: true,
-                              delegate: _ProductSectionDelegate(
-                                products: _products,
-                                authorId: _article!.authorId,
+                          Builder(
+                            builder: (context) {
+                              final isAuthor = AuthService.instance.userId == _article?.authorId;
+                              final visibleProducts = _products.where((p) => p.isApproved || isAuthor).toList();
+                              
+                              if (visibleProducts.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
+
+                              return SliverPersistentHeader(
+                                pinned: true,
+                                delegate: _ProductSectionDelegate(
+                                  products: visibleProducts,
+                                  authorId: _article!.authorId,
+                                  onRequestTag: _showRequestTagDialog,
+                                ),
                                 key: _productsKey,
-                              ),
-                            ),
+                              );
+                            },
+                          ),
 
                           // AREA 5: Comment Section Header
                           SliverToBoxAdapter(
@@ -1094,56 +1119,68 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   Widget _buildArea2ControlBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      height: 44, // Increased slightly for better tap target
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(
-              Icons.arrow_back,
-              color: Color(0xFFC4E0A5),
-              size: 24,
-            ),
-            onPressed: () => Navigator.pop(context),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            constraints: const BoxConstraints(),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true, // Scroll from right to left or keep right-aligned
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  _buildNavButton(
-                    'หัวข้อ',
-                    _activeSection == 'article',
-                    onTap: () => _scrollToSection(_articleHeadKey),
-                  ),
-                  _buildNavButton(
-                    'สินค้า',
-                    _activeSection == 'products',
-                    onTap: () => _scrollToSection(_productsKey),
-                  ),
-                  _buildNavButton(
-                    'ความคิดเห็น',
-                    _activeSection == 'comments',
-                    onTap: () => _scrollToSection(_commentsKey),
-                  ),
-                  _buildNavButton(
-                    'ที่บันทึกไว้',
-                    _activeSection == 'bookmarks',
-                    onTap: _showBookmarksDialog,
-                  ),
-                ],
+      height: 44,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
               ),
             ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  constraints: const BoxConstraints(),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        _buildNavButton(
+                          'หัวข้อ',
+                          _activeSection == 'article',
+                          onTap: () => _scrollToSection(_articleHeadKey),
+                        ),
+                        _buildNavButton(
+                          'สินค้า',
+                          _activeSection == 'products',
+                          onTap: () => _scrollToSection(_productsKey),
+                        ),
+                        _buildNavButton(
+                          'ความคิดเห็น',
+                          _activeSection == 'comments',
+                          onTap: () => _scrollToSection(_commentsKey),
+                        ),
+                        _buildNavButton(
+                          'ที่บันทึกไว้',
+                          _activeSection == 'bookmarks',
+                          onTap: _showBookmarksDialog,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1151,19 +1188,21 @@ class _HealthArticlePageState extends State<HealthArticlePage>
   Widget _buildNavButton(String label, bool isActive, {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? Colors.white.withOpacity(0.3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isActive ? Colors.white : Colors.black87.withOpacity(0.7),
+            color: isActive ? Colors.white : Colors.white.withOpacity(0.6),
             fontSize: 12,
             fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            fontFamily: 'SukhumvitSet',
           ),
         ),
       ),
@@ -1256,262 +1295,322 @@ class _HealthArticlePageState extends State<HealthArticlePage>
 
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF6CB0C5).withOpacity(0.8),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF6CB0C5).withOpacity(0.6),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Stack(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          GestureDetector(
-                            onTap: () => setState(
-                              () => _isTitleExpanded = !_isTitleExpanded,
-                            ),
-                            child: Text(
-                              _article!.title,
-                              maxLines: _isTitleExpanded ? null : 2,
-                              overflow: _isTitleExpanded
-                                  ? TextOverflow.visible
-                                  : TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น • ${_article!.bookmarkCount} ท่านสนใจบทความนี้',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.white70,
-                            ),
-                          ),
-                          if (AuthService.instance.currentUser?.id ==
-                              _article!.authorId)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: TextButton.icon(
-                                onPressed: _showEditArticleDialog,
-                                icon: const Icon(
-                                  Icons.edit,
-                                  size: 16,
-                                  color: Color(0xFFF1AE27),
-                                ),
-                                label: const Text(
-                                  'แก้ไขบทความ',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFFF1AE27),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => setState(
+                                    () => _isTitleExpanded = !_isTitleExpanded,
                                   ),
-                                ),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 0,
-                                    vertical: 0,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  alignment: Alignment.centerLeft,
-                                ),
-                              ),
-                            ),
-                          if (_article!.editCount > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'แก้ไขแล้ว',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const SizedBox(width: 12),
-                    Column(
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.access_time,
-                              size: 14,
-                              color: Colors.white70,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _formatThaiDate(_article!.createdAt),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: _showAuthorProfile,
-                          child: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: Colors.white70,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: _article!.authorImage != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(24),
-                                    child: Image.network(
-                                      _article!.authorImage!,
-                                      fit: BoxFit.cover,
+                                  child: Text(
+                                    _article!.title,
+                                    maxLines: _isTitleExpanded ? null : 2,
+                                    overflow: _isTitleExpanded
+                                        ? TextOverflow.visible
+                                        : TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      fontFamily: 'SukhumvitSet',
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black26,
+                                          offset: Offset(0, 2),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
                                     ),
-                                  )
-                                : const Icon(Icons.person, color: Colors.grey),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'เปิดดู ${_article!.viewCount} • ${_totalComments} ความคิดเห็น • ${_article!.bookmarkCount} ท่านสนใจ',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                    fontFamily: 'SukhumvitSet',
+                                  ),
+                                ),
+                                if (AuthService.instance.currentUser?.id ==
+                                    _article!.authorId)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: TextButton.icon(
+                                      onPressed: _showEditArticleDialog,
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        size: 16,
+                                        color: Color(0xFFF1AE27),
+                                      ),
+                                      label: const Text(
+                                        'แก้ไขบทความ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFF1AE27),
+                                          fontFamily: 'SukhumvitSet',
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 0,
+                                          vertical: 0,
+                                        ),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        alignment: Alignment.centerLeft,
+                                      ),
+                                    ),
+                                  ),
+                                if (_article!.editCount > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white24,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'แก้ไขแล้ว',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'SukhumvitSet',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final contentStyle = TextStyle(
-                      fontSize: 16,
-                      height: 1.6,
-                      color: Colors.white.withOpacity(0.8),
-                    );
-
-                    // Simple check if it's block-based (JSON)
-                    bool isBlockBased =
-                        _article!.content.trim().startsWith('[') &&
-                        _article!.content.trim().endsWith(']');
-
-                    if (_isContentExpanded) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _renderArticleContent(
-                            _article!.content,
-                            contentStyle,
-                          ),
-                          const SizedBox(height: 12),
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _isContentExpanded = false),
-                            child: const Text(
-                              'ย่อเนื้อหา',
-                              style: TextStyle(
-                                color: Color(0xFFF1AE27),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                          const SizedBox(width: 12),
+                          Column(
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.access_time,
+                                    size: 14,
+                                    color: Colors.white70,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatThaiDate(_article!.createdAt),
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white,
+                                      fontFamily: 'SukhumvitSet',
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              GestureDetector(
+                                onTap: _showAuthorProfile,
+                                child: Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white70,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black12,
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: _article!.authorImage != null
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(26),
+                                          child: Image.network(
+                                            _article!.authorImage!,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      : const Icon(Icons.person, color: Colors.grey, size: 30),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
-                      );
-                    }
+                      ),
+                      const SizedBox(height: 24),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final contentStyle = TextStyle(
+                            fontSize: 16,
+                            height: 1.6,
+                            color: Colors.white.withOpacity(0.8),
+                            fontFamily: 'SukhumvitSet',
+                          );
 
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // When collapsed, we show first few lines of the first text block or content
-                        _renderArticleContent(
-                          _article!.content,
-                          contentStyle,
-                          maxLines: 3,
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () =>
-                              setState(() => _isContentExpanded = true),
-                          child: const Text(
-                            'แสดงเนื้อหาทั้งหมด...',
-                            style: TextStyle(
-                              color: Color(0xFFF1AE27),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                          if (_isContentExpanded) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _renderArticleContent(
+                                  _article!.content,
+                                  contentStyle,
+                                ),
+                                  if (AuthService.instance.currentUser?.id == _article!.authorId)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: TextButton.icon(
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const ArticleTagRequestsPage(),
+                                          ),
+                                        ).then((_) => _fetchProducts()),
+                                        icon: const Icon(
+                                          Icons.notifications_active_outlined,
+                                          size: 16,
+                                          color: Colors.redAccent,
+                                        ),
+                                        label: const Text(
+                                          'คำขอแท็กสินค้าใหม่',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.redAccent,
+                                            fontFamily: 'SukhumvitSet',
+                                            fontWeight: FontWeight.w900, // Maximum boldness
+                                          ),
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          alignment: Alignment.centerLeft,
+                                        ),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 12),
+                                GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _isContentExpanded = false),
+                                  child: const Text(
+                                    'ย่อเนื้อหา',
+                                    style: TextStyle(
+                                      color: Color(0xFFF1AE27),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      fontFamily: 'SukhumvitSet',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _renderArticleContent(
+                                _article!.content,
+                                contentStyle,
+                                maxLines: 3,
+                              ),
+                              const SizedBox(height: 12),
+                              GestureDetector(
+                                onTap: () =>
+                                    setState(() => _isContentExpanded = true),
+                                child: const Text(
+                                  'แสดงเนื้อหาทั้งหมด...',
+                                  style: TextStyle(
+                                    color: Color(0xFFF1AE27),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    fontFamily: 'SukhumvitSet',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: GestureDetector(
+                          onTap: () => _handleReply(null),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.reply, size: 16, color: Color(0xFFF1AE27)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'ตอบกลับ',
+                                  style: TextStyle(
+                                    color: Color(0xFFF1AE27),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'SukhumvitSet',
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: GestureDetector(
-                    onTap: () => _handleReply(null),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.reply, size: 16, color: Color(0xFFF1AE27)),
-                          SizedBox(width: 4),
-                          Text(
-                            'ตอบกลับ',
-                            style: TextStyle(
-                              color: Color(0xFFF1AE27),
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                Positioned(
+                  top: 0,
+                  right: 24,
+                  child: Container(
+                    key: _getIconKey('bm-article'),
+                    child: RibbonBookmark(
+                      isBookmarked: _article?.isBookmarked ?? false,
+                      onTap: () => _onToggleBookmark(),
+                      height: 30,
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
               ],
             ),
           ),
-          Positioned(
-            top: 0,
-            right: 24,
-            child: Container(
-              key: _getIconKey('bm-article'),
-              child: RibbonBookmark(
-                isBookmarked: _article?.isBookmarked ?? false,
-                onTap: () => _onToggleBookmark(),
-                height: 30,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1621,6 +1720,278 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         overflow: maxLines != null ? TextOverflow.ellipsis : null,
       );
     }
+  }
+
+  void _showRequestTagDialog() async {
+    if (AuthService.instance.currentUser == null) {
+      await Navigator.pushNamed(context, '/login');
+      if (AuthService.instance.currentUser == null) return;
+    }
+
+    List<MedicationModel> searchResults = [];
+    bool isSearching = false;
+    bool isSubmitting = false;
+    final searchController = TextEditingController();
+    String searchQuery = '';
+
+    // Popular tags for easier discovery (matching blog writing dialog)
+    final popularTags = [
+      'พาราเซตามอล',
+      'วิตามิน ซี',
+      'โอเมก้า 3',
+      'แคลเซียม',
+      'สังกะสี (Zinc)',
+      'ไอบูโพรเฟน',
+      'ยาแก้แพ้',
+      'หน้ากากอนามัย',
+    ];
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              Future<void> performSearch(String query) async {
+                if (query.isEmpty) {
+                  setModalState(() {
+                    searchResults = [];
+                    isSearching = false;
+                  });
+                  return;
+                }
+                setModalState(() => isSearching = true);
+                try {
+                  final pharmacyRepo = ServiceLocator.instance.pharmacyRepository;
+                  final results = await pharmacyRepo.getMedications(
+                    searchQuery: query,
+                    pageSize: 10,
+                  );
+                  setModalState(() {
+                    searchResults = results;
+                    isSearching = false;
+                  });
+                } catch (e) {
+                  setModalState(() => isSearching = false);
+                }
+              }
+
+              Future<void> submitRequest(MedicationModel medication) async {
+                setModalState(() => isSubmitting = true);
+                try {
+                  final success = await ServiceLocator.instance.healthArticleRepository.requestArticleProduct(
+                    articleId: _article!.id,
+                    userId: AuthService.instance.userId!,
+                    name: medication.tradeName,
+                    url: null, // Don't use medication.id as it's not a valid URL format
+                    imageUrl: medication.imageUrl,
+                  );
+                  
+                  if (!mounted) return;
+                  
+                  if (success) {
+                    _fetchProducts(); // Refresh the list
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('ส่งคำขอระบุแท็กแล้ว รอเจ้าของบทความอนุมัติ')),
+                    );
+                  } else {
+                    setModalState(() => isSubmitting = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('บันทึกคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')),
+                    );
+                  }
+                } catch (e) {
+                  setModalState(() => isSubmitting = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                  );
+                }
+              }
+
+              return Dialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                backgroundColor: Colors.white,
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 600),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'ขอระบุแท็กยาและผลิตภัณฑ์สุขภาพ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              fontFamily: 'SukhumvitSet',
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'ค้นหายาหรือผลิตภัณฑ์ที่ต้องการระบุในบทความนี้',
+                        style: TextStyle(fontSize: 13, color: Colors.grey, fontFamily: 'SukhumvitSet'),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: searchController,
+                        onChanged: (val) {
+                          setModalState(() => searchQuery = val);
+                          performSearch(val);
+                        },
+                        style: const TextStyle(fontFamily: 'SukhumvitSet'),
+                        decoration: InputDecoration(
+                          hintText: 'พิมพ์ชื่อยา หรือ ยี่ห้อ...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    searchController.clear();
+                                    searchQuery = '';
+                                    performSearch('');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: isSearching
+                            ? const Center(child: CircularProgressIndicator())
+                              : searchQuery.isEmpty
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'ยายอดนิยม',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          fontFamily: 'SukhumvitSet',
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: popularTags.map((tag) {
+                                          return InkWell(
+                                            onTap: () {
+                                              setModalState(() {
+                                                searchController.text = tag;
+                                                searchQuery = tag;
+                                              });
+                                              performSearch(tag);
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey[100],
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: Colors.grey[300]!),
+                                              ),
+                                              child: Text(
+                                                tag,
+                                                style: const TextStyle(fontSize: 12, fontFamily: 'SukhumvitSet'),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                      const Spacer(),
+                                      Center(
+                                        child: Column(
+                                          children: [
+                                            Icon(Icons.search, size: 48, color: Colors.grey[200]),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'พิมพ์เพื่อค้นหาสินค้าที่ต้องการ',
+                                              style: TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'SukhumvitSet'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                    ],
+                                  )
+                                : searchResults.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.search_off, size: 48, color: Colors.grey[300]),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'ไม่พบสินค้าชื่อ "$searchQuery"',
+                                              style: const TextStyle(color: Colors.grey, fontFamily: 'SukhumvitSet'),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                : ListView.builder(
+                                    itemCount: searchResults.length,
+                                    itemBuilder: (context, idx) {
+                                      final med = searchResults[idx];
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        leading: Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[200],
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: med.imageUrl != null
+                                              ? ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: Image.network(med.imageUrl!, fit: BoxFit.cover),
+                                                )
+                                              : const Icon(Icons.medication),
+                                        ),
+                                        title: Text(
+                                          med.tradeName,
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'SukhumvitSet'),
+                                        ),
+                                        subtitle: Text(med.genericName ?? '', style: const TextStyle(fontSize: 12, fontFamily: 'SukhumvitSet')),
+                                        trailing: isSubmitting
+                                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                                          : TextButton(
+                                            onPressed: () => submitRequest(med),
+                                            child: const Text('ระบุแท็ก', style: TextStyle(fontFamily: 'SukhumvitSet')),
+                                          ),
+                                      );
+                                    },
+                                  ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   String _formatThaiDate(DateTime date) {
@@ -3836,11 +4207,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
 class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
   final List<HealthArticleProduct> products;
   final String authorId;
+  final VoidCallback onRequestTag;
   final Key? key;
 
   _ProductSectionDelegate({
     required this.products,
     required this.authorId,
+    required this.onRequestTag,
     this.key,
   });
 
@@ -3850,63 +4223,131 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(
-      key: key,
-      height: 60,
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: products.isEmpty ? 3 : products.length,
-        itemBuilder: (context, index) {
-          final colors = [
-            const Color(0xFFCDE4F5),
-            const Color(0xFFFEF3D3),
-            const Color(0xFFFDE4D3),
-          ];
-          final textColors = [
-            const Color(0xFF5D9CDB),
-            const Color(0xFFF1AE27),
-            const Color(0xFFD3856E),
-          ];
+    return Stack(
+      children: [
+        ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              key: key,
+              height: 60,
+              color: Colors.white.withOpacity(0.05),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(left: 60, right: 16),
+                itemCount: products.isEmpty ? 3 : products.length,
+                itemBuilder: (context, index) {
+                  String label = 'รายการ ${index + 1}';
+                  
+                  // Color defaults (Red/Others)
+                  Color baseColor = const Color(0xFFFDE4D3);
+                  Color textColor = const Color(0xFFD3856E);
 
-          String label = 'รายการ ${index + 1}';
-          bool isAuthorTag = false;
-          int colorIndex = index % colors.length;
+                  if (index < products.length) {
+                    final p = products[index];
+                    label = p.name;
+                    
+                    if (!p.isApproved) {
+                      // Pending -> Grey/Text
+                      baseColor = Colors.grey[200]!;
+                      textColor = Colors.grey[600]!;
+                      label = '$label (รออนุมัติ)';
+                    } else if (p.taggedById == authorId) {
+                      // Owner -> Blue
+                      baseColor = const Color(0xFFCDE4F5);
+                      textColor = const Color(0xFF5D9CDB);
+                    } else if (p.taggerUserCategory == 'provider') {
+                      // Provider -> Yellow (except owner)
+                      baseColor = const Color(0xFFFEF3D3);
+                      textColor = const Color(0xFFF1AE27);
+                    } else {
+                      // Others -> Red
+                      baseColor = const Color(0xFFFDE4D3);
+                      textColor = const Color(0xFFD3856E);
+                    }
+                  } else {
+                    // Fallback placeholders
+                    final colors = [const Color(0xFFCDE4F5), const Color(0xFFFEF3D3), const Color(0xFFFDE4D3)];
+                    final textColors = [const Color(0xFF5D9CDB), const Color(0xFFF1AE27), const Color(0xFFD3856E)];
+                    baseColor = colors[index % colors.length];
+                    textColor = textColors[index % textColors.length];
+                  }
 
-          if (index < products.length) {
-            label = products[index].name;
-            if (products[index].taggedById == authorId) {
-              isAuthorTag = true;
-            }
-          }
-
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            constraints: const BoxConstraints(maxWidth: 160),
-            decoration: BoxDecoration(
-              color: isAuthorTag
-                  ? const Color(0xFFCDE4F5).withOpacity(0.9)
-                  : colors[colorIndex].withOpacity(0.9),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isAuthorTag
-                    ? const Color(0xFF5D9CDB)
-                    : textColors[colorIndex],
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PharmacyProductsPage(
+                            initialSearchQuery: label,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      decoration: BoxDecoration(
+                        color: baseColor.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white54, width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (index < products.length && products[index].taggedById == authorId)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 6),
+                              child: Icon(Icons.verified, size: 14, color: Color(0xFF5D9CDB)),
+                            ),
+                          Flexible(
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'SukhumvitSet',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+        // Floating Request Tag Button on the left
+        Positioned(
+          left: 12,
+          top: 10,
+          child: GestureDetector(
+            onTap: onRequestTag,
+            child: ClipOval(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

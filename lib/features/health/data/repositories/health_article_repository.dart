@@ -344,24 +344,139 @@ class HealthArticleRepository {
     }
   }
 
-  /// Fetch products for an article
+  /// Fetch products for an article with tagger info
   Future<List<HealthArticleProduct>> getArticleProducts(String articleId) async {
     try {
       final response = await _client
           .from('health_article_products')
-          .select()
+          .select('*, users!tagged_by_id(profession_id)')
           .eq('article_id', articleId)
           .order('created_at', ascending: false);
 
       if ((response as List).isNotEmpty) {
-        return (response as List)
-            .map((e) => HealthArticleProduct.fromJson(e))
-            .toList();
+        return (response as List).map((e) {
+          final jsonMap = Map<String, dynamic>.from(e);
+          // Extract user category from joined users table
+          if (jsonMap['users'] != null) {
+            final professionId = jsonMap['users']['profession_id'];
+            if (professionId == '00000000-0000-0000-0000-000000000001') {
+              jsonMap['tagger_user_category'] = 'consumer';
+            } else if (professionId == '00000000-0000-0000-0000-000000000002' || 
+                       professionId == '00000000-0000-0000-0000-000000000003') {
+              jsonMap['tagger_user_category'] = 'provider';
+            } else {
+              jsonMap['tagger_user_category'] = 'other';
+            }
+          }
+          return HealthArticleProduct.fromJson(jsonMap);
+        }).toList();
       }
       
       return [];
     } catch (e) {
+      debugPrint('Repository: Error fetching products: $e');
       return [];
+    }
+  }
+
+  /// Request a tag for an article
+  Future<bool> requestArticleProduct({
+    required String articleId,
+    required String userId,
+    required String name,
+    String? url,
+    String? imageUrl,
+    String tagType = 'product',
+  }) async {
+    try {
+      // If the requester is the article author, auto-approve and set type to 'author'
+      bool autoApprove = false;
+      String actualTagType = tagType == 'product' ? 'user' : tagType;
+
+      try {
+        final articleResponse = await _client.from('health_articles').select('author_id').eq('id', articleId).single();
+        if (articleResponse != null && articleResponse['author_id'] == userId) {
+          autoApprove = true;
+          actualTagType = 'author';
+        }
+      } catch (e) {
+        debugPrint('Repository: Note - Could not verify author for auto-approve: $e');
+      }
+
+      await _client.from('health_article_products').insert({
+        'article_id': articleId,
+        'tagged_by_id': userId,
+        'name': name,
+        'url': url,
+        'image_url': imageUrl,
+        'tag_type': actualTagType,
+        'is_approved': autoApprove,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Repository: Error requesting product tag: $e');
+      if (e is PostgrestException) {
+        debugPrint('Repository: DB Error Details: ${e.message} - ${e.details} - ${e.hint}');
+      }
+      return false;
+    }
+  }
+
+  /// Fetch pending tag requests for an author\'s articles
+  Future<List<Map<String, dynamic>>> getPendingTagRequests(String authorId) async {
+    try {
+      // Get all articles for this author first
+      final articlesResponse = await _client
+          .from('health_articles')
+          .select('id')
+          .eq('author_id', authorId);
+      
+      final articlesList = articlesResponse as List;
+      if (articlesList.isEmpty) return [];
+      
+      final articleIds = articlesList.map((e) => e['id'] as String).toList();
+      
+      // Get pending products for these articles using standard list filter
+      final response = await _client
+          .from('health_article_products')
+          .select('*, users!tagged_by_id(username, profile_image_url), health_articles(title)')
+          .filter('article_id', 'in', articleIds) // Use standard 'in' filter
+          .eq('is_approved', false)
+          .order('created_at', ascending: false);
+
+      final responseList = response as List;
+      return responseList.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('Repository: Error fetching pending requests: $e');
+      return [];
+    }
+  }
+
+  /// Approve a tag request
+  Future<bool> approveArticleProduct(String productId) async {
+    try {
+      await _client
+          .from('health_article_products')
+          .update({'is_approved': true})
+          .eq('id', productId);
+      return true;
+    } catch (e) {
+      debugPrint('Repository: Error approving product tag: $e');
+      return false;
+    }
+  }
+
+  /// Reject/Delete a tag request
+  Future<bool> deleteArticleProduct(String productId) async {
+    try {
+      await _client
+          .from('health_article_products')
+          .delete()
+          .eq('id', productId);
+      return true;
+    } catch (e) {
+      debugPrint('Repository: Error deleting product tag: $e');
+      return false;
     }
   }
 

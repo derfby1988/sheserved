@@ -135,6 +135,7 @@ class HealthArticleProduct {
   final String? taggedById;
   final bool isApproved;
   final DateTime createdAt;
+  final String? taggerUserCategory; // Tagging user category (provider, consumer, other)
 
   HealthArticleProduct({
     required this.id,
@@ -146,6 +147,7 @@ class HealthArticleProduct {
     this.taggedById,
     this.isApproved = false,
     required this.createdAt,
+    this.taggerUserCategory,
   });
 
   factory HealthArticleProduct.fromJson(Map<String, dynamic> json) {
@@ -159,6 +161,7 @@ class HealthArticleProduct {
       taggedById: json['tagged_by_id'],
       isApproved: json['is_approved'] ?? false,
       createdAt: DateTime.parse(json['created_at']),
+      taggerUserCategory: json['tagger_user_category'],
     );
   }
 }

@@ -8,7 +8,8 @@ import 'fda_search_page.dart';
 import 'dart:async';
 
 class PharmacyProductsPage extends StatefulWidget {
-  const PharmacyProductsPage({super.key});
+  final String? initialSearchQuery;
+  const PharmacyProductsPage({super.key, this.initialSearchQuery});
 
   @override
   State<PharmacyProductsPage> createState() => _PharmacyProductsPageState();
@@ -44,6 +45,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
   @override
   void initState() {
     super.initState();
+    _searchQuery = widget.initialSearchQuery;
     _scrollController.addListener(_onScroll);
     _fetchCategories();
     _fetchMedications();
@@ -165,7 +167,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: TlzAppTopBar.onPrimary(
                 notificationCount: 1,
-                searchHintText: 'ค้นหาสินค้า...',
+                searchHintText: _searchQuery ?? 'ค้นหาสินค้า...',
                 onQRTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังเปิดสแกน...')));
                 },
