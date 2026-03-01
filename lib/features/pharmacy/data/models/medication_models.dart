@@ -8,8 +8,8 @@ class MedicationModel {
   final String? dosageForm;
   final String? strength;
   final String? manufacturer;
-  
   final String status;
+  final String? fdaRiskStatus;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   
@@ -17,6 +17,12 @@ class MedicationModel {
   final TmtDetailsModel? tmtDetails;
   final UnregisteredDetailsModel? unregisteredDetails;
   final ClinicalKnowledgeModel? clinicalKnowledge;
+  final List<ProductCategoryModel>? categories;
+
+  // Sheserved specifics
+  final double? price;
+  final String? imageUrl;
+  final bool inStock;
 
   MedicationModel({
     required this.id,
@@ -28,11 +34,16 @@ class MedicationModel {
     this.strength,
     this.manufacturer,
     required this.status,
+    this.fdaRiskStatus,
     this.createdAt,
     this.updatedAt,
     this.tmtDetails,
     this.unregisteredDetails,
     this.clinicalKnowledge,
+    this.categories,
+    this.price,
+    this.imageUrl,
+    this.inStock = true,
   });
 
   factory MedicationModel.fromJson(Map<String, dynamic> json) {
@@ -46,6 +57,10 @@ class MedicationModel {
       strength: json['strength'] as String?,
       manufacturer: json['manufacturer'] as String?,
       status: json['status'] as String? ?? 'ACTIVE',
+      fdaRiskStatus: json['fda_risk_status'] as String?,
+      price: json['price'] != null ? double.tryParse(json['price'].toString()) : null,
+      imageUrl: json['image_url'] as String?,
+      inStock: json['in_stock'] as bool? ?? true,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
       
@@ -58,6 +73,15 @@ class MedicationModel {
           : null,
       clinicalKnowledge: json['clinical_knowledge'] != null && (json['clinical_knowledge'] as List).isNotEmpty
           ? ClinicalKnowledgeModel.fromJson((json['clinical_knowledge'] as List).first as Map<String, dynamic>)
+          : null,
+      categories: json['medication_category_mappings'] != null 
+          ? (json['medication_category_mappings'] as List)
+              .map((mapping) => mapping['product_categories'] != null 
+                  ? ProductCategoryModel.fromJson(mapping['product_categories'] as Map<String, dynamic>) 
+                  : null)
+              .where((c) => c != null)
+              .cast<ProductCategoryModel>()
+              .toList()
           : null,
     );
   }
@@ -173,6 +197,48 @@ class ClinicalKnowledgeModel {
       drugInteractions: json['drug_interactions'] as String?,
       pregnancyCategory: json['pregnancy_category'] as String?,
       storageConditions: json['storage_conditions'] as String?,
+    );
+  }
+}
+
+class ProductCategoryModel {
+  final String id;
+  final String name;
+  final String type;
+  final bool isActive;
+  final int displayOrder;
+
+  ProductCategoryModel({
+    required this.id,
+    required this.name,
+    this.type = 'CATEGORY',
+    this.isActive = true,
+    this.displayOrder = 0,
+  });
+
+  factory ProductCategoryModel.fromJson(Map<String, dynamic> json) {
+    return ProductCategoryModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      type: json['type'] as String? ?? 'CATEGORY',
+      isActive: json['is_active'] as bool? ?? true,
+      displayOrder: json['display_order'] as int? ?? 0,
+    );
+  }
+
+  ProductCategoryModel copyWith({
+    String? id,
+    String? name,
+    String? type,
+    bool? isActive,
+    int? displayOrder,
+  }) {
+    return ProductCategoryModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      isActive: isActive ?? this.isActive,
+      displayOrder: displayOrder ?? this.displayOrder,
     );
   }
 }

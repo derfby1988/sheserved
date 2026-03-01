@@ -4,6 +4,8 @@ import '../../../../shared/widgets/tlz_drawer.dart';
 import 'medication_detail_page.dart';
 import '../../../../services/service_locator.dart';
 import '../../data/models/medication_models.dart';
+import 'fda_search_page.dart';
+import 'dart:async';
 
 class PharmacyProductsPage extends StatefulWidget {
   const PharmacyProductsPage({super.key});
@@ -26,16 +28,46 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
   bool _isLoadingMore = false;
   final ScrollController _scrollController = ScrollController();
 
+  // Filters State
+  String? _searchQuery;
+  String? _selectedCategoryId;
+  double? _minPrice;
+  double? _maxPrice;
+  
+  List<ProductCategoryModel> _categories = [];
+  final TextEditingController _minPriceController = TextEditingController();
+  final TextEditingController _maxPriceController = TextEditingController();
+  
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _fetchCategories();
     _fetchMedications();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final repo = ServiceLocator.instance.pharmacyRepository;
+      final categories = await repo.getCategories();
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading categories: $e');
+    }
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _scrollController.dispose();
+    _minPriceController.dispose();
+    _maxPriceController.dispose();
     super.dispose();
   }
 
@@ -55,7 +87,15 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
     try {
       final repo = ServiceLocator.instance.pharmacyRepository;
       final userId = ServiceLocator.instance.currentUser?.id;
-      final meds = await repo.getMedications(userId: userId, page: _currentPage, pageSize: _pageSize);
+      final meds = await repo.getMedications(
+        userId: userId, 
+        page: _currentPage, 
+        pageSize: _pageSize,
+        searchQuery: _searchQuery,
+        categoryId: _selectedCategoryId,
+        minPrice: _minPrice,
+        maxPrice: _maxPrice,
+      );
       setState(() {
         _medications = meds;
         _isLoading = false;
@@ -83,7 +123,15 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
       final userId = ServiceLocator.instance.currentUser?.id;
       final nextPage = _currentPage + 1;
       
-      final moreMeds = await repo.getMedications(userId: userId, page: nextPage, pageSize: _pageSize);
+      final moreMeds = await repo.getMedications(
+        userId: userId, 
+        page: nextPage, 
+        pageSize: _pageSize,
+        searchQuery: _searchQuery,
+        categoryId: _selectedCategoryId,
+        minPrice: _minPrice,
+        maxPrice: _maxPrice,
+      );
       
       setState(() {
         _currentPage = nextPage;
@@ -116,20 +164,43 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
               onQRTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังเปิดสแกน...')));
               },
+              onSearch: (query, _) {
+                if (_debounce?.isActive ?? false) _debounce!.cancel();
+                _debounce = Timer(const Duration(milliseconds: 500), () {
+                  setState(() {
+                    _searchQuery = query.isEmpty ? null : query;
+                    _currentPage = 1;
+                    _hasMore = true;
+                  });
+                  _fetchMedications();
+                });
+              },
+              onSearchSubmit: (query) {
+                if (_debounce?.isActive ?? false) _debounce!.cancel();
+                setState(() {
+                  _searchQuery = query.isEmpty ? null : query;
+                  _currentPage = 1;
+                  _hasMore = true;
+                });
+                _fetchMedications(); // Refresh with new search
+              },
               onNotificationTap: () {},
               onCartTap: () {},
-              onResultTap: (item) {},
             ),
 
             // Header Section (กันสาด & โลโก้ & แท็บ)
             _buildHeaderSection(),
+
+            // Active Filters Section
+            if (_selectedCategoryId != null || _minPrice != null || _maxPrice != null)
+              _buildActiveFilters(),
 
             // Content Section
             Expanded(
               child: _showFilter
                   ? _buildFilterUI()
                   : (_isLoading
-                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      ? _buildSkeletonLoading()
                       : _error != null
                           ? Center(child: Text('เกิดข้อผิดพลาด: $_error', style: const TextStyle(color: Colors.white)))
                           : _medications.isEmpty
@@ -147,6 +218,15 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fda_search_btn',
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const FdaSearchPage()));
+        },
+        backgroundColor: Colors.white,
+        icon: const Icon(Icons.verified, color: Colors.blue),
+        label: const Text('ตรวจสอบบัญชียา อย.', style: TextStyle(color: Colors.blue, fontFamily: 'Sukhumvit Set', fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -346,13 +426,186 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.filter_list,
+                  Icons.filter_list_off,
                   color: Colors.white,
                 ),
               ),
             ),
           )
       ],
+    );
+  }
+
+  Widget _buildActiveFilters() {
+    String? categoryName;
+    if (_selectedCategoryId != null) {
+      try {
+        categoryName = _categories.firstWhere((cat) => cat.id == _selectedCategoryId).name;
+      } catch (e) {
+        categoryName = 'หมวดหมู่';
+      }
+    }
+
+    String? priceRange;
+    if (_minPrice != null || _maxPrice != null) {
+      if (_minPrice != null && _maxPrice != null) priceRange = '${_minPrice!.toInt()}-${_maxPrice!.toInt()}฿';
+      else if (_minPrice != null) priceRange = 'มากกว่า ${_minPrice!.toInt()}฿';
+      else if (_maxPrice != null) priceRange = 'น้อยกว่า ${_maxPrice!.toInt()}฿';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      color: Colors.transparent,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (categoryName != null)
+            Chip(
+              label: Text(categoryName, style: const TextStyle(color: Colors.white, fontSize: 12)),
+              backgroundColor: const Color(0xFF58910F),
+              deleteIcon: const Icon(Icons.close, color: Colors.white, size: 16),
+              onDeleted: () {
+                setState(() {
+                  _selectedCategoryId = null;
+                  _currentPage = 1;
+                  _hasMore = true;
+                });
+                _fetchMedications();
+              },
+            ),
+          if (priceRange != null)
+            Chip(
+              label: Text(priceRange, style: const TextStyle(color: Colors.white, fontSize: 12)),
+              backgroundColor: const Color(0xFF58910F),
+              deleteIcon: const Icon(Icons.close, color: Colors.white, size: 16),
+              onDeleted: () {
+                setState(() {
+                  _minPrice = null;
+                  _maxPrice = null;
+                  _minPriceController.clear();
+                  _maxPriceController.clear();
+                  _currentPage = 1;
+                  _hasMore = true;
+                });
+                _fetchMedications();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonLoading() {
+    return _isGalleryView ? _buildGallerySkeleton() : _buildTagsSkeleton();
+  }
+
+  Widget _buildGallerySkeleton() {
+    return GridView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.62,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: 12,
+      itemBuilder: (context, index) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Container(height: 10, width: double.infinity, color: Colors.grey[300]),
+                      Container(height: 10, width: 40, color: Colors.grey[300]),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(height: 12, width: 30, color: Colors.grey[300]),
+                          Container(height: 16, width: 16, decoration: BoxDecoration(color: Colors.grey[300], shape: BoxShape.circle)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTagsSkeleton() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          height: 160,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 5,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(height: 16, width: double.infinity, color: Colors.grey[300]),
+                      const SizedBox(height: 8),
+                      Container(height: 14, width: 100, color: Colors.grey[300]),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Container(height: 18, width: 50, color: Colors.grey[300]),
+                          const Spacer(),
+                          Container(height: 32, width: 80, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(8))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -371,8 +624,8 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         final medication = _medications[index];
         final title = medication.tradeName;
         final category = medication.genericName ?? medication.dosageForm ?? 'ยา/เวชภัณฑ์';
-        final price = 0.00; // ตอนนี้ Schema ยังไม่มีราคายา ใส่ placeholder ไปก่อน
-        final image = 'https://placehold.co/150x200'; // mock
+        final price = medication.price ?? 0.00;
+        final image = medication.imageUrl ?? 'https://placehold.co/150x200';
         
         return GestureDetector(
           onTap: () {
@@ -479,9 +732,9 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         final medication = _medications[index];
         final title = medication.tradeName;
         final category = medication.genericName ?? medication.dosageForm ?? 'ยา/เวชภัณฑ์';
-        final price = 0.00;
+        final price = medication.price ?? 0.00;
         final rating = 5.0;
-        final image = 'https://placehold.co/150x200';
+        final image = medication.imageUrl ?? 'https://placehold.co/150x200';
 
         return GestureDetector(
           onTap: () {
@@ -598,84 +851,131 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
       color: Colors.white, // ตามหน้าจอที่ 3 ที่เปลี่ยนเป็นพื้นหลังขาว
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 20),
-          // ไอคอนหมวดหมู่
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildFilterIcon(Icons.two_wheeler, 'ส่งฟรี'),
-              _buildFilterIcon(Icons.directions_car, 'ส่งทันที', color: const Color(0xFF58910F)),
-              _buildFilterIcon(Icons.local_offer, 'ลดราคา'),
-              _buildFilterIcon(Icons.home_outlined, 'ชำระปลายทาง', color: const Color(0xFF58910F)),
-              _buildFilterIcon(Icons.circle_outlined, 'ets.'),
-            ],
-          ),
-          const SizedBox(height: 40),
-          // ช่องระบุราคา
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 40,
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      hintText: 'ต่ำสุด',
-                      hintStyle: const TextStyle(fontFamily: 'Sukhumvit Set', fontSize: 14),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: const Color(0xFF58910F).withValues(alpha: 0.5)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: Color(0xFF58910F)),
-                      ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // โชว์หมวดหมู่ที่ดึงมาจาก Database
+                  if (_categories.isNotEmpty) ...[
+                    const Text('หมวดหมู่', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _categories.map((cat) {
+                        final isSelected = _selectedCategoryId == cat.id;
+                        return ChoiceChip(
+                          label: Text(cat.name, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF58910F))),
+                          selected: isSelected,
+                          selectedColor: const Color(0xFF58910F),
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFF58910F)),
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedCategoryId = selected ? cat.id : null;
+                            });
+                          },
+                        );
+                      }).toList(),
                     ),
-                  ),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.0),
-                child: Text('ราคา', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Sukhumvit Set')),
-              ),
-              Expanded(
-                child: Container(
-                  height: 40,
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      hintText: 'สูงสุด',
-                      hintStyle: const TextStyle(fontFamily: 'Sukhumvit Set', fontSize: 14),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: const Color(0xFF58910F).withValues(alpha: 0.5)),
+                    const SizedBox(height: 24),
+                  ],
+
+                  const Text('ราคา', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _minPriceController,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            hintText: 'ต่ำสุด',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                          ),
+                        ),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: Color(0xFF58910F)),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Text('-', style: TextStyle(color: Color(0xFF58910F), fontSize: 16)),
                       ),
-                    ),
+                      Expanded(
+                        child: TextField(
+                          controller: _maxPriceController,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            hintText: 'สูงสุด',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-          const Spacer(),
-          // ขอบเขตล่างสุดเป็นพื้นที่ทึบหรือว่างๆ (ในภาพเหมือนจะเป็นขอบเขียวเข้มของ bottom navigation แต่จริงๆ มันน่าจะเป็นปุ่มยืนยัน หรือแค่ฉาก)
-          Container(
-            width: double.infinity,
-            height: 100,
-            decoration: const BoxDecoration(
-              color: Color(0xFF334B16), // สีเขียวขี้ม้าเข้มด้านล่าง
-              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
             ),
-          )
+          ),
+          
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24.0, top: 16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedCategoryId = null;
+                          _minPrice = null;
+                          _maxPrice = null;
+                          _minPriceController.clear();
+                          _maxPriceController.clear();
+                          _showFilter = false;
+                          _currentPage = 1;
+                          _hasMore = true;
+                        });
+                        _fetchMedications();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF58910F)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                      ),
+                      child: const Text('ล้างค่า', style: TextStyle(color: Color(0xFF58910F), fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _minPrice = double.tryParse(_minPriceController.text);
+                          _maxPrice = double.tryParse(_maxPriceController.text);
+                          _showFilter = false;
+                          _currentPage = 1;
+                          _hasMore = true;
+                        });
+                        _fetchMedications();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF58910F),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                      ),
+                      child: const Text('ตกลง', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

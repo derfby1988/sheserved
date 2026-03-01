@@ -24,6 +24,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
   final List<Map<String, dynamic>>? suggestions;
   final Function(String query, List<Map<String, dynamic>> results)? onSearch;
   final Function(Map<String, dynamic> item)? onResultTap;
+  final Function(String query)? onSearchSubmit;
 
   const TlzAnimatedSearchBar({
     super.key,
@@ -35,6 +36,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
     this.suggestions,
     this.onSearch,
     this.onResultTap,
+    this.onSearchSubmit,
   });
 
   /// Factory สำหรับพื้นหลังสีเข้ม
@@ -47,6 +49,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
     List<Map<String, dynamic>>? suggestions,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
     Function(Map<String, dynamic> item)? onResultTap,
+    Function(String query)? onSearchSubmit,
   }) {
     return TlzAnimatedSearchBar(
       key: key,
@@ -58,6 +61,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
       suggestions: suggestions,
       onSearch: onSearch,
       onResultTap: onResultTap,
+      onSearchSubmit: onSearchSubmit,
     );
   }
 
@@ -71,6 +75,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
     List<Map<String, dynamic>>? suggestions,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
     Function(Map<String, dynamic> item)? onResultTap,
+    Function(String query)? onSearchSubmit,
   }) {
     return TlzAnimatedSearchBar(
       key: key,
@@ -82,6 +87,7 @@ class TlzAnimatedSearchBar extends StatefulWidget {
       suggestions: suggestions,
       onSearch: onSearch,
       onResultTap: onResultTap,
+      onSearchSubmit: onSearchSubmit,
     );
   }
 
@@ -132,6 +138,7 @@ class _TlzAnimatedSearchBarState extends State<TlzAnimatedSearchBar>
         onClose: _hideSearchOverlay,
         onSearch: widget.onSearch,
         onResultTap: widget.onResultTap,
+        onSearchSubmit: widget.onSearchSubmit,
       ),
     );
   }
@@ -208,6 +215,7 @@ class _SearchOverlay extends StatefulWidget {
   final VoidCallback onClose;
   final Function(String query, List<Map<String, dynamic>> results)? onSearch;
   final Function(Map<String, dynamic> item)? onResultTap;
+  final Function(String query)? onSearchSubmit;
 
   const _SearchOverlay({
     required this.layerLink,
@@ -217,6 +225,7 @@ class _SearchOverlay extends StatefulWidget {
     required this.onClose,
     this.onSearch,
     this.onResultTap,
+    this.onSearchSubmit,
   });
 
   @override
@@ -313,6 +322,10 @@ class _SearchOverlayState extends State<_SearchOverlay>
           _localHistory.removeLast();
         }
       });
+    }
+    if (widget.onSearchSubmit != null) {
+      widget.onSearchSubmit!(value);
+      _close(); // Close overlay when submitted
     }
   }
 

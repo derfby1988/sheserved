@@ -12,6 +12,7 @@ import '../features/health/data/repositories/health_article_repository.dart';
 import '../features/chat/data/repositories/chat_repository.dart';
 import '../features/chat/data/models/chat_models.dart';
 import '../features/pharmacy/data/repositories/pharmacy_repository.dart';
+import '../features/pharmacy/data/services/fda_api_service.dart';
 import '../features/consultation/data/repositories/consultation_repository.dart';
 import '../features/admin/data/repositories/body_region_repository.dart';
 import '../features/admin/data/repositories/profession_repository.dart';
@@ -41,6 +42,7 @@ class ServiceLocator {
   RegistrationRepository? _registrationRepository;
   GroupRoleRepository? _groupRoleRepository;
   PharmacyRepository? _pharmacyRepository;
+  FdaApiService? _fdaApiService;
   
   // Flags
   bool _isInitialized = false;
@@ -251,6 +253,11 @@ class ServiceLocator {
       _pharmacyRepository = PharmacyRepository(Supabase.instance.client);
     }
     return _pharmacyRepository!;
+  }
+
+  FdaApiService get fdaApiService {
+    _fdaApiService ??= FdaApiService();
+    return _fdaApiService!;
   }
 
   /// Get Unified Repository (recommended)

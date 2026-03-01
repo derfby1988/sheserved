@@ -25,9 +25,12 @@ class TlzAppTopBar extends StatelessWidget {
   
   /// Callback เมื่อค้นหา
   final Function(String query, List<Map<String, dynamic>> results)? onSearch;
-  
+
   /// Callback เมื่อกดผลการค้นหา
   final Function(Map<String, dynamic> item)? onResultTap;
+  
+  /// Callback เมื่อค้นหาแบบ submit
+  final Function(String query)? onSearchSubmit;
   
   /// ประวัติการค้นหา
   final List<String>? searchHistory;
@@ -54,6 +57,7 @@ class TlzAppTopBar extends StatelessWidget {
     this.showQRButton = true,
     this.onSearch,
     this.onResultTap,
+    this.onSearchSubmit,
     this.searchHistory,
     this.searchSuggestions,
     this.leading,
@@ -73,6 +77,7 @@ class TlzAppTopBar extends StatelessWidget {
     bool showQRButton = true,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
     Function(Map<String, dynamic> item)? onResultTap,
+    Function(String query)? onSearchSubmit,
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
@@ -111,6 +116,7 @@ class TlzAppTopBar extends StatelessWidget {
     bool showQRButton = true,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
     Function(Map<String, dynamic> item)? onResultTap,
+    Function(String query)? onSearchSubmit,
     List<String>? searchHistory,
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
@@ -158,6 +164,7 @@ class TlzAppTopBar extends StatelessWidget {
             suggestions: searchSuggestions,
             onSearch: onSearch,
             onResultTap: onResultTap,
+            onSearchSubmit: onSearchSubmit,
           ),
         ),
         

@@ -22,6 +22,7 @@ import 'features/admin/presentation/pages/body_region_admin_page.dart';
 import 'features/admin/presentation/pages/package_admin_page.dart';
 import 'features/admin/presentation/pages/application_review_page.dart';
 import 'features/admin/presentation/pages/user_category_admin_page.dart';
+import 'features/pharmacy/presentation/pages/pharmacy_filters_admin_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
 import 'services/test_websocket.dart';
@@ -137,6 +138,7 @@ class SheservedApp extends StatelessWidget {
         '/admin/user-categories': (context) => const UserCategoryAdminPage(),
         '/donate': (context) => const DonationDashboardPage(),
         '/admin/donations': (context) => const DonationAdminPage(),
+        '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

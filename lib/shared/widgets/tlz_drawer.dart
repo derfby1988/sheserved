@@ -371,7 +371,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
 
                             _buildMenuItem(
                               context,
-                              title: 'สินค้า',
+                              title: 'ยา & ความงาม',
                               icon: Icons.people_outline,
                               onTap: () {
                                 Navigator.of(context).pop(); // ปิด Drawer ก่อนเปิดหน้าถัดไป
@@ -572,6 +572,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               title: 'จัดการระบบบริจาค',
                               icon: Icons.volunteer_activism_outlined,
                               onTap: () => _navigateTo(context, '/admin/donations'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
+                              title: 'จัดการหมวดหมู่ยา/สินค้า',
+                              icon: Icons.local_pharmacy_outlined,
+                              onTap: () => _navigateTo(context, '/admin/pharmacy_filters'),
                               isSubItem: true,
                             ),
                           ],
