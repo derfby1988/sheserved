@@ -791,6 +791,7 @@ class HealthArticleRepository {
     required String title,
     required String content,
     String? imageUrl,
+    List<Map<String, dynamic>>? products,
   }) async {
     try {
       debugPrint('Repository: Attempting minimal insert for article. User: $userId');
@@ -807,8 +808,19 @@ class HealthArticleRepository {
           .select('*, users(username, profile_image_url)')
           .single();
 
+      final article = HealthArticle.fromJson(response);
+
+      if (products != null && products.isNotEmpty) {
+        final productsData = products.map((p) => {
+          ...p,
+          'article_id': article.id,
+          'tagged_by_id': userId,
+        }).toList();
+        await _client.from('health_article_products').insert(productsData);
+      }
+
       debugPrint('Repository: Success! Article ID: ${response['id']}');
-      return HealthArticle.fromJson(response);
+      return article;
     } catch (e) {
       debugPrint('Repository: Error creating article: $e');
       if (e is PostgrestException) {
@@ -820,6 +832,35 @@ class HealthArticleRepository {
         }
       }
       rethrow; // Rethrow to let the UI catch and show the actual error
+    }
+  }
+
+  /// Update article products / tags
+  Future<bool> editArticleProducts({
+    required String articleId,
+    required String userId,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    try {
+      // First, delete existing products added by this user
+      await _client.from('health_article_products')
+          .delete()
+          .eq('article_id', articleId)
+          .eq('tagged_by_id', userId);
+      
+      // Insert new products if any
+      if (products.isNotEmpty) {
+        final productsData = products.map((p) => {
+          ...p,
+          'article_id': articleId,
+          'tagged_by_id': userId,
+        }).toList();
+        await _client.from('health_article_products').insert(productsData);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Repository: Error updating products: $e');
+      return false;
     }
   }
 
