@@ -18,6 +18,7 @@ class PharmacyRepository {
     String? categoryId,
     double? minPrice,
     double? maxPrice,
+    String? sortBy, // trade_name_asc, price_asc, price_desc, created_at_desc
   }) async {
     try {
       final startIndex = (page - 1) * pageSize;
@@ -57,10 +58,13 @@ class PharmacyRepository {
         query = query.lte('price', maxPrice);
       }
 
-      // เรียงลำดับและแบ่งหน้า
-      final response = await query
-          .order('trade_name', ascending: true)
-          .range(startIndex, endIndex);
+      // เรียงลำดับและดึงข้อมูลตามช่วง (Pagination)
+      final response = await (
+        sortBy == 'price_asc' ? query.order('price', ascending: true) :
+        sortBy == 'price_desc' ? query.order('price', ascending: false) :
+        sortBy == 'created_at_desc' ? query.order('created_at', ascending: false) :
+        query.order('trade_name', ascending: true)
+      ).range(startIndex, endIndex);
 
       return (response as List).map((json) => MedicationModel.fromJson(json)).toList();
     } catch (e) {

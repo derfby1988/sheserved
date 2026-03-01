@@ -33,6 +33,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
   String? _selectedCategoryId;
   double? _minPrice;
   double? _maxPrice;
+  String _sortBy = 'trade_name_asc';
   
   List<ProductCategoryModel> _categories = [];
   final TextEditingController _minPriceController = TextEditingController();
@@ -95,6 +96,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         categoryId: _selectedCategoryId,
         minPrice: _minPrice,
         maxPrice: _maxPrice,
+        sortBy: _sortBy,
       );
       setState(() {
         _medications = meds;
@@ -131,6 +133,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         categoryId: _selectedCategoryId,
         minPrice: _minPrice,
         maxPrice: _maxPrice,
+        sortBy: _sortBy,
       );
       
       setState(() {
@@ -158,34 +161,37 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         child: Column(
           children: [
             // Top Bar
-            TlzAppTopBar.onPrimary(
-              notificationCount: 1,
-              searchHintText: 'ค้นหาสินค้า...',
-              onQRTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังเปิดสแกน...')));
-              },
-              onSearch: (query, _) {
-                if (_debounce?.isActive ?? false) _debounce!.cancel();
-                _debounce = Timer(const Duration(milliseconds: 500), () {
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: TlzAppTopBar.onPrimary(
+                notificationCount: 1,
+                searchHintText: 'ค้นหาสินค้า...',
+                onQRTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังเปิดสแกน...')));
+                },
+                onSearch: (query, _) {
+                  if (_debounce?.isActive ?? false) _debounce!.cancel();
+                  _debounce = Timer(const Duration(milliseconds: 500), () {
+                    setState(() {
+                      _searchQuery = query.isEmpty ? null : query;
+                      _currentPage = 1;
+                      _hasMore = true;
+                    });
+                    _fetchMedications();
+                  });
+                },
+                onSearchSubmit: (query) {
+                  if (_debounce?.isActive ?? false) _debounce!.cancel();
                   setState(() {
                     _searchQuery = query.isEmpty ? null : query;
                     _currentPage = 1;
                     _hasMore = true;
                   });
-                  _fetchMedications();
-                });
-              },
-              onSearchSubmit: (query) {
-                if (_debounce?.isActive ?? false) _debounce!.cancel();
-                setState(() {
-                  _searchQuery = query.isEmpty ? null : query;
-                  _currentPage = 1;
-                  _hasMore = true;
-                });
-                _fetchMedications(); // Refresh with new search
-              },
-              onNotificationTap: () {},
-              onCartTap: () {},
+                  _fetchMedications(); // Refresh with new search
+                },
+                onNotificationTap: () {},
+                onCartTap: () {},
+              ),
             ),
 
             // Header Section (กันสาด & โลโก้ & แท็บ)
@@ -197,38 +203,94 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
 
             // Content Section
             Expanded(
-              child: _showFilter
-                  ? _buildFilterUI()
-                  : (_isLoading
-                      ? _buildSkeletonLoading()
-                      : _error != null
-                          ? Center(child: Text('เกิดข้อผิดพลาด: $_error', style: const TextStyle(color: Colors.white)))
-                          : _medications.isEmpty
-                              ? const Center(child: Text('ไม่มีข้อมูลยา', style: TextStyle(color: Colors.white, fontFamily: 'Sukhumvit Set')))
-                              : Column(
-                                  children: [
-                                    Expanded(child: _isGalleryView ? _buildGalleryView() : _buildTagsView()),
-                                    if (_isLoadingMore) 
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(vertical: 16.0),
-                                        child: CircularProgressIndicator(color: Colors.white),
-                                      ),
-                                  ],
-                                )),
+              child: Stack(
+                children: [
+                  // Main Content (Grid / List)
+                  Positioned.fill(
+                    child: _isLoading
+                        ? _buildSkeletonLoading()
+                        : _error != null
+                            ? Center(child: Text('เกิดข้อผิดพลาด: $_error', style: const TextStyle(color: Colors.white, fontFamily: 'SukhumvitSet')))
+                            : _medications.isEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.inventory_2_outlined, size: 80, color: Colors.white.withOpacity(0.5)),
+                                        const SizedBox(height: 16),
+                                        const Text(
+                                          'ไม่พบข้อมูลยาที่คุณค้นหา',
+                                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet'),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          'ลองปรับเปลี่ยนตัวกรองหรือคำค้นหาดูใหม่นะคะ',
+                                          style: TextStyle(color: Colors.white70, fontSize: 14, fontFamily: 'SukhumvitSet'),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : Column(
+                                    children: [
+                                      Expanded(child: _isGalleryView ? _buildGalleryView() : _buildTagsView()),
+                                      if (_isLoadingMore) 
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 16.0),
+                                          child: CircularProgressIndicator(color: Colors.white),
+                                        ),
+                                    ],
+                                  ),
+                  ),
+
+                  // Filter Overlay mapped over content
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.fastOutSlowIn,
+                    top: _showFilter ? 0 : MediaQuery.of(context).size.height, // Slide from bottom
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeOut,
+                      opacity: _showFilter ? 1.0 : 0.0,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(32),
+                            topRight: Radius.circular(32),
+                          ),
+                        ),
+                        child: IgnorePointer(
+                          ignoring: !_showFilter,
+                          child: _buildFilterUI(key: const ValueKey('filter')),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'fda_search_btn',
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const FdaSearchPage()));
-        },
-        backgroundColor: Colors.white,
-        icon: const Icon(Icons.verified, color: Colors.blue),
-        label: const Text('ตรวจสอบบัญชียา อย.', style: TextStyle(color: Colors.blue, fontFamily: 'Sukhumvit Set', fontWeight: FontWeight.bold)),
-      ),
     );
+  }
+
+  String _getSortBadgeText() {
+    switch (_sortBy) {
+      case 'price_asc':
+        return 'ราคา\nต่ำ-สูง';
+      case 'price_desc':
+        return 'ราคา\nสูง-ต่ำ';
+      case 'created_at_desc':
+        return 'มาใหม่\nล่าสุด';
+      case 'trade_name_asc':
+      default:
+        return 'ชื่อยา\n(ก-ฮ)';
+    }
   }
 
   Widget _buildHeaderSection() {
@@ -241,17 +303,24 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
           children: [
             // ช่องสำหรับให้กันสาดห้อย
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(4, (index) {
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (index) {
                 return Container(
-                  width: MediaQuery.of(context).size.width / 4,
-                  height: 50,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(50),
-                      bottomRight: Radius.circular(50),
+                  width: MediaQuery.of(context).size.width / 5,
+                  height: 80, // ยาวขึ้นนิดนึง
+                  decoration: BoxDecoration(
+                    color: index % 2 == 0 ? Colors.white : const Color(0xFFD6E3B5), // สลับสีขาว-เขียวอ่อน
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(40),
+                      bottomRight: Radius.circular(40),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                 );
               }),
@@ -259,9 +328,9 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
           ],
         ),
 
-        // วงกลม "ขายดีโปรโมชั่น" คร่อมกันสาด
+        // วงกลม "ขายดีโปรโมชั่น" คร่อมชายกันสาด
         Positioned(
-          top: 20,
+          top: 100, // ขยับลงมาให้เริ่มช่วงปลายกันสาด
           child: Container(
             width: 100,
             height: 100,
@@ -276,15 +345,15 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                 ),
               ],
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                'ขายดี\nโปรโมชั่น',
+                _getSortBadgeText(),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF58910F),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
-                  fontFamily: 'Sukhumvit Set',
+                  fontFamily: 'SukhumvitSet',
                 ),
               ),
             ),
@@ -293,20 +362,25 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
 
         // พื้นที่ดันสเปซสำหรับ Tabs และ Filter
         Container(
-          height: 160,
-          color: _showFilter ? Colors.white : Colors.transparent, // ถ้าโหมด Filter ให้พื้นหลังเริ่มขาว
+          height: 270, // คงความสูงไว้ดันพื้นที่ Content เสมอไม่ว่าโหมดไหน
+          color: Colors.transparent, 
         ),
 
         // ปุ่ม Tabs และ Filter (ลอยอยู่ด้านล่างของกล่อง Spacer)
         Positioned(
-          bottom: 10,
+          top: 210, // วางต่อลงมาจากวงกลมโปรโมชั่น ไม่ให้ทับกัน
           left: 16,
           right: 16,
-          child: _showFilter 
-            ? const SizedBox.shrink() // ถ้ากด Filter อาจจะซ่อนปุ่มแถบเดิม หรือวาง Filter ลอยไว้
-            : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            child: _showFilter 
+              ? SizedBox.shrink(key: const ValueKey('hide_tabs')) // ถ้ากด Filter อาจจะซ่อนปุ่มแถบเดิม หรือวาง Filter ลอยไว้
+              : Row(
+                  key: const ValueKey('show_tabs'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                 const SizedBox(width: 48), // Spacer ชดเชยปุ่มฟิลเตอร์
                 
                 // กล่อง Gallery / Tags
@@ -341,7 +415,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                                     color: _isGalleryView ? Colors.white : const Color(0xFFD6E3B5),
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    fontFamily: 'Sukhumvit Set',
+                                    fontFamily: 'SukhumvitSet',
                                   ),
                                 ),
                               ),
@@ -370,7 +444,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                                     color: !_isGalleryView ? Colors.white : const Color(0xFFD6E3B5),
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    fontFamily: 'Sukhumvit Set',
+                                    fontFamily: 'SukhumvitSet',
                                   ),
                                 ),
                               ),
@@ -409,14 +483,20 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                 ),
               ],
             ),
+          ),
         ),
 
         // ปุ่มปิด Filter ลอยอยู่แทนกล่อง Tab เมื่อโหมด Filter ทำงาน
-        if (_showFilter)
-          Positioned(
-            bottom: 15,
-            right: 16,
-            child: GestureDetector(
+        Positioned(
+          top: 210, // ขยับปุ่มปิดให้มาอยู่ระนาบเดียวกับ tab bar
+          right: 16,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeInBack,
+            transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+            child: _showFilter ? GestureDetector(
+              key: const ValueKey('close_filter'),
               onTap: () => setState(() => _showFilter = false),
               child: Container(
                 width: 48,
@@ -424,14 +504,22 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                 decoration: const BoxDecoration(
                   color: Color(0xFF58910F), // เขียวเข้ม
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 6,
+                      offset: Offset(0, 3),
+                    )
+                  ]
                 ),
                 child: const Icon(
-                  Icons.filter_list_off,
+                  Icons.close, // เปลี่ยนเป็นกากบาทตามที่ตกลงกันไว้ก่อนหน้า
                   color: Colors.white,
                 ),
               ),
-            ),
-          )
+            ) : SizedBox.shrink(key: const ValueKey('no_close_filter')),
+          ),
+        )
       ],
     );
   }
@@ -463,7 +551,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
         children: [
           if (categoryName != null)
             Chip(
-              label: Text(categoryName, style: const TextStyle(color: Colors.white, fontSize: 12)),
+              label: Text(categoryName, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'SukhumvitSet')),
               backgroundColor: const Color(0xFF58910F),
               deleteIcon: const Icon(Icons.close, color: Colors.white, size: 16),
               onDeleted: () {
@@ -477,7 +565,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
             ),
           if (priceRange != null)
             Chip(
-              label: Text(priceRange, style: const TextStyle(color: Colors.white, fontSize: 12)),
+              label: Text(priceRange, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'SukhumvitSet')),
               backgroundColor: const Color(0xFF58910F),
               deleteIcon: const Icon(Icons.close, color: Colors.white, size: 16),
               onDeleted: () {
@@ -503,7 +591,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
 
   Widget _buildGallerySkeleton() {
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         childAspectRatio: 0.62,
@@ -559,12 +647,12 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
 
   Widget _buildTagsSkeleton() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       itemCount: 6,
       itemBuilder: (context, index) {
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
-          height: 160,
+          height: 185,
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.5),
             borderRadius: BorderRadius.circular(16),
@@ -612,7 +700,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
   Widget _buildGalleryView() {
     return GridView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         childAspectRatio: 0.62, // ปรับการยืดของการ์ดใน Grid (แนวตั้งยาวกว่าแนวนอน)
@@ -638,7 +726,12 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
               color: const Color(0xFFF7F9EE), // สีพื้นหลังขาวขุ่น
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2)),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                  spreadRadius: 1,
+                ),
               ],
             ),
             child: Column(
@@ -681,7 +774,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'Sukhumvit Set'),
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'SukhumvitSet'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -699,7 +792,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                           children: [
                             Text(
                               '$price บ.',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, fontFamily: 'Sukhumvit Set'),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, fontFamily: 'SukhumvitSet'),
                             ),
                             Container(
                               padding: const EdgeInsets.all(4),
@@ -726,7 +819,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
   Widget _buildTagsView() {
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       itemCount: _medications.length,
       itemBuilder: (context, index) {
         final medication = _medications[index];
@@ -744,10 +837,17 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
           },
           child: Container(
             margin: const EdgeInsets.only(bottom: 16),
-            height: 160,
+            height: 185,
             decoration: BoxDecoration(
-              color: Colors.transparent,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -789,7 +889,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                             Expanded(
                               child: Text(
                                 title,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Sukhumvit Set'),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'SukhumvitSet'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -799,14 +899,14 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                         ),
                         Text(
                           category,
-                          style: TextStyle(color: Colors.grey[500], fontSize: 14, fontFamily: 'Sukhumvit Set'),
+                          style: TextStyle(color: Colors.grey[500], fontSize: 14, fontFamily: 'SukhumvitSet'),
                         ),
                         const Spacer(),
                         Row(
                           children: [
                             Text(
                               rating.toString(),
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'SukhumvitSet'),
                             ),
                             const SizedBox(width: 4),
                             // ดาวเล็ก 1 ดวง
@@ -814,7 +914,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                             const Spacer(),
                             Text(
                               '$price บ.',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Sukhumvit Set'),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'SukhumvitSet'),
                             ),
                           ],
                         ),
@@ -829,7 +929,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                             ),
                             child: const Text(
                               'ใส่ลงตะกร้า',
-                              style: TextStyle(color: Colors.white, fontFamily: 'Sukhumvit Set'),
+                              style: TextStyle(color: Colors.white, fontFamily: 'SukhumvitSet'),
                             ),
                           ),
                         ),
@@ -845,8 +945,9 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
     );
   }
 
-  Widget _buildFilterUI() {
+  Widget _buildFilterUI({Key? key}) {
     return Container(
+      key: key,
       width: double.infinity,
       color: Colors.white, // ตามหน้าจอที่ 3 ที่เปลี่ยนเป็นพื้นหลังขาว
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -859,8 +960,23 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // โชว์หมวดหมู่ที่ดึงมาจาก Database
+                  const Text('เรียงลำดับตาม', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'SukhumvitSet')),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildSortChip('ชื่อยา (ก-ฮ)', 'trade_name_asc'),
+                      _buildSortChip('ราคา: ต่ำ-สูง', 'price_asc'),
+                      _buildSortChip('ราคา: สูง-ต่ำ', 'price_desc'),
+                      _buildSortChip('มาใหม่ล่าสุด', 'created_at_desc'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // โชว์หมวดหมู่ที่ดึงมาจาก Database
                   if (_categories.isNotEmpty) ...[
-                    const Text('หมวดหมู่', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text('หมวดหมู่', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'SukhumvitSet')),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -868,7 +984,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                       children: _categories.map((cat) {
                         final isSelected = _selectedCategoryId == cat.id;
                         return ChoiceChip(
-                          label: Text(cat.name, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF58910F))),
+                          label: Text(cat.name, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF58910F), fontFamily: 'SukhumvitSet')),
                           selected: isSelected,
                           selectedColor: const Color(0xFF58910F),
                           backgroundColor: Colors.white,
@@ -884,7 +1000,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                     const SizedBox(height: 24),
                   ],
 
-                  const Text('ราคา', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text('ราคา', style: TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'SukhumvitSet')),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -893,26 +1009,41 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                           controller: _minPriceController,
                           keyboardType: TextInputType.number,
                           textAlign: TextAlign.center,
+                          style: const TextStyle(fontFamily: 'SukhumvitSet'),
                           decoration: InputDecoration(
                             hintText: 'ต่ำสุด',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                            hintStyle: const TextStyle(fontFamily: 'SukhumvitSet'),
+                            prefixText: '฿ ',
+                            prefixStyle: const TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet'),
+                            filled: true,
+                            fillColor: const Color(0xFFF7F9EE),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                           ),
                         ),
                       ),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Text('-', style: TextStyle(color: Color(0xFF58910F), fontSize: 16)),
+                        child: Text('-', style: TextStyle(color: Color(0xFF58910F), fontSize: 16, fontFamily: 'SukhumvitSet')),
                       ),
                       Expanded(
                         child: TextField(
                           controller: _maxPriceController,
                           keyboardType: TextInputType.number,
                           textAlign: TextAlign.center,
+                          style: const TextStyle(fontFamily: 'SukhumvitSet'),
                           decoration: InputDecoration(
                             hintText: 'สูงสุด',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                            hintStyle: const TextStyle(fontFamily: 'SukhumvitSet'),
+                            prefixText: '฿ ',
+                            prefixStyle: const TextStyle(color: Color(0xFF58910F), fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet'),
+                            filled: true,
+                            fillColor: const Color(0xFFF7F9EE),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                           ),
                         ),
+
                       ),
                     ],
                   ),
@@ -934,6 +1065,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                           _selectedCategoryId = null;
                           _minPrice = null;
                           _maxPrice = null;
+                          _sortBy = 'trade_name_asc';
                           _minPriceController.clear();
                           _maxPriceController.clear();
                           _showFilter = false;
@@ -946,7 +1078,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                         side: const BorderSide(color: Color(0xFF58910F)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                       ),
-                      child: const Text('ล้างค่า', style: TextStyle(color: Color(0xFF58910F), fontSize: 16, fontWeight: FontWeight.bold)),
+                      child: const Text('ล้างค่า', style: TextStyle(color: Color(0xFF58910F), fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet')),
                     ),
                   ),
                 ),
@@ -957,8 +1089,19 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                     child: ElevatedButton(
                       onPressed: () {
                         setState(() {
-                          _minPrice = double.tryParse(_minPriceController.text);
-                          _maxPrice = double.tryParse(_maxPriceController.text);
+                          double? min = double.tryParse(_minPriceController.text);
+                          double? max = double.tryParse(_maxPriceController.text);
+                          
+                          if (min != null && max != null && min > max) {
+                            final temp = min;
+                            min = max;
+                            max = temp;
+                            _minPriceController.text = min.toInt().toString();
+                            _maxPriceController.text = max.toInt().toString();
+                          }
+                          
+                          _minPrice = min;
+                          _maxPrice = max;
                           _showFilter = false;
                           _currentPage = 1;
                           _hasMore = true;
@@ -969,7 +1112,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                         backgroundColor: const Color(0xFF58910F),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                       ),
-                      child: const Text('ตกลง', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      child: const Text('ตกลง', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet')),
                     ),
                   ),
                 ),
@@ -993,10 +1136,26 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
             color: color,
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            fontFamily: 'Sukhumvit Set',
+            fontFamily: 'SukhumvitSet',
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSortChip(String label, String value) {
+    final isSelected = _sortBy == value;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF58910F), fontFamily: 'SukhumvitSet')),
+      selected: isSelected,
+      selectedColor: const Color(0xFFF2A30B),
+      backgroundColor: Colors.white,
+      side: const BorderSide(color: Color(0xFFF2A30B)),
+      onSelected: (selected) {
+        setState(() {
+          _sortBy = selected ? value : 'trade_name_asc';
+        });
+      },
     );
   }
 }
