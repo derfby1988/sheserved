@@ -32,6 +32,8 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
       final categories = await repository.getAllUserCategories();
       if (mounted) {
         setState(() {
+          // Sort explicitly
+          categories.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
           _categories = categories;
           _isLoading = false;
         });
@@ -86,7 +88,8 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
 
   Widget _buildCategoryCard(UserCategory category) {
     final bool isSystem = category.id == UserCategory.consumerId || 
-                         category.id == UserCategory.providerId;
+                         category.id == UserCategory.providerId ||
+                         category.id == UserCategory.localLeaderId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -118,7 +121,23 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('ID: ${category.id}', style: AppTextStyles.caption),
+            Row(
+              children: [
+                Text('ID: ${category.id}', style: AppTextStyles.caption),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'ลำดับ: ${category.displayOrder}', 
+                    style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold)
+                  ),
+                ),
+              ],
+            ),
             if (category.description != null)
               Text(category.description!, style: AppTextStyles.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
@@ -144,9 +163,10 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
   }
 
   IconData _getIconData(String? iconName) {
+    if (iconName == null) return Icons.category;
+    
     switch (iconName) {
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'medical_services': return Icons.medical_services;
+      case 'category': return Icons.category;
       case 'person': return Icons.person;
       case 'business': return Icons.business;
       case 'volunteer_activism': return Icons.volunteer_activism;
@@ -156,6 +176,8 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
       case 'favorite': return Icons.favorite;
       case 'star': return Icons.star;
       case 'pets': return Icons.pets;
+      case 'shopping_cart': return Icons.shopping_cart;
+      case 'medical_services': return Icons.medical_services;
       default: return Icons.category;
     }
   }
@@ -167,6 +189,11 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
     setState(() {
       final category = _categories.removeAt(oldIndex);
       _categories.insert(newIndex, category);
+      
+      // Update local display orders
+      for (int i = 0; i < _categories.length; i++) {
+        _categories[i] = _categories[i].copyWith(displayOrder: i);
+      }
     });
 
     try {

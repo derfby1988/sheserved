@@ -21,6 +21,7 @@ class UserCategory {
   /// ค่าคงที่สำหรับหมวดหมู่หลัก (เพื่อความปลอดภัยในการอ้างอิงโค้ดส่วนอื่น)
   static const String consumerId = 'consumer';
   static const String providerId = 'provider';
+  static const String localLeaderId = 'local_leader';
 
   static const UserCategory consumer = UserCategory(
     id: consumerId,
@@ -30,6 +31,13 @@ class UserCategory {
   static const UserCategory provider = UserCategory(
     id: providerId,
     name: 'ผู้ให้บริการ',
+  );
+
+  static const UserCategory localLeader = UserCategory(
+    id: localLeaderId,
+    name: 'ผู้นำชุมชน',
+    nameEn: 'Local Leader',
+    iconName: 'gavel',
   );
 
   String get value => id;
@@ -59,12 +67,32 @@ class UserCategory {
     );
   }
 
+  UserCategory copyWith({
+    String? id,
+    String? name,
+    String? nameEn,
+    String? description,
+    String? iconName,
+    int? displayOrder,
+    bool? isActive,
+  }) {
+    return UserCategory(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      nameEn: nameEn ?? this.nameEn,
+      description: description ?? this.description,
+      iconName: iconName ?? this.iconName,
+      displayOrder: displayOrder ?? this.displayOrder,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+
   /// แปลงจาก String (สำหรับความเข้ากันได้กับข้อมูลเดิม)
   static UserCategory fromString(String value) {
     if (value == consumerId || value == 'consumer') {
-      return const UserCategory(id: consumerId, name: 'ผู้ซื้อ/ผู้รับบริการ');
+      return const UserCategory(id: consumerId, name: 'Consumer');
     } else if (value == providerId || value == 'provider') {
-      return const UserCategory(id: providerId, name: 'ผู้ให้บริการ');
+      return const UserCategory(id: providerId, name: 'Provider');
     }
     return UserCategory(id: value, name: value);
   }
@@ -139,6 +167,7 @@ class Profession {
   final int displayOrder;
   final int fieldCount; // จำนวน fields (calculated)
   final int memberCount; // จำนวนสมาชิกทั้งหมด (calculated)
+  final String? colorHex; // Hex color string (e.g. #FF0000)
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -148,6 +177,7 @@ class Profession {
     this.nameEn,
     this.description,
     this.iconName,
+    this.colorHex,
     required this.category,
     this.isBuiltIn = false,
     this.isActive = true,
@@ -174,6 +204,7 @@ class Profession {
         nameEn: 'Consumer',
         description: 'ผู้ใช้ทั่วไปที่ต้องการซื้อสินค้าหรือรับบริการ',
         iconName: 'shopping_cart',
+        colorHex: '#2196F3', // Blue
         category: UserCategory.consumer,
         isBuiltIn: true,
         isActive: true,
@@ -188,6 +219,7 @@ class Profession {
         nameEn: 'Expert/Seller',
         description: 'ผู้เชี่ยวชาญ ผู้ขายสินค้า หรือเจ้าของร้านค้า',
         iconName: 'store',
+        colorHex: '#FF9800', // Orange
         category: UserCategory.provider,
         isBuiltIn: true,
         isActive: true,
@@ -202,6 +234,7 @@ class Profession {
         nameEn: 'Clinic/Center',
         description: 'คลินิก ศูนย์บริการ หรือสถานประกอบการ',
         iconName: 'local_hospital',
+        colorHex: '#E91E63', // Pink
         category: UserCategory.provider,
         isBuiltIn: true,
         isActive: true,
@@ -225,6 +258,7 @@ class Profession {
       'is_active': isActive,
       'requires_verification': requiresVerification,
       'display_order': displayOrder,
+      'color_hex': colorHex,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -249,6 +283,7 @@ class Profession {
       isActive: json['is_active'] ?? true,
       requiresVerification: json['requires_verification'] ?? true,
       displayOrder: json['display_order'] ?? 0,
+      colorHex: json['color_hex'],
       fieldCount: json['field_count'] ?? 0,
       memberCount: json['member_count'] ?? 0,
       createdAt: json['created_at'] != null
@@ -272,6 +307,7 @@ class Profession {
     bool? isActive,
     bool? requiresVerification,
     int? displayOrder,
+    String? colorHex,
     int? fieldCount,
     int? memberCount,
     DateTime? createdAt,
@@ -288,6 +324,7 @@ class Profession {
       isActive: isActive ?? this.isActive,
       requiresVerification: requiresVerification ?? this.requiresVerification,
       displayOrder: displayOrder ?? this.displayOrder,
+      colorHex: colorHex ?? this.colorHex,
       fieldCount: fieldCount ?? this.fieldCount,
       memberCount: memberCount ?? this.memberCount,
       createdAt: createdAt ?? this.createdAt,

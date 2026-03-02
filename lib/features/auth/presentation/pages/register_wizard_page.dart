@@ -135,7 +135,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   IconData _getIconForProfession(String? iconName) {
     if (iconName == null) return Icons.work;
     
-    // Simple mapping for demo/defaults
     switch (iconName) {
       case 'shopping_cart': return Icons.shopping_cart;
       case 'store': return Icons.store;
@@ -144,6 +143,11 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       case 'delivery_dining': return Icons.delivery_dining;
       case 'engineering': return Icons.engineering;
       case 'gavel': return Icons.gavel;
+      case 'person': return Icons.person;
+      case 'school': return Icons.school;
+      case 'restaurant': return Icons.restaurant;
+      case 'spa': return Icons.spa;
+      case 'fitness_center': return Icons.fitness_center;
       default: return Icons.work;
     }
   }
@@ -509,63 +513,214 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   Widget _buildProfessionSelector() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1.5,
+    final professionColor = _selectedProfession?.colorHex != null 
+        ? Color(int.parse(_selectedProfession!.colorHex!.replaceFirst('#', '0xFF')))
+        : _goldAccent;
+
+    return InkWell(
+      onTap: _showProfessionPicker,
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: _selectedProfession != null ? professionColor.withOpacity(0.5) : Colors.grey[200]!,
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: (_selectedProfession != null ? professionColor : Colors.black).withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<Profession>(
-          value: _selectedProfession,
-          hint: Text(
-            'เลือกประเภทการลงทะเบียน',
-            style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey[400]),
-          ),
-          icon: Icon(Icons.arrow_drop_down, color: _goldAccent),
-          isExpanded: true,
-          onChanged: (Profession? newValue) {
-            if (newValue != null) {
-              setState(() {
-                _selectedProfession = newValue;
-              });
-              _loadFieldsForProfession(newValue);
-            }
-          },
-          items: _professions.map<DropdownMenuItem<Profession>>((Profession value) {
-            return DropdownMenuItem<Profession>(
-              value: value,
-              child: Row(
-                children: [
-                  Icon(
-                    _getIconForProfession(value.iconName),
-                    color: _goldAccent,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    value.name,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
+        child: Row(
+          children: [
+            if (_selectedProfession != null) ...[
+              Icon(
+                _getIconForProfession(_selectedProfession!.iconName),
+                color: professionColor,
+                size: 22,
               ),
-            );
-          }).toList(),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Text(
+                _selectedProfession?.name ?? 'เลือกประเภทการลงทะเบียน',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: _selectedProfession != null ? AppColors.textPrimary : Colors.grey[400],
+                  fontWeight: _selectedProfession != null ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.unfold_more, 
+              color: _selectedProfession != null ? professionColor : Colors.grey[400],
+              size: 20,
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  void _showProfessionPicker() {
+    // Group professions by category ID
+    final Map<String, List<Profession>> groups = {};
+    final Map<String, UserCategory> categories = {};
+    
+    for (var p in _professions) {
+      if (!groups.containsKey(p.category.id)) {
+        groups[p.category.id] = [];
+        categories[p.category.id] = p.category;
+      }
+      groups[p.category.id]!.add(p);
+    }
+
+    // Sort categories list by displayOrder
+    final sortedCatIds = categories.keys.toList()
+      ..sort((a, b) => (categories[a]?.displayOrder ?? 0)
+          .compareTo(categories[b]?.displayOrder ?? 0));
+
+    // Track which category is expanded for auto-closing others
+    String? expandedCatId = _selectedProfession?.category.id;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.45,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(32),
+              topRight: Radius.circular(32),
+            ),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    itemCount: sortedCatIds.length,
+                    itemBuilder: (context, index) {
+                      final catId = sortedCatIds[index];
+                      final category = categories[catId]!;
+                      final proList = groups[catId]!;
+                      
+                      if (proList.length == 1) {
+                        final p = proList.first;
+                        final isSelected = _selectedProfession?.id == p.id;
+                        return _buildProfessionItem(p, isSelected);
+                      }
+                      
+                      final isExpanded = expandedCatId == catId;
+                      final hasSelectedInGroup = proList.any((p) => _selectedProfession?.id == p.id);
+                      
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          // Use Key that includes expansion state to force rebuild when auto-closing
+                          key: Key('${catId}_$isExpanded'),
+                          initiallyExpanded: isExpanded,
+                          onExpansionChanged: (expanding) {
+                            if (expanding) {
+                              setModalState(() {
+                                expandedCatId = catId;
+                              });
+                            } else {
+                              if (expandedCatId == catId) {
+                                setModalState(() {
+                                  expandedCatId = null;
+                                });
+                              }
+                            }
+                          },
+                          shape: const Border(),
+                          collapsedShape: const Border(),
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            _getIconForProfession(category.iconName),
+                            color: AppColors.primary,
+                            size: 22,
+                          ),
+                          title: Text(
+                            category.name,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.normal,
+                              color: hasSelectedInGroup ? AppColors.primary : AppColors.textPrimary,
+                            ),
+                          ),
+                          children: proList.map((p) {
+                            final isSelected = _selectedProfession?.id == p.id;
+                            return _buildProfessionItem(
+                              p, 
+                              isSelected, 
+                              padding: const EdgeInsets.only(left: 20),
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionItem(Profession p, bool isSelected, {EdgeInsets? padding}) {
+    final color = p.colorHex != null 
+        ? Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')))
+        : _goldAccent;
+        
+    return ListTile(
+      onTap: () {
+        setState(() {
+          _selectedProfession = p;
+        });
+        _loadFieldsForProfession(p);
+        Navigator.pop(context);
+      },
+      contentPadding: padding ?? EdgeInsets.zero,
+      leading: Icon(
+        _getIconForProfession(p.iconName), 
+        color: color, 
+        size: 22
+      ),
+      title: Text(
+        p.name,
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: isSelected ? AppColors.primary : AppColors.textPrimary,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20) : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      tileColor: isSelected ? AppColors.primary.withOpacity(0.05) : null,
     );
   }
 

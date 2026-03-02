@@ -478,6 +478,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           if (_expandedGroups['settings']!) ...[
                             _buildMenuItem(
                               context,
+                              title: 'ข้อมูลส่วนตัว',
+                              icon: Icons.person_outline,
+                              onTap: () => _navigateTo(context, '/profile'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
                               title: 'ช่องทางชำระเงิน',
                               icon: Icons.credit_card,
                               onTap: () => _navigateTo(context, '/payment-methods'),

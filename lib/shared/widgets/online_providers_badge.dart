@@ -140,12 +140,12 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _onlineCount > 0
-                  ? color.withOpacity(_pulseAnimation.value)
+                  ? color.withValues(alpha: _pulseAnimation.value)
                   : Colors.grey.shade400,
               boxShadow: _onlineCount > 0
                   ? [
                       BoxShadow(
-                        color: color.withOpacity(0.6 * _pulseAnimation.value),
+                        color: color.withValues(alpha: 0.6 * _pulseAnimation.value),
                         blurRadius: 8,
                         spreadRadius: 2,
                       )
@@ -184,9 +184,9 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.25), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -200,12 +200,12 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _onlineCount > 0
-                    ? color.withOpacity(_pulseAnimation.value)
+                    ? color.withValues(alpha: _pulseAnimation.value)
                     : Colors.grey.shade400,
                 boxShadow: _onlineCount > 0
                     ? [
                         BoxShadow(
-                          color: color.withOpacity(0.6 * _pulseAnimation.value),
+                          color: color.withValues(alpha: 0.6 * _pulseAnimation.value),
                           blurRadius: 10,
                           spreadRadius: 3,
                         )
@@ -225,7 +225,7 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
                   height: 14,
                   child: LinearProgressIndicator(
                     color: color,
-                    backgroundColor: color.withOpacity(0.15),
+                    backgroundColor: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 )
@@ -272,6 +272,7 @@ class AllGroupsOnlinePanel extends StatefulWidget {
 
 class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
   final UserRepository _repo = UserRepository(Supabase.instance.client);
+  final ScrollController _scrollController = ScrollController();
 
   Map<String, int> _counts = {};
   bool _isLoading = true;
@@ -294,6 +295,7 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
   void dispose() {
     _sub?.cancel();
     _refreshTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -310,13 +312,21 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
         .where((p) => p.category == UserCategory.provider)
         .toList();
 
+    // เรียงลำดับตามจำนวนออนไลน์ (มากไปน้อย)
+    providerProfessions.sort((a, b) {
+      final countA = _counts[a.id] ?? 0;
+      final countB = _counts[b.id] ?? 0;
+      if (countA != countB) return countB.compareTo(countA);
+      return a.name.compareTo(b.name); // ถ้าเท่ากันเรียงตามชื่อ
+    });
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -331,8 +341,8 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  AppColors.primary.withOpacity(0.12),
-                  AppColors.primaryLight.withOpacity(0.06),
+                  AppColors.primary.withValues(alpha: 0.12),
+                  AppColors.primaryLight.withValues(alpha: 0.06),
                 ],
               ),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -342,7 +352,7 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.15),
+                    color: AppColors.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.people_alt_rounded, color: AppColors.primary, size: 20),
@@ -392,18 +402,40 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
               ),
             )
           else
-            ...providerProfessions.asMap().entries.map((entry) {
-              final i = entry.key;
-              final p = entry.value;
-              final count = _counts[p.id] ?? 0;
-              final isLast = i == providerProfessions.length - 1;
-              return _ProfessionOnlineRow(
-                profession: p,
-                onlineCount: count,
-                isLast: isLast,
-              );
-            }),
+            _buildProfessionList(providerProfessions),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfessionList(List<Profession> professions) {
+    final list = Column(
+      children: professions.asMap().entries.map((entry) {
+        final i = entry.key;
+        final p = entry.value;
+        final count = _counts[p.id] ?? 0;
+        final isLast = i == professions.length - 1;
+        return _ProfessionOnlineRow(
+          profession: p,
+          onlineCount: count,
+          isLast: isLast,
+        );
+      }).toList(),
+    );
+
+    if (professions.length <= 5) return list;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 310), // ประมาณ 5 รายการ (62px * 5)
+      child: Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        thickness: 4,
+        radius: const Radius.circular(10),
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          child: list,
+        ),
       ),
     );
   }
@@ -448,12 +480,12 @@ class _TotalOnlineBadgeState extends State<_TotalOnlineBadge>
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: widget.count > 0
-              ? AppColors.success.withOpacity(0.12)
-              : Colors.grey.withOpacity(0.1),
+              ? AppColors.success.withValues(alpha: 0.12)
+              : Colors.grey.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: widget.count > 0
-                ? AppColors.success.withOpacity(_anim.value)
+                ? AppColors.success.withValues(alpha: _anim.value)
                 : Colors.grey.shade300,
             width: 1.5,
           ),
@@ -467,10 +499,10 @@ class _TotalOnlineBadgeState extends State<_TotalOnlineBadge>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.count > 0
-                    ? AppColors.success.withOpacity(_anim.value)
+                    ? AppColors.success.withValues(alpha: _anim.value)
                     : Colors.grey.shade400,
                 boxShadow: widget.count > 0
-                    ? [BoxShadow(color: AppColors.success.withOpacity(0.4 * _anim.value), blurRadius: 5, spreadRadius: 1)]
+                    ? [BoxShadow(color: AppColors.success.withValues(alpha: 0.4 * _anim.value), blurRadius: 5, spreadRadius: 1)]
                     : null,
               ),
             ),
@@ -503,7 +535,12 @@ class _ProfessionOnlineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = onlineCount > 0 ? AppColors.success : Colors.grey.shade400;
+    final statusColor = onlineCount > 0 ? AppColors.success : Colors.grey.shade400;
+    
+    // แปลงสีประจำอาชีพ
+    final professionColor = profession.colorHex != null 
+        ? Color(int.parse(profession.colorHex!.replaceFirst('#', '0xFF')))
+        : AppColors.primary;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -519,13 +556,13 @@ class _ProfessionOnlineRow extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: AppColors.primaryLight.withOpacity(0.15),
+              color: professionColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               _iconFor(profession.iconName),
               size: 18,
-              color: AppColors.primary,
+              color: professionColor,
             ),
           ),
           const SizedBox(width: 12),
@@ -537,16 +574,19 @@ class _ProfessionOnlineRow extends StatelessWidget {
               children: [
                 Text(
                   profession.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: onlineCount > 0 ? AppColors.textPrimary : Colors.grey.shade500,
                   ),
                 ),
                 if (profession.nameEn != null)
                   Text(
                     profession.nameEn!,
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                    style: TextStyle(
+                      fontSize: 11, 
+                      color: onlineCount > 0 ? Colors.grey.shade500 : Colors.grey.shade400,
+                    ),
                   ),
               ],
             ),
@@ -556,7 +596,7 @@ class _ProfessionOnlineRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: statusColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -564,7 +604,7 @@ class _ProfessionOnlineRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: color,
+                color: statusColor,
               ),
             ),
           ),

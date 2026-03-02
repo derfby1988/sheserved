@@ -19,7 +19,7 @@ class ProfessionAdminPage extends StatefulWidget {
 class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   List<Profession> _professions = [];
   bool _isLoading = true;
-  Map<String, int> _pendingCounts = {};
+  final Map<String, int> _pendingCounts = {};
 
   @override
   void initState() {
@@ -34,6 +34,8 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
       final professions = await repository.getAllProfessions();
       if (mounted) {
         setState(() {
+          // Sort explicitly by displayOrder to ensure correct order
+          professions.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
           _professions = professions;
           _isLoading = false;
         });
@@ -44,6 +46,35 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         setState(() {
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _handleReorder(int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+
+    setState(() {
+      final Profession movedItem = _professions.removeAt(oldIndex);
+      _professions.insert(newIndex, movedItem);
+
+      // Re-assign display orders dynamically based on current index
+      for (int i = 0; i < _professions.length; i++) {
+        _professions[i] = _professions[i].copyWith(displayOrder: i);
+      }
+    });
+
+    try {
+      final repository = ProfessionRepository(Supabase.instance.client);
+      await repository.reorderProfessions(_professions);
+    } catch (e) {
+      debugPrint('Error reordering professions: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text('เกิดข้อผิดพลาดในการบันทึกการเรียงลำดับ: $e'), backgroundColor: AppColors.error),
+        );
+        _loadProfessions(); // Revert back to server order if failed
       }
     }
   }
@@ -115,134 +146,164 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
       );
     }
 
-    // Only show custom professions in management list
-    final customProfessions =
-        _professions.where((p) => !p.isBuiltIn).toList();
+    // Show all professions to allow full reordering and editing
+    final displayProfessions = List<Profession>.from(_professions);
+    displayProfessions.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
 
     return RefreshIndicator(
       onRefresh: _loadProfessions,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Column(
         children: [
-          // === Online Providers Panel (Real-time) ===
-          AllGroupsOnlinePanel(professions: customProfessions, isAdminView: true),
-          const SizedBox(height: 20),
-    
-          // Professionals list (Custom only)
-          if (customProfessions.isNotEmpty) ...[
-            ...customProfessions.map((p) => _buildProfessionCard(p)),
-          ] else
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Text(
-                  'ยังไม่มีอาชีพที่เพิ่มเองในขณะนี้',
-                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
-                ),
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.all(16),
+              header: Column(
+                children: [
+                   AllGroupsOnlinePanel(professions: displayProfessions, isAdminView: true),
+                   const SizedBox(height: 20),
+                   if (displayProfessions.isNotEmpty)
+                     Padding(
+                       padding: const EdgeInsets.only(bottom: 8.0),
+                       child: Text(
+                         'กดค้างแล้วลาก (Drag & Drop) เพื่อจัดเรียงลำดับรายการทั้งหมด',
+                         style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                       ),
+                     ),
+                ],
               ),
+              itemCount: displayProfessions.length,
+              itemBuilder: (context, index) {
+                final profession = displayProfessions[index];
+                return Padding(
+                  key: ValueKey(profession.id),
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                     children: [
+                        Expanded(child: _buildProfessionCard(profession, margin: EdgeInsets.zero)),
+                        const SizedBox(width: 8),
+                        ReorderableDragStartListener(
+                           index: index,
+                           child: const Icon(Icons.drag_handle, color: Colors.grey),
+                        ),
+                     ],
+                  ),
+                );
+              },
+              onReorder: _handleReorder,
+              proxyDecorator: (child, index, animation) {
+                return Material(
+                  color: Colors.transparent,
+                  elevation: 6,
+                  shadowColor: AppColors.primary.withValues(alpha: 0.2),
+                  child: child,
+                );
+              },
             ),
-    
-          const SizedBox(height: 80), // Space for FAB
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: AppColors.textSecondary),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w600,
           ),
-        ),
-      ],
+          const SizedBox(height: 80),
+        ],
+      )
     );
   }
 
-  Widget _buildProfessionCard(Profession profession) {
+  Widget _buildProfessionCard(Profession profession, {EdgeInsets? margin}) {
     final pendingCount = _pendingCounts[profession.id] ?? 0;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: margin ?? const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: profession.isBuiltIn
-              ? AppColors.primary.withOpacity(0.3)
+              ? AppColors.primary.withValues(alpha: 0.3)
               : AppColors.border,
           width: 1,
         ),
       ),
-      child: InkWell(
-        onTap: () => _navigateToFieldConfig(profession),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Main Info Area - Tap to Config
+          InkWell(
+            onTap: () => _navigateToFieldConfig(profession),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Icon
                   Container(
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: _getCategoryColor(profession.category).withOpacity(0.1),
+                      color: (profession.colorHex != null 
+                        ? Color(int.parse(profession.colorHex!.replaceFirst('#', '0xFF')))
+                        : _getCategoryColor(profession.category)).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       _getIconData(profession.iconName),
-                      color: _getCategoryColor(profession.category),
+                      color: profession.colorHex != null 
+                        ? Color(int.parse(profession.colorHex!.replaceFirst('#', '0xFF')))
+                        : _getCategoryColor(profession.category),
                       size: 22,
                     ),
                   ),
                   const SizedBox(width: 12),
-
-                  // Main Content
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
-                                profession.name,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      profession.name,
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[100],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '#${profession.displayOrder}',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey[600], fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            if (profession.isBuiltIn)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'Built-in',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.primary,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
+                        if (profession.isBuiltIn)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Built-in',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.primary,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: 6),
-                        
-                        // Stats & Category in Wrap
                         Wrap(
                           spacing: 12,
                           runSpacing: 4,
@@ -262,70 +323,74 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                   ),
                 ],
               ),
-              
-              const Divider(height: 20),
-              
-              // Bottom Action Bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Pending Info
-                  if (pendingCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.error,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.notification_important, size: 12, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$pendingCount รายการรอตรวจ',
-                            style: AppTextStyles.caption.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
-                            ),
+            ),
+          ),
+          const Divider(height: 1),
+          // Actions Area - Independent of Card Tap
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (pendingCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.notification_important, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$pendingCount รายการรอตรวจ',
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
                           ),
-                        ],
-                      ),
-                    )
-                  else
-                    const SizedBox.shrink(),
-
-                  // Action Buttons
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!profession.isBuiltIn) ...[
-                        _buildActionIcon(
-                          Icons.group_add_outlined, 
-                          Colors.blue, 
-                          () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupMembersAdminPage(profession: profession))),
-                        ),
-                        _buildActionIcon(
-                          Icons.edit_outlined, 
-                          AppColors.primary, 
-                          () => _showEditProfessionDialog(profession),
-                        ),
-                        _buildActionIcon(
-                          Icons.delete_outline, 
-                          AppColors.error, 
-                          () => _confirmDeleteProfession(profession),
                         ),
                       ],
-                      const SizedBox(width: 8),
-                      Icon(Icons.settings_outlined, color: AppColors.textHint, size: 18),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+                    ),
+                  )
+                else
+                  const SizedBox.shrink(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildActionIcon(
+                      Icons.group_add_outlined, 
+                      Colors.blue, 
+                      'จัดการสมาชิก',
+                      () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupMembersAdminPage(profession: profession))),
+                    ),
+                    _buildActionIcon(
+                      Icons.edit_outlined, 
+                      AppColors.primary, 
+                      'แก้ไขอาชีพ',
+                      () => _showEditProfessionDialog(profession),
+                    ),
+                    if (!profession.isBuiltIn) 
+                      _buildActionIcon(
+                        Icons.delete_outline, 
+                        AppColors.error, 
+                        'ลบอาชีพ',
+                        () => _confirmDeleteProfession(profession),
+                      ),
+                    _buildActionIcon(
+                      Icons.settings_outlined, 
+                      AppColors.textHint, 
+                      'ตั้งค่าฟิลด์',
+                      () => _navigateToFieldConfig(profession),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -347,17 +412,14 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
     );
   }
 
-  Widget _buildActionIcon(IconData icon, Color color, VoidCallback onTap) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Icon(icon, color: color, size: 20),
-        ),
-      ),
+  Widget _buildActionIcon(IconData icon, Color color, String tooltip, VoidCallback onTap) {
+    return IconButton(
+      icon: Icon(icon, color: color, size: 20),
+      onPressed: onTap,
+      tooltip: tooltip,
+      splashRadius: 20,
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(),
     );
   }
 
@@ -367,7 +429,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
     } else if (category.id == UserCategory.providerId) {
       return AppColors.primary;
     }
-    return Colors.purple; // Default for new custom categories
+    return Colors.purple;
   }
 
   IconData _getIconData(String? iconName) {
@@ -388,6 +450,14 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         return Icons.engineering;
       case 'gavel':
         return Icons.gavel;
+      case 'school':
+        return Icons.school;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'spa':
+        return Icons.spa;
+      case 'fitness_center':
+        return Icons.fitness_center;
       default:
         return Icons.work;
     }
@@ -401,45 +471,55 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
     );
   }
 
-  void _showAddProfessionDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ProfessionEditorDialog(
-        onSave: (profession) {
-          _loadProfessions(); // Reload from server to get correct state
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+  void _showAddProfessionDialog() async {
+    debugPrint('Showing Add Profession Dialog');
+    if (!mounted) return;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => ProfessionEditorDialog(
+          onSave: (profession) {
+            _loadProfessions();
+            scaffoldMessenger.showSnackBar(
               SnackBar(
                 content: Text('เพิ่มอาชีพ "${profession.name}" สำเร็จ'),
                 backgroundColor: AppColors.success,
               ),
             );
-          }
-        },
-      ),
-    );
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error showing dialog: $e');
+    }
   }
 
-  void _showEditProfessionDialog(Profession profession) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ProfessionEditorDialog(
-        existingProfession: profession,
-        onSave: (updatedProfession) {
-          _loadProfessions(); // Reload from server
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+  void _showEditProfessionDialog(Profession profession) async {
+    debugPrint('Showing Edit Profession Dialog for: ${profession.name}');
+    if (!mounted) return;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => ProfessionEditorDialog(
+          existingProfession: profession,
+          onSave: (updatedProfession) {
+            _loadProfessions();
+            scaffoldMessenger.showSnackBar(
               SnackBar(
                 content: Text('แก้ไขอาชีพ "${updatedProfession.name}" เรียบร้อย'),
                 backgroundColor: AppColors.success,
               ),
             );
-          }
-        },
-      ),
-    );
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error showing dialog: $e');
+    }
   }
 
   void _confirmDeleteProfession(Profession profession) {
@@ -455,27 +535,25 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
             child: const Text('ยกเลิก'),
           ),
           TextButton(
-            onPressed: () async {
-              try {
-                final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
-                await repo.deleteProfession(profession.id);
-                setState(() {
-                  _professions.removeWhere((p) => p.id == profession.id);
-                });
-                Navigator.pop(context);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('ลบอาชีพ "${profession.name}" แล้ว')),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-                  );
-                }
-              }
-            },
+          onPressed: () async {
+            final scaffoldMessenger = ScaffoldMessenger.of(context);
+            final navigator = Navigator.of(context);
+            try {
+              final ProfessionRepository repo = ProfessionRepository(Supabase.instance.client);
+              await repo.deleteProfession(profession.id);
+              setState(() {
+                _professions.removeWhere((p) => p.id == profession.id);
+              });
+              navigator.pop();
+              scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text('ลบอาชีพ "${profession.name}" แล้ว')),
+              );
+            } catch (e) {
+              scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+              );
+            }
+          },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('ลบ'),
           ),
@@ -485,7 +563,6 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
   }
 }
 
-/// Dialog สำหรับเพิ่ม/แก้ไขอาชีพ
 class ProfessionEditorDialog extends StatefulWidget {
   final Profession? existingProfession;
   final Function(Profession) onSave;
@@ -509,6 +586,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   late UserCategory _selectedCategory;
   bool _requiresVerification = true;
   String _selectedIcon = 'work';
+  String _selectedColor = '#71BE0A'; // Default to AppColors.primary
   String? _copyFromProfessionId;
   bool _isSaving = false;
   bool get isEditing => widget.existingProfession != null;
@@ -519,6 +597,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
     {'name': 'store', 'icon': Icons.store, 'label': 'ร้านค้า'},
     {'name': 'local_hospital', 'icon': Icons.local_hospital, 'label': 'โรงพยาบาล'},
     {'name': 'medical_services', 'icon': Icons.medical_services, 'label': 'บริการทางการแพทย์'},
+    {'name': 'shopping_cart', 'icon': Icons.shopping_cart, 'label': 'การซื้อขาย'},
     {'name': 'delivery_dining', 'icon': Icons.delivery_dining, 'label': 'จัดส่ง'},
     {'name': 'engineering', 'icon': Icons.engineering, 'label': 'วิศวกรรม'},
     {'name': 'gavel', 'icon': Icons.gavel, 'label': 'กฎหมาย'},
@@ -526,6 +605,10 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
     {'name': 'restaurant', 'icon': Icons.restaurant, 'label': 'ร้านอาหาร'},
     {'name': 'spa', 'icon': Icons.spa, 'label': 'สปา/ความงาม'},
     {'name': 'fitness_center', 'icon': Icons.fitness_center, 'label': 'ฟิตเนส'},
+  ];
+
+  final List<String> _availableColors = [
+    '#71BE0A', '#2196F3', '#FFC107', '#E91E63', '#9C27B0', '#00BCD4', '#FF9800', '#4CAF50', '#607D8B', '#795548',
   ];
 
   @override
@@ -538,13 +621,13 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
     _descriptionController =
         TextEditingController(text: widget.existingProfession?.description ?? '');
     
-    // Set initial category (temp, will be refined once loaded)
     _selectedCategory = widget.existingProfession?.category ?? 
         const UserCategory(id: 'provider', name: 'ผู้ให้บริการ');
         
     _requiresVerification =
         widget.existingProfession?.requiresVerification ?? true;
     _selectedIcon = widget.existingProfession?.iconName ?? 'work';
+    _selectedColor = widget.existingProfession?.colorHex ?? '#71BE0A';
 
     _loadCategories();
   }
@@ -558,18 +641,15 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
       if (mounted) {
         setState(() {
           _categories.clear();
-          // Sort by display_order explicitly
           categories.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
           _categories.addAll(categories);
           
-          // Re-match selected category with loaded list to ensure object identity
           if (widget.existingProfession != null) {
             _selectedCategory = _categories.firstWhere(
               (c) => c.id == widget.existingProfession!.category.id,
               orElse: () => _categories.isNotEmpty ? _categories.first : _selectedCategory,
             );
           } else if (_categories.isNotEmpty) {
-            // Default to provider or first available
             _selectedCategory = _categories.firstWhere(
               (c) => c.id == 'provider',
               orElse: () => _categories.first,
@@ -599,62 +679,54 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(isEditing ? 'แก้ไขอาชีพ' : 'เพิ่มอาชีพใหม่'),
-      content: SingleChildScrollView(
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.8,
+      content: SizedBox(
+        width: MediaQuery.of(context).size.width * 0.9,
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Name (Thai)
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'ชื่ออาชีพ (ภาษาไทย) *',
-                  hintText: 'เช่น แพทย์, ทนายความ',
-                  border: OutlineInputBorder(),
-                ),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'ชื่ออาชีพ (ภาษาไทย) *',
+                hintText: 'เช่น แพทย์, ทนายความ',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 16),
-
-              // Name (English)
-              TextField(
-                controller: _nameEnController,
-                decoration: const InputDecoration(
-                  labelText: 'ชื่ออาชีพ (ภาษาอังกฤษ)',
-                  hintText: 'เช่น Doctor, Lawyer',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameEnController,
+              decoration: const InputDecoration(
+                labelText: 'ชื่ออาชีพ (ภาษาอังกฤษ)',
+                hintText: 'เช่น Doctor, Lawyer',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 16),
-
-              // Description
-              TextField(
-                controller: _descriptionController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'คำอธิบาย',
-                  hintText: 'อธิบายลักษณะอาชีพ',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _descriptionController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'คำอธิบาย',
+                hintText: 'อธิบายลักษณะอาชีพ',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 16),
-
-              // Icon selector
-              Text(
-                'เลือกไอคอน',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'เลือกไอคอน',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 60,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _availableIcons.length,
-                  itemBuilder: (context, index) {
-                    final iconData = _availableIcons[index];
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 60,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _availableIcons.map((iconData) {
                     final isSelected = _selectedIcon == iconData['name'];
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -669,7 +741,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
                           width: 50,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? AppColors.primary.withOpacity(0.1)
+                                ? AppColors.primary.withValues(alpha: 0.1)
                                 : AppColors.background,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
@@ -694,94 +766,142 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
                         ),
                       ),
                     );
-                  },
+                  }).toList(),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // User Category
-              if (_isCategoriesLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: LinearProgressIndicator(),
-                )
-              else
-                DropdownButtonFormField<UserCategory>(
-                  value: _selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: 'หมวดหมู่ผู้ใช้',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.category),
-                  ),
-                  items: _categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category.displayName),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'เลือกสี',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _availableColors.map((colorHex) {
+                    final isSelected = _selectedColor == colorHex;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedColor = colorHex;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Color(int.parse(colorHex.replaceFirst('#', '0xFF'))),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? AppColors.textPrimary : Colors.transparent,
+                              width: isSelected ? 2 : 0,
+                            ),
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, color: Colors.white, size: 20)
+                              : null,
+                        ),
+                      ),
                     );
                   }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _selectedCategory = value;
-                      });
-                    }
-                  },
                 ),
-              const SizedBox(height: 16),
-
-              // Requires verification
-              SwitchListTile(
-                title: const Text('ต้องตรวจสอบก่อนใช้งาน'),
-                subtitle: const Text('ผู้สมัครต้องรอ Admin อนุมัติ'),
-                value: _requiresVerification,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_isCategoriesLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: LinearProgressIndicator(),
+              )
+            else
+              DropdownButtonFormField<UserCategory>(
+                initialValue: _selectedCategory,
+                decoration: const InputDecoration(
+                  labelText: 'หมวดหมู่ผู้ใช้',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category),
+                ),
+                items: _categories.isNotEmpty 
+                  ? _categories.map((category) {
+                      return DropdownMenuItem(
+                        value: category,
+                        child: Text(category.displayName),
+                      );
+                    }).toList()
+                  : [
+                      DropdownMenuItem(
+                        value: _selectedCategory,
+                        child: Text(_selectedCategory.displayName),
+                      )
+                    ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedCategory = value;
+                    });
+                  }
+                },
+              ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('ต้องตรวจสอบก่อนใช้งาน'),
+              subtitle: const Text('ผู้สมัครต้องรอ Admin อนุมัติ'),
+              value: _requiresVerification,
+              onChanged: (value) {
+                setState(() {
+                  _requiresVerification = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (!isEditing) ...[
+              const Divider(height: 32),
+              Text(
+                'คัดลอก Fields จากอาชีพอื่น (ไม่บังคับ)',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String?>(
+                initialValue: _copyFromProfessionId,
+                decoration: const InputDecoration(
+                  labelText: 'เลือกอาชีพต้นแบบ',
+                  border: OutlineInputBorder(),
+                ),
+                menuMaxHeight: 250,
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('ไม่คัดลอก'),
+                  ),
+                  ...Profession.defaultProfessions.map((p) {
+                    return DropdownMenuItem(
+                      value: p.id,
+                      child: Text(p.name),
+                    );
+                  }),
+                ],
                 onChanged: (value) {
                   setState(() {
-                    _requiresVerification = value;
+                    _copyFromProfessionId = value;
                   });
                 },
-                activeColor: AppColors.primary,
-                contentPadding: EdgeInsets.zero,
               ),
-
-              // Copy fields from another profession
-              if (!isEditing) ...[
-                const Divider(height: 32),
-                Text(
-                  'คัดลอก Fields จากอาชีพอื่น (ไม่บังคับ)',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String?>(
-                  value: _copyFromProfessionId,
-                  decoration: const InputDecoration(
-                    labelText: 'เลือกอาชีพต้นแบบ',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('ไม่คัดลอก'),
-                    ),
-                    ...Profession.defaultProfessions.map((p) {
-                      return DropdownMenuItem(
-                        value: p.id,
-                        child: Text(p.name),
-                      );
-                    }),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _copyFromProfessionId = value;
-                    });
-                  },
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -831,29 +951,28 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           'name_en': nameEn,
           'description': description,
           'icon_name': _selectedIcon,
+          'color_hex': _selectedColor,
           'category': _selectedCategory.value,
           'requires_verification': _requiresVerification,
         });
         widget.onSave(updated);
         if (mounted) Navigator.pop(context);
       } else {
-        // Create new profession
         final newProfession = await repo.createProfession(
           name: name,
           nameEn: nameEn,
           description: description,
           iconName: _selectedIcon,
+          colorHex: _selectedColor,
           category: _selectedCategory,
           requiresVerification: _requiresVerification,
         );
 
-        // If copy fields from another profession is selected
         if (_copyFromProfessionId != null) {
           try {
             await repo.copyFieldsFromProfession(_copyFromProfessionId!, newProfession.id);
           } catch (e) {
             debugPrint('Error copying fields: $e');
-            // We ignore field copy error but show the profession
           }
         }
 

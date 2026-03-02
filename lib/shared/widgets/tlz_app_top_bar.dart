@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
 import 'tlz_hamburger_menu.dart';
 import 'tlz_animated_search_bar.dart';
 import 'tlz_notification_button.dart';
@@ -44,6 +43,9 @@ class TlzAppTopBar extends StatelessWidget {
   /// Widget ตรงกลาง (ถ้าไม่กำหนดจะใช้ TlzAnimatedSearchBar)
   final Widget? middle;
 
+  /// Custom action widgets
+  final List<Widget>? actions;
+
   const TlzAppTopBar({
     super.key,
     this.onMenuPressed,
@@ -62,6 +64,7 @@ class TlzAppTopBar extends StatelessWidget {
     this.searchSuggestions,
     this.leading,
     this.middle,
+    this.actions,
   });
 
   /// สร้าง Top Bar สำหรับพื้นหลังสีเข้ม (primary)
@@ -82,6 +85,7 @@ class TlzAppTopBar extends StatelessWidget {
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
     Widget? middle,
+    List<Widget>? actions,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -96,10 +100,12 @@ class TlzAppTopBar extends StatelessWidget {
       showQRButton: showQRButton,
       onSearch: onSearch,
       onResultTap: onResultTap,
+      onSearchSubmit: onSearchSubmit,
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
       leading: leading,
       middle: middle,
+      actions: actions,
     );
   }
 
@@ -121,6 +127,7 @@ class TlzAppTopBar extends StatelessWidget {
     List<Map<String, dynamic>>? searchSuggestions,
     Widget? leading,
     Widget? middle,
+    List<Widget>? actions,
   }) {
     return TlzAppTopBar(
       key: key,
@@ -135,10 +142,12 @@ class TlzAppTopBar extends StatelessWidget {
       showQRButton: showQRButton,
       onSearch: onSearch,
       onResultTap: onResultTap,
+      onSearchSubmit: onSearchSubmit,
       searchHistory: searchHistory,
       searchSuggestions: searchSuggestions,
       leading: leading,
       middle: middle,
+      actions: actions,
     );
   }
 
@@ -168,6 +177,11 @@ class TlzAppTopBar extends StatelessWidget {
           ),
         ),
         
+        if (actions != null) ...[
+          const SizedBox(width: 8),
+          ...actions!,
+        ],
+
         const SizedBox(width: 12),
         
         // Notification Button

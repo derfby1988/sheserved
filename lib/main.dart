@@ -43,6 +43,7 @@ import 'config/app_config.dart';
 import 'services/supabase_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'features/chat/data/models/chat_models.dart';
+import 'features/profile/presentation/pages/profile_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -139,6 +140,7 @@ class SheservedApp extends StatelessWidget {
         '/donate': (context) => const DonationDashboardPage(),
         '/admin/donations': (context) => const DonationAdminPage(),
         '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
+        '/profile': (context) => const ProfilePage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

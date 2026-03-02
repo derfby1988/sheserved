@@ -20,7 +20,8 @@ class ProfessionRepository {
           .from('user_categories')
           .select()
           .eq('is_active', true)
-          .order('display_order');
+          .order('display_order', ascending: true)
+          .order('name', ascending: true);
       
       return (response as List).map((e) => UserCategory.fromJson(e)).toList();
     } catch (e) {
@@ -109,8 +110,11 @@ class ProfessionRepository {
       if (activeOnly) {
         query = query.eq('is_active', true);
       }
-
-      final response = await query.order('display_order').timeout(const Duration(seconds: 10));
+      
+      final response = await query
+          .order('display_order', ascending: true)
+          .order('name', ascending: true)
+          .timeout(const Duration(seconds: 10));
 
       return (response as List).map((json) {
         // Handle field_count
@@ -177,6 +181,7 @@ class ProfessionRepository {
     String? description,
     String? iconName,
     required UserCategory category,
+    String? colorHex,
     bool requiresVerification = true,
     int displayOrder = 0,
   }) async {
@@ -187,6 +192,7 @@ class ProfessionRepository {
       'description': description,
       'icon_name': iconName,
       'category': category.value,
+      'color_hex': colorHex,
       'is_built_in': false,
       'is_active': true,
       'requires_verification': requiresVerification,
@@ -229,17 +235,22 @@ class ProfessionRepository {
         .eq('id', id);
   }
 
-  /// เรียงลำดับอาชีพใหม่
-  Future<void> reorderProfessions(List<String> professionIds) async {
-    for (int i = 0; i < professionIds.length; i++) {
-      await _client
-          .from('professions')
-          .update({
-            'display_order': i,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', professionIds[i]);
+  /// เรียงลำดับอาชีพใหม่ (Bulk Update)
+  Future<void> reorderProfessions(List<Profession> professions) async {
+    final now = DateTime.now().toIso8601String();
+    final data = <Map<String, dynamic>>[];
+    
+    for (int i = 0; i < professions.length; i++) {
+      data.add({
+        'id': professions[i].id,
+        'name': professions[i].name, // Safe for upsert NOT-NULL constraint
+        'category': professions[i].category.value, // Required field
+        'display_order': i,
+        'updated_at': now,
+      });
     }
+
+    await _client.from('professions').upsert(data);
   }
 
   /// คัดลอก fields จากอาชีพหนึ่งไปยังอีกอาชีพ
