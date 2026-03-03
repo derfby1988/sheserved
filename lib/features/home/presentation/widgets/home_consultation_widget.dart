@@ -8,16 +8,21 @@ import 'home_painters.dart';
 import '../../../../services/auth_service.dart';
 
 /// Consultation Widget - วงกลมปรึกษาแพทย์และเภสัช
+/// รองรับ 2 โหมด: ปกติ (Full) และ ย่อขนาด (Mini)
 class HomeConsultationWidget extends StatefulWidget {
   final VoidCallback? onTap;
   final int? availableCount;
   final bool useRealtime;
+  final bool isMini;
+  final double? overrideSize;
 
   const HomeConsultationWidget({
     super.key,
     this.onTap,
     this.availableCount,
     this.useRealtime = true,
+    this.isMini = false,
+    this.overrideSize,
   });
 
   @override
@@ -27,7 +32,6 @@ class HomeConsultationWidget extends StatefulWidget {
 class _HomeConsultationWidgetState extends State<HomeConsultationWidget> 
     with TickerProviderStateMixin {
   int _count = 0;
-  bool _isLoading = true;
   
   late AnimationController _rotationController;
   late AnimationController _pulseController;
@@ -87,7 +91,6 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
 
     if (widget.availableCount != null) {
       _count = widget.availableCount!;
-      _isLoading = false;
       _updateRatio(_count, 0);
     } else if (widget.useRealtime) {
       _initStreams();
@@ -142,12 +145,11 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
       if (mounted) {
         setState(() {
           _count = providerCount;
-          _isLoading = false;
           _updateRatio(providerCount, recipientCount);
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() {});
     }
   }
 
@@ -169,12 +171,23 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
     _currentRatio = ratio;
   }
 
+  /// คำนวณ Base Size ตาม mode
+  double _calculateBaseSize(BuildContext context) {
+    if (widget.overrideSize != null) {
+      return widget.overrideSize!;
+    }
+    if (widget.isMini) {
+      return 90.0; // ขนาดจิ๋วสำหรับ Mini Mode
+    }
+    final screenWidth = MediaQuery.of(context).size.width;
+    final widgetSize = screenWidth * 0.72;
+    return widgetSize.clamp(200.0, 320.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 1. Responsive Scaling
-    final screenWidth = MediaQuery.of(context).size.width;
-    final widgetSize = screenWidth * 0.72; // ประมาณ 72% ของความกว้างจอ
-    final baseSize = widgetSize.clamp(200.0, 320.0); // คุมขนาดไม่ให้เล็กหรือใหญ่เกินไป
+    final baseSize = _calculateBaseSize(context);
+    final isMini = widget.isMini || baseSize < 150;
     final innerSize = baseSize * 0.85;
     final dottedSize = innerSize * 0.92;
 
@@ -186,72 +199,83 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: isMini ? 0 : 16),
           child: Stack(
             alignment: Alignment.center,
             children: [
               // Animated Ratio Border (Like Health Card Score)
-              AnimatedBuilder(
-                animation: _ratioAnimation,
-                builder: (context, child) {
-                  return SizedBox(
-                    width: baseSize,
-                    height: baseSize,
-                    child: CustomPaint(
-                      painter: RatioCirclePainter(
-                        providerRatio: _ratioAnimation.value,
-                        providerColor: AppColors.primary.withOpacity(0.4),
-                        recipientColor: AppColors.accent.withOpacity(0.4),
-                        providerLabel: 'ผู้ให้บริการ',
-                        recipientLabel: 'รอปรึกษา',
-                        strokeWidth: 14 * (baseSize / 280),
+              if (!isMini)
+                AnimatedBuilder(
+                  animation: _ratioAnimation,
+                  builder: (context, child) {
+                    return SizedBox(
+                      width: baseSize,
+                      height: baseSize,
+                      child: CustomPaint(
+                        painter: RatioCirclePainter(
+                          providerRatio: _ratioAnimation.value,
+                          providerColor: AppColors.primary.withOpacity(0.4),
+                          recipientColor: AppColors.accent.withOpacity(0.4),
+                          providerLabel: 'ผู้ให้บริการ',
+                          recipientLabel: 'รอปรึกษา',
+                          strokeWidth: 14 * (baseSize / 280),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              
-              // Decoration Ring Elements
-              SizedBox(
-                width: baseSize,
-                height: baseSize,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Decorative Green Dots
-                    _buildRingDot(baseSize, 0, 18),
-                    _buildRingDot(baseSize, 180, 18),
-                  ],
+                    );
+                  },
                 ),
-              ),
+              
+              // Decoration Ring Elements (ซ่อนใน Mini Mode)
+              if (!isMini)
+                SizedBox(
+                  width: baseSize,
+                  height: baseSize,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      _buildRingDot(baseSize, 0, 18),
+                      _buildRingDot(baseSize, 180, 18),
+                    ],
+                  ),
+                ),
               
               // Inner UI Area
               Container(
-                width: innerSize,
-                height: innerSize,
-                decoration: const BoxDecoration(
+                width: isMini ? baseSize : innerSize,
+                height: isMini ? baseSize : innerSize,
+                decoration: BoxDecoration(
                   color: AppColors.backgroundWhite,
                   shape: BoxShape.circle,
+                  boxShadow: isMini
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
                 ),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Inner Dotted Line (Animated Spinning)
-                    RotationTransition(
-                      turns: _rotationController,
-                      child: SizedBox(
-                        width: dottedSize,
-                        height: dottedSize,
-                        child: CustomPaint(
-                          painter: DottedCirclePainter(
-                            color: AppColors.textHint.withOpacity(0.3),
-                            strokeWidth: 1.5,
-                            dashWidth: 4,
-                            dashSpace: 3,
+                    // Inner Dotted Line (Animated Spinning) - ซ่อนใน Mini Mode
+                    if (!isMini)
+                      RotationTransition(
+                        turns: _rotationController,
+                        child: SizedBox(
+                          width: dottedSize,
+                          height: dottedSize,
+                          child: CustomPaint(
+                            painter: DottedCirclePainter(
+                              color: AppColors.textHint.withOpacity(0.3),
+                              strokeWidth: 1.5,
+                              dashWidth: 4,
+                              dashSpace: 3,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                     
                     // Content
                     Column(
@@ -285,12 +309,16 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                       }
                                     });
 
-                                    return _buildMainContent(providers, baseSize);
+                                    return isMini 
+                                      ? _buildMiniContent(providers, baseSize)
+                                      : _buildMainContent(providers, baseSize);
                                   }
                                 );
                               }
                             )
-                          : _buildMainContent(_count, baseSize),
+                          : isMini
+                            ? _buildMiniContent(_count, baseSize)
+                            : _buildMainContent(_count, baseSize),
                       ],
                     ),
                   ],
@@ -319,6 +347,61 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           shape: BoxShape.circle,
         ),
       ),
+    );
+  }
+
+  /// Mini Mode Content - แสดงเฉพาะไอคอน + จุดออนไลน์ + ตัวเลข
+  Widget _buildMiniContent(int onlineCount, double baseSize) {
+    final isOffline = onlineCount == 0;
+    final scale = baseSize / 90.0; // scale จากขนาดฐาน 90px
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Stethoscope Icon - ขนาดเล็กลง
+        Icon(
+          Icons.medical_services,
+          size: (24 * scale).clamp(16.0, 32.0),
+          color: isOffline ? AppColors.textHint : AppColors.primary,
+        ),
+        SizedBox(height: 2 * scale),
+        // Online Count with Pulsating Dot
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _pulseAnimation,
+              builder: (context, child) {
+                return Container(
+                  width: 6 * scale,
+                  height: 6 * scale,
+                  decoration: BoxDecoration(
+                    color: onlineCount > 0 ? AppColors.success : AppColors.textHint,
+                    shape: BoxShape.circle,
+                    boxShadow: onlineCount > 0 ? [
+                      BoxShadow(
+                        color: AppColors.success.withOpacity(_pulseAnimation.value),
+                        blurRadius: 6 * _pulseAnimation.value + 1,
+                        spreadRadius: 1 * _pulseAnimation.value,
+                      )
+                    ] : null,
+                  ),
+                );
+              },
+            ),
+            SizedBox(width: 3 * scale),
+            Text(
+              '$onlineCount',
+              style: TextStyle(
+                fontSize: (11 * scale).clamp(8.0, 14.0),
+                fontWeight: FontWeight.bold,
+                color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

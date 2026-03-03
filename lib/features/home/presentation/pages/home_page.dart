@@ -7,6 +7,20 @@ import '../../../health/data/models/health_article_models.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../consultation/presentation/logic/consultation_guard.dart';
+import '../../../auth/data/repositories/user_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
+enum ConsultationPosition {
+  center,
+  // 4 มุม
+  topLeft, topRight, bottomLeft, bottomRight,
+  // 4 กลางขอบ
+  topCenter, bottomCenter, leftCenter, rightCenter,
+}
+
+/// Preference key สำหรับบันทึกใน Supabase
+const _kConsultPosKey = 'home_consultation_position';
 
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
@@ -17,18 +31,25 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
   late ScrollController _scrollController;
   final GlobalKey _headerSectionKey = GlobalKey();
   final GlobalKey _consultationKey = GlobalKey();
   final GlobalKey _pharmacyKey = GlobalKey();
+  final GlobalKey _mapAreaKey = GlobalKey();
   double _headerSectionHeight = 0;
   double _consultationHeight = 0;
   double _pharmacyHeight = 0;
   double _mapHeight = 500; // ค่าเริ่มต้น จะถูกอัปเดตหลัง build
   bool _showTopBarBorderRadius = false;
+
+  // === Snap-to-Corner State ===
+  ConsultationPosition _consultPosition = ConsultationPosition.center;
+  Offset? _dragOffset; // ตำแหน่งชั่วคราวขณะลาก
+  bool _isDraggingConsultation = false;
+  double _savedConsultationHeight = 0; // บันทึกความสูงก่อนย่อ เพื่อใช้เป็น Placeholder
   
   List<HealthArticle> _recommendedArticles = [];
   List<HealthArticle> _interestingArticles = [];
@@ -50,14 +71,267 @@ class _HomePageState extends State<HomePage> {
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     
-    // Listen for auth state changes to refresh data (e.g., after login)
-    AuthService.instance.addListener(_loadHomeData);
+    // Listen for auth state changes to refresh data and re-load preferences
+    AuthService.instance.addListener(_onAuthChanged);
     
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
+      // โหลดตำแหน่ง consultation หลังจาก build แรกเสร็จ (เพื่อให้วัดความสูงได้)
+      _loadConsultationPosition();
     });
 
+    _loadHomeData();
+  }
+
+  // === Snap-to-Corner Helpers ===
+  
+  bool get _isConsultationMini => _consultPosition != ConsultationPosition.center;
+  
+  /// คำนวณพิกัดจริงของปุ่มเมื่ออยู่ในแต่ละตำแหน่ง
+  Offset _getSnapOffset(ConsultationPosition pos, Size mapSize) {
+    const double miniSize = 90.0;
+    const double margin = 12.0;
+    final double halfW = (mapSize.width - miniSize) / 2;
+    final double halfH = (mapSize.height - miniSize) / 2;
+    switch (pos) {
+      case ConsultationPosition.center:
+        return Offset(halfW, halfH);
+      case ConsultationPosition.topLeft:
+        return const Offset(margin, margin);
+      case ConsultationPosition.topRight:
+        return Offset(mapSize.width - miniSize - margin, margin);
+      case ConsultationPosition.bottomLeft:
+        return Offset(margin, mapSize.height - miniSize - margin);
+      case ConsultationPosition.bottomRight:
+        return Offset(mapSize.width - miniSize - margin, mapSize.height - miniSize - margin);
+      case ConsultationPosition.topCenter:
+        return Offset(halfW, margin);
+      case ConsultationPosition.bottomCenter:
+        return Offset(halfW, mapSize.height - miniSize - margin);
+      case ConsultationPosition.leftCenter:
+        return Offset(margin, halfH);
+      case ConsultationPosition.rightCenter:
+        return Offset(mapSize.width - miniSize - margin, halfH);
+    }
+  }
+
+  /// หาตำแหน่งที่ใกล้ที่สุดจากตำแหน่งที่ปล่อยนิ้ว (จาก 8 ตำแหน่ง)
+  ConsultationPosition _findNearestCorner(Offset position, Size mapSize) {
+    const double miniSize = 90.0;
+    final double halfW = mapSize.width / 2;
+    final double halfH = mapSize.height / 2;
+
+    final Map<ConsultationPosition, Offset> targets = {
+      ConsultationPosition.topLeft:      const Offset(miniSize / 2, miniSize / 2),
+      ConsultationPosition.topRight:     Offset(mapSize.width - miniSize / 2, miniSize / 2),
+      ConsultationPosition.bottomLeft:   Offset(miniSize / 2, mapSize.height - miniSize / 2),
+      ConsultationPosition.bottomRight:  Offset(mapSize.width - miniSize / 2, mapSize.height - miniSize / 2),
+      ConsultationPosition.topCenter:    Offset(halfW, miniSize / 2),
+      ConsultationPosition.bottomCenter: Offset(halfW, mapSize.height - miniSize / 2),
+      ConsultationPosition.leftCenter:   Offset(miniSize / 2, halfH),
+      ConsultationPosition.rightCenter:  Offset(mapSize.width - miniSize / 2, halfH),
+    };
+
+    double minDist = double.infinity;
+    ConsultationPosition nearest = ConsultationPosition.topRight;
+    for (final entry in targets.entries) {
+      final dist = (position - entry.value).distance;
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = entry.key;
+      }
+    }
+    return nearest;
+  }
+
+  /// วัดและเก็บความสูงของ consultation widget ก่อนย่อ
+  void _captureConsultationHeight() {
+    if (_savedConsultationHeight > 0) return; // วัดแล้ว
+    final RenderBox? box = _consultationKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      _savedConsultationHeight = box.size.height;
+      debugPrint('HomePage: Captured consultationHeight = $_savedConsultationHeight');
+    }
+  }
+
+  void _onConsultationLongPressStart(LongPressStartDetails details) {
+    // บันทึกความสูงปัจจุบันก่อนย่อ
+    _captureConsultationHeight();
+    
+    // หาตำแหน่ง map area
+    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (mapBox == null || !mapBox.hasSize) return;
+    
+    final mapTopLeft = mapBox.localToGlobal(Offset.zero);
+    final localPos = details.globalPosition - mapTopLeft;
+    
+    setState(() {
+      _isDraggingConsultation = true;
+      _dragOffset = Offset(
+        localPos.dx - 45,
+        localPos.dy - 45,
+      );
+    });
+  }
+
+  void _onConsultationLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (mapBox == null || !mapBox.hasSize) return;
+    
+    final mapTopLeft = mapBox.localToGlobal(Offset.zero);
+    final localPos = details.globalPosition - mapTopLeft;
+    const double miniSize = 90.0;
+    
+    setState(() {
+      _dragOffset = Offset(
+        (localPos.dx - miniSize / 2).clamp(0, mapBox.size.width - miniSize),
+        (localPos.dy - miniSize / 2).clamp(0, mapBox.size.height - miniSize),
+      );
+    });
+  }
+
+  void _onConsultationLongPressEnd(LongPressEndDetails details) {
+    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (mapBox == null || !mapBox.hasSize) return;
+    
+    final mapTopLeft = mapBox.localToGlobal(Offset.zero);
+    final localPos = details.globalPosition - mapTopLeft;
+    
+    final nearest = _findNearestCorner(localPos, mapBox.size);
+    debugPrint('HomePage: Snap to → ${nearest.name}');
+    
+    // 1) Snap ทันที (optimistic) – ไม่รอ DB
+    setState(() {
+      _isDraggingConsultation = false;
+      _dragOffset = null;
+      _consultPosition = nearest;
+    });
+    
+    // 2) Save ลง DB ในพื้นหลัง + เขย่าเมื่อ confirm
+    _saveAndShake(nearest);
+  }
+  
+  /// กดปุ่ม X หรือ double tap: คืนสู่ตำแหน่งกลาง
+  void _resetConsultationToCenter() {
+    debugPrint('HomePage: Reset to center');
+    setState(() {
+      _consultPosition = ConsultationPosition.center;
+      _savedConsultationHeight = 0;
+    });
+    // วัดความสูงใหม่หลังจากกลับเป็น Full Mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureHeaderSectionHeight();
+    });
+    // Save center ลง DB ในพื้นหลัง
+    _saveConsultationPosition(ConsultationPosition.center);
+  }
+
+  /// Save → รอ confirm → เขย่าปุ่ม 3 จังหวะเป็นการยืนยัน
+  Future<void> _saveAndShake(ConsultationPosition pos) async {
+    final ok = await _saveConsultationPosition(pos);
+    if (!mounted || !ok) return;
+    
+    // เขย่า 3 จังหวะ: ขยาย → หด → ขยาย → คืน
+    for (int i = 0; i < 3; i++) {
+      if (!mounted) return;
+      setState(() => _snapConfirmed = true);
+      await Future.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
+      setState(() => _snapConfirmed = false);
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  // flag แจ้งว่า DB confirm แล้ว (ใช้แสดงเขย่า)
+  bool _snapConfirmed = false;
+
+  // =====================================================
+  // UI Preference Persistence
+  // =====================================================
+
+  /// โหลดตำแหน่ง consultation จาก Supabase (เฉพาะ user mode)
+  /// Flow: center ก่อน → วัดความสูง → delay → bounce ไปตำแหน่งที่บันทึกไว้
+  Future<void> _loadConsultationPosition() async {
+    // ✅ ใช้ ServiceLocator ตาม auth_data_guidelines
+    final userId = ServiceLocator.instance.currentUser?.id;
+    debugPrint('HomePage: _loadConsultationPosition userId=$userId');
+    
+    if (userId == null) {
+      // Guest mode → center เสมอ
+      if (mounted && _consultPosition != ConsultationPosition.center) {
+        setState(() => _consultPosition = ConsultationPosition.center);
+      }
+      return;
+    }
+
+    // เริ่มจาก center (full-size) ก่อนเสมอ
+    if (mounted && _consultPosition != ConsultationPosition.center) {
+      setState(() {
+        _consultPosition = ConsultationPosition.center;
+        _savedConsultationHeight = 0;
+      });
+    }
+
+    try {
+      final repo = UserRepository(Supabase.instance.client);
+      debugPrint('HomePage: Querying user_ui_preferences for key=$_kConsultPosKey ...');
+      final saved = await repo.getUiPreference(userId, _kConsultPosKey);
+      debugPrint('HomePage: DB returned preference_value=$saved');
+      
+      if (!mounted) return;
+      if (saved == null || saved == 'center') {
+        debugPrint('HomePage: No saved position or center → stay center');
+        return;
+      }
+      
+      final pos = ConsultationPosition.values.firstWhere(
+        (e) => e.name == saved,
+        orElse: () => ConsultationPosition.center,
+      );
+      
+      if (pos == ConsultationPosition.center) return;
+      
+      // วัดความสูง consultation widget ก่อนย่อ
+      _captureConsultationHeight();
+
+      // แสดง center สักพัก → แล้ว bounce ไปตำแหน่งที่บันทึกไว้
+      debugPrint('HomePage: Will bounce to $pos after 2000ms ...');
+      await Future.delayed(const Duration(milliseconds: 2000));
+      if (!mounted) return;
+      
+      setState(() => _consultPosition = pos);
+      debugPrint('HomePage: ✓ Bounced to saved position → $pos');
+    } catch (e) {
+      debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
+    }
+  }
+
+  /// บันทึกตำแหน่ง consultation ลง Supabase
+  /// คืน true = สำเร็จ, false = ล้มเหลว
+  /// ✅ ใช้ ServiceLocator ตาม auth_data_guidelines
+  Future<bool> _saveConsultationPosition(ConsultationPosition pos) async {
+    final userId = ServiceLocator.instance.currentUser?.id;
+    debugPrint('HomePage: _saveConsultationPosition userId=$userId pos=${pos.name}');
+    if (userId == null) {
+      debugPrint('HomePage: Guest mode → skip save');
+      return true; // Guest: ถือว่าสำเร็จ
+    }
+    try {
+      final repo = UserRepository(Supabase.instance.client);
+      await repo.saveUiPreference(userId, _kConsultPosKey, pos.name);
+      debugPrint('HomePage: ✓ Saved to DB → ${pos.name}');
+      return true;
+    } catch (e) {
+      debugPrint('HomePage: ❌ _saveConsultationPosition FAILED: $e');
+      return false;
+    }
+  }
+
+  /// เรียกเมื่อ auth state เปลี่ยน (login / logout)
+  void _onAuthChanged() {
+    debugPrint('HomePage: _onAuthChanged fired, userId=${ServiceLocator.instance.currentUser?.id}');
+    _loadConsultationPosition();
     _loadHomeData();
   }
 
@@ -280,7 +554,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    AuthService.instance.removeListener(_loadHomeData);
+    AuthService.instance.removeListener(_onAuthChanged);
     super.dispose();
   }
 
@@ -371,6 +645,7 @@ class _HomePageState extends State<HomePage> {
                                   // เลื่อน Map ลงมาเริ่มที่กึ่งกลาง HeaderSection
                                   SizedBox(height: _headerSectionHeight / 2),
                                   SizedBox(
+                                    key: _mapAreaKey,
                                     height: _mapHeight,
                                     child: const HomeMapBackground(),
                                   ),
@@ -450,10 +725,24 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-                                  HomeConsultationWidget(
-                                    key: _consultationKey,
-                                    onTap: () => ConsultationGuard.startConsultation(context),
-                                  ),
+                                  // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ
+                                  // เมื่ออยู่มุม: แสดง Placeholder เพื่อรักษาขนาดแผนที่
+                                  if (!_isConsultationMini)
+                                    GestureDetector(
+                                      onLongPressStart: _onConsultationLongPressStart,
+                                      onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
+                                      onLongPressEnd: _onConsultationLongPressEnd,
+                                      child: HomeConsultationWidget(
+                                        key: _consultationKey,
+                                        onTap: () => ConsultationGuard.startConsultation(context),
+                                      ),
+                                    )
+                                  else
+                                    // Placeholder: รักษาความสูงเดิมเพื่อไม่ให้แผนที่หดตัว
+                                    SizedBox(
+                                      key: _consultationKey,
+                                      height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
+                                    ),
                                   const SizedBox(height: 24),
                                   HomePharmacyCard(
                                     key: _pharmacyKey,
@@ -462,6 +751,9 @@ class _HomePageState extends State<HomePage> {
                                   const SizedBox(height: 24),
                                 ],
                               ),
+                              // Topmost Layer - Floating Mini Consultation (อยู่เหนือ Header/Pharmacy)
+                              if (_isConsultationMini || _isDraggingConsultation)
+                                _buildFloatingConsultation(),
                             ],
                           ),
                         ],
@@ -479,6 +771,92 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ==================== Floating Consultation Widget ====================
+
+  Widget _buildFloatingConsultation() {
+    const double miniSize = 90.0;
+
+    // คำนวณขนาด map area จริงจาก RenderBox
+    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final mapWidth = mapBox?.size.width ?? MediaQuery.of(context).size.width;
+    final mapSize = Size(mapWidth, _mapHeight);
+    
+    // Map อยู่ห่างจากขอบ Inner Stack ลงมา = headerHeight / 2
+    final double mapTopOffset = _headerSectionHeight / 2;
+
+    // ขณะลาก: ใช้ Positioned ตรง ไม่มี Animation เพื่อให้ติดนิ้ว
+    if (_isDraggingConsultation && _dragOffset != null) {
+      return Positioned(
+        left: _dragOffset!.dx,
+        top: _dragOffset!.dy + mapTopOffset,
+        child: _buildMiniConsultationBody(miniSize),
+      );
+    }
+
+    // เมื่อ Snap แล้ว: AnimatedPositioned เป็น direct child ของ Stack
+    final snapOffset = _getSnapOffset(_consultPosition, mapSize);
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 1200),
+      curve: Curves.elasticOut,
+      left: snapOffset.dx,
+      top: snapOffset.dy + mapTopOffset,
+      child: _buildMiniConsultationBody(miniSize),
+    );
+  }
+
+  Widget _buildMiniConsultationBody(double miniSize) {
+    return AnimatedScale(
+      scale: _snapConfirmed ? 1.35 : 1.0,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutBack,
+      child: GestureDetector(
+        onLongPressStart: _onConsultationLongPressStart,
+        onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
+        onLongPressEnd: _onConsultationLongPressEnd,
+        onDoubleTap: _resetConsultationToCenter,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            HomeConsultationWidget(
+              isMini: true,
+              overrideSize: miniSize,
+              onTap: () => ConsultationGuard.startConsultation(context),
+            ),
+            // ปุ่ม X เล็กๆ สำหรับคืนตำแหน่งกลาง
+            Positioned(
+              top: -4,
+              right: -4,
+              child: GestureDetector(
+                onTap: _resetConsultationToCenter,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: AppColors.textSecondary.withOpacity(0.8),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

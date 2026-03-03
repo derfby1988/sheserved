@@ -741,4 +741,54 @@ class UserRepository {
         .stream(primaryKey: ['id'])
         .asyncMap((_) => getAvailableProviderCounts());
   }
+
+  // =====================================================
+  // UI PREFERENCES
+  // =====================================================
+
+  /// บันทึก UI Preference ของผู้ใช้
+  /// [userId]        : ID ของผู้ใช้
+  /// [preferenceKey] : key เช่น 'home_consultation_position'
+  /// [value]         : ค่า เช่น 'topRight', 'center'
+  Future<void> saveUiPreference(
+    String userId,
+    String preferenceKey,
+    String value,
+  ) async {
+    debugPrint('UserRepository: saveUiPreference user=$userId key=$preferenceKey val=$value');
+    await _client.from('user_ui_preferences').upsert(
+      {
+        'user_id': userId,
+        'preference_key': preferenceKey,
+        'preference_value': value,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'user_id,preference_key',
+    );
+    debugPrint('UserRepository: ✓ UI preference saved successfully');
+  }
+
+  /// ดึง UI Preference ของผู้ใช้
+  /// คืน null หากยังไม่เคยบันทึก หรือตารางไม่มี
+  Future<String?> getUiPreference(
+    String userId,
+    String preferenceKey,
+  ) async {
+    debugPrint('UserRepository: getUiPreference user=$userId key=$preferenceKey');
+    try {
+      final response = await _client
+          .from('user_ui_preferences')
+          .select('preference_value')
+          .eq('user_id', userId)
+          .eq('preference_key', preferenceKey)
+          .maybeSingle();
+      final val = response?['preference_value'] as String?;
+      debugPrint('UserRepository: ✓ getUiPreference result=$val');
+      return val;
+    } catch (e) {
+      debugPrint('UserRepository: ❌ getUiPreference error: $e');
+      return null;
+    }
+  }
 }
+
