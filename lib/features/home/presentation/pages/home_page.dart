@@ -47,9 +47,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // === Snap-to-Corner State ===
   ConsultationPosition _consultPosition = ConsultationPosition.center;
+  bool _isConsultationMini = false; // เปลี่ยนจาก getter เป็นตัวแปรเพื่อควบคุมแยกต่างหาก
   Offset? _dragOffset; // ตำแหน่งชั่วคราวขณะลาก
   bool _isDraggingConsultation = false;
   double _savedConsultationHeight = 0; // บันทึกความสูงก่อนย่อ เพื่อใช้เป็น Placeholder
+  double _spinTurns = 0.0; // บันทึกรอบการหมุนของ widget
   
   List<HealthArticle> _recommendedArticles = [];
   List<HealthArticle> _interestingArticles = [];
@@ -85,8 +87,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   // === Snap-to-Corner Helpers ===
-  
-  bool get _isConsultationMini => _consultPosition != ConsultationPosition.center;
   
   /// คำนวณพิกัดจริงของปุ่มเมื่ออยู่ในแต่ละตำแหน่ง
   Offset _getSnapOffset(ConsultationPosition pos, Size mapSize) {
@@ -167,6 +167,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final localPos = details.globalPosition - mapTopLeft;
     
     setState(() {
+      _isConsultationMini = true;
       _isDraggingConsultation = true;
       _dragOffset = Offset(
         localPos.dx - 45,
@@ -205,6 +206,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     setState(() {
       _isDraggingConsultation = false;
       _dragOffset = null;
+      if (_consultPosition != nearest) {
+        // ให้หมุน 1 รอบเมื่อมีการย้ายตำแหน่งเปลี่ยนไป
+        _spinTurns += 1.0; 
+      }
       _consultPosition = nearest;
     });
     
@@ -213,18 +218,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
   
   /// กดปุ่ม X หรือ double tap: คืนสู่ตำแหน่งกลาง
-  void _resetConsultationToCenter() {
+  void _resetConsultationToCenter() async {
     debugPrint('HomePage: Reset to center');
+    // Save center ลง DB ในพื้นหลัง
+    _saveConsultationPosition(ConsultationPosition.center);
+
     setState(() {
+      if (_consultPosition != ConsultationPosition.center) {
+        // ให้หมุนกลับหลัง 1 รอบเมื่อถูกรีเซต
+        _spinTurns -= 1.0;
+      }
       _consultPosition = ConsultationPosition.center;
+    });
+
+    // รอให้มันหมุนกลิ้งมาถึงตรงกลาง (1000ms) จากนั้นค่อยเปลี่ยนเป็น Widget ตัวใหญ่
+    await Future.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
+
+    setState(() {
+      _isConsultationMini = false;
       _savedConsultationHeight = 0;
     });
     // วัดความสูงใหม่หลังจากกลับเป็น Full Mode
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
     });
-    // Save center ลง DB ในพื้นหลัง
-    _saveConsultationPosition(ConsultationPosition.center);
   }
 
   /// Save → รอ confirm → เขย่าปุ่ม 3 จังหวะเป็นการยืนยัน
@@ -260,7 +278,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (userId == null) {
       // Guest mode → center เสมอ
       if (mounted && _consultPosition != ConsultationPosition.center) {
-        setState(() => _consultPosition = ConsultationPosition.center);
+        setState(() {
+          _consultPosition = ConsultationPosition.center;
+          _isConsultationMini = false;
+        });
       }
       return;
     }
@@ -269,6 +290,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (mounted && _consultPosition != ConsultationPosition.center) {
       setState(() {
         _consultPosition = ConsultationPosition.center;
+        _isConsultationMini = false;
         _savedConsultationHeight = 0;
       });
     }
@@ -299,9 +321,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       debugPrint('HomePage: Will bounce to $pos after 2000ms ...');
       await Future.delayed(const Duration(milliseconds: 2000));
       if (!mounted) return;
+
+      // เริ่มสร้าง widget ตัวเล็กขึ้นมาตรงกลาง
+      setState(() {
+        _isConsultationMini = true;
+        _consultPosition = ConsultationPosition.center;
+      });
       
-      setState(() => _consultPosition = pos);
-      debugPrint('HomePage: ✓ Bounced to saved position → $pos');
+      // รอ 1 frame ให้ widget ปรากฏ จากนั้นจึงสั่งกลิ้ง
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future.delayed(const Duration(milliseconds: 50));
+        if (!mounted) return;
+        setState(() {
+          _consultPosition = pos;
+          _spinTurns += 2.0; // หมุนเท่ ๆ 2 รอบตอนที่เปิดหน้า Home
+        });
+        debugPrint('HomePage: ✓ Bounced to saved position → $pos');
+      });
+
     } catch (e) {
       debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
     }
@@ -802,11 +839,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final snapOffset = _getSnapOffset(_consultPosition, mapSize);
 
     return AnimatedPositioned(
-      duration: const Duration(milliseconds: 1200),
-      curve: Curves.elasticOut,
+      duration: const Duration(milliseconds: 1000),
+      curve: Curves.easeOutBack,
       left: snapOffset.dx,
       top: snapOffset.dy + mapTopOffset,
-      child: _buildMiniConsultationBody(miniSize),
+      child: AnimatedRotation( // เพิ่ม AnimatedRotation ครอบชั้นใน
+        turns: _spinTurns,
+        duration: const Duration(milliseconds: 1000),
+        curve: Curves.easeOutBack,
+        child: _buildMiniConsultationBody(miniSize),
+      ),
     );
   }
 
