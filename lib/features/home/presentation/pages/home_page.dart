@@ -67,6 +67,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _hasMoreInteresting = true;
   bool _isLoadingMoreInteresting = false;
 
+  double? _healthScore; // Null หมายถึง Guest หรือยังโหลดไม่เสร็จ
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +77,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     
     // Listen for auth state changes to refresh data and re-load preferences
     AuthService.instance.addListener(_onAuthChanged);
+    
+    // Initial load of health score if already logged in
+    _loadHealthScore();
     
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -369,7 +374,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _onAuthChanged() {
     debugPrint('HomePage: _onAuthChanged fired, userId=${ServiceLocator.instance.currentUser?.id}');
     _loadConsultationPosition();
+    _loadHealthScore();
     _loadHomeData();
+  }
+
+  /// โหลดคะแนนสุขภาพของผู้ใช้
+  Future<void> _loadHealthScore() async {
+    final currentUser = ServiceLocator.instance.currentUser;
+    if (currentUser == null) {
+      if (mounted) setState(() => _healthScore = null);
+      return;
+    }
+
+    try {
+      final repo = ServiceLocator.get<UserRepository>();
+      final profile = await repo.getConsumerProfile(currentUser.id);
+      if (mounted && profile != null) {
+        final score = profile.healthInfo?['health_score'];
+        setState(() {
+          if (score != null) {
+            _healthScore = (score as num).toDouble();
+          } else {
+            _healthScore = 0;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('HomePage: Error loading health score: $e');
+    }
   }
 
   Future<void> _loadHomeData() async {
@@ -741,18 +773,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 children: [
                                   HomeHeaderSection(
                                     sectionKey: _headerSectionKey,
+                                    isLoading: ServiceLocator.instance.currentUser != null && _healthScore == null,
                                     headerText: ServiceLocator.instance.currentUser != null 
-                                      ? 'ข้อมูลสุขภาพ' 
+                                      ? (_healthScore != null 
+                                          ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
+                                          : 'คะแนนสุขภาพ --%')
                                       : 'ตรวจสุขภาพ',
-                                    onHealthTap: () {
+                                    onHealthTap: () async {
                                       if (ServiceLocator.instance.currentUser != null) {
-                                        Navigator.pushNamed(context, '/health');
+                                        await Navigator.pushNamed(context, '/health');
+                                        _loadHealthScore();
                                       } else {
-                                        Navigator.pushNamed(
+                                        await Navigator.pushNamed(
                                           context, 
                                           '/login',
                                           arguments: '/health',
                                         );
+                                        _loadHealthScore();
                                       }
                                     },
                                     onProfileTap: () => Navigator.pushNamed(

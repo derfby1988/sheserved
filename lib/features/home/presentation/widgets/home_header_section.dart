@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/online_providers_badge.dart';
+import 'package:shimmer/shimmer.dart';
 
 /// Header Section Widget สำหรับหน้า Home
 /// แสดงข้อมูลสถานะสุขภาพ, โปรไฟล์, และข้อมูลทานยา
@@ -10,6 +11,7 @@ class HomeHeaderSection extends StatelessWidget {
   final VoidCallback? onHealthTap;
   final VoidCallback? onProfileTap;
   final String? headerText;
+  final bool isLoading;
 
   const HomeHeaderSection({
     super.key,
@@ -17,6 +19,7 @@ class HomeHeaderSection extends StatelessWidget {
     this.onHealthTap,
     this.onProfileTap,
     this.headerText,
+    this.isLoading = false,
   });
 
   @override
@@ -50,18 +53,32 @@ class HomeHeaderSection extends StatelessWidget {
                     // กดเพื่อไปหน้า Health
                     GestureDetector(
                       onTap: onHealthTap,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.center,
-                        child: Text(
-                          headerText ?? 'สุขภาพ "ดี"',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            color: AppColors.textOnPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                        ),
-                      ),
+                      child: isLoading
+                          ? Container(
+                              alignment: Alignment.center,
+                              width: 80,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(3),
+                                child: LinearProgressIndicator(
+                                  backgroundColor: Colors.white.withOpacity(0.3),
+                                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              ),
+                            )
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.center,
+                              child: Text(
+                                headerText ?? 'สุขภาพ "ดี"',
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.textOnPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 12),
                     // Profile Picture Button - กดเพื่อไปหน้า Login
@@ -98,10 +115,12 @@ class HomeHeaderSection extends StatelessWidget {
           // Right Side: Medicine Reminder & Popular Badge
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75, // ไม่เกิน 75% ของความกว้างหน้าจอ
-              maxHeight: 96, // จำกัดความสูง (ประมาณ 3 บรรทัด) เพื่อไม่ให้ล้นกระทบ HomeHeaderSection
+              maxWidth: MediaQuery.of(context).size.width * 0.5, // ปรับจาก 75% เหลือ 50%
+              maxHeight: 96,
             ),
-            child: _ScrollableNotificationContent(
+            child: isLoading 
+              ? _buildShimmerNotifications()
+              : _ScrollableNotificationContent(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -129,6 +148,44 @@ class HomeHeaderSection extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShimmerNotifications() {
+    return Shimmer.fromColors(
+      baseColor: Colors.white.withOpacity(0.2),
+      highlightColor: Colors.white.withOpacity(0.4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            width: 120,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 150,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: 100,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ],
