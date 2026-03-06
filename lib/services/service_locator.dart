@@ -20,6 +20,7 @@ import '../features/admin/data/repositories/registration_repository.dart';
 import '../features/admin/data/repositories/group_role_repository.dart';
 import 'package:hive/hive.dart';
 import 'auth_service.dart';
+import '../features/video/data/repositories/video_repository.dart';
 
 /// Service Locator สำหรับจัดการ Dependencies
 /// ใช้รูปแบบ Singleton เพื่อให้เข้าถึงได้จากทุกที่
@@ -43,6 +44,7 @@ class ServiceLocator {
   GroupRoleRepository? _groupRoleRepository;
   PharmacyRepository? _pharmacyRepository;
   FdaApiService? _fdaApiService;
+  VideoRepository? _videoRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -172,6 +174,7 @@ class ServiceLocator {
       _registrationRepository = RegistrationRepository(supabaseClient);
       _groupRoleRepository = GroupRoleRepository(supabaseClient);
       _pharmacyRepository = PharmacyRepository(supabaseClient);
+      _videoRepository = VideoRepository(supabaseClient);
     }
 
 
@@ -258,6 +261,13 @@ class ServiceLocator {
   FdaApiService get fdaApiService {
     _fdaApiService ??= FdaApiService();
     return _fdaApiService!;
+  }
+
+  VideoRepository get videoRepository {
+    if (_videoRepository == null) {
+      _videoRepository = VideoRepository(Supabase.instance.client);
+    }
+    return _videoRepository!;
   }
 
   /// Get Unified Repository (recommended)

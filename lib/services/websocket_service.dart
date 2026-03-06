@@ -23,6 +23,11 @@ class WebSocketService {
   final _callRejectController = StreamController<Map<String, dynamic>>.broadcast();
   final _webrtcSignalController = StreamController<Map<String, dynamic>>.broadcast();
   
+  // Video Stream Controllers
+  final _videoProgressController = StreamController<Map<String, dynamic>>.broadcast();
+  final _videoStatusController = StreamController<Map<String, dynamic>>.broadcast();
+  final _videoInteractionController = StreamController<Map<String, dynamic>>.broadcast();
+  
   // Getters
   bool get isConnected => _isConnected;
   bool get isEnabled => _isEnabled;
@@ -34,6 +39,11 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get callAcceptStream => _callAcceptController.stream;
   Stream<Map<String, dynamic>> get callRejectStream => _callRejectController.stream;
   Stream<Map<String, dynamic>> get webrtcSignalStream => _webrtcSignalController.stream;
+  
+  // Video Getters
+  Stream<Map<String, dynamic>> get videoProgressStream => _videoProgressController.stream;
+  Stream<Map<String, dynamic>> get videoStatusStream => _videoStatusController.stream;
+  Stream<Map<String, dynamic>> get videoInteractionStream => _videoInteractionController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -145,6 +155,19 @@ class WebSocketService {
         _webrtcSignalController.add(Map<String, dynamic>.from(data));
       });
       
+      // Video Events
+      _socket!.on('video-progress', (data) {
+        _videoProgressController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('video-status', (data) {
+        _videoStatusController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('video-interaction', (data) {
+        _videoInteractionController.add(Map<String, dynamic>.from(data));
+      });
+
       _socket!.on('error', (error) {
         if (kDebugMode) {
           debugPrint('WebSocket error: $error');
@@ -290,6 +313,29 @@ class WebSocketService {
   }
   
   /// Dispose resources
+  /// Join a video room to receive interactions
+  void joinVideoRoom(String videoId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('join-room', {'roomId': 'video-$videoId'});
+  }
+
+  /// Leave a video room
+  void leaveVideoRoom(String videoId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('leave-room', {'roomId': 'video-$videoId'});
+  }
+
+  /// Send a video interaction (like, gift)
+  void sendVideoInteraction(String videoId, String type, {int value = 0}) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('video-interaction', {
+      'videoId': videoId,
+      'type': type,
+      'value': value,
+    });
+  }
+
+  /// Dispose resources
   void dispose() {
     disconnect();
     _connectionController.close();
@@ -300,5 +346,8 @@ class WebSocketService {
     _callAcceptController.close();
     _callRejectController.close();
     _webrtcSignalController.close();
+    _videoProgressController.close();
+    _videoStatusController.close();
+    _videoInteractionController.close();
   }
 }

@@ -406,11 +406,11 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           if (_expandedGroups['community']!) ...[
                             _buildMenuItem(
                               context,
-                              title: 'แจ้งเหตุ / ร้องเรียน',
-                              icon: Icons.people_outline,
+                              title: 'แจ้งเหตุ / ฉุกเฉิน',
+                              icon: Icons.emergency_outlined,
                               isUnderlined: true,
-                              underlineText: 'แจ้ง',
-                              onTap: () => _navigateTo(context, '/news'),
+                              underlineText: 'แจ้งเหตุ',
+                              onTap: () => _navigateTo(context, '/emergency-live'),
                               isSubItem: true,
                             ),
                             _buildMenuItem(

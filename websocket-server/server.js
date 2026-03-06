@@ -18,6 +18,10 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { Pool } = require('pg');
 
+// Video System Services & Routes
+const socketService = require('./services/socket-service');
+const videoRoutes = require('./routes/video');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -29,6 +33,9 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+
+// Initialize Socket Service
+socketService.init(io);
 
 // Database configuration (optional - can work without database)
 let pool = null;
@@ -43,7 +50,7 @@ if (USE_DATABASE) {
       password: process.env.DB_PASSWORD || 'password',
       port: process.env.DB_PORT || 5432,
     });
-    
+
     // Test database connection
     pool.query('SELECT NOW()', (err, res) => {
       if (err) {
@@ -70,32 +77,37 @@ const locationsCache = new Map();
 app.use(cors());
 app.use(express.json());
 
+// Video Routes
+if (pool) {
+  app.use('/api/videos', videoRoutes(pool));
+}
+
 // Store connected users
 const connectedUsers = new Map();
 
 // WebSocket Connection Handler
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
-  
+
   // User connected event
   socket.on('user-connected', async (data) => {
     const { userId } = data;
     connectedUsers.set(socket.id, userId);
     socket.userId = userId;
-    
+
     console.log(`User ${userId} connected (socket: ${socket.id})`);
-    
+
     // Join user's personal room
     socket.join(`user-${userId}`);
-    
+
     // Notify others that user is online
     socket.broadcast.emit('user-online', { userId });
   });
-  
+
   // Location update event
   socket.on('location-update', async (data) => {
     const { userId, latitude, longitude, timestamp, accuracy, speed, heading } = data;
-    
+
     const locationData = {
       userId,
       latitude,
@@ -105,7 +117,7 @@ io.on('connection', (socket) => {
       speed,
       heading,
     };
-    
+
     try {
       // Save to database if available
       if (pool) {
@@ -115,7 +127,7 @@ io.on('connection', (socket) => {
             'SELECT id FROM users WHERE id = $1',
             [userId]
           );
-          
+
           if (userCheck.rows.length === 0) {
             // Create user if not exists (with required fields)
             await pool.query(
@@ -125,7 +137,7 @@ io.on('connection', (socket) => {
               [userId, 'Guest', `guest_${userId.substring(0, 8)}`, new Date()]
             );
           }
-          
+
           // Save location to database
           await pool.query(
             `INSERT INTO locations (user_id, latitude, longitude, accuracy, speed, heading, created_at) 
@@ -160,56 +172,56 @@ io.on('connection', (socket) => {
           userLocations.shift();
         }
       }
-      
+
       // Broadcast to all clients (or specific subscribers)
       // Send to user's personal room
       io.to(`user-${userId}`).emit('location-updated', locationData);
-      
+
       // Also broadcast to all connected clients (optional)
       socket.broadcast.emit('location-updated', locationData);
-      
+
       console.log(`✅ Location updated for user ${userId}: ${latitude}, ${longitude}`);
     } catch (error) {
       console.error('Error processing location:', error);
       socket.emit('error', { message: 'Failed to process location' });
     }
   });
-  
+
   // Subscribe to specific user's location
   socket.on('subscribe-user', (data) => {
     const { userId } = data;
     socket.join(`user-${userId}`);
     console.log(`Socket ${socket.id} subscribed to user ${userId}`);
   });
-  
+
   // Unsubscribe from user's location
   socket.on('unsubscribe-user', (data) => {
     const { userId } = data;
     socket.leave(`user-${userId}`);
     console.log(`Socket ${socket.id} unsubscribed from user ${userId}`);
   });
-  
+
   // Join a room (for group tracking)
   socket.on('join-room', (data) => {
     const { roomId } = data;
     socket.join(`room-${roomId}`);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
   });
-  
+
   // Leave a room
   socket.on('leave-room', (data) => {
     const { roomId } = data;
     socket.leave(`room-${roomId}`);
     console.log(`Socket ${socket.id} left room ${roomId}`);
   });
-  
+
   // Disconnect handler
   socket.on('disconnect', () => {
     const userId = connectedUsers.get(socket.id);
     if (userId) {
       console.log(`User ${userId} disconnected (socket: ${socket.id})`);
       connectedUsers.delete(socket.id);
-      
+
       // Notify others that user is offline
       socket.broadcast.emit('user-offline', { userId });
     }
@@ -218,8 +230,8 @@ io.on('connection', (socket) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     connectedUsers: connectedUsers.size,
     database: pool ? 'connected' : 'not connected'
   });
@@ -233,7 +245,7 @@ app.get('/api/professions', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const result = await pool.query(
       `SELECT id, name, name_en, description, icon_name, category, 
               is_built_in, is_active, requires_verification, display_order,
@@ -255,17 +267,17 @@ app.get('/api/professions/:id', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const result = await pool.query(
       `SELECT * FROM professions WHERE id = $1`,
       [id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Profession not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching profession:', error);
@@ -279,7 +291,7 @@ app.get('/api/professions/:id/fields', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const result = await pool.query(
       `SELECT id, field_id, label, hint, field_type, is_required, 
@@ -290,7 +302,7 @@ app.get('/api/professions/:id/fields', async (req, res) => {
        ORDER BY field_order ASC`,
       [id]
     );
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching fields:', error);
@@ -306,21 +318,21 @@ app.post('/api/users', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
-    const { 
-      professionId, firstName, lastName, username, email, 
-      phone, passwordHash, socialProvider, socialId 
+
+    const {
+      professionId, firstName, lastName, username, email,
+      phone, passwordHash, socialProvider, socialId
     } = req.body;
-    
+
     const result = await pool.query(
       `INSERT INTO users (profession_id, first_name, last_name, username, email, 
                           phone, password_hash, social_provider, social_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [professionId, firstName, lastName, username, email, 
-       phone, passwordHash, socialProvider, socialId]
+      [professionId, firstName, lastName, username, email,
+        phone, passwordHash, socialProvider, socialId]
     );
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -338,7 +350,7 @@ app.get('/api/users/:id', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const result = await pool.query(
       `SELECT u.*, p.name as profession_name, p.category as profession_category
@@ -347,11 +359,11 @@ app.get('/api/users/:id', async (req, res) => {
        WHERE u.id = $1`,
       [id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -365,15 +377,15 @@ app.put('/api/users/:id', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const updates = req.body;
-    
+
     // Build dynamic update query
     const fields = [];
     const values = [];
     let paramIndex = 1;
-    
+
     const allowedFields = ['first_name', 'last_name', 'email', 'phone', 'profile_image_url'];
     for (const [key, value] of Object.entries(updates)) {
       const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
@@ -383,21 +395,21 @@ app.put('/api/users/:id', async (req, res) => {
         paramIndex++;
       }
     }
-    
+
     if (fields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
-    
+
     values.push(id);
     const result = await pool.query(
       `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
       values
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating user:', error);
@@ -413,22 +425,22 @@ app.post('/api/applications', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
-    const { 
-      userId, professionId, firstName, lastName, username, 
-      phone, profileImageUrl, registrationData 
+
+    const {
+      userId, professionId, firstName, lastName, username,
+      phone, profileImageUrl, registrationData
     } = req.body;
-    
+
     const result = await pool.query(
       `INSERT INTO registration_applications 
        (user_id, profession_id, first_name, last_name, username, phone, 
         profile_image_url, registration_data, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
        RETURNING *`,
-      [userId, professionId, firstName, lastName, username, phone, 
-       profileImageUrl, JSON.stringify(registrationData || {})]
+      [userId, professionId, firstName, lastName, username, phone,
+        profileImageUrl, JSON.stringify(registrationData || {})]
     );
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating application:', error);
@@ -442,7 +454,7 @@ app.get('/api/applications', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { status } = req.query;
     let query = `
       SELECT a.*, p.name as profession_name, p.category as profession_category
@@ -450,14 +462,14 @@ app.get('/api/applications', async (req, res) => {
       LEFT JOIN professions p ON a.profession_id = p.id
     `;
     const params = [];
-    
+
     if (status) {
       query += ' WHERE a.status = $1';
       params.push(status);
     }
-    
+
     query += ' ORDER BY a.created_at DESC';
-    
+
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -472,7 +484,7 @@ app.get('/api/applications/:id', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const result = await pool.query(
       `SELECT a.*, p.name as profession_name
@@ -481,11 +493,11 @@ app.get('/api/applications/:id', async (req, res) => {
        WHERE a.id = $1`,
       [id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Application not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching application:', error);
@@ -499,10 +511,10 @@ app.post('/api/applications/:id/approve', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const { note, reviewedBy } = req.body;
-    
+
     // Update application status
     const result = await pool.query(
       `UPDATE registration_applications 
@@ -511,17 +523,17 @@ app.post('/api/applications/:id/approve', async (req, res) => {
        RETURNING *`,
       [note, reviewedBy, id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Application not found or already processed' });
     }
-    
+
     // Update user verification status
     await pool.query(
       `UPDATE users SET verification_status = 'verified' WHERE id = $1`,
       [result.rows[0].user_id]
     );
-    
+
     res.json({ message: 'Application approved', application: result.rows[0] });
   } catch (error) {
     console.error('Error approving application:', error);
@@ -535,14 +547,14 @@ app.post('/api/applications/:id/reject', async (req, res) => {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
     }
-    
+
     const { id } = req.params;
     const { note, reviewedBy } = req.body;
-    
+
     if (!note) {
       return res.status(400).json({ error: 'Rejection note is required' });
     }
-    
+
     const result = await pool.query(
       `UPDATE registration_applications 
        SET status = 'rejected', review_note = $1, reviewed_by = $2, reviewed_at = NOW()
@@ -550,17 +562,17 @@ app.post('/api/applications/:id/reject', async (req, res) => {
        RETURNING *`,
       [note, reviewedBy, id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Application not found or already processed' });
     }
-    
+
     // Update user verification status
     await pool.query(
       `UPDATE users SET verification_status = 'rejected' WHERE id = $1`,
       [result.rows[0].user_id]
     );
-    
+
     res.json({ message: 'Application rejected', application: result.rows[0] });
   } catch (error) {
     console.error('Error rejecting application:', error);
@@ -572,7 +584,7 @@ app.post('/api/applications/:id/reject', async (req, res) => {
 app.get('/api/locations/:userId', async (req, res) => {
   const { userId } = req.params;
   const limit = parseInt(req.query.limit) || 100;
-  
+
   try {
     if (pool) {
       // Get from database
@@ -729,7 +741,7 @@ app.post('/api/users/sync', async (req, res) => {
            is_active = EXCLUDED.is_active,
            updated_at = EXCLUDED.updated_at`,
         [
-          item.id, item.profession_id, item.first_name, item.last_name, 
+          item.id, item.profession_id, item.first_name, item.last_name,
           item.username, item.verification_status, item.is_active,
           item.created_at, item.updated_at
         ]
