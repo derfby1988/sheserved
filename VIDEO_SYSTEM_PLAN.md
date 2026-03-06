@@ -162,8 +162,28 @@ REDIS_URL=redis://localhost:6379
 - **Bandwidth**: $0.005/GB
 - **ตัวอย่าง**: 100GB storage + 1TB bandwidth/เดือน = $1 + $5 = **$6/เดือน**
 
+### Google Maps (Mobile Only)
+- **Maps SDK for Android & iOS**: ฟรีไม่จำกัดจำนวนครั้ง (Unlimited)
+- **Maps JavaScript API (Web)**: ป้องกันไม่ให้เปิดใช้งานเพื่อหลีกเลี่ยงค่าใช้จ่าย ($7/1,000 loads)
+- **ค่าใช้จ่ายรายเดือน**: **$0** (ภายใต้การจำกัดการใช้งานเฉพาะแอปมือถือ)
+
 ### Self-hosted (FFmpeg, PostgreSQL, Queue)
 - **ค่าใช้จ่าย**: $0 (รันบนเครื่องหลัก)
+
+## Cost Prevention: ป้องกันค่าใช้จ่าย Google Maps (Web)
+
+เพื่อให้แน่ใจว่าจะไม่มีค่าใช้จ่ายจากการเรียกใช้บน Web App ให้ดำเนินการดังนี้บน [Google Cloud Console](https://console.cloud.google.com/):
+
+1. **เปิดใช้งานเฉพาะ API ที่จำเป็น**:
+   - ✅ เปิดใช้งาน: `Maps SDK for Android`
+   - ✅ เปิดใช้งาน: `Maps SDK for iOS`
+   - ❌ **ปิดการใช้งาน**: `Maps JavaScript API` (สำคัญมาก! เพื่อป้องกันไม่ให้นำ Key ไปใช้โหลดบน Web)
+2. **ตั้งค่า API Key Restrictions (Application restrictions)**:
+   - สร้าง API Key แยกสำหรับ Android และ iOS
+   - **Android Key**: จำกัด (Restrict) ให้ใช้ได้เฉพาะกับ Android App โดยระบุ `Package name` และ `SHA-1 certificate fingerprint`
+   - **iOS Key**: จำกัดให้ใช้ได้เฉพาะกับ iOS App โดยระบุ `Bundle ID`
+3. **API Restrictions**:
+   - จำกัดให้ Key ทั้งสองสามารถเรียกใช้ได้เฉพาะ `Maps SDK for Android` และ `Maps SDK for iOS` เท่านั้น
 
 ## Development Setup
 

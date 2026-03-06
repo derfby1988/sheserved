@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../widgets/glassmorphism_button.dart';
+import '../../../../services/websocket_service.dart';
+import '../../../../services/service_locator.dart';
+import 'dart:async';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -21,17 +23,24 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   int _viewerCount = 10000;
   int _likeCount = 1200;
   double _donationTotal = 625;
+  bool _isConnected = true;
   late AnimationController _liveBlinkController;
-
-  // Mock GPS Route
+  late AnimationController _pulseController;
+  GoogleMapController? _mapController;
+  
+  StreamSubscription? _connectionSub;
+  StreamSubscription? _interactionSub;
+  StreamSubscription? _progressSub;
+  
+  // Mock GPS Route - Sukhumvit, Bangkok Area
   final List<LatLng> _routePoints = [
-    LatLng(35.7150, 51.4050),
-    LatLng(35.7165, 51.4080),
-    LatLng(35.7180, 51.4110),
-    LatLng(35.7195, 51.4140),
-    LatLng(35.7210, 51.4170),
-    LatLng(35.7230, 51.4200),
-    LatLng(35.7260, 51.4230),
+    LatLng(13.7300, 100.5600),
+    LatLng(13.7315, 100.5615),
+    LatLng(13.7330, 100.5630),
+    LatLng(13.7345, 100.5645),
+    LatLng(13.7360, 100.5660),
+    LatLng(13.7375, 100.5675),
+    LatLng(13.7390, 100.5690),
   ];
 
   @override
@@ -41,11 +50,74 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
+    
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+    
+    _setupWebSocketStreams();
+    _loadInitialData();
+  }
+
+  void _loadInitialData() async {
+    if (widget.videoId != null) {
+      final summary = await ServiceLocator.instance.videoRepository
+          .getInteractionSummary(widget.videoId!);
+      setState(() {
+        _likeCount = summary['likes'] ?? 0;
+        _donationTotal = summary['donations']?.toDouble() ?? 0.0;
+      });
+    }
+  }
+
+  void _setupWebSocketStreams() {
+    final ws = WebSocketService();
+    
+    // 1. Connection Status
+    _connectionSub = ws.connectionStream.listen((connected) {
+      setState(() => _isConnected = connected);
+    });
+
+    // 2. Video Interactions (Likes, Gifts)
+    if (widget.videoId != null) {
+      ws.joinVideoRoom(widget.videoId!);
+      _interactionSub = ws.videoInteractionStream.listen((data) {
+        if (data['videoId'] == widget.videoId) {
+          setState(() {
+            if (data['type'] == 'like') _likeCount++;
+            if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0);
+          });
+        }
+      });
+    }
+
+    // 3. Progress / GPS (Simulated move for demo, but wired to logic)
+    _progressSub = ws.videoProgressStream.listen((data) {
+      if (data['videoId'] == widget.videoId && data['location'] != null) {
+        final loc = data['location'];
+        final point = LatLng(loc['lat'], loc['lng']);
+        setState(() {
+          _routePoints.add(point);
+        });
+        // Refinement 1: Map Auto-Center
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(point),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _liveBlinkController.dispose();
+    _pulseController.dispose();
+    _connectionSub?.cancel();
+    _interactionSub?.cancel();
+    _progressSub?.cancel();
+    if (widget.videoId != null) {
+      WebSocketService().leaveVideoRoom(widget.videoId!);
+    }
     super.dispose();
   }
 
@@ -69,6 +141,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           SafeArea(
             child: Column(
               children: [
+                // Refinement 3: Offline State Indicator
+                if (!_isConnected) _buildOfflineIndicator(),
+                
                 // Top Bar: Status + Code Icon
                 _buildTopBar(),
                 const SizedBox(height: 8),
@@ -106,65 +181,38 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildMapBackground() {
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: _routePoints.isNotEmpty
+    return GoogleMap(
+      onMapCreated: (controller) => _mapController = controller,
+      initialCameraPosition: CameraPosition(
+        target: _routePoints.isNotEmpty
             ? _routePoints[_routePoints.length ~/ 2]
-            : LatLng(35.72, 51.41),
-        initialZoom: 14.5,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.none,
-        ),
+            : const LatLng(13.7367, 100.5604),
+        zoom: 15.0,
       ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.sheserved.app',
+      zoomControlsEnabled: false,
+      myLocationButtonEnabled: false,
+      compassEnabled: false,
+      mapToolbarEnabled: false,
+      polylines: {
+        Polyline(
+          polylineId: const PolylineId('emergency_route'),
+          points: _routePoints,
+          color: const Color(0xFF7B2FF7),
+          width: 5,
         ),
-        // GPS Route Polyline
-        PolylineLayer(
-          polylines: [
-            Polyline(
-              points: _routePoints,
-              color: const Color(0xFF7B2FF7),
-              strokeWidth: 5,
-              borderColor: const Color(0xFF7B2FF7).withOpacity(0.3),
-              borderStrokeWidth: 2,
-            ),
-          ],
-        ),
-        // Current Position Marker
-        MarkerLayer(
-          markers: [
-            if (_routePoints.isNotEmpty)
-              Marker(
-                point: _routePoints.last,
-                width: 30,
-                height: 30,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF7B2FF7).withOpacity(0.3),
-                    border: Border.all(
-                      color: const Color(0xFF7B2FF7),
-                      width: 2,
-                    ),
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFF7B2FF7),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
+      },
+      markers: {
+        if (_routePoints.isNotEmpty)
+          Marker(
+            markerId: const MarkerId('current_location'),
+            position: _routePoints.last,
+            // TODO: Use custom marker icon with pulse effect if possible, 
+            // or stick to default marker for simplicity in Google Maps.
+            // Google Maps doesn't support custom widget markers out-of-the-box like flutter_map.
+            // We'll use the default marker for now, tinted purple.
+            icon: BitmapDescriptor.defaultMarkerWithHue(270.0), // Purple hue
+          ),
+      },
     );
   }
 
@@ -527,6 +575,32 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     );
   }
 
+  Widget _buildOfflineIndicator() {
+    return Container(
+      width: double.infinity,
+      color: Colors.red.withOpacity(0.8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: const Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.wifi_off, size: 14, color: Colors.white),
+            SizedBox(width: 8),
+            Text(
+              'การเชื่อมต่อขัดข้อง - กำลังพยายามเชื่อมต่อใหม่...',
+              style: TextStyle(
+                fontFamily: 'SukhumvitSet',
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _navIcon(IconData icon, {bool isActive = false}) {
     return GestureDetector(
       onTap: () {},
@@ -593,22 +667,42 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                     runSpacing: 10,
                     children: [10, 50, 100, 500, 1000].map((amount) {
                       return GestureDetector(
-                        onTap: () {
-                          setState(() => _donationTotal += amount);
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'บริจาค $amount บาท สำเร็จ ขอบคุณครับ! 🙏',
-                                style: const TextStyle(fontFamily: 'SukhumvitSet'),
-                              ),
-                              backgroundColor: const Color(0xFF4CAF50),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          );
+                        onTap: () async {
+                          // Refinement 4: Real Donation Integration
+                          if (widget.videoId != null) {
+                            try {
+                              WebSocketService().sendVideoInteraction(
+                                widget.videoId!,
+                                'gift',
+                                value: amount,
+                              );
+                              
+                              // แจ้งเตือนความสำเร็จ
+                              if (mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'ส่งของขวัญ $amount บาท สำเร็จ! 🙏',
+                                      style: const TextStyle(fontFamily: 'SukhumvitSet'),
+                                    ),
+                                    backgroundColor: const Color(0xFF4CAF50),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('เกิดข้อผิดพลาดในการบริจาค')),
+                                );
+                              }
+                            }
+                          } else {
+                            // Demo mode behavior
+                            setState(() => _donationTotal += amount);
+                            Navigator.pop(context);
+                          }
                         },
                         child: Container(
                           width: 90,
