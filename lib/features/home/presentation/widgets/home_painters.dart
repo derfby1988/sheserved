@@ -8,12 +8,14 @@ class DottedCirclePainter extends CustomPainter {
   final double strokeWidth;
   final double dashWidth;
   final double dashSpace;
+  final double rotationOffset; // New: allow external rotation
 
   DottedCirclePainter({
     required this.color,
     this.strokeWidth = 3.0,
     this.dashWidth = 8.0,
     this.dashSpace = 4.0,
+    this.rotationOffset = 0.0,
   });
 
   @override
@@ -37,7 +39,7 @@ class DottedCirclePainter extends CustomPainter {
     final angleStep = (2 * math.pi) / segments;
 
     for (int i = 0; i < segments; i++) {
-      final startAngle = i * angleStep;
+      final startAngle = (i * angleStep) + rotationOffset;
       final endAngle = startAngle + (dashLength / radius);
       
       path.addArc(
@@ -51,7 +53,8 @@ class DottedCirclePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant DottedCirclePainter oldDelegate) => 
+      oldDelegate.rotationOffset != rotationOffset || oldDelegate.color != color;
 }
 
 /// Custom Painter for Map Skeleton Grid Pattern
@@ -127,6 +130,7 @@ class RatioCirclePainter extends CustomPainter {
   final double strokeWidth;
   final String providerLabel;
   final String recipientLabel;
+  final bool showGlow;
 
   RatioCirclePainter({
     required this.providerRatio,
@@ -135,71 +139,107 @@ class RatioCirclePainter extends CustomPainter {
     required this.providerLabel,
     required this.recipientLabel,
     this.strokeWidth = 10.0,
+    this.showGlow = true,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - strokeWidth) / 2;
+    final radius = (size.width - strokeWidth * 1.5) / 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
 
-    final providerPaint = Paint()
-      ..color = providerColor
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final recipientPaint = Paint()
-      ..color = recipientColor
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    const gap = 0.15; // Gap between arcs in radians (about 8.5 degrees)
+    const gap = 0.15; // Gap between arcs in radians
     const totalAvailableAngle = 2 * math.pi - (2 * gap);
     
-    // Draw Provider arc (Top Half Focus)
-    if (providerRatio > 0.05) {
+    // 1. Draw Background Track (Dimmer version)
+    final bgPaint = Paint()
+      ..color = Colors.black.withOpacity(0.05)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, bgPaint);
+
+    // 2. Draw Arc Glow (Shadow Layer)
+    if (showGlow) {
+      final glowPaint = Paint()
+        ..strokeWidth = strokeWidth * 1.2
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+      if (providerRatio > 0.02) {
+        final sweepAngle = totalAvailableAngle * providerRatio;
+        final startAngle = (-math.pi / 2) - (sweepAngle / 2);
+        glowPaint.color = providerColor.withOpacity(0.3);
+        canvas.drawArc(rect, startAngle, sweepAngle, false, glowPaint);
+      }
+
+      if (providerRatio < 0.98) {
+        final sweepAngleRecipient = totalAvailableAngle * (1 - providerRatio);
+        final startAngleRecipient = (math.pi / 2) - (sweepAngleRecipient / 2);
+        glowPaint.color = recipientColor.withOpacity(0.3);
+        canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, glowPaint);
+      }
+    }
+
+    // 3. Draw Main Arcs with Gradients
+    final providerPaint = Paint()
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    if (providerRatio > 0.02) {
       final sweepAngle = totalAvailableAngle * providerRatio;
-      // Start from top-center and expand outwards symmetrically
       final startAngle = (-math.pi / 2) - (sweepAngle / 2);
       
+      providerPaint.shader = ui.Gradient.sweep(
+        center,
+        [
+          providerColor.withOpacity(0.6),
+          providerColor,
+          providerColor.withOpacity(0.6),
+        ],
+        [0.0, 0.5, 1.0],
+        TileMode.clamp,
+        startAngle,
+        startAngle + sweepAngle,
+      );
+      
       canvas.drawArc(rect, startAngle, sweepAngle, false, providerPaint);
-
-      _drawCapCircle(canvas, center, radius, startAngle, providerColor);
-      _drawCapCircle(canvas, center, radius, startAngle + sweepAngle, providerColor);
 
       if (providerLabel.isNotEmpty && providerRatio > 0.15) {
         _drawTextOnArc(canvas, providerLabel, radius, center, -math.pi / 2, Colors.white, strokeWidth);
       }
     }
 
-    // Draw Recipient arc (Bottom Half Focus)
-    if (providerRatio < 0.95) {
+    final recipientPaint = Paint()
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    if (providerRatio < 0.98) {
       final sweepAngleRecipient = totalAvailableAngle * (1 - providerRatio);
-      // Start from bottom-center and expand outwards symmetrically
       final startAngleRecipient = (math.pi / 2) - (sweepAngleRecipient / 2);
       
-      canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, recipientPaint);
+      recipientPaint.shader = ui.Gradient.sweep(
+        center,
+        [
+          recipientColor.withOpacity(0.6),
+          recipientColor,
+          recipientColor.withOpacity(0.6),
+        ],
+        [0.0, 0.5, 1.0],
+        TileMode.clamp,
+        startAngleRecipient,
+        startAngleRecipient + sweepAngleRecipient,
+      );
 
-      _drawCapCircle(canvas, center, radius, startAngleRecipient, recipientColor);
-      _drawCapCircle(canvas, center, radius, startAngleRecipient + sweepAngleRecipient, recipientColor);
+      canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, recipientPaint);
 
       if (recipientLabel.isNotEmpty && (1 - providerRatio) > 0.15) {
         _drawTextOnArc(canvas, recipientLabel, radius, center, math.pi / 2, Colors.white, strokeWidth);
       }
     }
-  }
-
-  void _drawCapCircle(Canvas canvas, Offset center, double radius, double angle, Color color) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    
-    final x = center.dx + radius * math.cos(angle);
-    final y = center.dy + radius * math.sin(angle);
-    
-    canvas.drawCircle(Offset(x, y), strokeWidth / 2, paint);
   }
 
   void _drawTextOnArc(
@@ -218,34 +258,24 @@ class RatioCirclePainter extends CustomPainter {
       textAlign: TextAlign.center,
     );
 
-    // แยกกลุ่มตัวอักษรภาษาไทยให้พยัญชนะ สระ และวรรณยุกต์อยู่ด้วยกัน
-    final List<String> charList = text.runes.map((r) => String.fromCharCode(r)).toList();
-    // หมายเหตุ: เพื่อความแม่นยำสูงสุดในภาษาไทย เราจะพยายามจับกลุ่มตัวอักษรที่มีสระ/วรรณยุกต์ติดกัน
     final List<String> clusters = [];
-    String currentCluster = '';
-    
-    // Logic พื้นฐานในการรวมวรรณยุกต์และสระในภาษาไทย
     for (int i = 0; i < text.length; i++) {
-      int charCode = text.codeUnitAt(i);
-      // ช่วงรหัสสระและวรรณยุกต์ไทย (บน/ล่าง)
-      bool isThaiMark = (charCode >= 0x0E31 && charCode <= 0x0E3A) || // สระบน/ล่าง
-                        (charCode >= 0x0E47 && charCode <= 0x0E4E);   // วรรณยุกต์
-      
-      if (isThaiMark && clusters.isNotEmpty) {
-        clusters[clusters.length - 1] += text[i];
-      } else {
-        clusters.add(text[i]);
-      }
+        int charCode = text.codeUnitAt(i);
+        bool isThaiMark = (charCode >= 0x0E31 && charCode <= 0x0E3A) || 
+                          (charCode >= 0x0E47 && charCode <= 0x0E4E);
+        
+        if (isThaiMark && clusters.isNotEmpty) {
+          clusters[clusters.length - 1] += text[i];
+        } else {
+          clusters.add(text[i]);
+        }
     }
 
     const double fontSize = 11.0;
-    // ปรับระยะห่างตามจำนวนกลุ่มตัวอักษร
     final double charAngleSpan = (fontSize * 0.85) / radius;
     final double totalTextAngle = clusters.length * charAngleSpan;
     
     double currentAngle = midAngle - (totalTextAngle / 2);
-
-    // ตรวจสอบว่าเป็นส่วนล่างของวงกลมหรือไม่ (สำหรับกลับหัวตัวหนังสือให้อ่านง่าย)
     bool isBottom = midAngle > 0 && midAngle < math.pi;
 
     for (int i = 0; i < clusters.length; i++) {
@@ -264,12 +294,8 @@ class RatioCirclePainter extends CustomPainter {
       );
       textPainter.layout();
 
-      // คำนวณความเบี่ยงเบนของมุมเล็กน้อย (สำหรับสระ/วรรณยุกต์จะไม่เพิ่มระยะห่าง)
       double angle = currentAngle;
-      
-      // ถ้าเป็นส่วนล่าง เราจะหมุนข้อความ 180 องศาเพื่อไม่ให้กลับหัว
       if (isBottom) {
-        // วาดสลับลำดับจากขวาไปซ้าย หรือหมุนตัวอักษรแต่ละตัว
         angle = midAngle + (midAngle - currentAngle);
       }
 
@@ -280,7 +306,7 @@ class RatioCirclePainter extends CustomPainter {
       canvas.translate(x, y);
       
       if (isBottom) {
-        canvas.rotate(angle - math.pi / 2); // หมุนตัวอักษรยืนขึ้นสำหรับด้านล่าง
+        canvas.rotate(angle - math.pi / 2);
       } else {
         canvas.rotate(angle + math.pi / 2);
       }

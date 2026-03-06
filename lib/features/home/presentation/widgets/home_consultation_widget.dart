@@ -1,4 +1,7 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -36,6 +39,8 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
   late AnimationController _rotationController;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  
+  bool _isInitialLoading = true; // Flag for skeleton loader
 
   // Scale animation for tactile feedback
   late AnimationController _scaleController;
@@ -130,7 +135,10 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
     super.dispose();
   }
 
-  void _onTapDown(TapDownDetails details) => _scaleController.reverse();
+  void _onTapDown(TapDownDetails details) {
+    HapticFeedback.lightImpact();
+    _scaleController.reverse();
+  }
   void _onTapUp(TapUpDetails details) => _scaleController.forward();
   void _onTapCancel() => _scaleController.forward();
 
@@ -146,10 +154,15 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         setState(() {
           _count = providerCount;
           _updateRatio(providerCount, recipientCount);
+          _isInitialLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+        });
+      }
     }
   }
 
@@ -246,35 +259,54 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                 decoration: BoxDecoration(
                   color: AppColors.backgroundWhite,
                   shape: BoxShape.circle,
-                  boxShadow: isMini
-                    ? [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppColors.backgroundWhite,
+                      AppColors.backgroundWhite.withOpacity(0.9),
+                      AppColors.backgroundWhite.withOpacity(0.8),
+                    ],
+                    stops: const [0.0, 0.8, 1.0],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isMini ? 0.15 : 0.08),
+                      blurRadius: isMini ? 8 : 15,
+                      spreadRadius: isMini ? 0 : 2,
+                      offset: Offset(0, isMini ? 2 : 4),
+                    ),
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.05),
+                      blurRadius: 20,
+                      spreadRadius: -5,
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.5),
+                    width: 1.5,
+                  ),
                 ),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     // Inner Dotted Line (Animated Spinning) - ซ่อนใน Mini Mode
                     if (!isMini)
-                      RotationTransition(
-                        turns: _rotationController,
-                        child: SizedBox(
-                          width: dottedSize,
-                          height: dottedSize,
-                          child: CustomPaint(
-                            painter: DottedCirclePainter(
-                              color: AppColors.textHint.withOpacity(0.3),
-                              strokeWidth: 1.5,
-                              dashWidth: 4,
-                              dashSpace: 3,
+                      AnimatedBuilder(
+                        animation: _rotationController,
+                        builder: (context, child) {
+                          return SizedBox(
+                            width: dottedSize,
+                            height: dottedSize,
+                            child: CustomPaint(
+                              painter: DottedCirclePainter(
+                                color: AppColors.primary.withOpacity(0.4),
+                                strokeWidth: 1.5,
+                                dashWidth: 4,
+                                dashSpace: 3,
+                                rotationOffset: _rotationController.value * 2 * math.pi,
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     
                     // Content
@@ -293,6 +325,12 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                       ? providerSnapshot.data!.values.fold<int>(0, (a, b) => a + b)
                                       : _count;
                                     final recipients = recipientSnapshot.data ?? 0;
+                                    final providerMap = providerSnapshot.data ?? {};
+                                    
+                                    // Show skeleton if it's the very first load and we have no data yet
+                                    if (_isInitialLoading && !providerSnapshot.hasData) {
+                                      return _buildSkeleton(baseSize, isMini);
+                                    }
                                     
                                     if (providerSnapshot.hasData) {
                                       debugPrint('HomeConsultationWidget: Stream update - providers: $providers, recipients: $recipients');
@@ -308,17 +346,23 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                         _updateRatio(providers, recipients);
                                       }
                                     });
-
-                                    return isMini 
-                                      ? _buildMiniContent(providers, baseSize)
-                                      : _buildMainContent(providers, baseSize);
+                                    
+                                    // Content fades in after loading
+                                    return AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 500),
+                                      child: isMini 
+                                        ? _buildMiniContent(providers, baseSize)
+                                        : _buildMainContent(providers, baseSize, recipients: recipients, providerMap: providerMap),
+                                    );
                                   }
                                 );
                               }
                             )
-                          : isMini
-                            ? _buildMiniContent(_count, baseSize)
-                            : _buildMainContent(_count, baseSize),
+                          : _isInitialLoading && widget.useRealtime // Modified: Show skeleton if initial loading and using realtime
+                            ? _buildSkeleton(baseSize, isMini)
+                            : isMini
+                              ? _buildMiniContent(_count, baseSize)
+                              : _buildMainContent(_count, baseSize),
                       ],
                     ),
                   ],
@@ -391,8 +435,8 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               },
             ),
             SizedBox(width: 3 * scale),
-            Text(
-              '$onlineCount',
+            _buildAnimatedCount(
+              onlineCount, 
               style: TextStyle(
                 fontSize: (11 * scale).clamp(8.0, 14.0),
                 fontWeight: FontWeight.bold,
@@ -405,12 +449,33 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
     );
   }
 
-  Widget _buildMainContent(int onlineCount, double baseSize) {
+  /// Animated Digit Counter
+  Widget _buildAnimatedCount(int value, {required TextStyle style}) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeOutExpo,
+      builder: (context, digit, child) {
+        return Text(
+          digit.toInt().toString(),
+          style: style,
+        );
+      },
+    );
+  }
+
+  Widget _buildMainContent(
+    int onlineCount, 
+    double baseSize, {
+    int recipients = 0, 
+    Map<String, int> providerMap = const {}
+  }) {
     final isOffline = onlineCount == 0;
-    final iconSize = 56 * (baseSize / 280);
+    final iconSize = 48 * (baseSize / 280); // Scaled down icon to save space
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         // Stethoscope Icon
         Icon(
@@ -419,7 +484,13 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           color: isOffline ? AppColors.textHint : AppColors.textPrimary,
         ),
         
-        SizedBox(height: 16 * (baseSize / 280)),
+        SizedBox(height: 6 * (baseSize / 280)),
+        
+        // Smart Status Indicator (🟢 ปรึกษาได้ทันที)
+        if (!isOffline) ...[
+          _buildSmartStatus(onlineCount, recipients, baseSize),
+          SizedBox(height: 4 * (baseSize / 280)),
+        ],
         
         // Title
         Text(
@@ -427,10 +498,15 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           style: AppTextStyles.heading3.copyWith(
             color: isOffline ? AppColors.textSecondary : AppColors.textPrimary,
             fontWeight: FontWeight.bold,
+            fontSize: 20 * (baseSize / 280),
           ),
         ),
         
-        SizedBox(height: 6 * (baseSize / 280)),
+        // Detailed Provider Row (e.g. หมอ 1 | เภสัช 2)
+        if (!isOffline && providerMap.isNotEmpty) 
+          _buildDetailedProviderText(providerMap, baseSize),
+
+        SizedBox(height: 2 * (baseSize / 280)),
         
         // Subtitle
         RichText(
@@ -438,6 +514,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           text: TextSpan(
             style: AppTextStyles.bodyMedium.copyWith(
               color: isOffline ? AppColors.textHint : AppColors.textPrimary,
+              fontSize: 12 * (baseSize / 280),
             ),
             children: [
               const TextSpan(text: 'แพทย์ '),
@@ -445,6 +522,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                 text: '&',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: AppColors.textSecondary,
+                  fontSize: 12 * (baseSize / 280),
                 ),
               ),
               const TextSpan(text: ' เภสัช'),
@@ -452,36 +530,25 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           ),
         ),
         
-        SizedBox(height: 12 * (baseSize / 280)),
-        
-        // Status Messaging (Empty State UX)
-        Text(
-          isOffline ? 'ขณะนี้อยู่นอกเวลาทำการ' : 'พร้อมให้บริการขณะนี้',
-          style: AppTextStyles.caption.copyWith(
-            color: isOffline ? AppColors.error.withOpacity(0.7) : AppColors.textSecondary,
-            fontWeight: isOffline ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-        
-        if (isOffline)
-          Padding(
-            padding: const EdgeInsets.only(top: 4.0),
-            child: Text(
-              'ฝากข้อความทิ้งไว้ได้เลย',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 10,
-              ),
+        if (isOffline) ...[
+          SizedBox(height: 6 * (baseSize / 280)),
+          // Status Messaging (Empty State UX)
+          Text(
+            'ขณะนี้อยู่นอกเวลาทำการ',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.error.withOpacity(0.7),
+              fontWeight: FontWeight.w600,
+              fontSize: 10 * (baseSize / 280),
             ),
           ),
-        
-        SizedBox(height: 8 * (baseSize / 280)),
-        
-        // Online Count Display
-        _buildOnlineCount(onlineCount, baseSize),
+          SizedBox(height: 2 * (baseSize / 280)),
+          _buildOnlineCount(onlineCount, baseSize),
+        ],
       ],
     );
   }
+
 
   Widget _buildOnlineCount(int onlineCount, double baseSize) {
     return Row(
@@ -509,14 +576,150 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           },
         ),
         const SizedBox(width: 8),
-        Text(
-          '$onlineCount ราย',
+        _buildAnimatedCount(
+          onlineCount,
           style: AppTextStyles.bodySmall.copyWith(
             color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
             fontWeight: onlineCount > 0 ? FontWeight.bold : FontWeight.normal,
+            fontSize: 14 * (baseSize / 280),
+          ),
+        ),
+        Text(
+          ' ราย',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+            fontSize: 14 * (baseSize / 280),
           ),
         ),
       ],
+    );
+  }
+
+  /// Skeleton Loading Widget
+  Widget _buildSkeleton(double baseSize, bool isMini) {
+    return Shimmer.fromColors(
+      baseColor: AppColors.primary.withOpacity(0.05),
+      highlightColor: AppColors.backgroundWhite,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Icon Placeholder
+          Container(
+            width: 56 * (baseSize / 280),
+            height: 56 * (baseSize / 280),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+          if (!isMini) ...[
+            SizedBox(height: 16 * (baseSize / 280)),
+            // Status Placeholder
+            Container(
+              width: 100 * (baseSize / 280),
+              height: 12 * (baseSize / 280),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            SizedBox(height: 12 * (baseSize / 280)),
+            // Title Placeholder
+            Container(
+              width: 80 * (baseSize / 280),
+              height: 18 * (baseSize / 280),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            SizedBox(height: 8 * (baseSize / 280)),
+            // Subtitle Placeholder
+            Container(
+              width: 120 * (baseSize / 280),
+              height: 12 * (baseSize / 280),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// New: Smart Status Indicator with Wait Time logic
+  Widget _buildSmartStatus(int providers, int recipients, double baseSize) {
+    String message = 'พร้อมให้บริการขณะนี้';
+    Color color = AppColors.success;
+    
+    if (recipients > 0) {
+      final waitMin = (recipients / providers * 5).ceil();
+      message = 'รอประมาณ $waitMin-${waitMin + 5} นาที';
+      color = AppColors.warning;
+    } else if (providers > 0) {
+      message = 'ปรึกษาได้ทันที';
+      color = AppColors.success;
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 8 * (baseSize / 280), 
+        vertical: 2 * (baseSize / 280)
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6 * (baseSize / 280),
+            height: 6 * (baseSize / 280),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            message,
+            style: AppTextStyles.caption.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 10 * (baseSize / 280),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// New: Detailed Provider Text Parser
+  Widget _buildDetailedProviderText(Map<String, int> providerMap, double baseSize) {
+    // Note: Use hardcoded IDs mapping based on your DB or profession names logic
+    // Usually profession_id is UUID, but in dev it might be 'doctor', 'pharmacist' 
+    // This is a simplified display logic.
+    List<String> parts = [];
+    providerMap.forEach((id, count) {
+      if (id.toLowerCase().contains('doctor') || id == 'prof_doc_uuid_placeholder') {
+        parts.add('หมอ $count');
+      } else if (id.toLowerCase().contains('pharma') || id == 'prof_pharma_uuid_placeholder') {
+        parts.add('เภสัช $count');
+      }
+    });
+
+    if (parts.isEmpty && providerMap.isNotEmpty) {
+      int total = providerMap.values.fold(0, (a, b) => a + b);
+      parts.add('ผู้เชี่ยวชาญ $total');
+    }
+
+    return Text(
+      parts.join(' | '),
+      style: AppTextStyles.bodySmall.copyWith(
+        color: AppColors.textSecondary,
+        fontSize: 10 * (baseSize / 280),
+      ),
     );
   }
 }
