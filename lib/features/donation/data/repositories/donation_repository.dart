@@ -19,6 +19,19 @@ class DonationRepository {
         .toList();
   }
 
+  /// ดึงเฉพาะหมวดหมู่สำหรับแจ้งเหตุฉุกเฉิน
+  Future<List<DonationCategory>> getEmergencyCategories() async {
+    final response = await _client
+        .from('donation_categories')
+        .select()
+        .eq('is_emergency', true)
+        .order('display_order');
+    
+    return (response as List)
+        .map((json) => DonationCategory.fromJson(json))
+        .toList();
+  }
+
   /// ดึงข้อมูลหมวดหมู่แบบ Real-time
   Stream<List<DonationCategory>> watchCategories() {
     return _client

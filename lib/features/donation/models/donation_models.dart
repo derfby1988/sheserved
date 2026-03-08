@@ -54,6 +54,7 @@ class DonationCategory {
   final String? iconName;
   final bool isEmergency;
   final int displayOrder;
+  final List<String> volunteerProfessionIds;
   final List<DonationCategoryField> customFields;
 
   const DonationCategory({
@@ -63,6 +64,7 @@ class DonationCategory {
     this.iconName,
     this.isEmergency = false,
     this.displayOrder = 0,
+    this.volunteerProfessionIds = const [],
     this.customFields = const [],
   });
 
@@ -73,6 +75,13 @@ class DonationCategory {
       fields = list.map((e) => DonationCategoryField.fromJson(e)).toList();
     }
 
+    List<String> volunteerIds = [];
+    if (json['volunteer_profession_ids'] != null) {
+      if (json['volunteer_profession_ids'] is List) {
+        volunteerIds = List<String>.from(json['volunteer_profession_ids']);
+      }
+    }
+
     return DonationCategory(
       id: json['id'],
       name: json['name'] ?? '',
@@ -80,6 +89,7 @@ class DonationCategory {
       iconName: json['icon_name'],
       isEmergency: json['is_emergency'] ?? false,
       displayOrder: json['display_order'] ?? 0,
+      volunteerProfessionIds: volunteerIds,
       customFields: fields,
     );
   }
@@ -92,6 +102,7 @@ class DonationCategory {
       'icon_name': iconName,
       'is_emergency': isEmergency,
       'display_order': displayOrder,
+      'volunteer_profession_ids': volunteerProfessionIds,
       'custom_fields': customFields.map((e) => e.toJson()).toList(),
     };
   }

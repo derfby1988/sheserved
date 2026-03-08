@@ -51,5 +51,9 @@
 	<string>แอปต้องการเข้าถึงคลังภาพเพื่อเลือกรูปประกอบบทความ</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>แอปต้องการเข้าถึงไมโครโฟนสำหรับการถ่ายวิดีโอ (ถ้ามี)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อแสดงบนแผนที่และช่วยในการนำทางเหตุฉุกเฉิน</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อติดตามความคืบหน้าของรถฉุกเฉิน</string>
 </dict>
 </plist>

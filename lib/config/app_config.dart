@@ -109,6 +109,13 @@ class AppConfig {
   static const String vegaApiKey = 'DEVELOPMENT_MOCK_KEY';
 
   // =====================================================
+  // GOOGLE MAPS CONFIGURATION
+  // =====================================================
+  
+  /// Google Maps API Key (ใช้สำหรับ Directions API)
+  static const String googleMapsApiKey = 'AIzaSyB_cex2WRkdTKElFJ-Cjgsfhm0kk1AZkcQ';
+
+  // =====================================================
   // LEGACY SUPPORT
   // =====================================================
   

@@ -183,6 +183,7 @@ class ProfessionRepository {
     required UserCategory category,
     String? colorHex,
     bool requiresVerification = true,
+    bool isVolunteer = false,
     int displayOrder = 0,
   }) async {
     final now = DateTime.now();
@@ -195,6 +196,7 @@ class ProfessionRepository {
       'color_hex': colorHex,
       'is_built_in': false,
       'is_active': true,
+      'is_volunteer': isVolunteer,
       'requires_verification': requiresVerification,
       'display_order': displayOrder,
       'created_at': now.toIso8601String(),

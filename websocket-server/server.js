@@ -226,6 +226,142 @@ io.on('connection', (socket) => {
       socket.broadcast.emit('user-offline', { userId });
     }
   });
+
+  // Handle Video Interactions
+  socket.on('video-interaction', async (data) => {
+    const { videoId, userId, type, value } = data;
+    console.log(`[Video ${videoId}] Interaction from ${userId}: ${type} (${value})`);
+
+    if (pool && videoId && userId) {
+      try {
+        await pool.query(
+          `INSERT INTO video_interactions (video_id, user_id, type, value, created_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [videoId, userId, type, value || 0]
+        );
+
+        // Broadcast back to clients in the room
+        socketService.broadcastInteraction(videoId, { videoId, userId, type, value });
+      } catch (err) {
+        console.error('Failed to save interaction:', err.message);
+      }
+    } else {
+      // Demo mode / No DB: Broadcast blindly
+      socketService.broadcastInteraction(videoId, { videoId, userId, type, value });
+    }
+  });
+
+  // Handle Emergency Alerts
+  socket.on('emergency-alert', async (data) => {
+    const { userId, categoryId, videoId, type, text } = data;
+    console.log(`[Emergency] User ${userId} triggered alert for category ${categoryId}`);
+
+    if (pool && categoryId) {
+      try {
+        // 1. Get category info (name + volunteer profession ids)
+        const catRes = await pool.query(
+          `SELECT name, volunteer_profession_ids FROM donation_categories WHERE id = $1`,
+          [categoryId]
+        );
+
+        // 2. Get latest GPS coordinates of the emergency from video_gps_tracks
+        let emergencyLat = null;
+        let emergencyLng = null;
+        if (videoId) {
+          const gpsRes = await pool.query(
+            `SELECT latitude, longitude FROM video_gps_tracks 
+             WHERE video_id = $1 ORDER BY timestamp_offset DESC LIMIT 1`,
+            [videoId]
+          );
+          if (gpsRes.rows.length > 0) {
+            emergencyLat = gpsRes.rows[0].latitude;
+            emergencyLng = gpsRes.rows[0].longitude;
+          }
+        }
+
+        if (catRes.rows.length > 0) {
+          const categoryName = catRes.rows[0].name;
+          const volunteerIds = catRes.rows[0].volunteer_profession_ids;
+          if (volunteerIds && volunteerIds.length > 0) {
+            // Find users who have these volunteer professions AND are active
+            const userRes = await pool.query(
+              `SELECT DISTINCT ugr.user_id 
+                FROM user_group_roles ugr
+                LEFT JOIN consumer_profiles cp ON ugr.user_id = cp.user_id
+                WHERE ugr.profession_id = ANY($1) 
+                  AND (cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL)`,
+              [volunteerIds]
+            );
+
+            const targetUsers = userRes.rows.map(row => row.user_id);
+
+            // Send to target users with full payload including real GPS
+            targetUsers.forEach(targetId => {
+              if (targetId !== userId) {
+                io.to(`user-${targetId}`).emit('emergency-notification', {
+                  senderId: userId,
+                  categoryId,
+                  categoryName: categoryName || '',
+                  videoId,
+                  type,
+                  latitude: emergencyLat,
+                  longitude: emergencyLng,
+                  text: text || 'มีการแจ้งเหตุฉุกเฉินใหม่ที่คุณสามารถให้ความช่วยเหลือได้',
+                  timestamp: new Date().toISOString()
+                });
+              }
+            });
+            console.log(`[Emergency] Alert sent to ${targetUsers.length} volunteers (GPS: ${emergencyLat}, ${emergencyLng})`);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to process emergency alert:', err.message);
+      }
+    }
+  });
+
+  // Handle Rescue Status Updates (Feedback Loop to Victim + DB Persistence)
+  socket.on('rescue-status-update', async (data) => {
+    const { videoId, volunteerId, status, victimId, responseId } = data;
+    console.log(`[Rescue] Volunteer: ${volunteerId} updated status to ${status} for incident ${videoId}`);
+
+    // 1. Persist to DB as single source of truth
+    if (pool && responseId) {
+      try {
+        const updates = { status, updated_at: new Date().toISOString() };
+        if (status === 'arrived') updates.arrived_at = new Date().toISOString();
+        if (status === 'resolved' || status === 'cancelled') updates.resolved_at = new Date().toISOString();
+
+        const setClauses = Object.entries(updates).map(([key, _], i) => `${key} = $${i + 1}`).join(', ');
+        const values = Object.values(updates);
+        values.push(responseId);
+
+        await pool.query(
+          `UPDATE incident_responses SET ${setClauses} WHERE id = $${values.length}`,
+          values
+        );
+        console.log(`[Rescue] DB updated: response ${responseId} -> ${status}`);
+      } catch (dbErr) {
+        console.error('[Rescue] DB update failed:', dbErr.message);
+      }
+    }
+
+    // 2. Notify the victim in real-time
+    if (victimId) {
+      io.to(`user-${victimId}`).emit('rescue-incoming', {
+        videoId,
+        volunteerId,
+        status,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`[Rescue] Notified victim ${victimId} of status: ${status}`);
+    }
+
+    // 3. If cancelled, also notify other connected volunteers so they know the spot is open
+    if (status === 'cancelled') {
+      io.emit('rescue-cancelled', { videoId, volunteerId });
+    }
+  });
 });
 
 // Health check endpoint

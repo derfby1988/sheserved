@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/service_locator.dart';
+import '../../../admin/models/profession.dart';
+import '../../../admin/data/repositories/profession_repository.dart';
 import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
 
@@ -113,12 +115,28 @@ class _CategoryManagementPanel extends StatefulWidget {
 
 class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
   List<DonationCategory> _categories = [];
+  List<Profession> _volunteerProfessions = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadCategories();
+    _loadVolunteerProfessions();
+  }
+
+  Future<void> _loadVolunteerProfessions() async {
+    try {
+      final repo = ProfessionRepository(Supabase.instance.client);
+      final list = await repo.getAllProfessions();
+      if (mounted) {
+        setState(() {
+          _volunteerProfessions = list.where((p) => p.isVolunteer).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading volunteer professions: $e');
+    }
   }
 
   Future<void> _loadCategories() async {
@@ -138,42 +156,120 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     final nameController = TextEditingController(text: category?.name);
     final iconController = TextEditingController(text: category?.iconName);
     bool isEmergency = category?.isEmergency ?? false;
+    List<String> selectedVolunteers = List.from(category?.volunteerProfessionIds ?? []);
+    bool isSaving = false;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(category == null ? 'เพิ่มหมวดหมู่' : 'แก้ไขหมวดหมู่'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อหมวดหมู่')),
-              TextField(controller: iconController, decoration: const InputDecoration(labelText: 'ชื่อไอคอน (Material/Slug)')),
-              SwitchListTile(
-                title: const Text('เป็นเหตุฉุกเฉิน?'),
-                value: isEmergency,
-                onChanged: (val) => setDialogState(() => isEmergency = val),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อหมวดหมู่')),
+                TextField(controller: iconController, decoration: const InputDecoration(labelText: 'ชื่อไอคอน (Material/Slug)')),
+                SwitchListTile(
+                  title: const Text('เป็นเหตุฉุกเฉิน?'),
+                  value: isEmergency,
+                  onChanged: isSaving ? null : (val) => setDialogState(() => isEmergency = val),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                if (_volunteerProfessions.isNotEmpty) ...[
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text('อาชีพจิตอาสาที่เกี่ยวข้อง:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  ..._volunteerProfessions.map((prof) {
+                    return CheckboxListTile(
+                      title: Text(prof.name),
+                      value: selectedVolunteers.contains(prof.id),
+                      onChanged: isSaving ? null : (bool? value) {
+                        setDialogState(() {
+                          if (value == true) {
+                            selectedVolunteers.add(prof.id);
+                          } else {
+                            selectedVolunteers.remove(prof.id);
+                          }
+                        });
+                      },
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  }),
+                ],
+              ],
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
             TextButton(
-              onPressed: () async {
-                final data = {
-                  'name': nameController.text,
-                  'icon_name': iconController.text,
-                  'is_emergency': isEmergency,
-                };
-                if (category == null) {
-                  await widget.repository.createCategory(data);
-                } else {
-                  await widget.repository.updateCategory(category.id, data);
-                }
-                if (mounted) Navigator.pop(context);
-                _loadCategories();
-              },
-              child: const Text('บันทึก'),
+              onPressed: isSaving ? null : () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
+            ),
+            ElevatedButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (nameController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('กรุณากรอกชื่อหมวดหมู่')),
+                        );
+                        return;
+                      }
+                      setDialogState(() => isSaving = true);
+                      try {
+                        final data = {
+                          'name': nameController.text.trim(),
+                          'icon_name': iconController.text.trim(),
+                          'is_emergency': isEmergency,
+                          'volunteer_profession_ids': selectedVolunteers,
+                        };
+                        if (category == null) {
+                          await widget.repository.createCategory(data);
+                        } else {
+                          await widget.repository.updateCategory(category.id, data);
+                        }
+                        // Verify saved: reload list from DB
+                        await _loadCategories();
+                        if (mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(category == null
+                                  ? 'เพิ่มหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓'
+                                  : 'บันทึกหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓'),
+                              backgroundColor: Colors.green,
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint('Error saving category: $e');
+                        setDialogState(() => isSaving = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('บันทึกไม่สำเร็จ: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: isSaving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('บันทึก'),
             ),
           ],
         ),

@@ -26,6 +26,7 @@ class GlassmorphismButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
         child: BackdropFilter(
@@ -105,6 +106,7 @@ class GlassTabButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(

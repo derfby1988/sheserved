@@ -161,6 +161,20 @@ class SyncConfig {
     syncOnAppStart = true;
     syncOnResume = true;
   }
+
+  // =====================================================
+  // VIDEO CONTROL SETTINGS - การควบคุมระบบวิดีโอ
+  // =====================================================
+
+  /// ระยะเวลาห้ามอัปโหลดซ้ำ (วินาที)
+  /// ป้องกันการยิงถล่ม
+  static int videoUploadCooldownSeconds = 3;
+
+  /// ขนาดไฟล์วิดีโอสูงสุด (MB)
+  static int maxVideoFileSizeMB = 20;
+
+  /// โควตาการอัปโหลดต่อวัน (ครั้ง)
+  static int dailyVideoUploadQuota = 50;
 }
 
 /// Sync Mode Presets

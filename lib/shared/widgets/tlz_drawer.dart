@@ -4,6 +4,7 @@ import 'dart:ui';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../services/auth_service.dart';
+import '../../services/service_locator.dart';
 import '../../features/consultation/presentation/logic/consultation_guard.dart';
 import '../../features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import '../../features/pharmacy/presentation/pages/pharmacy_products_page.dart';
@@ -60,6 +61,9 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   // Scroll Controller สำหรับจัดการ Dynamic Curve
   late ScrollController _scrollController;
   double _scrollOffset = 0.0;
+
+  // Volunteer role check
+  bool _isVolunteer = false;
   
   @override
   void initState() {
@@ -71,6 +75,8 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
         _scrollOffset = _scrollController.offset;
       });
     });
+
+    _checkVolunteerRole();
     
     // Initialize animation controller
     _animationController = AnimationController(
@@ -109,6 +115,16 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
       widget.onClose!();
     } else {
       Navigator.of(context).pop();
+    }
+  }
+
+  void _checkVolunteerRole() async {
+    final user = ServiceLocator.instance.currentUser;
+    if (user != null) {
+      final isVol = await ServiceLocator.instance.videoRepository.isUserVolunteer(user.id);
+      if (mounted) {
+        setState(() => _isVolunteer = isVol);
+      }
     }
   }
   
@@ -434,6 +450,14 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/screening'),
                               isSubItem: true,
                             ),
+                            if (_isVolunteer)
+                              _buildMenuItem(
+                                context,
+                                title: 'ศูนย์กู้ภัยจิตอาสา',
+                                icon: Icons.map,
+                                onTap: () => _navigateTo(context, '/rescue-map'),
+                                isSubItem: true,
+                              ),
                           ],
                           
                           const SizedBox(height: 16),
@@ -586,6 +610,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               title: 'จัดการหมวดหมู่ยา/สินค้า',
                               icon: Icons.local_pharmacy_outlined,
                               onTap: () => _navigateTo(context, '/admin/pharmacy_filters'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
+                              title: 'ควบคุมระบบวิดีโอ',
+                              icon: Icons.video_settings,
+                              onTap: () => _navigateTo(context, '/admin/video-control'),
                               isSubItem: true,
                             ),
                           ],

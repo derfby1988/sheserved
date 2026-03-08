@@ -45,6 +45,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'features/chat/data/models/chat_models.dart';
 import 'features/profile/presentation/pages/profile_page.dart';
 import 'features/video/presentation/pages/emergency_live_page.dart';
+import 'features/video/presentation/pages/rescue_page.dart';
+import 'features/admin/presentation/pages/video_admin_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -141,8 +143,10 @@ class SheservedApp extends StatelessWidget {
         '/donate': (context) => const DonationDashboardPage(),
         '/admin/donations': (context) => const DonationAdminPage(),
         '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
+        '/admin/video-control': (context) => const VideoAdminPage(),
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
+        '/rescue-map': (context) => const RescuePage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat-room') {

@@ -28,6 +28,10 @@ class WebSocketService {
   final _videoStatusController = StreamController<Map<String, dynamic>>.broadcast();
   final _videoInteractionController = StreamController<Map<String, dynamic>>.broadcast();
   
+  // Emergency Stream Controller
+  final _emergencyNotificationController = StreamController<Map<String, dynamic>>.broadcast();
+  final _rescueIncomingController = StreamController<Map<String, dynamic>>.broadcast();
+  
   // Getters
   bool get isConnected => _isConnected;
   bool get isEnabled => _isEnabled;
@@ -44,6 +48,10 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get videoProgressStream => _videoProgressController.stream;
   Stream<Map<String, dynamic>> get videoStatusStream => _videoStatusController.stream;
   Stream<Map<String, dynamic>> get videoInteractionStream => _videoInteractionController.stream;
+  
+  // Emergency Getters
+  Stream<Map<String, dynamic>> get emergencyNotificationStream => _emergencyNotificationController.stream;
+  Stream<Map<String, dynamic>> get rescueIncomingStream => _rescueIncomingController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -166,6 +174,17 @@ class WebSocketService {
 
       _socket!.on('video-interaction', (data) {
         _videoInteractionController.add(Map<String, dynamic>.from(data));
+      });
+
+      // Emergency Event
+      _socket!.on('emergency-notification', (data) {
+        debugPrint('Emergency notification received: $data');
+        _emergencyNotificationController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('rescue-incoming', (data) {
+        debugPrint('Rescue incoming notification received: $data');
+        _rescueIncomingController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -300,6 +319,49 @@ class WebSocketService {
       'signal': signalData,
     });
   }
+
+  /// Send Emergency Alert to Volunteers
+  void sendEmergencyAlert({
+    required String userId,
+    required String categoryId,
+    String? videoId,
+    String? type,
+    String? text,
+  }) {
+    if (!_isConnected || _socket == null) {
+      debugPrint('WebSocket not connected');
+      return;
+    }
+    
+    _socket!.emit('emergency-alert', {
+      'userId': userId,
+      'categoryId': categoryId,
+      'videoId': videoId,
+      'type': type,
+      'text': text,
+    });
+    debugPrint('Sent emergency alert for category: $categoryId');
+  }
+
+  /// Send Rescue Status Update (Feedback loop)
+  void sendRescueStatusUpdate({
+    required String videoId,
+    required String volunteerId,
+    required String status,
+    String? victimId,
+    String? responseId,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    
+    _socket!.emit('rescue-status-update', {
+      'videoId': videoId,
+      'volunteerId': volunteerId,
+      'status': status,
+      'victimId': victimId,
+      'responseId': responseId,
+    });
+    debugPrint('Sent rescue status update: $status for video: $videoId');
+  }
   
   /// Disconnect from server
   void disconnect() {
@@ -326,10 +388,11 @@ class WebSocketService {
   }
 
   /// Send a video interaction (like, gift)
-  void sendVideoInteraction(String videoId, String type, {int value = 0}) {
+  void sendVideoInteraction(String videoId, String userId, String type, {int value = 0}) {
     if (!_isConnected || _socket == null) return;
     _socket!.emit('video-interaction', {
       'videoId': videoId,
+      'userId': userId,
       'type': type,
       'value': value,
     });
@@ -349,5 +412,7 @@ class WebSocketService {
     _videoProgressController.close();
     _videoStatusController.close();
     _videoInteractionController.close();
+    _emergencyNotificationController.close();
+    _rescueIncomingController.close();
   }
 }

@@ -585,6 +585,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   bool _isCategoriesLoading = true;
   late UserCategory _selectedCategory;
   bool _requiresVerification = true;
+  bool _isVolunteer = false;
   String _selectedIcon = 'work';
   String _selectedColor = '#71BE0A'; // Default to AppColors.primary
   String? _copyFromProfessionId;
@@ -626,6 +627,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
         
     _requiresVerification =
         widget.existingProfession?.requiresVerification ?? true;
+    _isVolunteer = widget.existingProfession?.isVolunteer ?? false;
     _selectedIcon = widget.existingProfession?.iconName ?? 'work';
     _selectedColor = widget.existingProfession?.colorHex ?? '#71BE0A';
 
@@ -863,6 +865,19 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               activeThumbColor: AppColors.primary,
               contentPadding: EdgeInsets.zero,
             ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: const Text('สิทธิอาสาสมัคร (Volunteer Role)'),
+              subtitle: const Text('สามารถรับแจ้งเตือนและเข้าช่วยเหลือเมื่อเกิดเหตุฉุกเฉินได้'),
+              value: _isVolunteer,
+              onChanged: (value) {
+                setState(() {
+                  _isVolunteer = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
             if (!isEditing) ...[
               const Divider(height: 32),
               Text(
@@ -954,9 +969,19 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           'color_hex': _selectedColor,
           'category': _selectedCategory.value,
           'requires_verification': _requiresVerification,
+          'is_volunteer': _isVolunteer,
         });
         widget.onSave(updated);
-        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('บันทึกอาชีพ "$name" สำเร็จ ✓'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       } else {
         final newProfession = await repo.createProfession(
           name: name,
@@ -966,6 +991,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           colorHex: _selectedColor,
           category: _selectedCategory,
           requiresVerification: _requiresVerification,
+          isVolunteer: _isVolunteer,
         );
 
         if (_copyFromProfessionId != null) {
@@ -977,7 +1003,16 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
         }
 
         widget.onSave(newProfession);
-        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('เพิ่มอาชีพ "$name" สำเร็จ ✓'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error saving profession: $e');
@@ -985,7 +1020,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('ไม่สามารถบันทึกข้อมูลได้: $e'),
+            content: Text('บันทึกไม่สำเร็จ: $e'),
             backgroundColor: AppColors.error,
           ),
         );

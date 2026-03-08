@@ -163,6 +163,7 @@ class Profession {
   final UserCategory category;
   final bool isBuiltIn; // true = ห้ามลบ (consumer, expert, clinic)
   final bool isActive;
+  final bool isVolunteer; // สามารถเป็นอาสาสมัครลงพื้นที่ช่วยเหลือได้
   final bool requiresVerification; // ต้องตรวจสอบก่อนใช้งาน
   final int displayOrder;
   final int fieldCount; // จำนวน fields (calculated)
@@ -181,6 +182,7 @@ class Profession {
     required this.category,
     this.isBuiltIn = false,
     this.isActive = true,
+    this.isVolunteer = false,
     this.requiresVerification = true,
     this.displayOrder = 0,
     this.fieldCount = 0,
@@ -208,6 +210,7 @@ class Profession {
         category: UserCategory.consumer,
         isBuiltIn: true,
         isActive: true,
+        isVolunteer: false,
         requiresVerification: false,
         displayOrder: 0,
         createdAt: now,
@@ -223,6 +226,7 @@ class Profession {
         category: UserCategory.provider,
         isBuiltIn: true,
         isActive: true,
+        isVolunteer: false,
         requiresVerification: true,
         displayOrder: 1,
         createdAt: now,
@@ -238,6 +242,7 @@ class Profession {
         category: UserCategory.provider,
         isBuiltIn: true,
         isActive: true,
+        isVolunteer: false,
         requiresVerification: true,
         displayOrder: 2,
         createdAt: now,
@@ -256,6 +261,7 @@ class Profession {
       'category': category.value,
       'is_built_in': isBuiltIn,
       'is_active': isActive,
+      'is_volunteer': isVolunteer,
       'requires_verification': requiresVerification,
       'display_order': displayOrder,
       'color_hex': colorHex,
@@ -281,6 +287,7 @@ class Profession {
       category: category,
       isBuiltIn: json['is_built_in'] ?? false,
       isActive: json['is_active'] ?? true,
+      isVolunteer: json['is_volunteer'] ?? false,
       requiresVerification: json['requires_verification'] ?? true,
       displayOrder: json['display_order'] ?? 0,
       colorHex: json['color_hex'],
@@ -305,6 +312,7 @@ class Profession {
     UserCategory? category,
     bool? isBuiltIn,
     bool? isActive,
+    bool? isVolunteer,
     bool? requiresVerification,
     int? displayOrder,
     String? colorHex,
@@ -322,6 +330,7 @@ class Profession {
       category: category ?? this.category,
       isBuiltIn: isBuiltIn ?? this.isBuiltIn,
       isActive: isActive ?? this.isActive,
+      isVolunteer: isVolunteer ?? this.isVolunteer,
       requiresVerification: requiresVerification ?? this.requiresVerification,
       displayOrder: displayOrder ?? this.displayOrder,
       colorHex: colorHex ?? this.colorHex,
