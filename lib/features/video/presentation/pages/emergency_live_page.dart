@@ -61,7 +61,6 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   
   // Responders data
   List<Map<String, dynamic>> _responders = [];
-  Timer? _responderUpdateTimer;
 
   // Emergency Recording
   CameraController? _cameraController;
@@ -240,54 +239,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           _responders = responders;
         });
         _adjustMapBounds();
-        _startResponderSimulation();
       }
     } catch (e) {
       debugPrint('Error loading responders: $e');
     }
-  }
-
-  void _startResponderSimulation() {
-    _responderUpdateTimer?.cancel();
-    _responderUpdateTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (!mounted || _routePoints.isEmpty) return;
-      
-      final target = _routePoints.last;
-      
-      setState(() {
-        for (var i = 0; i < _responders.length; i++) {
-          var r = _responders[i];
-          if (r['currentLat'] == null || r['currentLng'] == null) continue;
-          
-          double dist = Geolocator.distanceBetween(
-             r['currentLat'], r['currentLng'],
-             target.latitude, target.longitude
-          );
-          
-          if (dist < 50) {
-             r['estimatedMinutes'] = 0; // Arrived
-             continue;
-          }
-          
-          // Randomize speed slightly for realism (in m/s)
-          double speed = r['currentSpeed'] as double;
-          speed = speed + ((DateTime.now().millisecond % 5) - 2); // +/- 2 m/s
-          if (speed < 5) speed = 5; // Min speed
-          if (speed > 30) speed = 30; // Max speed
-          
-          r['currentSpeed'] = speed;
-          r['estimatedMinutes'] = (dist / speed / 60).ceil();
-          
-          // Move slightly towards target (Simple linear interpolation for demo)
-          // Move dist in 3 seconds = speed * 3 meters
-          double stepRatio = (speed * 3) / dist;
-          if (stepRatio > 1) stepRatio = 1;
-          
-          r['currentLat'] = r['currentLat'] + (target.latitude - r['currentLat']) * stepRatio;
-          r['currentLng'] = r['currentLng'] + (target.longitude - r['currentLng']) * stepRatio;
-        }
-      });
-    });
   }
 
   void _adjustMapBounds() {
@@ -356,10 +311,6 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         setState(() {
           _routePoints.add(point);
         });
-        // Refinement 1: Map Auto-Center
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLng(point),
-        );
       }
     });
 
@@ -448,7 +399,6 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _videoStatusSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
-    _responderUpdateTimer?.cancel();
     if (_currentVideoId != null) {
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     }
@@ -1675,7 +1625,6 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           _routePoints.clear();
           _routePoints.addAll(newRoute);
         });
-        _adjustMapBounds();
       }
     }
   }
