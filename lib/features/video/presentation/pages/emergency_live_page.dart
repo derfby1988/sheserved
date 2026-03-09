@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:intl/intl.dart';
 import '../../models/video_models.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
@@ -39,6 +40,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   int _likeCount = 1200;
   double _donationTotal = 625;
   bool _isConnected = true;
+  String? _currentVideoId;
   late AnimationController _liveBlinkController;
   late AnimationController _pulseController;
   GoogleMapController? _mapController;
@@ -56,6 +58,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   
   // Custom logic to avoid resetting polyline too often
   VideoGpsTrack? _lastSyncedVideoTrack;
+  
+  // Responders data
+  List<Map<String, dynamic>> _responders = [];
+  Timer? _responderUpdateTimer;
 
   // Emergency Recording
   CameraController? _cameraController;
@@ -110,6 +116,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         );
       }
     });
+    
+    _currentVideoId = widget.videoId;
 
     _liveBlinkController = AnimationController(
       vsync: this,
@@ -169,22 +177,22 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   void _loadInitialData() async {
-    if (widget.videoId != null) {
+    if (_currentVideoId != null) {
       final summary = await ServiceLocator.instance.videoRepository
-          .getInteractionSummary(widget.videoId!);
+          .getInteractionSummary(_currentVideoId!);
       setState(() {
         _likeCount = summary['likes'] ?? 0;
         _donationTotal = summary['donations']?.toDouble() ?? 0.0;
       });
 
       // Fetch Video and handle reproduction
-      final video = await ServiceLocator.instance.videoRepository.getVideoById(widget.videoId!);
+      final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
       if (video != null && video.bunnyUrl != null) {
          _initializePlayer(video.bunnyUrl!);
       }
       
       // Fetch GPS Tracks for the video
-      final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(widget.videoId!);
+      final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(_currentVideoId!);
       if (tracks.isNotEmpty) {
           _dbGpsTracks = tracks;
       }
@@ -207,6 +215,116 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         });
       }
     }
+    
+    // Fetch responders if watching a video
+    if (_currentVideoId != null) {
+      _loadResponders();
+    }
+  }
+
+  Future<void> _loadResponders() async {
+    try {
+      final responders = await ServiceLocator.instance.videoRepository.getIncidentResponders(_currentVideoId!);
+      if (mounted) {
+        setState(() {
+          // Initialize simulated distance/time for display purposes
+          for (int i = 0; i < responders.length; i++) {
+            var r = responders[i];
+            r['currentLat'] = r['startLat'];
+            r['currentLng'] = r['startLng'];
+            // If they don't have a start location, their progress won't be drawn.
+            r['estimatedMinutes'] = 0;
+            // Provide a default fallback speed if real gps tracking data isn't integrated yet.
+            r['currentSpeed'] = 15.0; 
+          }
+          _responders = responders;
+        });
+        _adjustMapBounds();
+        _startResponderSimulation();
+      }
+    } catch (e) {
+      debugPrint('Error loading responders: $e');
+    }
+  }
+
+  void _startResponderSimulation() {
+    _responderUpdateTimer?.cancel();
+    _responderUpdateTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (!mounted || _routePoints.isEmpty) return;
+      
+      final target = _routePoints.last;
+      
+      setState(() {
+        for (var i = 0; i < _responders.length; i++) {
+          var r = _responders[i];
+          if (r['currentLat'] == null || r['currentLng'] == null) continue;
+          
+          double dist = Geolocator.distanceBetween(
+             r['currentLat'], r['currentLng'],
+             target.latitude, target.longitude
+          );
+          
+          if (dist < 50) {
+             r['estimatedMinutes'] = 0; // Arrived
+             continue;
+          }
+          
+          // Randomize speed slightly for realism (in m/s)
+          double speed = r['currentSpeed'] as double;
+          speed = speed + ((DateTime.now().millisecond % 5) - 2); // +/- 2 m/s
+          if (speed < 5) speed = 5; // Min speed
+          if (speed > 30) speed = 30; // Max speed
+          
+          r['currentSpeed'] = speed;
+          r['estimatedMinutes'] = (dist / speed / 60).ceil();
+          
+          // Move slightly towards target (Simple linear interpolation for demo)
+          // Move dist in 3 seconds = speed * 3 meters
+          double stepRatio = (speed * 3) / dist;
+          if (stepRatio > 1) stepRatio = 1;
+          
+          r['currentLat'] = r['currentLat'] + (target.latitude - r['currentLat']) * stepRatio;
+          r['currentLng'] = r['currentLng'] + (target.longitude - r['currentLng']) * stepRatio;
+        }
+      });
+    });
+  }
+
+  void _adjustMapBounds() {
+    if (_mapController == null || !mounted) return;
+    if (_routePoints.isEmpty) return;
+
+    if (_responders.isEmpty) {
+      try {
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_routePoints.last, 17.0));
+      } catch (_) {}
+      return;
+    }
+
+    double minLat = _routePoints.last.latitude;
+    double maxLat = _routePoints.last.latitude;
+    double minLng = _routePoints.last.longitude;
+    double maxLng = _routePoints.last.longitude;
+    
+    for (var r in _responders) {
+      if (r['currentLat'] != null && r['currentLng'] != null) {
+        if (r['currentLat'] < minLat) minLat = r['currentLat'];
+        if (r['currentLat'] > maxLat) maxLat = r['currentLat'];
+        if (r['currentLng'] < minLng) minLng = r['currentLng'];
+        if (r['currentLng'] > maxLng) maxLng = r['currentLng'];
+      }
+    }
+    
+    LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+    
+    try {
+      _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60.0));
+    } catch (e) {
+      debugPrint("Error adjusting map bounds: $e");
+    }
   }
 
   void _setupWebSocketStreams() {
@@ -218,10 +336,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     });
 
     // 2. Video Interactions (Likes, Gifts)
-    if (widget.videoId != null) {
-      ws.joinVideoRoom(widget.videoId!);
+    if (_currentVideoId != null) {
+      ws.joinVideoRoom(_currentVideoId!);
       _interactionSub = ws.videoInteractionStream.listen((data) {
-        if (data['videoId'] == widget.videoId) {
+        if (data['videoId'] == _currentVideoId) {
           setState(() {
             if (data['type'] == 'like') _likeCount++;
             if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0);
@@ -232,7 +350,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
     // 3. Progress / GPS (Simulated move for demo, but wired to logic)
     _progressSub = ws.videoProgressStream.listen((data) {
-      if (data['videoId'] == widget.videoId && data['location'] != null) {
+      if (data['videoId'] == _currentVideoId && data['location'] != null) {
         final loc = data['location'];
         final point = LatLng(loc['lat'], loc['lng']);
         setState(() {
@@ -274,9 +392,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     });
 
     // 5. Video Status Updates
-    if (widget.videoId != null) {
+    if (_currentVideoId != null) {
       _videoStatusSub = ws.videoStatusStream.listen((data) {
-        if (data['videoId'] == widget.videoId && data['status'] == 'ready') {
+        if (data['videoId'] == _currentVideoId && data['status'] == 'ready') {
            final url = data['url'];
            if (url != null) {
              _initializePlayer(url);
@@ -284,6 +402,36 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         }
       });
     }
+  }
+
+  void _switchVideo(String newVideoId) {
+    if (_currentVideoId != null) {
+      WebSocketService().leaveVideoRoom(_currentVideoId!);
+    }
+    
+    _interactionSub?.cancel();
+    _progressSub?.cancel();
+    _rescueIncomingSub?.cancel();
+    _videoStatusSub?.cancel();
+    
+    _videoPlayerController?.removeListener(_syncGpsWithVideo);
+    _videoPlayerController?.dispose();
+    _videoPlayerController = null;
+    _chewieController?.dispose();
+    _chewieController = null;
+    
+    setState(() {
+      _currentVideoId = newVideoId;
+      _dbGpsTracks.clear();
+      _routePoints.clear();
+      _responders.clear();
+      _lastSyncedVideoTrack = null;
+      _likeCount = 0;
+      _donationTotal = 0.0;
+    });
+
+    _setupWebSocketStreams();
+    _loadInitialData();
   }
 
   @override
@@ -300,8 +448,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _videoStatusSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
-    if (widget.videoId != null) {
-      WebSocketService().leaveVideoRoom(widget.videoId!);
+    _responderUpdateTimer?.cancel();
+    if (_currentVideoId != null) {
+      WebSocketService().leaveVideoRoom(_currentVideoId!);
     }
     if (_gpsTimer != null) _gpsTimer!.cancel();
     _cameraController?.dispose();
@@ -784,7 +933,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               ),
               const SizedBox(height: 15),
               _buildVideoPlayer(),
-              const SizedBox(height: 15),
+              const SizedBox(height: 8),
+              _buildStatusBar(),
+              const SizedBox(height: 8),
               _buildViewerCount(),
               const SizedBox(height: 20),
               _buildActionButtons(),
@@ -1259,6 +1410,69 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildMapBackground() {
+    Set<Marker> mapMarkers = {};
+    
+    // 1. Incident Marker
+    if (_routePoints.isNotEmpty) {
+      mapMarkers.add(
+        Marker(
+          markerId: const MarkerId('current_location'),
+          position: _routePoints.last,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'จุดเกิดเหตุ'),
+        )
+      );
+    }
+    
+    // 2. Responders Markers
+    int responderIndex = 0;
+    for (var r in _responders) {
+      if (r['currentLat'] != null && r['currentLng'] != null) {
+        // Build subtitle string
+        int mins = r['estimatedMinutes'] as int? ?? 0;
+        double speedKmh = (r['currentSpeed'] as double? ?? 0) * 3.6;
+        String subtitle = mins == 0 
+           ? 'ถึงที่เกิดเหตุแล้ว' 
+           : 'อีก $mins นาที (${speedKmh.toStringAsFixed(0)} กม./ชม.)';
+           
+        // กำหนดสีหมุดตามสีของอาชีพ (Profession colorHex) หรือ Rainbow Mode หากไม่ระบุสี
+        double fallbackHue;
+        switch (responderIndex % 6) {
+          case 0: fallbackHue = BitmapDescriptor.hueRed; break;
+          case 1: fallbackHue = BitmapDescriptor.hueOrange; break;
+          case 2: fallbackHue = BitmapDescriptor.hueYellow; break;
+          case 3: fallbackHue = BitmapDescriptor.hueGreen; break;
+          case 4: fallbackHue = BitmapDescriptor.hueBlue; break;
+          case 5: fallbackHue = BitmapDescriptor.hueViolet; break;
+          default: fallbackHue = BitmapDescriptor.hueOrange;
+        }
+
+        double markerHue = fallbackHue;
+        if (r['professionColor'] != null) {
+          try {
+            final hex = (r['professionColor'] as String).replaceAll('#', '');
+            if (hex.length == 6) {
+              final color = Color(int.parse('FF$hex', radix: 16));
+              markerHue = HSVColor.fromColor(color).hue;
+            }
+          } catch (_) {}
+        }
+
+        mapMarkers.add(
+          Marker(
+            markerId: MarkerId('responder_${r['id']}'),
+            position: LatLng(r['currentLat'], r['currentLng']),
+            icon: BitmapDescriptor.defaultMarkerWithHue(markerHue), 
+            infoWindow: InfoWindow(
+               title: '${r['professionName']} - ${r['volunteerName']}',
+               snippet: subtitle,
+            ),
+          )
+        );
+        responderIndex++;
+      }
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1267,10 +1481,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           onMapCreated: (controller) {
             debugPrint("DEBUG: Google Map Created Successfully");
             _mapController = controller;
+            
+            // Adjust camera if we have responders to show a wider view using bounds
+            Future.delayed(const Duration(milliseconds: 500), () {
+               _adjustMapBounds();
+            });
           },
           initialCameraPosition: CameraPosition(
             target: _routePoints.isNotEmpty
-                ? _routePoints[_routePoints.length ~/ 2]
+                ? _routePoints.last
                 : const LatLng(13.7367, 100.5604),
             zoom: 15.0,
           ),
@@ -1288,14 +1507,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               width: 5,
             ),
           },
-          markers: {
-            if (_routePoints.isNotEmpty)
-              Marker(
-                markerId: const MarkerId('current_location'),
-                position: _routePoints.last,
-                icon: BitmapDescriptor.defaultMarkerWithHue(270.0),
-              ),
-          },
+          markers: mapMarkers,
         ),
         // Layer 2: BackdropFilter blur — เฉพาะ Tab แจ้งเหตุ (tab 2)
         if (_selectedTab == 2)
@@ -1370,30 +1582,44 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     final user = AuthService.instance.currentUser;
     final displayName = user?.fullName?.toUpperCase() ?? 'GUEST USER';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(
-          displayName,
-          style: TextStyle(
-            fontFamily: 'SukhumvitSet',
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            color: const Color(0xFF6A0D91), // Purple in draft
-            letterSpacing: 1.2,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.85), // Glassmorphism-style solid bg
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        ),
-        Text(
-          'DRIVER',
-          style: TextStyle(
-            fontFamily: 'SukhumvitSet',
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFFC084FC), // Lighter purple
-            letterSpacing: 2.0,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            displayName,
+            style: TextStyle(
+              fontFamily: 'SukhumvitSet',
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF6A0D91), // Purple in draft
+              letterSpacing: 1.2,
+            ),
           ),
-        ),
-      ],
+          Text(
+            'START LIVE',
+            style: TextStyle(
+              fontFamily: 'SukhumvitSet',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFC084FC), // Lighter purple
+              letterSpacing: 2.0,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1449,14 +1675,50 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           _routePoints.clear();
           _routePoints.addAll(newRoute);
         });
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLng(LatLng(lastTrack.latitude, lastTrack.longitude))
-        );
+        _adjustMapBounds();
       }
     }
   }
 
   Widget _buildVideoPlayer() {
+    if (_currentVideoId == null) {
+      return Container(
+        width: double.infinity,
+        height: 220,
+        margin: const EdgeInsets.only(left: 16),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.dashboard_customize_rounded, color: Colors.white54, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'กรุณาเลือกเหตุการณ์จากแผงยอดนิยมด้านขวา\nเพื่อแสดงระบบศูนย์สั่งการและรับชมวิดีโอ',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       height: 220,
@@ -1484,7 +1746,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                     const CircularProgressIndicator(color: Colors.red),
                     const SizedBox(height: 12),
                     Text(
-                      'กำลังเชื่อมต่อสัญญาณ...',
+                      'กำลังเชื่อมต่อสัญญาณภาพ...',
                       style: TextStyle(
                         fontFamily: 'SukhumvitSet',
                         color: Colors.white70,
@@ -1498,9 +1760,75 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     );
   }
 
+  Widget _buildStatusBar() {
+    if (_currentVideoId == null) return const SizedBox.shrink();
+
+    String statusText = 'รอหน่วยงานเข้าให้ความช่วยเหลือ';
+    Color badgeColor = Colors.red;
+    IconData statusIcon = Icons.warning_amber_rounded;
+
+    if (_responders.isNotEmpty) {
+      bool someArrived = _responders.any((r) => r['estimatedMinutes'] == 0);
+      if (someArrived) {
+        statusText = 'เจ้าหน้าที่ถึงที่เกิดเหตุแล้ว';
+        badgeColor = Colors.green;
+        statusIcon = Icons.check_circle_outline;
+      } else {
+        statusText = 'รถพยาบาล/กู้ภัย ${_responders.length} คัน กำลังเดินทาง';
+        badgeColor = Colors.orange;
+        statusIcon = Icons.airport_shuttle;
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(left: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon, color: badgeColor, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            'สถานะ:',
+            style: TextStyle(
+              fontFamily: 'SukhumvitSet',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              statusText,
+              style: TextStyle(
+                fontFamily: 'SukhumvitSet',
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: badgeColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTrendingPanel() {
     return Container(
-      width: 140,
+      width: 200,
       height: 380, // Tall vertical panel
       margin: const EdgeInsets.only(right: 16),
       decoration: BoxDecoration(
@@ -1559,18 +1887,26 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                         itemCount: _trendingVideos.length,
                         itemBuilder: (context, index) {
                           final video = _trendingVideos[index];
+                          
+                          // จัดรูปแบบเวลา วัน/เดือน/ปี เวลา
+                          final timeFormat = DateFormat('dd/MM/yyyy HH:mm').format(video.createdAt);
+                          
+                          // สร้างชื่อวิดีโอ (ถ้ามี category ใน title ก็ใช้ ถ้าไม่มีก็เติม)
+                          // รูปแบบ: ประเภทเหตุ - วันเวลา - (ตำแหน่งถ้ามี)
+                          String displayTitle = video.title;
+                          if (!displayTitle.contains(timeFormat)) {
+                             displayTitle = '${video.description ?? 'เหตุฉุกเฉิน'} $timeFormat';
+                          }
+
                           return GestureDetector(
                             onTap: () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => EmergencyLivePage(videoId: video.id),
-                                ),
-                              );
+                              if (video.id != _currentVideoId) {
+                                _switchVideo(video.id);
+                              }
                             },
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 8),
-                              height: 80,
+                              height: 100, // เพิ่มความสูงเพื่อใส่ชื่อ
                               decoration: BoxDecoration(
                                 color: Colors.blueGrey[900],
                                 borderRadius: BorderRadius.circular(12),
@@ -1579,19 +1915,41 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                                         image: NetworkImage(video.thumbnailUrl!),
                                         fit: BoxFit.cover,
                                         colorFilter: ColorFilter.mode(
-                                            Colors.black.withOpacity(0.3), BlendMode.darken),
+                                            Colors.black.withOpacity(0.4), BlendMode.darken), // มืดลงหน่อยให้อ่านง่าย
                                       )
                                     : null,
                               ),
-                              child: Center(
-                                child: Text(
-                                  'อันดับ ${index + 1}',
-                                  style: const TextStyle(
-                                    fontFamily: 'SukhumvitSet',
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
+                              child: Stack(
+                                children: [
+                                  // Rank Badge
+                                  Positioned(
+                                    top: 4, left: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text('#${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    )
                                   ),
-                                ),
+                                  // Title text at bottom
+                                  Positioned(
+                                    bottom: 6, left: 6, right: 6,
+                                    child: Text(
+                                      displayTitle,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontFamily: 'SukhumvitSet',
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -1653,8 +2011,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             label: 'ส่งกำลังใจ',
             onTap: () {
               final userId = ServiceLocator.instance.currentUser?.id;
-              if (userId != null && widget.videoId != null) {
-                WebSocketService().sendVideoInteraction(widget.videoId!, userId, 'like');
+              if (userId != null && _currentVideoId != null) {
+                WebSocketService().sendVideoInteraction(_currentVideoId!, userId, 'like');
               } else {
                 setState(() => _likeCount++);
               }
@@ -1910,10 +2268,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                         onTap: () async {
                           // Refinement 4: Real Donation Integration
                           final userId = ServiceLocator.instance.currentUser?.id;
-                          if (widget.videoId != null && userId != null) {
+                          if (_currentVideoId != null && userId != null) {
                             try {
                               WebSocketService().sendVideoInteraction(
-                                widget.videoId!,
+                                _currentVideoId!,
                                 userId,
                                 'gift',
                                 value: amount,

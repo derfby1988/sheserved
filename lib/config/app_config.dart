@@ -5,12 +5,12 @@ class AppConfig {
   // =====================================================
   // DATABASE CONFIGURATION
   // =====================================================
-  
+
   /// โหมดการทำงาน
   /// - unified: ใช้ทั้ง Local และ Supabase ซิงค์กันอัตโนมัติ (แนะนำ)
   /// - localOnly: ใช้แค่ Local PostgreSQL
   /// - supabaseOnly: ใช้แค่ Supabase Cloud
-  static const DatabaseMode databaseMode = DatabaseMode.unified;
+  static const DatabaseMode databaseMode = DatabaseMode.supabaseOnly;
 
   /// เปิดใช้งาน Auto Sync
   static const bool enableAutoSync = true;
@@ -21,78 +21,79 @@ class AppConfig {
   // =====================================================
   // LOCAL DATABASE (WebSocket Server)
   // =====================================================
-  
+
   /// URL ของ WebSocket Server (Local)
-  static const String localApiUrl = 'http://192.168.1.108:3000';
-  
+  static const String localApiUrl = 'http://127.0.0.1:3000';
+
   /// URL สำหรับ WebSocket connection
-  static const String websocketUrl = 'http://192.168.1.108:3000';
+  static const String websocketUrl = 'http://127.0.0.1:3000';
 
   // =====================================================
   // SUPABASE CONFIGURATION
   // =====================================================
-  
+
   /// Supabase Project URL
   /// เปลี่ยนเป็น URL จริงเมื่อสร้าง Supabase Project
   static const String supabaseUrl = 'https://psxcgdwcwjdbpaemkozq.supabase.co';
-  
+
   /// Supabase Anon Key
   /// เปลี่ยนเป็น Key จริงเมื่อสร้าง Supabase Project
-  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU';
+  static const String supabaseAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU';
 
   /// ตรวจสอบว่า Supabase configured หรือยัง
-  static bool get isSupabaseConfigured => 
-      supabaseUrl != 'YOUR_SUPABASE_URL' && 
+  static bool get isSupabaseConfigured =>
+      supabaseUrl != 'YOUR_SUPABASE_URL' &&
       supabaseAnonKey != 'YOUR_SUPABASE_ANON_KEY';
 
   // =====================================================
   // APP INFORMATION
   // =====================================================
-  
+
   /// ชื่อ App
   static const String appName = 'Sheserved';
-  
+
   /// เวอร์ชัน
   static const String appVersion = '1.0.0';
-  
+
   /// Build Number
   static const int buildNumber = 1;
 
   // =====================================================
   // FEATURE FLAGS
   // =====================================================
-  
+
   /// เปิดใช้งาน Location Tracking
   static const bool enableLocationTracking = true;
-  
+
   /// เปิดใช้งาน Push Notifications
   static const bool enablePushNotifications = false;
-  
+
   /// เปิดใช้งาน Debug Mode
   static const bool debugMode = true;
 
   // =====================================================
   // OTP CONFIGURATION
   // =====================================================
-  
+
   /// ใช้ Console OTP (ทดสอบ - ไม่ส่ง SMS จริง)
   /// true = แสดง OTP ใน Console (ฟรี สำหรับ development)
   /// false = ส่ง SMS จริงผ่าน Supabase/Twilio (มีค่าใช้จ่าย)
   static const bool useConsoleOtp = true;
-  
+
   /// เปิดใช้งาน OTP Verification
   static const bool enableOtpVerification = true;
-  
+
   /// OTP หมดอายุ (นาที)
   static const int otpExpiryMinutes = 5;
-  
+
   /// จำนวนครั้งที่ลองใส่ OTP ผิดได้
   static const int otpMaxRetries = 3;
 
   // =====================================================
   // VEGA AI (EIDY) CONFIGURATION
   // =====================================================
-  
+
   /// โหมดการทำงานของ Vega AI
   /// - mock: ใช้ข้อมูลจำลอง (ฟรี 100% สำหรับ Development)
   /// - live: เชื่อมต่อ API จริงของ Vega (ใช้โควตา Free Tier/เสียเงิน)
@@ -111,17 +112,18 @@ class AppConfig {
   // =====================================================
   // GOOGLE MAPS CONFIGURATION
   // =====================================================
-  
+
   /// Google Maps API Key (ใช้สำหรับ Directions API)
-  static const String googleMapsApiKey = 'AIzaSyB_cex2WRkdTKElFJ-Cjgsfhm0kk1AZkcQ';
+  static const String googleMapsApiKey =
+      'AIzaSyB_cex2WRkdTKElFJ-Cjgsfhm0kk1AZkcQ';
 
   // =====================================================
   // LEGACY SUPPORT
   // =====================================================
-  
+
   /// (Deprecated) ใช้ useLocalDatabase สำหรับ backward compatibility
-  static bool get useLocalDatabase => 
-      databaseMode == DatabaseMode.localOnly || 
+  static bool get useLocalDatabase =>
+      databaseMode == DatabaseMode.localOnly ||
       databaseMode == DatabaseMode.unified;
 }
 
@@ -129,10 +131,10 @@ class AppConfig {
 enum DatabaseMode {
   /// ใช้ทั้ง Local และ Supabase ซิงค์กันอัตโนมัติ
   unified,
-  
+
   /// ใช้แค่ Local PostgreSQL (offline mode)
   localOnly,
-  
+
   /// ใช้แค่ Supabase Cloud
   supabaseOnly,
 }
@@ -141,7 +143,7 @@ enum DatabaseMode {
 enum VegaAiMode {
   /// ใช้ข้อมูลจำลอง (ฟรี 100%)
   mock,
-  
+
   /// เชื่อมต่อ API จริง (ใช้โควตา)
   live,
 }

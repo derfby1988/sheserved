@@ -373,6 +373,68 @@ class VideoRepository {
       return null;
     }
   }
+  
+  /// Get list of responders (volunteers) currently rushing to this incident
+  Future<List<Map<String, dynamic>>> getIncidentResponders(String videoId) async {
+    try {
+      // Query incident_responses and join with consumer_profiles for name
+      final response = await _client
+          .from('incident_responses')
+          .select('''
+            id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
+            consumer_profiles!incident_responses_volunteer_id_fkey(full_name),
+            user_group_roles!incident_responses_volunteer_id_fkey(
+               professions(name, color_hex)
+            )
+          ''')
+          .eq('video_id', videoId)
+          .inFilter('status', ['accepted', 'arrived'])
+          .order('accepted_at', ascending: true);
+
+      final List<Map<String, dynamic>> responders = [];
+      for (var row in response as List) {
+        String? volunteerName;
+        String? professionName;
+
+        // Extract name
+        final profile = row['consumer_profiles'];
+        if (profile is Map) {
+           volunteerName = profile['full_name'];
+        } else if (profile is List && profile.isNotEmpty) {
+           volunteerName = profile.first['full_name'];
+        }
+
+        // Extract profession
+        final roles = row['user_group_roles'];
+        String? professionColor;
+        if (roles is List && roles.isNotEmpty) {
+           final prof = roles.first['professions'];
+           if (prof != null) {
+              professionName = prof['name'];
+              professionColor = prof['color_hex'];
+           }
+        }
+
+        responders.add({
+          'id': row['id'],
+          'volunteerId': row['volunteer_id'],
+          'status': row['status'],
+          'acceptedAt': row['accepted_at'],
+          'startLat': row['volunteer_start_lat'],
+          'startLng': row['volunteer_start_lng'],
+          'volunteerName': volunteerName ?? 'อาสาสมัคร',
+          'professionName': professionName ?? 'ทีมกู้ภัย',
+          'professionColor': professionColor,
+        });
+      }
+
+
+      return responders;
+    } catch (e) {
+      debugPrint('Error fetching incident responders: $e');
+      return [];
+    }
+  }
 
   /// Toggle the volunteer's active duty status
   Future<void> setVolunteerActiveStatus({
