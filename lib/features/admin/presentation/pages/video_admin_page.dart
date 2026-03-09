@@ -14,6 +14,8 @@ class _VideoAdminPageState extends State<VideoAdminPage> {
   late TextEditingController _cooldownController;
   late TextEditingController _maxSizeController;
   late TextEditingController _quotaController;
+  late TextEditingController _maxRecordingController;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -21,6 +23,7 @@ class _VideoAdminPageState extends State<VideoAdminPage> {
     _cooldownController = TextEditingController(text: SyncConfig.videoUploadCooldownSeconds.toString());
     _maxSizeController = TextEditingController(text: SyncConfig.maxVideoFileSizeMB.toString());
     _quotaController = TextEditingController(text: SyncConfig.dailyVideoUploadQuota.toString());
+    _maxRecordingController = TextEditingController(text: SyncConfig.maxEmergencyRecordingSeconds.toString());
   }
 
   @override
@@ -28,22 +31,46 @@ class _VideoAdminPageState extends State<VideoAdminPage> {
     _cooldownController.dispose();
     _maxSizeController.dispose();
     _quotaController.dispose();
+    _maxRecordingController.dispose();
     super.dispose();
   }
 
-  void _saveSettings() {
+  Future<void> _saveSettings() async {
+    if (_isSaving) return;
+
     setState(() {
+      _isSaving = true;
       SyncConfig.videoUploadCooldownSeconds = int.tryParse(_cooldownController.text) ?? 3;
       SyncConfig.maxVideoFileSizeMB = int.tryParse(_maxSizeController.text) ?? 20;
       SyncConfig.dailyVideoUploadQuota = int.tryParse(_quotaController.text) ?? 50;
+      SyncConfig.maxEmergencyRecordingSeconds = int.tryParse(_maxRecordingController.text) ?? 60;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('บันทึกการตั้งค่าเรียบร้อยแล้ว'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    try {
+      await SyncConfig.saveToSupabase();
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('บันทึกการตั้งค่าไปยังฐานข้อมูลเรียบร้อยแล้ว'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('เกิดข้อผิดพลาด: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   @override
@@ -80,20 +107,34 @@ class _VideoAdminPageState extends State<VideoAdminPage> {
               controller: _quotaController,
               icon: Icons.assessment,
             ),
+            const SizedBox(height: 16),
+            _buildSettingCard(
+              title: 'Max Emergency Recording (Seconds)',
+              subtitle: 'เวลาบันทึก Emergency Video สูงสุด (วินาที) - ค่าเริ่มต้น 60',
+              controller: _maxRecordingController,
+              icon: Icons.videocam,
+            ),
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _saveSettings,
+                onPressed: _isSaving ? null : _saveSettings,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('บันทึกการตั้งค่า (Apply Now)'),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                      )
+                    : const Text('บันทึกการตั้งค่า (Apply Now)'),
               ),
             ),
             const SizedBox(height: 24),

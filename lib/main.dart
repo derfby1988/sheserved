@@ -40,6 +40,7 @@ import 'features/donation/presentation/pages/donation_dashboard_page.dart';
 import 'features/donation/presentation/pages/donation_admin_page.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
+import 'config/sync_config.dart';
 import 'services/supabase_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'features/chat/data/models/chat_models.dart';
@@ -79,6 +80,9 @@ void main() async {
 
   // Initialize Supabase Service
   await SupabaseService.initialize();
+
+  // Load app settings from Supabase
+  await SyncConfig.loadFromSupabase();
 
   // Initialize Hive
   await Hive.initFlutter();

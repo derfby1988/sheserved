@@ -12,6 +12,9 @@
 /// - ร้านกลาง (5-20 พนักงาน): 30 วินาที
 /// - ร้านใหญ่ (20+ พนักงาน): 15-30 วินาที + ใช้แผน Pro
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
+
 class SyncConfig {
   // =====================================================
   // SYNC TIMING - กำหนดเวลา Sync
@@ -175,6 +178,60 @@ class SyncConfig {
 
   /// โควตาการอัปโหลดต่อวัน (ครั้ง)
   static int dailyVideoUploadQuota = 50;
+
+  /// เวลาบันทึก Emergency Video สูงสุด (วินาที)
+  /// ค่าเริ่มต้น: 60 วินาที
+  static int maxEmergencyRecordingSeconds = 60;
+
+  // =====================================================
+  // DATABASE SYNC (System Settings)
+  // =====================================================
+
+  /// โหลดการตั้งค่าจากฐานข้อมูล Supabase (ตาราง app_settings)
+  static Future<void> loadFromSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'video_system_config')
+          .maybeSingle();
+
+      if (response != null && response['value'] != null) {
+        final config = response['value'] as Map<String, dynamic>;
+        videoUploadCooldownSeconds = config['videoUploadCooldownSeconds'] ?? videoUploadCooldownSeconds;
+        maxVideoFileSizeMB = config['maxVideoFileSizeMB'] ?? maxVideoFileSizeMB;
+        dailyVideoUploadQuota = config['dailyVideoUploadQuota'] ?? dailyVideoUploadQuota;
+        maxEmergencyRecordingSeconds = config['maxEmergencyRecordingSeconds'] ?? maxEmergencyRecordingSeconds;
+        debugPrint("DEBUG: SyncConfig loaded from Supabase successfully: $config");
+      }
+    } catch (e) {
+      debugPrint("ERROR loading SyncConfig from Supabase: $e");
+    }
+  }
+
+  /// บันทึกการตั้งค่าลงฐานข้อมูล Supabase
+  static Future<void> saveToSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final configPayload = {
+        'videoUploadCooldownSeconds': videoUploadCooldownSeconds,
+        'maxVideoFileSizeMB': maxVideoFileSizeMB,
+        'dailyVideoUploadQuota': dailyVideoUploadQuota,
+        'maxEmergencyRecordingSeconds': maxEmergencyRecordingSeconds,
+      };
+
+      await supabase.from('app_settings').upsert({
+        'key': 'video_system_config',
+        'value': configPayload,
+        'description': 'Configuration for video upload and recording system',
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+      debugPrint("DEBUG: SyncConfig saved to Supabase successfully.");
+    } catch (e) {
+      debugPrint("ERROR saving SyncConfig to Supabase: $e");
+    }
+  }
 }
 
 /// Sync Mode Presets

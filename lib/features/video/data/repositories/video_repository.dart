@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../models/video_models.dart';
 
@@ -238,8 +238,7 @@ class VideoRepository {
           .from('videos')
           .select('''
             id, user_id, type, status, created_at,
-            video_gps_tracks(latitude, longitude, timestamp_offset),
-            donation_categories(name, icon_name)
+            video_gps_tracks(latitude, longitude, timestamp_offset)
           ''')
           .eq('type', 'emergency')
           .or('status.eq.ready,status.eq.processing,status.eq.live')
@@ -268,7 +267,6 @@ class VideoRepository {
           final latestTrack = tracks.reduce((curr, next) =>
               (curr['timestamp_offset'] as int) > (next['timestamp_offset'] as int) ? curr : next);
 
-          final category = video['donation_categories'];
           locations.add({
             'videoId': videoId,
             'userId': video['user_id'],
@@ -276,8 +274,8 @@ class VideoRepository {
             'status': video['status'],
             'latitude': (latestTrack['latitude'] as num).toDouble(),
             'longitude': (latestTrack['longitude'] as num).toDouble(),
-            'categoryName': category != null ? category['name'] : 'เหตุฉุกเฉิน',
-            'categoryIcon': category != null ? category['icon_name'] : 'warning',
+            'categoryName': 'เหตุฉุกเฉิน',
+            'categoryIcon': 'warning',
             'createdAt': video['created_at'],
           });
         }

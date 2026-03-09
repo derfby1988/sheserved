@@ -155,44 +155,47 @@ class _HomeInterestingSectionState extends State<HomeInterestingSection> {
               padding: const EdgeInsets.only(left: 20, top: 14, bottom: 14, right: 100),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Title
                   Text(
                     article.title.isNotEmpty ? article.title : 'รายการที่ ${article.id.hashCode % 100}',
                     style: const TextStyle(
                       fontFamily: 'Sukhumvit Set',
-                      fontSize: 22, // ขนาดใหญ่หน่อยตามดีไซน์
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF5B8E21), // สีเขียวเหมือนใน Figma
+                      color: Color(0xFF5B8E21),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
                   
-                  // Subtitle 
                   Text(
                     article.category ?? '100 - 200 น.',
                     style: const TextStyle(
                       fontFamily: 'Sukhumvit Set',
-                      fontSize: 16,
-                      color: Color(0xFF8B8B8B), // สีเทา
+                      fontSize: 13,
+                      color: Color(0xFF8B8B8B),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
                   
                   // Stars
                   Row(
-                    children: List.generate(5, (index) => const Padding(
-                      padding: EdgeInsets.only(right: 2),
-                      child: Icon(
+                    children: List.generate(5, (index) => Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: const Icon(
                         Icons.star,
-                        color: Color(0xFFC0CA33), // สีเหลืองอมเขียว
-                        size: 18,
+                        color: Color(0xFFC0CA33),
+                        size: 15,
                       ),
                     )),
                   ),
+                  const SizedBox(height: 4),
                   
                   // Add to Cart Button 
                   Container(

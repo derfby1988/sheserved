@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../widgets/glassmorphism_button.dart';
 import '../../../../config/app_config.dart';
+import '../../../../config/sync_config.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../data/repositories/video_repository.dart';
@@ -50,12 +51,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   DateTime? _recordingStartTime;
   List<Map<String, dynamic>> _recordedGpsTracks = [];
   String? _selectedEmergencyCategoryId;
+  DonationCategory? _selectedEmergencyCategory; // Full object for display
   
+  // Category state
+  List<DonationCategory> _emergencyCategories = [];
+  bool _isLoadingCategories = false;
+
   // Video Recording Limits & Timers
-  static const int _maxRecordingSeconds = 60;
   static const int _prepSeconds = 3;
   int _prepCountdown = 0;
-  int _recordingTimeLeft = _maxRecordingSeconds;
+  int _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
   Timer? _countdownTimer;
   Timer? _durationTimer;
   
@@ -77,6 +82,18 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   @override
   void initState() {
     super.initState();
+    
+    // Auth Check: ตรวจสอบสถานะซ้ำที่ Target Page ตาม navigation guide
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ServiceLocator.instance.currentUser == null) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/login',
+          arguments: '/emergency-live',
+        );
+      }
+    });
+
     _liveBlinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -87,12 +104,25 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       duration: const Duration(milliseconds: 1500),
     )..repeat();
     
-    _requestPermissions();
+    _checkPermissions();
     _setupWebSocketStreams();
     _loadInitialData();
   }
 
-  Future<void> _requestPermissions() async {
+  Future<void> _loadConfigFromDatabase() async {
+    try {
+      await SyncConfig.loadFromSupabase();
+      if (mounted) {
+        setState(() {
+          _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
+        });
+      }
+    } catch (e) {
+      debugPrint("ERROR loading emergency config: $e");
+    }
+  }
+
+  Future<void> _checkPermissions() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return;
@@ -237,92 +267,50 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
   // ===================== VIDEO RECORDING LOGIC =====================
 
+  /// โหลด categories เมื่อสลับมาแท็บ "แจ้งเหตุ"
+  Future<void> _loadEmergencyCategories() async {
+    if (_emergencyCategories.isNotEmpty || _isLoadingCategories) return;
+    setState(() => _isLoadingCategories = true);
+    try {
+      final cats = await ServiceLocator.instance.donationRepository.getEmergencyCategories();
+      if (mounted) setState(() => _emergencyCategories = cats);
+    } catch (e) {
+      debugPrint('Error loading emergency categories: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingCategories = false);
+    }
+  }
+
+  /// Long press → ตรวจสอบว่าเลือก category แล้ว → countdown → บันทึก
   void _onLongPressDownVideo() async {
     if (_isRecording || _prepCountdown > 0) return;
 
-    // 1. Fetch Emergency Categories
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-    
-    List<DonationCategory> categories = [];
-    try {
-      categories = await ServiceLocator.instance.donationRepository.getEmergencyCategories();
-    } catch (e) {
-      debugPrint("Error fetching emergency categories: $e");
-    }
-    
-    if (mounted) Navigator.pop(context); // Close loading dialog
-
-    if (categories.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ยังไม่มีหมวดหมู่เหตุฉุกเฉินในระบบ กรุณาติดต่อผู้ดูแล'), backgroundColor: Colors.red),
-        );
-      }
+    // บังคับให้เลือก category ก่อน
+    if (_selectedEmergencyCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('กรุณาเลือกประเภทเหตุฉุกเฉินก่อนเริ่มบันทึก'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
 
-    // 2. Show Modal Bottom Sheet for Category Selection
-    final selectedCategory = await showModalBottomSheet<DonationCategory>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('เลือกหมวดหมู่เหตุฉุกเฉิน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: categories.length,
-                  itemBuilder: (context, index) {
-                    final cat = categories[index];
-                    return ListTile(
-                      leading: const Icon(Icons.emergency, color: Colors.red),
-                      title: Text(cat.name),
-                      onTap: () => Navigator.pop(context, cat),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (selectedCategory == null) {
-      // User cancelled selection
-      return;
-    }
-
-    _selectedEmergencyCategoryId = selectedCategory.id;
-
-    // 3. Start Preparation Countdown
-    setState(() {
-      _prepCountdown = _prepSeconds;
-    });
+    // เริ่มนับถอยหลัง
+    setState(() => _prepCountdown = _prepSeconds);
 
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+      if (!mounted) { timer.cancel(); return; }
       setState(() {
-         if (_prepCountdown > 1) {
-           _prepCountdown--;
-         } else {
-           _prepCountdown = 0;
-           timer.cancel();
-           _startEmergencyRecording();
-         }
+        if (_prepCountdown > 1) {
+          _prepCountdown--;
+        } else {
+          _prepCountdown = 0;
+          timer.cancel();
+          _startEmergencyRecording();
+        }
       });
     });
   }
@@ -355,7 +343,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       _recordingStartTime = DateTime.now();
       _recordedGpsTracks = [];
       _isRecording = true;
-      _recordingTimeLeft = _maxRecordingSeconds;
+      _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
       
       // Start Duration Timer
       _durationTimer?.cancel();
@@ -668,9 +656,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                       'Emergency',
                       style: TextStyle(
                         fontFamily: 'SukhumvitSet',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black38, // Light gray in draft
+                        fontSize: 22, // Increased size
+                        fontWeight: FontWeight.w900, // Bolder
+                        color: Colors.black87, // Darker
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ),
@@ -778,281 +767,394 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildIncidentReportView() {
-    return Padding(
+    final bool categorySelected = _selectedEmergencyCategoryId != null;
+    final bool canRecord = categorySelected && !_isLoadingCategories;
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 10),
-          // Toggle Mode
+
+          // ─── Camera Preview + Category Overlay ─────────────────────
           Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: () => setState(() => _isPhotoMode = false),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: !_isPhotoMode ? Colors.red : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('Live Video', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _isPhotoMode = true),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _isPhotoMode ? Colors.red : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('Photos', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Camera Preview Box
-          Container(
-            height: 300,
+            height: 280,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.black45,
+              color: Colors.black87,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _isRecording ? Colors.red : Colors.white24, width: 2),
+              border: Border.all(
+                color: _isRecording ? Colors.red : (categorySelected ? Colors.green : Colors.white24),
+                width: _isRecording ? 2.5 : 1.5,
+              ),
             ),
             child: Stack(
               children: [
+                // Camera view
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: _cameraController != null && _cameraController!.value.isInitialized
                       ? SizedBox.expand(child: CameraPreview(_cameraController!))
-                      : const Center(child: Icon(Icons.camera_alt, color: Colors.white54, size: 40)),
+                      : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
                 ),
-                if (_prepCountdown > 0)
-                  Container(
-                    color: Colors.black54,
-                    child: Center(
-                      child: Text(
-                        '$_prepCountdown',
-                        style: const TextStyle(
-                          fontSize: 80,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+
+                // ─── Category chips overlay (bottom of camera) ─────
+                if (!_isRecording && _prepCountdown == 0)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Colors.black.withOpacity(0.85), Colors.transparent],
                         ),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(14),
+                          bottomRight: Radius.circular(14),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Label row
+                          Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: categorySelected ? Colors.green : Colors.red.shade700,
+                                ),
+                                child: Center(
+                                  child: categorySelected
+                                      ? const Icon(Icons.check, color: Colors.white, size: 13)
+                                      : const Text('!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                categorySelected
+                                    ? 'ประเภท: ${_selectedEmergencyCategory?.name ?? ""}'
+                                    : 'เลือกประเภทเหตุฉุกเฉิน',
+                                style: TextStyle(
+                                  color: categorySelected ? Colors.greenAccent : Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Chips
+                          if (_isLoadingCategories)
+                            const SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          else if (_emergencyCategories.isEmpty)
+                            GestureDetector(
+                              onTap: _loadEmergencyCategories,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.refresh, color: Colors.white, size: 14),
+                                    SizedBox(width: 6),
+                                    Text('โหลดใหม่', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: _emergencyCategories.map((cat) {
+                                  final selected = _selectedEmergencyCategoryId == cat.id;
+                                  return GestureDetector(
+                                    onTap: () => setState(() {
+                                      _selectedEmergencyCategoryId = cat.id;
+                                      _selectedEmergencyCategory = cat;
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 150),
+                                      margin: const EdgeInsets.only(right: 8),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: selected ? Colors.red : Colors.black54,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: selected ? Colors.red.shade300 : Colors.white38,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        cat.name,
+                                        style: TextStyle(
+                                          color: selected ? Colors.white : Colors.white70,
+                                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
-                if (_isRecording)
+
+                // ─── Mode toggle (top-right corner) ────────────────
+                if (!_isRecording && _prepCountdown == 0)
                   Positioned(
-                    top: 16,
-                    right: 16,
+                    top: 10,
+                    right: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.red, width: 2),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(
-                        '00:${_recordingTimeLeft.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                           color: Colors.white, 
-                           fontWeight: FontWeight.bold,
-                           fontFamily: 'monospace',
-                           fontSize: 16,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () => setState(() => _isPhotoMode = false),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: !_isPhotoMode ? Colors.red : Colors.transparent,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: const Text('Video', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => setState(() => _isPhotoMode = true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: _isPhotoMode ? Colors.red : Colors.transparent,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: const Text('Photo', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                  )
+                    ),
+                  ),
+
+                // ─── Countdown overlay ──────────────────────────────
+                if (_prepCountdown > 0)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$_prepCountdown',
+                            style: const TextStyle(fontSize: 80, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const Text('กำลังเริ่มบันทึก...', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // ─── Recording badge (top-left) ─────────────────────
+                if (_isRecording)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red, width: 1.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${(_recordingTimeLeft ~/ 60).toString().padLeft(2, '0')}:${(_recordingTimeLeft % 60).toString().padLeft(2, '0')}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'monospace',
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          
-          if (_isPhotoMode && _capturedPhotos.isNotEmpty) ...[
-             SizedBox(
-               height: 60,
-               child: ListView.builder(
-                 scrollDirection: Axis.horizontal,
-                 itemCount: _capturedPhotos.length,
-                 itemBuilder: (context, index) {
-                   return Container(
-                     margin: const EdgeInsets.only(right: 8),
-                     width: 60,
-                     decoration: BoxDecoration(
-                       borderRadius: BorderRadius.circular(8),
-                       image: DecorationImage(
-                         image: FileImage(File(_capturedPhotos[index].path)),
-                         fit: BoxFit.cover,
-                       )
-                     ),
-                     child: Align(
-                       alignment: Alignment.topRight,
-                       child: GestureDetector(
-                         onTap: () {
-                           setState(() {
-                             _capturedPhotos.removeAt(index);
-                           });
-                         },
-                         child: const Icon(Icons.cancel, color: Colors.white, size: 20),
-                       )
-                     ),
-                   );
-                 }
-               )
-             ),
-             const SizedBox(height: 10),
-          ],
+          const SizedBox(height: 24),
 
-          Text(
-            _isRecording ? 'กำลังบันทึกเหตุการณ์...' : 'คุณต้องการแจ้งเหตุฉุกเฉินใช่หรือไม่?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: _isRecording ? Colors.red[700] : Colors.red[900],
-            ),
-          ),
-          if (_isRecording) ...[
-            const SizedBox(height: 8),
-            FadeTransition(
-              opacity: _liveBlinkController,
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                   Icon(Icons.circle, color: Colors.red, size: 12),
-                   SizedBox(width: 8),
-                   Text('Recording...', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                ],
+
+          // ─── Photo Thumbnails ────────────────────────────────────────
+          if (_isPhotoMode && _capturedPhotos.isNotEmpty) ...[
+            SizedBox(
+              height: 64,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _capturedPhotos.length,
+                itemBuilder: (context, index) {
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 64,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: FileImage(File(_capturedPhotos[index].path)),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _capturedPhotos.removeAt(index)),
+                        child: const Icon(Icons.cancel, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
+            const SizedBox(height: 24),
           ],
-          const SizedBox(height: 12),
-          Text(
-            _isPhotoMode 
-             ? 'คุณสามารถเพิ่มหลักฐานภาพถ่ายสูงสุด ${VideoRepository.maxEmergencyPhotos} รูป\nระบบจะส่งพิกัด GPS ปัจจุบันพร้อมรูปไปให้เจ้าหน้าที่'
-             : 'เมื่อเริ่มบันทึก ระบบจะเก็บไฟล์วิดีโอและพิกัด GPS\nเพื่อส่งไปยังศูนย์รับแจ้งเหตุทันทีเมื่อหยุดบันทึก',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontSize: 14,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          // Action Buttons
-          if (_isPhotoMode) ...[
-             Row(
-               children: [
-                 Expanded(
-                   flex: 1,
-                   child: GestureDetector(
-                     onTap: _takePhoto,
-                     child: Container(
-                       padding: const EdgeInsets.symmetric(vertical: 20),
-                       decoration: BoxDecoration(
-                         color: Colors.white,
-                         borderRadius: BorderRadius.circular(16),
-                         border: Border.all(color: Colors.red, width: 2),
-                       ),
-                       child: const Center(
-                         child: Icon(Icons.camera, color: Colors.red, size: 30),
-                       ),
-                     ),
-                   ),
-                 ),
-                 if (_capturedPhotos.isNotEmpty) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: _sendPhotos,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)],
+
+          // ─── Step 2: ปุ่มบันทึก ─────────────────────────────────────
+          Opacity(
+            opacity: canRecord ? 1.0 : 0.45,
+            child: _isPhotoMode
+                ? Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: GestureDetector(
+                          onTap: canRecord ? _takePhoto : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.red, width: 2),
                             ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10)),
-                            ],
+                            child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
                           ),
-                          child: const Center(
-                            child: Text(
-                              'ส่งรูปภาพ (Send)',
-                              style: TextStyle(
-                                fontFamily: 'SukhumvitSet',
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
+                        ),
+                      ),
+                      if (_capturedPhotos.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: GestureDetector(
+                            onTap: _sendPhotos,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'ส่งรูปภาพ',
+                                  style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      ],
+                    ],
+                  )
+                // ─── Video Hold-to-Record Button ─────────────────────
+                : GestureDetector(
+                    onLongPressDown: canRecord ? (_) => _onLongPressDownVideo() : null,
+                    onLongPressEnd: (_) => _onLongPressEndCancelVideo(),
+                    onLongPressCancel: () => _onLongPressEndCancelVideo(),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: _isRecording
+                              ? [Colors.black87, Colors.black]
+                              : canRecord
+                                  ? [const Color(0xFFFF3B30), const Color(0xFFFF2D55)]
+                                  : [Colors.grey.shade700, Colors.grey.shade800],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isRecording ? Colors.black : canRecord ? Colors.red : Colors.grey)
+                                .withOpacity(0.35),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _isRecording ? Icons.stop_circle : Icons.videocam,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _isRecording
+                                ? 'ปล่อยเพื่อหยุดและส่ง'
+                                : canRecord
+                                    ? 'กดค้างเพื่อเริ่มบันทึก'
+                                    : 'เลือกประเภทเหตุก่อน',
+                            style: const TextStyle(
+                              fontFamily: 'SukhumvitSet',
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                 ]
-               ]
-             )
-          ] else ...[
-            GestureDetector(
-              onLongPressDown: (_) => _onLongPressDownVideo(),
-              onLongPressEnd: (_) => _onLongPressEndCancelVideo(),
-              onLongPressCancel: () => _onLongPressEndCancelVideo(),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _isRecording 
-                      ? [Colors.black87, Colors.black] 
-                      : [const Color(0xFFFF3B30), const Color(0xFFFF2D55)],
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (_isRecording ? Colors.black : Colors.red).withOpacity(0.4),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _isRecording ? Icons.stop_circle : Icons.videocam, 
-                      color: Colors.white, 
-                      size: 30
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      _isRecording 
-                         ? 'ปล่อยเพื่อหยุดและส่ง (Release to Stop)' 
-                         : 'กดค้างเพื่อเริ่มบันทึกเหตุ (Hold to Record)',
-                      style: const TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ]
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -1094,43 +1196,53 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildMapBackground() {
-    return GoogleMap(
-      onMapCreated: (controller) {
-        debugPrint("DEBUG: Google Map Created Successfully");
-        _mapController = controller;
-      },
-      initialCameraPosition: CameraPosition(
-        target: _routePoints.isNotEmpty
-            ? _routePoints[_routePoints.length ~/ 2]
-            : const LatLng(13.7367, 100.5604),
-        zoom: 15.0,
-      ),
-      zoomControlsEnabled: false,
-      myLocationEnabled: true,
-      myLocationButtonEnabled: false,
-      trafficEnabled: true,
-      compassEnabled: false,
-      mapToolbarEnabled: false,
-      polylines: {
-        Polyline(
-          polylineId: const PolylineId('emergency_route'),
-          points: _routePoints,
-          color: const Color(0xFF7B2FF7),
-          width: 5,
-        ),
-      },
-      markers: {
-        if (_routePoints.isNotEmpty)
-          Marker(
-            markerId: const MarkerId('current_location'),
-            position: _routePoints.last,
-            // TODO: Use custom marker icon with pulse effect if possible, 
-            // or stick to default marker for simplicity in Google Maps.
-            // Google Maps doesn't support custom widget markers out-of-the-box like flutter_map.
-            // We'll use the default marker for now, tinted purple.
-            icon: BitmapDescriptor.defaultMarkerWithHue(270.0), // Purple hue
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Layer 1: Google Map (native platform view)
+        GoogleMap(
+          onMapCreated: (controller) {
+            debugPrint("DEBUG: Google Map Created Successfully");
+            _mapController = controller;
+          },
+          initialCameraPosition: CameraPosition(
+            target: _routePoints.isNotEmpty
+                ? _routePoints[_routePoints.length ~/ 2]
+                : const LatLng(13.7367, 100.5604),
+            zoom: 15.0,
           ),
-      },
+          zoomControlsEnabled: false,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: false,
+          trafficEnabled: true,
+          compassEnabled: false,
+          mapToolbarEnabled: false,
+          polylines: {
+            Polyline(
+              polylineId: const PolylineId('emergency_route'),
+              points: _routePoints,
+              color: const Color(0xFF7B2FF7),
+              width: 5,
+            ),
+          },
+          markers: {
+            if (_routePoints.isNotEmpty)
+              Marker(
+                markerId: const MarkerId('current_location'),
+                position: _routePoints.last,
+                icon: BitmapDescriptor.defaultMarkerWithHue(270.0),
+              ),
+          },
+        ),
+        // Layer 2: BackdropFilter blur — เฉพาะ Tab แจ้งเหตุ (tab 2)
+        if (_selectedTab == 2)
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
+            child: Container(
+              color: Colors.black.withOpacity(0.15),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1166,6 +1278,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildDriverAvatar() {
+    final user = ServiceLocator.instance.currentUser;
+    final avatarUrl = user?.profileImageUrl ?? 'https://i.pravatar.cc/150';
+
     return Container(
       width: 64,
       height: 64,
@@ -1180,8 +1295,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             offset: const Offset(0, 4),
           ),
         ],
-        image: const DecorationImage(
-          image: NetworkImage('https://i.pravatar.cc/150'),
+        image: DecorationImage(
+          image: NetworkImage(avatarUrl),
           fit: BoxFit.cover,
         ),
       ),
@@ -1189,11 +1304,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildDriverNameAndTitle() {
+    final user = ServiceLocator.instance.currentUser;
+    final displayName = user?.fullName?.toUpperCase() ?? 'GUEST USER';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          'MAHDIFAKHR',
+          displayName,
           style: TextStyle(
             fontFamily: 'SukhumvitSet',
             fontSize: 18,
@@ -1489,10 +1607,17 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 size: 20,
                 color: _selectedTab == 2 ? Colors.red : Colors.grey,
               ),
-              onTap: () {
-                debugPrint("DEBUG: Switching to Report Incident Tab (2)");
-                _initCamera();
-                setState(() => _selectedTab = 2);
+              onTap: () async {
+                setState(() {
+                  _selectedTab = 2;
+                });
+                
+                // Fetch fresh settings and categories when tapping the report tab
+                await _loadConfigFromDatabase();
+                if (_emergencyCategories.isEmpty) {
+                  _loadEmergencyCategories();
+                }
+                _initCamera(); // Keep camera init here
               },
             ),
           ),

@@ -776,9 +776,23 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   }
 
   void _navigateTo(BuildContext context, String route) {
+    // Route ที่ต้อง Login ก่อนเข้า (ตัวอย่างเอาแค่ emergency-live แต่อาจมีอื่นๆเพิ่มได้)
+    final protectedRoutes = ['/emergency-live'];
+
     // เริ่ม animation ปิด drawer ก่อน navigate
     _animationController.forward().then((_) {
       Navigator.of(context).pop(); // Close drawer first
+      
+      // ดัก Auth ล่วงหน้าจาก source
+      if (protectedRoutes.contains(route) && ServiceLocator.instance.currentUser == null) {
+        Navigator.pushNamed(
+          context,
+          '/login',
+          arguments: route,
+        );
+        return;
+      }
+
       // Navigate to the route
       Navigator.pushNamed(context, route).catchError((error) {
         // ถ้า route ไม่มี ให้แสดง SnackBar
