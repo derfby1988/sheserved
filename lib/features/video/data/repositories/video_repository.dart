@@ -82,7 +82,7 @@ class VideoRepository {
   Future<Map<String, dynamic>> getInteractionSummary(String videoId) async {
     final likes = await _client
         .from('video_interactions')
-        .select()
+        .select('id')
         .eq('video_id', videoId)
         .eq('type', 'like');
 
@@ -92,6 +92,12 @@ class VideoRepository {
         .eq('video_id', videoId)
         .eq('type', 'gift');
 
+    final views = await _client
+        .from('video_interactions')
+        .select('id')
+        .eq('video_id', videoId)
+        .eq('type', 'view');
+
     double totalDonation = 0;
     for (final g in (gifts as List)) {
       totalDonation += (g['value'] as num? ?? 0).toDouble();
@@ -100,7 +106,27 @@ class VideoRepository {
     return {
       'likes': (likes as List).length,
       'donations': totalDonation,
+      'views': (views as List).length,
     };
+  }
+
+  /// สร้าง RealtimeChannel สำหรับฟังเหตุการณ์ที่มีการ Insert ในตาราง video_interactions
+  RealtimeChannel subscribeToInteractions(String videoId, void Function(Map<String, dynamic> payload) onInsert) {
+    return _client.channel('public:video_interactions:$videoId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'video_interactions',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'video_id',
+          value: videoId,
+        ),
+        callback: (payload) {
+          onInsert(payload.newRecord);
+        },
+      )
+      .subscribe();
   }
 
   /// Stream สำหรับ Real-time updates ของวิดีโอ

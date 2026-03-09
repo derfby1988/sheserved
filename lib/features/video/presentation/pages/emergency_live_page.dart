@@ -21,6 +21,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:intl/intl.dart';
 import '../../models/video_models.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -36,9 +37,11 @@ class EmergencyLivePage extends StatefulWidget {
 class _EmergencyLivePageState extends State<EmergencyLivePage>
     with TickerProviderStateMixin {
   int _selectedTab = 0;
-  int _viewerCount = 10000;
-  int _likeCount = 1200;
-  double _donationTotal = 625;
+  int _viewerCount = 0;
+  int _likeCount = 0;
+  double _donationTotal = 0.0;
+  RealtimeChannel? _supabaseInteractionSub;
+  LatLng? _userLocation;
   bool _isConnected = true;
   String? _currentVideoId;
   late AnimationController _liveBlinkController;
@@ -90,16 +93,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   bool _isPhotoMode = false;
   List<XFile> _capturedPhotos = [];
   
-  // Mock GPS Route - Sukhumvit, Bangkok Area
-  final List<LatLng> _routePoints = [
-    LatLng(13.7300, 100.5600),
-    LatLng(13.7315, 100.5615),
-    LatLng(13.7330, 100.5630),
-    LatLng(13.7345, 100.5645),
-    LatLng(13.7360, 100.5660),
-    LatLng(13.7375, 100.5675),
-    LatLng(13.7390, 100.5690),
-  ];
+  // GPS Route Points for the currently watched video
+  final List<LatLng> _routePoints = [];
 
   @override
   void initState() {
@@ -160,16 +155,21 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         return;
       }
 
-      // Auto-center camera on real location
+      // Auto-center camera only if no specific video/incident is being watched
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       );
-      if (!mounted) return;
-
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(position.latitude, position.longitude), 15.0),
-      );
+      if (mounted) {
+        setState(() {
+          _userLocation = LatLng(position.latitude, position.longitude);
+        });
+        
+        if (_currentVideoId == null) {
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(_userLocation!, 15.0),
+          );
+        }
+      }
     } catch (e) {
       debugPrint("Error getting current location: $e");
     }
@@ -182,7 +182,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       setState(() {
         _likeCount = summary['likes'] ?? 0;
         _donationTotal = summary['donations']?.toDouble() ?? 0.0;
+        _viewerCount = summary['views'] ?? 0;
       });
+      
+      _recordView();
 
       // Fetch Video and handle reproduction
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
@@ -247,7 +250,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
   void _adjustMapBounds() {
     if (_mapController == null || !mounted) return;
-    if (_routePoints.isEmpty) return;
+    
+    // If no specific incident route, center on user if possible
+    if (_routePoints.isEmpty) {
+      if (_currentVideoId == null && _userLocation != null) {
+        try {
+          _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_userLocation!, 15.0));
+        } catch (_) {}
+      }
+      return;
+    }
 
     if (_responders.isEmpty) {
       try {
@@ -282,6 +294,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     }
   }
 
+  void _recordView() async {
+    if (_currentVideoId == null) return;
+    final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
+    try {
+      final interaction = VideoInteraction(
+        id: '', // Supabase UUID default
+        videoId: _currentVideoId!,
+        userId: userId,
+        type: 'view',
+        createdAt: DateTime.now(),
+      );
+      await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+    } catch (e) {
+      debugPrint('Error recording view: $e');
+    }
+  }
+
   void _setupWebSocketStreams() {
     final ws = WebSocketService();
     
@@ -290,8 +319,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       setState(() => _isConnected = connected);
     });
 
-    // 2. Video Interactions (Likes, Gifts)
+    // 2. Video Interactions (Likes, Gifts, Views) Realtime
     if (_currentVideoId != null) {
+      // Subscribe via WebSocket if still needed globally
       ws.joinVideoRoom(_currentVideoId!);
       _interactionSub = ws.videoInteractionStream.listen((data) {
         if (data['videoId'] == _currentVideoId) {
@@ -300,6 +330,17 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0);
           });
         }
+      });
+      
+      // Real-time table subscription via Supabase
+      _supabaseInteractionSub = ServiceLocator.instance.videoRepository.subscribeToInteractions(_currentVideoId!, (payload) {
+         if (mounted) {
+            setState(() {
+               if (payload['type'] == 'like') _likeCount++;
+               if (payload['type'] == 'gift') _donationTotal += (payload['value'] ?? 0);
+               if (payload['type'] == 'view') _viewerCount++;
+            });
+         }
       });
     }
 
@@ -361,6 +402,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     }
     
     _interactionSub?.cancel();
+    _supabaseInteractionSub?.unsubscribe();
     _progressSub?.cancel();
     _rescueIncomingSub?.cancel();
     _videoStatusSub?.cancel();
@@ -394,6 +436,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _pulseController.dispose();
     _connectionSub?.cancel();
     _interactionSub?.cancel();
+    _supabaseInteractionSub?.unsubscribe();
     _progressSub?.cancel();
     _rescueIncomingSub?.cancel();
     _videoStatusSub?.cancel();
@@ -1363,7 +1406,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     Set<Marker> mapMarkers = {};
     
     // 1. Incident Marker
-    if (_routePoints.isNotEmpty) {
+    if (_currentVideoId != null && _routePoints.isNotEmpty) {
       mapMarkers.add(
         Marker(
           markerId: const MarkerId('current_location'),
@@ -1376,8 +1419,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     
     // 2. Responders Markers
     int responderIndex = 0;
-    for (var r in _responders) {
-      if (r['currentLat'] != null && r['currentLng'] != null) {
+    if (_currentVideoId != null) {
+      for (var r in _responders) {
+        if (r['currentLat'] != null && r['currentLng'] != null) {
         // Build subtitle string
         int mins = r['estimatedMinutes'] as int? ?? 0;
         double speedKmh = (r['currentSpeed'] as double? ?? 0) * 3.6;
@@ -1422,12 +1466,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         responderIndex++;
       }
     }
+  }
 
     return Stack(
       fit: StackFit.expand,
       children: [
         // Layer 1: Google Map (native platform view)
         GoogleMap(
+          key: ValueKey(_currentVideoId),
           onMapCreated: (controller) {
             debugPrint("DEBUG: Google Map Created Successfully");
             _mapController = controller;
@@ -1440,7 +1486,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           initialCameraPosition: CameraPosition(
             target: _routePoints.isNotEmpty
                 ? _routePoints.last
-                : const LatLng(13.7367, 100.5604),
+                : (_userLocation ?? const LatLng(13.7367, 100.5604)),
             zoom: 15.0,
           ),
           zoomControlsEnabled: false,
@@ -1449,7 +1495,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           trafficEnabled: true,
           compassEnabled: false,
           mapToolbarEnabled: false,
-          polylines: {
+          polylines: _currentVideoId == null ? {} : {
             Polyline(
               polylineId: const PolylineId('emergency_route'),
               points: _routePoints,
@@ -1958,12 +2004,22 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           _buildInteractionButtonRow(
             value: _formatCount(_likeCount),
             label: 'ส่งกำลังใจ',
-            onTap: () {
-              final userId = ServiceLocator.instance.currentUser?.id;
-              if (userId != null && _currentVideoId != null) {
-                WebSocketService().sendVideoInteraction(_currentVideoId!, userId, 'like');
-              } else {
-                setState(() => _likeCount++);
+            onTap: () async {
+              final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
+              if (_currentVideoId != null) {
+                // อัปเดตผ่าน Realtime Stream เท่านั้นเพื่อกันนับเบิ้ล
+                try {
+                  final interaction = VideoInteraction(
+                    id: '', 
+                    videoId: _currentVideoId!,
+                    userId: userId,
+                    type: 'like',
+                    createdAt: DateTime.now(),
+                  );
+                  await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+                } catch (e) {
+                   debugPrint('Error sending like: $e');
+                }
               }
             },
           ),
