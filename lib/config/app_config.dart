@@ -23,10 +23,10 @@ class AppConfig {
   // =====================================================
   
   /// URL ของ WebSocket Server (Local)
-  static const String localApiUrl = 'http://localhost:3000';
+  static const String localApiUrl = 'http://192.168.1.108:3000';
   
   /// URL สำหรับ WebSocket connection
-  static const String websocketUrl = 'http://localhost:3000';
+  static const String websocketUrl = 'http://192.168.1.108:3000';
 
   // =====================================================
   // SUPABASE CONFIGURATION

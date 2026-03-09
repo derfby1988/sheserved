@@ -129,7 +129,7 @@ class VideoRepository {
 
     var request = http.MultipartRequest(
       'POST',
-      Uri.parse('${AppConfig.localApiUrl}/api/video/upload'),
+      Uri.parse('${AppConfig.localApiUrl}/api/videos/upload'),
     );
 
     request.fields['userId'] = userId;
@@ -171,11 +171,11 @@ class VideoRepository {
 
     var request = http.MultipartRequest(
       'POST',
-      Uri.parse('${AppConfig.localApiUrl}/api/video/upload-photos'),
+      Uri.parse('${AppConfig.localApiUrl}/api/videos/upload-photos'),
     );
 
     request.fields['userId'] = userId;
-    request.fields['title'] = 'Emergency Photo Report ${DateTime.now().toIso8601String()}';
+    request.fields['title'] = 'Emergency Incident Photos ${DateTime.now().toIso8601String()}';
     request.fields['type'] = 'emergency_photo';
     if (categoryId != null) request.fields['categoryId'] = categoryId;
     request.fields['gpsTracks'] = jsonEncode(gpsTracks);

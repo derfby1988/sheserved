@@ -6,6 +6,7 @@ import '../../../../config/app_config.dart';
 import '../../../../config/sync_config.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
 import '../../data/repositories/video_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import 'dart:async';
@@ -16,6 +17,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
+import '../../models/video_models.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -43,7 +47,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   StreamSubscription? _interactionSub;
   StreamSubscription? _progressSub;
   StreamSubscription? _rescueIncomingSub;
+  StreamSubscription? _videoStatusSub;
   
+  // Video Player & Map Sync
+  VideoPlayerController? _videoPlayerController;
+  ChewieController? _chewieController;
+  List<VideoGpsTrack> _dbGpsTracks = [];
+  
+  // Custom logic to avoid resetting polyline too often
+  VideoGpsTrack? _lastSyncedVideoTrack;
+
   // Emergency Recording
   CameraController? _cameraController;
   bool _isRecording = false;
@@ -56,6 +69,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   // Category state
   List<DonationCategory> _emergencyCategories = [];
   bool _isLoadingCategories = false;
+
+  // Trending Videos
+  List<Video> _trendingVideos = [];
+  bool _isLoadingTrending = true;
 
   // Video Recording Limits & Timers
   static const int _prepSeconds = 3;
@@ -159,6 +176,36 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         _likeCount = summary['likes'] ?? 0;
         _donationTotal = summary['donations']?.toDouble() ?? 0.0;
       });
+
+      // Fetch Video and handle reproduction
+      final video = await ServiceLocator.instance.videoRepository.getVideoById(widget.videoId!);
+      if (video != null && video.bunnyUrl != null) {
+         _initializePlayer(video.bunnyUrl!);
+      }
+      
+      // Fetch GPS Tracks for the video
+      final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(widget.videoId!);
+      if (tracks.isNotEmpty) {
+          _dbGpsTracks = tracks;
+      }
+    }
+
+    // Fetch trending videos
+    try {
+      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos();
+      if (mounted) {
+        setState(() {
+          _trendingVideos = videos;
+          _isLoadingTrending = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading trending videos: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingTrending = false;
+        });
+      }
     }
   }
 
@@ -225,16 +272,32 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
          }
       }
     });
+
+    // 5. Video Status Updates
+    if (widget.videoId != null) {
+      _videoStatusSub = ws.videoStatusStream.listen((data) {
+        if (data['videoId'] == widget.videoId && data['status'] == 'ready') {
+           final url = data['url'];
+           if (url != null) {
+             _initializePlayer(url);
+           }
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _videoPlayerController?.removeListener(_syncGpsWithVideo);
+    _videoPlayerController?.dispose();
+    _chewieController?.dispose();
     _liveBlinkController.dispose();
     _pulseController.dispose();
     _connectionSub?.cancel();
     _interactionSub?.cancel();
     _progressSub?.cancel();
     _rescueIncomingSub?.cancel();
+    _videoStatusSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (widget.videoId != null) {
@@ -1278,7 +1341,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildDriverAvatar() {
-    final user = ServiceLocator.instance.currentUser;
+    final user = AuthService.instance.currentUser;
     final avatarUrl = user?.profileImageUrl ?? 'https://i.pravatar.cc/150';
 
     return Container(
@@ -1304,7 +1367,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildDriverNameAndTitle() {
-    final user = ServiceLocator.instance.currentUser;
+    final user = AuthService.instance.currentUser;
     final displayName = user?.fullName?.toUpperCase() ?? 'GUEST USER';
 
     return Column(
@@ -1334,14 +1397,73 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     );
   }
 
+  Future<void> _initializePlayer(String url) async {
+    if (_videoPlayerController != null) return;
+
+    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(url));
+    await _videoPlayerController!.initialize();
+
+    _chewieController = ChewieController(
+      videoPlayerController: _videoPlayerController!,
+      autoPlay: true,
+      looping: false,
+      aspectRatio: _videoPlayerController!.value.aspectRatio,
+      showControls: true,
+      materialProgressColors: ChewieProgressColors(
+        playedColor: Colors.red,
+        handleColor: Colors.redAccent,
+        backgroundColor: Colors.grey,
+        bufferedColor: Colors.white,
+      ),
+    );
+
+    _videoPlayerController!.addListener(_syncGpsWithVideo);
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _syncGpsWithVideo() {
+    if (_videoPlayerController == null || !_videoPlayerController!.value.isPlaying) return;
+    if (_dbGpsTracks.isEmpty) return;
+
+    final currentPositionSeconds = _videoPlayerController!.value.position.inSeconds;
+
+    List<LatLng> newRoute = [];
+    VideoGpsTrack? lastTrack;
+    
+    for (var track in _dbGpsTracks) {
+      if (track.timestampOffset <= currentPositionSeconds) {
+        newRoute.add(LatLng(track.latitude, track.longitude));
+        lastTrack = track;
+      } else {
+        break;
+      }
+    }
+
+    if (lastTrack != null && lastTrack != _lastSyncedVideoTrack) {
+      _lastSyncedVideoTrack = lastTrack;
+      if (mounted) {
+        setState(() {
+          _routePoints.clear();
+          _routePoints.addAll(newRoute);
+        });
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(LatLng(lastTrack.latitude, lastTrack.longitude))
+        );
+      }
+    }
+  }
+
   Widget _buildVideoPlayer() {
     return Container(
       width: double.infinity,
-      height: 180,
+      height: 220,
       margin: const EdgeInsets.only(left: 16),
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(4), // Slightly rounded but sharp in draft
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -1350,8 +1472,28 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           ),
         ],
       ),
-      child: Center(
-        child: Icon(Icons.play_arrow, color: Colors.white54, size: 50),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _chewieController != null &&
+               _chewieController!.videoPlayerController.value.isInitialized
+            ? Chewie(controller: _chewieController!)
+            : Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.red),
+                    const SizedBox(height: 12),
+                    Text(
+                      'กำลังเชื่อมต่อสัญญาณ...',
+                      style: TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -1401,6 +1543,62 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _isLoadingTrending
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)))
+                : _trendingVideos.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'ไม่มีข้อมูล',
+                          style: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.black54),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: _trendingVideos.length,
+                        itemBuilder: (context, index) {
+                          final video = _trendingVideos[index];
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => EmergencyLivePage(videoId: video.id),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              height: 80,
+                              decoration: BoxDecoration(
+                                color: Colors.blueGrey[900],
+                                borderRadius: BorderRadius.circular(12),
+                                image: video.thumbnailUrl != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(video.thumbnailUrl!),
+                                        fit: BoxFit.cover,
+                                        colorFilter: ColorFilter.mode(
+                                            Colors.black.withOpacity(0.3), BlendMode.darken),
+                                      )
+                                    : null,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'อันดับ ${index + 1}',
+                                  style: const TextStyle(
+                                    fontFamily: 'SukhumvitSet',
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          const SizedBox(height: 10),
         ],
       ),
     );
@@ -1721,13 +1919,21 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                                 value: amount,
                               );
                               
+                              // Save to DonationRepository to start payment flow process
+                              await ServiceLocator.instance.donationRepository.addContribution({
+                                'user_id': userId,
+                                'amount': amount,
+                                'status': 'pending', // Will be updated when payment completes
+                                'payment_method': 'app_transfer',
+                              });
+
                               // แจ้งเตือนความสำเร็จ
                               if (mounted) {
                                 Navigator.pop(context);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      'ส่งของขวัญ $amount บาท สำเร็จ! 🙏',
+                                      'บันทึกคำขอบริจาค $amount บาท สำเร็จ และกำลังเข้าสู่ขั้นตอนชำระเงิน 🙏',
                                       style: const TextStyle(fontFamily: 'SukhumvitSet'),
                                     ),
                                     backgroundColor: const Color(0xFF4CAF50),

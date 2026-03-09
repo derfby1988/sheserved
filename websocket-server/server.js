@@ -17,6 +17,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { Pool } = require('pg');
+const path = require('path');
 
 // Video System Services & Routes
 const socketService = require('./services/socket-service');
@@ -76,6 +77,10 @@ const locationsCache = new Map();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve static directory for fallback video playback
+const videoDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
+app.use('/temp/videos', express.static(videoDir));
 
 // Video Routes
 if (pool) {

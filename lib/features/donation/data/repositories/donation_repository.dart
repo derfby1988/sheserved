@@ -222,4 +222,9 @@ class DonationRepository {
     
     return List<Map<String, dynamic>>.from(response);
   }
+
+  /// เพิ่มข้อมูลการบริจาค (จำลอง Flow การชำระเงิน)
+  Future<void> addContribution(Map<String, dynamic> data) async {
+    await _client.from('donation_contributions').insert(data);
+  }
 }

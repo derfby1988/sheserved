@@ -2,13 +2,18 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, '../temp/videos'));
+        const destDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
+        if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true });
+        }
+        cb(null, destDir);
     },
     filename: (req, file, cb) => {
         const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
@@ -24,6 +29,9 @@ const upload = multer({
 const lastUploadTimestamps = new Map();
 
 module.exports = (pool) => {
+    // Initialize video service with the pool
+    videoService.init(pool);
+
     // Upload video
     router.post('/upload', upload.single('video'), async (req, res) => {
         try {
