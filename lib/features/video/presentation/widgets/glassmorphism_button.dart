@@ -104,47 +104,54 @@ class GlassTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? Colors.white.withOpacity(0.85)
-                  : Colors.white.withOpacity(0.55),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.4),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leading != null) ...[
-                  leading!,
-                  const SizedBox(height: 2),
-                ],
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'SukhumvitSet',
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                    color: isActive ? Colors.black87 : Colors.black54,
-                  ),
+    return AspectRatio(
+      aspectRatio: 1.0, // บังคับเป็นทรงสี่เหลี่ยมจัตุรัส
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Colors.white.withOpacity(0.85)
+                    : Colors.white.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.4),
+                  width: 1,
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(height: 2),
-                  trailing!,
-                ],
-              ],
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (leading != null) ...[
+                      leading!,
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 11, // เล็กลงนิดหน่อยเพื่อให้พอดีในจัตุรัส
+                        height: 1.2,
+                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                        color: isActive ? Colors.black87 : Colors.black54,
+                      ),
+                    ),
+                    if (trailing != null) ...[
+                      const SizedBox(height: 4),
+                      trailing!,
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),

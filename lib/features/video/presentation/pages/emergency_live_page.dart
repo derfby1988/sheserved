@@ -44,6 +44,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   LatLng? _userLocation;
   bool _isConnected = true;
   String? _currentVideoId;
+  Video? _currentVideo;
   late AnimationController _liveBlinkController;
   late AnimationController _pulseController;
   GoogleMapController? _mapController;
@@ -189,6 +190,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
       // Fetch Video and handle reproduction
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
+      if (mounted) {
+        setState(() {
+          _currentVideo = video;
+        });
+      }
+      
       if (video != null && video.bunnyUrl != null) {
          _initializePlayer(video.bunnyUrl!);
       }
@@ -415,6 +422,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     
     setState(() {
       _currentVideoId = newVideoId;
+      _currentVideo = null;
       _dbGpsTracks.clear();
       _routePoints.clear();
       _responders.clear();
@@ -852,36 +860,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               children: [
                 if (!_isConnected) _buildOfflineIndicator(),
                 
-                // 1. "Emergency" Header
+                // Header section removed
+
+                // 2. Back Button (Green arrow)
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, top: 8),
+                  padding: const EdgeInsets.only(left: 20, bottom: 10),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Emergency',
-                      style: TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontSize: 22, // Increased size
-                        fontWeight: FontWeight.w900, // Bolder
-                        color: Colors.black87, // Darker
-                        letterSpacing: 0.5,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(Icons.subdirectory_arrow_left_rounded, 
+                          color: Color(0xFF84CC16), // Lime green from mockup
+                          size: 30
+                        ),
                       ),
                     ),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // 2. Driver Info Row (Avatar Left, Name Right)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildDriverAvatar(),
-                      const Spacer(),
-                      _buildDriverNameAndTitle(),
-                    ],
                   ),
                 ),
 
@@ -906,47 +901,40 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildLiveView() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // --- Left Column ---
-        Expanded(
-          flex: 11,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 10),
-              // Back Arrow (Green in draft)
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Icon(Icons.arrow_back, color: Colors.green[700], size: 28),
+              // --- Left Column: Controls & Video (45%) ---
+              Expanded(
+                flex: 45,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    _buildVideoPlayer(),
+                    const SizedBox(height: 12),
+                    _buildViewerCount(),
+                    const SizedBox(height: 12),
+                    _buildActionButtons(),
+                  ],
                 ),
               ),
-              const SizedBox(height: 15),
-              _buildVideoPlayer(),
-              const SizedBox(height: 8),
-              _buildStatusBar(),
-              const SizedBox(height: 8),
-              _buildViewerCount(),
-              const SizedBox(height: 20),
-              _buildActionButtons(),
+              // --- Spacer (20%) อยู่ตรงกลางเพื่อดันการ์ดขวาไปชิดขอบจอ ---
+              const Spacer(flex: 20),
+              // --- Right Column: Trending (35%) ---
+              Expanded(
+                flex: 35,
+                child: _buildTrendingPanel(),
+              ),
             ],
           ),
         ),
-        // --- Right Column ---
-        Expanded(
-          flex: 9,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const SizedBox(height: 10),
-              _buildTrendingPanel(),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1474,6 +1462,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         // Layer 1: Google Map (native platform view)
         GoogleMap(
           key: ValueKey(_currentVideoId),
+          // ตั้งค่า Padding ด้านบนเท่ากับ 20% ของจอ เพื่อให้จุดศูนย์กลาง (Logical Center) ตกลงมาอยู่ที่ 3/5 (60%) ของจอพอดี
+          padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.2), 
           onMapCreated: (controller) {
             debugPrint("DEBUG: Google Map Created Successfully");
             _mapController = controller;
@@ -1548,76 +1538,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     );
   }
 
-  Widget _buildDriverAvatar() {
-    final user = AuthService.instance.currentUser;
-    final avatarUrl = user?.profileImageUrl ?? 'https://i.pravatar.cc/150';
 
-    return Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.grey[300],
-        border: Border.all(color: Colors.white, width: 3),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        image: DecorationImage(
-          image: NetworkImage(avatarUrl),
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDriverNameAndTitle() {
-    final user = AuthService.instance.currentUser;
-    final displayName = user?.fullName?.toUpperCase() ?? 'GUEST USER';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.85), // Glassmorphism-style solid bg
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            displayName,
-            style: TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF6A0D91), // Purple in draft
-              letterSpacing: 1.2,
-            ),
-          ),
-          Text(
-            'START LIVE',
-            style: TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFFC084FC), // Lighter purple
-              letterSpacing: 2.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _initializePlayer(String url) async {
     if (_videoPlayerController != null) return;
@@ -1676,81 +1597,124 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildVideoPlayer() {
-    if (_currentVideoId == null) {
-      return Container(
-        width: double.infinity,
-        height: 220,
-        margin: const EdgeInsets.only(left: 16),
-        decoration: BoxDecoration(
-          color: Colors.black87,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.dashboard_customize_rounded, color: Colors.white54, size: 48),
-              const SizedBox(height: 12),
-              Text(
-                'กรุณาเลือกเหตุการณ์จากแผงยอดนิยมด้านขวา\nเพื่อแสดงระบบศูนย์สั่งการและรับชมวิดีโอ',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'SukhumvitSet',
-                  color: Colors.white70,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+    double aspectRatio = 16 / 9;
+    if (_chewieController != null &&
+        _chewieController!.videoPlayerController.value.isInitialized) {
+      aspectRatio = _chewieController!.videoPlayerController.value.aspectRatio;
     }
 
-    return Container(
-      width: double.infinity,
-      height: 220,
-      margin: const EdgeInsets.only(left: 16),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+    return AspectRatio(
+      aspectRatio: aspectRatio,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: _chewieController != null &&
-               _chewieController!.videoPlayerController.value.isInitialized
-            ? Chewie(controller: _chewieController!)
-            : Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(color: Colors.red),
-                    const SizedBox(height: 12),
-                    Text(
-                      'กำลังเชื่อมต่อสัญญาณภาพ...',
-                      style: TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+        borderRadius: BorderRadius.circular(4),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.1), // โปร่งใสขึ้นอีก (10%)
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white.withOpacity(0.05)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-              ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // คำนวณขนาดแบบ Dynamic ตามความกว้างจริงที่ Widget ได้รับ
+                final width = constraints.maxWidth;
+                final titleFontSize = (width * 0.045).clamp(10.0, 16.0);
+                final statusFontSize = (width * 0.04).clamp(9.0, 14.0);
+                final iconSize = (width * 0.15).clamp(24.0, 48.0);
+                final spacing = (width * 0.03).clamp(4.0, 12.0);
+
+                if (_currentVideoId == null) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.dashboard_customize_rounded,
+                            color: Colors.white70, size: iconSize),
+                        SizedBox(height: spacing),
+                        Text(
+                          'กรุณาเลือกเหตุการณ์จากแผงยอดนิยมด้านขวา\nเพื่อแสดงระบบศูนย์สั่งการและรับชมวิดีโอ',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            color: Colors.white,
+                            fontSize: titleFontSize,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return _chewieController != null &&
+                        _chewieController!.videoPlayerController.value.isInitialized
+                    ? Chewie(controller: _chewieController!)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_currentVideo?.status == VideoStatus.error) ...[
+                              Icon(Icons.error_outline,
+                                  color: Colors.red, size: iconSize),
+                              SizedBox(height: spacing),
+                              Text('เกิดข้อผิดพลาดในการโหลดวิดีโอ',
+                                  style: TextStyle(
+                                      fontFamily: 'SukhumvitSet',
+                                      color: Colors.white70,
+                                      fontSize: statusFontSize)),
+                            ] else if (_currentVideo?.status ==
+                                    VideoStatus.processing ||
+                                _currentVideo?.status == VideoStatus.uploading) ...[
+                              SizedBox(
+                                width: iconSize * 0.6,
+                                height: iconSize * 0.6,
+                                child: const CircularProgressIndicator(
+                                    color: Colors.orange, strokeWidth: 2),
+                              ),
+                              SizedBox(height: spacing * 1.5),
+                              Text(
+                                'กำลังประมวลผล... (${_currentVideo?.progress ?? 0}%)',
+                                style: TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  color: Colors.white70,
+                                  fontSize: statusFontSize,
+                                ),
+                              ),
+                            ] else ...[
+                              SizedBox(
+                                width: iconSize * 0.6,
+                                height: iconSize * 0.6,
+                                child: const CircularProgressIndicator(
+                                    color: Colors.red, strokeWidth: 2),
+                              ),
+                              SizedBox(height: spacing * 1.5),
+                              Text(
+                                'กำลังเชื่อมต่อสัญญาณ...',
+                                style: TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  color: Colors.white70,
+                                  fontSize: statusFontSize,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1823,17 +1787,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
   Widget _buildTrendingPanel() {
     return Container(
-      width: 200,
-      height: 380, // Tall vertical panel
-      margin: const EdgeInsets.only(right: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.6), width: 4),
+        color: Colors.white.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -1958,85 +1920,79 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildViewerCount() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 30), // Offset to align with draft
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'กำลังรับชม',
-            style: TextStyle(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'กำลังรับชม',
+          style: TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontSize: 28, // Increased for impact
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFFFF6B35), // Orange from mockup
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF6B35),
+            borderRadius: BorderRadius.circular(25),
+          ),
+          child: Text(
+            '${_formatCount(_viewerCount)} ราย',
+            style: const TextStyle(
               fontFamily: 'SukhumvitSet',
-              fontSize: 20,
+              fontSize: 14,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFFFF6B35),
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 5),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF6B35),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '${_formatCount(_viewerCount)} ราย',
-              style: TextStyle(
-                fontFamily: 'SukhumvitSet',
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildActionButtons() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInteractionButtonRow(
-            value: _formatCount(_likeCount),
-            label: 'ส่งกำลังใจ',
-            onTap: () async {
-              final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
-              if (_currentVideoId != null) {
-                // อัปเดตผ่าน Realtime Stream เท่านั้นเพื่อกันนับเบิ้ล
-                try {
-                  final interaction = VideoInteraction(
-                    id: '', 
-                    videoId: _currentVideoId!,
-                    userId: userId,
-                    type: 'like',
-                    createdAt: DateTime.now(),
-                  );
-                  await ServiceLocator.instance.videoRepository.addInteraction(interaction);
-                } catch (e) {
-                   debugPrint('Error sending like: $e');
-                }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildInteractionButtonRow(
+          value: _formatCount(_likeCount),
+          label: 'ส่งกำลังใจ',
+          onTap: () async {
+            final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
+            if (_currentVideoId != null) {
+              try {
+                final interaction = VideoInteraction(
+                  id: '',
+                  videoId: _currentVideoId!,
+                  userId: userId,
+                  type: 'like',
+                  createdAt: DateTime.now(),
+                );
+                await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+              } catch (e) {
+                debugPrint('Error sending like: $e');
               }
-            },
-          ),
-          const SizedBox(height: 10),
-          _buildInteractionButtonRow(
-            value: '20%',
-            label: 'ให้ทาง',
-            onTap: () {},
-          ),
-          const SizedBox(height: 10),
-          _buildInteractionButtonRow(
-            value: '${_donationTotal.toStringAsFixed(0)}บ.',
-            label: 'บริจาค',
-            onTap: () => _showDonationSheet(),
-          ),
-        ],
-      ),
+            }
+          },
+        ),
+        const SizedBox(height: 6),
+        _buildInteractionButtonRow(
+          value: '20%',
+          label: 'ให้ทาง',
+          onTap: () {},
+        ),
+        const SizedBox(height: 6),
+        _buildInteractionButtonRow(
+          value: '${_donationTotal.toStringAsFixed(0)}บ.',
+          label: 'บริจาค',
+          onTap: () => _showDonationSheet(),
+        ),
+      ],
     );
   }
 
@@ -2050,45 +2006,42 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Value Box (Grayish/Blured)
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-              child: Container(
-                width: 60,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.35),
-                  border: Border.all(color: Colors.white.withOpacity(0.2)),
-                ),
-                child: Center(
-                  child: Text(
-                    value,
-                    style: const TextStyle(
-                      fontFamily: 'SukhumvitSet',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+            child: Container(
+              width: 70,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6B7280).withOpacity(0.8), // Gray background
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
+              ),
+              child: Center(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontFamily: 'SukhumvitSet',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
                   ),
                 ),
               ),
             ),
           ),
-          // Label Box (Orange)
+          // Label Box (Orange - Pill shape on the right)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFFF6B35).withOpacity(0.9),
+              color: const Color(0xFFFF6B35),
               borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(8),
-                bottomRight: Radius.circular(8),
+                topRight: Radius.circular(12),
+                bottomRight: Radius.circular(12),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFF6B35).withOpacity(0.3),
-                  blurRadius: 8,
+                  color: const Color(0xFFFF6B35).withOpacity(0.4),
+                  blurRadius: 10,
+                  offset: const Offset(2, 0),
                 )
               ],
             ),
@@ -2108,24 +2061,32 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildBottomTabs() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxButtonSize = screenHeight * 0.1; // จำกัดขนาดไม่เกิน 10% ของจอ
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Live Tab
           Expanded(
-            child: GlassTabButton(
-              label: 'Live',
-              isActive: _selectedTab == 0,
-              leading: AnimatedBuilder(
-                animation: _liveBlinkController,
-                builder: (context, child) {
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: maxButtonSize,
+                  maxWidth: maxButtonSize,
+                ),
+                child: GlassTabButton(
+                  label: 'Live',
+                  isActive: _selectedTab == 0,
+                  leading: AnimatedBuilder(
+                    animation: _liveBlinkController,
+                    builder: (context, child) {
+                      return Container(
+                        width: 8,
+                        height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Color.lerp(
@@ -2134,52 +2095,58 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                             _liveBlinkController.value,
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      );
+                    },
+                  ),
+                  onTap: () => setState(() => _selectedTab = 0),
+                ),
               ),
-              onTap: () {
-                debugPrint("DEBUG: Switching to Live Tab (0)");
-                setState(() => _selectedTab = 0);
-              },
             ),
           ),
           const SizedBox(width: 8),
           // ความสัมพันธ์ Tab
           Expanded(
-            child: GlassTabButton(
-              label: 'ความสัมพันธ์',
-              isActive: _selectedTab == 1,
-              onTap: () {
-                debugPrint("DEBUG: Switching to Relationship Tab (1)");
-                setState(() => _selectedTab = 1);
-              },
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: maxButtonSize,
+                  maxWidth: maxButtonSize,
+                ),
+                child: GlassTabButton(
+                  label: 'ความสัมพันธ์',
+                  isActive: _selectedTab == 1,
+                  onTap: () => setState(() => _selectedTab = 1),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 8),
           // แจ้งเหตุ Tab
           Expanded(
-            child: GlassTabButton(
-              label: 'แจ้งเหตุ\nขอความช่วยเหลือ',
-              isActive: _selectedTab == 2,
-              trailing: Icon(
-                Icons.error_outline,
-                size: 20,
-                color: _selectedTab == 2 ? Colors.red : Colors.grey,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: maxButtonSize,
+                  maxWidth: maxButtonSize,
+                ),
+                child: GlassTabButton(
+                  label: 'แจ้งเหตุ\nฉุกเฉิน',
+                  isActive: _selectedTab == 2,
+                  trailing: Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: _selectedTab == 2 ? Colors.red : Colors.grey,
+                  ),
+                  onTap: () async {
+                    setState(() => _selectedTab = 2);
+                    await _loadConfigFromDatabase();
+                    if (_emergencyCategories.isEmpty) {
+                      _loadEmergencyCategories();
+                    }
+                    _initCamera();
+                  },
+                ),
               ),
-              onTap: () async {
-                setState(() {
-                  _selectedTab = 2;
-                });
-                
-                // Fetch fresh settings and categories when tapping the report tab
-                await _loadConfigFromDatabase();
-                if (_emergencyCategories.isEmpty) {
-                  _loadEmergencyCategories();
-                }
-                _initCamera(); // Keep camera init here
-              },
             ),
           ),
         ],

@@ -7,26 +7,30 @@ class AppConfig {
   // =====================================================
 
   /// โหมดการทำงาน
-  /// - unified: ใช้ทั้ง Local และ Supabase ซิงค์กันอัตโนมัติ (แนะนำ)
+  /// - unified: ใช้ทั้ง Local และ Supabase ซิงค์กันอัตโนมัติ (แนะนำสำหรับเครื่องหลัก)
   /// - localOnly: ใช้แค่ Local PostgreSQL
-  /// - supabaseOnly: ใช้แค่ Supabase Cloud
+  /// - supabaseOnly: ใช้แค่ Supabase Cloud (แนะนำสำหรับเครื่องรอง/Client)
   static const DatabaseMode databaseMode = DatabaseMode.supabaseOnly;
 
-  /// เปิดใช้งาน Auto Sync
+  /// เปิดใช้งาน Auto Sync (สำหรับ Unified mode เท่านั้น)
   static const bool enableAutoSync = true;
 
   /// ช่วงเวลา Sync (วินาที)
   static const int syncIntervalSeconds = 30;
 
   // =====================================================
-  // LOCAL DATABASE (WebSocket Server)
+  // DEVELOPMENT SERVER (VIDEO PROCESSING / WEBSOCKET)
   // =====================================================
 
-  /// URL ของ WebSocket Server (Local)
-  static const String localApiUrl = 'http://127.0.0.1:3000';
+  /// IP ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server
+  /// เปลี่ยนเป็น 127.0.0.1 หากรันบนเครื่องเดียวกัน
+  static const String mainMachineIp = '192.168.1.108'; // IP เครื่องหลักของคุณ
+
+  /// URL ของ WebSocket Server
+  static const String localApiUrl = 'http://$mainMachineIp:3000';
 
   /// URL สำหรับ WebSocket connection
-  static const String websocketUrl = 'http://127.0.0.1:3000';
+  static const String websocketUrl = 'http://$mainMachineIp:3000';
 
   // =====================================================
   // SUPABASE CONFIGURATION
