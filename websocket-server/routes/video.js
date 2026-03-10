@@ -197,6 +197,76 @@ module.exports = (pool) => {
         }
     });
 
+    // Get emergency videos list (trending) - with user info & interaction counts
+    router.get('/emergency/list', async (req, res) => {
+        try {
+            const result = await pool.query(`
+                SELECT v.*,
+                    COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
+                    u.profile_image_url AS user_avatar,
+                    COALESCE(vc.view_count, 0)::int AS viewer_count,
+                    COALESCE(lc.like_count, 0)::int AS like_count
+                FROM videos v
+                LEFT JOIN users u ON u.id = v.user_id
+                LEFT JOIN (
+                    SELECT video_id, COUNT(*) AS view_count
+                    FROM video_interactions WHERE type = 'view'
+                    GROUP BY video_id
+                ) vc ON vc.video_id = v.id
+                LEFT JOIN (
+                    SELECT video_id, COUNT(*) AS like_count
+                    FROM video_interactions WHERE type = 'like'
+                    GROUP BY video_id
+                ) lc ON lc.video_id = v.id
+                WHERE v.type = 'emergency'
+                ORDER BY v.created_at DESC
+                LIMIT 20
+            `);
+
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Error fetching emergency videos:', error.message);
+            res.status(500).json({ error: 'Failed to fetch emergency videos' });
+        }
+    });
+
+    // Get GPS tracks for a video
+    router.get('/:id/gps-tracks', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query(
+                'SELECT * FROM video_gps_tracks WHERE video_id = $1 ORDER BY timestamp_offset',
+                [id]
+            );
+            res.json(result.rows);
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to fetch GPS tracks' });
+        }
+    });
+
+    // Get interaction summary for a video
+    router.get('/:id/interactions', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const views = await pool.query(
+                "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'view'", [id]
+            );
+            const likes = await pool.query(
+                "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'like'", [id]
+            );
+            const gifts = await pool.query(
+                "SELECT COALESCE(SUM(value), 0) as total FROM video_interactions WHERE video_id = $1 AND type = 'gift'", [id]
+            );
+            res.json({
+                views: parseInt(views.rows[0].cnt),
+                likes: parseInt(likes.rows[0].cnt),
+                donations: parseFloat(gifts.rows[0].total),
+            });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to fetch interactions' });
+        }
+    });
+
     // Get video status
     router.get('/:id', async (req, res) => {
         try {

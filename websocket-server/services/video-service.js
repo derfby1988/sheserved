@@ -1,5 +1,6 @@
 const { Queue, Worker } = require('bullmq');
 const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath('/opt/homebrew/bin/ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
