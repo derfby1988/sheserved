@@ -1801,7 +1801,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       ),
       child: Column(
         children: [
-          const SizedBox(height: 20),
+/*           const SizedBox(height: 20),
           Text(
             'ยอดนิยม',
             style: TextStyle(
@@ -1810,7 +1810,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               fontWeight: FontWeight.w900,
               color: Colors.black87,
             ),
-          ),
+          ), */
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1819,7 +1819,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              '10 อันดับแรก',
+              'ยอดนิยม',
               style: TextStyle(
                 fontFamily: 'SukhumvitSet',
                 fontSize: 12,
@@ -2079,7 +2079,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                   maxWidth: maxButtonSize,
                 ),
                 child: GlassTabButton(
-                  label: 'Live',
+                  label: 'ไทยมุง',
                   isActive: _selectedTab == 0,
                   leading: AnimatedBuilder(
                     animation: _liveBlinkController,
@@ -2113,7 +2113,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                   maxWidth: maxButtonSize,
                 ),
                 child: GlassTabButton(
-                  label: 'ความสัมพันธ์',
+                  label: 'เกี่ยวดอง',
                   isActive: _selectedTab == 1,
                   onTap: () => setState(() => _selectedTab = 1),
                 ),
