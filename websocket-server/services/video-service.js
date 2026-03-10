@@ -86,8 +86,9 @@ const worker = new Worker('video-processing', async (job) => {
             .outputOptions([
                 '-profile:v baseline',
                 '-level 3.0',
+                '-vf scale=-2:360', // บีบอัดความละเอียดลงมาที่ 360p (ส่วนสูง 360px กว้างปรับหดตามอัตราส่วนอัตโนมัติ)
                 '-start_number 0',
-                '-hls_time 10',
+                '-hls_time 2',      // ลดเวลาของแต่ละ segment จาก 10 วินาทีเหลือ 2 วินาที เพื่อให้โหลดตอนแรกไวขึ้น
                 '-hls_list_size 0',
                 '-f hls'
             ])
@@ -113,7 +114,7 @@ const worker = new Worker('video-processing', async (job) => {
 
                     const finalUrl = process.env.BUNNY_CDN_URL && process.env.BUNNY_CDN_URL !== 'https://your-pull-zone.b-cdn.net'
                         ? `${process.env.BUNNY_CDN_URL}/${videoId}/playlist.m3u8`
-                        : `http://localhost:3000/temp/videos/${videoId}/playlist.m3u8`; // Fallback to local url if not set
+                        : null; // Set to null. App will dynamically generate local URL via AppConfig.localApiUrl
 
                     if (dbPool) {
                         await dbPool.query('UPDATE videos SET status = $1, progress = 100, bunny_url = $2 WHERE id = $3', ['ready', finalUrl, videoId]);
@@ -122,7 +123,8 @@ const worker = new Worker('video-processing', async (job) => {
                     socketService.sendStatus(userId, videoId, 'ready', { url: finalUrl });
 
                     // Cleanup
-                    cleanup(filePath, outputDir);
+                    const keepOutputDir = (finalUrl === null);
+                    cleanup(filePath, outputDir, keepOutputDir);
                     resolve();
                 } catch (error) {
                     console.error('[Worker] Error after transcode:', error);
@@ -152,14 +154,16 @@ const worker = new Worker('video-processing', async (job) => {
  * Cleanup temporary files
  * @param {string} originalPath 
  * @param {string} outputDir 
+ * @param {boolean} keepOutputDir 
  */
-function cleanup(originalPath, outputDir) {
+function cleanup(originalPath, outputDir, keepOutputDir = false) {
     try {
-        if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
-        if (fs.existsSync(outputDir)) {
+        if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath); // Delete the original mp4
+
+        if (!keepOutputDir && fs.existsSync(outputDir)) {
             fs.rmSync(outputDir, { recursive: true, force: true });
         }
-        console.log(`[Cleanup] Removed temp files for ${originalPath}`);
+        console.log(`[Cleanup] Removed temp files for ${originalPath}${keepOutputDir ? ' (kept transcoded HLS files)' : ''}`);
     } catch (error) {
         console.error(`[Cleanup] Error: ${error.message}`);
     }
