@@ -119,6 +119,39 @@ class VideoRepository {
         .toList();
   }
 
+  /// ตอบรับการช่วยเหลือเหตุการณ์
+  /// @param videoId ID ของวิดีโอเหตุฉุกเฉิน
+  /// @param responderId ID ของผู้ช่วยเหลือ (กู้ภัย)
+  /// @param latitude ละติจูดปัจจุบันของผู้ช่วยเหลือ
+  /// @param longitude ลองจิจูดปัจจุบันของผู้ช่วยเหลือ
+  /// @return responseId ID สำหรับใช้ในการอัปเดตสถานะถัดไป
+  Future<String?> acceptIncident({
+    required String videoId,
+    required String responderId,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'responderId': responderId,
+          'latitude': latitude,
+          'longitude': longitude,
+        }),
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['responseId']?.toString();
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: acceptIncident failed - $e');
+    }
+    return null;
+  }
+
   /// เพิ่ม Interaction (like, gift, view)
   Future<void> addInteraction(VideoInteraction interaction) async {
     if (AppConfig.useLocalDatabase) {
@@ -205,7 +238,7 @@ class VideoRepository {
 
   /// อัปโหลดวิดีโอแจ้งเหตุฉุกเฉินพร้อมพิกัด GPS
   /// ต้องส่ง [userId] เข้ามาเสมอตาม auth_data_guidelines.md
-  Future<void> uploadEmergencyVideo({
+  Future<String?> uploadEmergencyVideo({
     required String userId,
     required File videoFile,
     required List<Map<String, dynamic>> gpsTracks,
@@ -235,11 +268,15 @@ class VideoRepository {
     if (response.statusCode != 200) {
       throw Exception("Upload failed with status ${response.statusCode}");
     }
+
+    final respStr = await response.stream.bytesToString();
+    final data = jsonDecode(respStr);
+    return data['video']?['id']?.toString() ?? data['id']?.toString();
   }
 
   /// อัปโหลดภาพถ่ายแจ้งเหตุฉุกเฉินพร้อมพิกัด GPS
   /// ต้องส่ง [userId] เข้ามาเสมอตาม auth_data_guidelines.md
-  Future<void> uploadEmergencyPhotos({
+  Future<String?> uploadEmergencyPhotos({
     required String userId,
     required List<File> photoFiles,
     required List<Map<String, dynamic>> gpsTracks,
@@ -279,6 +316,10 @@ class VideoRepository {
     if (response.statusCode != 200) {
       throw Exception("Upload failed with status ${response.statusCode}");
     }
+
+    final respStr = await response.stream.bytesToString();
+    final data = jsonDecode(respStr);
+    return data['video']?['id']?.toString() ?? data['id']?.toString();
   }
 
   /// ดึงพิกัดล่าสุดของ Live/วิดีโอ ที่กำลังออนไลน์หรือประมวลผลเสร็จแล้ว

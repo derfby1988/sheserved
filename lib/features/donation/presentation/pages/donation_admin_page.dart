@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../../../services/websocket_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/service_locator.dart';
@@ -7,6 +10,10 @@ import '../../../admin/models/profession.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
 import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
+import '../../../../features/video/data/repositories/video_repository.dart';
+import '../../../../features/video/presentation/pages/emergency_live_page.dart';
+import '../../../../features/video/models/video_models.dart';
+import '../../../../config/app_config.dart';
 
 class DonationAdminPage extends StatefulWidget {
   const DonationAdminPage({super.key});
@@ -24,7 +31,7 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _repository = DonationRepository(Supabase.instance.client);
     _loadUserContext();
   }
@@ -83,6 +90,7 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
                     Tab(text: 'หมวดหมู่'),
                     Tab(text: 'คำร้องขอ'),
                     Tab(text: 'ศูนย์อนุมัติ'),
+                    Tab(text: 'ช่วยเหลือฉุกเฉิน'),
                     Tab(text: 'ประวัติ'),
                   ],
                 ),
@@ -97,6 +105,7 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
           _CategoryManagementPanel(repository: _repository),
           _RequestManagementPanel(repository: _repository),
           _ApprovalCenterPanel(repository: _repository, userId: _currentUserId, isStorageAdmin: _isStorageAdmin),
+          _ResponderHelpPanel(userId: _currentUserId),
           _ContributionHistoryPanel(repository: _repository),
         ],
       ),
@@ -867,6 +876,218 @@ class _ContributionHistoryPanelState extends State<_ContributionHistoryPanel> {
           trailing: Text(item['created_at'].toString().split('T')[0]),
         );
       },
+    );
+  }
+}
+
+/// แผงช่วยเหลือฉุกเฉินสำหรับอาชีพ (Responder Help Panel)
+class _ResponderHelpPanel extends StatefulWidget {
+  final String? userId;
+  const _ResponderHelpPanel({this.userId});
+
+  @override
+  State<_ResponderHelpPanel> createState() => _ResponderHelpPanelState();
+}
+
+class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
+  late VideoRepository _videoRepository;
+  List<Video> _emergencyVideos = [];
+  bool _isLoading = true;
+  Position? _currentPosition;
+  StreamSubscription? _emergencySub;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _videoRepository = ServiceLocator.instance.videoRepository;
+    _loadEmergencyVideos();
+
+    // Listen for new emergency alerts via WebSocket and auto-refresh
+    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) {
+      debugPrint('ResponderHelpPanel: Received emergency notification, refreshing list...');
+      _loadEmergencyVideos();
+    });
+
+    // Periodic refresh every 10 seconds to catch any missed events
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _loadEmergencyVideos();
+    });
+  }
+
+  @override
+  void dispose() {
+    _emergencySub?.cancel();
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadEmergencyVideos() async {
+    if (!mounted) return;
+    setState(() => _isLoading = _emergencyVideos.isEmpty); // Only show loading on first load
+    try {
+      // 1. Get Current Location for distance calculation
+      try {
+        _currentPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+        ).timeout(const Duration(seconds: 3));
+      } catch (e) {
+        debugPrint('Error getting location: $e');
+      }
+
+      // 2. Load Videos
+      debugPrint('ResponderHelpPanel: Loading videos from ${AppConfig.localApiUrl}');
+      final videos = await _videoRepository.getEmergencyVideos();
+      debugPrint('ResponderHelpPanel: Loaded ${videos.length} videos');
+      if (mounted) {
+        setState(() {
+          _emergencyVideos = videos;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading emergency videos: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatAddress(Video video) {
+    List<String> parts = [];
+    if (video.village != null && video.village!.isNotEmpty) parts.add('หมู่บ้าน ${video.village}');
+    if (video.road != null && video.road!.isNotEmpty) parts.add('ถนน ${video.road}');
+    if (video.soi != null && video.soi!.isNotEmpty) parts.add('ซอย ${video.soi}');
+    if (video.alley != null && video.alley!.isNotEmpty) parts.add('ตรอก ${video.alley}');
+    if (video.address != null && video.address!.isNotEmpty) parts.add(video.address!);
+    
+    if (parts.isEmpty) return 'ไม่ระบุที่อยู่ละเอียด';
+    return parts.join(' ');
+  }
+
+  String _getDistanceLabel(Video video) {
+    if (_currentPosition == null || video.latitude == 0 || video.longitude == 0) {
+      return 'ไม่ทราบระยะทาง';
+    }
+    
+    double distanceInMeters = Geolocator.distanceBetween(
+      _currentPosition!.latitude,
+      _currentPosition!.longitude,
+      video.latitude,
+      video.longitude,
+    );
+    
+    if (distanceInMeters < 1000) {
+      return 'ห่างจากคุณ ${distanceInMeters.toStringAsFixed(0)} เมตร';
+    } else {
+      return 'ห่างจากคุณ ${(distanceInMeters / 1000).toStringAsFixed(1)} กม.';
+    }
+  }
+
+  Future<void> _handleAcceptHelp(Video video) async {
+    if (widget.userId == null) return;
+    
+    // Show loading state
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('กำลังบันทึกการตอบรับ...')),
+    );
+
+    try {
+      // 1. สร้าง Record การตอบรับ (Real API call)
+      final responseId = await _videoRepository.acceptIncident(
+        videoId: video.id,
+        responderId: widget.userId!,
+        latitude: _currentPosition?.latitude,
+        longitude: _currentPosition?.longitude,
+      );
+      
+      if (responseId == null) {
+        throw Exception('ไม่สามารถบันทึกการตอบรับได้ กรุณาลองใหม่');
+      }
+
+      // 2. ไปที่หน้า EmergencyLivePage ทันที
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EmergencyLivePage(
+              videoId: video.id,
+              responseId: responseId, // Pass the response tracking ID
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.userId == null) return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
+
+    return RefreshIndicator(
+      onRefresh: _loadEmergencyVideos,
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'เหตุฉุกเฉินที่กำลังเกิดขึ้น (Active Emergencies)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _emergencyVideos.isEmpty
+                    ? const Center(child: Text('ไม่มีเหตุฉุกเฉินในขณะนี้'))
+                    : ListView.builder(
+                        itemCount: _emergencyVideos.length,
+                        itemBuilder: (context, index) {
+                          final video = _emergencyVideos[index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Column(
+                              children: [
+                                ListTile(
+                                  leading: const Icon(Icons.emergency, color: Colors.red),
+                                  title: Text(video.title ?? 'ไม่ระบุชื่อเหตุการณ์'),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_formatAddress(video), 
+                                        style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                      const SizedBox(height: 4),
+                                      Text(_getDistanceLabel(video), 
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                    ],
+                                  ),
+                                  trailing: const Icon(Icons.live_tv, color: Colors.green),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                                  child: ElevatedButton(
+                                    onPressed: () => _handleAcceptHelp(video),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                      minimumSize: const Size(double.infinity, 45),
+                                    ),
+                                    child: const Text('ฉันพร้อมช่วยเหลือ (Accept Help)', 
+                                      style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }

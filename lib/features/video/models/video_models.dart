@@ -21,6 +21,13 @@ class Video {
   final int progress;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final double latitude;
+  final double longitude;
+  final String? address;
+  final String? road;
+  final String? soi;
+  final String? alley;
+  final String? village;
 
   // Joined data
   final String? userName;
@@ -52,6 +59,13 @@ class Video {
     this.viewerCount = 0,
     this.likeCount = 0,
     this.donationTotal = 0,
+    this.latitude = 0,
+    this.longitude = 0,
+    this.address,
+    this.road,
+    this.soi,
+    this.alley,
+    this.village,
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
@@ -61,6 +75,13 @@ class Video {
       if (value is int) return value;
       if (value is String) return int.tryParse(value) ?? 0;
       return 0;
+    }
+
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
     }
 
     return Video(
@@ -91,6 +112,13 @@ class Video {
       userRole: json['user_role']?.toString(),
       viewerCount: parseInt(json['viewer_count']),
       likeCount: parseInt(json['like_count']),
+      latitude: parseDouble(json['latitude']),
+      longitude: parseDouble(json['longitude']),
+      address: json['address']?.toString(),
+      road: json['road']?.toString(),
+      soi: json['soi']?.toString(),
+      alley: json['alley']?.toString(),
+      village: json['village']?.toString(),
     );
   }
 

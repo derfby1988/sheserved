@@ -35,7 +35,7 @@ module.exports = (pool) => {
     // Upload video
     router.post('/upload', upload.single('video'), async (req, res) => {
         try {
-            const { userId, title, description, type, donationRequestId } = req.body;
+            const { userId, title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
             const file = req.file;
 
             if (!file) {
@@ -73,9 +73,9 @@ module.exports = (pool) => {
             // 1. Insert into Database
             const videoId = uuidv4();
             const result = await pool.query(
-                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing') RETURNING id`,
-                [videoId, userId, title, description || '', type || 'normal', categoryId || null, donationRequestId || null]
+                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, status, address, road, soi, alley, village)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', $8, $9, $10, $11, $12) RETURNING id`,
+                [videoId, userId, title, description || '', type || 'normal', categoryId || null, donationRequestId || null, address || null, road || null, soi || null, alley || null, village || null]
             );
 
             const videoRecord = result.rows[0];
@@ -199,13 +199,17 @@ module.exports = (pool) => {
 
     // Get emergency videos list (trending) - with user info & interaction counts
     router.get('/emergency/list', async (req, res) => {
+        console.log('[API] Fetching emergency videos list');
         try {
             const result = await pool.query(`
                 SELECT v.*,
                     COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                     u.profile_image_url AS user_avatar,
                     COALESCE(vc.view_count, 0)::int AS viewer_count,
-                    COALESCE(lc.like_count, 0)::int AS like_count
+                    COALESCE(lc.like_count, 0)::int AS like_count,
+                    gt.latitude,
+                    gt.longitude,
+                    v.address, v.road, v.soi, v.alley, v.village
                 FROM videos v
                 LEFT JOIN users u ON u.id = v.user_id
                 LEFT JOIN (
@@ -218,6 +222,11 @@ module.exports = (pool) => {
                     FROM video_interactions WHERE type = 'like'
                     GROUP BY video_id
                 ) lc ON lc.video_id = v.id
+                LEFT JOIN (
+                    SELECT DISTINCT ON (video_id) video_id, latitude, longitude
+                    FROM video_gps_tracks
+                    ORDER BY video_id, timestamp_offset ASC
+                ) gt ON gt.video_id = v.id
                 WHERE v.type = 'emergency'
                 ORDER BY v.created_at DESC
                 LIMIT 20
@@ -227,6 +236,33 @@ module.exports = (pool) => {
         } catch (error) {
             console.error('Error fetching emergency videos:', error.message);
             res.status(500).json({ error: 'Failed to fetch emergency videos' });
+        }
+    });
+
+    // Accept incident
+    router.post('/:id/accept', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { responderId, latitude, longitude } = req.body;
+
+            if (!responderId) {
+                return res.status(400).json({ error: 'responderId is required' });
+            }
+
+            const result = await pool.query(
+                `INSERT INTO incident_responses (video_id, volunteer_id, volunteer_start_lat, volunteer_start_lng, status)
+                 VALUES ($1, $2, $3, $4, 'en_route')
+                 RETURNING id`,
+                [id, responderId, latitude || null, longitude || null]
+            );
+
+            res.json({
+                message: 'Incident accepted',
+                responseId: result.rows[0].id
+            });
+        } catch (error) {
+            console.error('Accept Incident Error:', error.message);
+            res.status(500).json({ error: 'Failed to accept incident' });
         }
     });
 

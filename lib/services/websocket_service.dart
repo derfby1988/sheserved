@@ -48,6 +48,7 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get videoProgressStream => _videoProgressController.stream;
   Stream<Map<String, dynamic>> get videoStatusStream => _videoStatusController.stream;
   Stream<Map<String, dynamic>> get videoInteractionStream => _videoInteractionController.stream;
+  IO.Socket? get socket => _socket;
   
   // Emergency Getters
   Stream<Map<String, dynamic>> get emergencyNotificationStream => _emergencyNotificationController.stream;
@@ -103,7 +104,9 @@ class WebSocketService {
         IO.OptionBuilder()
             .setTransports(['websocket'])
             .disableAutoConnect() // ปิด auto-connect เพื่อให้เชื่อมต่อเมื่อเรียก connect() เท่านั้น
-            .disableReconnection() // ปิด auto-reconnect เพื่อไม่ให้ retry ตลอดเวลา
+            .enableReconnection()
+            .setReconnectionDelay(2000)
+            .setReconnectionAttempts(10)
             .setAuth({'userId': userId, 'token': authToken})
             .build(),
       );
@@ -414,5 +417,24 @@ class WebSocketService {
     _videoInteractionController.close();
     _emergencyNotificationController.close();
     _rescueIncomingController.close();
+  }
+
+  /// Send rescue status update
+  void updateRescueStatus({
+    required String videoId,
+    required String volunteerId,
+    required String status,
+    required String responseId,
+    String? victimId,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    
+    _socket!.emit('rescue-status-update', {
+      'videoId': videoId,
+      'volunteerId': volunteerId,
+      'victimId': victimId,
+      'status': status,
+      'responseId': responseId,
+    });
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../widgets/glassmorphism_button.dart';
 import '../../../../config/app_config.dart';
@@ -27,8 +28,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
 class EmergencyLivePage extends StatefulWidget {
   final String? videoId;
+  final String? responseId; // ID for response tracking
 
-  const EmergencyLivePage({super.key, this.videoId});
+  const EmergencyLivePage({super.key, this.videoId, this.responseId});
 
   @override
   State<EmergencyLivePage> createState() => _EmergencyLivePageState();
@@ -54,6 +56,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   StreamSubscription? _progressSub;
   StreamSubscription? _rescueIncomingSub;
   StreamSubscription? _videoStatusSub;
+  StreamSubscription? _locationSub;
   
   // Video Player & Map Sync
   VideoPlayerController? _videoPlayerController;
@@ -65,6 +68,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   
   // Responders data
   List<Map<String, dynamic>> _responders = [];
+  String? _currentResponseId;
 
   // Emergency Recording
   CameraController? _cameraController;
@@ -113,6 +117,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     });
     
     _currentVideoId = widget.videoId;
+    _currentResponseId = widget.responseId;
 
     _liveBlinkController = AnimationController(
       vsync: this,
@@ -125,8 +130,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     )..repeat();
     
     _checkPermissions();
+    _ensureWebSocketConnected();
     _setupWebSocketStreams();
     _loadInitialData();
+  }
+
+  /// Ensure WebSocket is connected before doing anything
+  Future<void> _ensureWebSocketConnected() async {
+    final ws = WebSocketService();
+    final userId = ServiceLocator.instance.currentUser?.id;
+    if (userId != null && !ws.isConnected) {
+      debugPrint('EmergencyLivePage: WebSocket not connected. Connecting now...');
+      ws.resetConnectionAttempts();
+      await ws.connect(userId: userId);
+      debugPrint('EmergencyLivePage: WebSocket connection initiated. isConnected=${ws.isConnected}');
+    } else {
+      debugPrint('EmergencyLivePage: WebSocket already connected=${ws.isConnected}, userId=$userId');
+    }
   }
 
   Future<void> _loadConfigFromDatabase() async {
@@ -204,6 +224,24 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(_currentVideoId!);
       if (tracks.isNotEmpty) {
           _dbGpsTracks = tracks;
+          // Populate route points from existing tracks for initial camera focus
+          if (mounted) {
+            setState(() {
+              _routePoints.clear();
+              _routePoints.addAll(tracks.map((t) => LatLng(t.latitude, t.longitude)));
+            });
+            // Focus map on the incident
+            _adjustMapBounds();
+          }
+      } else if (video != null && video.latitude != 0) {
+          // Fallback if no tracks but video has a location
+          if (mounted) {
+            setState(() {
+              _routePoints.clear();
+              _routePoints.add(LatLng(video.latitude, video.longitude));
+            });
+            _adjustMapBounds();
+          }
       }
     }
 
@@ -367,7 +405,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (mounted) {
          final status = data['status'];
          String msg = '';
-         if (status == 'accepted') msg = 'กู้ภัยกำลังเดินทางมาหาคุณ...';
+         if (status == 'accepted') {
+           msg = 'กู้ภัยกำลังเดินทางมาหาคุณ...';
+           _loadResponders(); // RELOAD responders list when new one accepts
+         }
          else if (status == 'arrived') msg = 'กู้ภัยเดินทางมาถึงที่เกิดเหตุแล้ว!';
          else if (status == 'resolved') msg = 'ภารกิจของกู้ภัยเสร็จสิ้น!';
          
@@ -390,6 +431,52 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       }
     });
 
+    // 5. Real-time Responder Location Updates
+    _locationSub = ws.locationStream.listen((data) {
+      if (!mounted) return;
+      
+      final String? userId = data['userId'];
+      if (userId == null) return;
+
+      // Check if this location belongs to one of the responders we are tracking
+      setState(() {
+        bool found = false;
+        for (int i = 0; i < _responders.length; i++) {
+          if (_responders[i]['volunteer_id'] == userId || _responders[i]['id'] == userId) {
+            _responders[i]['currentLat'] = data['latitude'];
+            _responders[i]['currentLng'] = data['longitude'];
+            if (data['speed'] != null) {
+              _responders[i]['currentSpeed'] = data['speed'];
+            }
+            
+            // Calculate distance and ETA
+            if (_routePoints.isNotEmpty) {
+              final incidentPoint = _routePoints.last;
+              final distanceMeters = Geolocator.distanceBetween(
+                data['latitude'], data['longitude'],
+                incidentPoint.latitude, incidentPoint.longitude,
+              );
+              
+              _responders[i]['distanceKm'] = distanceMeters / 1000.0;
+              
+              // Estimate minutes (based on speed or default 40km/h)
+              double speedMps = data['speed'] ?? 11.1; // 40 km/h = 11.1 m/s
+              if (speedMps < 2.0) speedMps = 11.1; // If stopped, use default for ETA
+              
+              _responders[i]['estimatedMinutes'] = (distanceMeters / speedMps / 60).round();
+            }
+            
+            found = true;
+          }
+        }
+        
+        // If it's a new position for a tracked responder, adjust bounds occasionally
+        if (found) {
+           _adjustMapBounds();
+        }
+      });
+    });
+
     // 5. Video Status Updates
     if (_currentVideoId != null) {
       _videoStatusSub = ws.videoStatusStream.listen((data) {
@@ -400,6 +487,47 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
            }
         }
       });
+    }
+  }
+
+  // Navigation and Rescue Controls
+  Future<void> _openInGoogleMaps() async {
+    if (_currentVideo == null) return;
+    final lat = _currentVideo!.latitude;
+    final lng = _currentVideo!.longitude;
+    final url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _updateRescueStatus(String status) async {
+    if (_currentResponseId == null || _currentVideoId == null) return;
+    
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null) return;
+
+    // Send via WebSocket (as planned in server.js)
+    final socket = WebSocketService().socket;
+    if (socket != null && socket.connected) {
+      socket.emit('rescue-status-update', {
+        'videoId': _currentVideoId,
+        'volunteerId': userId,
+        'victimId': _currentVideo?.userId,
+        'status': status,
+        'responseId': _currentResponseId,
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('อัปเดตสถานะเป็น: ${status == 'arrived' ? 'มาถึงแล้ว' : 'เสร็จสิ้น'}')),
+      );
+
+      // If resolved, maybe close the page or show summary
+      if (status == 'resolved') {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) Navigator.of(context).pop();
+        });
+      }
     }
   }
 
@@ -448,6 +576,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _progressSub?.cancel();
     _rescueIncomingSub?.cancel();
     _videoStatusSub?.cancel();
+    _locationSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_currentVideoId != null) {
@@ -557,6 +686,18 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       _recordedGpsTracks = [];
       _isRecording = true;
       _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
+      
+      // Sample GPS immediately
+      try {
+        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+        _recordedGpsTracks.add({
+          'latitude': pos.latitude,
+          'longitude': pos.longitude,
+          'timestampOffset': 0,
+        });
+      } catch (e) {
+        debugPrint("Initial GPS Sampling Error: $e");
+      }
       
       // Start Duration Timer
       _durationTimer?.cancel();
@@ -743,7 +884,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
       List<File> filesToUpload = _capturedPhotos.map((x) => File(x.path)).toList();
 
-      await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(
+      final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(
         userId: userId,
         photoFiles: filesToUpload,
         gpsTracks: _recordedGpsTracks,
@@ -751,11 +892,19 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       );
 
       // Trigger Notification
-      WebSocketService().sendEmergencyAlert(
+      final ws = WebSocketService();
+      debugPrint('EmergencyLivePage: About to sendEmergencyAlert. WS connected=${ws.isConnected}, videoId=$videoId, categoryId=$categoryId');
+      if (!ws.isConnected) {
+        debugPrint('EmergencyLivePage: ⚠️ WS NOT CONNECTED! Attempting reconnect...');
+        await _ensureWebSocketConnected();
+      }
+      ws.sendEmergencyAlert(
         userId: userId,
         categoryId: categoryId,
+        videoId: videoId,
         type: 'photo',
       );
+      debugPrint('EmergencyLivePage: ✅ sendEmergencyAlert called for photos');
 
       if (mounted) Navigator.pop(context); // Close loading
 
@@ -802,7 +951,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       final userId = ServiceLocator.instance.currentUser?.id;
       if (userId == null) throw Exception("User not logged in");
 
-      await ServiceLocator.instance.videoRepository.uploadEmergencyVideo(
+      final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyVideo(
         userId: userId,
         videoFile: file,
         gpsTracks: _recordedGpsTracks,
@@ -811,11 +960,19 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
       // Trigger Notification
       if (_selectedEmergencyCategoryId != null) {
-        WebSocketService().sendEmergencyAlert(
+        final ws = WebSocketService();
+        debugPrint('EmergencyLivePage: About to sendEmergencyAlert for video. WS connected=${ws.isConnected}, videoId=$videoId, categoryId=$_selectedEmergencyCategoryId');
+        if (!ws.isConnected) {
+          debugPrint('EmergencyLivePage: ⚠️ WS NOT CONNECTED for video! Attempting reconnect...');
+          await _ensureWebSocketConnected();
+        }
+        ws.sendEmergencyAlert(
           userId: userId,
           categoryId: _selectedEmergencyCategoryId!,
+          videoId: videoId,
           type: 'video',
         );
+        debugPrint('EmergencyLivePage: ✅ sendEmergencyAlert called for video');
       }
 
       if (mounted) Navigator.pop(context); // Close loading
@@ -888,6 +1045,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                           ? _buildRelationshipView()
                           : _buildIncidentReportView(),
                 ),
+
+                // 4. Rescue Control Panel (Only if viewing target video + has responseId)
+                if (_currentResponseId != null && _selectedTab == 0)
+                   _buildRescueControlPanel(),
 
                 // Bottom Tabs (Live, ความสัมพันธ์, แจ้งเหตุ)
                 _buildBottomTabs(),
@@ -1400,6 +1561,94 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     });
   }
 
+  Widget _buildRescueControlPanel() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.emergency_share, color: Colors.blue),
+              const SizedBox(width: 8),
+              const Text(
+                'เครื่องมือสำหรับผู้ช่วยเหลือ (Responder Tools)',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+              ),
+              const Spacer(),
+              _buildControlStatusBadge(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openInGoogleMaps,
+                  icon: const Icon(Icons.navigation),
+                  label: const Text('นำทาง (Maps)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade50,
+                    foregroundColor: Colors.blue,
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _updateRescueStatus('arrived'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade50,
+                    foregroundColor: Colors.orange.shade900,
+                    elevation: 0,
+                  ),
+                  child: const Text('ถึงที่เกิดเหตุแล้ว'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => _updateRescueStatus('resolved'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 45),
+              elevation: 0,
+            ),
+            child: const Text('จบภารกิจ (Resolved)', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControlStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Text(
+        'กำลังปฏิบัติการ',
+        style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
   Widget _buildMapBackground() {
     Set<Marker> mapMarkers = {};
     
@@ -1422,10 +1671,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         if (r['currentLat'] != null && r['currentLng'] != null) {
         // Build subtitle string
         int mins = r['estimatedMinutes'] as int? ?? 0;
+        double distKm = r['distanceKm'] as double? ?? 0.0;
         double speedKmh = (r['currentSpeed'] as double? ?? 0) * 3.6;
-        String subtitle = mins == 0 
+        
+        String subtitle = mins <= 0 
            ? 'ถึงที่เกิดเหตุแล้ว' 
-           : 'อีก $mins นาที (${speedKmh.toStringAsFixed(0)} กม./ชม.)';
+           : 'ห่าง ${distKm.toStringAsFixed(1)} กม. (อีก $mins นาที)';
            
         // กำหนดสีหมุดตามสีของอาชีพ (Profession colorHex) หรือ Rainbow Mode หากไม่ระบุสี
         double fallbackHue;
@@ -1471,9 +1722,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       children: [
         // Layer 1: Google Map (native platform view)
         GoogleMap(
-          key: ValueKey(_currentVideoId),
-          // ตั้งค่า Padding ด้านบนเท่ากับ 20% ของจอ เพื่อให้จุดศูนย์กลาง (Logical Center) ตกลงมาอยู่ที่ 3/5 (60%) ของจอพอดี
-          padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.2), 
+          key: ValueKey('${_currentVideoId}_${_currentVideo?.longitude}'),
+          // ตั้งค่า Padding ด้านบนเท่ากับ 40% ของจอ เพื่อให้จุดศูนย์กลาง (Logical Center) ตกลงมาอยู่ที่ 70% ของจอพอดี
+          padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.4), 
           onMapCreated: (controller) {
             debugPrint("DEBUG: Google Map Created Successfully");
             _mapController = controller;

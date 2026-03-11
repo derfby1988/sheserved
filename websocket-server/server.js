@@ -102,8 +102,43 @@ io.on('connection', (socket) => {
 
     console.log(`User ${userId} connected (socket: ${socket.id})`);
 
+    // --- DEV AUTO-SEEDING ---
+    // Ensure user exists and has a rescuer role for testing
+    if (pool) {
+      try {
+        const username = `user_${userId.substring(0, 5)}`;
+        // 1. Ensure user exists
+        await pool.query(
+          `INSERT INTO users (id, first_name, username, verification_status) 
+           VALUES ($1, $2, $3, 'verified')
+           ON CONFLICT (id) DO NOTHING`,
+          [userId, 'Dev User', username]
+        );
+
+        // 2. Ensure consumer profile exists (for volunteer_active status)
+        await pool.query(
+          `INSERT INTO consumer_profiles (user_id, is_volunteer_active) 
+           VALUES ($1, true)
+           ON CONFLICT (user_id) DO NOTHING`,
+          [userId]
+        );
+
+        // 3. Ensure they have a volunteer role (use the first seeded profession 'กู้ภัย')
+        await pool.query(
+          `INSERT INTO user_group_roles (user_id, profession_id) 
+           VALUES ($1, '00000000-0000-0000-0000-000000000001')
+           ON CONFLICT DO NOTHING`,
+          [userId]
+        );
+        console.log(`[Dev] Auto-seeded user ${userId} as Rescuer`);
+      } catch (err) {
+        console.warn('[Dev] Auto-seed failed (this is fine):', err.message);
+      }
+    }
+
     // Join user's personal room
     socket.join(`user-${userId}`);
+    console.log(`User ${userId} joined room user-${userId}`);
 
     // Notify others that user is online
     socket.broadcast.emit('user-online', { userId });
@@ -259,19 +294,28 @@ io.on('connection', (socket) => {
   // Handle Emergency Alerts
   socket.on('emergency-alert', async (data) => {
     const { userId, categoryId, videoId, type, text } = data;
-    console.log(`[Emergency] User ${userId} triggered alert for category ${categoryId}`);
+    console.log(`[Emergency] ====== ALERT RECEIVED ======`);
+    console.log(`[Emergency] Sender: ${userId}`);
+    console.log(`[Emergency] Category: ${categoryId}`);
+    console.log(`[Emergency] VideoId: ${videoId}`);
+    console.log(`[Emergency] Type: ${type}`);
 
-    if (pool && categoryId) {
+    // Build notification payload
+    const notificationPayload = {
+      senderId: userId,
+      categoryId,
+      categoryName: '',
+      videoId,
+      type,
+      latitude: null,
+      longitude: null,
+      text: text || 'มีการแจ้งเหตุฉุกเฉินใหม่ที่คุณสามารถให้ความช่วยเหลือได้',
+      timestamp: new Date().toISOString()
+    };
+
+    if (pool) {
       try {
-        // 1. Get category info (name + volunteer profession ids)
-        const catRes = await pool.query(
-          `SELECT name, volunteer_profession_ids FROM donation_categories WHERE id = $1`,
-          [categoryId]
-        );
-
-        // 2. Get latest GPS coordinates of the emergency from video_gps_tracks
-        let emergencyLat = null;
-        let emergencyLng = null;
+        // 1. Get GPS coordinates
         if (videoId) {
           const gpsRes = await pool.query(
             `SELECT latitude, longitude FROM video_gps_tracks 
@@ -279,49 +323,79 @@ io.on('connection', (socket) => {
             [videoId]
           );
           if (gpsRes.rows.length > 0) {
-            emergencyLat = gpsRes.rows[0].latitude;
-            emergencyLng = gpsRes.rows[0].longitude;
+            notificationPayload.latitude = gpsRes.rows[0].latitude;
+            notificationPayload.longitude = gpsRes.rows[0].longitude;
+          }
+          console.log(`[Emergency] GPS: ${notificationPayload.latitude}, ${notificationPayload.longitude}`);
+        }
+
+        // 2. Try to find category and volunteers
+        let targetUserIds = [];
+        if (categoryId) {
+          const catRes = await pool.query(
+            `SELECT name, volunteer_profession_ids FROM donation_categories WHERE id = $1`,
+            [categoryId]
+          );
+          if (catRes.rows.length > 0) {
+            notificationPayload.categoryName = catRes.rows[0].name || '';
+            const volunteerProfIds = catRes.rows[0].volunteer_profession_ids;
+            console.log(`[Emergency] Category found: ${notificationPayload.categoryName}, professions: ${JSON.stringify(volunteerProfIds)}`);
+
+            if (volunteerProfIds && volunteerProfIds.length > 0) {
+              const userRes = await pool.query(
+                `SELECT DISTINCT ugr.user_id 
+                  FROM user_group_roles ugr
+                  LEFT JOIN consumer_profiles cp ON ugr.user_id = cp.user_id
+                  WHERE ugr.profession_id = ANY($1) 
+                    AND (cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL)`,
+                [volunteerProfIds]
+              );
+              targetUserIds = userRes.rows.map(row => row.user_id);
+            }
+          } else {
+            console.log(`[Emergency] Category ${categoryId} NOT found in local DB.`);
           }
         }
 
-        if (catRes.rows.length > 0) {
-          const categoryName = catRes.rows[0].name;
-          const volunteerIds = catRes.rows[0].volunteer_profession_ids;
-          if (volunteerIds && volunteerIds.length > 0) {
-            // Find users who have these volunteer professions AND are active
-            const userRes = await pool.query(
-              `SELECT DISTINCT ugr.user_id 
-                FROM user_group_roles ugr
-                LEFT JOIN consumer_profiles cp ON ugr.user_id = cp.user_id
-                WHERE ugr.profession_id = ANY($1) 
-                  AND (cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL)`,
-              [volunteerIds]
-            );
-
-            const targetUsers = userRes.rows.map(row => row.user_id);
-
-            // Send to target users with full payload including real GPS
-            targetUsers.forEach(targetId => {
-              if (targetId !== userId) {
-                io.to(`user-${targetId}`).emit('emergency-notification', {
-                  senderId: userId,
-                  categoryId,
-                  categoryName: categoryName || '',
-                  videoId,
-                  type,
-                  latitude: emergencyLat,
-                  longitude: emergencyLng,
-                  text: text || 'มีการแจ้งเหตุฉุกเฉินใหม่ที่คุณสามารถให้ความช่วยเหลือได้',
-                  timestamp: new Date().toISOString()
-                });
-              }
-            });
-            console.log(`[Emergency] Alert sent to ${targetUsers.length} volunteers (GPS: ${emergencyLat}, ${emergencyLng})`);
-          }
+        // 3. Fallback: if no targets found, get ALL active volunteers
+        if (targetUserIds.length === 0) {
+          console.log(`[Emergency] No targeted volunteers found. Using fallback: all volunteers.`);
+          const userRes = await pool.query(
+            `SELECT DISTINCT cp.user_id FROM consumer_profiles cp
+             WHERE cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL`
+          );
+          targetUserIds = userRes.rows.map(row => row.user_id);
         }
+
+        console.log(`[Emergency] Target volunteer IDs: ${JSON.stringify(targetUserIds)}`);
+        console.log(`[Emergency] Connected users map:`, Array.from(connectedUsers.entries()));
+
+        // 4. Send to ALL target volunteers (including sender during dev - they can also be a volunteer)
+        let sentCount = 0;
+        targetUserIds.forEach(targetId => {
+          const roomName = `user-${targetId}`;
+          io.to(roomName).emit('emergency-notification', notificationPayload);
+          sentCount++;
+          console.log(`[Emergency] -> Sent to room: ${roomName}`);
+        });
+
+        // 5. Also broadcast to ALL connected sockets as a safety net
+        if (sentCount === 0) {
+          console.log(`[Emergency] No targets found at all! Broadcasting to everyone.`);
+          io.emit('emergency-notification', notificationPayload);
+        }
+
+        console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} users ======`);
       } catch (err) {
-        console.error('Failed to process emergency alert:', err.message);
+        console.error('[Emergency] Failed to process alert:', err.message);
+        // Even on error, try to broadcast to everyone
+        io.emit('emergency-notification', notificationPayload);
+        console.log(`[Emergency] Error fallback: broadcast to all sockets`);
       }
+    } else {
+      // No database - just broadcast to everyone
+      console.log(`[Emergency] No DB pool. Broadcasting to all sockets.`);
+      io.emit('emergency-notification', notificationPayload);
     }
   });
 

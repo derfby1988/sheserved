@@ -9,6 +9,10 @@ import '../../../../services/auth_service.dart';
 import '../../../consultation/presentation/logic/consultation_guard.dart';
 import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../services/websocket_service.dart';
+import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
+import 'dart:async';
+import 'package:geolocator/geolocator.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -68,6 +72,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _isLoadingMoreInteresting = false;
 
   double? _healthScore; // Null หมายถึง Guest หรือยังโหลดไม่เสร็จ
+  
+  // === Emergency Alert State ===
+  StreamSubscription? _emergencySub;
+  final List<Map<String, dynamic>> _activeAlerts = [];
 
   @override
   void initState() {
@@ -89,6 +97,39 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     });
 
     _loadHomeData();
+    _listenForEmergencyAlerts();
+    _connectWebSocket();
+  }
+
+  void _connectWebSocket() {
+    final userId = ServiceLocator.instance.currentUser?.id;
+    if (userId != null) {
+      WebSocketService().resetConnectionAttempts();
+      WebSocketService().connect(userId: userId);
+    }
+  }
+
+  void _listenForEmergencyAlerts() {
+    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) {
+      if (!mounted) return;
+      
+      // Add to alerts list
+      setState(() {
+        // Prevent duplicate alerts for the same video
+        if (!_activeAlerts.any((a) => a['videoId'] == data['videoId'])) {
+          _activeAlerts.add(data);
+        }
+      });
+
+      // Automatically remove after 15 seconds if ignored
+      Future.delayed(const Duration(seconds: 15), () {
+        if (mounted) {
+          setState(() {
+            _activeAlerts.removeWhere((a) => a['videoId'] == data['videoId']);
+          });
+        }
+      });
+    });
   }
 
   // === Snap-to-Corner Helpers ===
@@ -376,6 +417,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _loadConsultationPosition();
     _loadHealthScore();
     _loadHomeData();
+    _connectWebSocket();
   }
 
   /// โหลดคะแนนสุขภาพของผู้ใช้
@@ -624,6 +666,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     AuthService.instance.removeListener(_onAuthChanged);
+    _emergencySub?.cancel();
     super.dispose();
   }
 
@@ -801,21 +844,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   const SizedBox(height: 16),
                                   // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ
                                   // เมื่ออยู่มุม: แสดง Placeholder เพื่อรักษาขนาดแผนที่
-                                  if (!_isConsultationMini)
+                                  if (_isConsultationMini) 
+                                    SizedBox(
+                                      key: _consultationKey,
+                                      height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
+                                      child: const SizedBox(height: 90), // Placeholder internal
+                                    )
+                                  else
                                     GestureDetector(
                                       onLongPressStart: _onConsultationLongPressStart,
                                       onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
                                       onLongPressEnd: _onConsultationLongPressEnd,
                                       child: HomeConsultationWidget(
                                         key: _consultationKey,
-                                        onTap: () => ConsultationGuard.startConsultation(context),
                                       ),
-                                    )
-                                  else
-                                    // Placeholder: รักษาความสูงเดิมเพื่อไม่ให้แผนที่หดตัว
-                                    SizedBox(
-                                      key: _consultationKey,
-                                      height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
                                     ),
                                   const SizedBox(height: 24),
                                   HomePharmacyCard(
@@ -841,6 +883,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     right: 0,
                     child: _buildTopNavigationBar(context),
                   ),
+
+                  // Emergency Overlays (Proactive alerts)
+                  if (_activeAlerts.isNotEmpty)
+                    _buildActiveAlertsOverlay(),
                 ],
               ),
             ),
@@ -1067,6 +1113,94 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActiveAlertsOverlay() {
+    return Positioned(
+      top: 80, // Down from top bar
+      left: 16,
+      right: 16,
+      child: Column(
+        children: _activeAlerts.map((alert) => _buildEmergencyAlertCard(alert)).toList(),
+      ),
+    );
+  }
+
+  Widget _buildEmergencyAlertCard(Map<String, dynamic> alert) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _activeAlerts.removeWhere((a) => a['videoId'] == alert['videoId']);
+            });
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => EmergencyLivePage(videoId: alert['videoId']),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.red.shade800, Colors.red.shade600],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withOpacity(0.4),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.emergency, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '🚨 ${alert['categoryName'] ?? 'แจ้งเหตุฉุกเฉินด่วน!'}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        alert['address'] ?? 'มีการแจ้งเหตุพบในพื้นที่ของคุณ',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'ดูเดี๋ยวนี้',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
