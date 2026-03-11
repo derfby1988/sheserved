@@ -267,6 +267,25 @@ module.exports = (pool) => {
         }
     });
 
+    // Record interaction for a video
+    router.post('/:id/interactions', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { video_id, user_id, type, value } = req.body;
+
+            const result = await pool.query(
+                `INSERT INTO video_interactions (video_id, user_id, type, value)
+                 VALUES ($1, $2, $3, $4) RETURNING *`,
+                [id, user_id, type, value || 0]
+            );
+
+            res.json(result.rows[0]);
+        } catch (error) {
+            console.error('Error recording interaction:', error.message);
+            res.status(500).json({ error: 'Failed to record interaction' });
+        }
+    });
+
     // Get video status
     router.get('/:id', async (req, res) => {
         try {

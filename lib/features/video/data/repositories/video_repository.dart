@@ -29,6 +29,20 @@ class VideoRepository {
 
   /// ดึงวิดีโอทั้งหมด (เรียงตามวันที่สร้าง)
   Future<List<Video>> getVideos({String? type}) async {
+    // Attempt Local API first, since FFmpeg system is local
+    try {
+      final url = type != null 
+          ? '${AppConfig.localApiUrl}/api/videos?type=$type' 
+          : '${AppConfig.localApiUrl}/api/videos';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((json) => Video.fromJson(json)).toList();
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: Local fetch failed (this is normal if server is off) - $e');
+    }
+
     var query = _client.from('videos').select();
     if (type != null) {
       query = query.eq('type', type);
@@ -41,6 +55,17 @@ class VideoRepository {
 
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
   Future<List<Video>> getEmergencyVideos() async {
+    // Attempt Local API first
+    try {
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list')).timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((json) => Video.fromJson(json)).toList();
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: Local emergency list failed - $e');
+    }
+
     final response = await _client
         .from('videos')
         .select()
@@ -52,6 +77,16 @@ class VideoRepository {
 
   /// ดึงวิดีโอตาม ID
   Future<Video?> getVideoById(String id) async {
+    // Attempt Local API first
+    try {
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id')).timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        return Video.fromJson(jsonDecode(response.body));
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: Local video info $id failed - $e');
+    }
+
     final response = await _client
         .from('videos')
         .select()
@@ -63,6 +98,17 @@ class VideoRepository {
 
   /// ดึง GPS Tracks ของวิดีโอ
   Future<List<VideoGpsTrack>> getGpsTracks(String videoId) async {
+    // Attempt Local API first
+    try {
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gps-tracks')).timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((json) => VideoGpsTrack.fromJson(json)).toList();
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: Local gps tracks failed - $e');
+    }
+
     final response = await _client
         .from('video_gps_tracks')
         .select()
@@ -75,6 +121,24 @@ class VideoRepository {
 
   /// เพิ่ม Interaction (like, gift, view)
   Future<void> addInteraction(VideoInteraction interaction) async {
+    if (AppConfig.useLocalDatabase) {
+      try {
+        final url = Uri.parse('${AppConfig.localApiUrl}/api/videos/${interaction.videoId}/interactions');
+        final response = await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(interaction.toJson()),
+        ).timeout(const Duration(seconds: 3));
+
+        if (response.statusCode == 200) {
+          debugPrint('VideoRepository: Recorded interaction locally');
+          return;
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: Local interaction failed, falling back to Supabase: $e');
+      }
+    }
+
     await _client.from('video_interactions').insert(interaction.toJson());
   }
 

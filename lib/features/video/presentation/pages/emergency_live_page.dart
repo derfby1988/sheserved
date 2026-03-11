@@ -901,40 +901,50 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   Widget _buildLiveView() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // --- Left Column: Controls & Video (45%) ---
-              Expanded(
-                flex: 45,
-                child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Layer 1: Left column defines the height of the Stack
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    _buildVideoPlayer(),
-                    const SizedBox(height: 12),
-                    _buildViewerCount(),
-                    const SizedBox(height: 12),
-                    _buildActionButtons(),
+                    SizedBox(
+                      width: (constraints.maxWidth - 32) * 0.45, // Subtract padding
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildVideoPlayer(),
+                          const SizedBox(height: 12),
+                          _buildViewerCount(),
+                          const SizedBox(height: 12),
+                          _buildActionButtons(),
+                        ],
+                      ),
+                    ),
+                    // Filler to ensure Stack occupies width for Positioned right alignment
+                    SizedBox(width: (constraints.maxWidth - 32) * 0.55),
                   ],
                 ),
-              ),
-              // --- Spacer (20%) อยู่ตรงกลางเพื่อดันการ์ดขวาไปชิดขอบจอ ---
-              const Spacer(flex: 20),
-              // --- Right Column: Trending (35%) ---
-              Expanded(
-                flex: 35,
-                child: _buildTrendingPanel(),
-              ),
-            ],
+                // Layer 2: Right column matches the height of Layer 1
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  width: (constraints.maxWidth - 32) * 0.35,
+                  child: _buildTrendingPanel(),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2029,29 +2039,33 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             ),
           ),
           // Label Box (Orange - Pill shape on the right)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF6B35),
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(12),
-                bottomRight: Radius.circular(12),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35),
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFF6B35).withOpacity(0.4),
-                  blurRadius: 10,
-                  offset: const Offset(2, 0),
-                )
-              ],
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'SukhumvitSet',
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),

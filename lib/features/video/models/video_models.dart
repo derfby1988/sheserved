@@ -55,29 +55,42 @@ class Video {
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
+    // Helper function for safe int parsing
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return Video(
-      id: json['id'],
-      userId: json['user_id'],
+      id: json['id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
       type: json['type'] == 'emergency' ? VideoType.emergency : VideoType.normal,
-      donationRequestId: json['donation_request_id'],
+      donationRequestId: json['donation_request_id']?.toString(),
       title: json['title'] ?? '',
-      description: json['description'],
-      bunnyVideoId: json['bunny_video_id'],
-      bunnyUrl: json['bunny_url'],
-      thumbnailUrl: json['thumbnail_url'],
-      duration: json['duration'],
-      fileSize: json['file_size'],
+      description: json['description']?.toString(),
+      bunnyVideoId: json['bunny_video_id']?.toString(),
+      bunnyUrl: json['bunny_url']?.toString(),
+      thumbnailUrl: json['thumbnail_url']?.toString(),
+      duration: parseInt(json['duration']),
+      fileSize: parseInt(json['file_size']),
       status: VideoStatus.values.firstWhere(
         (e) => e.name == json['status'],
         orElse: () => VideoStatus.processing,
       ),
-      progress: json['progress'] ?? 0,
+      progress: parseInt(json['progress']),
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
+          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'])
+          ? DateTime.tryParse(json['updated_at'].toString())
           : null,
+      userName: json['user_name']?.toString(),
+      userAvatar: json['user_avatar']?.toString(),
+      userRole: json['user_role']?.toString(),
+      viewerCount: parseInt(json['viewer_count']),
+      likeCount: parseInt(json['like_count']),
     );
   }
 
@@ -103,12 +116,26 @@ class VideoGpsTrack {
   });
 
   factory VideoGpsTrack.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return VideoGpsTrack(
-      id: json['id'],
-      videoId: json['video_id'],
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      timestampOffset: json['timestamp_offset'] ?? 0,
+      id: json['id']?.toString() ?? '',
+      videoId: json['video_id']?.toString() ?? '',
+      latitude: parseDouble(json['latitude']),
+      longitude: parseDouble(json['longitude']),
+      timestampOffset: parseInt(json['timestamp_offset']),
     );
   }
 }
@@ -132,14 +159,21 @@ class VideoInteraction {
   });
 
   factory VideoInteraction.fromJson(Map<String, dynamic> json) {
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return VideoInteraction(
-      id: json['id'],
-      videoId: json['video_id'],
-      userId: json['user_id'],
-      type: json['type'] ?? 'view',
-      value: json['value'] ?? 0,
+      id: json['id']?.toString() ?? '',
+      videoId: json['video_id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
+      type: json['type']?.toString() ?? 'view',
+      value: parseInt(json['value']),
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
+          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
     );
   }

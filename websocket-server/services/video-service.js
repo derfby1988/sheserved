@@ -112,9 +112,10 @@ const worker = new Worker('video-processing', async (job) => {
 
                     await uploadToBunny(outputDir, videoId);
 
+                    const localApiUrl = process.env.LOCAL_API_URL || 'http://localhost:3000';
                     const finalUrl = process.env.BUNNY_CDN_URL && process.env.BUNNY_CDN_URL !== 'https://your-pull-zone.b-cdn.net'
                         ? `${process.env.BUNNY_CDN_URL}/${videoId}/playlist.m3u8`
-                        : null; // Set to null. App will dynamically generate local URL via AppConfig.localApiUrl
+                        : `${localApiUrl}/temp/videos/${videoId}/playlist.m3u8`;
 
                     if (dbPool) {
                         await dbPool.query('UPDATE videos SET status = $1, progress = 100, bunny_url = $2 WHERE id = $3', ['ready', finalUrl, videoId]);
@@ -122,8 +123,10 @@ const worker = new Worker('video-processing', async (job) => {
 
                     socketService.sendStatus(userId, videoId, 'ready', { url: finalUrl });
 
-                    // Cleanup
-                    const keepOutputDir = (finalUrl === null);
+                    // Determine if we should keep the HLS files locally (if not using Bunny CDN)
+                    const isLocalUrl = finalUrl.includes('localhost') || finalUrl.includes('192.168.1.108') || !process.env.BUNNY_CDN_URL || process.env.BUNNY_CDN_URL === 'https://your-pull-zone.b-cdn.net';
+                    const keepOutputDir = isLocalUrl;
+
                     cleanup(filePath, outputDir, keepOutputDir);
                     resolve();
                 } catch (error) {

@@ -55,5 +55,10 @@
 	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อแสดงบนแผนที่และช่วยในการนำทางเหตุฉุกเฉิน</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อติดตามความคืบหน้าของรถฉุกเฉิน</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
