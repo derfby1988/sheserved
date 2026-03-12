@@ -56,16 +56,23 @@ class ConsultationEntry {
     final shortId = userId.length >= 8 ? userId.substring(0, 8) : userId;
     final roomId = 'consult_$shortId';
 
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     return ConsultationEntry(
-      id: map['id'] as String,
+      id: map['id'] as String? ?? '',
       patientName: patientName,
       patientAvatar: user['profile_image_url'] as String?,
       packageName: map['package_name'] as String? ?? 'ไม่ระบุแพ็คเกจ',
       packageId: map['package_id'] as String?,
-      price: (map['price'] as num?)?.toDouble() ?? 0,
+      price: parseDouble(map['price']),
       bodyArea: bodyArea,
       status: map['status'] as String? ?? 'pending',
-      requestedAt: DateTime.parse(map['created_at'] as String),
+      requestedAt: DateTime.tryParse(map['created_at']?.toString() ?? '') ?? DateTime.now(),
       roomId: roomId,
       providerId: map['provider_id'] as String?,
     );

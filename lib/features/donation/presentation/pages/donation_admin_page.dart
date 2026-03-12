@@ -6,6 +6,7 @@ import '../../../../services/websocket_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
 import '../../../admin/models/profession.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
 import '../../data/repositories/donation_repository.dart';
@@ -31,7 +32,18 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    // ดึงค่า tab index เริ่มต้นจาก arguments (ถ้ามี)
+    int initialIndex = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is int) {
+        _tabController.animateTo(args);
+      } else if (args is Map<String, dynamic> && args.containsKey('initialIndex')) {
+        _tabController.animateTo(args['initialIndex'] as int);
+      }
+    });
+
+    _tabController = TabController(length: 5, vsync: this, initialIndex: initialIndex);
     _repository = DonationRepository(Supabase.instance.client);
     _loadUserContext();
   }
@@ -668,7 +680,7 @@ class _RequestManagementPanelState extends State<_RequestManagementPanel> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: _getStatusColor(req.approvalStatus).withOpacity(0.1),
+                              color: _getStatusColor(req.approvalStatus).withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -935,13 +947,50 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
         debugPrint('Error getting location: $e');
       }
 
-      // 2. Load Videos
+      // 2. Load Categories for Filtering
+      final repo = ServiceLocator.instance.donationRepository;
+      final emergencyCategories = await repo.getEmergencyCategories();
+      final user = AuthService.instance.currentUser;
+      
+      // 3. Load Videos
       debugPrint('ResponderHelpPanel: Loading videos from ${AppConfig.localApiUrl}');
-      final videos = await _videoRepository.getEmergencyVideos();
-      debugPrint('ResponderHelpPanel: Loaded ${videos.length} videos');
+      final allVideos = await _videoRepository.getEmergencyVideos();
+      
+      // 4. Filter Videos by Role
+      List<Video> filteredVideos = [];
+      if (user != null) {
+        for (var video in allVideos) {
+          bool isRelevant = false;
+          final categoryId = video.categoryId;
+          
+          if (categoryId != null) {
+            final category = emergencyCategories.any((c) => c.id == categoryId) 
+                ? emergencyCategories.firstWhere((c) => c.id == categoryId)
+                : null;
+            
+            if (category != null) {
+              if (user.professionId != null && category.volunteerProfessionIds.contains(user.professionId)) {
+                isRelevant = true;
+              }
+            } else {
+               // Fallback
+               isRelevant = true;
+            }
+          } else {
+            // General emergency without category
+            isRelevant = true;
+          }
+          
+          if (isRelevant) {
+            filteredVideos.add(video);
+          }
+        }
+      }
+
+      debugPrint('ResponderHelpPanel: Loaded ${filteredVideos.length} filtered videos (out of ${allVideos.length})');
       if (mounted) {
         setState(() {
-          _emergencyVideos = videos;
+          _emergencyVideos = filteredVideos;
           _isLoading = false;
         });
       }

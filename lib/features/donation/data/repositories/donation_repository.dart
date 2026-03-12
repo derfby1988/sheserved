@@ -82,11 +82,18 @@ class DonationRepository {
     double requested = 0;
     double received = 0;
     
-    for (final row in (response as List)) {
-      requested += (row['target_amount'] as num? ?? 0).toDouble();
-      received += (row['current_amount'] as num? ?? 0).toDouble();
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
     }
-    
+
+    for (final row in (response as List)) {
+      requested += parseDouble(row['target_amount']);
+      received += parseDouble(row['current_amount']);
+    }
+
     return DonationStats(
       requested: requested,
       received: received,

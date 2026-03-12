@@ -136,8 +136,14 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
             
             // Extract score from profile
             final healthInfo = profile!.healthInfo; // มั่นใจว่ามีค่าเพราะผ่าน check data missing แล้ว
+            double parseDouble(dynamic value) {
+              if (value == null) return 0.0;
+              if (value is num) return value.toDouble();
+              if (value is String) return double.tryParse(value) ?? 0.0;
+              return 0.0;
+            }
             if (healthInfo != null && healthInfo['health_score'] != null) {
-              _targetScore = (healthInfo['health_score'] as num).toDouble();
+              _targetScore = parseDouble(healthInfo['health_score']);
             } else {
               _targetScore = 0;
             }

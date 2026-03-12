@@ -88,7 +88,9 @@ class DonationCategory {
       nameEn: json['name_en'],
       iconName: json['icon_name'],
       isEmergency: json['is_emergency'] ?? false,
-      displayOrder: json['display_order'] ?? 0,
+      displayOrder: (json['display_order'] is num)
+          ? (json['display_order'] as num).toInt()
+          : int.tryParse(json['display_order']?.toString() ?? '0') ?? 0,
       volunteerProfessionIds: volunteerIds,
       customFields: fields,
     );
@@ -157,14 +159,21 @@ class DonationRequest {
   });
 
   factory DonationRequest.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     return DonationRequest(
       id: json['id'],
       userId: json['user_id'],
       categoryId: json['category_id'] ?? '',
       title: json['title'] ?? '',
       description: json['description'],
-      targetAmount: (json['target_amount'] as num?)?.toDouble(),
-      currentAmount: (json['current_amount'] as num? ?? 0).toDouble(),
+      targetAmount: json['target_amount'] != null ? parseDouble(json['target_amount']) : null,
+      currentAmount: parseDouble(json['current_amount']),
       imageUrl: json['image_url'],
       isTrending: json['is_trending'] ?? false,
       status: json['status'] ?? 'active',

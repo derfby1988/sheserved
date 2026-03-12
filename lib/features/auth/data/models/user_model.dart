@@ -113,6 +113,20 @@ class UserModel {
     return DateTime.now().difference(lastSeenAt!).inMinutes < 2;
   }
 
+  /// Responder group checks for alert filtering
+  bool get isMedicalResponder =>
+      professionId != null &&
+      ['00000000-0000-0000-0000-000000000001', // Doctor
+       '00000000-0000-0000-0000-000000000004'].contains(professionId); // Nurse/Medic
+
+  bool get isSecurityResponder =>
+      professionId != null &&
+      ['00000000-0000-0000-0000-000000000003'].contains(professionId); // Police/Security
+
+  bool get isFireResponder =>
+      professionId != null &&
+      ['00000000-0000-0000-0000-000000000005'].contains(professionId); // Firefighter
+
   const UserModel({
     required this.id,
     this.professionId,

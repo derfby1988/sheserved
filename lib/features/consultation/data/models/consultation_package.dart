@@ -30,21 +30,33 @@ class ConsultationPackage {
     List<ExpertGroup> groups = [];
     if (groupsRaw is List) {
       groups = groupsRaw.map((g) => ExpertGroup.fromJson(Map<String, dynamic>.from(g))).toList();
-    } else if (groupsRaw is String) {
-       // Handle case where it might be a JSON string from Supabase (though usually it's parsed if using supabase_flutter)
-       // But usually it's already a List or Map.
     }
     
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return ConsultationPackage(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      shortName: json['short_name'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      shortName: json['short_name'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      price: (json['price'] as num).toDouble(),
+      price: parseDouble(json['price']),
       includesAI: json['includes_ai'] as bool? ?? false,
       isActive: json['is_active'] as bool? ?? true,
       expertGroups: groups,
-      displayOrder: json['display_order'] as int? ?? 0,
+      displayOrder: parseInt(json['display_order']),
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : DateTime.now(),
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : DateTime.now(),
     );
@@ -79,13 +91,23 @@ class ExpertGroup {
     this.isRequired = false,
   });
 
-  factory ExpertGroup.fromJson(Map<String, dynamic> json) => ExpertGroup(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    role: json['role'] as String,
-    maxExperts: json['maxExperts'] as int? ?? -1,
-    isRequired: json['isRequired'] as bool? ?? false,
-  );
+  factory ExpertGroup.fromJson(Map<String, dynamic> json) {
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
+    return ExpertGroup(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      role: json['role'] as String? ?? '',
+      maxExperts: parseInt(json['maxExperts'] ?? json['max_experts'] ?? -1),
+      isRequired: json['isRequired'] == true || json['is_required'] == true,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,

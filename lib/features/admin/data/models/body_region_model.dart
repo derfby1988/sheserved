@@ -32,21 +32,36 @@ class BodyRegionModel {
   });
 
   factory BodyRegionModel.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic value, [double defaultValue = 0.0]) {
+      if (value == null) return defaultValue;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? defaultValue;
+      return defaultValue;
+    }
+
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return BodyRegionModel(
-      id: json['id'] as String,
-      nameTh: json['name_th'] as String,
-      nameEn: json['name_en'] as String,
-      yRatio: (json['y_ratio'] as num).toDouble(),
-      xRatio: (json['x_ratio'] as num?)?.toDouble() ?? 0.50,
+      id: json['id'] as String? ?? '',
+      nameTh: json['name_th'] as String? ?? '',
+      nameEn: json['name_en'] as String? ?? '',
+      yRatio: parseDouble(json['y_ratio']),
+      xRatio: parseDouble(json['x_ratio'], 0.50),
       iconName: json['icon_name'] as String?,
-      hasSides: json['has_sides'] as bool? ?? false,
+      hasSides: json['has_sides'] == true,
       gender: json['gender'] as String? ?? 'both',
       image2dUrl: json['image_2d_url'] as String?,
       model3dUrl: json['model_3d_url'] as String?,
       colorHex: json['color_hex'] as String?,
-      displayOrder: json['display_order'] as int? ?? 0,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      displayOrder: parseInt(json['display_order']),
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
     );
   }
 

@@ -25,10 +25,12 @@ class HomeMapBackground extends StatefulWidget {
     super.key,
     this.initialLocation = const gm.LatLng(13.7563, 100.5018),
     this.initialZoom = 14.0,
+    this.focusedAlert,
   });
 
   final gm.LatLng initialLocation;
   final double initialZoom;
+  final Map<String, dynamic>? focusedAlert;
 
   @override
   State<HomeMapBackground> createState() => _HomeMapBackgroundState();
@@ -50,6 +52,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
   List<Map<String, dynamic>> _activeEvents = [];
   Map<String, dynamic>? _focusedEvent; // event ที่กำลังโฟกัสอยู่
   Set<gm.Marker> _markers = {};
+  Set<gm.Polyline> _polylines = {}; // เส้นทางนำทาง
   Timer? _refreshTimer;
 
   // ─── Info banner ───────────────────────────────────────────
@@ -70,6 +73,80 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _pollEmergencyEvents(),
+    );
+
+    if (widget.focusedAlert != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleFocusedAlert(widget.focusedAlert!);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(HomeMapBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusedAlert != oldWidget.focusedAlert) {
+      if (widget.focusedAlert != null) {
+        _handleFocusedAlert(widget.focusedAlert!);
+      } else {
+        setState(() {
+          _polylines.clear();
+        });
+      }
+    }
+  }
+
+  void _handleFocusedAlert(Map<String, dynamic> alert) {
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
+    final lat = parseDouble(alert['latitude']);
+    final lng = parseDouble(alert['longitude']);
+    if (lat == 0.0) return;
+
+    final dest = gm.LatLng(lat, lng);
+    
+    if (_userLatLng != null) {
+      setState(() {
+        _polylines = {
+          gm.Polyline(
+            polylineId: const gm.PolylineId('route_to_incident'),
+            points: [_userLatLng!, dest],
+            color: Colors.red,
+            width: 5,
+            jointType: gm.JointType.round,
+            startCap: gm.Cap.roundCap,
+            endCap: gm.Cap.roundCap,
+          ),
+        };
+      });
+      _animateToFit(dest, _userLatLng!);
+    } else {
+      _animateCameraTo(dest, zoom: 15.0);
+    }
+    
+    _showEventBanner(alert);
+  }
+
+  void _animateToFit(gm.LatLng p1, gm.LatLng p2) {
+    if (_mapController == null) return;
+    
+    double minLat = min(p1.latitude, p2.latitude);
+    double maxLat = max(p1.latitude, p2.latitude);
+    double minLng = min(p1.longitude, p2.longitude);
+    double maxLng = max(p1.longitude, p2.longitude);
+
+    final bounds = gm.LatLngBounds(
+      southwest: gm.LatLng(minLat, minLng),
+      northeast: gm.LatLng(maxLat, maxLng),
+    );
+
+    _mapController!.animateCamera(
+      gm.CameraUpdate.newLatLngBounds(bounds, 100.0),
     );
   }
 
@@ -131,10 +208,17 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         _markers = _buildMarkers(events, nearest);
       });
 
+      double parseDouble(dynamic value) {
+        if (value == null) return 0.0;
+        if (value is num) return value.toDouble();
+        if (value is String) return double.tryParse(value) ?? 0.0;
+        return 0.0;
+      }
+
       // เลื่อนกล้องไปตามสถานการณ์
       if (nearest != null) {
-        final lat = nearest['latitude'] as double;
-        final lng = nearest['longitude'] as double;
+        final lat = parseDouble(nearest['latitude']);
+        final lng = parseDouble(nearest['longitude']);
         _animateCameraTo(gm.LatLng(lat, lng), zoom: 14.0);
         _showEventBanner(nearest);
       } else if (_userLatLng != null) {
@@ -155,9 +239,16 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     Map<String, dynamic>? nearest;
     double minDist = double.infinity;
 
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     for (final e in events) {
-      final lat = e['latitude'] as double;
-      final lng = e['longitude'] as double;
+      final lat = parseDouble(e['latitude']);
+      final lng = parseDouble(e['longitude']);
       final dist = _haversineDistance(
         _userLatLng!.latitude, _userLatLng!.longitude, lat, lng);
       if (dist < minDist) {
@@ -199,13 +290,20 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       ));
     }
 
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     // Emergency event markers
     for (final e in events) {
       final videoId = e['videoId'] as String;
       final isFocused = focused != null && focused['videoId'] == videoId;
       markers.add(gm.Marker(
         markerId: gm.MarkerId(videoId),
-        position: gm.LatLng(e['latitude'] as double, e['longitude'] as double),
+        position: gm.LatLng(parseDouble(e['latitude']), parseDouble(e['longitude'])),
         icon: gm.BitmapDescriptor.defaultMarkerWithHue(
           isFocused
               ? gm.BitmapDescriptor.hueRed
@@ -238,8 +336,15 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     if (!mounted) return;
     setState(() {
       _bannerTitle = '🚨 ${event['categoryName'] ?? 'เหตุฉุกเฉิน'}';
-      final lat = (event['latitude'] as double).toStringAsFixed(5);
-      final lng = (event['longitude'] as double).toStringAsFixed(5);
+      double parseDouble(dynamic value) {
+        if (value == null) return 0.0;
+        if (value is num) return value.toDouble();
+        if (value is String) return double.tryParse(value) ?? 0.0;
+        return 0.0;
+      }
+
+      final lat = parseDouble(event['latitude']).toStringAsFixed(5);
+      final lng = parseDouble(event['longitude']).toStringAsFixed(5);
       _bannerSubtitle = 'ใกล้คุณที่สุด · $lat, $lng';
       _showBanner = true;
     });
@@ -258,10 +363,19 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     // หลัง map สร้างเสร็จ ตั้งกล้องตามสถานะ
     Future.delayed(const Duration(milliseconds: 500), () {
       if (_focusedEvent != null) {
-        _animateCameraTo(
-          gm.LatLng(_focusedEvent!['latitude'] as double,
-              _focusedEvent!['longitude'] as double),
-          zoom: 14.0,
+        double parseDouble(dynamic value) {
+          if (value == null) return 0.0;
+          if (value is num) return value.toDouble();
+          if (value is String) return double.tryParse(value) ?? 0.0;
+          return 0.0;
+        }
+
+        _mapController?.animateCamera(
+          gm.CameraUpdate.newLatLngZoom(
+            gm.LatLng(parseDouble(_focusedEvent!['latitude']),
+                parseDouble(_focusedEvent!['longitude'])),
+            15.0,
+          ),
         );
       } else if (_userLatLng != null) {
         _animateCameraTo(_userLatLng!, zoom: 14.5);
@@ -296,6 +410,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                   ),
                   onMapCreated: _onMapCreated,
                   markers: _markers,
+                  polylines: _polylines,
                   myLocationEnabled: !_locationPermissionDenied,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,

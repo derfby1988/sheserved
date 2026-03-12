@@ -393,6 +393,13 @@ class VideoRepository {
         // ข้ามเหตุการณ์ที่ resolve แล้ว
         if (resolvedIds.contains(videoId)) continue;
 
+        double parseDouble(dynamic value) {
+          if (value == null) return 0.0;
+          if (value is num) return value.toDouble();
+          if (value is String) return double.tryParse(value) ?? 0.0;
+          return 0.0;
+        }
+
         final tracks = video['video_gps_tracks'] as List?;
         if (tracks != null && tracks.isNotEmpty) {
           final latestTrack = tracks.reduce((curr, next) =>
@@ -403,8 +410,8 @@ class VideoRepository {
             'userId': video['user_id'],
             'type': video['type'],
             'status': video['status'],
-            'latitude': (latestTrack['latitude'] as num).toDouble(),
-            'longitude': (latestTrack['longitude'] as num).toDouble(),
+            'latitude': parseDouble(latestTrack['latitude']),
+            'longitude': parseDouble(latestTrack['longitude']),
             'categoryName': 'เหตุฉุกเฉิน',
             'categoryIcon': 'warning',
             'createdAt': video['created_at'],
@@ -493,9 +500,16 @@ class VideoRepository {
           .maybeSingle();
       
       if (response != null) {
+        double parseDouble(dynamic value) {
+          if (value == null) return 0.0;
+          if (value is num) return value.toDouble();
+          if (value is String) return double.tryParse(value) ?? 0.0;
+          return 0.0;
+        }
+
         return {
-          'latitude': (response['latitude'] as num).toDouble(),
-          'longitude': (response['longitude'] as num).toDouble(),
+          'latitude': parseDouble(response['latitude']),
+          'longitude': parseDouble(response['longitude']),
         };
       }
       return null;

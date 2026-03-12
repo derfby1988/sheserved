@@ -57,6 +57,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   StreamSubscription? _rescueIncomingSub;
   StreamSubscription? _videoStatusSub;
   StreamSubscription? _locationSub;
+  StreamSubscription? _myLocationStreamSub;
   
   // Video Player & Map Sync
   VideoPlayerController? _videoPlayerController;
@@ -133,6 +134,46 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
     _loadInitialData();
+    _startResponderTracking();
+  }
+
+  /// เปิดการติดตามตำแหน่งของอาสาสมัคร (Responder) เพื่อส่งให้ผู้แจ้งเหตุติดตามได้แบบ Real-time
+  void _startResponderTracking() {
+    // ติดตามเฉพาะเมื่อเข้ามาในฐานะผู้ตอบรับการช่วยเหลือ (มี responseId)
+    if (_currentResponseId == null) return;
+    
+    debugPrint('EmergencyLivePage: Starting responder tracking for responseId=$_currentResponseId');
+    
+    _myLocationStreamSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10, // อัปเดตทุกๆ 10 เมตรเพื่อประหยัดแบตเตอรี่และ data
+      ),
+    ).listen((Position position) {
+      if (!mounted) return;
+      
+      setState(() {
+        _userLocation = LatLng(position.latitude, position.longitude);
+      });
+      
+      // ส่งตำแหน่งไปยัง Server ผ่าน WebSocket
+      final userId = AuthService.instance.userId;
+      if (userId != null && _isConnected) {
+        final socket = WebSocketService().socket;
+        if (socket != null && socket.connected) {
+          socket.emit('location-update', {
+            'userId': userId,
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'timestamp': DateTime.now().toIso8601String(),
+            'accuracy': position.accuracy,
+            'speed': position.speed,
+            'heading': position.heading,
+          });
+          debugPrint('EmergencyLivePage: Location emitted for volunteer=$userId');
+        }
+      }
+    });
   }
 
   /// Ensure WebSocket is connected before doing anything
@@ -275,12 +316,37 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (mounted) {
         setState(() {
           // Initialize simulated distance/time for display purposes
+          double parseDouble(dynamic value) {
+            if (value == null) return 0.0;
+            if (value is num) return value.toDouble();
+            if (value is String) return double.tryParse(value) ?? 0.0;
+            return 0.0;
+          }
+
           for (int i = 0; i < responders.length; i++) {
             var r = responders[i];
             r['currentLat'] = r['startLat'];
             r['currentLng'] = r['startLng'];
-            // If they don't have a start location, their progress won't be drawn.
-            r['estimatedMinutes'] = 0;
+            
+            // คำนวณระยะทางและเวลาเดินทางโดยประมาณ (ETA)
+            if (r['startLat'] != null && r['startLng'] != null && _currentVideo != null) {
+              final double distanceMeters = Geolocator.distanceBetween(
+                parseDouble(r['startLat']),
+                parseDouble(r['startLng']),
+                _currentVideo!.latitude,
+                _currentVideo!.longitude,
+              );
+              final double distanceKm = distanceMeters / 1000;
+              r['distanceKm'] = distanceKm;
+              
+              // สมมติความเร็วเฉลี่ยรถกู้ชีพ/อาสาสมัครที่ 40 กม./ชม.
+              final int mins = (distanceKm / 40 * 60).round().clamp(1, 120);
+              r['estimatedMinutes'] = mins;
+            } else {
+              r['estimatedMinutes'] = 0;
+              r['distanceKm'] = 0.0;
+            }
+            
             // Provide a default fallback speed if real gps tracking data isn't integrated yet.
             r['currentSpeed'] = 15.0; 
           }
@@ -577,6 +643,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _rescueIncomingSub?.cancel();
     _videoStatusSub?.cancel();
     _locationSub?.cancel();
+    _myLocationStreamSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_currentVideoId != null) {
@@ -1177,7 +1244,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                         gradient: LinearGradient(
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
-                          colors: [Colors.black.withOpacity(0.85), Colors.transparent],
+                          colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
                         ),
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(14),
@@ -1487,7 +1554,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                         boxShadow: [
                           BoxShadow(
                             color: (_isRecording ? Colors.black : canRecord ? Colors.red : Colors.grey)
-                                .withOpacity(0.35),
+                                .withValues(alpha: 0.35),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -1570,7 +1637,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1671,8 +1738,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         if (r['currentLat'] != null && r['currentLng'] != null) {
         // Build subtitle string
         int mins = r['estimatedMinutes'] as int? ?? 0;
-        double distKm = r['distanceKm'] as double? ?? 0.0;
-        double speedKmh = (r['currentSpeed'] as double? ?? 0) * 3.6;
+        double parseDouble(dynamic value) {
+          if (value == null) return 0.0;
+          if (value is num) return value.toDouble();
+          if (value is String) return double.tryParse(value) ?? 0.0;
+          return 0.0;
+        }
+        double distKm = parseDouble(r['distanceKm']);
+        double speedKmh = parseDouble(r['currentSpeed']) * 3.6;
         
         String subtitle = mins <= 0 
            ? 'ถึงที่เกิดเหตุแล้ว' 
@@ -1761,7 +1834,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
             child: Container(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
             ),
           ),
       ],
@@ -1873,12 +1946,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           child: Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.1), // โปร่งใสขึ้นอีก (10%)
+              color: Colors.black.withValues(alpha: 0.1), // โปร่งใสขึ้นอีก (10%)
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -2004,11 +2077,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       margin: const EdgeInsets.only(left: 16),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: Colors.white.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           )
@@ -2049,12 +2122,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   Widget _buildTrendingPanel() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.6),
+        color: Colors.white.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 30,
             offset: const Offset(0, 10),
           ),
@@ -2133,7 +2206,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                                         image: NetworkImage(video.thumbnailUrl!),
                                         fit: BoxFit.cover,
                                         colorFilter: ColorFilter.mode(
-                                            Colors.black.withOpacity(0.4), BlendMode.darken), // มืดลงหน่อยให้อ่านง่าย
+                                            Colors.black.withValues(alpha: 0.4), BlendMode.darken), // มืดลงหน่อยให้อ่านง่าย
                                       )
                                     : null,
                               ),
@@ -2273,8 +2346,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               width: 70,
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withOpacity(0.8), // Gray background
-                border: Border.all(color: Colors.white.withOpacity(0.2)),
+                color: const Color(0xFF6B7280).withValues(alpha: 0.8), // Gray background
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
               child: Center(
                 child: Text(
@@ -2301,7 +2374,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -2356,7 +2429,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                           shape: BoxShape.circle,
                           color: Color.lerp(
                             Colors.red,
-                            Colors.red.withOpacity(0.3),
+                            Colors.red.withValues(alpha: 0.3),
                             _liveBlinkController.value,
                           ),
                         ),
@@ -2423,7 +2496,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   Widget _buildOfflineIndicator() {
     return Container(
       width: double.infinity,
-      color: Colors.red.withOpacity(0.8),
+      color: Colors.red.withValues(alpha: 0.8),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: const Center(
         child: Row(
@@ -2460,7 +2533,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             child: Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(24),
                 ),
@@ -2517,7 +2590,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               // Save to DonationRepository to start payment flow process
                               await ServiceLocator.instance.donationRepository.addContribution({
                                 'user_id': userId,
-                                'amount': amount,
+                                'request_id': _currentVideo?.donationRequestId,
+                                'amount': amount.toDouble(),
                                 'status': 'pending', // Will be updated when payment completes
                                 'payment_method': 'app_transfer',
                               });
@@ -2559,7 +2633,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFFFF6B35).withOpacity(0.3),
+                                color: const Color(0xFFFF6B35).withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
                               ),

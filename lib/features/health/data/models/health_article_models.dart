@@ -41,6 +41,15 @@ class HealthArticle {
 
   factory HealthArticle.fromJson(Map<String, dynamic> json) {
     final authorData = json['users'] as Map<String, dynamic>?;
+
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return HealthArticle(
       id: json['id'],
       title: json['title'],
@@ -48,16 +57,16 @@ class HealthArticle {
       authorId: json['author_id'],
       authorName: authorData != null ? authorData['username'] : null,
       authorImage: authorData != null ? authorData['profile_image_url'] : null,
-      viewCount: json['view_count'] ?? 0,
-      likeCount: json['like_count'] ?? 0,
-      shareCount: json['share_count'] ?? 0,
-      bookmarkCount: json['bookmark_count'] ?? 0,
-      commentCount: json['comment_count'] ?? 0,
-      editCount: json['edit_count'] ?? 0,
+      viewCount: parseInt(json['view_count']),
+      likeCount: parseInt(json['like_count']),
+      shareCount: parseInt(json['share_count']),
+      bookmarkCount: parseInt(json['bookmark_count']),
+      commentCount: parseInt(json['comment_count']),
+      editCount: parseInt(json['edit_count']),
       category: json['category'],
       imageUrl: json['image_url'],
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : DateTime.now(),
       isBookmarked: json['is_bookmarked'] == true,
       isLiked: json['is_liked'] == true,
     );
@@ -204,6 +213,14 @@ class HealthArticleComment {
   factory HealthArticleComment.fromJson(Map<String, dynamic> json) {
     final userData = json['users'] as Map<String, dynamic>?;
 
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return HealthArticleComment(
       id: json['id'],
       articleId: json['article_id'],
@@ -212,13 +229,13 @@ class HealthArticleComment {
       userImage: userData != null ? userData['profile_image_url'] : null,
       parentId: json['parent_id'],
       content: json['content'],
-      commentNumber: json['comment_number'],
-      viewCount: json['view_count'] ?? 0,
-      likeCount: json['like_count'] ?? 0,
-      createdAt: DateTime.parse(json['created_at']),
+      commentNumber: parseInt(json['comment_number']),
+      viewCount: parseInt(json['view_count']),
+      likeCount: parseInt(json['like_count']),
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
       isLiked: json['is_liked'] == true,
       isBookmarked: json['is_bookmarked'] == true,
-      editCount: json['edit_count'] ?? 0,
+      editCount: parseInt(json['edit_count']),
       isHidden: json['is_hidden'] == true,
     );
   }

@@ -10,6 +10,7 @@ class Video {
   final String userId;
   final VideoType type;
   final String? donationRequestId;
+  final String? categoryId;
   final String title;
   final String? description;
   final String? bunnyVideoId;
@@ -42,6 +43,7 @@ class Video {
     required this.userId,
     this.type = VideoType.normal,
     this.donationRequestId,
+    this.categoryId,
     required this.title,
     this.description,
     this.bunnyVideoId,
@@ -89,6 +91,7 @@ class Video {
       userId: json['user_id']?.toString() ?? '',
       type: json['type'] == 'emergency' ? VideoType.emergency : VideoType.normal,
       donationRequestId: json['donation_request_id']?.toString(),
+      categoryId: json['category_id']?.toString(),
       title: json['title'] ?? '',
       description: json['description']?.toString(),
       bunnyVideoId: json['bunny_video_id']?.toString(),

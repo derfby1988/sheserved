@@ -12,7 +12,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
 import 'dart:async';
-import 'package:geolocator/geolocator.dart';
+import 'dart:async';
+import '../../../donation/data/repositories/donation_repository.dart';
+import '../../../donation/models/donation_models.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -76,6 +78,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // === Emergency Alert State ===
   StreamSubscription? _emergencySub;
   final List<Map<String, dynamic>> _activeAlerts = [];
+  Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่
+  List<DonationCategory> _emergencyCategories = []; // เก็บสิทธิอาสาสมัครจากตารางจริง
+  final DonationRepository _donationRepo = DonationRepository(Supabase.instance.client);
 
   @override
   void initState() {
@@ -113,11 +118,51 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) {
       if (!mounted) return;
       
+      final user = AuthService.instance.currentUser;
+      if (user == null) return;
+
+      // Profession-based filtering จากฐานข้อมูลจริง
+      bool isRelevant = false;
+      final categoryId = data['categoryId'] as String? ?? data['category_id'] as String?;
+      
+      if (categoryId != null) {
+        // ค้นหาหมวดหมู่ที่ตรงกัน
+        final category = _emergencyCategories.any((c) => c.id == categoryId) 
+            ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
+            : null;
+        
+        if (category != null) {
+          // ตรวจสอบว่า professionId ของผู้ใช้อยู่ในรายการที่ได้รับอนุญาตหรือไม่
+          final userProfessionId = user.professionId;
+          if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
+            isRelevant = true;
+          }
+        } else {
+          // หากไม่พบหมวดหมู่ใน Cache (อาจเป็นเหตุการณ์ทั่วไปหรือยังโหลดไม่เสร็จ) 
+          // ให้ใช้ตรรกะพื้นฐาน (isEmergency responder อะไรสักอย่าง)
+          if (user.isMedicalResponder || user.isFireResponder || user.isSecurityResponder) {
+            isRelevant = true;
+          }
+        }
+      } else {
+        // ถ้าไม่มี categoryId (อาจเป็นเหตุการณ์ทั่วไป) ให้แสดงสำหรับอาสาสมัครทุกคน
+        if (user.isMedicalResponder || user.isFireResponder || user.isSecurityResponder) {
+          isRelevant = true;
+        }
+      }
+
+      if (!isRelevant) return;
+
       // Add to alerts list
       setState(() {
         // Prevent duplicate alerts for the same video
         if (!_activeAlerts.any((a) => a['videoId'] == data['videoId'])) {
-          _activeAlerts.add(data);
+          _activeAlerts.insert(0, data); // เอาอันล่าสุดไว้บนสุด
+          
+          // บังคับ UI ให้เปลี่ยนเป็นโหมดย่อและโฟกัสแผนที่
+          _isConsultationMini = true;
+          _consultPosition = ConsultationPosition.leftCenter;
+          _focusedAlert = data;
         }
       });
 
@@ -126,6 +171,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (mounted) {
           setState(() {
             _activeAlerts.removeWhere((a) => a['videoId'] == data['videoId']);
+            if (_focusedAlert != null && _focusedAlert!['videoId'] == data['videoId']) {
+              _focusedAlert = _activeAlerts.isNotEmpty ? _activeAlerts.first : null;
+            }
           });
         }
       });
@@ -435,7 +483,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         final score = profile.healthInfo?['health_score'];
         setState(() {
           if (score != null) {
-            _healthScore = (score as num).toDouble();
+            if (score is num) {
+              _healthScore = score.toDouble();
+            } else if (score is String) {
+              _healthScore = double.tryParse(score) ?? 0;
+            } else {
+              _healthScore = 0;
+            }
           } else {
             _healthScore = 0;
           }
@@ -479,6 +533,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         userId: currentUserId,
       );
       
+      // Fetch Emergency Categories for filtering rights
+      final emergencyCategories = await _donationRepo.getEmergencyCategories();
+
       if (mounted) {
         setState(() {
           if (recommended.length < 5) {
@@ -489,6 +546,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
           _recommendedArticles = recommended;
           _interestingArticles = interesting;
+          _emergencyCategories = emergencyCategories;
           _isLoadingArticles = false;
         });
       }
@@ -759,8 +817,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   SizedBox(
                                     key: _mapAreaKey,
                                     height: _mapHeight,
-                                    child: const HomeMapBackground(),
+                                    child: HomeMapBackground(
+                                      focusedAlert: _focusedAlert,
+                                    ),
                                   ),
+                                  if (_activeAlerts.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 16, left: 16, right: 16),
+                                      child: Column(
+                                        children: _activeAlerts
+                                            .map((alert) => _buildEmergencyAlertCard(alert))
+                                            .toList(),
+                                      ),
+                                    ),
                                   Container(
                                     width: double.infinity,
                                     color: const Color(0xFFEDF5DA),
@@ -884,9 +953,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     child: _buildTopNavigationBar(context),
                   ),
 
-                  // Emergency Overlays (Proactive alerts)
-                  if (_activeAlerts.isNotEmpty)
-                    _buildActiveAlertsOverlay(),
+                  // Emergency Overlays moved inside map Stack
                 ],
               ),
             ),
@@ -963,11 +1030,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   width: 22,
                   height: 22,
                   decoration: BoxDecoration(
-                    color: AppColors.textSecondary.withOpacity(0.8),
+                    color: AppColors.textSecondary.withValues(alpha: 0.8),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withValues(alpha: 0.2),
                         blurRadius: 4,
                         offset: const Offset(0, 1),
                       ),
@@ -1052,7 +1119,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         boxShadow: _showTopBarBorderRadius
             ? [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -1116,90 +1183,126 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildActiveAlertsOverlay() {
-    return Positioned(
-      top: 80, // Down from top bar
-      left: 16,
-      right: 16,
-      child: Column(
-        children: _activeAlerts.map((alert) => _buildEmergencyAlertCard(alert)).toList(),
-      ),
-    );
-  }
+  // Removed _buildActiveAlertsOverlay as it is now integrated into the map Stack
 
   Widget _buildEmergencyAlertCard(Map<String, dynamic> alert) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _activeAlerts.removeWhere((a) => a['videoId'] == alert['videoId']);
-            });
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => EmergencyLivePage(videoId: alert['videoId']),
-              ),
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.red.shade800, Colors.red.shade600],
-              ),
+      child: Stack(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.red.withOpacity(0.4),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.emergency, color: Colors.white, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '🚨 ${alert['categoryName'] ?? 'แจ้งเหตุฉุกเฉินด่วน!'}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                      Text(
-                        alert['address'] ?? 'มีการแจ้งเหตุพบในพื้นที่ของคุณ',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+              onTap: () {
+                // ยกเลิกการลบ Card ออกอัตโนมัติเมื่อกด (ตามคำขอผู้ใช้)
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EmergencyLivePage(videoId: alert['videoId']),
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.red.shade800.withValues(alpha: 0.85),
+                      Colors.red.shade600.withValues(alpha: 0.85),
                     ],
                   ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.red.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'ดูเดี๋ยวนี้',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16), // เว้นที่ให้ไอคอนกากบาท
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '🚨 ${alert['categoryName'] ?? 'แจ้งเหตุฉุกเฉินด่วน!'}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          Text(
+                            alert['address'] ?? 'มีการแจ้งเหตุพบในพื้นที่ของคุณ',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // ปุ่มเหตุฉุกเฉิน (ไปหน้าจัดการระบบบริจาค Tab 3)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pushNamed(context, '/donation/admin', arguments: 3);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'เหตุฉุกเฉิน',
+                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'ดูเดี๋ยวนี้',
+                        style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          // ปุ่มปิดการ์ด (มุมบนซ้าย)
+          Positioned(
+            top: 2,
+            left: 2,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _activeAlerts.removeWhere((a) => a['videoId'] == alert['videoId']);
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

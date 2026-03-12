@@ -164,15 +164,21 @@ class _RescuePageState extends State<RescuePage> {
          responseId: _activeResponseId,
       );
       
+      double parseDouble(dynamic value) {
+        if (value == null) return 0.0;
+        if (value is num) return value.toDouble();
+        if (value is String) return double.tryParse(value) ?? 0.0;
+        return 0.0;
+      }
       // Use real GPS from WebSocket payload, fallback to DB query
       final lat = alert['latitude'];
       final lng = alert['longitude'];
       if (lat != null && lng != null) {
-        _emergencyLoc = LatLng((lat as num).toDouble(), (lng as num).toDouble());
+        _emergencyLoc = LatLng(parseDouble(lat), parseDouble(lng));
       } else if (alert['videoId'] != null) {
         final loc = await ServiceLocator.instance.videoRepository.getEmergencyLocation(alert['videoId']);
         if (loc != null) {
-          _emergencyLoc = LatLng(loc['latitude']!, loc['longitude']!);
+          _emergencyLoc = LatLng(loc['latitude'] ?? 0.0, loc['longitude'] ?? 0.0);
         }
       }
       _emergencyLoc ??= const LatLng(13.7300, 100.5600); // Last resort fallback
@@ -614,7 +620,7 @@ class _RescuePageState extends State<RescuePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(categoryName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            if (hasGps) Text('📍 พิกัด: ${(alert['latitude'] as num).toStringAsFixed(4)}, ${(alert['longitude'] as num).toStringAsFixed(4)}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                            if (hasGps) Text('📍 พิกัด: ${double.tryParse(alert['latitude']?.toString() ?? '0')?.toStringAsFixed(4)}, ${double.tryParse(alert['longitude']?.toString() ?? '0')?.toStringAsFixed(4)}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                           ],
                         ),
                       ),
