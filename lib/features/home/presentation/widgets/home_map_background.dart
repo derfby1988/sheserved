@@ -91,7 +91,12 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       } else {
         setState(() {
           _polylines.clear();
+          _focusedEvent = null;
         });
+        _hideBanner();
+        if (_userLatLng != null) {
+          _animateCameraTo(_userLatLng!, zoom: 14.5);
+        }
       }
     }
   }
@@ -202,11 +207,6 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       // หา event ที่ใกล้ผู้ใช้ที่สุด
       final nearest = _findNearestEvent(events);
 
-      setState(() {
-        _activeEvents = events;
-        _focusedEvent = nearest;
-        _markers = _buildMarkers(events, nearest);
-      });
 
       double parseDouble(dynamic value) {
         if (value == null) return 0.0;
@@ -215,14 +215,38 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         return 0.0;
       }
 
-      // เลื่อนกล้องไปตามสถานการณ์
-      if (nearest != null) {
-        final lat = parseDouble(nearest['latitude']);
-        final lng = parseDouble(nearest['longitude']);
+      // 1. ตัดสินใจว่าจะโฟกัสที่อะไร
+      Map<String, dynamic>? currentFocus;
+      
+      if (widget.focusedAlert != null) {
+        // ให้ความสำคัญกับสิ่งที่ผู้ใช้เลือก (จากหน้า Home)
+        final stillExists = events.any((e) => e['videoId'] == widget.focusedAlert!['videoId']);
+        if (stillExists) {
+          currentFocus = events.firstWhere((e) => e['videoId'] == widget.focusedAlert!['videoId']);
+        } else {
+          // ถ้าสิ่งที่โฟกัสหายไปแล้ว ให้กลับไปตำแหน่งผู้ใช้หรือ nearest (ถ้ามี)
+          currentFocus = nearest;
+        }
+      } else {
+        currentFocus = nearest;
+      }
+
+      setState(() {
+        _activeEvents = events;
+        _focusedEvent = currentFocus;
+        _markers = _buildMarkers(events, currentFocus);
+      });
+
+      // 2. เลื่อนกล้องไปตามสถานการณ์
+      if (currentFocus != null) {
+        final lat = parseDouble(currentFocus['latitude']);
+        final lng = parseDouble(currentFocus['longitude']);
+        
+        // เลื่อนกล้องไปยังจุดที่โฟกัส
         _animateCameraTo(gm.LatLng(lat, lng), zoom: 14.0);
-        _showEventBanner(nearest);
-      } else if (_userLatLng != null) {
-        // ไม่มี event — กลับที่ตำแหน่งผู้ใช้
+        _showEventBanner(currentFocus);
+      } else if (_userLatLng != null && widget.focusedAlert == null) {
+        // ไม่มี event และไม่มีการโฟกัสค้างไว้ — กลับที่ตำแหน่งผู้ใช้
         _animateCameraTo(_userLatLng!, zoom: 14.5);
         _hideBanner();
       }

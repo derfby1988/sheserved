@@ -166,17 +166,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         }
       });
 
-      // Automatically remove after 15 seconds if ignored
-      Future.delayed(const Duration(seconds: 15), () {
-        if (mounted) {
-          setState(() {
-            _activeAlerts.removeWhere((a) => a['videoId'] == data['videoId']);
-            if (_focusedAlert != null && _focusedAlert!['videoId'] == data['videoId']) {
-              _focusedAlert = _activeAlerts.isNotEmpty ? _activeAlerts.first : null;
-            }
-          });
-        }
-      });
     });
   }
 
@@ -1290,6 +1279,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               onTap: () {
                 setState(() {
                   _activeAlerts.removeWhere((a) => a['videoId'] == alert['videoId']);
+                  if (_focusedAlert != null && _focusedAlert!['videoId'] == alert['videoId']) {
+                    _focusedAlert = null;
+                  }
                 });
               },
               child: Container(
