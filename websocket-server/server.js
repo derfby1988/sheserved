@@ -103,8 +103,9 @@ io.on('connection', (socket) => {
     console.log(`User ${userId} connected (socket: ${socket.id})`);
 
     // --- DEV AUTO-SEEDING ---
-    // Ensure user exists and has a rescuer role for testing
-    if (pool) {
+    // ⚠️  ทำงานเฉพาะ NODE_ENV=development เท่านั้น
+    // ป้องกัน Security Risk: ไม่ให้ assign role กู้ภัยอัตโนมัติบน Production
+    if (process.env.NODE_ENV === 'development' && pool) {
       try {
         const username = `user_${userId.substring(0, 5)}`;
         // 1. Ensure user exists

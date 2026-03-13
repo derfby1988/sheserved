@@ -395,3 +395,100 @@ REDIS_URL=redis://localhost:6379
 - **App Resume Refresh**: ใช้ `WidgetsBindingObserver` เพื่อตรวจจับเมื่อแอปกลับมาทำงาน (Resumed) ระบบจะทำการดึงข้อมูลเหตุฉุกเฉินล่าสุดและตรวจสอบการเชื่อมต่อ WebSocket ทันที เพื่อให้ผู้ใช้เห็นข้อมูลที่เป็นปัจจุบันที่สุดโดยไม่ต้องปิด-เปิดแอปใหม่
 - **Periodic Timer (Fail-safe)**: ติดตั้ง `Timer.periodic` ทุกๆ 90 วินาที เพื่อทำการ Re-sync ข้อมูลเหตุฉุกเฉินจากฐานข้อมูลแบบเบื้องหลัง เป็นแผนสำรองกรณี WebSocket หรือ Push Notification ทำงานผิดพลาดหรือสัญญาณขาดหาย
 - **Immediate Data Prioritization**: ปรับปรุงลำดับการโหลดข้อมูลในหน้า Home โดยกำหนดให้ดึงหมวดหมู่ (Emergency Categories) และรายการที่ถูกปิด (Dismissed IDs) มาเป็นลำดับแรกสุด เพื่อให้ระบบกรองเหตุการณ์ทำงานได้ทันทีตั้งแต่วินาทีแรกที่ข้อมูลถูกดึงมาแสดงผล
+
+---
+
+## 🚨 Critical Bug Fixes & Coding Rules
+> บันทึก ณ วันที่ 2026-03-14 — กฎเหล่านี้ถูกสร้างขึ้นจากการพบและแก้ไขจุดบกพร่องจริง ห้ามละเมิดในทุกกรณี
+
+---
+
+### Bug Fix #1 — ห้ามใช้ `io` โดยตรงใน Route Files
+**ไฟล์ที่เคยบกพร่อง:** `websocket-server/routes/video.js`
+
+**สาเหตุ:** Route file ไม่มี access โดยตรงต่อ `io` instance ของ Socket.io — การเรียก `io.to(...).emit(...)` โดยตรงจะทำให้ Server crash ด้วย `ReferenceError: io is not defined`
+
+**กฎที่ต้องปฏิบัติ:**
+- ทุก Route file ที่ต้องการส่ง WebSocket event **ต้องใช้ผ่าน `socketService` เสมอ**
+- ต้อง `require('../services/socket-service')` ที่ส่วนบนของไฟล์ก่อนใช้งาน
+- ห้าม import หรือใช้ `io` object โดยตรงในไฟล์ใด ๆ นอกจาก `server.js` และ `services/socket-service.js`
+
+```javascript
+// ❌ ผิด — จะ crash
+io.to(`video-${videoId}`).emit('video-status', { ... });
+
+// ✅ ถูก — ใช้ socketService เสมอ
+const socketService = require('../services/socket-service');
+socketService.sendStatus(userId, videoId, 'ready', { progress: 100 });
+```
+
+---
+
+### Bug Fix #2 — Dev Auto-Seeding ต้องถูก Guard ด้วย `NODE_ENV`
+**ไฟล์ที่เคยบกพร่อง:** `websocket-server/server.js`
+
+**สาเหตุ:** โค้ด Auto-Seeding ที่สร้างขึ้นเพื่อ Development ถูกปล่อยให้ทำงานทุก Environment — ทำให้ทุก user ที่ connect บน Production ถูก assign role "กู้ภัย" โดยอัตโนมัติ เป็น Security Risk ร้ายแรง
+
+**กฎที่ต้องปฏิบัติ:**
+- โค้ด Dev/Testing ทุกชิ้น **ต้อง wrap ด้วย `if (process.env.NODE_ENV === 'development')` เสมอ**
+- ไฟล์ `.env` บนเครื่อง Development ต้องมี `NODE_ENV=development`
+- ไฟล์ `.env` บน Production Server **ต้องตั้งค่า `NODE_ENV=production`** เพื่อ disable feature นี้โดยอัตโนมัติ
+
+```javascript
+// ❌ ผิด — ทำงานทุก Environment
+if (pool) {
+  await pool.query(`INSERT INTO user_group_roles ...`);
+}
+
+// ✅ ถูก — guard ด้วย NODE_ENV
+if (process.env.NODE_ENV === 'development' && pool) {
+  await pool.query(`INSERT INTO user_group_roles ...`);
+}
+```
+
+---
+
+### Bug Fix #3 — Thai Mhung Distance ต้องใช้ `user.alertRadius` ไม่ใช่ Hardcoded
+**ไฟล์ที่เคยบกพร่อง:** `lib/features/video/presentation/pages/emergency_live_page.dart`
+
+**สาเหตุ:** การตรวจสอบระยะทางก่อนเข้า Thai Mhung Mode ใช้ค่า `500` เมตร hardcoded แทนที่จะดึงค่า `alertRadius` ที่ผู้ใช้ตั้งไว้ในหน้า Profile — ขัดกับนโยบาย Manual Distance Control
+
+**กฎที่ต้องปฏิบัติ:**
+- ทุกการตรวจสอบระยะทาง (Distance Check) สำหรับ Thai Mhung และ Emergency Alert **ต้องดึงค่าจาก `AuthService.instance.currentUser?.alertRadius` เสมอ**
+- ค่า fallback = `500` เมตร **ใช้ได้เฉพาะกรณี guest (user == null) เท่านั้น**
+- ข้อความแจ้งเตือนควรบอก **ทั้งระยะทางจริง และรัศมีที่ตั้งไว้** เพื่อให้ผู้ใช้รู้และปรับแก้ได้
+
+```dart
+// ❌ ผิด — hardcoded ขัดนโยบาย
+if (distanceInMeters > 500) { ... }
+
+// ✅ ถูก — ดึงจาก User Profile
+final int userAlertRadius = AuthService.instance.currentUser?.alertRadius ?? 500;
+if (distanceInMeters > userAlertRadius) { ... }
+```
+
+---
+
+### Bug Fix #4 — ห้ามมี Fallback ให้สิทธิ Responder โดยไม่ตรวจ Category
+**ไฟล์ที่เคยบกพร่อง:** `lib/features/video/presentation/pages/emergency_live_page.dart` (`_isEligibleResponder()`)
+
+**สาเหตุ:** มี fallback `return user.isProfessionalResponder` ซึ่งจะให้สิทธิ "Accept" แก่ volunteer ทุกคนโดยอัตโนมัติ แม้ว่า profession ของพวกเขาจะไม่ถูกกำหนดไว้ใน `category.volunteerProfessionIds` — ขัดกับ **"No Professional Fallback Policy"** อย่างตรงไปตรงมา
+
+**กฎที่ต้องปฏิบัติ:**
+- `_isEligibleResponder()` **ต้อง return `false` เสมอ** ในทุกกรณีที่ `category.volunteerProfessionIds` ว่างเปล่าหรือไม่มี category
+- **ห้าม Fallback** ไปยัง `user.isProfessionalResponder`, `user.isVolunteer`, หรือ property อื่นใดทั้งสิ้น
+- หากปุ่ม Accept หายไปโดยไม่ตั้งใจ → ให้ตรวจสอบและแก้ไขข้อมูล `volunteer_profession_ids` ใน table `donation_categories` ของ Supabase แทน
+
+```dart
+// ❌ ผิด — Fallback ขัดนโยบาย
+// Fallback: ถ้าเป็นอาสาสมัครอาชีพ ให้มีสิทธิช่วยเหลือเสมอ
+return user.isProfessionalResponder;
+
+// ✅ ถูก — "No Professional Fallback" Policy
+// หาก category ไม่ได้กำหนด volunteerProfessionIds → ปฏิเสธเสมอ
+// แก้ไขที่ DB ไม่ใช่ที่โค้ด
+debugPrint('_isEligibleResponder: no mapped professions → denied.');
+return false;
+```
+
+---

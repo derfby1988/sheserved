@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
+const socketService = require('../services/socket-service');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -181,11 +182,8 @@ module.exports = (pool) => {
 
             // 3. Mark as Ready directly since there's no transcoding needed for photos right now
             await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoRecord.id]);
-            io.to(`video-${videoRecord.id}`).emit('video-status', {
-                videoId: videoRecord.id,
-                status: 'ready',
-                progress: 100
-            });
+            // ✅ ใช้ socketService แทน io โดยตรง เพื่อหลีกเลี่ยง ReferenceError
+            socketService.sendStatus(userId || userIdFromRequest, videoRecord.id, 'ready', { progress: 100 });
 
             res.json({
                 message: 'Photos upload successful',

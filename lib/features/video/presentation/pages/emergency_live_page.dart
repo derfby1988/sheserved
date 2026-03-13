@@ -670,11 +670,19 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
 
     if (category != null && category.volunteerProfessionIds.isNotEmpty) {
+      // ✅ ให้สิทธิเฉพาะเมื่อ professionId ถูก map ไว้ใน category อย่างชัดเจน
       return category.volunteerProfessionIds.contains(user.professionId);
     }
 
-    // Fallback: ถ้าเป็นอาสาสมัครอาชีพ ให้มีสิทธิช่วยเหลือเบื้องต้นได้เสมอ
-    return user.isProfessionalResponder;
+    // ❌ ไม่มี Fallback — Policy: "No Professional Fallback"
+    // ระบบจะไม่ให้สิทธิ 'รับแจ้งเหตุ' โดยอัตโนมัติ
+    // หาก category ไม่ได้กำหนด volunteerProfessionIds ไว้ในฐานข้อมูล
+    // → ต้องแก้ไขข้อมูล category ใน DB แทน ไม่ใช่ bypass ที่นี่
+    debugPrint(
+      '_isEligibleResponder: category "$catId" has no mapped professions → denied. '
+      'user.professionId=${user.professionId}',
+    );
+    return false;
   }
 
   /// กดตอบรับการช่วยเหลือ
@@ -1536,11 +1544,21 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         _currentVideo!.longitude,
       );
 
-      if (distanceInMeters > 500) {
+      // ✅ ใช้ alertRadius จาก User Profile แทนค่า hardcoded
+      // fallback = 500 เมตร เฉพาะกรณีที่ผู้ใช้ยังไม่ได้ login
+      final int userAlertRadius = AuthService.instance.currentUser?.alertRadius ?? 500;
+
+      if (distanceInMeters > userAlertRadius) {
         if (mounted) {
+          final String radiusDisplay = userAlertRadius >= 1000
+              ? '${(userAlertRadius / 1000).toStringAsFixed(1)} กม.'
+              : '$userAlertRadius ม.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('คุณอยู่ไกลจากจุดเกิดเหตุเกินไปสำหรับการทำหน้าที่ไทยมุง (ห่าง ${distanceInMeters.toStringAsFixed(0)} เมตร)'),
+              content: Text(
+                'คุณอยู่ไกลจากจุดเกิดเหตุเกินไปสำหรับการทำหน้าที่ไทยมุง '
+                '(ห่าง ${distanceInMeters.toStringAsFixed(0)} เมตร, รัศมีของคุณ: $radiusDisplay)',
+              ),
               backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
             ),
