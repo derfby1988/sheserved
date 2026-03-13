@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+// Updated Alert System UI and logic - v2
 import '../../../../core/constants/app_colors.dart';
 import '../widgets/widgets.dart';
 import 'package:shimmer/shimmer.dart';
@@ -81,6 +82,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่
   List<DonationCategory> _emergencyCategories = []; // เก็บสิทธิอาสาสมัครจากตารางจริง
   final DonationRepository _donationRepo = DonationRepository(Supabase.instance.client);
+  final List<String> _dismissedAlertIds = [];
+  static const String _kDismissedAlertsKey = 'dismissed_emergency_alert_ids';
 
   @override
   void initState() {
@@ -142,6 +145,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         }
       }
 
+      // 1.1 Extract or establish timestamp for sorting
+      final createdAt = data['created_at'] != null 
+          ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+          : DateTime.now();
+
       // Initial filtering
       if (!isRelevant && (!isThaiMhungAlert || !user.isThaiMhungEnabled)) {
         debugPrint('HomePage: Alert not relevant to user profession (isRelevant: $isRelevant) or Thai Mhung (isThaiMhungAlert: $isThaiMhungAlert, enabled: ${user.isThaiMhungEnabled})');
@@ -186,14 +194,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (mounted) {
         setState(() {
           final alert = Map<String, dynamic>.from(data);
+          final videoId = alert['videoId']?.toString() ?? alert['video_id']?.toString() ?? '';
+          
+          // Check if user has already dismissed this alert
+          if (_dismissedAlertIds.contains(videoId)) {
+            debugPrint('HomePage: Alert $videoId was previously dismissed, skipping.');
+            return;
+          }
+
+          // Add normalized createdAt for sorting
+          alert['createdAt'] = data['created_at'] != null 
+              ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+              : DateTime.now();
+          
           // Prevent duplicates
           if (!_activeAlerts.any((a) => a['videoId'] == alert['videoId'])) {
             _activeAlerts.insert(0, alert);
             
+            // Re-sort just in case out-of-order notifications arrive
+            _activeAlerts.sort((a, b) {
+              final at = a['createdAt'] as DateTime;
+              final bt = b['createdAt'] as DateTime;
+              return bt.compareTo(at); // Newest first
+            });
+            
             // Force mini mode to show map and alert
             _isConsultationMini = true;
             _consultPosition = ConsultationPosition.leftCenter;
-            _focusedAlert = alert;
+            _focusedAlert = _activeAlerts.first;
           }
         });
         
@@ -231,17 +259,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         }
 
         if (isRelevant) {
-          newAlerts.add({
-            'videoId': video.id,
-            'categoryId': video.categoryId,
-            'categoryName': _emergencyCategories.any((c) => c.id == video.categoryId) 
-                ? _emergencyCategories.firstWhere((c) => c.id == video.categoryId).name
-                : 'แจ้งเหตุฉุกเฉิน',
-            'latitude': video.latitude,
-            'longitude': video.longitude,
-            'address': video.address,
-            'title': video.title,
-          });
+          final vidId = video.id;
+          if (!_dismissedAlertIds.contains(vidId)) {
+            newAlerts.add({
+              'videoId': vidId,
+              'categoryId': video.categoryId,
+              'categoryName': _emergencyCategories.any((c) => c.id == video.categoryId) 
+                  ? _emergencyCategories.firstWhere((c) => c.id == video.categoryId).name
+                  : 'แจ้งเหตุฉุกเฉิน',
+              'latitude': video.latitude,
+              'longitude': video.longitude,
+              'address': video.address,
+              'title': video.title,
+              'createdAt': video.createdAt,
+            });
+          }
         }
       }
 
@@ -252,7 +284,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               _activeAlerts.add(alert);
             }
           }
-          // Sort by creation or just ensure top is focused
+          
+          // Sort by creation: Newest at index 0
+          _activeAlerts.sort((a, b) {
+            final at = a['createdAt'] as DateTime;
+            final bt = b['createdAt'] as DateTime;
+            return bt.compareTo(at);
+          });
+
           if (_activeAlerts.isNotEmpty) {
             _focusedAlert = _activeAlerts.first;
             
@@ -543,6 +582,49 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     } catch (e) {
       debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
+    }
+
+    // โหลดรายการแจ้งเหตุที่เคยยกเลิกไปแล้ว
+    _loadDismissedAlerts();
+  }
+
+  /// โหลดรายการแจ้งเหตุที่ผู้ใช้กดปิดไปแล้ว (จะไม่แสดงซ้ำ)
+  Future<void> _loadDismissedAlerts() async {
+    final userId = ServiceLocator.instance.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final repo = ServiceLocator.get<UserRepository>();
+      final saved = await repo.getUiPreference(userId, _kDismissedAlertsKey);
+      if (saved != null && saved.isNotEmpty) {
+        setState(() {
+          _dismissedAlertIds.clear();
+          _dismissedAlertIds.addAll(saved.split(','));
+        });
+        debugPrint('HomePage: Loaded ${_dismissedAlertIds.length} dismissed alerts.');
+      }
+    } catch (e) {
+      debugPrint('HomePage: Error loading dismissed alerts: $e');
+    }
+  }
+
+  /// บันทึกการปิดแจ้งเหตุลงฐานข้อมูล
+  Future<void> _recordDismissedAlert(String videoId) async {
+    if (videoId.isEmpty) return;
+    
+    if (!_dismissedAlertIds.contains(videoId)) {
+      _dismissedAlertIds.add(videoId);
+    }
+
+    final userId = ServiceLocator.instance.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final repo = ServiceLocator.get<UserRepository>();
+      await repo.saveUiPreference(userId, _kDismissedAlertsKey, _dismissedAlertIds.join(','));
+      debugPrint('HomePage: Recorded dismissal for $videoId');
+    } catch (e) {
+      debugPrint('HomePage: Error saving dismissed alert: $e');
     }
   }
 
@@ -1307,139 +1389,185 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // Removed _buildActiveAlertsOverlay as it is now integrated into the map Stack
 
   Widget _buildEmergencyAlertCard(Map<String, dynamic> alert, {int index = 0, int total = 1}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Stack(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EmergencyLivePage(videoId: alert['videoId']),
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.red.shade800.withValues(alpha: 0.95),
-                      Colors.red.shade600.withValues(alpha: 0.95),
+    final videoId = alert['videoId']?.toString() ?? '';
+    
+    return Dismissible(
+      key: Key('alert_$videoId'),
+      direction: DismissDirection.horizontal,
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.endToStart) {
+          // Swipe Left -> Close
+          _recordDismissedAlert(videoId);
+          setState(() {
+            _activeAlerts.removeAt(index);
+            if (_activeAlerts.isEmpty) {
+              _focusedAlert = null;
+            } else {
+              _focusedAlert = _activeAlerts.first;
+            }
+          });
+          return true;
+        } else if (direction == DismissDirection.startToEnd) {
+          // Swipe Right -> View Incident
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => EmergencyLivePage(videoId: videoId),
+            ),
+          );
+          return false; // Don't remove it visually from the list yet
+        }
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        color: Colors.green.withOpacity(0.5),
+        child: const Icon(Icons.emergency, color: Colors.white, size: 32),
+      ),
+      secondaryBackground: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.black.withOpacity(0.3),
+        child: const Icon(Icons.close, color: Colors.white, size: 32),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Stack(
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EmergencyLivePage(videoId: videoId),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.red.shade800.withOpacity(0.95),
+                        Colors.red.shade600.withOpacity(0.95),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 24), // Space for Close button
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '🚨 ${alert['categoryName'] ?? 'แจ้งเหตุฉุกเฉินด่วน!'}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                          const SizedBox(width: 24), // Space for Close button
+                          Expanded(
+                            child: Text(
+                              '🚨 ${alert['categoryName'] ?? 'แจ้งเหตุฉุกเฉินด่วน!'}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
                               ),
-                              if (total > 1)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white24,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    '${index + 1}/$total',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          Text(
-                            alert['address'] ?? 'มีการแจ้งเหตุพบในพื้นที่ของคุณ',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: 8),
+                          // "Emergency" status label
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white30),
+                            ),
+                            child: const Text(
+                              'เหตุฉุกเฉิน',
+                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    // "Emergency" status label
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 24),
+                        child: Text(
+                          alert['address'] ?? '',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      child: const Text(
-                        'เหตุฉุกเฉิน',
-                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 14),
-                  ],
+                      if (total > 1) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const SizedBox(width: 24),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white12,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${total - index}/$total',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          // Close button (Top Left)
-          Positioned(
-            top: 2,
-            left: 2,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _activeAlerts.removeAt(index);
-                  if (_activeAlerts.isEmpty) {
-                    _focusedAlert = null;
-                  } else {
-                    // Update focus to the new top card
-                    _focusedAlert = _activeAlerts.first;
-                    // Auto-sync map
-                  }
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white24),
+            // Close button (Top Left)
+            Positioned(
+              top: 2,
+              left: 2,
+              child: GestureDetector(
+                onTap: () {
+                  _recordDismissedAlert(videoId);
+                  setState(() {
+                    _activeAlerts.removeAt(index);
+                    if (_activeAlerts.isEmpty) {
+                      _focusedAlert = null;
+                    } else {
+                      _focusedAlert = _activeAlerts.first;
+                    }
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 14),
                 ),
-                child: const Icon(Icons.close, color: Colors.white, size: 14),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
