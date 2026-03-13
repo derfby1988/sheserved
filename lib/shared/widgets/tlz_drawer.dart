@@ -162,10 +162,10 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final drawerWidth = screenWidth * 0.50;
+    final drawerWidth = math.min(screenWidth * 0.75, 320.0); // ใช้ 75% แต่ไม่เกิน 320px เพื่อความสวยงาม
 
     return SizedBox(
-      width: drawerWidth, // กำหนดความกว้างเป็น 50% ตามต้องการ
+      width: drawerWidth,
       child: Container(
         decoration: BoxDecoration(
           boxShadow: [
@@ -776,15 +776,15 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   }
 
   void _navigateTo(BuildContext context, String route) {
-    // Route ที่ต้อง Login ก่อนเข้า (ตัวอย่างเอาแค่ emergency-live แต่อาจมีอื่นๆเพิ่มได้)
-    final protectedRoutes = ['/emergency-live'];
+    // Route ที่ต้อง Login ก่อนเข้า
+    final protectedRoutes = ['/emergency-live', '/profile'];
 
     // เริ่ม animation ปิด drawer ก่อน navigate
     _animationController.forward().then((_) {
       Navigator.of(context).pop(); // Close drawer first
       
       // ดัก Auth ล่วงหน้าจาก source
-      if (protectedRoutes.contains(route) && ServiceLocator.instance.currentUser == null) {
+      if (protectedRoutes.contains(route) && !AuthService.instance.isLoggedIn) {
         Navigator.pushNamed(
           context,
           '/login',

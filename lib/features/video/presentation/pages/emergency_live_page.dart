@@ -63,6 +63,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   StreamSubscription? _videoStatusSub;
   StreamSubscription? _locationSub;
   StreamSubscription? _myLocationStreamSub;
+  StreamSubscription? _emergencySub;
   
   // Video Player & Map Sync
   VideoPlayerController? _videoPlayerController;
@@ -245,6 +246,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   void _loadInitialData() async {
+    await _loadEmergencyCategories();
     if (_currentVideoId != null) {
       final summary = await ServiceLocator.instance.videoRepository
           .getInteractionSummary(_currentVideoId!);
@@ -261,6 +263,17 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (mounted) {
         setState(() {
           _currentVideo = video;
+          // แก้ไขข้อผิดพลาด: นำหมวดหมู่มาใช้เลย ไม่ต้องถามซ้ำ
+          if (video?.categoryId != null) {
+            _selectedEmergencyCategoryId = video!.categoryId;
+            // พยายามโหลด Object หมวดหมู่เพื่อแสดงผล UI
+            if (_emergencyCategories.isNotEmpty) {
+               _selectedEmergencyCategory = _emergencyCategories.firstWhere(
+                 (c) => c.id == video.categoryId,
+                 orElse: () => DonationCategory(id: video.categoryId!, name: 'เหตุฉุกเฉิน'),
+               );
+            }
+          }
         });
       }
       
@@ -296,23 +309,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       }
     }
 
-    // Fetch trending videos
-    try {
-      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos();
-      if (mounted) {
-        setState(() {
-          _trendingVideos = videos;
-          _isLoadingTrending = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading trending videos: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingTrending = false;
-        });
-      }
-    }
+    // Trending videos are loaded in _loadTrendingVideos
+    await _loadTrendingVideos();
+    
+    // Fetch responders if watching a video
     
     // Fetch responders if watching a video
     if (_currentVideoId != null) {
@@ -432,12 +432,29 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     }
   }
 
+  Future<void> _loadTrendingVideos() async {
+    try {
+      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos();
+      if (mounted) {
+        setState(() {
+          _trendingVideos = videos;
+          _isLoadingTrending = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading trending videos: $e');
+      if (mounted) {
+        setState(() => _isLoadingTrending = false);
+      }
+    }
+  }
+
   void _setupWebSocketStreams() {
     final ws = WebSocketService();
     
     // 1. Connection Status
     _connectionSub = ws.connectionStream.listen((connected) {
-      setState(() => _isConnected = connected);
+      if (mounted) setState(() => _isConnected = connected);
     });
 
     // 2. Video Interactions (Likes, Gifts, Views) Realtime
@@ -446,10 +463,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       ws.joinVideoRoom(_currentVideoId!);
       _interactionSub = ws.videoInteractionStream.listen((data) {
         if (data['videoId'] == _currentVideoId) {
-          setState(() {
-            if (data['type'] == 'like') _likeCount++;
-            if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0);
-          });
+          if (mounted) {
+            setState(() {
+              if (data['type'] == 'like') _likeCount++;
+              if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0);
+              if (data['type'] == 'view') _viewerCount++;
+            });
+          }
         }
       });
       
@@ -465,14 +485,38 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       });
     }
 
-    // 3. Progress / GPS (Simulated move for demo, but wired to logic)
+    // 3. New Emergency Alerts (to refresh trending list immediately)
+    _emergencySub = ws.emergencyNotificationStream.listen((data) {
+      debugPrint('EmergencyLivePage: Received emergency notification, refreshing trending list...');
+      _loadTrendingVideos();
+      
+      // Show snackbar for new alerts
+      if (mounted && data['videoId'] != _currentVideoId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🛑 เหตุฉุกเฉินใหม่: ${data['categoryName'] ?? "ไม่ระบุ"}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'ดูเหตุการณ์',
+              textColor: Colors.white,
+              onPressed: () => _switchVideo(data['videoId']),
+            ),
+          ),
+        );
+      }
+    });
+
+    // 4. Progress / GPS (Simulated move for demo, but wired to logic)
     _progressSub = ws.videoProgressStream.listen((data) {
       if (data['videoId'] == _currentVideoId && data['location'] != null) {
         final loc = data['location'];
         final point = LatLng(loc['lat'], loc['lng']);
-        setState(() {
-          _routePoints.add(point);
-        });
+        if (mounted) {
+          setState(() {
+            _routePoints.add(point);
+          });
+        }
       }
     });
 
@@ -958,66 +1002,70 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   Future<void> _sendPhotos() async {
     if (_capturedPhotos.isEmpty) return;
 
-    // Show category selection first
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-    
-    List<DonationCategory> categories = [];
-    try {
-      categories = await ServiceLocator.instance.donationRepository.getEmergencyCategories();
-    } catch (e) {
-      debugPrint("Error fetching emergency categories: $e");
-    }
-    
-    if (!mounted) return;
-    Navigator.pop(context); // Close loading dialog
+    String? categoryId = _selectedEmergencyCategoryId;
 
-    if (categories.isEmpty) {
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text('ยังไม่มีหมวดหมู่เหตุฉุกเฉินในระบบ กรุณาติดต่อผู้ดูแล'), backgroundColor: Colors.red),
-         );
-       }
-       return;
-    }
+    if (categoryId == null) {
+      // Fallback only if somehow not selected
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+      
+      List<DonationCategory> categories = [];
+      try {
+        categories = await ServiceLocator.instance.donationRepository.getEmergencyCategories();
+      } catch (e) {
+        debugPrint("Error fetching emergency categories: $e");
+      }
+      
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
 
-    if (!mounted) return;
-    final selectedCategory = await showModalBottomSheet<DonationCategory>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('เลือกหมวดหมู่เหตุฉุกเฉิน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: categories.length,
-                  itemBuilder: (context, index) {
-                    final cat = categories[index];
-                    return ListTile(
-                      leading: const Icon(Icons.emergency, color: Colors.red),
-                      title: Text(cat.name),
-                      onTap: () => Navigator.pop(context, cat),
-                    );
-                  },
+      if (categories.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ยังไม่มีหมวดหมู่เหตุฉุกเฉินในระบบ กรุณาติดต่อผู้ดูแล'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+      final selectedCategory = await showModalBottomSheet<DonationCategory>(
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (context) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('เลือกหมวดหมู่เหตุฉุกเฉิน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: categories.length,
+                    itemBuilder: (context, index) {
+                      final cat = categories[index];
+                      return ListTile(
+                        leading: const Icon(Icons.emergency, color: Colors.red),
+                        title: Text(cat.name),
+                        onTap: () => Navigator.pop(context, cat),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+              ],
+            ),
+          );
+        },
+      );
 
-    if (selectedCategory == null) return;
-    String categoryId = selectedCategory.id;
+      if (selectedCategory == null) return;
+      categoryId = selectedCategory.id;
+    }
 
     // Show loading
     if (!mounted) return;

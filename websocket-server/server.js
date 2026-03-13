@@ -357,20 +357,9 @@ io.on('connection', (socket) => {
           }
         }
 
-        // 3. Fallback: if no targets found, get ALL active volunteers
-        if (targetUserIds.length === 0) {
-          console.log(`[Emergency] No targeted volunteers found. Using fallback: all volunteers.`);
-          const userRes = await pool.query(
-            `SELECT DISTINCT cp.user_id FROM consumer_profiles cp
-             WHERE cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL`
-          );
-          targetUserIds = userRes.rows.map(row => row.user_id);
-        }
-
         console.log(`[Emergency] Target volunteer IDs: ${JSON.stringify(targetUserIds)}`);
-        console.log(`[Emergency] Connected users map:`, Array.from(connectedUsers.entries()));
 
-        // 4. Send to ALL target volunteers (including sender during dev - they can also be a volunteer)
+        // 4. Send ONLY to target volunteers
         let sentCount = 0;
         targetUserIds.forEach(targetId => {
           const roomName = `user-${targetId}`;
@@ -379,23 +368,12 @@ io.on('connection', (socket) => {
           console.log(`[Emergency] -> Sent to room: ${roomName}`);
         });
 
-        // 5. Also broadcast to ALL connected sockets as a safety net
-        if (sentCount === 0) {
-          console.log(`[Emergency] No targets found at all! Broadcasting to everyone.`);
-          io.emit('emergency-notification', notificationPayload);
-        }
-
         console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} users ======`);
       } catch (err) {
         console.error('[Emergency] Failed to process alert:', err.message);
-        // Even on error, try to broadcast to everyone
-        io.emit('emergency-notification', notificationPayload);
-        console.log(`[Emergency] Error fallback: broadcast to all sockets`);
       }
     } else {
-      // No database - just broadcast to everyone
-      console.log(`[Emergency] No DB pool. Broadcasting to all sockets.`);
-      io.emit('emergency-notification', notificationPayload);
+      console.log(`[Emergency] No DB pool. Notification not sent.`);
     }
   });
 

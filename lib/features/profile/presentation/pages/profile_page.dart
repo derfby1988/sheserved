@@ -6,7 +6,6 @@ import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
-import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/auth_service.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
@@ -37,12 +36,21 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _thaiMhungEnabled = true; // ความสมัครใจไทยมุง
   int _alertRadius = 500; // รัศมีการแจ้งเตือน (เมตร)
   File? _tempProfileImage;
+  int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer
 
   @override
   void initState() {
     super.initState();
     _repository = ProfileRepository(Supabase.instance.client);
-    _loadProfile();
+    
+    // Auth re-verify as per login_navigation_guide
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!AuthService.instance.isLoggedIn) {
+        Navigator.pushReplacementNamed(context, '/login', arguments: '/profile');
+        return;
+      }
+      _loadProfile();
+    });
   }
 
   Future<void> _loadProfile() async {
@@ -112,58 +120,87 @@ class _ProfilePageState extends State<ProfilePage> {
           ? const Center(child: CircularProgressIndicator())
           : _user == null
               ? const Center(child: Text('ไม่พบข้อมูลผู้ใช้'))
-              : _buildContent(),
+              : SafeArea(
+                  top: false, 
+                  child: _buildContent(),
+                ),
     );
   }
 
   Widget _buildContent() {
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(
-          child: TlzAppTopBar.onPrimary(
-            searchHintText: 'ค้นหา...',
-            leading: const TlzHamburgerMenu(),
-            actions: [
-              if (!_isEditing)
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.white),
-                  onPressed: () => setState(() => _isEditing = true),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () {
-                    setState(() {
-                      _isEditing = false;
-                      _tempProfileImage = null;
-                    });
-                    _loadProfile();
-                  },
-                ),
-            ],
+        SliverAppBar(
+          pinned: true,
+          floating: true,
+          backgroundColor: AppColors.primary,
+          automaticallyImplyLeading: false,
+          elevation: 2,
+          titleSpacing: 0,
+          toolbarHeight: 65,
+          title: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TlzAppTopBar.onPrimary(
+              searchHintText: 'ค้นหา...',
+              leading: const TlzHamburgerMenu(),
+              actions: const [],
+            ),
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(50),
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
+              ),
+              child: Row(
+                children: [
+                    Expanded(
+                      child: _buildTabItem(
+                        icon: Icons.person_outline,
+                        text: _profession?.name ?? 'โปรไฟล์',
+                        isActive: _selectedTabIndex == 0,
+                        activeColor: AppColors.primary,
+                        onTap: () => setState(() => _selectedTabIndex = 0),
+                      ),
+                    ),
+                  if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false))
+                    Expanded(
+                      child: _buildTabItem(
+                        icon: Icons.volunteer_activism_outlined,
+                        text: 'จิตอาสา',
+                        isActive: _selectedTabIndex == 1,
+                        activeColor: const Color(0xFFF5A623),
+                        onTap: () => setState(() => _selectedTabIndex = 1),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              _buildHeader(),
-              const SizedBox(height: 24),
-              _buildCoreInfo(),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 16),
-              Text(
-                'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
-                style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
-              ),
-              const SizedBox(height: 16),
-               ..._buildDynamicFields(),
-               const SizedBox(height: 16),
-               const Divider(),
-               const SizedBox(height: 16),
-               _buildNotificationSettings(),
-               if (_isEditing) ...[
+              if (_selectedTabIndex == 0) ...[
+                _buildHeader(),
+                const SizedBox(height: 24),
+                _buildCoreInfo(),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 16),
+                Text(
+                  'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
+                  style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+                ),
+                const SizedBox(height: 16),
+                ..._buildDynamicFields(),
+              ] else ...[
+                _buildNotificationSettings(),
+              ],
+              if (_isEditing) ...[
                 const SizedBox(height: 32),
                 TlzButton(
                   text: 'บันทึกข้อมูล',
@@ -179,10 +216,52 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Widget _buildTabItem({
+    required IconData icon,
+    required String text,
+    required bool isActive,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: isActive ? activeColor : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isActive ? activeColor : Colors.grey,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              text,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isActive ? activeColor : Colors.grey,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader() {
     return Center(
       child: Column(
         children: [
+          const SizedBox(height: 16),
           Stack(
             children: [
               CircleAvatar(
@@ -216,24 +295,54 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
           const SizedBox(height: 16),
-          Text(
-            _user?.fullName ?? '',
-            style: AppTextStyles.heading2,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _user?.fullName ?? '',
+                style: AppTextStyles.heading2,
+              ),
+              const SizedBox(width: 8),
+              if (!_isEditing)
+                GestureDetector(
+                  onTap: () => setState(() => _isEditing = true),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5A623).withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.edit, color: Color(0xFFF5A623), size: 18),
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isEditing = false;
+                      _tempProfileImage = null;
+                    });
+                    _loadProfile();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: Colors.red, size: 18),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _profession?.category.displayName ?? _user?.userType.displayName ?? '',
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
-                ),
+              Text(
+                _profession?.category.name ?? _user?.userType.displayName ?? '',
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
               ),
               if (_user?.verificationStatus == auth.VerificationStatus.verified) ...[
                 const SizedBox(width: 8),
@@ -241,6 +350,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ],
           ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -460,15 +570,13 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               Switch(
                 value: _thaiMhungEnabled,
-                onChanged: _isEditing 
-                  ? (value) => setState(() => _thaiMhungEnabled = value)
-                  : null,
+                onChanged: (value) => _updateVolunteerSettings(enabled: value),
                 activeColor: AppColors.primary,
               ),
             ],
           ),
         ),
-        if (_profession?.isVolunteer ?? false) ...[
+        if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false)) ...[
           const SizedBox(height: 24),
           _buildRadiusSection(),
         ],
@@ -477,6 +585,12 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildRadiusSection() {
+    final isProfessional = _profession?.isVolunteer ?? false;
+    final title = isProfessional ? 'รัศมีพื้นที่รับผิดชอบ' : 'พื้นที่ให้ทางแก่เจ้าหน้าที่';
+    final description = isProfessional 
+        ? 'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้' 
+        : 'รัศมีสำหรับการแจ้งเตือนเหตุ เพื่ออำนวยความสะดวก "เส้นทาง"แก่เจ้าหน้าที่';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -491,7 +605,7 @@ class _ProfilePageState extends State<ProfilePage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'พื้นที่ความรับผิดชอบ (รัศมี)',
+                title,
                 style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
               ),
               Container(
@@ -514,7 +628,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้',
+            description,
             style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
           ),
           const SizedBox(height: 16),
@@ -522,10 +636,9 @@ class _ProfilePageState extends State<ProfilePage> {
             value: _alertRadius.toDouble().clamp(500, 100000),
             min: 500,
             max: 100000,
-            divisions: 199, // ขยับทีละ 500ม. (100,000 - 500) / 500 = 199
-            onChanged: _isEditing 
-              ? (value) => setState(() => _alertRadius = value.round())
-              : null,
+            divisions: 199,
+            onChanged: (value) => setState(() => _alertRadius = value.round()),
+            onChangeEnd: (value) => _updateVolunteerSettings(radius: value.round()),
             activeColor: AppColors.primary,
             inactiveColor: Colors.grey[200],
           ),
@@ -539,6 +652,53 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
+  }
+
+  Future<void> _updateVolunteerSettings({bool? enabled, int? radius}) async {
+    if (_user == null) return;
+    
+    final newEnabled = enabled ?? _thaiMhungEnabled;
+    final newRadius = radius ?? _alertRadius;
+    
+    setState(() {
+      _thaiMhungEnabled = newEnabled;
+      _alertRadius = newRadius;
+    });
+
+    try {
+      await _repository.updateProfile(
+        userId: _user!.id,
+        coreData: {
+          'is_thai_mhung_enabled': newEnabled,
+          'alert_radius': newRadius,
+        },
+        dynamicData: {},
+        userType: _user!.userType,
+      );
+      
+      AuthService.instance.login(_user!.copyWith(
+        isThaiMhungEnabled: newEnabled,
+        alertRadius: newRadius,
+      ));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('บันทึกการตั้งค่าจิตอาสาสำเร็จ'),
+            duration: Duration(seconds: 1),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error updating volunteer settings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _pickImage() async {
