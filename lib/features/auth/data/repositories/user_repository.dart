@@ -756,16 +756,42 @@ class UserRepository {
     String value,
   ) async {
     debugPrint('UserRepository: saveUiPreference user=$userId key=$preferenceKey val=$value');
-    await _client.from('user_ui_preferences').upsert(
-      {
-        'user_id': userId,
-        'preference_key': preferenceKey,
-        'preference_value': value,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'user_id,preference_key',
-    );
-    debugPrint('UserRepository: ✓ UI preference saved successfully');
+    
+    // 1. Save to Local API if on Main Machine
+    if (AppConfig.databaseMode != DatabaseMode.supabaseOnly) {
+      try {
+        final response = await http.post(
+          Uri.parse('${AppConfig.localApiUrl}/api/users/$userId/preferences'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'key': preferenceKey, 'value': value}),
+        );
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          debugPrint('UserRepository: ✓ UI preference saved to Local DB');
+        } else {
+          debugPrint('UserRepository: ⚠️ Local DB save failed: ${response.body}');
+        }
+      } catch (e) {
+        debugPrint('UserRepository: ❌ Local DB save error: $e');
+      }
+    }
+
+    // 2. Save to Supabase (Always or fallback depending on preference)
+    if (AppConfig.databaseMode != DatabaseMode.localOnly) {
+      try {
+        await _client.from('user_ui_preferences').upsert(
+          {
+            'user_id': userId,
+            'preference_key': preferenceKey,
+            'preference_value': value,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          onConflict: 'user_id,preference_key',
+        );
+        debugPrint('UserRepository: ✓ UI preference saved to Supabase');
+      } catch (e) {
+        debugPrint('UserRepository: ❌ Supabase save error: $e');
+      }
+    }
   }
 
   /// ดึง UI Preference ของผู้ใช้
@@ -775,6 +801,26 @@ class UserRepository {
     String preferenceKey,
   ) async {
     debugPrint('UserRepository: getUiPreference user=$userId key=$preferenceKey');
+    
+    // 1. Try Local API first if on Main Machine
+    if (AppConfig.databaseMode != DatabaseMode.supabaseOnly) {
+      try {
+        final response = await http.get(
+          Uri.parse('${AppConfig.localApiUrl}/api/users/$userId/preferences/$preferenceKey'),
+        );
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['value'] != null) {
+            debugPrint('UserRepository: ✓ getUiPreference (Local) result=${data['value']}');
+            return data['value'];
+          }
+        }
+      } catch (e) {
+        debugPrint('UserRepository: ❌ Local getUiPreference failed: $e');
+      }
+    }
+
+    // 2. Try Supabase
     try {
       final response = await _client
           .from('user_ui_preferences')
@@ -783,10 +829,10 @@ class UserRepository {
           .eq('preference_key', preferenceKey)
           .maybeSingle();
       final val = response?['preference_value'] as String?;
-      debugPrint('UserRepository: ✓ getUiPreference result=$val');
+      debugPrint('UserRepository: ✓ getUiPreference (Supabase) result=$val');
       return val;
     } catch (e) {
-      debugPrint('UserRepository: ❌ getUiPreference error: $e');
+      debugPrint('UserRepository: ❌ Supabase getUiPreference error: $e');
       return null;
     }
   }

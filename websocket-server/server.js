@@ -359,7 +359,7 @@ io.on('connection', (socket) => {
 
         console.log(`[Emergency] Target volunteer IDs: ${JSON.stringify(targetUserIds)}`);
 
-        // 4. Send ONLY to target volunteers
+        // 3. Send ONLY to target volunteers
         let sentCount = 0;
         targetUserIds.forEach(targetId => {
           const roomName = `user-${targetId}`;
@@ -419,6 +419,24 @@ io.on('connection', (socket) => {
       io.emit('rescue-cancelled', { videoId, volunteerId });
     }
   });
+
+  // Handle UI Preference Updates
+  socket.on('save-ui-preference', async (data) => {
+    const { userId, key, value } = data;
+    console.log(`[UI] Save preference for ${userId}: ${key} = ${value}`);
+    if (pool && userId && key) {
+      try {
+        await pool.query(
+          `INSERT INTO user_ui_preferences (user_id, preference_key, preference_value, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (user_id, preference_key) DO UPDATE SET preference_value = $3, updated_at = NOW()`,
+          [userId, key, value]
+        );
+      } catch (err) {
+        console.error('[UI] Failed to save preference:', err.message);
+      }
+    }
+  });
 });
 
 // Health check endpoint
@@ -428,6 +446,39 @@ app.get('/health', (req, res) => {
     connectedUsers: connectedUsers.size,
     database: pool ? 'connected' : 'not connected'
   });
+});
+
+// UI Preferences API
+app.get('/api/users/:userId/preferences/:key', async (req, res) => {
+  const { userId, key } = req.params;
+  try {
+    if (!pool) return res.status(503).json({ error: 'Database not available' });
+    const result = await pool.query(
+      'SELECT preference_value FROM user_ui_preferences WHERE user_id = $1 AND preference_key = $2',
+      [userId, key]
+    );
+    if (result.rows.length === 0) return res.json({ value: null });
+    res.json({ value: result.rows[0].preference_value });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/users/:userId/preferences', async (req, res) => {
+  const { userId } = req.params;
+  const { key, value } = req.body;
+  try {
+    if (!pool) return res.status(503).json({ error: 'Database not available' });
+    await pool.query(
+      `INSERT INTO user_ui_preferences (user_id, preference_key, preference_value, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, preference_key) DO UPDATE SET preference_value = $3, updated_at = NOW()`,
+      [userId, key, value]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============ PROFESSIONS API ============

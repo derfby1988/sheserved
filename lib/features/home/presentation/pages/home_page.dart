@@ -38,7 +38,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  Timer? _refreshTimer;
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
   late ScrollController _scrollController;
@@ -88,6 +89,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     
@@ -105,8 +107,35 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     });
 
     _loadHomeData();
-    _listenForEmergencyAlerts();
     _connectWebSocket();
+    _listenForEmergencyAlerts(); // WebSocket listener
+
+    // Start auto-refresh timer as a fail-safe (every 90 seconds)
+    _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+      if (mounted) {
+        debugPrint('HomePage: Auto-refreshing alerts via timer...');
+        _loadActiveAlerts();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    AuthService.instance.removeListener(_onAuthChanged);
+    _scrollController.dispose();
+    _emergencySub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('HomePage: App resumed, refreshing data and checking WebSocket...');
+      _connectWebSocket(); // Ensure connection is alive
+      _loadHomeData();    // Full refresh including alerts
+    }
   }
 
   void _connectWebSocket() {
@@ -122,7 +151,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (!mounted) return;
       
       final user = AuthService.instance.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        debugPrint('HomePage: WebSocket alert received but user is null');
+        return;
+      }
 
       debugPrint('HomePage: Received emergency notification: $data');
 
@@ -131,6 +163,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final categoryId = data['categoryId'] as String? ?? data['category_id'] as String?;
       
       final isThaiMhungAlert = data['isThaiMhungEnabled'] == true || data['is_thai_mhung_enabled'] == true;
+
+      // Ensure categories are loaded before processing
+      if (_emergencyCategories.isEmpty) {
+        debugPrint('HomePage: Categories not loaded yet, fetching now...');
+        _emergencyCategories = await _donationRepo.getEmergencyCategories();
+      }
 
       if (categoryId != null) {
         final category = _emergencyCategories.any((c) => c.id == categoryId) 
@@ -145,16 +183,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         }
       }
 
+      // Initial filtering
+      if (!isRelevant && (!isThaiMhungAlert || !user.isThaiMhungEnabled)) {
+        debugPrint('HomePage: Alert REJECTED - not relevant (isRelevant: $isRelevant, isThaiMhung: $isThaiMhungAlert)');
+        return;
+      }
+
       // 1.1 Extract or establish timestamp for sorting
       final createdAt = data['created_at'] != null 
           ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
           : DateTime.now();
-
-      // Initial filtering
-      if (!isRelevant && (!isThaiMhungAlert || !user.isThaiMhungEnabled)) {
-        debugPrint('HomePage: Alert not relevant to user profession (isRelevant: $isRelevant) or Thai Mhung (isThaiMhungAlert: $isThaiMhungAlert, enabled: ${user.isThaiMhungEnabled})');
-        return;
-      }
 
       // 2. Distance-based Proximity Check
       try {
@@ -162,26 +200,40 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         final lng = _parseDouble(data['longitude']);
         
         if (lat != 0 && lng != 0) {
-          final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
-          final distance = Geolocator.distanceBetween(
-            position.latitude,
-            position.longitude,
-            lat,
-            lng,
-          );
-          debugPrint('HomePage: Distance to incident: ${distance.toStringAsFixed(0)}m, user.alertRadius: ${user.alertRadius}');
+          // Optimization: Get last known position first as it's nearly instantaneous
+          Position? position = await Geolocator.getLastKnownPosition();
+          
+          // Only request fresh position if last known is missing or old
+          if (position == null) {
+             position = await Geolocator.getCurrentPosition(
+               desiredAccuracy: LocationAccuracy.low,
+               timeLimit: const Duration(seconds: 3),
+             ).catchError((_) => position);
+          }
 
-          if (isRelevant) {
-            // Professionals: Use strictly defined alertRadius
-            if (distance > user.alertRadius) {
-              debugPrint('HomePage: Alert too far for Professional ($distance m > ${user.alertRadius} m)');
-              return;
-            }
-          } else if (isThaiMhungAlert) {
-            // Thai Mhung: Use user's defined alertRadius
-            if (distance > user.alertRadius) {
-              debugPrint('HomePage: Alert REJECTED - too far for Thai Mhung ($distance m > ${user.alertRadius} m)');
-              return;
+          if (position == null) {
+             debugPrint('HomePage: Proximity check skipped - location unavailable');
+          } else {
+            final distance = Geolocator.distanceBetween(
+              position.latitude,
+              position.longitude,
+              lat,
+              lng,
+            );
+            debugPrint('HomePage: Distance to incident: ${distance.toStringAsFixed(0)}m, user.alertRadius: ${user.alertRadius}');
+
+            if (isRelevant) {
+              // Professionals: Use strictly defined alertRadius
+              if (distance > user.alertRadius) {
+                debugPrint('HomePage: Alert too far for Professional ($distance m > ${user.alertRadius} m)');
+                return;
+              }
+            } else if (isThaiMhungAlert) {
+              // Thai Mhung: Use user's defined alertRadius
+              if (distance > user.alertRadius) {
+                debugPrint('HomePage: Alert REJECTED - too far for Thai Mhung ($distance m > ${user.alertRadius} m)');
+                return;
+              }
             }
           }
         }
@@ -273,12 +325,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               'title': video.title,
               'createdAt': video.createdAt,
             });
+          } else {
+            debugPrint('HomePage: Skipping dismissed alert: $vidId');
           }
         }
       }
 
-      if (mounted && newAlerts.isNotEmpty) {
+      if (mounted) {
         setState(() {
+          // Remove any alerts that are now in the dismissed set
+          _activeAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
+
           for (var alert in newAlerts) {
             if (!_activeAlerts.any((a) => a['videoId'] == alert['videoId'])) {
               _activeAlerts.add(alert);
@@ -584,27 +641,36 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
     }
 
-    // โหลดรายการแจ้งเหตุที่เคยยกเลิกไปแล้ว
-    _loadDismissedAlerts();
+    // ดึง UI Preference ของผู้ใช้ (เช่น รายการแจ้งเหตุที่เคยยกเลิกไปแล้ว)
+    await _loadDismissedAlerts();
   }
 
   /// โหลดรายการแจ้งเหตุที่ผู้ใช้กดปิดไปแล้ว (จะไม่แสดงซ้ำ)
   Future<void> _loadDismissedAlerts() async {
     final userId = ServiceLocator.instance.currentUser?.id;
+    debugPrint('HomePage: _loadDismissedAlerts for userId=$userId');
     if (userId == null) return;
 
     try {
       final repo = ServiceLocator.get<UserRepository>();
       final saved = await repo.getUiPreference(userId, _kDismissedAlertsKey);
-      if (saved != null && saved.isNotEmpty) {
+      if (saved != null && saved.trim().isNotEmpty) {
         setState(() {
           _dismissedAlertIds.clear();
-          _dismissedAlertIds.addAll(saved.split(','));
+          // Split robustly handling spaces and empty items
+          _dismissedAlertIds.addAll(
+            saved.split(',')
+                 .map((e) => e.trim())
+                 .where((e) => e.isNotEmpty)
+          );
         });
-        debugPrint('HomePage: Loaded ${_dismissedAlertIds.length} dismissed alerts.');
+        debugPrint('HomePage: ✓ Loaded ${_dismissedAlertIds.length} dismissed alerts: $_dismissedAlertIds');
+      } else {
+        debugPrint('HomePage: No dismissed alerts found in DB for this user.');
+        setState(() => _dismissedAlertIds.clear());
       }
     } catch (e) {
-      debugPrint('HomePage: Error loading dismissed alerts: $e');
+      debugPrint('HomePage: ❌ Error loading dismissed alerts: $e');
     }
   }
 
@@ -612,19 +678,28 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _recordDismissedAlert(String videoId) async {
     if (videoId.isEmpty) return;
     
-    if (!_dismissedAlertIds.contains(videoId)) {
-      _dismissedAlertIds.add(videoId);
-    }
-
     final userId = ServiceLocator.instance.currentUser?.id;
-    if (userId == null) return;
+    debugPrint('HomePage: _recordDismissedAlert videoId=$videoId userId=$userId');
+
+    setState(() {
+      if (!_dismissedAlertIds.contains(videoId)) {
+        _dismissedAlertIds.add(videoId);
+      }
+    });
+
+    if (userId == null) {
+      debugPrint('HomePage: Guest mode -> skip DB save for dismissal');
+      return;
+    }
 
     try {
       final repo = ServiceLocator.get<UserRepository>();
-      await repo.saveUiPreference(userId, _kDismissedAlertsKey, _dismissedAlertIds.join(','));
-      debugPrint('HomePage: Recorded dismissal for $videoId');
+      final value = _dismissedAlertIds.join(',');
+      debugPrint('HomePage: Saving dismissed alerts to DB: $value');
+      await repo.saveUiPreference(userId, _kDismissedAlertsKey, value);
+      debugPrint('HomePage: ✓ Recorded dismissal for $videoId successfully');
     } catch (e) {
-      debugPrint('HomePage: Error saving dismissed alert: $e');
+      debugPrint('HomePage: ❌ Error saving dismissed alert: $e');
     }
   }
 
@@ -651,11 +726,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// เรียกเมื่อ auth state เปลี่ยน (login / logout)
   void _onAuthChanged() {
-    debugPrint('HomePage: _onAuthChanged fired, userId=${ServiceLocator.instance.currentUser?.id}');
+    final userId = ServiceLocator.instance.currentUser?.id;
+    debugPrint('HomePage: _onAuthChanged fired, userId=$userId');
+    
+    // Reset connection on auth change
+    if (userId != null) {
+      _connectWebSocket();
+    }
+    
     _loadConsultationPosition();
     _loadHealthScore();
     _loadHomeData();
-    _connectWebSocket();
   }
 
   /// โหลดคะแนนสุขภาพของผู้ใช้
@@ -705,8 +786,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     });
     
     try {
+      // 1. Fetch Emergency Categories FIRST (Required for filtering)
+      final emergencyCategories = await _donationRepo.getEmergencyCategories();
+      if (mounted) {
+        setState(() => _emergencyCategories = emergencyCategories);
+      }
+
       final repository = ServiceLocator.instance.healthArticleRepository;
-      
       final currentUserId = ServiceLocator.instance.currentUser?.id;
       
       // Fetch recommended articles
@@ -722,9 +808,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         pageSize: 5,
         userId: currentUserId,
       );
-      
-      // Fetch Emergency Categories for filtering rights
-      final emergencyCategories = await _donationRepo.getEmergencyCategories();
 
       if (mounted) {
         setState(() {
@@ -736,11 +819,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
           _recommendedArticles = recommended;
           _interestingArticles = interesting;
-          _emergencyCategories = emergencyCategories;
           _isLoadingArticles = false;
         });
-        // โหลดเหตุฉุกเฉินที่กำลังเกิดค้างอยู่
-        _loadActiveAlerts();
+
+        // 2. โหลดรายการที่เคย Dismiss ไว้ก่อน เพื่อป้องการ race condition
+        await _loadDismissedAlerts();
+        
+        // 3. โหลดเหตุฉุกเฉินที่กำลังเกิดค้างอยู่
+        await _loadActiveAlerts();
       }
     } catch (e) {
       if (mounted) {
@@ -909,15 +995,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       // Revert or reload on error
       _loadHomeData();
     }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    AuthService.instance.removeListener(_onAuthChanged);
-    _emergencySub?.cancel();
-    super.dispose();
   }
 
   void _measureHeaderSectionHeight() {
