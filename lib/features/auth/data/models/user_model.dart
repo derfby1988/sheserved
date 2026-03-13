@@ -1,4 +1,4 @@
-/// ประเภทผู้ใช้งาน
+/// ประเภทผู้ใช้งาน (ใช้เพื่อแยก Logic หน้าจอหลัก)
 enum UserType {
   consumer, // ผู้ซื้อ/ผู้รับบริการ
   expert, // ผู้เชี่ยวชาญ/ผู้ขาย/สถานบริการ/ร้านค้า
@@ -106,6 +106,9 @@ class UserModel {
   final String availabilityStatus; // 'online', 'busy', 'offline'
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool isThaiMhungEnabled; // ความสมัครใจในการรับแจ้งเหตุไทยมุง
+  final int alertRadius; // รัศมีการแจ้งเตือน (เมตร)
+  final bool isVolunteer; // สิทธิจิตอาสา (ดึงมาจาก Profession)
 
   /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา
   bool get isOnline {
@@ -113,19 +116,8 @@ class UserModel {
     return DateTime.now().difference(lastSeenAt!).inMinutes < 2;
   }
 
-  /// Responder group checks for alert filtering
-  bool get isMedicalResponder =>
-      professionId != null &&
-      ['00000000-0000-0000-0000-000000000001', // Doctor
-       '00000000-0000-0000-0000-000000000004'].contains(professionId); // Nurse/Medic
-
-  bool get isSecurityResponder =>
-      professionId != null &&
-      ['00000000-0000-0000-0000-000000000003'].contains(professionId); // Police/Security
-
-  bool get isFireResponder =>
-      professionId != null &&
-      ['00000000-0000-0000-0000-000000000005'].contains(professionId); // Firefighter
+  /// ตรวจสอบความเป็นอาสาสมัครเพื่อกรองการแจ้งเตือน
+  bool get isProfessionalResponder => isVolunteer;
 
   const UserModel({
     required this.id,
@@ -146,6 +138,9 @@ class UserModel {
     this.availabilityStatus = 'online',
     required this.createdAt,
     required this.updatedAt,
+    this.isThaiMhungEnabled = true,
+    this.alertRadius = 500,
+    this.isVolunteer = false,
   });
 
   String get fullName => '$firstName $lastName';
@@ -157,7 +152,6 @@ class UserModel {
     return {
       'id': id,
       'profession_id': professionId,
-      // Note: user_type removed from DB but kept in Model for app logic
       'first_name': firstName,
       'last_name': lastName,
       'username': username,
@@ -173,29 +167,23 @@ class UserModel {
       'availability_status': availabilityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'is_thai_mhung_enabled': isThaiMhungEnabled,
+      'alert_radius': alertRadius,
+      // is_volunteer can be stored in metadata or handled during fetch
     };
   }
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
-    // Derive UserType from profession_id if user_type is missing
-    UserType derivedType = UserType.consumer;
+    // Derive UserType broadly, but UI will use Profession for exact category
+    UserType type = UserType.consumer;
     if (json['user_type'] != null) {
-      derivedType = UserTypeExtension.fromString(json['user_type']);
-    } else if (json['profession_id'] != null) {
-      final pId = json['profession_id'].toString();
-      if (pId == '00000000-0000-0000-0000-000000000002') {
-        derivedType = UserType.expert;
-      } else if (pId == '00000000-0000-0000-0000-000000000003') {
-        derivedType = UserType.clinic;
-      } else {
-        derivedType = UserType.consumer;
-      }
+      type = UserTypeExtension.fromString(json['user_type']);
     }
 
     return UserModel(
       id: json['id'],
       professionId: json['profession_id'],
-      userType: derivedType,
+      userType: type,
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       username: json['username'],
@@ -212,6 +200,9 @@ class UserModel {
       availabilityStatus: json['availability_status'] ?? 'online',
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
+      isThaiMhungEnabled: json['is_thai_mhung_enabled'] ?? true,
+      alertRadius: json['alert_radius'] ?? 500,
+      isVolunteer: json['is_volunteer'] ?? (json['professions']?['is_volunteer'] ?? false),
     );
   }
 
@@ -233,6 +224,9 @@ class UserModel {
     String? availabilityStatus,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isThaiMhungEnabled,
+    int? alertRadius,
+    bool? isVolunteer,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -252,6 +246,9 @@ class UserModel {
       availabilityStatus: availabilityStatus ?? this.availabilityStatus,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isThaiMhungEnabled: isThaiMhungEnabled ?? this.isThaiMhungEnabled,
+      alertRadius: alertRadius ?? this.alertRadius,
+      isVolunteer: isVolunteer ?? this.isVolunteer,
     );
   }
 }

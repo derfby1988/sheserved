@@ -14,7 +14,7 @@ class ProfileRepository {
   Future<Map<String, dynamic>> getFullProfileData(String userId) async {
     try {
       // 1. Get core user data
-      final userResponse = await _client.from('users').select().eq('id', userId).single();
+      final userResponse = await _client.from('users').select('*, professions(is_volunteer)').eq('id', userId).single();
       final user = UserModel.fromJson(userResponse);
 
       // 2. Get profession and its field configurations

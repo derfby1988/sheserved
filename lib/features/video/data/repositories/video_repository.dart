@@ -75,6 +75,18 @@ class VideoRepository {
     return (response as List).map((json) => Video.fromJson(json)).toList();
   }
 
+  /// ดึงภาพไทยมุงที่เกี่ยวข้องกับหมวดหมู่เหตุการณ์
+  Future<List<Video>> getThaiMhungPhotos(String categoryId) async {
+    final response = await _client
+        .from('videos')
+        .select()
+        .eq('type', 'emergency_photo')
+        .eq('category_id', categoryId)
+        .order('created_at', ascending: false)
+        .limit(10);
+    return (response as List).map((json) => Video.fromJson(json)).toList();
+  }
+
   /// ดึงวิดีโอตาม ID
   Future<Video?> getVideoById(String id) async {
     // Attempt Local API first

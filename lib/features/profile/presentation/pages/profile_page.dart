@@ -34,6 +34,8 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isEditing = false;
+  bool _thaiMhungEnabled = true; // ความสมัครใจไทยมุง
+  int _alertRadius = 500; // รัศมีการแจ้งเตือน (เมตร)
   File? _tempProfileImage;
 
   @override
@@ -56,6 +58,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _profession = data['profession'];
           _fields = data['fields'];
           _dynamicData = data['dynamicData'];
+          _thaiMhungEnabled = _user?.isThaiMhungEnabled ?? true;
+          _alertRadius = _user?.alertRadius ?? 500;
           _initControllers();
           _isLoading = false;
         });
@@ -154,8 +158,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
               ),
               const SizedBox(height: 16),
-              ..._buildDynamicFields(),
-              if (_isEditing) ...[
+               ..._buildDynamicFields(),
+               const SizedBox(height: 16),
+               const Divider(),
+               const SizedBox(height: 16),
+               _buildNotificationSettings(),
+               if (_isEditing) ...[
                 const SizedBox(height: 32),
                 TlzButton(
                   text: 'บันทึกข้อมูล',
@@ -223,7 +231,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _user?.userType.displayName ?? '',
+                  _profession?.category.displayName ?? _user?.userType.displayName ?? '',
                   style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
                 ),
               ),
@@ -409,6 +417,130 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Widget _buildNotificationSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'การตั้งค่าการแจ้งเตือน',
+          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'แจ้งเหตุฉุกเฉินใกล้ตัว (ไทยมุง)',
+                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'รับแจ้งเตือนเมื่อมีเหตุการณ์เกิดขึ้นในรัศมี 500 เมตร',
+                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _thaiMhungEnabled,
+                onChanged: _isEditing 
+                  ? (value) => setState(() => _thaiMhungEnabled = value)
+                  : null,
+                activeColor: AppColors.primary,
+              ),
+            ],
+          ),
+        ),
+        if (_profession?.isVolunteer ?? false) ...[
+          const SizedBox(height: 24),
+          _buildRadiusSection(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildRadiusSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'พื้นที่ความรับผิดชอบ (รัศมี)',
+                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _alertRadius >= 1000 
+                    ? '${(_alertRadius / 1000).toStringAsFixed(1)} กม.' 
+                    : '$_alertRadius ม.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้',
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Slider(
+            value: _alertRadius.toDouble().clamp(500, 100000),
+            min: 500,
+            max: 100000,
+            divisions: 199, // ขยับทีละ 500ม. (100,000 - 500) / 500 = 199
+            onChanged: _isEditing 
+              ? (value) => setState(() => _alertRadius = value.round())
+              : null,
+            activeColor: AppColors.primary,
+            inactiveColor: Colors.grey[200],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('500 ม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+              Text('100 กม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
@@ -450,6 +582,8 @@ class _ProfilePageState extends State<ProfilePage> {
       final Map<String, dynamic> coreData = {
         'first_name': _controllers['first_name']?.text,
         'last_name': _controllers['last_name']?.text,
+        'is_thai_mhung_enabled': _thaiMhungEnabled,
+        'alert_radius': _alertRadius,
       };
 
       final Map<String, String> dynamicData = {};
@@ -482,6 +616,15 @@ class _ProfilePageState extends State<ProfilePage> {
         dynamicData: dynamicData,
         userType: _user!.userType,
       );
+      
+      // Update local session
+      AuthService.instance.login(_user!.copyWith(
+        firstName: coreData['first_name'],
+        lastName: coreData['last_name'],
+        isThaiMhungEnabled: _thaiMhungEnabled,
+        alertRadius: _alertRadius,
+        profileImageUrl: coreData['profile_image_url'],
+      ));
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

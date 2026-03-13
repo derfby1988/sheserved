@@ -4,6 +4,7 @@ import '../../widgets/glassmorphism_button.dart';
 class BottomTabsWidget extends StatelessWidget {
   final int selectedTab;
   final Animation<double> blinkAnimation;
+  final bool showThaiMhung;
   final Function(int) onTabSelected;
   final VoidCallback onEmergencyTabSelected;
 
@@ -11,6 +12,7 @@ class BottomTabsWidget extends StatelessWidget {
     super.key,
     required this.selectedTab,
     required this.blinkAnimation,
+    this.showThaiMhung = true,
     required this.onTabSelected,
     required this.onEmergencyTabSelected,
   });
@@ -27,39 +29,41 @@ class BottomTabsWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Live Tab
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: maxButtonSize,
-                  maxWidth: maxButtonSize,
-                ),
-                child: GlassTabButton(
-                  label: 'ไทยมุง',
-                  isActive: selectedTab == 0,
-                  leading: AnimatedBuilder(
-                    animation: blinkAnimation,
-                    builder: (context, child) {
-                      return Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color.lerp(
-                            Colors.red,
-                            Colors.red.withValues(alpha: 0.3),
-                            blinkAnimation.value,
-                          ),
-                        ),
-                      );
-                    },
+          if (showThaiMhung) ...[
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: maxButtonSize,
+                    maxWidth: maxButtonSize,
                   ),
-                  onTap: () => onTabSelected(0),
+                  child: GlassTabButton(
+                    label: 'ไทยมุง',
+                    isActive: selectedTab == 0,
+                    leading: AnimatedBuilder(
+                      animation: blinkAnimation,
+                      builder: (context, child) {
+                        return Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color.lerp(
+                              Colors.red,
+                              Colors.red.withValues(alpha: 0.3),
+                              blinkAnimation.value,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    onTap: () => onTabSelected(0),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           // ความสัมพันธ์ Tab
           Expanded(
             child: Center(

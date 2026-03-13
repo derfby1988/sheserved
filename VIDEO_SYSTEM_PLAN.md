@@ -188,6 +188,9 @@ REDIS_URL=redis://localhost:6379
 ### Self-hosted (FFmpeg, PostgreSQL, Queue)
 - **ค่าใช้จ่าย**: $0 (รันบนเครื่องหลัก)
 
+### Firebase Cloud Messaging (FCM)
+- **ค่าใช้จ่าย**: **$0** (FCM เปิดให้ใช้งานฟรีสำหรับการส่ง Push Notification ไปยัง Mobile Devices โดยไม่มีค่าใช้จ่ายในระดับการใช้งานทั่วไป)
+
 ## Cost Prevention: ป้องกันค่าใช้จ่าย Google Maps (Web)
 
 เพื่อให้แน่ใจว่าจะไม่มีค่าใช้จ่ายจากการเรียกใช้บน Web App ให้ดำเนินการดังนี้บน [Google Cloud Console](https://console.cloud.google.com/):
@@ -321,7 +324,10 @@ REDIS_URL=redis://localhost:6379
     - **Location Requirement**: ผู้ใช้ต้องเปิดระบบระบุตำแหน่ง (GPS) ของอุปกรณ์
     - **Proximity Filter**: ผู้ใช้ต้องอยู่ในระยะห่างจากจุดเกิดเหตุ **ไม่เกิน 500 เมตร** 
     - **Distance Alert**: หากโหมดไทยมุงถูกเรียกใช้งานแต่ระยะห่างเกิน 500 เมตร ระบบจะแจ้งเตือนให้ผู้ใช้ทราบว่า "คุณอยู่ไกลจากจุดเกิดเหตุเกินไปสำหรับการทำหน้าที่ไทยมุง"
-- **Community Alert**: เมื่อมีการแจ้งเหตุ ระบบจะส่ง Notification หาผู้ใช้ในรัศมีใกล้เคียงเพื่อให้เข้ามาทำหน้าที่เป็น "ไทยมุง"
+- **Community Alert (Notification Channels)**: 
+    - **Push Notification (FCM)**: ใช้ Firebase Cloud Messaging สำหรับส่งแจ้งเตือนหาผู้ใช้ที่อยู่รอบพิกัดเหตุการณ์ 500 เมตร แม้จะปิดแอปอยู่ เพื่อเชิญชวนให้มาทำหน้าที่ "ไทยมุง"
+    - **In-app Entry (HomeHeaderSection)**: ใช้พื้นที่ด้านขวาของ `HomeHeaderSection` ในหน้า Home เพื่อแสดง Badge แจ้งเตือนเหตุการณ์ใกล้ตัวแบบ Real-time (WebSocket) พร้อมข้อความเชิญชวน
+    - **One-Click Navigation**: เมื่อกดที่การแจ้งเตือนใน `HomeHeaderSection` ระบบจะต้องนำทางผู้ใช้ไปยังหน้า `EmergencyLivePage` ของเหตุการณ์นั้นทันที
 - **Crowd Support Display**: แสดงจุดหรือจำนวน "ไทยมุง" บนแผนที่รอบจุดเกิดเหตุ เพื่อให้เจ้าหน้าที่เห็นความหนาแน่นของพยานและผู้ช่วยในพื้นที่
 
 ### 2. Community Reporting (Thai Mhung Mode)

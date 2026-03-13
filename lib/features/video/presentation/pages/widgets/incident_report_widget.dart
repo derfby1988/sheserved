@@ -21,6 +21,8 @@ class IncidentReportWidget extends StatelessWidget {
   final Function(DonationCategory) onCategorySelected;
   final Function(bool) onModeChanged;
   final VoidCallback onLoadCategories;
+  final bool isThaiMhungMode;
+  final int maxPhotos;
 
   const IncidentReportWidget({
     super.key,
@@ -41,6 +43,8 @@ class IncidentReportWidget extends StatelessWidget {
     required this.onCategorySelected,
     required this.onModeChanged,
     required this.onLoadCategories,
+    this.isThaiMhungMode = false,
+    this.maxPhotos = 3,
   });
 
   @override
@@ -186,7 +190,7 @@ class IncidentReportWidget extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (!isRecording && prepCountdown == 0)
+                if (!isRecording && prepCountdown == 0 && !isThaiMhungMode)
                   Positioned(
                     top: 10,
                     right: 10,
@@ -283,6 +287,34 @@ class IncidentReportWidget extends StatelessWidget {
               ],
             ),
           ),
+          if (isThaiMhungMode) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'โหมดไทยมุง: ถ่ายภาพได้สูงสุด $maxPhotos ภาพ (${capturedPhotos.length}/$maxPhotos)',
+                      style: const TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           if (isPhotoMode && capturedPhotos.isNotEmpty) ...[
             SizedBox(
@@ -322,7 +354,7 @@ class IncidentReportWidget extends StatelessWidget {
                       Expanded(
                         flex: 1,
                         child: GestureDetector(
-                          onTap: canRecord ? onTakePhoto : null,
+                          onTap: (canRecord && capturedPhotos.length < maxPhotos) ? onTakePhoto : null,
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             decoration: BoxDecoration(
@@ -358,7 +390,9 @@ class IncidentReportWidget extends StatelessWidget {
                       ],
                     ],
                   )
-                : GestureDetector(
+                : isThaiMhungMode 
+                  ? const SizedBox.shrink() // No video button in Thai Mhung mode
+                  : GestureDetector(
                     onLongPressDown: canRecord ? (_) => onLongPressDownVideo() : null,
                     onLongPressEnd: (_) => onLongPressEndCancelVideo(),
                     onLongPressCancel: () => onLongPressEndCancelVideo(),

@@ -27,6 +27,7 @@ import 'widgets/live_view_widget.dart';
 import 'widgets/relationship_view_widget.dart';
 import 'widgets/donation_sheet_widget.dart';
 import 'widgets/control_back_button_widget.dart';
+import 'widgets/thai_mhung_gallery_widget.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -101,7 +102,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   
   // Emergency Photos
   bool _isPhotoMode = false;
+  bool _isThaiMhungReporting = false;
   final List<XFile> _capturedPhotos = [];
+  List<ThaiMhungPhoto> _thaiMhungPhotos = [];
   
   // GPS Route Points for the currently watched video
   final List<LatLng> _routePoints = [];
@@ -264,6 +267,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (video != null && video.bunnyUrl != null) {
          _initializePlayer(video.bunnyUrl!);
       }
+      
+      // Load Thai Mhung Gallery photos
+      _loadThaiMhungPhotos();
       
       // Fetch GPS Tracks for the video
       final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(_currentVideoId!);
@@ -623,8 +629,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       return category.volunteerProfessionIds.contains(user.professionId);
     }
 
-    // Fallback: ถ้าเป็นอาชีพกู้ภัย/หมอ/ตำรวจ/ดับเพลิง ให้มีสิทธิช่วยเหลือเบื้องต้นได้เสมอ
-    return user.isMedicalResponder || user.isSecurityResponder || user.isFireResponder;
+    // Fallback: ถ้าเป็นอาสาสมัครอาชีพ ให้มีสิทธิช่วยเหลือเบื้องต้นได้เสมอ
+    return user.isProfessionalResponder;
   }
 
   /// กดตอบรับการช่วยเหลือ
@@ -1171,6 +1177,18 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             },
           ),
 
+          // === Layer 1.5: Thai Mhung Gallery (On top of map) ===
+          if (_selectedTab == 0 && !_isThaiMhungReporting && _thaiMhungPhotos.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 150, // Above bottom tabs
+              child: ThaiMhungGalleryWidget(
+                photos: _thaiMhungPhotos,
+                onPhotoTap: _showPhotoDetail,
+              ),
+            ),
+
           // === Layer 2: All Overlays ===
           SafeArea(
             left: false,
@@ -1187,35 +1205,59 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 // 3. Main Split Content based on Tab (Index 0: Live, 1: Relation, 2: Report)
                 Expanded(
                   child: _selectedTab == 0
-                      ? LiveViewWidget(
-                          chewieController: _chewieController,
-                          currentVideoId: _currentVideoId,
-                          currentVideo: _currentVideo,
-                          formattedViewerCount: _formatCount(_viewerCount),
-                          likeCountFormatted: _formatCount(_likeCount),
-                          donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
-                          trendingVideos: _trendingVideos,
-                          isLoadingTrending: _isLoadingTrending,
-                          onLike: () async {
-                            final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
-                            if (_currentVideoId != null) {
-                              try {
-                                final interaction = VideoInteraction(
-                                  id: '',
-                                  videoId: _currentVideoId!,
-                                  userId: userId,
-                                  type: 'like',
-                                  createdAt: DateTime.now(),
-                                );
-                                await ServiceLocator.instance.videoRepository.addInteraction(interaction);
-                              } catch (e) {
-                                debugPrint('Error sending like: $e');
-                              }
-                            }
-                          },
-                          onDonate: _showDonationSheet,
-                          onSwitchVideo: _switchVideo,
-                        )
+                      ? (_isThaiMhungReporting 
+                          ? IncidentReportWidget(
+                              isRecording: _isRecording,
+                              isLoadingCategories: _isLoadingCategories,
+                              prepCountdown: _prepCountdown,
+                              recordingTimeLeft: _recordingTimeLeft,
+                              isPhotoMode: _isPhotoMode,
+                              capturedPhotos: _capturedPhotos,
+                              selectedEmergencyCategoryId: _selectedEmergencyCategoryId,
+                              selectedEmergencyCategory: _selectedEmergencyCategory,
+                              emergencyCategories: _emergencyCategories,
+                              cameraController: _cameraController,
+                              onTakePhoto: _takePhoto,
+                              onSendPhotos: _sendPhotos,
+                              onLongPressDownVideo: _onLongPressDownVideo,
+                              onLongPressEndCancelVideo: _onLongPressEndCancelVideo,
+                              onCategorySelected: (DonationCategory cat) => setState(() {
+                                _selectedEmergencyCategoryId = cat.id;
+                                _selectedEmergencyCategory = cat;
+                              }),
+                              onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
+                              onLoadCategories: _loadEmergencyCategories,
+                              isThaiMhungMode: true,
+                            )
+                          : LiveViewWidget(
+                              chewieController: _chewieController,
+                              currentVideoId: _currentVideoId,
+                              currentVideo: _currentVideo,
+                              formattedViewerCount: _formatCount(_viewerCount),
+                              likeCountFormatted: _formatCount(_likeCount),
+                              donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
+                              trendingVideos: _trendingVideos,
+                              isLoadingTrending: _isLoadingTrending,
+                              onLike: () async {
+                                final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
+                                if (_currentVideoId != null) {
+                                  try {
+                                    final interaction = VideoInteraction(
+                                      id: '',
+                                      videoId: _currentVideoId!,
+                                      userId: userId,
+                                      type: 'like',
+                                      createdAt: DateTime.now(),
+                                    );
+                                    await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+                                  } catch (e) {
+                                    debugPrint('Error sending like: $e');
+                                  }
+                                }
+                              },
+                              onDonate: _showDonationSheet,
+                              onSwitchVideo: _switchVideo,
+                            ))
                       : _selectedTab == 1
                           ? const RelationshipViewWidget()
                           : IncidentReportWidget(
@@ -1259,9 +1301,22 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 BottomTabsWidget(
                   selectedTab: _selectedTab,
                   blinkAnimation: _liveBlinkController,
-                  onTabSelected: (index) => setState(() => _selectedTab = index),
+                  showThaiMhung: _currentVideoId != null, 
+                  onTabSelected: (index) {
+                    if (index == 0) {
+                      _onThaiMhungTabSelected();
+                    } else {
+                      setState(() {
+                        _selectedTab = index;
+                        _isThaiMhungReporting = false;
+                      });
+                    }
+                  },
                   onEmergencyTabSelected: () async {
-                    setState(() => _selectedTab = 2);
+                    setState(() {
+                      _selectedTab = 2;
+                      _isThaiMhungReporting = false;
+                    });
                     await _loadConfigFromDatabase();
                     if (_emergencyCategories.isEmpty) {
                       _loadEmergencyCategories();
@@ -1387,6 +1442,133 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           },
         );
       },
+    );
+  }
+
+  void _onThaiMhungTabSelected() async {
+    if (_currentVideo == null) {
+      setState(() => _selectedTab = 0);
+      return;
+    }
+
+    // 1. Check GPS enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('กรุณาเปิดระบบระบุตำแหน่ง (GPS) เพื่อทำหน้าที่ไทยมุง')),
+        );
+      }
+      return;
+    }
+
+    // 2. Check Distance
+    if (_userLocation == null) {
+       // Try to get location if null
+       try {
+         final pos = await Geolocator.getCurrentPosition();
+         setState(() {
+           _userLocation = LatLng(pos.latitude, pos.longitude);
+         });
+       } catch (e) {
+         if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('ไม่สามารถดึงตำแหน่งปัจจุบันของคุณได้')),
+           );
+         }
+         return;
+       }
+    }
+
+    if (_userLocation != null && _currentVideo != null) {
+      final double distanceInMeters = Geolocator.distanceBetween(
+        _userLocation!.latitude,
+        _userLocation!.longitude,
+        _currentVideo!.latitude,
+        _currentVideo!.longitude,
+      );
+
+      if (distanceInMeters > 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('คุณอยู่ไกลจากจุดเกิดเหตุเกินไปสำหรับการทำหน้าที่ไทยมุง (ห่าง ${distanceInMeters.toStringAsFixed(0)} เมตร)'),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // 3. Success -> Go to Thai Mhung Mode
+    setState(() {
+      _selectedTab = 0;
+      _isThaiMhungReporting = true;
+      _isPhotoMode = true; // Always photo for Thai Mhung
+    });
+    
+    // Trigger Camera for Thai Mhung
+    await _loadConfigFromDatabase();
+    if (_emergencyCategories.isEmpty) {
+      await _loadEmergencyCategories();
+    }
+    _initCamera();
+    _loadThaiMhungPhotos();
+  }
+
+  Future<void> _loadThaiMhungPhotos() async {
+    if (_currentVideo == null || _currentVideo?.categoryId == null) return;
+    
+    try {
+      final photos = await ServiceLocator.instance.videoRepository.getThaiMhungPhotos(_currentVideo!.categoryId!);
+      setState(() {
+        _thaiMhungPhotos = photos.map((v) => ThaiMhungPhoto(
+          id: v.id,
+          url: v.bunnyUrl ?? '',
+          userName: v.userName,
+        )).where((p) => p.url.isNotEmpty).toList();
+      });
+    } catch (e) {
+      debugPrint("Error loading Thai Mhung photos: $e");
+    }
+  }
+
+  void _showPhotoDetail(ThaiMhungPhoto photo) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.network(
+                photo.url,
+                fit: BoxFit.contain,
+              ),
+            ),
+            if (photo.userName != null)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'โดย: ${photo.userName}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

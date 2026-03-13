@@ -12,9 +12,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
 import 'dart:async';
-import 'dart:async';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
+import 'package:geolocator/geolocator.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -115,7 +115,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _listenForEmergencyAlerts() {
-    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) {
+    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) async {
       if (!mounted) return;
       
       final user = AuthService.instance.currentUser;
@@ -138,20 +138,58 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             isRelevant = true;
           }
         } else {
-          // หากไม่พบหมวดหมู่ใน Cache (อาจเป็นเหตุการณ์ทั่วไปหรือยังโหลดไม่เสร็จ) 
-          // ให้ใช้ตรรกะพื้นฐาน (isEmergency responder อะไรสักอย่าง)
-          if (user.isMedicalResponder || user.isFireResponder || user.isSecurityResponder) {
+          // หากไม่พบหมวดหมู่ใน Cache ให้ใช้สิทธิอาสาสมัครรวม
+          if (user.isProfessionalResponder) {
             isRelevant = true;
           }
         }
       } else {
-        // ถ้าไม่มี categoryId (อาจเป็นเหตุการณ์ทั่วไป) ให้แสดงสำหรับอาสาสมัครทุกคน
-        if (user.isMedicalResponder || user.isFireResponder || user.isSecurityResponder) {
+        // ถ้าไม่มี categoryId ให้แสดงเป็นข้อมูลพื้นฐานสำหรับอาสาสมัครอาชีพทุกคน
+        if (user.isProfessionalResponder) {
           isRelevant = true;
         }
       }
 
-      if (!isRelevant) return;
+      final isThaiMhungEnabled = data['isThaiMhungEnabled'] == true || data['is_thai_mhung_enabled'] == true;
+
+      // 1. Initial Filtering: If not relevant to profession AND not an enabled Thai Mhung alert, skip.
+      if (!isRelevant && (!isThaiMhungEnabled || !user.isThaiMhungEnabled)) return;
+
+      // 2. Distance-based Proximity Check
+      try {
+        final lat = data['latitude'] as double?;
+        final lng = data['longitude'] as double?;
+        
+        if (lat != null && lng != null) {
+          final position = await Geolocator.getCurrentPosition();
+          final distance = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            lat,
+            lng,
+          );
+
+          if (isRelevant) {
+            // Professionals: Use user-defined radius (default 500m if not set, but professionals usually set it higher)
+            if (distance > user.alertRadius) {
+              debugPrint('HomePage: Alert too far for Professional ($distance m > ${user.alertRadius} m), skipping.');
+              return;
+            }
+          } else if (isThaiMhungEnabled) {
+            // Thai Mhung: Limit to 500m radius
+            if (distance > 500) {
+              debugPrint('HomePage: Alert too far for Thai Mhung ($distance m), skipping.');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('HomePage: Error checking distance: $e');
+        // Fallback: If location cannot be determined, we might still want to show 
+        // extremely critical alerts or block them depending on policy.
+        // For now, we block to ensure proximity relevance.
+        return; 
+      }
 
       // Add to alerts list
       setState(() {
@@ -880,6 +918,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                           ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
                                           : 'คะแนนสุขภาพ --%')
                                       : 'ตรวจสุขภาพ',
+                                    emergencyCount: _activeAlerts.length,
+                                    onEmergencyTap: () {
+                                      if (_activeAlerts.isNotEmpty) {
+                                        // นำทางไปยังเหตุการณ์แรกที่มีการแจ้งเตือน
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => EmergencyLivePage(videoId: _activeAlerts.first['videoId']),
+                                          ),
+                                        );
+                                      }
+                                    },
                                     onHealthTap: () async {
                                       if (ServiceLocator.instance.currentUser != null) {
                                         await Navigator.pushNamed(context, '/health');

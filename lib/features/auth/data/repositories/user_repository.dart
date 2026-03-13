@@ -76,7 +76,7 @@ class UserRepository {
   Future<UserModel?> getUserById(String id) async {
     try {
       final response =
-          await _client.from('users').select().eq('id', id).single();
+          await _client.from('users').select('*, professions(is_volunteer)').eq('id', id).single();
       var user = UserModel.fromJson(response);
       
       if (user.professionId == null) {
@@ -142,7 +142,7 @@ class UserRepository {
       // 1. Try finding by username
       var response = await _client
           .from('users')
-          .select()
+          .select('*, professions(is_volunteer)')
           .eq('username', identifier)
           .eq('password_hash', hashedPassword)
           .eq('is_active', true)
@@ -155,7 +155,7 @@ class UserRepository {
         // 2. Try finding by phone
         response = await _client
             .from('users')
-            .select()
+            .select('*, professions(is_volunteer)')
             .eq('phone', identifier)
             .eq('password_hash', hashedPassword)
             .eq('is_active', true)

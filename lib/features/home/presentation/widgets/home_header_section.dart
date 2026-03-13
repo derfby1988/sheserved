@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
-import '../../../../shared/widgets/online_providers_badge.dart';
 import 'package:shimmer/shimmer.dart';
 
 /// Header Section Widget สำหรับหน้า Home
@@ -12,6 +11,9 @@ class HomeHeaderSection extends StatelessWidget {
   final VoidCallback? onProfileTap;
   final String? headerText;
   final bool isLoading;
+  final int emergencyCount;
+  final String? emergencyMessage;
+  final VoidCallback? onEmergencyTap;
 
   const HomeHeaderSection({
     super.key,
@@ -20,6 +22,9 @@ class HomeHeaderSection extends StatelessWidget {
     this.onProfileTap,
     this.headerText,
     this.isLoading = false,
+    this.emergencyCount = 0,
+    this.emergencyMessage,
+    this.onEmergencyTap,
   });
 
   @override
@@ -62,7 +67,7 @@ class HomeHeaderSection extends StatelessWidget {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(3),
                                 child: LinearProgressIndicator(
-                                  backgroundColor: Colors.white.withOpacity(0.3),
+                                  backgroundColor: Colors.white.withValues(alpha: 0.3),
                                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                                 ),
                               ),
@@ -124,28 +129,64 @@ class HomeHeaderSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    'อีก 10 นาที\nทา4545646545646514324564651531465451536454561465451325145645215614615นยา\nทานยา\nทานยา\nทานยา',
+                   Text(
+                    'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
                     textAlign: TextAlign.right,
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textOnPrimary,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.textOnPrimary.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'เกิดเหตุด่วน 3 แห่ง',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textOnPrimary,
-                        fontWeight: FontWeight.w600,
+                  if (emergencyCount > 0) ...[
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: onEmergencyTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B30).withValues(alpha: 0.8), // สีแดงเข้มสำหรับเหตุฉุกเฉิน
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.emergency, color: Colors.white, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              emergencyMessage ?? (emergencyCount == 1 ? 'มีเหตุใกล้คุณ!' : 'มีเหตุ $emergencyCount แห่งใกล้คุณ'),
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textOnPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.textOnPrimary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'สถานะปกติ',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textOnPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -157,8 +198,8 @@ class HomeHeaderSection extends StatelessWidget {
 
   Widget _buildShimmerNotifications() {
     return Shimmer.fromColors(
-      baseColor: Colors.white.withOpacity(0.2),
-      highlightColor: Colors.white.withOpacity(0.4),
+      baseColor: Colors.white.withValues(alpha: 0.2),
+      highlightColor: Colors.white.withValues(alpha: 0.4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -196,7 +237,7 @@ class HomeHeaderSection extends StatelessWidget {
 
 class _ScrollableNotificationContent extends StatefulWidget {
   final Widget child;
-  const _ScrollableNotificationContent({Key? key, required this.child}) : super(key: key);
+  const _ScrollableNotificationContent({required this.child});
 
   @override
   State<_ScrollableNotificationContent> createState() => _ScrollableNotificationContentState();
@@ -239,7 +280,6 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
   @override
   Widget build(BuildContext context) {
     return Stack(
-      alignment: Alignment.centerRight,
       children: [
         NotificationListener<ScrollNotification>(
           onNotification: (notification) {
@@ -250,7 +290,7 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
           },
           child: RawScrollbar(
             controller: _scrollController,
-            thumbColor: AppColors.textOnPrimary.withOpacity(0.5), // ทำสี scrollbar ให้กลืนกับหน้าจอ
+            thumbColor: AppColors.textOnPrimary.withValues(alpha: 0.5),
             radius: const Radius.circular(4),
             thickness: 3,
             child: SingleChildScrollView(
@@ -272,7 +312,7 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    AppColors.primary.withOpacity(0.0),
+                    AppColors.primary.withValues(alpha: 0.0),
                     AppColors.primary,
                   ],
                 ),
@@ -291,7 +331,7 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.2), // วงกลมดำโปร่งแสงเป็นพื้นหลัง
+                  color: Colors.black.withValues(alpha: 0.2), // วงกลมดำโปร่งแสงเป็นพื้นหลัง
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
