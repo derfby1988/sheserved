@@ -163,17 +163,34 @@ CREATE TABLE video_interactions (
 );
 
 -- สำหรับเก็บสถานะการตอบรับช่วยเหลือของอาชีพต่างๆ
+-- ✅ อัปเดต 2026-03-14: ตรงกับ Supabase Production Schema จริง
 CREATE TABLE incident_responses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     video_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    responder_id UUID NOT NULL, -- user_id ของอาชีพที่เข้าช่วยเหลือ
-    status VARCHAR(20) DEFAULT 'en_route', -- en_route, arrived, completed, cancelled
-    estimated_arrival TIMESTAMP,
-    arrived_at TIMESTAMP,
-    completed_at TIMESTAMP,
+    -- ✅ ชื่อ Field จริงใน DB คือ volunteer_id (ไม่ใช่ responder_id)
+    -- FK ชื่อ: incident_responses_volunteer_id_fkey
+    volunteer_id UUID NOT NULL REFERENCES consumer_profiles(id),
+    status VARCHAR(20) DEFAULT 'en_route',
+    -- Status ที่ใช้จริง: 'en_route' | 'accepted' | 'arrived' | 'resolved' | 'cancelled'
+    accepted_at TIMESTAMP,                -- เวลาที่รับงาน
+    arrived_at TIMESTAMP,                 -- เวลาที่ถึงที่เกิดเหตุ
+    resolved_at TIMESTAMP,                -- เวลาที่ปิดงาน (resolved/cancelled)
+    volunteer_start_lat DOUBLE PRECISION, -- ละติจูดจุดออกตัวของ volunteer
+    volunteer_start_lng DOUBLE PRECISION, -- ลองจิจูดจุดออกตัวของ volunteer
+    notes TEXT,                           -- หมายเหตุเพิ่มเติม
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    -- ป้องกัน volunteer เดิมรับงานเดิมซ้ำ
+    UNIQUE (video_id, volunteer_id)
 );
+
+-- ⚠️ หมายเหตุสำคัญสำหรับทีม:
+-- ห้ามใช้ชื่อ responder_id ในโค้ดใหม่ใดๆ ทั้งสิ้น
+-- FK constraint ที่ใช้ Join ใน Supabase query:
+--   consumer_profiles!incident_responses_volunteer_id_fkey(full_name)
+--   user_group_roles!incident_responses_volunteer_id_fkey(...)
+
+
 
 ## Technology Stack
 
