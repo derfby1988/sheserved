@@ -641,9 +641,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
     }
 
-    // ดึง UI Preference ของผู้ใช้ (เช่น รายการแจ้งเหตุที่เคยยกเลิกไปแล้ว)
-    await _loadDismissedAlerts();
+    // ✅ ไม่เรียก _loadDismissedAlerts() ที่นี่อีกต่อไป
+    // เพราะ _loadHomeData() เรียกอยู่แล้วก่อน _loadActiveAlerts()
+    // การเรียกซ้ำที่นี่ทำให้เกิด Race Condition:
+    // _dismissedAlertIds อาจถูก clear แล้ว reload ขณะที่ _loadActiveAlerts() กำลังทำงาน
   }
+
 
   /// โหลดรายการแจ้งเหตุที่ผู้ใช้กดปิดไปแล้ว (จะไม่แสดงซ้ำ)
   Future<void> _loadDismissedAlerts() async {

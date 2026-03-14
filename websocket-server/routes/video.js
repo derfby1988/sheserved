@@ -120,6 +120,8 @@ module.exports = (pool) => {
     });
 
     // Upload multiple photos
+    // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
+    // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
     router.post('/upload-photos', upload.array('photos', 5), async (req, res) => {
         try {
             const userIdFromRequest = req.body.userId;
@@ -129,8 +131,17 @@ module.exports = (pool) => {
                 return res.status(400).json({ error: 'No photos provided' });
             }
 
-            if (files.length > 5) {
-                return res.status(400).json({ error: 'Maximum 5 photos allowed' });
+            // ✅ Quota แยกตาม Mode
+            const isThaiMhung = req.body.isThaiMhung === 'true';
+            const MAX_THAI_MHUNG_PHOTOS = 3;
+            const MAX_EMERGENCY_PHOTOS = 5;
+            const quota = isThaiMhung ? MAX_THAI_MHUNG_PHOTOS : MAX_EMERGENCY_PHOTOS;
+            const modeName = isThaiMhung ? 'Thai Mhung' : 'Emergency';
+
+            if (files.length > quota) {
+                return res.status(400).json({
+                    error: `${modeName} mode allows maximum ${quota} photos per upload`
+                });
             }
 
             // 1. Rate Limiting (3s Cooldown)
@@ -150,19 +161,22 @@ module.exports = (pool) => {
 
             const { userId, title, description, categoryId, donationRequestId, gpsTracks } = req.body;
 
+            // ✅ ใช้ type ตาม mode จริง แทนที่จะ hardcode 'emergency_photo' เสมอ
+            const videoType = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
+
             const photoUrls = files.map(f => `/uploads/videos/${f.filename}`);
 
-            // 1. Insert into Database
+            // 2. Insert into Database
             const videoId = uuidv4();
             const result = await pool.query(
                 `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, status)
-                 VALUES ($1, $2, $3, $4, 'emergency_photo', $5, $6, $7::jsonb, 'processing') RETURNING id`,
-                [videoId, userId, title, description || '', categoryId || null, donationRequestId || null, JSON.stringify(photoUrls)]
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'processing') RETURNING id`,
+                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls)]
             );
 
             const videoRecord = result.rows[0];
 
-            // 2. Handle GPS Tracks if provided
+            // 3. Handle GPS Tracks if provided
             if (gpsTracks) {
                 try {
                     const tracks = JSON.parse(gpsTracks);
@@ -180,13 +194,13 @@ module.exports = (pool) => {
                 }
             }
 
-            // 3. Mark as Ready directly since there's no transcoding needed for photos right now
+            // 4. Mark as Ready directly since there's no transcoding needed for photos right now
             await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoRecord.id]);
             // ✅ ใช้ socketService แทน io โดยตรง เพื่อหลีกเลี่ยง ReferenceError
             socketService.sendStatus(userId || userIdFromRequest, videoRecord.id, 'ready', { progress: 100 });
 
             res.json({
-                message: 'Photos upload successful',
+                message: `${modeName} photos upload successful (${files.length}/${quota})`,
                 video: videoRecord
             });
         } catch (error) {
@@ -194,6 +208,7 @@ module.exports = (pool) => {
             res.status(500).json({ error: 'Failed to upload photos' });
         }
     });
+
 
     // Get emergency videos list (trending) - with user info & interaction counts
     router.get('/emergency/list', async (req, res) => {

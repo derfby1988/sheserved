@@ -11,8 +11,11 @@ class VideoRepository {
   final SupabaseClient _client;
   DateTime? _lastUploadTimestamp;
 
-  /// จำนวนภาพถ่ายสูงสุดต่อการแจ้งเหตุ 1 ครั้ง
+  /// จำนวนภาพถ่ายสูงสุดต่อการแจ้งเหตุ 1 ครั้ง (โหมด Emergency ทั่วไป)
   static const int maxEmergencyPhotos = 5;
+
+  /// จำนวนภาพถ่ายสูงสุดสำหรับโหมดไทยมุงโดยเฟพาะ (ตามแผน §4 Thai Mhung)
+  static const int maxThaiMhungPhotos = 3;
 
   VideoRepository(this._client);
 
@@ -131,18 +134,21 @@ class VideoRepository {
         .toList();
   }
 
-  /// ตอบรับการช่วยเหลือเหตุการณ์
-  /// @param videoId ID ของวิดีโอเหตุฉุกเฉิน
-  /// @param responderId ID ของผู้ช่วยเหลือ (กู้ภัย)
-  /// @param latitude ละติจูดปัจจุบันของผู้ช่วยเหลือ
-  /// @param longitude ลองจิจูดปัจจุบันของผู้ช่วยเหลือ
-  /// @return responseId ID สำหรับใช้ในการอัปเดตสถานะถัดไป
+  /// ตอบรับการช่วยเหลือเหตุการณ์ (Dual-Write: Local API + Supabase Cloud Sync)
+  /// -------------------------------------------------------------------
+  /// ✅ Primary Path: Local API POST /accept → Local PostgreSQL
+  ///    → Sync ไปยัง Supabase Cloud ทันที (Dual-Write)
+  /// ✅ Fallback Path: Supabase Cloud เท่านั้น (เมื่อ Local API ไม่ตอบสนอง)
+  /// -------------------------------------------------------------------
+  /// ต้องส่ง [responderId] เข้ามาเสมอตาม auth_data_guidelines.md
+  /// ห้ามใช้ _client.auth.currentUser ในการดึง userId
   Future<String?> acceptIncident({
     required String videoId,
     required String responderId,
     double? latitude,
     double? longitude,
   }) async {
+    // ---- Primary Path: Local API ----
     try {
       final response = await http.post(
         Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
@@ -156,12 +162,78 @@ class VideoRepository {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['responseId']?.toString();
+        final responseId = data['responseId']?.toString();
+
+        // ✅ Dual-Write: sync ไปยัง Supabase Cloud เพื่อให้ข้อมูลตรงกัน
+        // ใช้ upsert เพื่อป้องกัน duplicate (วิธีนี้ปลอดภัยกว่า insert)
+        try {
+          await _client.from('incident_responses').upsert({
+            'video_id': videoId,
+            'volunteer_id': responderId,
+            'status': 'en_route',
+            'accepted_at': DateTime.now().toIso8601String(),
+            'volunteer_start_lat': latitude,
+            'volunteer_start_lng': longitude,
+          }, onConflict: 'video_id, volunteer_id');
+          debugPrint('VideoRepository: ✅ Synced acceptIncident to Supabase (responseId=$responseId)');
+        } catch (syncErr) {
+          // Sync ล้มเหลว ไม่ใช่ error ร้ายแรง — Local API ยังทำงานปกติ
+          debugPrint('VideoRepository: ⚠️ Supabase sync failed (non-critical): $syncErr');
+        }
+
+        return responseId;
       }
     } catch (e) {
-      debugPrint('VideoRepository: acceptIncident failed - $e');
+      debugPrint('VideoRepository: Local acceptIncident failed → fallback to Supabase: $e');
     }
+
+    // ---- Fallback Path: Supabase Cloud (เมื่อ Local API ไม่ตอบสนอง) ----
+    try {
+      final result = await _client.from('incident_responses').insert({
+        'video_id': videoId,
+        'volunteer_id': responderId,
+        'status': 'en_route',
+        'accepted_at': DateTime.now().toIso8601String(),
+        'volunteer_start_lat': latitude,
+        'volunteer_start_lng': longitude,
+      }).select('id').single();
+
+      debugPrint('VideoRepository: ✅ acceptIncident via Supabase fallback');
+      return result['id']?.toString();
+    } catch (supabaseErr) {
+      debugPrint('VideoRepository: ❌ Both Local and Supabase acceptIncident failed: $supabaseErr');
+    }
+
     return null;
+  }
+
+  /// Accept an emergency rescue job — Legacy method ใช้ Supabase โดยตรง
+  /// ✅ Deprecated: ใช้ acceptIncident() แทน (รองรับ Dual-Write)
+  /// คงไว้เพื่อ backward compatibility กับโค้ดเก่าที่ยังเรียกใช้อยู่
+  @Deprecated('Use acceptIncident() instead. It now supports Dual-Write (Local + Supabase Sync)')
+  Future<String> acceptRescue({
+    required String videoId,
+    required String volunteerId,
+    double? startLat,
+    double? startLng,
+  }) async {
+    try {
+      final response = await _client.from('incident_responses').insert({
+        'video_id': videoId,
+        'volunteer_id': volunteerId,
+        'status': 'accepted',
+        'accepted_at': DateTime.now().toIso8601String(),
+        'volunteer_start_lat': startLat,
+        'volunteer_start_lng': startLng,
+      }).select('id').single();
+
+      return response['id'] as String;
+    } catch (e) {
+      if (e.toString().contains('duplicate') || e.toString().contains('unique')) {
+        throw Exception('คุณได้รับงานนี้ไปแล้ว');
+      }
+      rethrow;
+    }
   }
 
   /// เพิ่ม Interaction (like, gift, view)
@@ -288,18 +360,23 @@ class VideoRepository {
 
   /// อัปโหลดภาพถ่ายแจ้งเหตุฉุกเฉินพร้อมพิกัด GPS
   /// ต้องส่ง [userId] เข้ามาเสมอตาม auth_data_guidelines.md
+  /// [isThaiMhung] = true ใช้ quota 3 รูป, false ใช้ quota 5 รูป
   Future<String?> uploadEmergencyPhotos({
     required String userId,
     required List<File> photoFiles,
     required List<Map<String, dynamic>> gpsTracks,
     String? categoryId,
+    bool isThaiMhung = false,
   }) async {
     if (!canUpload) {
       throw Exception("Please wait before uploading again.");
     }
 
-    if (photoFiles.length > maxEmergencyPhotos) {
-      throw Exception("อัปโหลดรูปภาพได้สูงสุด $maxEmergencyPhotos รูปต่อครั้ง");
+    // ✅ Quota แยกตาม Mode ตามแผน §4 Thai Mhung
+    final int quota = isThaiMhung ? maxThaiMhungPhotos : maxEmergencyPhotos;
+    if (photoFiles.length > quota) {
+      final modeName = isThaiMhung ? 'ไทยมุง' : 'Emergency';
+      throw Exception("โหมด$modeName อัปโหลดรูปภาพได้สูงสุด $quota รูปต่อครั้ง");
     }
 
     if (photoFiles.isEmpty) {
@@ -315,7 +392,9 @@ class VideoRepository {
 
     request.fields['userId'] = userId;
     request.fields['title'] = 'Emergency Incident Photos ${DateTime.now().toIso8601String()}';
-    request.fields['type'] = 'emergency_photo';
+    request.fields['type'] = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
+    // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
+    request.fields['isThaiMhung'] = isThaiMhung.toString();
     if (categoryId != null) request.fields['categoryId'] = categoryId;
     request.fields['gpsTracks'] = jsonEncode(gpsTracks);
 
@@ -440,33 +519,8 @@ class VideoRepository {
   // ==========================================
   // Volunteer & Rescue Response Features
   // ==========================================
-
-  /// Accept an emergency rescue job (stores volunteer start location)
-  Future<String> acceptRescue({
-    required String videoId,
-    required String volunteerId,
-    double? startLat,
-    double? startLng,
-  }) async {
-    try {
-      final response = await _client.from('incident_responses').insert({
-        'video_id': videoId,
-        'volunteer_id': volunteerId,
-        'status': 'accepted',
-        'accepted_at': DateTime.now().toIso8601String(),
-        'volunteer_start_lat': startLat,
-        'volunteer_start_lng': startLng,
-      }).select('id').single();
-      
-      return response['id'] as String;
-    } catch (e) {
-      // Handle duplicate (UNIQUE constraint violation)
-      if (e.toString().contains('duplicate') || e.toString().contains('unique')) {
-        throw Exception('คุณได้รับงานนี้ไปแล้ว');
-      }
-      rethrow;
-    }
-  }
+  // acceptRescue() และ acceptIncident() ถูกรวม Dual-Write แล้ว
+  // ดูที่บรรทัด ~145 ด้านบน
 
   /// Update the status of an ongoing rescue
   Future<void> updateRescueStatus({

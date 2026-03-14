@@ -57,6 +57,65 @@
 └─────────────────────────────────────────────────┘
 ```
 
+---
+
+### Emergency Alert Architecture (Level 3 — Best Fix, Updated 2026-03-14)
+
+**หลักการ:** Emergency Alert ใช้ **Supabase Cloud เป็น Source of Truth** สำหรับการ lookup category และ volunteer list — ไม่ใช่ Local PostgreSQL เพื่อแก้ปัญหา Data Sync และรับประกัน Privacy-First Delivery
+
+**Flow การทำงาน:**
+
+```
+Flutter App
+    │
+    ├── socket.emit('emergency-alert', { userId, categoryId, videoId, ... })
+    │
+    ▼
+WebSocket Server (server.js)
+    │
+    ├── Step 1: GPS lookup ← Local PostgreSQL (เครื่องเดียวกัน, sync สมบูรณ์)
+    │
+    ├── Step 2: Category + Volunteer lookup ← SUPABASE CLOUD (Source of Truth)
+    │       │
+    │       ├── 2a. query donation_categories WHERE id = categoryId
+    │       │        ↓ ถ้าไม่พบ → io.emit() Broadcast Fallback
+    │       │
+    │       ├── 2b. ถ้า volunteer_profession_ids ว่าง → Broadcast ทั้งหมด
+    │       │
+    │       └── 2c. query user_group_roles JOIN consumer_profiles
+    │                WHERE profession_id IN [...] AND is_volunteer_active = true
+    │                ↓
+    └── Step 3: io.to('user-{id}').emit() เฉพาะ volunteer ที่ตรงสิทธิเท่านั้น
+```
+
+**Fallback Chain (ลำดับความปลอดภัย):**
+
+| สถานการณ์ | พฤติกรรม |
+|:---|:---|
+| Supabase ตอบกลับปกติ + มี volunteer | ✅ ส่งเฉพาะ volunteer ที่ตรงสิทธิ (Privacy First) |
+| Supabase ตอบกลับปกติ + ไม่มี volunteer | ⚠️ Silent — ไม่ส่งใคร (ถูกต้องตาม Policy) |
+| Supabase ตอบกลับปกติ + category ไม่มี professions | 📢 Broadcast ทุกคน (Flutter กรองเอง) |
+| Category ไม่พบใน Supabase | 📢 Broadcast ทุกคน (Fallback) |
+| Supabase ล้มเหลว (network error) | 📢 Broadcast ทุกคน (Safety Fallback) |
+| SUPABASE_URL ไม่ได้ตั้งค่า | 📢 Broadcast ทุกคน (Config Fallback) |
+
+**Auth & Data Guidelines (ไม่ขัด `/auth_data_guidelines.md`):**
+- ใช้ **Anon Key** เท่านั้น — อ่านข้อมูล Public (`donation_categories`, `user_group_roles`)
+- **ไม่ใช้** `Supabase.instance.client.auth.currentUser` เลย
+- **ไม่ใช้** `_client.auth.currentUser` เลย
+- ข้อมูล User Identity (`userId`) มาจาก WebSocket payload ที่ Flutter ส่งมาผ่าน `AuthService.instance.currentUser?.id` ฝั่ง Client เท่านั้น
+
+**Environment Variables ที่ต้องตั้งค่าใน `websocket-server/.env`:**
+```env
+SUPABASE_URL=https://[project-id].supabase.co
+SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
+```
+
+**Privacy-First Design:**
+> ระบบส่งข้อมูล Emergency Alert ไปยัง **Device ของ Volunteer ที่เกี่ยวข้องเท่านั้น** — ไม่มีการส่งข้อมูลไปยัง Device ที่ไม่มีสิทธิตั้งแต่ระดับ Server ผู้ใช้ที่มีสิทธิ Volunteer แต่ไม่ได้ถูก Map ไว้ใน `donation_categories.volunteer_profession_ids` จะไม่ได้รับ Socket Packet เลย ป้องกันการสิ้นเปลือง Data/แบตเตอรี่
+
+---
+
 ## Database Schema
 
 ```sql

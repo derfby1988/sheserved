@@ -19,6 +19,23 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
 
+// =====================================================
+// SUPABASE CLIENT (Level 3 Best Fix)
+// ใช้สำหรับ Emergency Alert Handler:
+// query donation_categories + user_group_roles
+// จาก Cloud Source of Truth แทน Local DB
+// =====================================================
+const { createClient } = require('@supabase/supabase-js');
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+let supabase = null;
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient(supabaseUrl, supabaseAnonKey);
+  console.log('✅ Supabase client initialized for Emergency Alert (Level 3)');
+} else {
+  console.warn('⚠️  SUPABASE_URL or SUPABASE_ANON_KEY not set — Emergency Alert will use broadcast fallback');
+}
+
 // Video System Services & Routes
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
@@ -292,7 +309,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle Emergency Alerts
+  // Handle Emergency Alerts (Level 3 Best Fix: Supabase Cloud Query)
+  // -------------------------------------------------------------------
+  // ดึง category + volunteer list จาก Supabase Cloud เป็น Source of Truth
+  // แทนการ query Local PostgreSQL ที่อาจไม่ sync
+  // ไม่ขัดกับ auth_data_guidelines: ใช้ Anon Key อ่าน public data เท่านั้น
+  // ไม่ใช้ Supabase Auth / currentUser เลย
+  // -------------------------------------------------------------------
   socket.on('emergency-alert', async (data) => {
     const { userId, categoryId, videoId, type, text } = data;
     console.log(`[Emergency] ====== ALERT RECEIVED ======`);
@@ -314,67 +337,95 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    if (pool) {
+    // --- Step 1: ดึง GPS จาก Local DB (ถ้ามี) ---
+    // GPS ยังใช้ Local DB ได้เพราะบันทึกจากเครื่องเดียวกัน
+    if (pool && videoId) {
       try {
-        // 1. Get GPS coordinates
-        if (videoId) {
-          const gpsRes = await pool.query(
-            `SELECT latitude, longitude FROM video_gps_tracks 
-             WHERE video_id = $1 ORDER BY timestamp_offset DESC LIMIT 1`,
-            [videoId]
-          );
-          if (gpsRes.rows.length > 0) {
-            notificationPayload.latitude = gpsRes.rows[0].latitude;
-            notificationPayload.longitude = gpsRes.rows[0].longitude;
-          }
-          console.log(`[Emergency] GPS: ${notificationPayload.latitude}, ${notificationPayload.longitude}`);
+        const gpsRes = await pool.query(
+          `SELECT latitude, longitude FROM video_gps_tracks
+           WHERE video_id = $1 ORDER BY timestamp_offset DESC LIMIT 1`,
+          [videoId]
+        );
+        if (gpsRes.rows.length > 0) {
+          notificationPayload.latitude = gpsRes.rows[0].latitude;
+          notificationPayload.longitude = gpsRes.rows[0].longitude;
         }
-
-        // 2. Try to find category and volunteers
-        let targetUserIds = [];
-        if (categoryId) {
-          const catRes = await pool.query(
-            `SELECT name, volunteer_profession_ids FROM donation_categories WHERE id = $1`,
-            [categoryId]
-          );
-          if (catRes.rows.length > 0) {
-            notificationPayload.categoryName = catRes.rows[0].name || '';
-            const volunteerProfIds = catRes.rows[0].volunteer_profession_ids;
-            console.log(`[Emergency] Category found: ${notificationPayload.categoryName}, professions: ${JSON.stringify(volunteerProfIds)}`);
-
-            if (volunteerProfIds && volunteerProfIds.length > 0) {
-              const userRes = await pool.query(
-                `SELECT DISTINCT ugr.user_id 
-                  FROM user_group_roles ugr
-                  LEFT JOIN consumer_profiles cp ON ugr.user_id = cp.user_id
-                  WHERE ugr.profession_id = ANY($1) 
-                    AND (cp.is_volunteer_active = true OR cp.is_volunteer_active IS NULL)`,
-                [volunteerProfIds]
-              );
-              targetUserIds = userRes.rows.map(row => row.user_id);
-            }
-          } else {
-            console.log(`[Emergency] Category ${categoryId} NOT found in local DB.`);
-          }
-        }
-
-        console.log(`[Emergency] Target volunteer IDs: ${JSON.stringify(targetUserIds)}`);
-
-        // 3. Send ONLY to target volunteers
-        let sentCount = 0;
-        targetUserIds.forEach(targetId => {
-          const roomName = `user-${targetId}`;
-          io.to(roomName).emit('emergency-notification', notificationPayload);
-          sentCount++;
-          console.log(`[Emergency] -> Sent to room: ${roomName}`);
-        });
-
-        console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} users ======`);
-      } catch (err) {
-        console.error('[Emergency] Failed to process alert:', err.message);
+        console.log(`[Emergency] GPS: ${notificationPayload.latitude}, ${notificationPayload.longitude}`);
+      } catch (gpsErr) {
+        console.warn('[Emergency] GPS lookup failed (non-critical):', gpsErr.message);
       }
+    }
+
+    // --- Step 2: Query Supabase Cloud สำหรับ Category + Volunteers ---
+    if (supabase && categoryId) {
+      try {
+        // 2a. ดึงข้อมูล category จาก Supabase (Source of Truth)
+        const { data: category, error: catError } = await supabase
+          .from('donation_categories')
+          .select('name, volunteer_profession_ids')
+          .eq('id', categoryId)
+          .single();
+
+        if (catError || !category) {
+          console.warn(`[Emergency] ⚠️  Category ${categoryId} not found in Supabase → broadcast fallback`);
+          // Fallback: broadcast ทุกคน แล้วให้ Flutter client กรองเอง
+          io.emit('emergency-notification', notificationPayload);
+          console.log(`[Emergency] ====== FALLBACK BROADCAST sent ======`);
+          return;
+        }
+
+        notificationPayload.categoryName = category.name || '';
+        const volunteerProfIds = category.volunteer_profession_ids;
+        console.log(`[Emergency] Category: "${category.name}", professions: ${JSON.stringify(volunteerProfIds)}`);
+
+        // 2b. ถ้า category ไม่มี volunteerProfessionIds → แสดงว่าเปิดทั่วไป
+        if (!volunteerProfIds || volunteerProfIds.length === 0) {
+          console.log(`[Emergency] No profession mapping → broadcast to all`);
+          io.emit('emergency-notification', notificationPayload);
+          console.log(`[Emergency] ====== BROADCAST sent ======`);
+          return;
+        }
+
+        // 2c. ดึง user ที่มี profession ตรงและเปิด volunteer_active
+        const { data: volunteers, error: userError } = await supabase
+          .from('user_group_roles')
+          .select('user_id, consumer_profiles!inner(is_volunteer_active)')
+          .in('profession_id', volunteerProfIds)
+          .eq('consumer_profiles.is_volunteer_active', true);
+
+        if (userError) {
+          console.warn('[Emergency] ⚠️  Volunteer query failed → broadcast fallback:', userError.message);
+          io.emit('emergency-notification', notificationPayload);
+          return;
+        }
+
+        const targetUserIds = (volunteers || []).map(v => v.user_id);
+        console.log(`[Emergency] Target volunteers (${targetUserIds.length}): ${JSON.stringify(targetUserIds)}`);
+
+        // 2d. ส่งเฉพาะ volunteer ที่เกี่ยวข้อง (Privacy First)
+        if (targetUserIds.length === 0) {
+          console.warn('[Emergency] ⚠️  No active volunteers found for this category → silent (no broadcast)');
+        } else {
+          let sentCount = 0;
+          targetUserIds.forEach(targetId => {
+            io.to(`user-${targetId}`).emit('emergency-notification', notificationPayload);
+            sentCount++;
+          });
+          console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} volunteers ======`);
+        }
+
+      } catch (err) {
+        console.error('[Emergency] Supabase query error → broadcast fallback:', err.message);
+        // Safety fallback: ถ้า Supabase ล้มเหลว ให้ broadcast เพื่อไม่ให้ Alert หาย
+        io.emit('emergency-notification', notificationPayload);
+      }
+
     } else {
-      console.log(`[Emergency] No DB pool. Notification not sent.`);
+      // Supabase ไม่ได้ตั้งค่า หรือไม่มี categoryId
+      // → broadcast ทุกคน แล้วให้ Flutter client กรองเองตาม professionId + alertRadius
+      console.warn(`[Emergency] ⚠️  Supabase not configured or no categoryId → broadcast fallback`);
+      io.emit('emergency-notification', notificationPayload);
+      console.log(`[Emergency] ====== FALLBACK BROADCAST sent ======`);
     }
   });
 

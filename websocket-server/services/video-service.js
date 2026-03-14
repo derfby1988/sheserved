@@ -1,6 +1,10 @@
 const { Queue, Worker } = require('bullmq');
 const ffmpeg = require('fluent-ffmpeg');
-ffmpeg.setFfmpegPath('/opt/homebrew/bin/ffmpeg');
+// ✅ ใช้ ENV แทน hardcoded path เพื่อรองรับ Linux/macOS/Windows
+// ตั้งค่าใน .env: FFMPEG_PATH=/usr/bin/ffmpeg (Linux) หรือ /opt/homebrew/bin/ffmpeg (macOS)
+// ถ้าไม่ตั้งค่าจะใช้ 'ffmpeg' จาก PATH ของระบบ
+ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || 'ffmpeg');
+
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
