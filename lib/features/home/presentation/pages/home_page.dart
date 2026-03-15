@@ -1232,17 +1232,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                           ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
                                           : 'คะแนนสุขภาพ --%')
                                       : 'ตรวจสุขภาพ',
-                                    emergencyCount: _thaiMhungAlerts.length,
-                                    onEmergencyTap: () {
-                                      if (_thaiMhungAlerts.isNotEmpty) {
-                                        // นำทางไปยังเหตุการณ์แรกที่มีการแจ้งเตือน
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => EmergencyLivePage(videoId: _thaiMhungAlerts.first['videoId']),
-                                          ),
-                                        );
-                                      }
+                                    alerts: _thaiMhungAlerts,
+                                    onAlertDismissed: (videoId) {
+                                      _recordDismissedAlert(videoId);
+                                      setState(() {
+                                        _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                      });
+                                    },
+                                    onAlertTapped: (videoId) {
+                                      _recordDismissedAlert(videoId);
+                                      setState(() {
+                                        _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                      });
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => EmergencyLivePage(videoId: videoId),
+                                        ),
+                                      );
                                     },
                                     onHealthTap: () async {
                                       if (ServiceLocator.instance.currentUser != null) {
@@ -1645,12 +1652,41 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 4),
+                          // ปุ่ม "เหตุอื่น" (Other Event)
+                          GestureDetector(
+                            onTap: () {
+                              _recordDismissedAlert(videoId);
+                              setState(() {
+                                _professionalAlerts.removeAt(index);
+                                if (_professionalAlerts.isEmpty) {
+                                  _focusedAlert = null;
+                                  _loadConsultationPosition(introDelay: Duration.zero);
+                                } else {
+                                  _focusedAlert = _professionalAlerts.first;
+                                }
+                              });
+                              Navigator.pushNamed(context, '/admin/donations');
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white30),
+                              ),
+                              child: const Text(
+                                'เหตุอื่น',
+                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           // "Emergency" status label
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.white30),
                             ),
@@ -1659,6 +1695,25 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                             ),
                           ),
+                          if (total > 1) ...[
+                            const SizedBox(width: 4),
+                            // ตัวเลขหน้า นับถอยหลัง (Top Right)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white30,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${total - index}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -1671,29 +1726,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (total > 1) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const SizedBox(width: 24),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white12,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${total - index}/$total',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),

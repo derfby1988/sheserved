@@ -11,9 +11,9 @@ class HomeHeaderSection extends StatelessWidget {
   final VoidCallback? onProfileTap;
   final String? headerText;
   final bool isLoading;
-  final int emergencyCount;
-  final String? emergencyMessage;
-  final VoidCallback? onEmergencyTap;
+  final List<Map<String, dynamic>> alerts;
+  final Function(String videoId)? onAlertDismissed;
+  final Function(String videoId)? onAlertTapped;
 
   const HomeHeaderSection({
     super.key,
@@ -22,9 +22,9 @@ class HomeHeaderSection extends StatelessWidget {
     this.onProfileTap,
     this.headerText,
     this.isLoading = false,
-    this.emergencyCount = 0,
-    this.emergencyMessage,
-    this.onEmergencyTap,
+    this.alerts = const [],
+    this.onAlertDismissed,
+    this.onAlertTapped,
   });
 
   @override
@@ -120,74 +120,96 @@ class HomeHeaderSection extends StatelessWidget {
           // Right Side: Medicine Reminder & Popular Badge
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.5, // ปรับจาก 75% เหลือ 50%
+              maxWidth: MediaQuery.of(context).size.width * 0.65, // ปรับเป็น 65%
               maxHeight: 96,
             ),
             child: isLoading 
               ? _buildShimmerNotifications()
               : _ScrollableNotificationContent(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                   Text(
-                    'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
-                    textAlign: TextAlign.right,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textOnPrimary,
-                    ),
-                  ),
-                  if (emergencyCount > 0) ...[
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: onEmergencyTap,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF3B30).withValues(alpha: 0.8), // สีแดงเข้มสำหรับเหตุฉุกเฉิน
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.emergency, color: Colors.white, size: 14),
-                            const SizedBox(width: 4),
-                            Text(
-                              emergencyMessage ?? (emergencyCount == 1 ? 'มีเหตุใกล้คุณ!' : 'มีเหตุ $emergencyCount แห่งใกล้คุณ'),
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textOnPrimary,
-                                fontWeight: FontWeight.bold,
+              child: Builder(
+                builder: (context) {
+                  // สร้าง list รวมระหว่างรายการยา (จำลอง) และเหตุฉุกเฉิน
+                  final List<Map<String, dynamic>> combinedItems = [];
+                  
+                  for (var alert in alerts) {
+                    combinedItems.add({
+                      'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
+                      'type': 'alert',
+                      'data': alert,
+                    });
+                  }
+
+                  // รายการยา (Mock)
+                  combinedItems.add({
+                    'time': DateTime.now().subtract(const Duration(hours: 1)), // จำลองว่าเกิดก่อน
+                    'type': 'medicine',
+                  });
+
+                  // เรียงลำดับจากใหม่สุดไปเก่าสุด
+                  combinedItems.sort((a, b) => (b['time'] as DateTime).compareTo(a['time'] as DateTime));
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: combinedItems.map((item) {
+                      if (item['type'] == 'alert') {
+                        final alert = item['data'];
+                        final videoId = alert['videoId']?.toString() ?? '';
+                        final categoryName = alert['categoryName'] ?? 'ฉุกเฉิน';
+                        
+                        // กรณีมีหลายเหตุ จะลิสต์แยกกัน หรือรวมกันก็ได้ ในที่นี้แยกกันตามเวลาดังนั้นใช้ "มีเหตุ + ประเภท"
+                        final text = alerts.length == 1 ? 'มีเหตุ$categoryName' : 'มีเหตุ$categoryName';
+
+                        return Dismissible(
+                          key: Key(videoId),
+                          direction: DismissDirection.horizontal,
+                          onDismissed: (dir) {
+                            if (dir == DismissDirection.endToStart) { // ปัดซ้าย
+                              onAlertDismissed?.call(videoId);
+                            } else { // ปัดขวา
+                              onAlertTapped?.call(videoId);
+                            }
+                          },
+                          background: Container(
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.only(left: 10),
+                            child: const Icon(Icons.arrow_forward, color: Colors.white70, size: 20),
+                          ),
+                          secondaryBackground: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 10),
+                            child: const Icon(Icons.close, color: Colors.white70, size: 20),
+                          ),
+                          child: GestureDetector(
+                            onTap: () => onAlertTapped?.call(videoId),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Text(
+                                text,
+                                style: AppTextStyles.caption.copyWith(
+                                  color: const Color(0xFFFF3B30),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.right,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.textOnPrimary.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'สถานะปกติ',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textOnPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+                          ),
+                        );
+                      } else {
+                        // Medicine Reminder
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
+                            textAlign: TextAlign.right,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textOnPrimary,
+                            ),
+                          ),
+                        );
+                      }
+                    }).toList(),
+                  );
+                }
               ),
             ),
           ),

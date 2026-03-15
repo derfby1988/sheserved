@@ -625,3 +625,79 @@ final response = await http.get(url).timeout(const Duration(seconds: 5));
 ```
 
 ---
+
+---
+
+## 🏥 Emergency Health Data Release System (Future Plan - 2026-03-15)
+
+แผนระบบจัดการและส่งต่อข้อมูลสุขภาพส่วนบุคคลแบบอัตโนมัติในสภาวะวิกฤต (หมดสติ/ศูนย์เสียความทรงจำ) ภายใต้เงื่อนไขความปลอดภัยสูงสุด
+
+### 1. หลักการทำงาน (Core Concepts)
+ระบบจะทำการปลดล็อกและส่งข้อมูลสุขภาพที่จำเป็น (เช่น กรุ๊ปเลือด, ประวัติแพ้ยา, โรคประจำตัว) ให้กับกลุ่มบุคคลที่ได้รับอนุญาตเมื่อเข้าเงื่อนไขที่กำหนดไว้ล่วงหน้า โดยแบ่งเป็น 2 รูปแบบหลัก:
+
+1.  **Automatic Trigger (การตรวจจับอัตโนมัติ)**:
+    -   **Connected Devices & Health Sensors**: 
+        -   เชื่อมโยงกับอุปกรณ์ที่ผู้ใช้เพิ่มใน **Connected Devices Section** (หน้า Health Page)
+        -   **Smart Watch/Heart Rate Monitor**: ตรวจจับชีพจรผิดปกติขั้นวิกฤต
+        -   **Blood Pressure**: ตรวจจับค่าความดันที่อยู่ในระดับอันตราย
+        -   **Fall Detection**: ตรวจจับการหกล้มเฉียบพลัน
+    -   **OS Integration**: ดึงข้อมูลจาก Apple Health หรือ Google Fit
+    -   **Dead Man's Switch**: หากผู้ใช้งานไม่มีการตอบสนองต่อระบบ (Check-in) ภายในเวลาที่กำหนด (เช่น 12-24 ชั่วโมง) ในขณะที่เปิดโหมดเฝ้าระวัง
+2.  **Manual Trigger by Authorized Contacts (การอนุญาตโดยบุคคลใกล้ชิด)**:
+    -   ผู้ใช้งานสามารถกำหนดรายชื่อ "บุคคลที่ไว้วางใจ" (Authorized Contacts) ไว้ล่วงหน้า
+    -   บุคคลเหล่านี้สามารถกดปุ่ม "ขอเข้าถึงข้อมูลสุขภาพเพื่อการส่งต่อ" ได้เมื่อพบว่าผู้ใช้งานอยู่ในสภาวะวิกฤต
+### 2. ส่วนติดต่อผู้ใช้ (UI Integration) - หน้า Profile
+เพื่อความสะดวกในการตั้งค่า ระบบจะเพิ่มแถบเมนู (Tab) ใหม่ในหน้า **Profile** (ถัดจากแถบจิตอาสา) เพื่อใช้จัดการ:
+-   **Configuration**: เปิด/ปิด Auto-Trigger และกำหนดค่าวิกฤต (ชีพจร/ความดัน) รวมถึง Dead Man's Switch
+-   **Authorized Contacts (การจัดการรายชื่อบุคคล)**: 
+    -   ส่วนค้นหาและเพิ่มบุคคลที่อนุญาตให้มีสิทธิ "สั่งปลดล็อกข้อมูล" ในกรณีฉุกเฉิน (Search by ID/Phone)
+    -   แสดงรายการบุคคลที่เลือกไว้ พร้อมข้อมูลความสัมพันธ์และการจัดการ (ลบ/แก้ไข)
+-   **Data Disclosure Scope (ขอบเขตข้อมูลที่เปิดเผย)**:
+    -   เลือกข้อมูลสุขภาพที่อนุญาตให้เปิดเผยได้ (เช่น กรุ๊ปเลือด, ประวัติแพ้ยา, โรคประจำตัว, ยาที่ใช้ประจำ)
+-   **Recipient Filtering & Professionals (การคัดกรองผู้รับและวิชาชีพ)**:
+    -   เลือกกลุ่มวิชาชีพที่อนุญาตให้เข้าถึงข้อมูล (เช่น หมอ, พยาบาล, กู้ชีพ)
+    -   **Multi-Layer Proximity Control**:
+        -   **Level 1: GPS Radius**: กำหนดรัศมี (Radius) จากตำแหน่งที่เกิดเหตุ (เช่น 2 กิโลเมตร)
+        -   **Level 2: Bluetooth/Short-Range Verification**: (ตัวเลือกเสริม) ข้อมูลจะถูกปลดล็อกให้เจ้าหน้าที่เมื่อระบบตรวจพบว่าเครื่องของเจ้าหน้าที่และเหยื่ออยู่ในระยะสัญญาณ Bluetooth ของกันและกัน (On-Scene Only)
+
+---
+
+### 3. การควบคุมสิทธิการรับข้อมูล (Recipient Filtering)
+เพื่อรักษาความเป็นส่วนตัวสูงสุด ข้อมูลจะไม่ถูกเปิดเผยต่อสาธารณะหรือ "ไทยมุง" แต่จะส่งให้เฉพาะบุคคลตามลำดับสิทธิดังนี้:
+
+-   **Professional Groups (กลุ่มวิชาชีพ)**: 
+    -   ส่งต่อให้ หมอ, พยาบาล, กู้ชีพ หรืออาชีพที่เกี่ยวข้อง (พิจารณาจาก `profession_id`) ที่กด "ตอบรับช่วยเหลือ" (Accept Help) ในเหตุการณ์นั้นๆ เท่านั้น
+-   **User-Defined Occupations**: ผู้ใช้งานสามารถระบุกลุ่มอาชีพเพิ่มเติมที่ตนเองอนุญาตให้เข้าถึงข้อมูลได้ผ่านหน้า Settings
+
+---
+
+### 3. มาตรการด้านความปลอดภัยและ Privacy
+-   **Encrypted Storage**: ข้อมูลสุขภาพที่ละเอียดอ่อนจะถูกเข้ารหัส (Encryption at Rest) ในฐานข้อมูล
+-   **Timed Access Token**: ผู้รับข้อมูล (Responders) จะได้รับ Token ชั่วคราวในการเข้าดูข้อมูล ซึ่งจะหมดอายุทันทีเมื่อภารกิจสิ้นสุด (`resolved`)
+-   **Audit Trail**: ระบบจะบันทึก Log ทุกครั้งที่มีการเข้าถึงข้อมูล (ใคร, เข้าถึงเมื่อไหร่, ผ่านเงื่อนไขใด) เพื่อใช้ตรวจสอบย้อนหลังได้ 100%
+-   **Explicit Consent**: ผู้ใช้งานต้องทำการกดยอมรับนโยบายและตั้งค่าสิทธิด้วยตนเองทั้งหมด (Opt-in Only)
+
+---
+
+### 4. โครงสร้างข้อมูลเบื้องต้น (Schema Proposal)
+
+```sql
+-- สำหรับเก็บสิทธิการเข้าถึงข้อมูลสุขภาพ
+CREATE TABLE emergency_health_settings (
+    user_id UUID PRIMARY KEY REFERENCES consumer_profiles(id),
+    is_auto_trigger_enabled BOOLEAN DEFAULT false,
+    allowed_profession_ids UUID[], -- รายชื่อกลุ่มอาชีพที่อนุญาต
+    authorized_contact_ids UUID[], -- รายชื่อบุคคลที่สามารถกดปลดล็อกแทนได้
+    data_scope JSONB, -- กำหนดว่าอนุญาตให้เห็นข้อมูลส่วนไหนบ้าง
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- สำหรับเก็บข้อมูลสุขภาพที่เข้ารหัส
+CREATE TABLE emergency_health_data (
+    user_id UUID PRIMARY KEY REFERENCES consumer_profiles(id),
+    encrypted_payload TEXT, -- ข้อมูลที่ผ่านการเข้ารหัส (Blood Type, Allergies, etc.)
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
