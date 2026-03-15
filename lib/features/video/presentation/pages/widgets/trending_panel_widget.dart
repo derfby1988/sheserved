@@ -67,14 +67,45 @@ class TrendingPanelWidget extends StatelessWidget {
                         itemBuilder: (context, index) {
                           final video = trendingVideos[index];
                           
-                          // จัดรูปแบบเวลา วัน/เดือน/ปี เวลา
-                          final timeFormat = DateFormat('dd/MM/yyyy HH:mm').format(video.createdAt);
+                          // จัดรูปแบบเวลา วัน/เดือน/ปี เวลา -> วันนี้/เมื่อวาน หรือ แปลง พ.ศ. และเดือนไทย
+                          final now = DateTime.now();
+                          final createdAt = video.createdAt;
+                          final isToday = now.year == createdAt.year && now.month == createdAt.month && now.day == createdAt.day;
+                          final yesterday = now.subtract(const Duration(days: 1));
+                          final isYesterday = yesterday.year == createdAt.year && yesterday.month == createdAt.month && yesterday.day == createdAt.day;
                           
-                          // สร้างชื่อวิดีโอ (ถ้ามี category ใน title ก็ใช้ ถ้าไม่มีก็เติม)
-                          // รูปแบบ: ประเภทเหตุ - วันเวลา - (ตำแหน่งถ้ามี)
-                          String displayTitle = video.title;
-                          if (!displayTitle.contains(timeFormat)) {
-                             displayTitle = '${video.description ?? 'เหตุฉุกเฉิน'} $timeFormat';
+                          final timeStr = DateFormat('HH.mm').format(createdAt) + ' น.';
+                          String dateStr = '';
+                          
+                          if (isToday) {
+                            dateStr = timeStr;
+                          } else if (isYesterday) {
+                            dateStr = 'เมื่อวาน $timeStr';
+                          } else {
+                            final thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                            final thaiYearShort = ((createdAt.year + 543) % 100).toString().padLeft(2, '0');
+                            dateStr = '${createdAt.day} ${thaiMonths[createdAt.month - 1]} $thaiYearShort $timeStr';
+                          }
+                          
+                          // ดึงชื่อประเภทเหตุการณ์จากตาราง donation_categories (มากับ Join)
+                          String displayTitle = video.categoryName ?? '';
+                          if (displayTitle.isEmpty || displayTitle == 'null') {
+                            if (video.title.startsWith('Emergency Incident')) {
+                              displayTitle = 'เหตุฉุกเฉิน';
+                            } else {
+                              displayTitle = video.title;
+                            }
+                            
+                            if (displayTitle.isEmpty) {
+                              displayTitle = video.description ?? 'เหตุฉุกเฉิน';
+                            }
+                            // เผื่อมีวันที่แบบเก่าติดมา
+                            displayTitle = displayTitle.replaceAll(RegExp(r'\s+\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}$'), '');
+                          }
+                          
+                          // ตัดความยาวไม่เกิน 30 ตัวอักษร เพื่อให้มั่นใจว่าเห็นแค่ชื่อเหตุ
+                          if (displayTitle.length > 30) {
+                            displayTitle = '${displayTitle.substring(0, 30)}...';
                           }
 
                           return GestureDetector(
@@ -85,7 +116,7 @@ class TrendingPanelWidget extends StatelessWidget {
                             },
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 8),
-                              height: 100, // เพิ่มความสูงเพื่อใส่ชื่อ
+                              width: double.infinity,
                               decoration: BoxDecoration(
                                 color: Colors.blueGrey[900],
                                 borderRadius: BorderRadius.circular(12),
@@ -98,37 +129,41 @@ class TrendingPanelWidget extends StatelessWidget {
                                       )
                                     : null,
                               ),
-                              child: Stack(
-                                children: [
-                                  // Rank Badge
-                                  Positioned(
-                                    top: 4, left: 4,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red,
-                                        borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                child: FittedBox(
+                                  alignment: Alignment.centerLeft,
+                                  fit: BoxFit.scaleDown,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min, // ให้สูงพอดีกับเนื้อหา
+                                    children: [
+                                      Text(
+                                        displayTitle,
+                                        maxLines: 1,
+                                        style: const TextStyle(
+                                          fontFamily: 'SukhumvitSet',
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                                        ),
                                       ),
-                                      child: Text('#${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                                    )
-                                  ),
-                                  // Title text at bottom
-                                  Positioned(
-                                    bottom: 6, left: 6, right: 6,
-                                    child: Text(
-                                      displayTitle,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontFamily: 'SukhumvitSet',
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        dateStr,
+                                        maxLines: 1,
+                                        style: const TextStyle(
+                                          fontFamily: 'SukhumvitSet',
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           );

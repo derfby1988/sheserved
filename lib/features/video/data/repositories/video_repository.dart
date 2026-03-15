@@ -71,7 +71,7 @@ class VideoRepository {
 
     final response = await _client
         .from('videos')
-        .select()
+        .select('*, donation_categories(name)')
         .eq('type', 'emergency')
         .order('created_at', ascending: false)
         .limit(20);

@@ -1264,11 +1264,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                         _loadHealthScore();
                                       }
                                     },
-                                     onProfileTap: () => Navigator.pushNamed(
-                                       context, 
-                                       '/login',
-                                       arguments: '/profile',
-                                     ),
+                                     onProfileTap: () {
+                                       if (ServiceLocator.instance.currentUser != null) {
+                                         Navigator.pushNamed(context, '/profile');
+                                       } else {
+                                         Navigator.pushNamed(
+                                           context,
+                                           '/login',
+                                           arguments: '/profile',
+                                         );
+                                       }
+                                     },
                                   ),
                                   const SizedBox(height: 16),
                                   // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ

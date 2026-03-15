@@ -218,6 +218,7 @@ module.exports = (pool) => {
                 SELECT v.*,
                     COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                     u.profile_image_url AS user_avatar,
+                    dc.name AS category_name,
                     COALESCE(vc.view_count, 0)::int AS viewer_count,
                     COALESCE(lc.like_count, 0)::int AS like_count,
                     gt.latitude,
@@ -225,6 +226,7 @@ module.exports = (pool) => {
                     v.address, v.road, v.soi, v.alley, v.village
                 FROM videos v
                 LEFT JOIN users u ON u.id = v.user_id
+                LEFT JOIN donation_categories dc ON dc.id::text = v.category_id::text
                 LEFT JOIN (
                     SELECT video_id, COUNT(*) AS view_count
                     FROM video_interactions WHERE type = 'view'

@@ -53,24 +53,39 @@ class HomePharmacyCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'ร้านยาใกล้คุณ',
-                  style: AppTextStyles.heading5.copyWith(
-                    color: AppColors.textPrimary,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'ร้านยาใกล้คุณ',
+                    style: AppTextStyles.heading5.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 1,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'จัดส่งภายใน 10 นาที',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'จัดส่งภายใน 10 นาที',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'คลินิก / นวดสปา / ฟิสเนส',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textHint,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'คลินิก / นวดสปา / ฟิสเนส',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textHint,
+                    ),
+                    maxLines: 1,
                   ),
                 ),
               ],

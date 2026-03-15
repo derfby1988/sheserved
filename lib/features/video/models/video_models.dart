@@ -38,6 +38,7 @@ class Video {
   final int viewerCount;
   final int likeCount;
   final double donationTotal;
+  final String? categoryName;
 
   const Video({
     required this.id,
@@ -59,6 +60,7 @@ class Video {
     this.userName,
     this.userAvatar,
     this.userRole,
+    this.categoryName,
     this.viewerCount = 0,
     this.likeCount = 0,
     this.donationTotal = 0,
@@ -115,6 +117,8 @@ class Video {
       userName: json['user_name']?.toString(),
       userAvatar: json['user_avatar']?.toString(),
       userRole: json['user_role']?.toString(),
+      categoryName: json['category_name']?.toString() ?? 
+                    (json['donation_categories'] != null ? json['donation_categories']['name']?.toString() : null),
       viewerCount: parseInt(json['viewer_count']),
       likeCount: parseInt(json['like_count']),
       latitude: parseDouble(json['latitude']),
