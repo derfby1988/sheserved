@@ -12,6 +12,7 @@ import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
+import 'package:sheserved/services/location_tracking_service.dart';
 import 'dart:async';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
@@ -79,8 +80,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   
   // === Emergency Alert State ===
   StreamSubscription? _emergencySub;
-  final List<Map<String, dynamic>> _activeAlerts = [];
-  Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่
+  final List<Map<String, dynamic>> _professionalAlerts = [];
+  final List<Map<String, dynamic>> _thaiMhungAlerts = [];
+  Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่ (สำหรับ Professional เท่านั้น)
   List<DonationCategory> _emergencyCategories = []; // เก็บสิทธิอาสาสมัครจากตารางจริง
   final DonationRepository _donationRepo = DonationRepository(Supabase.instance.client);
   final List<String> _dismissedAlertIds = [];
@@ -95,6 +97,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     
     // Listen for auth state changes to refresh data and re-load preferences
     AuthService.instance.addListener(_onAuthChanged);
+    
+    // Clear alerts on auth change manually if needed or via _onAuthChanged
+    _professionalAlerts.clear();
+    _thaiMhungAlerts.clear();
     
     // Initial load of health score if already logged in
     _loadHealthScore();
@@ -158,15 +164,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       debugPrint('HomePage: Received emergency notification: $data');
 
-      // 1. Determine relevance based on category and profession
-      bool isRelevant = false;
+      // 0. Self-Reporter Exclusion (ห้ามแจ้งเตือนผู้แจ้งเหตุเอง)
+      final reporterId = data['userId']?.toString() ?? 
+                         data['user_id']?.toString() ?? 
+                         data['senderId']?.toString() ?? 
+                         data['sender_id']?.toString();
+                         
+      if (reporterId != null && reporterId == user.id) {
+        debugPrint('HomePage: Alert REJECTED - Self-reporter exclusion');
+        return;
+      }
+
+      // 1. Determine Channels
+      bool isProfessional = false;
       final categoryId = data['categoryId'] as String? ?? data['category_id'] as String?;
-      
       final isThaiMhungAlert = data['isThaiMhungEnabled'] == true || data['is_thai_mhung_enabled'] == true;
 
-      // Ensure categories are loaded before processing
       if (_emergencyCategories.isEmpty) {
-        debugPrint('HomePage: Categories not loaded yet, fetching now...');
         _emergencyCategories = await _donationRepo.getEmergencyCategories();
       }
 
@@ -174,36 +188,30 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         final category = _emergencyCategories.any((c) => c.id == categoryId) 
             ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
             : null;
-        
         if (category != null) {
           final userProfessionId = user.professionId;
           if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
-            isRelevant = true;
+            isProfessional = true;
           }
         }
       }
 
-      // Initial filtering
-      if (!isRelevant && (!isThaiMhungAlert || !user.isThaiMhungEnabled)) {
-        debugPrint('HomePage: Alert REJECTED - not relevant (isRelevant: $isRelevant, isThaiMhung: $isThaiMhungAlert)');
+      bool isThaiMhungEnabled = isThaiMhungAlert && user.isThaiMhungEnabled;
+
+      if (!isProfessional && !isThaiMhungEnabled) {
+        debugPrint('HomePage: Alert REJECTED - No relevant role (Pro or Thai Mhung)');
         return;
       }
 
-      // 1.1 Extract or establish timestamp for sorting
-      final createdAt = data['created_at'] != null 
-          ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
-          : DateTime.now();
-
       // 2. Distance-based Proximity Check
+      double distance = 0;
+      bool hasLocation = false;
       try {
         final lat = _parseDouble(data['latitude']);
         final lng = _parseDouble(data['longitude']);
         
         if (lat != 0 && lng != 0) {
-          // Optimization: Get last known position first as it's nearly instantaneous
           Position? position = await Geolocator.getLastKnownPosition();
-          
-          // Only request fresh position if last known is missing or old
           if (position == null) {
              position = await Geolocator.getCurrentPosition(
                desiredAccuracy: LocationAccuracy.low,
@@ -211,73 +219,72 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
              ).catchError((_) => position);
           }
 
-          if (position == null) {
-             debugPrint('HomePage: Proximity check skipped - location unavailable');
-          } else {
-            final distance = Geolocator.distanceBetween(
+          if (position != null) {
+            distance = Geolocator.distanceBetween(
               position.latitude,
               position.longitude,
               lat,
               lng,
             );
-            debugPrint('HomePage: Distance to incident: ${distance.toStringAsFixed(0)}m, user.alertRadius: ${user.alertRadius}');
-
-            if (isRelevant) {
-              // Professionals: Use strictly defined alertRadius
-              if (distance > user.alertRadius) {
-                debugPrint('HomePage: Alert too far for Professional ($distance m > ${user.alertRadius} m)');
-                return;
-              }
-            } else if (isThaiMhungAlert) {
-              // Thai Mhung: Use user's defined alertRadius
-              if (distance > user.alertRadius) {
-                debugPrint('HomePage: Alert REJECTED - too far for Thai Mhung ($distance m > ${user.alertRadius} m)');
-                return;
-              }
-            }
+            hasLocation = true;
           }
         }
       } catch (e) {
-        debugPrint('HomePage: Error checking distance: $e');
-        // Fallback: If location fails, show it anyway if it was relevant
+        debugPrint('HomePage: Error checking distance $e');
       }
 
-      // 3. Add to alerts list and refresh
+      // Routing logic based on distance
+      bool routeToProfessional = false;
+      bool routeToThaiMhung = false;
+
+      if (isProfessional) {
+        // Professional: Must be within responsibility radius (Mission Call)
+        // Strictly enforced to ensure precise operational area control
+        if (hasLocation && distance <= user.alertRadius) {
+          routeToProfessional = true;
+        }
+      } else if (isThaiMhungEnabled) {
+        // Thai Mhung: Strictly within radius (passive alert)
+        if (hasLocation && distance <= user.alertRadius) {
+          routeToThaiMhung = true;
+        }
+      }
+
+      if (!routeToProfessional && !routeToThaiMhung) {
+        debugPrint('HomePage: Alert REJECTED - Out of radius');
+        return;
+      }
+
+      // 3. Update State
       if (mounted) {
         setState(() {
           final alert = Map<String, dynamic>.from(data);
           final videoId = alert['videoId']?.toString() ?? alert['video_id']?.toString() ?? '';
           
-          // Check if user has already dismissed this alert
-          if (_dismissedAlertIds.contains(videoId)) {
-            debugPrint('HomePage: Alert $videoId was previously dismissed, skipping.');
-            return;
-          }
+          if (_dismissedAlertIds.contains(videoId)) return;
 
-          // Add normalized createdAt for sorting
           alert['createdAt'] = data['created_at'] != null 
               ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
               : DateTime.now();
           
-          // Prevent duplicates
-          if (!_activeAlerts.any((a) => a['videoId'] == alert['videoId'])) {
-            _activeAlerts.insert(0, alert);
-            
-            // Re-sort just in case out-of-order notifications arrive
-            _activeAlerts.sort((a, b) {
-              final at = a['createdAt'] as DateTime;
-              final bt = b['createdAt'] as DateTime;
-              return bt.compareTo(at); // Newest first
-            });
-            
-            // Force mini mode to show map and alert
-            _isConsultationMini = true;
-            _consultPosition = ConsultationPosition.leftCenter;
-            _focusedAlert = _activeAlerts.first;
+          if (routeToProfessional) {
+            if (!_professionalAlerts.any((a) => a['videoId'] == videoId)) {
+              _professionalAlerts.insert(0, alert);
+              _professionalAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+              
+              // Professionals force UI changes (Stacked Cards)
+              _isConsultationMini = true;
+              _consultPosition = ConsultationPosition.leftCenter;
+              _focusedAlert = _professionalAlerts.first;
+            }
+          } else if (routeToThaiMhung) {
+            if (!_thaiMhungAlerts.any((a) => a['videoId'] == videoId)) {
+              _thaiMhungAlerts.insert(0, alert);
+              _thaiMhungAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+              // Thai Mhung logic does NOT move the Consultation Widget
+            }
           }
         });
-        
-        // Refresh home data to potentially show this in popular/interesting section
         _loadHomeData();
       }
     });
@@ -291,73 +298,101 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final videoRepo = ServiceLocator.instance.videoRepository;
       final activeVideos = await videoRepo.getEmergencyVideos();
       
-      final List<Map<String, dynamic>> newAlerts = [];
+      final List<Map<String, dynamic>> newProfessional = [];
+      final List<Map<String, dynamic>> newThaiMhung = [];
+
+      if (_emergencyCategories.isEmpty) {
+        _emergencyCategories = await _donationRepo.getEmergencyCategories();
+      }
       
+      Position? position = await Geolocator.getLastKnownPosition();
+
       for (var video in activeVideos) {
-        bool isRelevant = false;
+        // 0. Self-Reporter Exclusion
+        if (video.userId == user.id) continue;
+
+        bool isProfessional = false;
         final categoryId = video.categoryId;
-        
         if (categoryId != null) {
           final category = _emergencyCategories.any((c) => c.id == categoryId) 
               ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
               : null;
-          
           if (category != null) {
             final userProfessionId = user.professionId;
             if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
-              isRelevant = true;
+              isProfessional = true;
             }
           }
         }
 
-        if (isRelevant) {
-          final vidId = video.id;
-          if (!_dismissedAlertIds.contains(vidId)) {
-            newAlerts.add({
-              'videoId': vidId,
-              'categoryId': video.categoryId,
-              'categoryName': _emergencyCategories.any((c) => c.id == video.categoryId) 
-                  ? _emergencyCategories.firstWhere((c) => c.id == video.categoryId).name
-                  : 'แจ้งเหตุฉุกเฉิน',
-              'latitude': video.latitude,
-              'longitude': video.longitude,
-              'address': video.address,
-              'title': video.title,
-              'createdAt': video.createdAt,
-            });
-          } else {
-            debugPrint('HomePage: Skipping dismissed alert: $vidId');
+        bool isThaiMhungEnabled = (video.isThaiMhungEnabled ?? false) && user.isThaiMhungEnabled;
+        
+        double distance = 0;
+        bool hasLocation = false;
+        if (video.latitude != null && video.longitude != null && position != null) {
+          distance = Geolocator.distanceBetween(position.latitude, position.longitude, video.latitude!, video.longitude!);
+          hasLocation = true;
+        }
+
+        final alertData = {
+          'videoId': video.id,
+          'categoryId': video.categoryId,
+          'categoryName': _emergencyCategories.any((c) => c.id == video.categoryId) 
+              ? _emergencyCategories.firstWhere((c) => c.id == video.categoryId).name
+              : 'แจ้งเหตุฉุกเฉิน',
+          'latitude': video.latitude,
+          'longitude': video.longitude,
+          'address': video.address,
+          'title': video.title,
+          'createdAt': video.createdAt,
+        };
+
+        if (isProfessional) {
+          // Professional: Must be within responsibility radius (Mission Call)
+          if (hasLocation && distance <= user.alertRadius) {
+            if (!_dismissedAlertIds.contains(video.id)) {
+              newProfessional.add(alertData);
+            }
+          }
+        } else if (isThaiMhungEnabled) {
+          if (hasLocation && distance <= user.alertRadius) {
+            if (!_dismissedAlertIds.contains(video.id)) {
+              newThaiMhung.add(alertData);
+            }
           }
         }
       }
 
       if (mounted) {
         setState(() {
-          // Remove any alerts that are now in the dismissed set
-          _activeAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
-
-          for (var alert in newAlerts) {
-            if (!_activeAlerts.any((a) => a['videoId'] == alert['videoId'])) {
-              _activeAlerts.add(alert);
+          final hadPro = _professionalAlerts.isNotEmpty;
+          
+          // Update Professional
+          _professionalAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
+          for (var alert in newProfessional) {
+            if (!_professionalAlerts.any((a) => a['videoId'] == alert['videoId'])) {
+              _professionalAlerts.add(alert);
             }
           }
-          
-          // Sort by creation: Newest at index 0
-          _activeAlerts.sort((a, b) {
-            final at = a['createdAt'] as DateTime;
-            final bt = b['createdAt'] as DateTime;
-            return bt.compareTo(at);
-          });
+          _professionalAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
 
-          if (_activeAlerts.isNotEmpty) {
-            _focusedAlert = _activeAlerts.first;
-            
-            // วัดความสูงก่อนย่อถ้ายังไม่ได้วัด
+          // Update Thai Mhung
+          _thaiMhungAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
+          for (var alert in newThaiMhung) {
+            if (!_thaiMhungAlerts.any((a) => a['videoId'] == alert['videoId'])) {
+              _thaiMhungAlerts.add(alert);
+            }
+          }
+          _thaiMhungAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+
+          if (_professionalAlerts.isNotEmpty) {
+            _focusedAlert = _professionalAlerts.first;
             _captureConsultationHeight();
-            
-            // Force mini mode automatically if there are alerts
             _isConsultationMini = true;
             _consultPosition = ConsultationPosition.leftCenter;
+          } else if (hadPro && _professionalAlerts.isEmpty) {
+            // Restore position only when ALL professional alerts are gone
+            _loadConsultationPosition(introDelay: Duration.zero);
           }
         });
       }
@@ -556,20 +591,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// โหลดตำแหน่ง consultation จาก Supabase (เฉพาะ user mode)
   /// Flow: center ก่อน → วัดความสูง → delay → bounce ไปตำแหน่งที่บันทึกไว้
-  Future<void> _loadConsultationPosition() async {
+  Future<void> _loadConsultationPosition({Duration introDelay = const Duration(milliseconds: 2000)}) async {
     // ✅ ใช้ ServiceLocator ตาม auth_data_guidelines
     final userId = ServiceLocator.instance.currentUser?.id;
-    debugPrint('HomePage: _loadConsultationPosition userId=$userId');
+    debugPrint('HomePage: _loadConsultationPosition userId=$userId delay=${introDelay.inMilliseconds}ms');
     
-    // หากมีเหตุฉุกเฉินอยู่แล้ว ให้ข้ามการโหลดตำแหน่งบันทึก เพื่อไม่ให้ทับซ้อนระบบอัติโนมัติ
-    if (_activeAlerts.isNotEmpty) {
-      debugPrint('HomePage: Emergency active, skipping saved position load.');
+    // หากมีเหตุฉุกเฉิน (Professional) อยู่แล้ว ให้ข้ามการโหลดตำแหน่งบันทึก เพื่อไม่ให้ทับซ้อนระบบอัติโนมัติ
+    if (_professionalAlerts.isNotEmpty) {
+      debugPrint('HomePage: Professional emergency active, skipping saved position load.');
       return;
     }
     
     if (userId == null) {
       // Guest mode → center เสมอ
-      if (mounted && _consultPosition != ConsultationPosition.center) {
+      if (mounted && (_consultPosition != ConsultationPosition.center || _isConsultationMini)) {
         setState(() {
           _consultPosition = ConsultationPosition.center;
           _isConsultationMini = false;
@@ -578,24 +613,29 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       return;
     }
 
-    // เริ่มจาก center (full-size) ก่อนเสมอ
-    if (mounted && _consultPosition != ConsultationPosition.center) {
-      setState(() {
-        _consultPosition = ConsultationPosition.center;
-        _isConsultationMini = false;
-        _savedConsultationHeight = 0;
-      });
+    // เริ่มจาก center (full-size) ก่อนเสมอ ถ้าไม่ได้ระบุว่าเป็น Instant (ไม่มี delay)
+    if (mounted && introDelay > Duration.zero) {
+      if (_consultPosition != ConsultationPosition.center || _isConsultationMini) {
+        setState(() {
+          _consultPosition = ConsultationPosition.center;
+          _isConsultationMini = false;
+          _savedConsultationHeight = 0;
+        });
+      }
     }
 
     try {
       final repo = UserRepository(Supabase.instance.client);
-      debugPrint('HomePage: Querying user_ui_preferences for key=$_kConsultPosKey ...');
       final saved = await repo.getUiPreference(userId, _kConsultPosKey);
       debugPrint('HomePage: DB returned preference_value=$saved');
       
       if (!mounted) return;
       if (saved == null || saved == 'center') {
         debugPrint('HomePage: No saved position or center → stay center');
+        setState(() {
+          _consultPosition = ConsultationPosition.center;
+          _isConsultationMini = false;
+        });
         return;
       }
       
@@ -604,26 +644,37 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         orElse: () => ConsultationPosition.center,
       );
       
-      if (pos == ConsultationPosition.center) return;
+      if (pos == ConsultationPosition.center) {
+        setState(() {
+           _isConsultationMini = false;
+        });
+        return;
+      }
       
       // วัดความสูง consultation widget ก่อนย่อ
       _captureConsultationHeight();
 
       // แสดง center สักพัก → แล้ว bounce ไปตำแหน่งที่บันทึกไว้
-      debugPrint('HomePage: Will bounce to $pos after 2000ms ...');
-      await Future.delayed(const Duration(milliseconds: 2000));
+      if (introDelay > Duration.zero) {
+        debugPrint('HomePage: Will bounce to $pos after ${introDelay.inMilliseconds}ms ...');
+        await Future.delayed(introDelay);
+      }
+      
       if (!mounted) return;
 
       // เพิ่มความชัวร์: หากโหลดเหตุฉุกเฉินเสร็จแล้วพบว่ามีเหตุค้างอยู่ ให้ยกเลิกการโหลดตำแหน่งบันทึก
-      if (_activeAlerts.isNotEmpty) {
-        debugPrint('HomePage: Emergency detected after delay, skipping saved position bounce.');
+      if (_professionalAlerts.isNotEmpty) {
+        debugPrint('HomePage: Professional emergency detected during restoration, aborting.');
         return;
       }
 
       // เริ่มสร้าง widget ตัวเล็กขึ้นมาตรงกลาง
       setState(() {
         _isConsultationMini = true;
-        _consultPosition = ConsultationPosition.center;
+        // หากเป็นการ restore แบบทันที (delay=0) ให้ใช้ตแหน่งเก่า Center ก่อน แล้วค่อยเลื่อน
+        if (introDelay == Duration.zero) {
+          _consultPosition = ConsultationPosition.center;
+        }
       });
       
       // รอ 1 frame ให้ widget ปรากฏ จากนั้นจึงสั่งกลิ้ง
@@ -632,9 +683,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (!mounted) return;
         setState(() {
           _consultPosition = pos;
-          _spinTurns += 2.0; // หมุนเท่ ๆ 2 รอบตอนที่เปิดหน้า Home
+          _spinTurns += (introDelay > Duration.zero ? 2.0 : 1.0); 
         });
-        debugPrint('HomePage: ✓ Bounced to saved position → $pos');
+        debugPrint('HomePage: ✓ Restored to saved position → $pos');
       });
 
     } catch (e) {
@@ -796,7 +847,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
 
       final repository = ServiceLocator.instance.healthArticleRepository;
-      final currentUserId = ServiceLocator.instance.currentUser?.id;
+      final currentUserId = AuthService.instance.userId;
+      final currentUser = AuthService.instance.currentUser;
+
+      // Option 3: Auto-start persistent responder tracking if enabled
+      if (currentUser != null && currentUser.isThaiMhungEnabled) {
+        debugPrint('HomePage: Auto-starting tracking for volunteer profile...');
+        LocationTrackingService().startTracking(userId: currentUser.id);
+      }
       
       // Fetch recommended articles
       final recommended = await repository.getAllArticles(
@@ -1154,14 +1212,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                           ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
                                           : 'คะแนนสุขภาพ --%')
                                       : 'ตรวจสุขภาพ',
-                                    emergencyCount: _activeAlerts.length,
+                                    emergencyCount: _thaiMhungAlerts.length,
                                     onEmergencyTap: () {
-                                      if (_activeAlerts.isNotEmpty) {
+                                      if (_thaiMhungAlerts.isNotEmpty) {
                                         // นำทางไปยังเหตุการณ์แรกที่มีการแจ้งเตือน
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => EmergencyLivePage(videoId: _activeAlerts.first['videoId']),
+                                            builder: (context) => EmergencyLivePage(videoId: _thaiMhungAlerts.first['videoId']),
                                           ),
                                         );
                                       }
@@ -1212,7 +1270,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 ],
                               ),
                               // Floating Stacked Alerts - Layered above Pharmacy but below Consultation
-                              if (_activeAlerts.isNotEmpty)
+                              if (_professionalAlerts.isNotEmpty)
                                 Positioned(
                                   top: (_headerSectionHeight / 2) + _mapHeight - 110,
                                   left: 16,
@@ -1479,11 +1537,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           // Swipe Left -> Close
           _recordDismissedAlert(videoId);
           setState(() {
-            _activeAlerts.removeAt(index);
-            if (_activeAlerts.isEmpty) {
+            _professionalAlerts.removeAt(index);
+            if (_professionalAlerts.isEmpty) {
               _focusedAlert = null;
+              // คืนค่าตำแหน่งเมื่อปัดทิ้งใบสุดท้าย
+              _loadConsultationPosition(introDelay: Duration.zero);
             } else {
-              _focusedAlert = _activeAlerts.first;
+              _focusedAlert = _professionalAlerts.first;
             }
           });
           return true;
@@ -1627,11 +1687,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 onTap: () {
                   _recordDismissedAlert(videoId);
                   setState(() {
-                    _activeAlerts.removeAt(index);
-                    if (_activeAlerts.isEmpty) {
+                    _professionalAlerts.removeAt(index);
+                    if (_professionalAlerts.isEmpty) {
                       _focusedAlert = null;
+                      // คืนค่าตำแหน่งเมื่อกดปิดใบสุดท้าย
+                      _loadConsultationPosition(introDelay: Duration.zero);
                     } else {
-                      _focusedAlert = _activeAlerts.first;
+                      _focusedAlert = _professionalAlerts.first;
                     }
                   });
                 },
@@ -1653,7 +1715,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildStackedAlerts() {
-    final total = _activeAlerts.length;
+    final total = _professionalAlerts.length;
     // Show top card and edges of 2 cards behind it
     const int maxVisible = 3;
     final displayCount = total > maxVisible ? maxVisible : total;
@@ -1665,12 +1727,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         clipBehavior: Clip.none,
         children: List.generate(displayCount, (i) {
           // Bottom-up: Oldest in stack children should be index 0
-          // But our _activeAlerts[0] is LATEST.
-          // So children = [ _activeAlerts[2], _activeAlerts[1], _activeAlerts[0] ]
+          // But our _professionalAlerts[0] is LATEST.
+          // So children = [ _professionalAlerts[2], _professionalAlerts[1], _professionalAlerts[0] ]
           // i=0 is bottom-most in Stack => index = displayCount - 1
           final visualRank = displayCount - 1 - i; 
           final alertIndex = visualRank; 
-          final alert = _activeAlerts[alertIndex];
+          final alert = _professionalAlerts[alertIndex];
           
           return Positioned(
             top: i * 8.0,

@@ -92,8 +92,8 @@ class SyncService {
     // Start periodic sync
     _startPeriodicSync();
 
-    // Initial sync
-    await fullSync();
+    // Initial sync (run in background)
+    unawaited(fullSync());
 
     debugPrint('SyncService: Initialized');
   }
@@ -377,7 +377,9 @@ class SyncService {
 
   Future<List<Map<String, dynamic>>> _fetchFromLocal(String table) async {
     try {
-      final response = await http.get(Uri.parse('$_localApiUrl/api/$table'));
+      final response = await http
+          .get(Uri.parse('$_localApiUrl/api/$table'))
+          .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         return List<Map<String, dynamic>>.from(json.decode(response.body));
       }
@@ -393,7 +395,7 @@ class SyncService {
         Uri.parse('$_localApiUrl/api/$table/sync'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'data': data}),
-      );
+      ).timeout(const Duration(seconds: 8)); // เพิ่ม timeout 8 วินาที
     } catch (e) {
       debugPrint('SyncService: Failed to save $table to local - $e');
     }
@@ -473,21 +475,27 @@ class SyncService {
       final endpoint = '$_localApiUrl/api/$table';
       switch (operation) {
         case 'insert':
-          await http.post(
-            Uri.parse(endpoint),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(data),
-          );
+          await http
+              .post(
+                Uri.parse(endpoint),
+                headers: {'Content-Type': 'application/json'},
+                body: json.encode(data),
+              )
+              .timeout(const Duration(seconds: 5));
           break;
         case 'update':
-          await http.put(
-            Uri.parse('$endpoint/${data['id']}'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(data),
-          );
+          await http
+              .put(
+                Uri.parse('$endpoint/${data['id']}'),
+                headers: {'Content-Type': 'application/json'},
+                body: json.encode(data),
+              )
+              .timeout(const Duration(seconds: 5));
           break;
         case 'delete':
-          await http.delete(Uri.parse('$endpoint/${data['id']}'));
+          await http
+              .delete(Uri.parse('$endpoint/${data['id']}'))
+              .timeout(const Duration(seconds: 5));
           break;
       }
     } catch (e) {

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
+import '../../../../services/location_tracking_service.dart';
 
 import '../../../../config/sync_config.dart';
 import '../../../../services/websocket_service.dart';
@@ -146,11 +149,24 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
   /// เปิดการติดตามตำแหน่งของอาสาสมัคร (Responder) เพื่อส่งให้ผู้แจ้งเหตุติดตามได้แบบ Real-time
-  void _startResponderTracking() {
+  Future<void> _startResponderTracking() async {
     // ติดตามเฉพาะเมื่อเข้ามาในฐานะผู้ตอบรับการช่วยเหลือ (มี responseId)
     if (_currentResponseId == null) return;
     
     debugPrint('EmergencyLivePage: Starting responder tracking for responseId=$_currentResponseId');
+
+    final locService = LocationTrackingService();
+    final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
+
+    if (!isAlwaysGranted) {
+      if (mounted) {
+        final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
+        if (shouldGoToSettings) {
+          await openAppSettings();
+          return;
+        }
+      }
+    }
     
     _myLocationStreamSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -490,8 +506,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       debugPrint('EmergencyLivePage: Received emergency notification, refreshing trending list...');
       _loadTrendingVideos();
       
-      // Show snackbar for new alerts
-      if (mounted && data['videoId'] != _currentVideoId) {
+      // Show snackbar for new alerts - EXCEPT for the reporter (Self-Reporter Exclusion)
+      final currentUserId = AuthService.instance.currentUser?.id;
+      final reporterId = data['userId']?.toString() ?? data['senderId']?.toString();
+      
+      if (mounted && data['videoId'] != _currentVideoId && reporterId != currentUserId) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('🛑 เหตุฉุกเฉินใหม่: ${data['categoryName'] ?? "ไม่ระบุ"}'),
@@ -1103,6 +1122,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         photoFiles: filesToUpload,
         gpsTracks: _recordedGpsTracks,
         categoryId: categoryId,
+        isThaiMhung: _isThaiMhungReporting,
       );
 
       // Trigger Notification
@@ -1117,6 +1137,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         categoryId: categoryId,
         videoId: videoId,
         type: 'photo',
+        isThaiMhungEnabled: true, // Enable Thai Mhung channel for all emergency reports
       );
       debugPrint('EmergencyLivePage: ✅ sendEmergencyAlert called for photos');
 
@@ -1179,11 +1200,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           await _ensureWebSocketConnected();
         }
         ws.sendEmergencyAlert(
-          userId: userId,
-          categoryId: _selectedEmergencyCategoryId!,
-          videoId: videoId,
-          type: 'video',
-        );
+        userId: userId,
+        categoryId: _selectedEmergencyCategoryId ?? '',
+        videoId: videoId,
+        type: 'video',
+        isThaiMhungEnabled: true, // Enable Thai Mhung channel for all emergency reports
+      );
         debugPrint('EmergencyLivePage: ✅ sendEmergencyAlert called for video');
       }
 

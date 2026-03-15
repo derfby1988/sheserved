@@ -317,15 +317,17 @@ io.on('connection', (socket) => {
   // ไม่ใช้ Supabase Auth / currentUser เลย
   // -------------------------------------------------------------------
   socket.on('emergency-alert', async (data) => {
-    const { userId, categoryId, videoId, type, text } = data;
+    const { userId, categoryId, videoId, type, text, isThaiMhungEnabled } = data;
     console.log(`[Emergency] ====== ALERT RECEIVED ======`);
     console.log(`[Emergency] Sender: ${userId}`);
     console.log(`[Emergency] Category: ${categoryId}`);
     console.log(`[Emergency] VideoId: ${videoId}`);
     console.log(`[Emergency] Type: ${type}`);
+    console.log(`[Emergency] ThaiMhung: ${isThaiMhungEnabled}`);
 
     // Build notification payload
     const notificationPayload = {
+      userId: userId, // Added for reporter exclusion in Flutter
       senderId: userId,
       categoryId,
       categoryName: '',
@@ -334,6 +336,7 @@ io.on('connection', (socket) => {
       latitude: null,
       longitude: null,
       text: text || 'มีการแจ้งเหตุฉุกเฉินใหม่ที่คุณสามารถให้ความช่วยเหลือได้',
+      isThaiMhungEnabled: isThaiMhungEnabled === true, // Added for Thai Mhung badge routing
       timestamp: new Date().toISOString()
     };
 

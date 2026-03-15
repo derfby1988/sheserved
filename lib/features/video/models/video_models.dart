@@ -29,6 +29,7 @@ class Video {
   final String? soi;
   final String? alley;
   final String? village;
+  final bool isThaiMhungEnabled;
 
   // Joined data
   final String? userName;
@@ -68,6 +69,7 @@ class Video {
     this.soi,
     this.alley,
     this.village,
+    this.isThaiMhungEnabled = false,
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
@@ -122,6 +124,7 @@ class Video {
       soi: json['soi']?.toString(),
       alley: json['alley']?.toString(),
       village: json['village']?.toString(),
+      isThaiMhungEnabled: json['is_thai_mhung_enabled'] == true || json['isThaiMhungEnabled'] == true,
     );
   }
 

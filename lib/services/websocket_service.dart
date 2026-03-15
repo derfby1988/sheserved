@@ -11,7 +11,8 @@ class WebSocketService {
   bool _isConnected = false;
   bool _isEnabled = true; // Flag to enable/disable WebSocket
   int _connectionAttempts = 0;
-  static const int _maxConnectionAttempts = 3;
+  static const int _maxConnectionAttempts = 100; // Increased for background persistence
+  Timer? _heartbeatTimer;
   
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
@@ -103,10 +104,12 @@ class WebSocketService {
         _serverUrl,
         IO.OptionBuilder()
             .setTransports(['websocket'])
-            .disableAutoConnect() // ปิด auto-connect เพื่อให้เชื่อมต่อเมื่อเรียก connect() เท่านั้น
+            .enableAutoConnect() // Changed to true for background resilience
             .enableReconnection()
-            .setReconnectionDelay(2000)
-            .setReconnectionAttempts(10)
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(5000)
+            .setReconnectionAttempts(99999) // Practically infinite for responders
+            .setRandomizationFactor(0.5)
             .setAuth({'userId': userId, 'token': authToken})
             .build(),
       );
@@ -117,6 +120,9 @@ class WebSocketService {
         _isConnected = true;
         _connectionAttempts = 0; // Reset on successful connection
         _connectionController.add(true);
+        
+        // Start heartbeat to keep connection alive in background
+        _startHeartbeat();
         
         // Send user info after connection
         if (userId != null) {
@@ -330,6 +336,7 @@ class WebSocketService {
     String? videoId,
     String? type,
     String? text,
+    bool isThaiMhungEnabled = false,
   }) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
@@ -342,8 +349,9 @@ class WebSocketService {
       'videoId': videoId,
       'type': type,
       'text': text,
+      'isThaiMhungEnabled': isThaiMhungEnabled,
     });
-    debugPrint('Sent emergency alert for category: $categoryId');
+    debugPrint('Sent emergency alert for category: $categoryId, thaiMhung: $isThaiMhungEnabled');
   }
 
   /// Send Rescue Status Update (Feedback loop)
@@ -368,6 +376,7 @@ class WebSocketService {
   
   /// Disconnect from server
   void disconnect() {
+    _stopHeartbeat();
     if (_socket != null) {
       _socket!.disconnect();
       _socket!.dispose();
@@ -375,6 +384,22 @@ class WebSocketService {
       _isConnected = false;
       _connectionController.add(false);
     }
+  }
+
+  /// Start a custom heartbeat ping
+  void _startHeartbeat() {
+    _stopHeartbeat();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 25), (timer) {
+      if (_isConnected && _socket != null) {
+        _socket!.emit('ping-heartbeat', {'timestamp': DateTime.now().toIso8601String()});
+      }
+    });
+  }
+
+  /// Stop the heartbeat ping
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
   }
   
   /// Dispose resources

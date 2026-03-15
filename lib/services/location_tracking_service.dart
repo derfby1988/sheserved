@@ -28,16 +28,20 @@ class LocationTrackingService {
   }
   
   /// Check and request location permissions
-  Future<bool> checkPermissions() async {
-    final status = await Permission.location.status;
-    
-    if (status.isGranted) {
-      return true;
-    }
+  Future<bool> checkPermissions({bool requestAlways = false}) async {
+    PermissionStatus status = await Permission.location.status;
     
     if (status.isDenied) {
-      final result = await Permission.location.request();
-      return result.isGranted;
+      status = await Permission.location.request();
+    }
+    
+    if (status.isGranted && requestAlways) {
+      // On Android 11+, Always permission must be requested separately
+      PermissionStatus alwaysStatus = await Permission.locationAlways.status;
+      if (alwaysStatus.isDenied) {
+        alwaysStatus = await Permission.locationAlways.request();
+      }
+      return alwaysStatus.isGranted;
     }
     
     if (status.isPermanentlyDenied) {
@@ -46,12 +50,39 @@ class LocationTrackingService {
       return false;
     }
     
-    return false;
+    return status.isGranted;
   }
   
-  /// Check if location services are enabled
+  /// Specifically request background location permission (Android 11+)
+  Future<bool> requestBackgroundPermission() async {
+    // First, ensure foreground is granted
+    final foregroundGranted = await checkPermissions(requestAlways: false);
+    if (!foregroundGranted) return false;
+    
+    // Then request background
+    final status = await Permission.locationAlways.request();
+    return status.isGranted;
+  }
+
+  /// Check if background location permission is currently granted
+  Future<bool> isBackgroundPermissionGranted() async {
+    return await Permission.locationAlways.isGranted;
+  }
+  
   Future<bool> isLocationEnabled() async {
     return await Geolocator.isLocationServiceEnabled();
+  }
+
+  /// Request to ignore battery optimizations (Android only)
+  /// This helps prevent the OS from killing the foreground service in Doze mode
+  Future<void> requestIgnoreBatteryOptimizations() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (!status.isGranted) {
+        debugPrint('LocationTrackingService: Requesting battery optimization exclusion');
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    }
   }
   
   /// Start tracking location
@@ -76,16 +107,36 @@ class LocationTrackingService {
     if (!isEnabled) {
       throw Exception('Location services are disabled');
     }
+
+    // Request battery optimization exclusion for background reliability
+    await requestIgnoreBatteryOptimizations();
     
     _currentUserId = userId;
     if (updateInterval != null) _updateInterval = updateInterval;
     if (distanceFilter != null) _distanceFilter = distanceFilter;
     
     // Get location accuracy settings
-    final locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: _distanceFilter.toInt(), // Convert double to int
-    );
+    // For Android, we use foreground service settings to prevent the app from being killed
+    late final LocationSettings locationSettings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: _distanceFilter.toInt(),
+        forceLocationManager: true,
+        intervalDuration: _updateInterval,
+        // Set foreground notification details
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText: "กำลังติดตามระดับพิกัดเพื่อรับแจ้งเหตุช่วยเหลือ",
+          notificationTitle: "Sheserved: กำลังออนไลน์",
+          enableWakeLock: true,
+        ),
+      );
+    } else {
+      locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: _distanceFilter.toInt(),
+      );
+    }
     
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,

@@ -9,9 +9,12 @@ import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/auth_service.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
-import '../../../auth/data/models/user_model.dart' as auth;
-import '../../data/repositories/profile_repository.dart';
+import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
+import 'package:sheserved/services/location_tracking_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../../data/repositories/profile_repository.dart';
+import '../../../auth/data/models/user_model.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -25,7 +28,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _dynamicValues = {};
   
-  auth.UserModel? _user;
+  UserModel? _user;
   prof.Profession? _profession;
   List<RegistrationFieldConfig> _fields = [];
   Map<String, String> _dynamicData = {};
@@ -344,7 +347,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 _profession?.category.name ?? _user?.userType.displayName ?? '',
                 style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
               ),
-              if (_user?.verificationStatus == auth.VerificationStatus.verified) ...[
+              if (_user?.verificationStatus == VerificationStatus.verified) ...[
                 const SizedBox(width: 8),
                 const Icon(Icons.verified, color: AppColors.primary, size: 16),
               ],
@@ -657,8 +660,29 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _updateVolunteerSettings({bool? enabled, int? radius}) async {
     if (_user == null) return;
     
-    final newEnabled = enabled ?? _thaiMhungEnabled;
+    bool newEnabled = enabled ?? _thaiMhungEnabled;
     final newRadius = radius ?? _alertRadius;
+
+    // Guided UX: If enabling, check for background location permission on Android
+    if (enabled == true) {
+      final locService = LocationTrackingService();
+      final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
+      
+      if (!isAlwaysGranted) {
+        // Show our custom guidance dialog first
+        final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
+        if (shouldGoToSettings) {
+          await openAppSettings();
+          // After returning from settings, we don't force 'true' yet, 
+          // let the user toggle again once they grant permission.
+          return;
+        } else {
+          // User cancelled the guidance, don't enable
+          setState(() => _thaiMhungEnabled = false);
+          return;
+        }
+      }
+    }
     
     setState(() {
       _thaiMhungEnabled = newEnabled;
@@ -680,6 +704,16 @@ class _ProfilePageState extends State<ProfilePage> {
         isThaiMhungEnabled: newEnabled,
         alertRadius: newRadius,
       ));
+
+      // Option 3: Start/Stop persistent tracking based on toggle
+      final locService = LocationTrackingService();
+      if (newEnabled) {
+        // Start persistent tracking
+        await locService.startTracking(userId: _user!.id);
+      } else {
+        // Stop tracking
+        locService.stopTracking();
+      }
       
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();

@@ -26,7 +26,7 @@ class LocalDatabaseRepository {
       final response = await http.get(
         Uri.parse('$_baseUrl$endpoint'),
         headers: _headers,
-      );
+      ).timeout(const Duration(seconds: 5)); // เพิ่ม timeout 5 วินาที
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
@@ -43,7 +43,7 @@ class LocalDatabaseRepository {
         Uri.parse('$_baseUrl$endpoint'),
         headers: _headers,
         body: json.encode(data),
-      );
+      ).timeout(const Duration(seconds: 10)); // เพิ่ม timeout 10 วินาที
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
