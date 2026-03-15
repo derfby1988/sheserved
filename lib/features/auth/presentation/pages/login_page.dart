@@ -48,7 +48,10 @@ class _LoginPageState extends State<LoginPage>
       try {
         final supabaseClient = Supabase.instance.client;
         _userRepository = UserRepository(supabaseClient);
-        _socialAuthService = SocialAuthService(_userRepository!, supabaseClient);
+        _socialAuthService = SocialAuthService(
+          _userRepository!,
+          supabaseClient,
+        );
       } catch (e) {
         debugPrint('LoginPage: Supabase not initialized - $e');
       }
@@ -59,21 +62,17 @@ class _LoginPageState extends State<LoginPage>
       duration: const Duration(milliseconds: 700),
     );
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.25),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _animationController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
 
     _animationController.forward();
   }
@@ -97,11 +96,7 @@ class _LoginPageState extends State<LoginPage>
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFFD4900A),
-                  Color(0xFF8B6000),
-                  _bgDark,
-                ],
+                colors: [Color(0xFFD4900A), Color(0xFF8B6000), _bgDark],
                 stops: [0.0, 0.5, 1.0],
               ),
             ),
@@ -113,264 +108,309 @@ class _LoginPageState extends State<LoginPage>
             left: 0,
             right: 0,
             height: MediaQuery.of(context).size.height * 0.55,
-            child: CustomPaint(
-              painter: _GlowGridPainter(),
-            ),
+            child: CustomPaint(painter: _GlowGridPainter()),
           ),
 
           // Content
           SafeArea(
-            child: Column(
-              children: [
-                // Top Section - Logo & Welcome
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // App Logo / Icon
-                        Container(
-                          width: 90,
-                          height: 90,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const RadialGradient(
-                              colors: [Color(0xFFFFD700), Color(0xFFB8860B)],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _goldAccent.withOpacity(0.5),
-                                blurRadius: 24,
-                                spreadRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.local_hospital_rounded,
-                            color: Colors.white,
-                            size: 46,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Welcome Text
-                        Text(
-                          'ยินดีต้อนรับ!',
-                          style: AppTextStyles.heading2.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 28,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'เข้าสู่ระบบเพื่อเริ่มต้นใช้งาน',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.white.withOpacity(0.75),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
                     ),
-                  ),
-                ),
-
-                // Bottom Card - Login Form
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: _cardBg,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(36),
-                          topRight: Radius.circular(36),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 24,
-                            offset: const Offset(0, -4),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Username/Phone Field
-                            _buildFieldLabel('ชื่อผู้ใช้ / เบอร์โทรศัพท์'),
-                            const SizedBox(height: 6),
-                            _buildInputField(
-                              controller: _usernameController,
-                              hintText: 'กรอกชื่อผู้ใช้หรือเบอร์โทร',
-                              prefixIcon: Icons.person_outline_rounded,
-                              keyboardType: TextInputType.text,
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Password Field
-                            _buildFieldLabel('รหัสผ่าน'),
-                            const SizedBox(height: 6),
-                            _buildInputField(
-                              controller: _passwordController,
-                              hintText: '••••••••',
-                              prefixIcon: Icons.lock_outline_rounded,
-                              obscureText: _obscurePassword,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
-                                },
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                  color: Colors.grey[500],
-                                  size: 22,
-                                ),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        children: [
+                          // Top Section - Logo & Welcome
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
                               ),
-                            ),
-                            const SizedBox(height: 28),
-
-                            // Login Button - Gold
-                            SizedBox(
-                              height: 54,
-                              child: ElevatedButton(
-                                onPressed: _isLoading ? null : _handleLogin,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _goldBright,
-                                  foregroundColor: Colors.black,
-                                  disabledBackgroundColor: Colors.grey[300],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(28),
-                                  ),
-                                  elevation: 4,
-                                  shadowColor: _goldAccent.withOpacity(0.5),
-                                ),
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            Colors.black54,
-                                          ),
-                                        ),
-                                      )
-                                    : Text(
-                                        'เข้าสู่ระบบ',
-                                        style: AppTextStyles.button.copyWith(
-                                          color: Colors.black,
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // App Logo / Icon
+                                  Container(
+                                    width: 90,
+                                    height: 90,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const RadialGradient(
+                                        colors: [
+                                          Color(0xFFFFD700),
+                                          Color(0xFFB8860B),
+                                        ],
                                       ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Divider
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Divider(
-                                    color: Colors.grey[300],
-                                    thickness: 1,
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  child: Text(
-                                    'หรือเข้าสู่ระบบด้วย',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.grey[500],
-                                      fontSize: 12,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _goldAccent.withOpacity(0.5),
+                                          blurRadius: 24,
+                                          spreadRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.local_hospital_rounded,
+                                      color: Colors.white,
+                                      size: 46,
                                     ),
                                   ),
-                                ),
-                                Expanded(
-                                  child: Divider(
-                                    color: Colors.grey[300],
-                                    thickness: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
+                                  const SizedBox(height: 20),
 
-                            // Social Login Icons
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildSocialButton(
-                                  SocialProvider.google,
-                                  onPressed: () =>
-                                      _handleSocialLogin(SocialProvider.google),
-                                ),
-                                const SizedBox(width: 14),
-                                _buildSocialButton(
-                                  SocialProvider.facebook,
-                                  onPressed: () =>
-                                      _handleSocialLogin(SocialProvider.facebook),
-                                ),
-                                const SizedBox(width: 14),
-                                _buildSocialButton(
-                                  SocialProvider.apple,
-                                  onPressed: () =>
-                                      _handleSocialLogin(SocialProvider.apple),
-                                ),
-                                const SizedBox(width: 14),
-                                _buildSocialButton(
-                                  SocialProvider.line,
-                                  onPressed: () =>
-                                      _handleSocialLogin(SocialProvider.line),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Register Link
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'ยังไม่มีบัญชี? ',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: Colors.grey[600],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: _handleSignUp,
-                                  child: Text(
-                                    'ลงทะเบียน',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: _goldAccent,
+                                  // Welcome Text
+                                  Text(
+                                    'ยินดีต้อนรับ!',
+                                    style: AppTextStyles.heading2.copyWith(
+                                      color: Colors.white,
                                       fontWeight: FontWeight.bold,
+                                      fontSize: 28,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'เข้าสู่ระบบเพื่อเริ่มต้นใช้งาน',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: Colors.white.withOpacity(0.75),
                                       fontSize: 14,
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                          ],
-                        ),
+                          ),
+
+                          // Bottom Card - Login Form
+                          FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: _cardBg,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(36),
+                                    topRight: Radius.circular(36),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.3),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, -4),
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  32,
+                                  24,
+                                  24,
+                                ),
+                                child: Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Username/Phone Field
+                                      _buildFieldLabel(
+                                        'ชื่อผู้ใช้ / เบอร์โทรศัพท์',
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _buildInputField(
+                                        controller: _usernameController,
+                                        hintText: 'กรอกชื่อผู้ใช้หรือเบอร์โทร',
+                                        prefixIcon:
+                                            Icons.person_outline_rounded,
+                                        keyboardType: TextInputType.text,
+                                      ),
+                                      const SizedBox(height: 16),
+
+                                      // Password Field
+                                      _buildFieldLabel('รหัสผ่าน'),
+                                      const SizedBox(height: 6),
+                                      _buildInputField(
+                                        controller: _passwordController,
+                                        hintText: '••••••••',
+                                        prefixIcon: Icons.lock_outline_rounded,
+                                        obscureText: _obscurePassword,
+                                        suffixIcon: IconButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _obscurePassword =
+                                                  !_obscurePassword;
+                                            });
+                                          },
+                                          icon: Icon(
+                                            _obscurePassword
+                                                ? Icons.visibility_outlined
+                                                : Icons.visibility_off_outlined,
+                                            color: Colors.grey[500],
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 28),
+
+                                      // Login Button - Gold
+                                      SizedBox(
+                                        height: 54,
+                                        child: ElevatedButton(
+                                          onPressed: _isLoading
+                                              ? null
+                                              : _handleLogin,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: _goldBright,
+                                            foregroundColor: Colors.black,
+                                            disabledBackgroundColor:
+                                                Colors.grey[300],
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(28),
+                                            ),
+                                            elevation: 4,
+                                            shadowColor: _goldAccent
+                                                .withOpacity(0.5),
+                                          ),
+                                          child: _isLoading
+                                              ? const SizedBox(
+                                                  width: 24,
+                                                  height: 24,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2.5,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                          Color
+                                                        >(Colors.black54),
+                                                  ),
+                                                )
+                                              : Text(
+                                                  'เข้าสู่ระบบ',
+                                                  style: AppTextStyles.button
+                                                      .copyWith(
+                                                        color: Colors.black,
+                                                        fontSize: 17,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+
+                                      // Divider
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Divider(
+                                              color: Colors.grey[300],
+                                              thickness: 1,
+                                            ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            child: Text(
+                                              'หรือเข้าสู่ระบบด้วย',
+                                              style: AppTextStyles.bodySmall
+                                                  .copyWith(
+                                                    color: Colors.grey[500],
+                                                    fontSize: 12,
+                                                  ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Divider(
+                                              color: Colors.grey[300],
+                                              thickness: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+
+                                      // Social Login Icons
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          _buildSocialButton(
+                                            SocialProvider.google,
+                                            onPressed: () => _handleSocialLogin(
+                                              SocialProvider.google,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          _buildSocialButton(
+                                            SocialProvider.facebook,
+                                            onPressed: () => _handleSocialLogin(
+                                              SocialProvider.facebook,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          _buildSocialButton(
+                                            SocialProvider.apple,
+                                            onPressed: () => _handleSocialLogin(
+                                              SocialProvider.apple,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          _buildSocialButton(
+                                            SocialProvider.line,
+                                            onPressed: () => _handleSocialLogin(
+                                              SocialProvider.line,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 20),
+
+                                      // Register Link
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            'ยังไม่มีบัญชี? ',
+                                            style: AppTextStyles.bodyMedium
+                                                .copyWith(
+                                                  color: Colors.grey[600],
+                                                  fontSize: 14,
+                                                ),
+                                          ),
+                                          GestureDetector(
+                                            onTap: _handleSignUp,
+                                            child: Text(
+                                              'ลงทะเบียน',
+                                              style: AppTextStyles.bodyMedium
+                                                  .copyWith(
+                                                    color: _goldAccent,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-              ],
+                );
+              },
             ),
           ),
 
@@ -427,10 +467,7 @@ class _LoginPageState extends State<LoginPage>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.grey[200]!, width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -453,11 +490,7 @@ class _LoginPageState extends State<LoginPage>
             color: Colors.grey[400],
             fontSize: 14,
           ),
-          prefixIcon: Icon(
-            prefixIcon,
-            color: Colors.grey[500],
-            size: 22,
-          ),
+          prefixIcon: Icon(prefixIcon, color: Colors.grey[500], size: 22),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
@@ -563,10 +596,7 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Widget _buildGoogleIcon() {
-    return CustomPaint(
-      size: const Size(26, 26),
-      painter: _GoogleIconPainter(),
-    );
+    return CustomPaint(size: const Size(26, 26), painter: _GoogleIconPainter());
   }
 
   void _handleLogin() async {
@@ -609,23 +639,10 @@ class _LoginPageState extends State<LoginPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
-
-          if (args is String && args.isNotEmpty) {
-            Navigator.pushReplacementNamed(context, args);
-          } else if (args is Map<String, dynamic>) {
-            final route = (args['route'] ?? args['redirect']) as String?;
-            final routeArgs = args['arguments'];
-            if (route != null) {
-              Navigator.pushReplacementNamed(context, route, arguments: routeArgs);
-            } else if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            } else {
-              Navigator.pushReplacementNamed(context, '/');
-            }
-          } else if (Navigator.canPop(context)) {
-            Navigator.pop(context);
+          if (args is Map<String, dynamic> && args['redirect'] != null) {
+            Navigator.pushReplacementNamed(context, args['redirect']);
           } else {
-            Navigator.pushReplacementNamed(context, '/');
+            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
           }
         });
       } else {
@@ -701,23 +718,10 @@ class _LoginPageState extends State<LoginPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
-
-          if (args is String && args.isNotEmpty) {
-            Navigator.pushReplacementNamed(context, args);
-          } else if (args is Map<String, dynamic>) {
-            final route = (args['route'] ?? args['redirect']) as String?;
-            final routeArgs = args['arguments'];
-            if (route != null) {
-              Navigator.pushReplacementNamed(context, route, arguments: routeArgs);
-            } else if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            } else {
-              Navigator.pushReplacementNamed(context, '/');
-            }
-          } else if (Navigator.canPop(context)) {
-            Navigator.pop(context);
+          if (args is Map<String, dynamic> && args['redirect'] != null) {
+            Navigator.pushReplacementNamed(context, args['redirect']);
           } else {
-            Navigator.pushReplacementNamed(context, '/');
+            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
           }
         });
       } else {
@@ -774,15 +778,18 @@ class _GlowGridPainter extends CustomPainter {
 
     // Center glow
     final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFFFFBF00).withOpacity(0.15),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-        center: Offset(size.width / 2, size.height * 0.4),
-        radius: size.width * 0.6,
-      ));
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFFFFBF00).withOpacity(0.15),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width / 2, size.height * 0.4),
+              radius: size.width * 0.6,
+            ),
+          );
     canvas.drawCircle(
       Offset(size.width / 2, size.height * 0.4),
       size.width * 0.6,

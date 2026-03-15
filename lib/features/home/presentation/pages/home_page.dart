@@ -14,9 +14,11 @@ import '../../../../services/websocket_service.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'dart:async';
+import '../widgets/background_permission_dialog.dart';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -851,9 +853,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final currentUser = AuthService.instance.currentUser;
 
       // Option 3: Auto-start persistent responder tracking if enabled
-      if (currentUser != null && currentUser.isThaiMhungEnabled) {
-        debugPrint('HomePage: Auto-starting tracking for volunteer profile...');
-        LocationTrackingService().startTracking(userId: currentUser.id);
+      if (currentUser != null && (currentUser.isThaiMhungEnabled || currentUser.isProfessionalResponder)) {
+        debugPrint('HomePage: Checking background location permission for volunteer profile...');
+        final locService = LocationTrackingService();
+        final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
+        
+        if (!isAlwaysGranted) {
+           debugPrint('HomePage: Background permission not granted. Showing dialog...');
+           if (mounted) {
+             final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
+             if (shouldGoToSettings) {
+               await openAppSettings();
+             }
+           }
+        } else {
+           debugPrint('HomePage: Auto-starting tracking for volunteer profile...');
+           try {
+             await locService.startTracking(userId: currentUser.id);
+           } catch (e) {
+             debugPrint('HomePage: Error auto-starting tracking: $e');
+           }
+        }
       }
       
       // Fetch recommended articles

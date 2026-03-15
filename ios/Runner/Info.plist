@@ -53,6 +53,8 @@
 	<string>แอปต้องการเข้าถึงไมโครโฟนสำหรับการถ่ายวิดีโอ (ถ้ามี)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อแสดงบนแผนที่และช่วยในการนำทางเหตุฉุกเฉิน</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อติดตามความคืบหน้าของรถฉุกเฉิน</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>แอปต้องการเข้าถึงตำแหน่งของคุณเพื่อติดตามความคืบหน้าของรถฉุกเฉิน</string>
 	<key>NSAppTransportSecurity</key>
@@ -60,5 +62,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

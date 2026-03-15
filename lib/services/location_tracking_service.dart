@@ -29,28 +29,25 @@ class LocationTrackingService {
   
   /// Check and request location permissions
   Future<bool> checkPermissions({bool requestAlways = false}) async {
+    // 1. Initial status check
     PermissionStatus status = await Permission.location.status;
     
+    // 2. Request if denied (first time or reset)
     if (status.isDenied) {
       status = await Permission.location.request();
     }
     
-    if (status.isGranted && requestAlways) {
-      // On Android 11+, Always permission must be requested separately
+    // 3. Handle Always requirement
+    if (requestAlways) {
       PermissionStatus alwaysStatus = await Permission.locationAlways.status;
       if (alwaysStatus.isDenied) {
         alwaysStatus = await Permission.locationAlways.request();
       }
-      return alwaysStatus.isGranted;
+      return alwaysStatus.isGranted || alwaysStatus.isLimited;
     }
     
-    if (status.isPermanentlyDenied) {
-      // Open app settings
-      await openAppSettings();
-      return false;
-    }
-    
-    return status.isGranted;
+    // 4. Final check for foreground/general permission
+    return status.isGranted || status.isLimited;
   }
   
   /// Specifically request background location permission (Android 11+)
@@ -66,7 +63,7 @@ class LocationTrackingService {
 
   /// Check if background location permission is currently granted
   Future<bool> isBackgroundPermissionGranted() async {
-    return await Permission.locationAlways.isGranted;
+    return await checkPermissions(requestAlways: true);
   }
   
   Future<bool> isLocationEnabled() async {

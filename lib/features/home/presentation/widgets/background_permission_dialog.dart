@@ -19,77 +19,79 @@ class BackgroundPermissionDialog extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.location_on_rounded,
-              size: 64,
-              color: Colors.redAccent,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'ต้องเข้าถึงพิกัด "ตลอดเวลา"',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.location_on_rounded,
+                size: 64,
+                color: Colors.redAccent,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'เพื่อให้ระบบสามารถติดตามตำแหน่งของคุณและแจ้งเหตุช่วยเหลือได้อย่างแม่นยำ แม้ในขณะที่หน้าจอปิดอยู่ หรือคุณกำลังใช้แอปอื่น',
-              style: TextStyle(fontSize: 16, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
+              const SizedBox(height: 16),
+              const Text(
+                'ต้องเข้าถึงพิกัด "ตลอดเวลา"',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
               ),
-              child: Column(
+              const SizedBox(height: 16),
+              const Text(
+                'เพื่อให้ระบบสามารถติดตามตำแหน่งของคุณและแจ้งเหตุช่วยเหลือได้อย่างแม่นยำ แม้ในขณะที่หน้าจอปิดอยู่ หรือคุณกำลังใช้แอปอื่น',
+                style: TextStyle(fontSize: 16, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'ขั้นตอนการตั้งค่า:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildStep('1. กดปุ่ม "ไปที่การตั้งค่า" ด้านล่าง'),
+                    _buildStep('2. เลือก "การอนุญาต" (Permissions)'),
+                    _buildStep('3. เลือก "ตำแหน่ง" (Location)'),
+                    _buildStep('4. เลือก "อนุญาตตลอดเวลา" (Allow all the time)'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
                 children: [
-                  const Text(
-                    'ขั้นตอนการตั้งค่า:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('ไว้ทีหลัง'),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  _buildStep('1. กดปุ่ม "ไปที่การตั้งค่า" ด้านล่าง'),
-                  _buildStep('2. เลือก "การอนุญาต" (Permissions)'),
-                  _buildStep('3. เลือก "ตำแหน่ง" (Location)'),
-                  _buildStep('4. เลือก "อนุญาตตลอดเวลา" (Allow all the time)'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('ไปที่การตั้งค่า'),
+                    ),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('ไว้ทีหลัง'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text('ไปที่การตั้งค่า'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

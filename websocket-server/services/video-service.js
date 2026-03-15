@@ -128,7 +128,7 @@ const worker = new Worker('video-processing', async (job) => {
                     socketService.sendStatus(userId, videoId, 'ready', { url: finalUrl });
 
                     // Determine if we should keep the HLS files locally (if not using Bunny CDN)
-                    const isLocalUrl = finalUrl.includes('localhost') || finalUrl.includes('192.168.0.116') || !process.env.BUNNY_CDN_URL || process.env.BUNNY_CDN_URL === 'https://your-pull-zone.b-cdn.net';
+                    const isLocalUrl = finalUrl.includes('localhost') || finalUrl.includes('192.168.0.109') || !process.env.BUNNY_CDN_URL || process.env.BUNNY_CDN_URL === 'https://your-pull-zone.b-cdn.net';
                     const keepOutputDir = isLocalUrl;
 
                     cleanup(filePath, outputDir, keepOutputDir);
