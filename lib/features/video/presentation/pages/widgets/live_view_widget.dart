@@ -15,6 +15,7 @@ class LiveViewWidget extends StatelessWidget {
   final String donationTotalFormatted;
   final List<Video> trendingVideos;
   final bool isLoadingTrending;
+  final bool canViewUnblurred;
   final VoidCallback onLike;
   final VoidCallback onDonate;
   final Function(String) onSwitchVideo;
@@ -29,6 +30,7 @@ class LiveViewWidget extends StatelessWidget {
     required this.donationTotalFormatted,
     required this.trendingVideos,
     required this.isLoadingTrending,
+    this.canViewUnblurred = false,
     required this.onLike,
     required this.onDonate,
     required this.onSwitchVideo,
@@ -58,6 +60,7 @@ class LiveViewWidget extends StatelessWidget {
                             chewieController: chewieController,
                             currentVideoId: currentVideoId,
                             currentVideo: currentVideo,
+                            canViewUnblurred: canViewUnblurred,
                           ),
                           const SizedBox(height: 12),
                           ViewerCountWidget(formattedViewerCount: formattedViewerCount),

@@ -9,6 +9,8 @@ import 'dart:async';
 import '../../../../config/app_config.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
+import 'widgets/responder_compass_widget.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 
 /// หน้าสำหรับจิตอาสา (Rescue Page) - Phase 3 Production-Ready
 class RescuePage extends StatefulWidget {
@@ -24,7 +26,9 @@ class _RescuePageState extends State<RescuePage> {
   final Set<Polyline> _polylines = {};
   
   StreamSubscription? _emergencySub;
-  List<Map<String, dynamic>> _activeEmergencies = [];
+  StreamSubscription? _compassSub;
+  double? _deviceHeading;
+  final List<Map<String, dynamic>> _activeEmergencies = [];
   bool _isAssisting = false;
   bool _isLoading = true;
   bool _isVolunteerActive = true;
@@ -50,6 +54,11 @@ class _RescuePageState extends State<RescuePage> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+    _compassSub = FlutterCompass.events?.listen((event) {
+      if (mounted) {
+        setState(() => _deviceHeading = event.heading);
+      }
+    });
   }
   
   Future<void> _checkActiveRescues() async {
@@ -122,6 +131,7 @@ class _RescuePageState extends State<RescuePage> {
   @override
   void dispose() {
     _emergencySub?.cancel();
+    _compassSub?.cancel();
     super.dispose();
   }
 
@@ -147,12 +157,12 @@ class _RescuePageState extends State<RescuePage> {
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       _volunteerLoc = LatLng(pos.latitude, pos.longitude);
 
-      // Save to DB with volunteer start location
-      _activeResponseId = await ServiceLocator.instance.videoRepository.acceptRescue(
+      // Save to DB with volunteer start location (Using acceptIncident with correct parameters)
+      _activeResponseId = await ServiceLocator.instance.videoRepository.acceptIncident(
          videoId: alert['videoId'], 
-         volunteerId: user.id,
-         startLat: pos.latitude,
-         startLng: pos.longitude,
+         responderId: user.id,
+         latitude: pos.latitude,
+         longitude: pos.longitude,
       );
       
       // Notify victim via WebSocket
@@ -430,7 +440,7 @@ class _RescuePageState extends State<RescuePage> {
               Switch(
                 value: _isVolunteerActive,
                 onChanged: (_) => _toggleDutyStatus(),
-                activeColor: Colors.greenAccent,
+                activeThumbColor: Colors.greenAccent,
                 inactiveTrackColor: Colors.grey,
               ),
             ],
@@ -460,6 +470,17 @@ class _RescuePageState extends State<RescuePage> {
                 myLocationButtonEnabled: true,
                 padding: EdgeInsets.only(bottom: _isAssisting || _activeEmergencies.isNotEmpty ? 240 : 0),
               ),
+              
+              if (_isAssisting && _volunteerLoc != null && _emergencyLoc != null)
+                Positioned(
+                  top: 100,
+                  right: 16,
+                  child: ResponderCompassWidget(
+                    userLocation: _volunteerLoc,
+                    destinationLocation: _emergencyLoc,
+                    deviceHeading: _deviceHeading,
+                  ),
+                ),
               
               if (_isAssisting)
                 _buildAssistingPanel()

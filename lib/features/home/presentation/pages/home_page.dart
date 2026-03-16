@@ -1169,6 +1169,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                     height: _mapHeight,
                                     child: HomeMapBackground(
                                       focusedAlert: _focusedAlert,
+                                      onTap: () {
+                                        if (_focusedAlert != null) {
+                                          setState(() {
+                                            _focusedAlert = null;
+                                            // Restoration of consultation position when focus is cleared
+                                            _loadConsultationPosition(introDelay: Duration.zero);
+                                          });
+                                        }
+                                      },
                                     ),
                                   ),
                                   Container(

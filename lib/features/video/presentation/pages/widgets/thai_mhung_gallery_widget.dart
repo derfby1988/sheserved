@@ -18,6 +18,9 @@ class ThaiMhungPhoto {
 class ThaiMhungGalleryWidget extends StatefulWidget {
   final List<ThaiMhungPhoto> photos;
   final Function(ThaiMhungPhoto) onPhotoTap;
+  /// true = ผู้ใช้มีสิทธิ์เห็นภาพต้นฉบับ (ไม่เบลอ)
+  /// false (default) = แสดง Face Blur overlay
+  final bool canViewUnblurred;
 
   /// จำนวนรูปที่แสดงแต่ละด้านรอบ currentPage (ตาม spec = 2)
   static const int windowRadius = 2;
@@ -26,6 +29,7 @@ class ThaiMhungGalleryWidget extends StatefulWidget {
     super.key,
     required this.photos,
     required this.onPhotoTap,
+    this.canViewUnblurred = false,
   });
 
   @override
@@ -141,27 +145,37 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                         },
                         child: Hero(
                           tag: 'thai_mhung_photo_${item.photo.id}',
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? Colors.blue : Colors.white38,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow: [
-                                if (isSelected)
-                                  BoxShadow(
-                                    color: Colors.blue.withValues(alpha: 0.4),
-                                    blurRadius: 10,
-                                    spreadRadius: 2,
+                          child: Stack(
+                            children: [
+                              // Base image
+                              Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected ? Colors.blue : Colors.white38,
+                                    width: isSelected ? 2 : 1,
                                   ),
-                              ],
-                              image: DecorationImage(
-                                image: NetworkImage(item.photo.url),
-                                fit: BoxFit.cover,
+                                  boxShadow: [
+                                    if (isSelected)
+                                      BoxShadow(
+                                        color: Colors.blue.withValues(alpha: 0.4),
+                                        blurRadius: 10,
+                                        spreadRadius: 2,
+                                      ),
+                                  ],
+                                  image: DecorationImage(
+                                    image: NetworkImage(item.photo.url),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
-                            ),
+                              // Face blur overlay — แสดงเมื่อไม่มีสิทธิ์เห็นต้นฉบับ
+                              if (!widget.canViewUnblurred)
+                                Positioned.fill(
+                                  child: _FaceBlurOverlay(),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -213,6 +227,59 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
             fontSize: 12,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Simulated Face Blur Overlay
+/// ใช้ BackdropFilter + CustomPainter เพื่อทำ Bokeh-style blur บริเวณหน้าคน
+/// ในระบบ Production จะส่งภาพผ่าน MediaPipe บน Server แทน
+class _FaceBlurOverlay extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        children: [
+          // Full blur layer หลัก (Gaussian Blur สม่ำเสมอ)
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(color: Colors.transparent),
+          ),
+          // Privacy icon + label
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 16),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'ซ่อนภาพ',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

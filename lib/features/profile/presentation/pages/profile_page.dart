@@ -41,6 +41,11 @@ class _ProfilePageState extends State<ProfilePage> {
   File? _tempProfileImage;
   int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer
 
+  // ฟีเจอร์กำหนดอาชีพที่เห็นวิดีโอไม่เบลอ
+  List<prof.Profession> _allVolunteerProfessions = [];
+  Set<String> _selectedUnblurredIds = {};
+  bool _isLoadingProfessions = false;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +58,7 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
       _loadProfile();
+      _loadVolunteerProfessions();
     });
   }
 
@@ -71,9 +77,15 @@ class _ProfilePageState extends State<ProfilePage> {
           _dynamicData = data['dynamicData'];
           _thaiMhungEnabled = _user?.isThaiMhungEnabled ?? true;
           _alertRadius = _user?.alertRadius ?? 500;
+          _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
           _initControllers();
           _isLoading = false;
         });
+
+        // ซิงค์ข้อมูลลง Local Session เสมอเพื่อให้ส่วนอื่นๆ ของแอปอัปเดตตาม
+        if (_user != null) {
+          AuthService.instance.login(_user!);
+        }
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
@@ -574,7 +586,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Switch(
                 value: _thaiMhungEnabled,
                 onChanged: (value) => _updateVolunteerSettings(enabled: value),
-                activeColor: AppColors.primary,
+                activeThumbColor: AppColors.primary,
               ),
             ],
           ),
@@ -582,6 +594,8 @@ class _ProfilePageState extends State<ProfilePage> {
         if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false)) ...[
           const SizedBox(height: 24),
           _buildRadiusSection(),
+          const SizedBox(height: 24),
+          _buildUnblurredProfessionSection(),
         ],
       ],
     );
@@ -657,6 +671,160 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  /// โหลดรายการอาชีพจิตอาสาทั้งหมดจาก Supabase Professions Table
+  Future<void> _loadVolunteerProfessions() async {
+    if (_isLoadingProfessions) return;
+    setState(() => _isLoadingProfessions = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('professions')
+          .select('id, name, color_hex, is_volunteer, is_active')
+          .eq('is_active', true)
+          .eq('is_volunteer', true)
+          .order('display_order');
+      if (mounted) {
+        setState(() {
+          _allVolunteerProfessions = (response as List).map((json) {
+            return prof.Profession(
+              id: json['id'] ?? '',
+              name: json['name'] ?? '',
+              colorHex: json['color_hex'],
+              isVolunteer: json['is_volunteer'] ?? false,
+              category: prof.UserCategory.fromString('provider'),
+              isActive: json['is_active'] ?? true,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+          }).toList();
+          _isLoadingProfessions = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ProfilePage: Error loading professions: $e');
+      if (mounted) setState(() => _isLoadingProfessions = false);
+    }
+  }
+
+  /// UI เลือกอาชีพที่อนุญาตให้เห็นวิดีโอไม่เบลอ
+  Widget _buildUnblurredProfessionSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.visibility, color: Colors.red, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'สิทธิ์ดูวิดีโอต้นฉบับ',
+                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'เลือกอาชีพจิตอาสาที่อนุญาตให้เห็นภาพ/วิดีโอไม่ผ่านการเบลอ',
+                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isLoadingProfessions)
+            const Center(child: CircularProgressIndicator())
+          else if (_allVolunteerProfessions.isEmpty)
+            Text(
+              'ไม่พบรายการอาชีพจิตอาสา',
+              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _allVolunteerProfessions.map((p) {
+                final isSelected = _selectedUnblurredIds.contains(p.id);
+                Color chipColor = AppColors.primary;
+                if (p.colorHex != null && p.colorHex!.isNotEmpty) {
+                  try {
+                    chipColor = Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')));
+                  } catch (_) {}
+                }
+                return FilterChip(
+                  label: Text(p.name),
+                  selected: isSelected,
+                  selectedColor: chipColor.withValues(alpha: 0.2),
+                  checkmarkColor: chipColor,
+                  labelStyle: AppTextStyles.bodySmall.copyWith(
+                    color: isSelected ? chipColor : Colors.grey[700],
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  side: BorderSide(
+                    color: isSelected ? chipColor : Colors.grey[300]!,
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                  onSelected: (val) {
+                    setState(() {
+                      if (val) {
+                        _selectedUnblurredIds.add(p.id);
+                      } else {
+                        _selectedUnblurredIds.remove(p.id);
+                      }
+                    });
+                    _saveUnblurredProfessions();
+                  },
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'หมายเหตุ: อาชีพที่ไม่ได้เลือกจะเห็นเพียงภาพเบลอ (Privacy Mode)',
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveUnblurredProfessions() async {
+    if (_user == null) return;
+    try {
+      await Supabase.instance.client.from('consumer_profiles').upsert({
+        'user_id': _user!.id,
+        'unblurred_profession_ids': _selectedUnblurredIds.toList(),
+      }, onConflict: 'user_id');
+      // อัพเดต local session
+      AuthService.instance.login(_user!.copyWith(
+        unblurredProfessionIds: _selectedUnblurredIds.toList(),
+      ));
+      debugPrint('ProfilePage: ✅ Saved unblurred professions: $_selectedUnblurredIds');
+    } catch (e) {
+      debugPrint('ProfilePage: ❌ Error saving unblurred professions: $e');
+    }
+  }
+
   Future<void> _updateVolunteerSettings({bool? enabled, int? radius}) async {
     if (_user == null) return;
     
@@ -671,6 +839,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!isAlwaysGranted) {
         // Show our custom guidance dialog first
         final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
+        if (!mounted) return;
         if (shouldGoToSettings) {
           await openAppSettings();
           // After returning from settings, we don't force 'true' yet, 

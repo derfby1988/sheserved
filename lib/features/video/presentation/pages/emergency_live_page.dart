@@ -31,6 +31,8 @@ import 'widgets/relationship_view_widget.dart';
 import 'widgets/donation_sheet_widget.dart';
 import 'widgets/control_back_button_widget.dart';
 import 'widgets/thai_mhung_gallery_widget.dart';
+import 'widgets/responder_compass_widget.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -67,6 +69,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   StreamSubscription? _locationSub;
   StreamSubscription? _myLocationStreamSub;
   StreamSubscription? _emergencySub;
+  StreamSubscription? _compassSub;
+  
+  double? _deviceHeading;
   
   // Video Player & Map Sync
   VideoPlayerController? _videoPlayerController;
@@ -112,6 +117,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   
   // GPS Route Points for the currently watched video
   final List<LatLng> _routePoints = [];
+
+  // Privacy & Permission
+  bool _canViewUnblurred = false;
 
   @override
   void initState() {
@@ -168,6 +176,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _setupWebSocketStreams();
     _loadInitialData();
     _startResponderTracking();
+    _initCompass();
+  }
+
+  void _initCompass() {
+    _compassSub = FlutterCompass.events?.listen((event) {
+      if (mounted && event.heading != null) {
+        setState(() => _deviceHeading = event.heading);
+      }
+    });
   }
 
   /// เปิดการติดตามตำแหน่งของอาสาสมัคร (Responder) เพื่อส่งให้ผู้แจ้งเหตุติดตามได้แบบ Real-time
@@ -295,6 +312,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       });
       
       _recordView();
+      _checkPrivacyPermissions();
 
       // Fetch Video and handle reproduction
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
@@ -315,8 +333,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         });
       }
       
-      if (video != null && video.bunnyUrl != null) {
-         _initializePlayer(video.bunnyUrl!);
+      if (video != null && video.previewUrl != null) {
+         _initializePlayer(video.previewUrl!, isLocal: video.localFilePath != null);
       }
       
       // Load Thai Mhung Gallery photos
@@ -484,6 +502,50 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (mounted) {
         setState(() => _isLoadingTrending = false);
       }
+    }
+  }
+
+  Future<void> _checkPrivacyPermissions() async {
+    if (_currentVideo == null) return;
+    
+    final currentUserId = AuthService.instance.userId;
+    if (currentUserId == null) return;
+    
+    // Check ownership
+    final isOwner = _currentVideo!.userId == currentUserId;
+    
+    if (mounted) {
+      setState(() {
+        _canViewUnblurred = false; // Reset first
+        // Owners can always see their own original video
+        if (isOwner) _canViewUnblurred = true;
+      });
+    }
+
+    if (isOwner) return;
+
+    // Fetch victim's (video owner) profile to see allowed professions
+    try {
+      final victimProfile = await Supabase.instance.client
+          .from('consumer_profiles')
+          .select('unblurred_profession_ids')
+          .eq('user_id', _currentVideo!.userId)
+          .maybeSingle();
+      
+      if (victimProfile != null) {
+        final List<dynamic> allowedIds = victimProfile['unblurred_profession_ids'] ?? [];
+        final currentUser = AuthService.instance.currentUser; // My profile from session
+        
+        if (currentUser != null && currentUser.professionId != null) {
+          if (allowedIds.map((id) => id.toString()).contains(currentUser.professionId)) {
+            if (mounted) {
+              setState(() => _canViewUnblurred = true);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('EmergencyLivePage: Privacy check error: $e');
     }
   }
 
@@ -808,6 +870,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _progressSub?.cancel();
     _rescueIncomingSub?.cancel();
     _videoStatusSub?.cancel();
+    _emergencySub?.cancel();
     
     _videoPlayerController?.removeListener(_syncGpsWithVideo);
     _videoPlayerController?.dispose();
@@ -845,6 +908,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _videoStatusSub?.cancel();
     _locationSub?.cancel();
     _myLocationStreamSub?.cancel();
+    _emergencySub?.cancel();
+    _compassSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_currentVideoId != null) {
@@ -1233,6 +1298,29 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         categoryId: _selectedEmergencyCategoryId,
       );
 
+      // ✅ Immediate Preview: เพิ่มวิดีโอนี้ลงใน Feed ทันทีด้วย Local Path
+      if (videoId != null && mounted) {
+        final newVideo = Video(
+          id: videoId,
+          userId: userId,
+          title: 'Emergency Incident',
+          type: VideoType.emergency,
+          status: VideoStatus.processing,
+          latitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['latitude'] : 0.0,
+          longitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['longitude'] : 0.0,
+          createdAt: DateTime.now(),
+          localFilePath: file.path, 
+          categoryId: _selectedEmergencyCategoryId,
+          categoryName: _selectedEmergencyCategory?.name ?? 'เหตุฉุกเฉิน',
+        );
+        
+        setState(() {
+          _trendingVideos.insert(0, newVideo);
+          _currentVideoId = videoId;
+          _currentVideo = newVideo;
+        });
+      }
+
       // Trigger Notification
       if (_selectedEmergencyCategoryId != null) {
         final ws = WebSocketService();
@@ -1295,7 +1383,29 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 _adjustMapBounds();
               });
             },
+            onTap: () {
+              if (_selectedTab != 0 || _isThaiMhungReporting) {
+                setState(() {
+                  _selectedTab = 0;
+                  _isThaiMhungReporting = false;
+                });
+              }
+            },
           ),
+          
+          // === Layer 1.1: Responder Compass (Orientation pointer) ===
+          if (_currentResponseId != null && _userLocation != null && (_routePoints.isNotEmpty || (_currentVideo?.latitude != null && _currentVideo?.longitude != null)))
+            Positioned(
+              top: 100,
+              right: 16,
+              child: ResponderCompassWidget(
+                userLocation: _userLocation,
+                destinationLocation: _routePoints.isNotEmpty 
+                  ? _routePoints.last 
+                  : LatLng(_currentVideo!.latitude, _currentVideo!.longitude),
+                deviceHeading: _deviceHeading,
+              ),
+            ),
 
           // === Layer 1.5: Thai Mhung Gallery (On top of map) ===
           if (_selectedTab == 0 && !_isThaiMhungReporting && _thaiMhungPhotos.isNotEmpty)
@@ -1306,6 +1416,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               child: ThaiMhungGalleryWidget(
                 photos: _thaiMhungPhotos,
                 onPhotoTap: _showPhotoDetail,
+                canViewUnblurred: _canViewUnblurred,
               ),
             ),
 
@@ -1359,6 +1470,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
                               trendingVideos: _trendingVideos,
                               isLoadingTrending: _isLoadingTrending,
+                              canViewUnblurred: _canViewUnblurred,
                               onLike: () async {
                                 final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
                                 if (_currentVideoId != null) {
@@ -1380,8 +1492,21 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               onSwitchVideo: _switchVideo,
                             ))
                       : _selectedTab == 1
-                          ? const RelationshipViewWidget()
-                          : IncidentReportWidget(
+                          ? GestureDetector(
+                              onTap: () => setState(() {
+                                _selectedTab = 0;
+                                _isThaiMhungReporting = false;
+                              }),
+                              behavior: HitTestBehavior.translucent,
+                              child: const RelationshipViewWidget(),
+                            )
+                          : GestureDetector(
+                              onTap: () => setState(() {
+                                _selectedTab = 0;
+                                _isThaiMhungReporting = false;
+                              }),
+                              behavior: HitTestBehavior.translucent,
+                              child: IncidentReportWidget(
                               isRecording: _isRecording,
                               isLoadingCategories: _isLoadingCategories,
                               prepCountdown: _prepCountdown,
@@ -1404,6 +1529,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               onLoadCategories: _loadEmergencyCategories,
                               onYieldWay: () {}, // Not used in incident report tab
                             ),
+                          ),
                 ),
 
                 // 4. Rescue Control Panel (Only if viewing target video + has responseId)
@@ -1456,10 +1582,18 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   }
 
 
-  Future<void> _initializePlayer(String url) async {
-    if (_videoPlayerController != null) return;
+  Future<void> _initializePlayer(String url, {bool isLocal = false}) async {
+    if (_videoPlayerController != null) {
+      await _videoPlayerController!.dispose();
+      _videoPlayerController = null;
+    }
 
-    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(url));
+    if (isLocal) {
+      _videoPlayerController = VideoPlayerController.file(File(url));
+    } else {
+      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(url));
+    }
+    
     await _videoPlayerController!.initialize();
 
     _chewieController = ChewieController(

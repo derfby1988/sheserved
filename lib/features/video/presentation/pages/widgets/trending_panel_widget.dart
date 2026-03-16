@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../models/video_models.dart';
+import 'video_skeleton_widget.dart';
 
 class TrendingPanelWidget extends StatelessWidget {
   final List<Video> trendingVideos;
@@ -53,7 +54,7 @@ class TrendingPanelWidget extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(
             child: isLoadingTrending
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)))
+                ? _buildSkeletonList()
                 : trendingVideos.isEmpty
                     ? const Center(
                         child: Text(
@@ -108,6 +109,14 @@ class TrendingPanelWidget extends StatelessWidget {
                             displayTitle = '${displayTitle.substring(0, 30)}...';
                           }
 
+                          final bool hasLocalPreview = video.localFilePath != null;
+                          final bool isStillProcessing = video.status == VideoStatus.processing;
+                          final bool showPlaceholder = isStillProcessing && !hasLocalPreview;
+
+                          if (showPlaceholder) {
+                            return const VideoSkeletonWidget(isTrendingCard: true);
+                          }
+
                           return GestureDetector(
                             onTap: () {
                               if (video.id != currentVideoId) {
@@ -136,7 +145,7 @@ class TrendingPanelWidget extends StatelessWidget {
                                   fit: BoxFit.scaleDown,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min, // ให้สูงพอดีกับเนื้อหา
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
                                         displayTitle,
@@ -161,6 +170,25 @@ class TrendingPanelWidget extends StatelessWidget {
                                           shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                                         ),
                                       ),
+                                      // แสดง Badge เมื่อเป็น Local Preview (ยังรอ Server)
+                                      if (hasLocalPreview && isStillProcessing) ...[
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.withValues(alpha: 0.85),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            '⏳ ตัวอย่างจากเครื่อง',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -173,6 +201,14 @@ class TrendingPanelWidget extends StatelessWidget {
           const SizedBox(height: 10),
         ],
       ),
+    );
+  }
+
+  Widget _buildSkeletonList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      itemCount: 4,
+      itemBuilder: (_, __) => const VideoSkeletonWidget(isTrendingCard: true),
     );
   }
 }

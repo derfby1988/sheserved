@@ -11,6 +11,7 @@ class MapBackgroundWidget extends StatelessWidget {
   final List<Map<String, dynamic>> responders;
   final int selectedTab;
   final Function(GoogleMapController) onMapCreated;
+  final VoidCallback? onTap;
 
   const MapBackgroundWidget({
     super.key,
@@ -21,6 +22,7 @@ class MapBackgroundWidget extends StatelessWidget {
     required this.responders,
     required this.selectedTab,
     required this.onMapCreated,
+    this.onTap,
   });
 
   @override
@@ -116,6 +118,7 @@ class MapBackgroundWidget extends StatelessWidget {
           trafficEnabled: true,
           compassEnabled: false,
           mapToolbarEnabled: false,
+          onTap: (_) => onTap?.call(),
           polylines: currentVideoId == null
               ? {}
               : {
@@ -142,11 +145,14 @@ class MapBackgroundWidget extends StatelessWidget {
                 },
           markers: mapMarkers,
         ),
-        if (selectedTab == 2)
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.15),
+        if (selectedTab != 0)
+          GestureDetector(
+            onTap: onTap,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.15),
+              ),
             ),
           ),
       ],

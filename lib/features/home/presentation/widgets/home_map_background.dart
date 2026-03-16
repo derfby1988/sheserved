@@ -21,16 +21,18 @@ import 'home_painters.dart';
 ///   4. ถ้า event นั้นจบแล้ว → เลื่อนไป event ถัดไปอัตโนมัติ
 /// ===============================================================
 class HomeMapBackground extends StatefulWidget {
+  final gm.LatLng initialLocation;
+  final double initialZoom;
+  final Map<String, dynamic>? focusedAlert;
+  final VoidCallback? onTap;
+
   const HomeMapBackground({
     super.key,
     this.initialLocation = const gm.LatLng(13.7563, 100.5018),
     this.initialZoom = 14.0,
     this.focusedAlert,
+    this.onTap,
   });
-
-  final gm.LatLng initialLocation;
-  final double initialZoom;
-  final Map<String, dynamic>? focusedAlert;
 
   @override
   State<HomeMapBackground> createState() => _HomeMapBackgroundState();
@@ -440,6 +442,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                   zoomControlsEnabled: false,
                   compassEnabled: false,
                   mapToolbarEnabled: false,
+                  onTap: (_) => widget.onTap?.call(),
                 ),
               ),
             ),

@@ -40,6 +40,10 @@ class Video {
   final double donationTotal;
   final String? categoryName;
 
+  /// path ไปยังไฟล์วิดีโอในเครื่อง สำหรับ Immediate Preview ก่อน HLS พร้อม
+  /// null = ไม่มี local cache (ดูจาก bunnyUrl แทน)
+  final String? localFilePath;
+
   const Video({
     required this.id,
     required this.userId,
@@ -72,6 +76,7 @@ class Video {
     this.alley,
     this.village,
     this.isThaiMhungEnabled = false,
+    this.localFilePath,
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
@@ -129,12 +134,110 @@ class Video {
       alley: json['alley']?.toString(),
       village: json['village']?.toString(),
       isThaiMhungEnabled: json['is_thai_mhung_enabled'] == true || json['isThaiMhungEnabled'] == true,
+      localFilePath: json['local_file_path']?.toString(),
     );
   }
+
+  Video copyWith({
+    String? id,
+    String? userId,
+    VideoType? type,
+    String? donationRequestId,
+    String? categoryId,
+    String? title,
+    String? description,
+    String? bunnyVideoId,
+    String? bunnyUrl,
+    String? thumbnailUrl,
+    int? duration,
+    int? fileSize,
+    VideoStatus? status,
+    int? progress,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? userName,
+    String? userAvatar,
+    String? userRole,
+    String? categoryName,
+    int? viewerCount,
+    int? likeCount,
+    double? donationTotal,
+    double? latitude,
+    double? longitude,
+    String? address,
+    String? road,
+    String? soi,
+    String? alley,
+    String? village,
+    bool? isThaiMhungEnabled,
+    String? localFilePath,
+  }) {
+    return Video(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      type: type ?? this.type,
+      donationRequestId: donationRequestId ?? this.donationRequestId,
+      categoryId: categoryId ?? this.categoryId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      bunnyVideoId: bunnyVideoId ?? this.bunnyVideoId,
+      bunnyUrl: bunnyUrl ?? this.bunnyUrl,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      duration: duration ?? this.duration,
+      fileSize: fileSize ?? this.fileSize,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      userName: userName ?? this.userName,
+      userAvatar: userAvatar ?? this.userAvatar,
+      userRole: userRole ?? this.userRole,
+      categoryName: categoryName ?? this.categoryName,
+      viewerCount: viewerCount ?? this.viewerCount,
+      likeCount: likeCount ?? this.likeCount,
+      donationTotal: donationTotal ?? this.donationTotal,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      address: address ?? this.address,
+      road: road ?? this.road,
+      soi: soi ?? this.soi,
+      alley: alley ?? this.alley,
+      village: village ?? this.village,
+      isThaiMhungEnabled: isThaiMhungEnabled ?? this.isThaiMhungEnabled,
+      localFilePath: localFilePath ?? this.localFilePath,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'user_id': userId,
+    'type': type.name,
+    'donation_request_id': donationRequestId,
+    'category_id': categoryId,
+    'title': title,
+    'description': description,
+    'bunny_video_id': bunnyVideoId,
+    'bunny_url': bunnyUrl,
+    'thumbnail_url': thumbnailUrl,
+    'duration': duration,
+    'file_size': fileSize,
+    'status': status.name,
+    'progress': progress,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+    'latitude': latitude,
+    'longitude': longitude,
+    'address': address,
+    'is_thai_mhung_enabled': isThaiMhungEnabled,
+    'local_file_path': localFilePath,
+  };
 
   bool get isEmergency => type == VideoType.emergency;
   bool get isReady => status == VideoStatus.ready;
   bool get isProcessing => status == VideoStatus.processing;
+
+  /// ใช้ Local file สำหรับ preview ถ้ามี ไม่เช่นนั้นใช้ bunnyUrl
+  String? get previewUrl => localFilePath ?? bunnyUrl;
 }
 
 /// Model สำหรับ GPS Track ที่สัมพันธ์กับเวลาในวิดีโอ

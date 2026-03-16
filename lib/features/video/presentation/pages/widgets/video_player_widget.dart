@@ -2,17 +2,20 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import '../../../models/video_models.dart';
+import 'video_skeleton_widget.dart';
 
 class VideoPlayerWidget extends StatelessWidget {
   final ChewieController? chewieController;
   final String? currentVideoId;
   final Video? currentVideo;
+  final bool canViewUnblurred;
 
   const VideoPlayerWidget({
     super.key,
     required this.chewieController,
     required this.currentVideoId,
     required this.currentVideo,
+    this.canViewUnblurred = false,
   });
 
   @override
@@ -76,61 +79,113 @@ class VideoPlayerWidget extends StatelessWidget {
                   );
                 }
 
-                return chewieController != null &&
-                        chewieController!.videoPlayerController.value.isInitialized
-                    ? Chewie(controller: chewieController!)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (currentVideo?.status == VideoStatus.error) ...[
-                              Icon(Icons.error_outline,
-                                  color: Colors.red, size: iconSize),
-                              SizedBox(height: spacing),
-                              Text('เกิดข้อผิดพลาดในการโหลดวิดีโอ',
-                                  style: TextStyle(
-                                      fontFamily: 'SukhumvitSet',
-                                      color: Colors.white70,
-                                      fontSize: statusFontSize)),
-                            ] else if (currentVideo?.status ==
-                                    VideoStatus.processing ||
-                                currentVideo?.status == VideoStatus.uploading) ...[
-                              SizedBox(
-                                width: iconSize * 0.6,
-                                height: iconSize * 0.6,
-                                child: const CircularProgressIndicator(
-                                    color: Colors.orange, strokeWidth: 2),
-                              ),
-                              SizedBox(height: spacing * 1.5),
-                              Text(
-                                'กำลังประมวลผล... (${currentVideo?.progress ?? 0}%)',
-                                style: TextStyle(
-                                  fontFamily: 'SukhumvitSet',
-                                  color: Colors.white70,
-                                  fontSize: statusFontSize,
-                                ),
-                              ),
-                            ] else ...[
-                              SizedBox(
-                                width: iconSize * 0.6,
-                                height: iconSize * 0.6,
-                                child: const CircularProgressIndicator(
-                                    color: Colors.red, strokeWidth: 2),
-                              ),
-                              SizedBox(height: spacing * 1.5),
-                              Text(
-                                'กำลังเชื่อมต่อสัญญาณ...',
-                                style: TextStyle(
-                                  fontFamily: 'SukhumvitSet',
-                                  color: Colors.white70,
-                                  fontSize: statusFontSize,
+                // Wrap with another Stack for the blur overlay
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    chewieController != null &&
+                            chewieController!.videoPlayerController.value.isInitialized
+                        ? Chewie(controller: chewieController!)
+                        : Stack(
+                            children: [
+                              const VideoSkeletonWidget(), 
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (currentVideo?.status == VideoStatus.error) ...[
+                                      Icon(Icons.error_outline,
+                                          color: Colors.red, size: iconSize),
+                                      SizedBox(height: spacing),
+                                      Text('เกิดข้อผิดพลาดในการโหลดวิดีโอ',
+                                          style: TextStyle(
+                                              fontFamily: 'SukhumvitSet',
+                                              color: Colors.white70,
+                                              fontSize: statusFontSize)),
+                                    ] else if (currentVideo?.status ==
+                                            VideoStatus.processing ||
+                                        currentVideo?.status == VideoStatus.uploading) ...[
+                                      const Center(child: VideoProcessingBadge()), 
+                                      SizedBox(height: spacing * 1.5),
+                                      Text(
+                                        '(${currentVideo?.progress ?? 0}%)',
+                                        style: TextStyle(
+                                          fontFamily: 'SukhumvitSet',
+                                          color: Colors.white70,
+                                          fontSize: statusFontSize,
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      Center(
+                                        child: Column(
+                                          children: [
+                                            SizedBox(
+                                              width: iconSize * 0.6,
+                                              height: iconSize * 0.6,
+                                              child: const CircularProgressIndicator(
+                                                  color: Colors.red, strokeWidth: 2),
+                                            ),
+                                            SizedBox(height: spacing * 1.5),
+                                            Text(
+                                              'กำลังเชื่อมต่อสัญญาณ...',
+                                              style: TextStyle(
+                                                fontFamily: 'SukhumvitSet',
+                                                color: Colors.white70,
+                                                fontSize: statusFontSize,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ],
-                          ],
+                          ),
+                    if (!canViewUnblurred)
+                      Positioned.fill(
+                        child: ClipRRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                                      ),
+                                      child: const Icon(Icons.visibility_off, color: Colors.white, size: 28),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 20),
+                                      child: Text(
+                                        'สิทธิ์การเข้าถึงจำกัด (Privacy Mode)\nเฉพาะอาชีพที่เหยื่อกำหนดจึงจะเห็นต้นฉบับ',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      );
+                      ),
+                  ],
+                );
               },
             ),
           ),
