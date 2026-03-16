@@ -640,7 +640,14 @@ class _LoginPageState extends State<LoginPage>
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
           if (args is Map<String, dynamic> && args['redirect'] != null) {
-            Navigator.pushReplacementNamed(context, args['redirect']);
+            Navigator.pushReplacementNamed(
+              context, 
+              args['redirect'], 
+              arguments: args['args']
+            );
+          } else if (args is String) {
+            // Fallback for old style string redirect
+            Navigator.pushReplacementNamed(context, args);
           } else {
             Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
           }
@@ -719,7 +726,14 @@ class _LoginPageState extends State<LoginPage>
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
           if (args is Map<String, dynamic> && args['redirect'] != null) {
-            Navigator.pushReplacementNamed(context, args['redirect']);
+            Navigator.pushReplacementNamed(
+              context, 
+              args['redirect'], 
+              arguments: args['args']
+            );
+          } else if (args is String) {
+            // Fallback for old style string redirect
+            Navigator.pushReplacementNamed(context, args);
           } else {
             Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
           }

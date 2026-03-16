@@ -119,12 +119,26 @@ class MapBackgroundWidget extends StatelessWidget {
           polylines: currentVideoId == null
               ? {}
               : {
+                  // 1. เส้นทางรวมพิกัด (Official Gps Tracks)
                   Polyline(
                     polylineId: const PolylineId('emergency_route'),
                     points: routePoints,
                     color: const Color(0xFF7B2FF7),
                     width: 5,
                   ),
+                  // 2. เส้นทางจาก Responder แต่ละคนไปยังจุดเกิดเหตุ (ถ้ามีพิกัด)
+                  ...responders.where((r) => r['currentLat'] != null && r['currentLng'] != null && routePoints.isNotEmpty).map((r) {
+                    return Polyline(
+                      polylineId: PolylineId('responder_route_${r['id']}'),
+                      points: [
+                        LatLng(r['currentLat'], r['currentLng']),
+                        routePoints.last, // ลากไปยังจุดล่าสุดของที่เกิดเหตุ
+                      ],
+                      color: Colors.blue.withValues(alpha: 0.6),
+                      width: 4,
+                      patterns: [PatternItem.dash(20), PatternItem.gap(10)], // ทำเป็นเส้นประเพื่อให้ดูแตกต่าง
+                    );
+                  }),
                 },
           markers: mapMarkers,
         ),

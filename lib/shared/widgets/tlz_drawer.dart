@@ -426,7 +426,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               icon: Icons.emergency_outlined,
                               isUnderlined: true,
                               underlineText: 'แจ้งเหตุ',
-                              onTap: () => _navigateTo(context, '/emergency-live'),
+                              onTap: () => _navigateTo(context, '/emergency-live', arguments: {'tab': 2}),
                               isSubItem: true,
                             ),
                             _buildMenuItem(
@@ -775,7 +775,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
     );
   }
 
-  void _navigateTo(BuildContext context, String route) {
+  void _navigateTo(BuildContext context, String route, {Object? arguments}) {
     // Route ที่ต้อง Login ก่อนเข้า
     final protectedRoutes = ['/emergency-live', '/profile'];
 
@@ -788,13 +788,16 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
         Navigator.pushNamed(
           context,
           '/login',
-          arguments: route,
+          arguments: {
+            'redirect': route,
+            'args': arguments,
+          },
         );
         return;
       }
 
       // Navigate to the route
-      Navigator.pushNamed(context, route).catchError((error) {
+      Navigator.pushNamed(context, route, arguments: arguments).catchError((error) {
         // ถ้า route ไม่มี ให้แสดง SnackBar
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -129,8 +129,30 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     });
     
     _currentVideoId = widget.videoId;
-    _currentResponseId = widget.responseId;
 
+    // Check for initial tab argument from Navigator
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic> && args['tab'] != null) {
+        setState(() {
+          _selectedTab = args['tab'];
+        });
+        if (_selectedTab == 2) {
+          _loadConfigFromDatabase();
+          if (_emergencyCategories.isEmpty) {
+            _loadEmergencyCategories();
+          }
+          _initCamera();
+        }
+      }
+    });
+
+    // Check if we have an active incident response for this video
+    if (widget.responseId != null) {
+      _currentResponseId = widget.responseId;
+    }
+    
     _liveBlinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -715,11 +737,30 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       final responseId = await ServiceLocator.instance.videoRepository.acceptIncident(
         videoId: _currentVideoId!,
         responderId: userId,
+        latitude: _userLocation?.latitude,
+        longitude: _userLocation?.longitude,
       );
 
       if (mounted) {
         setState(() {
           _currentResponseId = responseId;
+          
+          // 1.5 เพิ่มตัวเองลงในรายชื่อผู้ตอบรับทันทีเพื่อความรวดเร็วในการแสดงผล
+          final user = AuthService.instance.currentUser;
+          if (user != null && _userLocation != null) {
+            _responders.add({
+              'id': responseId,
+              'volunteerId': userId,
+              'status': 'accepted',
+              'volunteerName': user.fullName,
+              'professionName': 'อาสาสมัคร', // Default as professionName is not in UserModel
+              'professionColor': '#FF3B30', // Default Red as professionColor is not in UserModel
+              'currentLat': _userLocation!.latitude,
+              'currentLng': _userLocation!.longitude,
+              'distanceKm': 0.0,
+              'estimatedMinutes': 0,
+            });
+          }
         });
 
         // 2. บอก Server ผ่าน WebSocket ว่าเราตอบรับแล้ว
@@ -743,6 +784,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           const SnackBar(
             content: Text('คุณได้รับภารกิจช่วยเหลือแล้ว! กำลังนำทาง...'),
             backgroundColor: Colors.blue,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -1305,6 +1347,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               }),
                               onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
                               onLoadCategories: _loadEmergencyCategories,
+                              onYieldWay: _yieldWay,
                               isThaiMhungMode: true,
                             )
                           : LiveViewWidget(
@@ -1359,6 +1402,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                               }),
                               onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
                               onLoadCategories: _loadEmergencyCategories,
+                              onYieldWay: () {}, // Not used in incident report tab
                             ),
                 ),
 
@@ -1620,6 +1664,45 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       });
     } catch (e) {
       debugPrint("Error loading Thai Mhung photos: $e");
+    }
+  }
+
+  /// ✅ ไทยมุงช่วยกดปุ่ม "ให้ทาง" (Yield Way Feedback System §4)
+  Future<void> _yieldWay() async {
+    if (_currentVideoId == null) return;
+    
+    final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
+    try {
+      final interaction = VideoInteraction(
+        id: '',
+        videoId: _currentVideoId!,
+        userId: userId,
+        type: 'yield_way', // เป็น Interaction ประเภทใหม่ตามแผน
+        createdAt: DateTime.now(),
+      );
+      
+      await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+      
+      // บอก Server ผ่าน WebSocket เผื่อเอาไปนับสถิติ Real-time แบบภาพรวม
+      final socket = WebSocketService().socket;
+      if (socket != null && socket.connected) {
+        socket.emit('yield-way-click', {
+          'videoId': _currentVideoId,
+          'userId': userId,
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ขอบคุณที่ช่วยเปิดทางให้รถฉุกเฉิน! 🚑💙'),
+            backgroundColor: Colors.blue,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error sending yield way: $e');
     }
   }
 

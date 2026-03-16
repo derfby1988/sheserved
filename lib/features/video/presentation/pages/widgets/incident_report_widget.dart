@@ -21,6 +21,7 @@ class IncidentReportWidget extends StatelessWidget {
   final Function(DonationCategory) onCategorySelected;
   final Function(bool) onModeChanged;
   final VoidCallback onLoadCategories;
+  final VoidCallback onYieldWay; // Added Yield Way callback
   final bool isThaiMhungMode;
   final int maxPhotos;
 
@@ -43,6 +44,7 @@ class IncidentReportWidget extends StatelessWidget {
     required this.onCategorySelected,
     required this.onModeChanged,
     required this.onLoadCategories,
+    required this.onYieldWay, // Required Yield Way callback
     this.isThaiMhungMode = false,
     this.maxPhotos = 3,
   });
@@ -312,6 +314,43 @@ class IncidentReportWidget extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // ✅ Yield Way Button (ตามแผน §4 Yield Way Feedback System)
+            GestureDetector(
+              onTap: onYieldWay,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF007AFF), Color(0xFF00C7BE)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.directions_car, color: Colors.white, size: 22),
+                    SizedBox(width: 10),
+                    Text(
+                      'ช่วยกดปุ่ม "ให้ทาง" (Yield Way)',
+                      style: TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

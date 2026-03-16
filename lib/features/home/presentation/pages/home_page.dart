@@ -1682,7 +1682,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 border: Border.all(color: Colors.white30),
                               ),
                               child: const Text(
-                                'เหตุอื่น',
+                                'ดูเหตุอื่น',
                                 style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                               ),
                             ),
@@ -1697,7 +1697,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               border: Border.all(color: Colors.white30),
                             ),
                             child: const Text(
-                              'เหตุฉุกเฉิน',
+                              'วิเคราะห์เหตุนี้',
                               style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                             ),
                           ),
