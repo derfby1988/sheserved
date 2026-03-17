@@ -29,14 +29,14 @@ class VideoPlayerWidget extends StatelessWidget {
     return AspectRatio(
       aspectRatio: aspectRatio,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(40),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
           child: Container(
             width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.1), // โปร่งใสขึ้นอีก (10%)
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(40),
               border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
               boxShadow: [
                 BoxShadow(
@@ -150,33 +150,41 @@ class VideoPlayerWidget extends StatelessWidget {
                     // เปลี่ยนเป็นการบอกสถานะว่ามีการเบลอใบหน้าสงวนสิทธิ์ส่วนบุคคลแล้วที่ไฟล์วิดีโอ (Server-side)
                     if (!canViewUnblurred)
                       Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.face_retouching_off, color: Colors.amber, size: 14),
-                              SizedBox(width: 6),
-                              Text(
-                                'สงวนสิทธิ์ภาพบุคคล (Face Blur)',
-                                style: TextStyle(
-                                  color: Colors.amber,
-                                  fontSize: 10,
-                                  fontFamily: 'SukhumvitSet',
-                                  fontWeight: FontWeight.bold,
+                        top: 12,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.3), // More transparent
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                            ),
+                            child: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.face_retouching_off, color: Colors.white, size: 14),
+                                SizedBox(width: 6),
+                                Text(
+                                  'สิทธิ์ภาพบุคคล (Face Blur)',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 9, // Slightly smaller default
+                                    fontFamily: 'SukhumvitSet',
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
+                    ),
                   ],
                 );
               },

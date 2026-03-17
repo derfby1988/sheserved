@@ -54,9 +54,21 @@ class _RescuePageState extends State<RescuePage> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+    _initCompass();
+  }
+
+  void _initCompass() {
+    // ALWAYS cancel existing subscription first to prevent leaks
+    _compassSub?.cancel();
+    _compassSub = null;
+    
+    if (!_isAssisting) return;
     _compassSub = FlutterCompass.events?.listen((event) {
       if (mounted) {
-        setState(() => _deviceHeading = event.heading);
+        // Throttle to 1 degree to reduce UI rebuilds
+        if (_deviceHeading == null || (event.heading! - _deviceHeading!).abs() > 1.0) {
+          setState(() => _deviceHeading = event.heading);
+        }
       }
     });
   }
@@ -147,6 +159,7 @@ class _RescuePageState extends State<RescuePage> {
       _currentAssistingStatus = 'accepted';
       _activeEmergencies.remove(alert); 
     });
+    _initCompass(); // Start compass
     
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -255,6 +268,7 @@ class _RescuePageState extends State<RescuePage> {
           _activeResponseId = null;
           _markers.clear();
           _polylines.clear();
+          _compassSub?.cancel(); // Stop compass
         } else {
           _currentAssistingStatus = newStatus;
         }

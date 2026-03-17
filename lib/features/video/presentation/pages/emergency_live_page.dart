@@ -175,14 +175,25 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
     _loadInitialData();
-    _startResponderTracking();
-    _initCompass();
+    _startResponderTracking(); // This will now also init the compass if appropriate
+    _initCompass(); // Keep call but we will add conditions inside _initCompass
   }
 
   void _initCompass() {
+    // ALWAYS cancel existing subscription first to prevent leaks
+    _compassSub?.cancel();
+    _compassSub = null;
+
+    // Only listen to compass if we are a responder to reduce native log noise (D/FlutterCompass)
+    if (_currentResponseId == null) return;
+    
     _compassSub = FlutterCompass.events?.listen((event) {
       if (mounted && event.heading != null) {
-        setState(() => _deviceHeading = event.heading);
+        // Throttle updates: only setState if heading change is > 1.0 degree
+        // to reduce UI rebuilds and terminal log noise.
+        if (_deviceHeading == null || (event.heading! - _deviceHeading!).abs() > 1.0) {
+          setState(() => _deviceHeading = event.heading);
+        }
       }
     });
   }
@@ -233,7 +244,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             'speed': position.speed,
             'heading': position.heading,
           });
-          debugPrint('EmergencyLivePage: Location emitted for volunteer=$userId');
+            // debugPrint('EmergencyLivePage: Location emitted for volunteer=$userId'); // Reduced noise
         }
       }
     });
@@ -819,7 +830,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     return false;
   }
 
-  /// กดตอบรับการช่วยเหลือ
+  /// กดตอบรับการช่วยเหลือ 
   Future<void> _acceptRescue() async {
     if (_currentVideoId == null || !mounted) return;
     final userId = AuthService.instance.currentUser?.id;
@@ -833,12 +844,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         latitude: _userLocation?.latitude,
         longitude: _userLocation?.longitude,
       );
-
       if (mounted) {
         setState(() {
           _currentResponseId = responseId;
           _checkPrivacyPermissions(); // ✅ ปลดล็อกวิดีโอทันทีเมื่อรับงาน
-          
+          _initCompass(); // ✅ เริ่มต้นเข็มทิศเมื่อเป็นผู้ช่วยเหลือแล้ว
+        });
+      }
+
           // 1.5 เพิ่มตัวเองลงในรายชื่อผู้ตอบรับทันทีเพื่อความรวดเร็วในการแสดงผล
           final user = AuthService.instance.currentUser;
           if (user != null && _userLocation != null) {
@@ -855,8 +868,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               'estimatedMinutes': 0,
             });
           }
-        });
-
+        
         // 2. บอก Server ผ่าน WebSocket ว่าเราตอบรับแล้ว
         final socket = WebSocketService().socket;
         if (socket != null && socket.connected) {
@@ -881,8 +893,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             behavior: SnackBarBehavior.floating,
           ),
         );
-      }
-    } catch (e) {
+      } catch (e) {
       debugPrint('Error accepting rescue: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

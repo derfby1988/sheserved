@@ -138,8 +138,8 @@ class WebSocketService {
       
       _socket!.onConnectError((error) {
         _isConnected = false;
-        // แสดง error เฉพาะครั้งแรกหรือเมื่อมีการ subscribe error stream
-        if (_connectionAttempts <= 1) {
+        // แสดง error เฉพาะครั้งแรกๆ เพื่อลด log noise ใน terminal
+        if (_connectionAttempts <= 3) {
           debugPrint('WebSocket connection error: $error');
           debugPrint('Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)');
         }
@@ -148,7 +148,7 @@ class WebSocketService {
       
       // Location Events
       _socket!.on('location-updated', (data) {
-        debugPrint('Location updated: $data');
+        // debugPrint('Location updated: $data'); // Removed to reduce terminal noise
         _locationController.add(Map<String, dynamic>.from(data));
       });
 
@@ -187,7 +187,7 @@ class WebSocketService {
 
       // Emergency Event
       _socket!.on('emergency-notification', (data) {
-        debugPrint('Emergency notification received: $data');
+        // debugPrint('Emergency notification received: $data'); // Reduced logging
         _emergencyNotificationController.add(Map<String, dynamic>.from(data));
       });
 
