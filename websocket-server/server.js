@@ -389,20 +389,37 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // 2c. ดึง user ที่มี profession ตรงและเปิด volunteer_active
-        const { data: volunteers, error: userError } = await supabase
+        // 2c. ดึง user ที่มี profession ตรงและเปิด volunteer_active (แยก Query เพื่อเลี่ยงปัญหา Relationship และ RLS)
+        const { data: roles, error: roleError } = await supabase
           .from('user_group_roles')
-          .select('user_id, consumer_profiles!inner(is_volunteer_active)')
-          .in('profession_id', volunteerProfIds)
-          .eq('consumer_profiles.is_volunteer_active', true);
+          .select('user_id')
+          .in('profession_id', volunteerProfIds);
 
-        if (userError) {
-          console.warn('[Emergency] ⚠️  Volunteer query failed → broadcast fallback:', userError.message);
+        if (roleError) {
+          console.warn('[Emergency] ⚠️  Role query failed → broadcast fallback:', roleError.message);
           io.emit('emergency-notification', notificationPayload);
           return;
         }
 
-        const targetUserIds = (volunteers || []).map(v => v.user_id);
+        const potentialUserIds = (roles || []).map(r => r.user_id);
+        if (potentialUserIds.length === 0) {
+          console.warn('[Emergency] ⚠️  No users found with these professions');
+          return;
+        }
+
+        const { data: activeProfiles, error: profileError } = await supabase
+          .from('consumer_profiles')
+          .select('user_id')
+          .in('user_id', potentialUserIds)
+          .eq('is_volunteer_active', true);
+
+        if (profileError) {
+          console.warn('[Emergency] ⚠️  Profile query failed → broadcast fallback:', profileError.message);
+          io.emit('emergency-notification', notificationPayload);
+          return;
+        }
+
+        const targetUserIds = (activeProfiles || []).map(p => p.user_id);
         console.log(`[Emergency] Target volunteers (${targetUserIds.length}): ${JSON.stringify(targetUserIds)}`);
 
         // 2d. ส่งเฉพาะ volunteer ที่เกี่ยวข้อง (และไม่ใช่ผู้แจ้งเหตุเอง)

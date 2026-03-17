@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
@@ -45,6 +46,8 @@ class _ProfilePageState extends State<ProfilePage> {
   List<prof.Profession> _allVolunteerProfessions = [];
   Set<String> _selectedUnblurredIds = {};
   bool _isLoadingProfessions = false;
+  bool _isSavingUnblurred = false; // สถานะการบันทึกสิทธิ์ดูวิดีโอ
+  String? _selectedCategory; // หมวดหมู่ที่กำลังเลือกอยู่
 
   @override
   void initState() {
@@ -77,7 +80,22 @@ class _ProfilePageState extends State<ProfilePage> {
           _dynamicData = data['dynamicData'];
           _thaiMhungEnabled = _user?.isThaiMhungEnabled ?? true;
           _alertRadius = _user?.alertRadius ?? 500;
-          _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+          _alertRadius = _user?.alertRadius ?? 500;
+          
+          // โหลดค่า unblurred_profession_ids จาก dynamicData (user_registration_data) 
+          // เพื่อความเข้ากันได้ 100% กับ Supabase Cloud โดยไม่ต้องแก้ Schema ตารางหลัก
+          final unblurredRaw = _dynamicData['unblurred_profession_ids'];
+          if (unblurredRaw != null && unblurredRaw.isNotEmpty) {
+            try {
+              final List<dynamic> decoded = json.decode(unblurredRaw);
+              _selectedUnblurredIds = Set<String>.from(decoded.map((e) => e.toString()));
+            } catch (e) {
+              _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+            }
+          } else {
+            _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+          }
+
           _initControllers();
           _isLoading = false;
         });
@@ -678,24 +696,39 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final response = await Supabase.instance.client
           .from('professions')
-          .select('id, name, color_hex, is_volunteer, is_active')
+          .select('''
+            id, name, color_hex, is_volunteer, is_active, category,
+            category_data:user_categories!professions_category_fkey(*)
+          ''')
           .eq('is_active', true)
-          .eq('is_volunteer', true)
           .order('display_order');
       if (mounted) {
         setState(() {
           _allVolunteerProfessions = (response as List).map((json) {
+            // Handle category safely
+            prof.UserCategory category;
+            if (json['category_data'] != null) {
+              category = prof.UserCategory.fromJson(json['category_data']);
+            } else {
+              category = prof.UserCategory.fromString(json['category'] ?? 'consumer');
+            }
+
             return prof.Profession(
               id: json['id'] ?? '',
               name: json['name'] ?? '',
               colorHex: json['color_hex'],
               isVolunteer: json['is_volunteer'] ?? false,
-              category: prof.UserCategory.fromString('provider'),
+              category: category,
               isActive: json['is_active'] ?? true,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
             );
           }).toList();
+
+          // ตั้งค่าเริ่มต้นเป็นกลุ่มแรกหากยังไม่ได้เลือก
+          if (_allVolunteerProfessions.isNotEmpty && _selectedCategory == null) {
+            _selectedCategory = _allVolunteerProfessions.first.category.id;
+          }
           _isLoadingProfessions = false;
         });
       }
@@ -732,7 +765,16 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.visibility, color: Colors.red, size: 18),
+                child: _isSavingUnblurred
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                        ),
+                      )
+                    : const Icon(Icons.visibility, color: Colors.red, size: 18),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -757,14 +799,44 @@ class _ProfilePageState extends State<ProfilePage> {
             const Center(child: CircularProgressIndicator())
           else if (_allVolunteerProfessions.isEmpty)
             Text(
-              'ไม่พบรายการอาชีพจิตอาสา',
+              'ไม่พบรายการอาชีพ',
               style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
             )
-          else
+          else ...[
+            // 1. ส่วนเลือกกลุ่มอาชีพ (Category Selector)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _getUniqueCategories().map((cat) {
+                  final isSelected = _selectedCategory == cat.id;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(cat.displayName),
+                      selected: isSelected,
+                      onSelected: (val) {
+                        if (val) setState(() => _selectedCategory = cat.id);
+                      },
+                      selectedColor: AppColors.primary.withValues(alpha: 0.1),
+                      labelStyle: AppTextStyles.bodySmall.copyWith(
+                        color: isSelected ? AppColors.primary : Colors.grey,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            // 2. ส่วนเลือกอาชีพในกลุ่มที่เลือก (Professions in Selected Category)
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _allVolunteerProfessions.map((p) {
+              children: _allVolunteerProfessions
+                  .where((p) => p.category.id == _selectedCategory)
+                  .map((p) {
                 final isSelected = _selectedUnblurredIds.contains(p.id);
                 Color chipColor = AppColors.primary;
                 if (p.colorHex != null && p.colorHex!.isNotEmpty) {
@@ -785,36 +857,60 @@ class _ProfilePageState extends State<ProfilePage> {
                     color: isSelected ? chipColor : Colors.grey[300]!,
                     width: isSelected ? 1.5 : 1,
                   ),
-                  onSelected: (val) {
-                    setState(() {
-                      if (val) {
-                        _selectedUnblurredIds.add(p.id);
-                      } else {
-                        _selectedUnblurredIds.remove(p.id);
-                      }
-                    });
-                    _saveUnblurredProfessions();
-                  },
+                  onSelected: _isSavingUnblurred
+                      ? null
+                      : (val) {
+                          setState(() {
+                            if (val) {
+                              _selectedUnblurredIds.add(p.id);
+                            } else {
+                              _selectedUnblurredIds.remove(p.id);
+                            }
+                          });
+                          _saveUnblurredProfessions();
+                        },
                 );
               }).toList(),
             ),
-          const SizedBox(height: 8),
-          Text(
-            'หมายเหตุ: อาชีพที่ไม่ได้เลือกจะเห็นเพียงภาพเบลอ (Privacy Mode)',
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 11),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              'หมายเหตุ: อาชีพที่ไม่ได้เลือกจะเห็นเพียงภาพเบลอ (Privacy Mode)',
+              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 11),
+            ),
+          ],
         ],
       ),
     );
   }
 
+  /// ดึงหมวดหมู่ที่ไม่ซ้ำกันจากรายการอาชีพทั้งหมด
+  List<prof.UserCategory> _getUniqueCategories() {
+    final categories = <prof.UserCategory>[];
+    final seen = <String>{};
+    for (var p in _allVolunteerProfessions) {
+      if (!seen.contains(p.category.id)) {
+        seen.add(p.category.id);
+        categories.add(p.category);
+      }
+    }
+    // เรียงตาม displayOrder เพื่อให้ตรงกับหน้าจัดการ (Admin)
+    categories.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    return categories;
+  }
+
   Future<void> _saveUnblurredProfessions() async {
     if (_user == null) return;
+    setState(() => _isSavingUnblurred = true);
     try {
-      await Supabase.instance.client.from('consumer_profiles').upsert({
+      // บันทึกลงตาราง user_registration_data ซึ่งเป็นตารางแบบ Dynamic Key-Value
+      // วิธีนี้จะทำให้ข้อมูลถูกบันทึกสำเร็จแน่นอนทั้งใน Local และ Supabase Cloud โดยไม่ต้องกังวลเรื่องคอลัมน์ขาดหาย
+      await Supabase.instance.client.from('user_registration_data').upsert({
         'user_id': _user!.id,
-        'unblurred_profession_ids': _selectedUnblurredIds.toList(),
-      }, onConflict: 'user_id');
+        'field_id': 'unblurred_profession_ids',
+        'field_value': json.encode(_selectedUnblurredIds.toList()),
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id,field_id');
+
       // อัพเดต local session
       AuthService.instance.login(_user!.copyWith(
         unblurredProfessionIds: _selectedUnblurredIds.toList(),
@@ -822,6 +918,10 @@ class _ProfilePageState extends State<ProfilePage> {
       debugPrint('ProfilePage: ✅ Saved unblurred professions: $_selectedUnblurredIds');
     } catch (e) {
       debugPrint('ProfilePage: ❌ Error saving unblurred professions: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingUnblurred = false);
+      }
     }
   }
 

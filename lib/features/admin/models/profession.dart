@@ -93,6 +93,8 @@ class UserCategory {
       return const UserCategory(id: consumerId, name: 'Consumer');
     } else if (value == providerId || value == 'provider') {
       return const UserCategory(id: providerId, name: 'Provider');
+    } else if (value == localLeaderId || value == 'local_leader') {
+      return const UserCategory(id: localLeaderId, name: 'Local Leader');
     }
     return UserCategory(id: value, name: value);
   }
