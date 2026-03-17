@@ -166,7 +166,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       debugPrint('HomePage: Received emergency notification: $data');
 
-      // 0. Self-Reporter Exclusion (ห้ามแจ้งเตือนผู้แจ้งเหตุเอง)
+      // 0. Self-Reporter Exclusion (ผู้แจ้งไม่ต้องเห็นการ์ดแจ้งเตือนตัวเอง)
+      // นโยบายผู้แจ้งไม่ต้องได้รับหรือเห็นการ์ดแจ้งเตือนของตัวเอง (อิงตามที่ผู้แจ้งเหตุแจ้งไว้)
       final reporterId = data['userId']?.toString() ?? 
                          data['user_id']?.toString() ?? 
                          data['senderId']?.toString() ?? 

@@ -18,7 +18,7 @@ class ViewerCountWidget extends StatelessWidget {
           'กำลังรับชม',
           style: TextStyle(
             fontFamily: 'SukhumvitSet',
-            fontSize: 28, // Increased for impact
+            fontSize: 22, // Adjusted to fit in one line
             fontWeight: FontWeight.w800,
             color: Color(0xFFFF6B35), // Orange from mockup
             letterSpacing: -0.5,

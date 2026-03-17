@@ -54,239 +54,267 @@ class IncidentReportWidget extends StatelessWidget {
     final bool categorySelected = selectedEmergencyCategoryId != null;
     final bool canRecord = categorySelected && !isLoadingCategories;
 
+    final screenSize = MediaQuery.of(context).size;
+    final maxPreviewHeight = screenSize.height * 0.75;
+    
+    // คำนวณขนาด Preview แบบ Dynamic (ทางเลือกที่ 3)
+    double previewWidth = screenSize.width - 32; // หัก padding ซ้ายขวาอย่างละ 16
+    double previewHeight = 280; // ค่าเริ่มต้นก่อนที่กล้องจะ Initialize เสร็จ
+
+    if (cameraController != null && cameraController!.value.isInitialized) {
+      final double cameraAspectRatio = cameraController!.value.aspectRatio;
+      
+      // กรณีแนวตั้ง (Portrait): aspectRatio มักจะน้อยกว่า 1 (เช่น 0.56 สำหรับ 9:16)
+      // กรณีแนวนอน (Landscape): aspectRatio มักจะมากกว่า 1 (เช่น 1.77 สำหรับ 16:9)
+      // CameraPreview ของ Flutter มักจะคืนค่าเป็นกว้าง/สูงของเซนเซอร์
+      double calculatedHeight = previewWidth / cameraAspectRatio;
+
+      // ปรับปรุง: ตรวจสอบความสูงไม่ให้เกิน 75% ของหน้าจอ
+      if (calculatedHeight > maxPreviewHeight) {
+        previewHeight = maxPreviewHeight;
+        previewWidth = previewHeight * cameraAspectRatio;
+      } else {
+        previewHeight = calculatedHeight;
+      }
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 10),
-          Container(
-            height: 280,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.black87,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isRecording ? Colors.red : (categorySelected ? Colors.green : Colors.white24),
-                width: isRecording ? 2.5 : 1.5,
-              ),
-            ),
-            child: Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: cameraController != null && cameraController!.value.isInitialized
-                      ? SizedBox.expand(child: CameraPreview(cameraController!))
-                      : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
+          Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: previewHeight,
+              width: previewWidth,
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isRecording ? Colors.red : (categorySelected ? Colors.green : Colors.white24),
+                  width: isRecording ? 2.5 : 1.5,
                 ),
-                if (!isRecording && prepCountdown == 0)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+              ),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: cameraController != null && cameraController!.value.isInitialized
+                        ? SizedBox.expand(child: CameraPreview(cameraController!))
+                        : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
+                  ),
+                  if (!isRecording && prepCountdown == 0)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(14),
+                            bottomRight: Radius.circular(14),
+                          ),
                         ),
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(14),
-                          bottomRight: Radius.circular(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: categorySelected ? Colors.green : Colors.red.shade700,
+                                  ),
+                                  child: Center(
+                                    child: categorySelected
+                                        ? const Icon(Icons.check, color: Colors.white, size: 13)
+                                        : const Text('!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  categorySelected
+                                      ? 'ประเภท: ${selectedEmergencyCategory?.name ?? ""}'
+                                      : 'เลือกประเภทเหตุฉุกเฉิน',
+                                  style: TextStyle(
+                                    color: categorySelected ? Colors.greenAccent : Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (isLoadingCategories)
+                              const SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            else if (emergencyCategories.isEmpty)
+                              GestureDetector(
+                                onTap: onLoadCategories,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white24,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.refresh, color: Colors.white, size: 14),
+                                      SizedBox(width: 6),
+                                      Text('โหลดใหม่', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: emergencyCategories.map((cat) {
+                                    final selected = selectedEmergencyCategoryId == cat.id;
+                                    return GestureDetector(
+                                      onTap: () => onCategorySelected(cat),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 150),
+                                        margin: const EdgeInsets.only(right: 8),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: selected ? Colors.red : Colors.black54,
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: selected ? Colors.red.shade300 : Colors.white38,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          cat.name,
+                                          style: TextStyle(
+                                            color: selected ? Colors.white : Colors.white70,
+                                            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: categorySelected ? Colors.green : Colors.red.shade700,
-                                ),
-                                child: Center(
-                                  child: categorySelected
-                                      ? const Icon(Icons.check, color: Colors.white, size: 13)
-                                      : const Text('!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                categorySelected
-                                    ? 'ประเภท: ${selectedEmergencyCategory?.name ?? ""}'
-                                    : 'เลือกประเภทเหตุฉุกเฉิน',
-                                style: TextStyle(
-                                  color: categorySelected ? Colors.greenAccent : Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (isLoadingCategories)
-                            const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          else if (emergencyCategories.isEmpty)
+                    ),
+                  if (!isRecording && prepCountdown == 0 && !isThaiMhungMode)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             GestureDetector(
-                              onTap: onLoadCategories,
+                              onTap: () => onModeChanged(false),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: !isPhotoMode ? Colors.red : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
                                 ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.refresh, color: Colors.white, size: 14),
-                                    SizedBox(width: 6),
-                                    Text('โหลดใหม่', style: TextStyle(color: Colors.white, fontSize: 12)),
-                                  ],
-                                ),
-                              ),
-                            )
-                          else
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: emergencyCategories.map((cat) {
-                                  final selected = selectedEmergencyCategoryId == cat.id;
-                                  return GestureDetector(
-                                    onTap: () => onCategorySelected(cat),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 150),
-                                      margin: const EdgeInsets.only(right: 8),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: selected ? Colors.red : Colors.black54,
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: selected ? Colors.red.shade300 : Colors.white38,
-                                          width: 1.5,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        cat.name,
-                                        style: TextStyle(
-                                          color: selected ? Colors.white : Colors.white70,
-                                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
+                                child: const Text('วิดีโอ', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                               ),
                             ),
-                        ],
+                            GestureDetector(
+                              onTap: () => onModeChanged(true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isPhotoMode ? Colors.red : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: const Text('ภาพถ่าย', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                if (!isRecording && prepCountdown == 0 && !isThaiMhungMode)
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
+                  if (prepCountdown > 0)
+                    Container(
                       decoration: BoxDecoration(
                         color: Colors.black54,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () => onModeChanged(false),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: !isPhotoMode ? Colors.red : Colors.transparent,
-                                borderRadius: BorderRadius.circular(7),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$prepCountdown',
+                              style: const TextStyle(fontSize: 80, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            const Text('กำลังเริ่มบันทึก...', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (isRecording)
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.red, width: 1.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
                               ),
-                              child: const Text('Video', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
-                          ),
-                          GestureDetector(
-                            onTap: () => onModeChanged(true),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: isPhotoMode ? Colors.red : Colors.transparent,
-                                borderRadius: BorderRadius.circular(7),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${(recordingTimeLeft ~/ 60).toString().padLeft(2, '0')}:${(recordingTimeLeft % 60).toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
+                                fontSize: 14,
                               ),
-                              child: const Text('Photo', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                if (prepCountdown > 0)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '$prepCountdown',
-                            style: const TextStyle(fontSize: 80, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                          const Text('กำลังเริ่มบันทึก...', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (isRecording)
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.red, width: 1.5),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${(recordingTimeLeft ~/ 60).toString().padLeft(2, '0')}:${(recordingTimeLeft % 60).toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           if (isThaiMhungMode) ...[

@@ -331,6 +331,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             }
           }
         });
+        
+        // ✅ ตรวจสอบสิทธิความเป็นส่วนตัวอีกครั้งหลังจากได้ข้อมูลวิดีโอ (เพื่อให้ _isEligibleResponder ทำงานได้ถูกต้อง)
+        _checkPrivacyPermissions();
       }
       
       if (video != null && video.previewUrl != null) {
@@ -517,8 +520,25 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     if (mounted) {
       setState(() {
         _canViewUnblurred = false; // Reset first
-        // Owners can always see their own original video
+        
+        // 1. สิทธิเจ้าของหรือผู้แจ้งเหตุ
         if (isOwner) _canViewUnblurred = true;
+
+        // 2. จิตอาสาที่ได้รับสิทธิ (ตรงตามหมวดหมู่) หรือผู้ที่รับงานแล้ว
+        // เราเช็ค profession mapping ตรงๆ เพื่อความชัวร์ (เผื่อ _isEligibleResponder คืนค่า false เพราะรับงานแล้ว)
+        final user = AuthService.instance.currentUser;
+        if (user != null && _currentVideo != null) {
+          final catId = _currentVideo!.categoryId;
+          final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
+          
+          if (category != null && category.volunteerProfessionIds.contains(user.professionId)) {
+            debugPrint('EmergencyLivePage: Volunteer profession matches category -> Unblurred view');
+            _canViewUnblurred = true;
+          }
+        }
+        
+        // 3. ถ้าเข้ารับความช่วยเหลืออยู่แล้ว
+        if (_currentResponseId != null) _canViewUnblurred = true;
       });
     }
 
@@ -591,10 +611,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       _loadTrendingVideos();
       
       // Show snackbar for new alerts - EXCEPT for the reporter (Self-Reporter Exclusion)
-      final currentUserId = AuthService.instance.currentUser?.id;
+      final currentUserId = AuthService.instance.userId?.toString();
       final reporterId = data['userId']?.toString() ?? data['senderId']?.toString();
+      final bool isSelfReport = (reporterId != null && currentUserId != null) && 
+                                (reporterId.trim() == currentUserId.trim());
       
-      if (mounted && data['videoId'] != _currentVideoId && reporterId != currentUserId) {
+      if (mounted && data['videoId'] != _currentVideoId && !isSelfReport) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('🛑 เหตุฉุกเฉินใหม่: ${data['categoryName'] ?? "ไม่ระบุ"}'),
@@ -768,6 +790,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     // ถ้าเข้ารับความช่วยเหลืออยู่แล้ว ไม่ต้องแสดงปุ่ม Accept อีก
     if (_currentResponseId != null) return false;
 
+    // ✅ เจ้าของเหตุการณ์ไม่ต้องเห็นกล่องตอบรับการช่วยเหลือของตัวเอง
+    final currentUserId = AuthService.instance.userId?.toString();
+    final ownerId = _currentVideo?.userId?.toString();
+    final authedUserId = user.id.toString();
+    final isOwner = (ownerId != null) && 
+                    (ownerId.trim() == authedUserId.trim() || 
+                     (currentUserId != null && ownerId.trim() == currentUserId.trim()));
+    if (isOwner) return false;
+
     // ตรวจสอบจากหมวดหมู่เหตุฉุกเฉิน
     final catId = _currentVideo?.categoryId;
     final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
@@ -806,6 +837,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       if (mounted) {
         setState(() {
           _currentResponseId = responseId;
+          _checkPrivacyPermissions(); // ✅ ปลดล็อกวิดีโอทันทีเมื่อรับงาน
           
           // 1.5 เพิ่มตัวเองลงในรายชื่อผู้ตอบรับทันทีเพื่อความรวดเร็วในการแสดงผล
           final user = AuthService.instance.currentUser;
@@ -1319,6 +1351,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           _currentVideoId = videoId;
           _currentVideo = newVideo;
         });
+
+        // ✅ เรียกใช้งานฟังก์ชันที่จำเป็นทันทีโดยไม่ต้องรอ WebSocket หรือ API Sync
+        _initializePlayer(file.path, isLocal: true);
+        _checkPrivacyPermissions();
       }
 
       // Trigger Notification
@@ -1420,160 +1456,160 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               ),
             ),
 
-          // === Layer 2: All Overlays ===
-          SafeArea(
-            left: false,
-            right: false,
-            child: Column(
-              children: [
-                if (!_isConnected) const OfflineIndicatorWidget(),
-                
-                // Header section removed
+          Positioned.fill(
+            child: SafeArea(
+              left: false,
+              right: false,
+              child: Column(
+                children: [
+                  if (!_isConnected) const OfflineIndicatorWidget(),
+                  
+                  // 2. Back Button (Green arrow)
+                  const ControlBackButtonWidget(),
 
-                // 2. Back Button (Green arrow)
-                const ControlBackButtonWidget(),
-
-                // 3. Main Split Content based on Tab (Index 0: Live, 1: Relation, 2: Report)
-                Expanded(
-                  child: _selectedTab == 0
-                      ? (_isThaiMhungReporting 
-                          ? IncidentReportWidget(
-                              isRecording: _isRecording,
-                              isLoadingCategories: _isLoadingCategories,
-                              prepCountdown: _prepCountdown,
-                              recordingTimeLeft: _recordingTimeLeft,
-                              isPhotoMode: _isPhotoMode,
-                              capturedPhotos: _capturedPhotos,
-                              selectedEmergencyCategoryId: _selectedEmergencyCategoryId,
-                              selectedEmergencyCategory: _selectedEmergencyCategory,
-                              emergencyCategories: _emergencyCategories,
-                              cameraController: _cameraController,
-                              onTakePhoto: _takePhoto,
-                              onSendPhotos: _sendPhotos,
-                              onLongPressDownVideo: _onLongPressDownVideo,
-                              onLongPressEndCancelVideo: _onLongPressEndCancelVideo,
-                              onCategorySelected: (DonationCategory cat) => setState(() {
-                                _selectedEmergencyCategoryId = cat.id;
-                                _selectedEmergencyCategory = cat;
-                              }),
-                              onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
-                              onLoadCategories: _loadEmergencyCategories,
-                              onYieldWay: _yieldWay,
-                              isThaiMhungMode: true,
-                            )
-                          : LiveViewWidget(
-                              chewieController: _chewieController,
-                              currentVideoId: _currentVideoId,
-                              currentVideo: _currentVideo,
-                              formattedViewerCount: _formatCount(_viewerCount),
-                              likeCountFormatted: _formatCount(_likeCount),
-                              donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
-                              trendingVideos: _trendingVideos,
-                              isLoadingTrending: _isLoadingTrending,
-                              canViewUnblurred: _canViewUnblurred,
-                              onLike: () async {
-                                final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
-                                if (_currentVideoId != null) {
-                                  try {
-                                    final interaction = VideoInteraction(
-                                      id: '',
-                                      videoId: _currentVideoId!,
-                                      userId: userId,
-                                      type: 'like',
-                                      createdAt: DateTime.now(),
-                                    );
-                                    await ServiceLocator.instance.videoRepository.addInteraction(interaction);
-                                  } catch (e) {
-                                    debugPrint('Error sending like: $e');
-                                  }
-                                }
-                              },
-                              onDonate: _showDonationSheet,
-                              onSwitchVideo: _switchVideo,
-                            ))
-                      : _selectedTab == 1
-                          ? GestureDetector(
-                              onTap: () => setState(() {
-                                _selectedTab = 0;
-                                _isThaiMhungReporting = false;
-                              }),
-                              behavior: HitTestBehavior.translucent,
-                              child: const RelationshipViewWidget(),
-                            )
-                          : GestureDetector(
-                              onTap: () => setState(() {
-                                _selectedTab = 0;
-                                _isThaiMhungReporting = false;
-                              }),
-                              behavior: HitTestBehavior.translucent,
-                              child: IncidentReportWidget(
-                              isRecording: _isRecording,
-                              isLoadingCategories: _isLoadingCategories,
-                              prepCountdown: _prepCountdown,
-                              recordingTimeLeft: _recordingTimeLeft,
-                              isPhotoMode: _isPhotoMode,
-                              capturedPhotos: _capturedPhotos,
-                              selectedEmergencyCategoryId: _selectedEmergencyCategoryId,
-                              selectedEmergencyCategory: _selectedEmergencyCategory,
-                              emergencyCategories: _emergencyCategories,
-                              cameraController: _cameraController,
-                              onTakePhoto: _takePhoto,
-                              onSendPhotos: _sendPhotos,
-                              onLongPressDownVideo: _onLongPressDownVideo,
-                              onLongPressEndCancelVideo: _onLongPressEndCancelVideo,
-                              onCategorySelected: (DonationCategory cat) => setState(() {
-                                _selectedEmergencyCategoryId = cat.id;
-                                _selectedEmergencyCategory = cat;
-                              }),
-                              onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
-                              onLoadCategories: _loadEmergencyCategories,
-                              onYieldWay: () {}, // Not used in incident report tab
-                            ),
-                          ),
-                ),
-
-                // 4. Rescue Control Panel (Only if viewing target video + has responseId)
-                if (_currentResponseId != null && _selectedTab == 0)
-                   RescueControlPanelWidget(
-                     onOpenInMaps: _openInGoogleMaps,
-                     onUpdateStatus: _updateRescueStatus,
-                   ),
-
-                // 4.5. Rescue Accept Panel (If eligible responder and not accepted yet)
-                if (_isEligibleResponder() && _selectedTab == 0)
-                  RescueAcceptPanelWidget(
-                    onAccept: _acceptRescue,
+                  // 3. Main Split Content based on Tab (Index 0: Live, 1: Relation, 2: Report)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: _selectedTab == 0
+                          ? (_isThaiMhungReporting 
+                              ? IncidentReportWidget(
+                                  isRecording: _isRecording,
+                                  isLoadingCategories: _isLoadingCategories,
+                                  prepCountdown: _prepCountdown,
+                                  recordingTimeLeft: _recordingTimeLeft,
+                                  isPhotoMode: _isPhotoMode,
+                                  capturedPhotos: _capturedPhotos,
+                                  selectedEmergencyCategoryId: _selectedEmergencyCategoryId,
+                                  selectedEmergencyCategory: _selectedEmergencyCategory,
+                                  emergencyCategories: _emergencyCategories,
+                                  cameraController: _cameraController,
+                                  onTakePhoto: _takePhoto,
+                                  onSendPhotos: _sendPhotos,
+                                  onLongPressDownVideo: _onLongPressDownVideo,
+                                  onLongPressEndCancelVideo: _onLongPressEndCancelVideo,
+                                  onCategorySelected: (DonationCategory cat) => setState(() {
+                                    _selectedEmergencyCategoryId = cat.id;
+                                    _selectedEmergencyCategory = cat;
+                                  }),
+                                  onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
+                                  onLoadCategories: _loadEmergencyCategories,
+                                  onYieldWay: _yieldWay,
+                                  isThaiMhungMode: true,
+                                )
+                              : LiveViewWidget(
+                                  chewieController: _chewieController,
+                                  currentVideoId: _currentVideoId,
+                                  currentVideo: _currentVideo,
+                                  formattedViewerCount: _formatCount(_viewerCount),
+                                  likeCountFormatted: _formatCount(_likeCount),
+                                  donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
+                                  trendingVideos: _trendingVideos,
+                                  isLoadingTrending: _isLoadingTrending,
+                                  canViewUnblurred: _canViewUnblurred,
+                                  onLike: () async {
+                                    final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
+                                    if (_currentVideoId != null) {
+                                      try {
+                                        final interaction = VideoInteraction(
+                                          id: '',
+                                          videoId: _currentVideoId!,
+                                          userId: userId,
+                                          type: 'like',
+                                          createdAt: DateTime.now(),
+                                        );
+                                        await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+                                      } catch (e) {
+                                        debugPrint('Error sending like: $e');
+                                      }
+                                    }
+                                  },
+                                  onDonate: _showDonationSheet,
+                                  onSwitchVideo: _switchVideo,
+                                ))
+                          : _selectedTab == 1
+                              ? GestureDetector(
+                                  onTap: () => setState(() {
+                                    _selectedTab = 0;
+                                    _isThaiMhungReporting = false;
+                                  }),
+                                  behavior: HitTestBehavior.translucent,
+                                  child: const RelationshipViewWidget(),
+                                )
+                              : GestureDetector(
+                                  onTap: () => setState(() {
+                                    _selectedTab = 0;
+                                    _isThaiMhungReporting = false;
+                                  }),
+                                  behavior: HitTestBehavior.translucent,
+                                  child: IncidentReportWidget(
+                                  isRecording: _isRecording,
+                                  isLoadingCategories: _isLoadingCategories,
+                                  prepCountdown: _prepCountdown,
+                                  recordingTimeLeft: _recordingTimeLeft,
+                                  isPhotoMode: _isPhotoMode,
+                                  capturedPhotos: _capturedPhotos,
+                                  selectedEmergencyCategoryId: _selectedEmergencyCategoryId,
+                                  selectedEmergencyCategory: _selectedEmergencyCategory,
+                                  emergencyCategories: _emergencyCategories,
+                                  cameraController: _cameraController,
+                                  onTakePhoto: _takePhoto,
+                                  onSendPhotos: _sendPhotos,
+                                  onLongPressDownVideo: _onLongPressDownVideo,
+                                  onLongPressEndCancelVideo: _onLongPressEndCancelVideo,
+                                  onCategorySelected: (DonationCategory cat) => setState(() {
+                                    _selectedEmergencyCategoryId = cat.id;
+                                    _selectedEmergencyCategory = cat;
+                                  }),
+                                  onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
+                                  onLoadCategories: _loadEmergencyCategories,
+                                  onYieldWay: () {}, // Not used in incident report tab
+                                ),
+                              ),
+                    ),
                   ),
 
-                // Bottom Tabs (Live, ความสัมพันธ์, แจ้งเหตุ)
-                BottomTabsWidget(
-                  selectedTab: _selectedTab,
-                  blinkAnimation: _liveBlinkController,
-                  showThaiMhung: _currentVideoId != null, 
-                  onTabSelected: (index) {
-                    if (index == 0) {
-                      _onThaiMhungTabSelected();
-                    } else {
+                  // 4. Rescue Control Panel (Only if viewing target video + has responseId)
+                  if (_currentResponseId != null && _selectedTab == 0)
+                     RescueControlPanelWidget(
+                       onOpenInMaps: _openInGoogleMaps,
+                       onUpdateStatus: _updateRescueStatus,
+                     ),
+
+                  // 4.5. Rescue Accept Panel (If eligible responder and not accepted yet)
+                  if (_isEligibleResponder() && _selectedTab == 0)
+                    RescueAcceptPanelWidget(
+                      onAccept: _acceptRescue,
+                    ),
+
+                  BottomTabsWidget(
+                    selectedTab: _selectedTab,
+                    blinkAnimation: _liveBlinkController,
+                    showThaiMhung: _currentVideoId != null, 
+                    onTabSelected: (index) {
+                      if (index == 0) {
+                        _onThaiMhungTabSelected();
+                      } else {
+                        setState(() {
+                          _selectedTab = index;
+                          _isThaiMhungReporting = false;
+                        });
+                      }
+                    },
+                    onEmergencyTabSelected: () async {
                       setState(() {
-                        _selectedTab = index;
+                        _selectedTab = 2;
                         _isThaiMhungReporting = false;
                       });
-                    }
-                  },
-                  onEmergencyTabSelected: () async {
-                    setState(() {
-                      _selectedTab = 2;
-                      _isThaiMhungReporting = false;
-                    });
-                    await _loadConfigFromDatabase();
-                    if (_emergencyCategories.isEmpty) {
-                      _loadEmergencyCategories();
-                    }
-                    _initCamera();
-                  },
-                ),
-                const SizedBox(height: 12),
-              ],
+                      await _loadConfigFromDatabase();
+                      if (_emergencyCategories.isEmpty) {
+                        _loadEmergencyCategories();
+                      }
+                      _initCamera();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
             ),
           ),
         ],

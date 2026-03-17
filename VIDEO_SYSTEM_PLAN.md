@@ -211,9 +211,12 @@ CREATE TABLE incident_responses (
 - **Bunny.net** - HLS streaming & Storage (Thailand PoP)
 
 ### Video Processing & Management
-- **FFmpeg**: Transcoding เป็น HLS
+- **Face Blurring (Privacy Mode)**: ใช้เครื่องมือ Open-Source `deface` (Python-based) ในการทำ Automated Face Anonymization ก่อนกระบวนการ Transcode เพื่อเบลอเฉพาะใบหน้าบุคคลในเหตุการณ์ 
+  - **Badge Visibility**: ผู้ใช้ทั่วไปหรือไทยมุงจะเห็นป้ายกำกับ "สงวนสิทธิ์ภาพบุคคล (Face Blur)" ที่มุมขวาบนของวิดีโอ 
+  - **Volunteer Privilege**: สำหรับผู้เป็นเจ้าของเหตุ หรือ **ผู้ได้รับสิทธิและผ่านระบบคัดกรองให้เป็นอาชีพจิตอาสา (Verified Volunteer)** ของเหตุการณ์นั้นๆ จะ **ไม่ต้องขึ้นป้ายกำกับนี้** เพราะถือว่ามีสิทธิประเมินร่องรอยและรายละเอียดบนวิดีโอในฐานะผู้ช่วยเหลือ
+- **FFmpeg**: Transcoding เป็น HLS (รองรับทั้งวิดีโอปกติและวิดีโอที่ผ่านการทำ Face Blur แล้ว)
 - **Priority Queue**: กำหนดให้ Emergency tasks รันก่อน
-- **Auto Cleanup**: ลบไฟล์หลังประมวลผลเสร็จสิ้น
+- **Auto Cleanup**: ลบไฟล์ชั่วคราวและไฟล์วิดีโอต้นฉบับหลังประมวลผลและอัปโหลดเสร็จสิ้น
 
 ## UI/UX Implementation Tips (Standard for Figma Design)
 
@@ -261,8 +264,9 @@ REDIS_URL=redis://localhost:6379
 - **Maps JavaScript API (Web)**: ป้องกันไม่ให้เปิดใช้งานเพื่อหลีกเลี่ยงค่าใช้จ่าย ($7/1,000 loads)
 - **ค่าใช้จ่ายรายเดือน**: **$0** (ภายใต้การจำกัดการใช้งานเฉพาะแอปมือถือ)
 
-### Self-hosted (FFmpeg, PostgreSQL, Queue)
+### Self-hosted (FFmpeg, PostgreSQL, Queue, Face Blur AI)
 - **ค่าใช้จ่าย**: $0 (รันบนเครื่องหลัก)
+- **Face Blur AI (`deface`)**: เป็นไลบรารี Open Source ฟรี 100% ไม่เสียค่าใช้งาน API แต่จะใช้ Computing Power (CPU/GPU) ของเครื่องเซิร์ฟเวอร์ค่อนข้างสูง หากในอนาคตมีผู้ใช้จำนวนมากอาจต้องพิจารณาอัปเกรดสเปคเครื่องหรือเปลี่ยนไปใช้ Cloud API ที่คิดตามการใช้งานจริง (Pay-per-use)
 
 ### Firebase Cloud Messaging (FCM)
 - **ค่าใช้จ่าย**: **$0** (FCM เปิดให้ใช้งานฟรีสำหรับการส่ง Push Notification ไปยัง Mobile Devices โดยไม่มีค่าใช้จ่ายในระดับการใช้งานทั่วไป)
@@ -472,9 +476,9 @@ REDIS_URL=redis://localhost:6379
 | **ไม่อยู่ในเงื่อนไข** | ❌ | ❌ | **ไม่แสดงผล** |
 
 ### 4. กฎการยกเว้นแจ้งเตือนตัวเอง (Self-Reporter Exclusion — Strict Policy)
-- **นโยบาย:** ระบบจะ **ไม่ทำการแจ้งเตือนทุกช่องทาง** (ทั้ง Stacked Cards และ Header Badge) ให้กับผู้ที่ส่งรายงานเหตุการณ์นั้นๆ ด้วยตนเอง (Self-Reporter)
-- **เงื่อนไขทางเทคนิค:** ตรวจสอบจาก `payload.userId != currentUser.id`
-- **หมายเหตุ:** กฎนี้มีผลบังคับใช้อย่างเคร่งครัดแม้ในโหมดทดสอบ เพื่อจำลองพฤติกรรมจริงของ Production เนื่องจากผู้ทดสอบสามารถใช้เครื่องสำรองหรือจำลองบัญชีอื่นมาทดสอบการรับแจ้งเตือนได้
+- **นโยบาย:** ระบบจะ **ไม่ทำการแจ้งเตือนทุกช่องทาง** (ทั้ง Stacked Cards และ Header Badge) ให้กับผู้ที่ส่งรายงานเหตุการณ์นั้นๆ ด้วยตนเอง (Self-Reporter) ไม่ให้เจ้าของ/ผู้แจ้งหน้าบ้านเห็นการ์ดของตัวเอง
+- **การติดตามผล:** หากแจ้งเหตุสำเร็จ (Upload Success) ระบบจะนำผู้แจ้งเข้าสู่ "ระบบแผนที่ติดตามโดยอัตโนมัติ" ในแถบ Command Center ทันที (ไม่ต้องพึ่ง Stacked Cards แจ้งเตือนแต่อย่างใด)
+- **เงื่อนไขทางเทคนิค:** ตรวจสอบจาก `payload.userId != currentUser.id` อย่างเคร่งครัด
 
 ---
 

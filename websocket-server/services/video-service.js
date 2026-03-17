@@ -1,5 +1,6 @@
 const { Queue, Worker } = require('bullmq');
 const ffmpeg = require('fluent-ffmpeg');
+const { execSync } = require('child_process');
 // ✅ ใช้ ENV แทน hardcoded path เพื่อรองรับ Linux/macOS/Windows
 // ตั้งค่าใน .env: FFMPEG_PATH=/usr/bin/ffmpeg (Linux) หรือ /opt/homebrew/bin/ffmpeg (macOS)
 // ถ้าไม่ตั้งค่าจะใช้ 'ffmpeg' จาก PATH ของระบบ
@@ -82,11 +83,34 @@ const worker = new Worker('video-processing', async (job) => {
         fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    console.log(`[Worker] Processing video ${videoId}: ${filePath}`);
+    let inputVideoPath = filePath;
+
+    console.log(`[Worker] Processing video ${videoId}: ${inputVideoPath}`);
     socketService.sendStatus(userId, videoId, 'processing');
 
+    // --- Face Blur (Open Source: deface) ---
+    // รันการเบลอหน้าด้วย python-deface ก่อนแปลงไฟล์
+    try {
+        const blurredPath = path.join(baseDir, `${videoId}_blurred.mp4`);
+        console.log(`[Worker] Applying Face Blur to ${videoId}...`);
+        
+        // Execute python-deface (assuming it's installed and in PATH)
+        // Command: deface input.mp4 -o output.mp4 --replacewith blur
+        const defaceCmd = `export PATH=$PATH:/Users/dave_macmini/Library/Python/3.9/bin && deface "${inputVideoPath}" -o "${blurredPath}" --replacewith blur --keep-audio`;
+        
+        execSync(defaceCmd, { stdio: 'pipe' });
+        
+        if (fs.existsSync(blurredPath)) {
+            console.log(`[Worker] Face Blur complete for ${videoId}`);
+            inputVideoPath = blurredPath; // Use the blurred video for transcoding
+        }
+    } catch (blurError) {
+        console.warn(`[Worker] Face Blur failed for ${videoId}, falling back to original video:`, blurError.message);
+        // Continue with original video if blur fails
+    }
+
     return new Promise((resolve, reject) => {
-        ffmpeg(filePath)
+        ffmpeg(inputVideoPath)
             .outputOptions([
                 '-profile:v baseline',
                 '-level 3.0',
@@ -132,6 +156,10 @@ const worker = new Worker('video-processing', async (job) => {
                     const keepOutputDir = isLocalUrl;
 
                     cleanup(filePath, outputDir, keepOutputDir);
+                    // Cleanup blurred file if it was created
+                    if (inputVideoPath !== filePath && fs.existsSync(inputVideoPath)) {
+                        fs.unlinkSync(inputVideoPath);
+                    }
                     resolve();
                 } catch (error) {
                     console.error('[Worker] Error after transcode:', error);

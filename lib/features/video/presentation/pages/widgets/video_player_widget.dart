@@ -103,9 +103,11 @@ class VideoPlayerWidget extends StatelessWidget {
                                               fontFamily: 'SukhumvitSet',
                                               color: Colors.white70,
                                               fontSize: statusFontSize)),
-                                    ] else if (currentVideo?.status ==
-                                            VideoStatus.processing ||
-                                        currentVideo?.status == VideoStatus.uploading) ...[
+                                    ] else if ((currentVideo?.status ==
+                                                VideoStatus.processing ||
+                                            currentVideo?.status ==
+                                                VideoStatus.uploading) &&
+                                        currentVideo?.localFilePath == null) ...[
                                       const Center(child: VideoProcessingBadge()), 
                                       SizedBox(height: spacing * 1.5),
                                       Text(
@@ -144,43 +146,34 @@ class VideoPlayerWidget extends StatelessWidget {
                               ),
                             ],
                           ),
+                    // ✅ ยกเลิกการเบลอทั้งวิดีโอ (Dynamic Blurring แบบเก่า)
+                    // เปลี่ยนเป็นการบอกสถานะว่ามีการเบลอใบหน้าสงวนสิทธิ์ส่วนบุคคลแล้วที่ไฟล์วิดีโอ (Server-side)
                     if (!canViewUnblurred)
-                      Positioned.fill(
-                        child: ClipRRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                                      ),
-                                      child: const Icon(Icons.visibility_off, color: Colors.white, size: 28),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 20),
-                                      child: Text(
-                                        'สิทธิ์การเข้าถึงจำกัด (Privacy Mode)\nเฉพาะอาชีพที่เหยื่อกำหนดจึงจะเห็นต้นฉบับ',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.face_retouching_off, color: Colors.amber, size: 14),
+                              SizedBox(width: 6),
+                              Text(
+                                'สงวนสิทธิ์ภาพบุคคล (Face Blur)',
+                                style: TextStyle(
+                                  color: Colors.amber,
+                                  fontSize: 10,
+                                  fontFamily: 'SukhumvitSet',
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ),

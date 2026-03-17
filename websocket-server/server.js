@@ -371,9 +371,9 @@ io.on('connection', (socket) => {
 
         if (catError || !category) {
           console.warn(`[Emergency] ⚠️  Category ${categoryId} not found in Supabase → broadcast fallback`);
-          // Fallback: broadcast ทุกคน แล้วให้ Flutter client กรองเอง
-          io.emit('emergency-notification', notificationPayload);
-          console.log(`[Emergency] ====== FALLBACK BROADCAST sent ======`);
+          // Fallback: broadcast ทุกคน (ยกเว้นผู้ส่ง) แล้วให้ Flutter client กรองเอง
+          socket.broadcast.emit('emergency-notification', notificationPayload);
+          console.log(`[Emergency] ====== FALLBACK BROADCAST sent (broadcast) ======`);
           return;
         }
 
@@ -383,9 +383,9 @@ io.on('connection', (socket) => {
 
         // 2b. ถ้า category ไม่มี volunteerProfessionIds → แสดงว่าเปิดทั่วไป
         if (!volunteerProfIds || volunteerProfIds.length === 0) {
-          console.log(`[Emergency] No profession mapping → broadcast to all`);
-          io.emit('emergency-notification', notificationPayload);
-          console.log(`[Emergency] ====== BROADCAST sent ======`);
+          console.log(`[Emergency] No profession mapping → broadcast to all (except sender)`);
+          socket.broadcast.emit('emergency-notification', notificationPayload);
+          console.log(`[Emergency] ====== BROADCAST sent (broadcast) ======`);
           return;
         }
 
@@ -405,16 +405,19 @@ io.on('connection', (socket) => {
         const targetUserIds = (volunteers || []).map(v => v.user_id);
         console.log(`[Emergency] Target volunteers (${targetUserIds.length}): ${JSON.stringify(targetUserIds)}`);
 
-        // 2d. ส่งเฉพาะ volunteer ที่เกี่ยวข้อง (Privacy First)
+        // 2d. ส่งเฉพาะ volunteer ที่เกี่ยวข้อง (และไม่ใช่ผู้แจ้งเหตุเอง)
         if (targetUserIds.length === 0) {
           console.warn('[Emergency] ⚠️  No active volunteers found for this category → silent (no broadcast)');
         } else {
           let sentCount = 0;
           targetUserIds.forEach(targetId => {
-            io.to(`user-${targetId}`).emit('emergency-notification', notificationPayload);
-            sentCount++;
+            // ✅ ไม่ส่งหาตัวเอง (ข้ามผู้แจ้งเหตุ)
+            if (targetId.toString() !== userId.toString()) {
+              io.to(`user-${targetId}`).emit('emergency-notification', notificationPayload);
+              sentCount++;
+            }
           });
-          console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} volunteers ======`);
+          console.log(`[Emergency] ====== ALERT COMPLETE: sent to ${sentCount} volunteers (excluded self) ======`);
         }
 
       } catch (err) {
@@ -425,10 +428,10 @@ io.on('connection', (socket) => {
 
     } else {
       // Supabase ไม่ได้ตั้งค่า หรือไม่มี categoryId
-      // → broadcast ทุกคน แล้วให้ Flutter client กรองเองตาม professionId + alertRadius
+      // → broadcast ทุกคน (ยกเว้นผู้ส่ง) แล้วให้ Flutter client กรองเองตาม professionId + alertRadius
       console.warn(`[Emergency] ⚠️  Supabase not configured or no categoryId → broadcast fallback`);
-      io.emit('emergency-notification', notificationPayload);
-      console.log(`[Emergency] ====== FALLBACK BROADCAST sent ======`);
+      socket.broadcast.emit('emergency-notification', notificationPayload);
+      console.log(`[Emergency] ====== FALLBACK BROADCAST sent (broadcast) ======`);
     }
   });
 
