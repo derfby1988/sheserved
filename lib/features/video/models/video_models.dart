@@ -1,3 +1,5 @@
+import '../../../../config/app_config.dart';
+
 /// Video Models สำหรับระบบวิดีโอ
 
 enum VideoType { normal, emergency }
@@ -95,6 +97,18 @@ class Video {
       return 0.0;
     }
 
+    DateTime parseDateTime(dynamic value) {
+      if (value == null) return AppConfig.currentUtc;
+      String s = value.toString();
+      DateTime? dt = DateTime.tryParse(s);
+      if (dt == null) return AppConfig.currentUtc;
+      // Force UTC if no offset is present in the string
+      if (!s.contains('Z') && !s.contains('+') && !dt.isUtc) {
+        return DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+      }
+      return dt;
+    }
+
     return Video(
       id: json['id']?.toString() ?? '',
       userId: json['user_id']?.toString() ?? '',
@@ -113,12 +127,8 @@ class Video {
         orElse: () => VideoStatus.processing,
       ),
       progress: parseInt(json['progress']),
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null
-          ? DateTime.tryParse(json['updated_at'].toString())
-          : null,
+      createdAt: parseDateTime(json['created_at']),
+      updatedAt: json['updated_at'] != null ? parseDateTime(json['updated_at']) : null,
       userName: json['user_name']?.toString(),
       userAvatar: json['user_avatar']?.toString(),
       userRole: json['user_role']?.toString(),
@@ -307,15 +317,24 @@ class VideoInteraction {
       return 0;
     }
 
+    DateTime parseDateTime(dynamic value) {
+      if (value == null) return AppConfig.currentUtc;
+      String s = value.toString();
+      DateTime? dt = DateTime.tryParse(s);
+      if (dt == null) return AppConfig.currentUtc;
+      if (!s.contains('Z') && !s.contains('+') && !dt.isUtc) {
+        return DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+      }
+      return dt;
+    }
+
     return VideoInteraction(
       id: json['id']?.toString() ?? '',
       videoId: json['video_id']?.toString() ?? '',
       userId: json['user_id']?.toString() ?? '',
       type: json['type']?.toString() ?? 'view',
       value: parseInt(json['value']),
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      createdAt: parseDateTime(json['created_at']),
     );
   }
 

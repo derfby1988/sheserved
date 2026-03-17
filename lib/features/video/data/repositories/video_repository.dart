@@ -171,7 +171,7 @@ class VideoRepository {
             'video_id': videoId,
             'volunteer_id': responderId,
             'status': 'en_route',
-            'accepted_at': DateTime.now().toIso8601String(),
+            'accepted_at': AppConfig.currentUtc.toIso8601String(),
             'volunteer_start_lat': latitude,
             'volunteer_start_lng': longitude,
           }, onConflict: 'video_id, volunteer_id');
@@ -193,7 +193,7 @@ class VideoRepository {
         'video_id': videoId,
         'volunteer_id': responderId,
         'status': 'en_route',
-        'accepted_at': DateTime.now().toIso8601String(),
+        'accepted_at': AppConfig.currentUtc.toIso8601String(),
         'volunteer_start_lat': latitude,
         'volunteer_start_lng': longitude,
       }).select('id').single();
@@ -222,7 +222,7 @@ class VideoRepository {
         'video_id': videoId,
         'volunteer_id': volunteerId,
         'status': 'accepted',
-        'accepted_at': DateTime.now().toIso8601String(),
+        'accepted_at': AppConfig.currentUtc.toIso8601String(),
         'volunteer_start_lat': startLat,
         'volunteer_start_lng': startLng,
       }).select('id').single();
@@ -340,7 +340,7 @@ class VideoRepository {
     );
 
     request.fields['userId'] = userId;
-    request.fields['title'] = 'Emergency Incident ${DateTime.now().toIso8601String()}';
+    request.fields['title'] = 'Emergency Incident ${AppConfig.thailandNow.toIso8601String()}';
     request.fields['type'] = 'emergency';
     if (categoryId != null) request.fields['categoryId'] = categoryId;
     request.fields['gpsTracks'] = jsonEncode(gpsTracks);
@@ -391,7 +391,7 @@ class VideoRepository {
     );
 
     request.fields['userId'] = userId;
-    request.fields['title'] = 'Emergency Incident Photos ${DateTime.now().toIso8601String()}';
+    request.fields['title'] = 'Emergency Incident Photos ${AppConfig.thailandNow.toIso8601String()}';
     request.fields['type'] = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
     // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
     request.fields['isThaiMhung'] = isThaiMhung.toString();
@@ -530,12 +530,12 @@ class VideoRepository {
   }) async {
     final Map<String, dynamic> updates = {
       'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': AppConfig.currentUtc.toIso8601String(),
     };
     
-    if (status == 'arrived') updates['arrived_at'] = DateTime.now().toIso8601String();
+    if (status == 'arrived') updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
     if (status == 'resolved' || status == 'cancelled') {
-        updates['resolved_at'] = DateTime.now().toIso8601String();
+        updates['resolved_at'] = AppConfig.currentUtc.toIso8601String();
     }
     if (notes != null) updates['notes'] = notes;
 

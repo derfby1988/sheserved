@@ -129,6 +129,19 @@ class AppConfig {
   static bool get useLocalDatabase =>
       databaseMode == DatabaseMode.localOnly ||
       databaseMode == DatabaseMode.unified;
+
+  /// Get current time in Thailand (GMT+7) forced
+  static DateTime get thailandNow => DateTime.now().toUtc().add(const Duration(hours: 7));
+
+  /// Get current UTC time
+  static DateTime get currentUtc => DateTime.now().toUtc();
+
+  /// Convert any DateTime to Thailand time (GMT+7)
+  /// If [dateTime] is already in Thailand time, this might double-convert if not careful.
+  /// But assuming inputs are UTC from DB.
+  static DateTime toThailand(DateTime dateTime) {
+    return dateTime.toUtc().add(const Duration(hours: 7));
+  }
 }
 
 /// Database Mode

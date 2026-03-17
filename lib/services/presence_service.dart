@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../features/auth/data/repositories/user_repository.dart';
+import 'package:sheserved/features/auth/data/repositories/user_repository.dart';
 
 /// PresenceService - จัดการสถานะ online ของผู้ใช้
 /// ส่ง heartbeat ทุก 60 วินาที เพื่ออัปเดต last_seen_at ใน Supabase
@@ -75,7 +75,7 @@ class PresenceService {
     try {
       final repo = UserRepository(Supabase.instance.client);
       await repo.updateLastSeen(_currentUserId!);
-      debugPrint('PresenceService: Heartbeat sent at ${DateTime.now()}');
+      // debugPrint('PresenceService: Heartbeat sent at ${DateTime.now()}');
     } catch (e) {
       debugPrint('PresenceService: Heartbeat error: $e');
     }

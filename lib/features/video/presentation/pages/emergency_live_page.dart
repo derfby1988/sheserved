@@ -6,6 +6,7 @@ import 'package:sheserved/features/home/presentation/widgets/background_permissi
 import '../../../../services/location_tracking_service.dart';
 
 import '../../../../config/sync_config.dart';
+import '../../../../config/app_config.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -101,6 +102,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   // Trending Videos
   List<Video> _trendingVideos = [];
   bool _isLoadingTrending = true;
+  String? _highlightVideoId;
 
   // Video Recording Limits & Timers
   static const int _prepSeconds = 3;
@@ -239,7 +241,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             'userId': userId,
             'latitude': position.latitude,
             'longitude': position.longitude,
-            'timestamp': DateTime.now().toIso8601String(),
+            'timestamp': AppConfig.currentUtc.toIso8601String(),
             'accuracy': position.accuracy,
             'speed': position.speed,
             'heading': position.heading,
@@ -494,7 +496,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         videoId: _currentVideoId!,
         userId: userId,
         type: 'view',
-        createdAt: DateTime.now(),
+        createdAt: AppConfig.currentUtc,
       );
       await ServiceLocator.instance.videoRepository.addInteraction(interaction);
     } catch (e) {
@@ -619,27 +621,20 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     // 3. New Emergency Alerts (to refresh trending list immediately)
     _emergencySub = ws.emergencyNotificationStream.listen((data) {
       debugPrint('EmergencyLivePage: Received emergency notification, refreshing trending list...');
-      _loadTrendingVideos();
       
-      // Show snackbar for new alerts - EXCEPT for the reporter (Self-Reporter Exclusion)
+      // Update highlight for new alerts - EXCEPT for the reporter (Self-Reporter Exclusion)
       final currentUserId = AuthService.instance.userId?.toString();
       final reporterId = data['userId']?.toString() ?? data['senderId']?.toString();
       final bool isSelfReport = (reporterId != null && currentUserId != null) && 
                                 (reporterId.trim() == currentUserId.trim());
       
       if (mounted && data['videoId'] != _currentVideoId && !isSelfReport) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🛑 เหตุฉุกเฉินใหม่: ${data['categoryName'] ?? "ไม่ระบุ"}'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'ดูเหตุการณ์',
-              textColor: Colors.white,
-              onPressed: () => _switchVideo(data['videoId']),
-            ),
-          ),
-        );
+        setState(() {
+          _highlightVideoId = data['videoId'];
+        });
+        _loadTrendingVideos();
+      } else {
+        _loadTrendingVideos();
       }
     });
 
@@ -923,6 +918,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     
     setState(() {
       _currentVideoId = newVideoId;
+      _highlightVideoId = null; // Clear highlight when watching or switching
       _currentVideo = null;
       _dbGpsTracks.clear();
       _routePoints.clear();
@@ -1351,7 +1347,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           status: VideoStatus.processing,
           latitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['latitude'] : 0.0,
           longitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['longitude'] : 0.0,
-          createdAt: DateTime.now(),
+          createdAt: AppConfig.currentUtc,
           localFilePath: file.path, 
           categoryId: _selectedEmergencyCategoryId,
           categoryName: _selectedEmergencyCategory?.name ?? 'เหตุฉุกเฉิน',
@@ -1516,6 +1512,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                                   donationTotalFormatted: '${_donationTotal.toStringAsFixed(0)}บ.',
                                   trendingVideos: _trendingVideos,
                                   isLoadingTrending: _isLoadingTrending,
+                                  highlightVideoId: _highlightVideoId,
                                   canViewUnblurred: _canViewUnblurred,
                                   onLike: () async {
                                     final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
@@ -1526,7 +1523,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                                           videoId: _currentVideoId!,
                                           userId: userId,
                                           type: 'like',
-                                          createdAt: DateTime.now(),
+                                          createdAt: AppConfig.currentUtc,
                                         );
                                         await ServiceLocator.instance.videoRepository.addInteraction(interaction);
                                       } catch (e) {
@@ -1859,7 +1856,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         videoId: _currentVideoId!,
         userId: userId,
         type: 'yield_way', // เป็น Interaction ประเภทใหม่ตามแผน
-        createdAt: DateTime.now(),
+        createdAt: AppConfig.currentUtc,
       );
       
       await ServiceLocator.instance.videoRepository.addInteraction(interaction);

@@ -621,7 +621,7 @@ class UserRepository {
           .neq('availability_status', 'offline')
           .gte('last_seen_at', threshold);
 
-      debugPrint('UserRepository: getOnlineProviderCounts found ${response.length} active providers');
+      // debugPrint('UserRepository: getOnlineProviderCounts found ${response.length} active providers');
 
       final Map<String, int> counts = {};
       for (final row in response) {

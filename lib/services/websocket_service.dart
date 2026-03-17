@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
+import '../config/app_config.dart';
 
 /// WebSocket Service for Real-time Communication
 /// Self-hosted WebSocket Server Connection
@@ -232,7 +233,7 @@ class WebSocketService {
       'userId': userId,
       'latitude': latitude,
       'longitude': longitude,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': AppConfig.thailandNow.toIso8601String(),
       if (accuracy != null) 'accuracy': accuracy,
       if (speed != null) 'speed': speed,
       if (heading != null) 'heading': heading,

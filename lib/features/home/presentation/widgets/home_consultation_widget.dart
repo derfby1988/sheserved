@@ -333,7 +333,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                     }
                                     
                                     if (providerSnapshot.hasData) {
-                                      debugPrint('HomeConsultationWidget: Stream update - providers: $providers, recipients: $recipients');
+                                      // debugPrint('HomeConsultationWidget: Stream update - providers: $providers, recipients: $recipients');
                                     }
                                     
                                     // Update ratio animation target if changed

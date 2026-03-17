@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:sheserved/config/app_config.dart';
 import '../../../models/video_models.dart';
 import 'video_skeleton_widget.dart';
 
-class TrendingPanelWidget extends StatelessWidget {
+class TrendingPanelWidget extends StatefulWidget {
   final List<Video> trendingVideos;
   final bool isLoadingTrending;
   final String? currentVideoId;
+  final String? highlightVideoId; // ID ของวิดีโอที่เป็นเหตุฉุกเฉินใหม่
   final Function(String) onSwitchVideo;
 
   const TrendingPanelWidget({
@@ -15,18 +17,65 @@ class TrendingPanelWidget extends StatelessWidget {
     required this.isLoadingTrending,
     required this.currentVideoId,
     required this.onSwitchVideo,
+    this.highlightVideoId,
   });
+
+  @override
+  State<TrendingPanelWidget> createState() => _TrendingPanelWidgetState();
+}
+
+class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTickerProviderStateMixin {
+  final ScrollController _scrollController = ScrollController();
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(TrendingPanelWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // ถ้ามี highlight ใหม่เข้ามา ให้เลื่อนขึ้นบนสุด
+    if (widget.highlightVideoId != null && 
+        widget.highlightVideoId != oldWidget.highlightVideoId) {
+      _scrollToTop();
+    }
+  }
+
+  void _scrollToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.elasticOut,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.6),
+        color: Colors.white.withOpacity(0.6),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
+            color: Colors.black.withOpacity(0.08),
             blurRadius: 30,
             offset: const Offset(0, 10),
           ),
@@ -53,9 +102,9 @@ class TrendingPanelWidget extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: isLoadingTrending
+            child: widget.isLoadingTrending
                 ? _buildSkeletonList()
-                : trendingVideos.isEmpty
+                : widget.trendingVideos.isEmpty
                     ? const Center(
                         child: Text(
                           'ไม่มีข้อมูล',
@@ -63,14 +112,16 @@ class TrendingPanelWidget extends StatelessWidget {
                         ),
                       )
                     : ListView.builder(
+                        controller: _scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        itemCount: trendingVideos.length,
+                        itemCount: widget.trendingVideos.length,
                         itemBuilder: (context, index) {
-                          final video = trendingVideos[index];
+                          final video = widget.trendingVideos[index];
+                          final bool isNewEmergency = video.id == widget.highlightVideoId;
                           
                           // จัดรูปแบบเวลา วัน/เดือน/ปี เวลา -> วันนี้/เมื่อวาน หรือ แปลง พ.ศ. และเดือนไทย
-                          final now = DateTime.now();
-                          final createdAt = video.createdAt;
+                          final now = AppConfig.thailandNow;
+                          final createdAt = AppConfig.toThailand(video.createdAt);
                           final isToday = now.year == createdAt.year && now.month == createdAt.month && now.day == createdAt.day;
                           final yesterday = now.subtract(const Duration(days: 1));
                           final isYesterday = yesterday.year == createdAt.year && yesterday.month == createdAt.month && yesterday.day == createdAt.day;
@@ -78,7 +129,15 @@ class TrendingPanelWidget extends StatelessWidget {
                           final timeStr = DateFormat('HH.mm').format(createdAt) + ' น.';
                           String dateStr = '';
                           
-                          if (isToday) {
+                          final diff = now.difference(createdAt);
+                          
+                          if (diff.inMinutes < 60 && diff.inMinutes >= 0) {
+                            if (diff.inMinutes == 0) {
+                              dateStr = 'เมื่อครู่นี้';
+                            } else {
+                              dateStr = '${diff.inMinutes} นาทีที่แล้ว';
+                            }
+                          } else if (isToday) {
                             dateStr = timeStr;
                           } else if (isYesterday) {
                             dateStr = 'เมื่อวาน $timeStr';
@@ -108,6 +167,10 @@ class TrendingPanelWidget extends StatelessWidget {
                           if (displayTitle.length > 30) {
                             displayTitle = '${displayTitle.substring(0, 30)}...';
                           }
+                          
+                          if (isNewEmergency) {
+                            displayTitle = '🚨 ใหม่: $displayTitle';
+                          }
 
                           final bool hasLocalPreview = video.localFilePath != null;
                           final bool isStillProcessing = video.status == VideoStatus.processing;
@@ -119,25 +182,47 @@ class TrendingPanelWidget extends StatelessWidget {
 
                           return GestureDetector(
                             onTap: () {
-                              if (video.id != currentVideoId) {
-                                onSwitchVideo(video.id);
+                              if (video.id != widget.currentVideoId) {
+                                widget.onSwitchVideo(video.id);
                               }
                             },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Colors.blueGrey[900],
-                                borderRadius: BorderRadius.circular(12),
-                                image: video.thumbnailUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(video.thumbnailUrl!),
-                                        fit: BoxFit.cover,
-                                        colorFilter: ColorFilter.mode(
-                                            Colors.black.withValues(alpha: 0.4), BlendMode.darken), // มืดลงหน่อยให้อ่านง่าย
-                                      )
-                                    : null,
-                              ),
+                            child: AnimatedBuilder(
+                              animation: _pulseController,
+                              builder: (context, child) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: isNewEmergency 
+                                        ? Colors.red.withOpacity(0.9 + (0.1 * _pulseController.value))
+                                        : Colors.blueGrey[900],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: isNewEmergency
+                                        ? Border.all(color: Colors.white, width: 2)
+                                        : null,
+                                    boxShadow: isNewEmergency
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.red.withOpacity(0.4),
+                                              blurRadius: 12 * _pulseController.value,
+                                              spreadRadius: 2 * _pulseController.value,
+                                            )
+                                          ]
+                                        : null,
+                                    image: video.thumbnailUrl != null
+                                        ? DecorationImage(
+                                            image: NetworkImage(video.thumbnailUrl!),
+                                            fit: BoxFit.cover,
+                                            colorFilter: ColorFilter.mode(
+                                                (isNewEmergency ? Colors.red : Colors.black)
+                                                    .withOpacity(0.4),
+                                                BlendMode.darken),
+                                          )
+                                        : null,
+                                  ),
+                                  child: child,
+                                );
+                              },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                                 child: FittedBox(
@@ -176,7 +261,7 @@ class TrendingPanelWidget extends StatelessWidget {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: Colors.orange.withValues(alpha: 0.85),
+                                            color: Colors.orange.withOpacity(0.85),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: const Text(
