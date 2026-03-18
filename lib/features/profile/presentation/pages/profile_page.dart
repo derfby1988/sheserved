@@ -697,11 +697,11 @@ class _ProfilePageState extends State<ProfilePage> {
       final response = await Supabase.instance.client
           .from('professions')
           .select('''
-            id, name, color_hex, is_volunteer, is_active, category,
+            id, name, color_hex, is_volunteer, is_active, category, display_order,
             category_data:user_categories!professions_category_fkey(*)
           ''')
           .eq('is_active', true)
-          .order('display_order');
+          .order('display_order'); // Order within categories
       if (mounted) {
         setState(() {
           _allVolunteerProfessions = (response as List).map((json) {
@@ -720,10 +720,18 @@ class _ProfilePageState extends State<ProfilePage> {
               isVolunteer: json['is_volunteer'] ?? false,
               category: category,
               isActive: json['is_active'] ?? true,
+              displayOrder: json['display_order'] ?? 0,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
             );
           }).toList();
+
+          // เรียงลำดับเพิ่มเติม: หมวดหมู่ (displayOrder) -> อาชีพ (displayOrder)
+          _allVolunteerProfessions.sort((a, b) {
+            final catCompare = a.category.displayOrder.compareTo(b.category.displayOrder);
+            if (catCompare != 0) return catCompare;
+            return a.displayOrder.compareTo(b.displayOrder);
+          });
 
           // ตั้งค่าเริ่มต้นเป็นกลุ่มแรกหากยังไม่ได้เลือก
           if (_allVolunteerProfessions.isNotEmpty && _selectedCategory == null) {

@@ -159,19 +159,58 @@ module.exports = (pool) => {
 
             lastUploadTimestamps.set(userIdFromRequest, now);
 
-            const { userId, title, description, categoryId, donationRequestId, gpsTracks } = req.body;
+            const { userId, title, description, categoryId, donationRequestId, gpsTracks, incidentId } = req.body;
 
             // ✅ ใช้ type ตาม mode จริง แทนที่จะ hardcode 'emergency_photo' เสมอ
             const videoType = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
 
-            const photoUrls = files.map(f => `/uploads/videos/${f.filename}`);
-
-            // 2. Insert into Database
+            // 2. Insert into Database first to get the videoId
             const videoId = uuidv4();
+            
+            // ✅ Organize files into subfolders
+            const baseDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
+            
+            // Structure: 
+            // - Regular: baseDir/[videoId]/photos/
+            // - Thai Mhung: baseDir/[incidentId]/thaimhung/[videoId]/
+            let reportDir;
+            if (isThaiMhung && incidentId) {
+                reportDir = path.join(baseDir, incidentId, 'thaimhung', videoId);
+            } else {
+                reportDir = path.join(baseDir, videoId);
+            }
+
+            if (!fs.existsSync(reportDir)) {
+                fs.mkdirSync(reportDir, { recursive: true });
+            }
+
+            const photoUrls = [];
+            const localApiUrl = process.env.LOCAL_API_URL || 'http://localhost:3000';
+            
+            for (const file of files) {
+                const newPath = path.join(reportDir, file.filename);
+                // Move file from root destDir to reportDir
+                fs.renameSync(file.path, newPath);
+                
+                // Construct URL correctly
+                let relativePath;
+                if (isThaiMhung && incidentId) {
+                    relativePath = `${incidentId}/thaimhung/${videoId}/${file.filename}`;
+                } else {
+                    relativePath = `${videoId}/${file.filename}`;
+                }
+                
+                // ✅ ใช้ full URL เพื่อให้ Client แสดงผลได้ทันที
+                photoUrls.push(`${localApiUrl}/temp/videos/${relativePath}`);
+            }
+
+            // ✅ Set first photo as bunny_url for basic preview support
+            const firstPhotoUrl = photoUrls.length > 0 ? photoUrls[0] : null;
+
             const result = await pool.query(
-                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'processing') RETURNING id`,
-                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls)]
+                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'processing') RETURNING *`,
+                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl]
             );
 
             const videoRecord = result.rows[0];
@@ -185,7 +224,7 @@ module.exports = (pool) => {
                             await pool.query(
                                 `INSERT INTO video_gps_tracks (video_id, latitude, longitude, timestamp_offset)
                                  VALUES ($1, $2, $3, $4)`,
-                                [videoRecord.id, track.latitude, track.longitude, track.timestampOffset]
+                                 [videoId, track.latitude, track.longitude, track.timestampOffset || 0]
                             );
                         }
                     }
@@ -194,14 +233,13 @@ module.exports = (pool) => {
                 }
             }
 
-            // 4. Mark as Ready directly since there's no transcoding needed for photos right now
-            await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoRecord.id]);
-            // ✅ ใช้ socketService แทน io โดยตรง เพื่อหลีกเลี่ยง ReferenceError
-            socketService.sendStatus(userId || userIdFromRequest, videoRecord.id, 'ready', { progress: 100 });
+            // 4. Mark as Ready डायरेक्टली
+            await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoId]);
+            socketService.sendStatus(userId || userIdFromRequest, videoId, 'ready', { progress: 100 });
 
             res.json({
                 message: `${modeName} photos upload successful (${files.length}/${quota})`,
-                video: videoRecord
+                video: { ...videoRecord, photo_urls: photoUrls }
             });
         } catch (error) {
             console.error('Upload Error:', error);

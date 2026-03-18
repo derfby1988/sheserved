@@ -52,9 +52,20 @@ function broadcastInteraction(videoId, interactionData) {
     io.to(`video-${videoId}`).emit('video-interaction', interactionData);
 }
 
+/**
+ * Broadcast emergency chat message to all participants in a video's chat room
+ * @param {string} videoId 
+ * @param {object} messageData 
+ */
+function broadcastEmergencyMessage(videoId, messageData) {
+    if (!io) return;
+    io.to(`emergency-chat-${videoId}`).emit('emergency-chat-message', messageData);
+}
+
 module.exports = {
     init,
     sendProgress,
     sendStatus,
-    broadcastInteraction
+    broadcastInteraction,
+    broadcastEmergencyMessage,  // ✅ export เพื่อให้ server.js เรียกใช้ได้
 };

@@ -5,7 +5,7 @@ import '../../models/profession.dart';
 import '../../data/repositories/profession_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../shared/widgets/tlz_drawer.dart';
-import '../../../../shared/widgets/tlz_hamburger_menu.dart';
+import '../../../../shared/widgets/tlz_app_top_bar.dart';
 
 /// หน้าจัดการหมวดหมู่ผู้ใช้ (Consumer, Provider, etc.)
 class UserCategoryAdminPage extends StatefulWidget {
@@ -53,28 +53,66 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
-      appBar: AppBar(
-        leading: const TlzHamburgerMenu(),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textOnPrimary,
-        title: const Text('จัดการหมวดหมู่ผู้ใช้'),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: Container(
+          color: AppColors.primary,
+          child: SafeArea(
+            child: TlzAppTopBar.onPrimary(
+              showQRButton: false,
+            ),
+          ),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadCategories,
-              child: ReorderableListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _categories.length,
-                onReorder: _onReorder,
-                itemBuilder: (context, index) {
-                  final category = _categories[index];
-                  return Container(
-                    key: ValueKey(category.id),
-                    child: _buildCategoryCard(category),
-                  );
-                },
-              ),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios_new, size: 24),
+                          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'จัดการหมวดหมู่ผู้ใช้',
+                          style: AppTextStyles.heading2.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadCategories,
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      itemCount: _categories.length,
+                      onReorder: _onReorder,
+                      itemBuilder: (context, index) {
+                        final category = _categories[index];
+                        return Container(
+                          key: ValueKey(category.id),
+                          child: _buildCategoryCard(category),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showEditorDialog(),
@@ -114,16 +152,26 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
             color: AppColors.primary,
           ),
         ),
-        title: Text(
-          category.name,
-          style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            category.name,
+            style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+          ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text('ID: ${category.id}', style: AppTextStyles.caption),
+                Flexible(
+                  child: Text(
+                    'ID: ${category.id}', 
+                    style: AppTextStyles.caption,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

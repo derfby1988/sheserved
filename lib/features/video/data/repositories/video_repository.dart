@@ -367,6 +367,7 @@ class VideoRepository {
     required List<Map<String, dynamic>> gpsTracks,
     String? categoryId,
     bool isThaiMhung = false,
+    String? incidentId,
   }) async {
     if (!canUpload) {
       throw Exception("Please wait before uploading again.");
@@ -396,6 +397,7 @@ class VideoRepository {
     // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
     request.fields['isThaiMhung'] = isThaiMhung.toString();
     if (categoryId != null) request.fields['categoryId'] = categoryId;
+    if (incidentId != null) request.fields['incidentId'] = incidentId;
     request.fields['gpsTracks'] = jsonEncode(gpsTracks);
 
     for (var file in photoFiles) {

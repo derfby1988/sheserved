@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
+import '../../../../donation/models/donation_models.dart';
+import '../../../models/video_models.dart';
 
 class RelationshipViewWidget extends StatelessWidget {
-  const RelationshipViewWidget({super.key});
+  final Video? currentVideo;
+  final Function(DonationCategory) onCategorySelected;
+  final VoidCallback onBackTap;
+
+  const RelationshipViewWidget({
+    super.key,
+    this.currentVideo,
+    required this.onCategorySelected,
+    required this.onBackTap,
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -227,6 +227,12 @@ CREATE TABLE incident_responses (
   - หลังการบริจาคสำเร็จ ให้ส่ง Event ผ่าน **Socket.io** เพื่อให้ระบบ Real-time Interactions แสดงข้อความขอบคุณหรือยอดรวมอัปเดตทันที
 - **Glassmorphism Overlay**: ใช้ `BackdropFilter` ใน Flutter ซ้อนทับหน้าจอวิดีโอเพื่อให้ได้ลุคตาม Figma
 - **Emergency Priority**: ในหน้า Dashboard ของเจ้าหน้าที่ วิดีโอประเภท `emergency` ต้องแสดงผลโดดเด่นและเข้าถึงง่ายที่สุด
+- **Floating Back Button Strategy**:
+  - **Layering**: ต้องวางไว้ที่ Layer บนสุดของ `Stack` หลัก (เหนือทั้ง Map และ UI Overlay) เพื่อป้องกันวิดีโอบัง
+  - **Visibility Logic**:
+    - แสดงผลเมื่อเปิดเครื่องมือควบคุม (`isUiVisible == true`)
+    - **ซ่อนอัตโนมัติ** เมื่ออยู่ในโหมดแจ้งเหตุ (`selectedTab == 2`) หรือโหมดไทยมุงแจ้งเหตุ (`isThaiMhungReporting == true`) เพื่อไม่ให้รบกวนหน้ากล้อง
+  - **Navigation**: ใช้สำหรับการย้อนกลับ (Standard Back Navigation) ไปยังหน้าก่อนหน้า
 
 ## Environment Variables
 

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class ControlBackButtonWidget extends StatelessWidget {
-  const ControlBackButtonWidget({super.key});
+  final VoidCallback? onBack;
+  const ControlBackButtonWidget({super.key, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -10,7 +11,7 @@ class ControlBackButtonWidget extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
+          onTap: onBack ?? () => Navigator.of(context).pop(),
           child: Container(
             padding: const EdgeInsets.all(4),
             child: const Icon(Icons.subdirectory_arrow_left_rounded, 
@@ -23,3 +24,4 @@ class ControlBackButtonWidget extends StatelessWidget {
     );
   }
 }
+

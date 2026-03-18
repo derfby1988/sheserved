@@ -12,6 +12,9 @@ class MapBackgroundWidget extends StatelessWidget {
   final int selectedTab;
   final Function(GoogleMapController) onMapCreated;
   final VoidCallback? onTap;
+  final bool isUiVisible;
+  final double? topPadding;
+  final double? bottomPadding;
 
   const MapBackgroundWidget({
     super.key,
@@ -23,6 +26,9 @@ class MapBackgroundWidget extends StatelessWidget {
     required this.selectedTab,
     required this.onMapCreated,
     this.onTap,
+    this.isUiVisible = true,
+    this.topPadding,
+    this.bottomPadding,
   });
 
   @override
@@ -104,7 +110,10 @@ class MapBackgroundWidget extends StatelessWidget {
       children: [
         GoogleMap(
           key: ValueKey('${currentVideoId}_${currentVideo?.longitude}'),
-          padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.2),
+          padding: EdgeInsets.only(
+            top: isUiVisible ? (topPadding ?? MediaQuery.of(context).size.height * 0.2) : 40.0,
+            bottom: isUiVisible ? (bottomPadding ?? 100.0) : 40.0,
+          ),
           onMapCreated: onMapCreated,
           initialCameraPosition: CameraPosition(
             target: routePoints.isNotEmpty
@@ -118,7 +127,10 @@ class MapBackgroundWidget extends StatelessWidget {
           trafficEnabled: true,
           compassEnabled: false,
           mapToolbarEnabled: false,
-          onTap: (_) => onTap?.call(),
+          onTap: (_) {
+            debugPrint("EMERGENCY_DEBUG: Google Map widget tapped");
+            onTap?.call();
+          },
           polylines: currentVideoId == null
               ? {}
               : {

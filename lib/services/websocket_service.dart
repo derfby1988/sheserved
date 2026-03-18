@@ -24,6 +24,7 @@ class WebSocketService {
   final _callAcceptController = StreamController<Map<String, dynamic>>.broadcast();
   final _callRejectController = StreamController<Map<String, dynamic>>.broadcast();
   final _webrtcSignalController = StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyChatController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Video Stream Controllers
   final _videoProgressController = StreamController<Map<String, dynamic>>.broadcast();
@@ -45,6 +46,7 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get callAcceptStream => _callAcceptController.stream;
   Stream<Map<String, dynamic>> get callRejectStream => _callRejectController.stream;
   Stream<Map<String, dynamic>> get webrtcSignalStream => _webrtcSignalController.stream;
+  Stream<Map<String, dynamic>> get emergencyChatStream => _emergencyChatController.stream;
   
   // Video Getters
   Stream<Map<String, dynamic>> get videoProgressStream => _videoProgressController.stream;
@@ -195,6 +197,10 @@ class WebSocketService {
       _socket!.on('rescue-incoming', (data) {
         debugPrint('Rescue incoming notification received: $data');
         _rescueIncomingController.add(Map<String, dynamic>.from(data));
+      });
+      
+      _socket!.on('emergency-chat-message', (data) {
+        _emergencyChatController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -374,6 +380,48 @@ class WebSocketService {
     });
     debugPrint('Sent rescue status update: $status for video: $videoId');
   }
+
+  /// Join Emergency Chat Room
+  void joinEmergencyChat(String videoId, String userId, String role) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('join-emergency-chat', {
+      'videoId': videoId,
+      'userId': userId,
+      'role': role,
+    });
+  }
+
+  /// Leave Emergency Chat Room
+  void leaveEmergencyChat(String videoId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('leave-emergency-chat', {'videoId': videoId});
+  }
+
+  /// สั่งให้ Server ย้ายข้อความแชทไปกองเก็บที่ Archive (ใช้เมื่อจบเหตุการณ์)
+  void archiveEmergencyChat(String videoId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('archive-chat', {'videoId': videoId});
+  }
+
+  /// Send Emergency Chat Message
+  void sendEmergencyChatMessage({
+    required String videoId,
+    required String userId,
+    required String role,
+    required String userName,
+    required String content,
+    String? profileImageUrl,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('send-emergency-message', {
+      'videoId': videoId,
+      'userId': userId,
+      'role': role,
+      'userName': userName,
+      'content': content,
+      'profileImageUrl': profileImageUrl,
+    });
+  }
   
   /// Disconnect from server
   void disconnect() {
@@ -443,6 +491,7 @@ class WebSocketService {
     _videoInteractionController.close();
     _emergencyNotificationController.close();
     _rescueIncomingController.close();
+    _emergencyChatController.close();
   }
 
   /// Send rescue status update

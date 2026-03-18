@@ -2,10 +2,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class DonationSheetWidget extends StatelessWidget {
+  final String videoId;
   final Function(int amount) onDonate;
 
   const DonationSheetWidget({
     super.key,
+    required this.videoId,
     required this.onDonate,
   });
 

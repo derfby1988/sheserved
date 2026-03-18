@@ -493,6 +493,11 @@ io.on('connection', (socket) => {
     if (status === 'cancelled') {
       io.emit('rescue-cancelled', { videoId, volunteerId });
     }
+
+    // 4. Archive chat if resolved or cancelled to save space in main tables
+    if (pool && (status === 'resolved' || status === 'cancelled')) {
+      await archiveChatMessages(videoId, status);
+    }
   });
 
   // Handle UI Preference Updates
@@ -512,6 +517,201 @@ io.on('connection', (socket) => {
       }
     }
   });
+
+  // Handle Emergency Live Chat
+  // -------------------------
+  socket.on('join-emergency-chat', (data) => {
+    const { videoId, userId, role } = data;
+    const roomName = `emergency-chat-${videoId}`;
+    socket.join(roomName);
+    console.log(`[Chat] User ${userId} (${role}) joined ${roomName}`);
+    
+    // Optionally notify others
+    socket.to(roomName).emit('emergency-chat-presence', { userId, role, status: 'joined' });
+  });
+
+  socket.on('leave-emergency-chat', (data) => {
+    const { videoId, userId } = data;
+    const roomName = `emergency-chat-${videoId}`;
+    socket.leave(roomName);
+    console.log(`[Chat] User ${userId} left ${roomName}`);
+  });
+
+  socket.on('send-emergency-message', async (data) => {
+    const { videoId, userId, role, userName, content, profileImageUrl } = data;
+    console.log(`[Chat] Message in ${videoId} from ${userName} (${role}): ${content}`);
+
+    const messagePayload = {
+      id: require('crypto').randomUUID(), // ✅ UUID แทน Date.now() เพื่อป้องกัน ID ชนกัน
+      videoId,
+      userId,
+      role,
+      userName,
+      content,
+      profileImageUrl,
+      timestamp: new Date().toISOString()
+    };
+
+    // 1. Broadcast to everyone in the room (including sender)
+    socketService.broadcastEmergencyMessage(videoId, messagePayload);
+
+    // 2. Persist to DB (using chat_rooms and chat_messages logic)
+    if (pool && videoId && userId) {
+      try {
+        // Find or create a room for this video
+        let roomId;
+        const roomCheck = await pool.query(
+          'SELECT id FROM chat_rooms WHERE video_id = $1',
+          [videoId]
+        );
+
+        if (roomCheck.rows.length > 0) {
+          roomId = roomCheck.rows[0].id;
+        } else {
+          // Create room. participant_ids will be updated as people join or just keep it open
+          const newRoom = await pool.query(
+            "INSERT INTO chat_rooms (video_id, participant_ids, created_at, updated_at) VALUES ($1, $2, NOW(), NOW()) RETURNING id",
+            [videoId, [userId]]
+          );
+          roomId = newRoom.rows[0].id;
+        }
+
+        // Save message
+        await pool.query(
+          `INSERT INTO chat_messages (id, room_id, sender_id, content, created_at, metadata)
+           VALUES ($1, $2, $3, $4, NOW(), $5)`,
+          [messagePayload.id, roomId, userId, content, JSON.stringify({ role, userName, profileImageUrl })]
+        );
+
+        // Update room's last message
+        await pool.query(
+          "UPDATE chat_rooms SET last_message = $1, updated_at = NOW() WHERE id = $2",
+          [content, roomId]
+        );
+      } catch (err) {
+        console.error('[Chat] Failed to persist message:', err.message);
+      }
+    }
+  });
+  // Manual Archive Trigger (optional use)
+  socket.on('archive-chat', async (data) => {
+    const { videoId } = data;
+    if (pool && videoId) {
+      console.log(`[Archive] Manual archiving requested for video ${videoId}`);
+      await archiveChatMessages(videoId, 'manual');
+    }
+  });
+});
+
+async function archiveChatMessages(videoId, status) {
+  if (!pool) return;
+  try {
+    // Copy messages to archive
+    await pool.query(
+      `INSERT INTO chat_messages_archive (id, room_id, video_id, sender_id, content, created_at, metadata)
+       SELECT m.id, m.room_id, r.video_id, m.sender_id, m.content, m.created_at, m.metadata
+       FROM chat_messages m
+       JOIN chat_rooms r ON m.room_id = r.id
+       WHERE r.video_id = $1
+       ON CONFLICT (id) DO NOTHING`,
+      [videoId]
+    );
+    // Delete from active messages
+    await pool.query(
+      `DELETE FROM chat_messages WHERE room_id IN (SELECT id FROM chat_rooms WHERE video_id = $1)`,
+      [videoId]
+    );
+    // Mark room as archived
+    await pool.query(
+      `UPDATE chat_rooms SET last_message = $1, updated_at = NOW() WHERE video_id = $2`,
+      [`[Archived: ${status}]`, videoId]
+    );
+    console.log(`[Archive] Video ${videoId} archived successfully (${status})`);
+  } catch (err) {
+    console.error(`[Archive] Failed to archive video ${videoId}:`, err.message);
+  }
+}
+
+// ============================================================
+// Emergency Chat History API
+// GET /api/videos/:videoId/chat  — โหลดประวัติแชท (active)
+// GET /api/videos/:videoId/chat/archived — โหลดแชทที่ archive แล้ว
+// ============================================================
+
+app.get('/api/videos/:videoId/chat', async (req, res) => {
+  const { videoId } = req.params;
+  const limit = parseInt(req.query.limit) || 50;
+
+  try {
+    if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+    const result = await pool.query(
+      `SELECT
+         m.id,
+         m.room_id,
+         r.video_id           AS "videoId",
+         m.sender_id          AS "userId",
+         m.content,
+         m.created_at         AS "timestamp",
+         m.metadata->>'role'         AS role,
+         m.metadata->>'userName'     AS "userName",
+         m.metadata->>'profileImageUrl' AS "profileImageUrl"
+       FROM chat_messages m
+       JOIN chat_rooms r ON m.room_id = r.id
+       WHERE r.video_id = $1
+       ORDER BY m.created_at ASC
+       LIMIT $2`,
+      [videoId, limit]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[Chat History] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
+  const { videoId } = req.params;
+  const limit = parseInt(req.query.limit) || 100;
+
+  try {
+    if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+    const result = await pool.query(
+      `SELECT
+         a.id,
+         a.video_id           AS "videoId",
+         a.sender_id          AS "userId",
+         a.content,
+         a.created_at         AS "timestamp",
+         a.metadata->>'role'         AS role,
+         a.metadata->>'userName'     AS "userName",
+         a.metadata->>'profileImageUrl' AS "profileImageUrl"
+       FROM chat_messages_archive a
+       WHERE a.video_id = $1
+       ORDER BY a.created_at ASC
+       LIMIT $2`,
+      [videoId, limit]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[Chat Archive History] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/chat/archive/:videoId — Manual archive trigger via REST
+app.post('/api/chat/archive/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  try {
+    if (!pool) return res.status(503).json({ error: 'Database not available' });
+    await archiveChatMessages(videoId, 'manual-api');
+    res.json({ success: true, message: `Chat archived for video ${videoId}` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Health check endpoint
