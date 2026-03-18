@@ -107,6 +107,7 @@ class EmergencyUiOverlay extends StatelessWidget {
                     showThaiMhung: hasVideo, 
                     onTabSelected: onTabSelected,
                     onEmergencyTabSelected: onEmergencyTabSelected,
+                    isChatVisible: isChatVisible,
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -119,24 +120,25 @@ class EmergencyUiOverlay extends StatelessWidget {
   }
 
   Widget _buildChatButton() {
+    if (isChatVisible) return const SizedBox.shrink(); // ⬅️ ซ่อนปุ่มถ้าแชทเปิดอยู่
+
     return GestureDetector(
       onTap: onToggleChat,
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isChatVisible ? Colors.blueAccent : Colors.black.withOpacity(0.5),
+          color: Colors.black.withValues(alpha: 0.5),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
         ),
-        child: Stack(
+        child: const Stack(
           clipBehavior: Clip.none,
           children: [
             Icon(
-              isChatVisible ? Icons.forum : Icons.forum_outlined,
+              Icons.forum_outlined,
               color: Colors.white,
               size: 24,
             ),
-            // Potential notification badge here later
           ],
         ),
       ),

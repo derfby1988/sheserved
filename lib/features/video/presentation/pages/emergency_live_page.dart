@@ -151,8 +151,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
+      body: GestureDetector(
+        onTap: () {
+          if (_isChatVisible) {
+            FocusScope.of(context).unfocus();
+          }
+        },
+        behavior: HitTestBehavior.translucent,
+        child: Stack(
+          children: [
           // Layer 1: Background layers (Map, Compass, Gallery, Back Button)
           EmergencyMapSection(
             currentVideoId: _currentVideoId,
@@ -216,7 +223,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             onOpenInMaps: _openInGoogleMaps,
             onUpdateStatus: _updateRescueStatus,
             onAcceptRescue: _acceptRescue,
-            onToggleUi: () => setState(() => _isUiVisible = !_isUiVisible),
+            onToggleUi: () {
+              if (_isChatVisible) {
+                FocusScope.of(context).unfocus();
+              } else {
+                setState(() => _isUiVisible = !_isUiVisible);
+              }
+            },
             onToggleChat: () => setState(() => _isChatVisible = !_isChatVisible),
             isChatVisible: _isChatVisible,
             content: _buildMainContent(),
@@ -236,12 +249,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           if (_isChatVisible && _currentVideoId != null && _isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting)
             Positioned(
               right: 16,
-              // เหนือปุ่ม Forum/Chat (ซึ่งอยู่ใน Row > Padding ใน Overlay) 
-              // กะจาก bottom tabs + button padding = ~160
-              bottom: 180, 
-              width: MediaQuery.of(context).size.width * 0.42, // กว้างประมาณชิดขวา
-              height: MediaQuery.of(context).size.height * 0.38, // สูงไม่เกินยอดนิยม (ประมาณครึ่งจอล่าง)
-              child: EmergencyChatWidget(
+              // วางชิดด้านล่างขวาของจอ (ระดับเดียวกับปุ่ม Tab ที่เลื่อนไปซ้าย)
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+              width: MediaQuery.of(context).size.width * 0.55, // ขยายกล่องให้กว้างขึ้นหน่อยเมื่ออยู่ด้านล่าง
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.25,
+                ),
+                child: EmergencyChatWidget(
+                key: ValueKey(_currentVideoId!), // ผูก key ให้สร้างใหม่เมื่อเปลี่ยนเหตุการณ์
                 videoId: _currentVideoId!,
                 userId: AuthService.instance.userId ?? 'unknown',
                 userName: AuthService.instance.currentUser?.fullName ?? 'Anonymous',
@@ -249,8 +265,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                 profileImageUrl: AuthService.instance.currentUser?.profileImageUrl,
                 onClose: () => setState(() => _isChatVisible = false),
               ),
+              ),
             ),
         ],
+      ),
       ),
     );
   }

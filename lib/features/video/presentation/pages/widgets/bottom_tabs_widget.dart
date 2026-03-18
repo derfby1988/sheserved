@@ -7,6 +7,7 @@ class BottomTabsWidget extends StatelessWidget {
   final bool showThaiMhung;
   final Function(int) onTabSelected;
   final VoidCallback onEmergencyTabSelected;
+  final bool isChatVisible;
 
   const BottomTabsWidget({
     super.key,
@@ -15,6 +16,7 @@ class BottomTabsWidget extends StatelessWidget {
     this.showThaiMhung = true,
     required this.onTabSelected,
     required this.onEmergencyTabSelected,
+    this.isChatVisible = false,
   });
 
   @override
@@ -25,18 +27,40 @@ class BottomTabsWidget extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: isChatVisible ? MainAxisAlignment.start : MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Live Tab
           if (showThaiMhung) ...[
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: maxButtonSize,
-                    maxWidth: maxButtonSize,
+            if (isChatVisible)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
+                child: GlassTabButton(
+                  label: 'ไทยมุง',
+                  isActive: selectedTab == 0,
+                  leading: AnimatedBuilder(
+                    animation: blinkAnimation,
+                    builder: (context, child) {
+                      return Container(
+                        width: 8, height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color.lerp(Colors.red, Colors.red.withValues(alpha: 0.3), blinkAnimation.value),
+                        ),
+                      );
+                    },
                   ),
+                  onTap: () => onTabSelected(0),
+                ),
+              )
+            else
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: maxButtonSize,
+                      maxWidth: maxButtonSize,
+                    ),
                   child: GlassTabButton(
                     label: 'ไทยมุง',
                     isActive: selectedTab == 0,
@@ -65,24 +89,35 @@ class BottomTabsWidget extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           // ความสัมพันธ์ Tab
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: maxButtonSize,
-                  maxWidth: maxButtonSize,
-                ),
-                child: GlassTabButton(
-                  label: 'เกี่ยวดอง',
-                  isActive: selectedTab == 1,
-                  onTap: () => onTabSelected(1),
+          if (isChatVisible)
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
+              child: GlassTabButton(
+                label: 'เกี่ยวดอง',
+                isActive: selectedTab == 1,
+                onTap: () => onTabSelected(1),
+              ),
+            )
+          else
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                   maxHeight: maxButtonSize,
+                   maxWidth: maxButtonSize,
+                  ),
+                  child: GlassTabButton(
+                    label: 'เกี่ยวดอง',
+                    isActive: selectedTab == 1,
+                    onTap: () => onTabSelected(1),
+                  ),
                 ),
               ),
             ),
-          ),
           const SizedBox(width: 8),
-          // แจ้งเหตุ Tab
-          Expanded(
+          // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท)
+          if (!isChatVisible)
+            Expanded(
             child: Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
