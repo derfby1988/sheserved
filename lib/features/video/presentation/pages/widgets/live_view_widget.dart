@@ -43,7 +43,7 @@ class LiveViewWidget extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.only(left: 16, right: 16, top: 60),
           child: Align(
             alignment: Alignment.topCenter,
             child: Stack(
@@ -64,16 +64,18 @@ class LiveViewWidget extends StatelessWidget {
                             currentVideo: currentVideo,
                             canViewUnblurred: canViewUnblurred,
                           ),
-                          const SizedBox(height: 12),
-                          ViewerCountWidget(formattedViewerCount: formattedViewerCount),
-                          const SizedBox(height: 12),
-                          ActionButtonsWidget(
-                            likeCountFormatted: likeCountFormatted,
-                            donationTotalFormatted: donationTotalFormatted,
-                            onLike: onLike,
-                            onYieldWay: () {},
-                            onDonate: onDonate,
-                          ),
+                          if (currentVideoId != null) ...[
+                            const SizedBox(height: 12),
+                            ViewerCountWidget(formattedViewerCount: formattedViewerCount),
+                            const SizedBox(height: 12),
+                            ActionButtonsWidget(
+                              likeCountFormatted: likeCountFormatted,
+                              donationTotalFormatted: donationTotalFormatted,
+                              onLike: onLike,
+                              onYieldWay: () {},
+                              onDonate: onDonate,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -82,7 +84,8 @@ class LiveViewWidget extends StatelessWidget {
                 ),
                 Positioned(
                   top: 0,
-                  bottom: 0,
+                  bottom: currentVideoId == null ? null : 0,
+                  height: currentVideoId == null ? MediaQuery.of(context).size.height * 0.4 : null,
                   right: 0,
                   width: (constraints.maxWidth - 32) * 0.35,
                   child: TrendingPanelWidget(

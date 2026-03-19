@@ -25,8 +25,8 @@ class FloatingBackButton extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                width: 50,
-                height: 50,
+                width: 42, // ลดจาก 50 เป็น 42
+                height: 42, // ลดจาก 50 เป็น 42
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
@@ -45,7 +45,7 @@ class FloatingBackButton extends StatelessWidget {
                 child: const Icon(
                   Icons.arrow_back_ios_new_rounded,
                   color: Colors.white,
-                  size: 22,
+                  size: 18, // ลดจาก 22 เป็น 18
                 ),
               ),
             ),

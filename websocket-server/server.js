@@ -271,6 +271,20 @@ io.on('connection', (socket) => {
     return uniqueUsers.size;
   };
 
+  // Helper: บันทึก Peak Concurrent Viewers ลง DB (อัปเดตเมื่อค่าปัจจุบันสูงกว่าเดิม)
+  const updatePeakViewers = async (videoId, currentCount) => {
+    if (!pool || !videoId || currentCount <= 0) return;
+    try {
+      await pool.query(
+        `UPDATE videos SET peak_viewers = $2, peak_viewers_at = NOW()
+         WHERE id = $1 AND (peak_viewers IS NULL OR peak_viewers < $2)`,
+        [videoId, currentCount]
+      );
+    } catch (err) {
+      console.error(`[PeakViewers] Failed to update for ${videoId}:`, err.message);
+    }
+  };
+
   // Join a room (for group tracking)
   socket.on('join-room', (data) => {
     const { roomId } = data;
@@ -287,6 +301,9 @@ io.on('connection', (socket) => {
       const count = getUniqueViewerCount(fullRoom);
       io.to(fullRoom).emit('viewer-count', { videoId, count });
       console.log(`[ViewerCount] ${videoId}: ${count} unique viewers`);
+      
+      // อัปเดตสถิติ Peak Concurrent Viewers (เฉพาะเวลาที่จำนวนเพิ่มขึ้น)
+      updatePeakViewers(videoId, count);
     }
   });
 

@@ -91,7 +91,7 @@ class BottomTabsWidget extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           // ความสัมพันธ์ Tab
-          if (!isEligibleResponder) ...[
+          if (!isEligibleResponder && showThaiMhung) ...[
             if (isChatVisible)
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),

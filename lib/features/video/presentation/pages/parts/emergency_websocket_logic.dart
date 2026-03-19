@@ -23,7 +23,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
           setState(() { 
             if (data['type'] == 'like') _likeCount++; 
             if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0); 
-            if (data['type'] == 'view') _viewerCount++; 
+            // หมายเหตุ: ไม่นับ view ที่นี่ เพราะ viewerCountStream จัดการค่า unique viewers อยู่แล้ว
           });
         }
       }
@@ -122,7 +122,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
          setState(() { 
            if (payload['type'] == 'like') _likeCount++; 
            if (payload['type'] == 'gift') _donationTotal += (payload['value'] ?? 0); 
-           if (payload['type'] == 'view') _viewerCount++; 
+           // หมายเหตุ: ไม่นับ view ที่นี่ เพราะ viewerCountStream จัดการค่า unique viewers อยู่แล้ว
          }); 
        }
     });

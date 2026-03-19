@@ -68,10 +68,11 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   void _loadInitialData() async {
     await _loadEmergencyCategories();
     if (_currentVideoId != null) {
-      // 1. บันทึก View ก่อน (รวมผู้ดูปัจจุบัน) แล้วค่อย query summary ใหม่
-      await _recordView();
+      // หมายเหตุ: ไม่เรียก _recordView() แล้ว เพราะ WebSocket Server นับ unique viewers ผ่าน room membership
       final summary = await ServiceLocator.instance.videoRepository.getInteractionSummary(_currentVideoId!);
-      setState(() { _likeCount = summary['likes'] ?? 0; _donationTotal = summary['donations']?.toDouble() ?? 0.0; _viewerCount = summary['views'] ?? 0; });
+      // หมายเหตุ: ไม่ตั้ง _viewerCount จาก summary เพราะ summary['views'] คือยอดสะสม (ทั้งหมดที่เคยดู)
+      // ค่า _viewerCount ที่ถูกต้องจะมาจาก WebSocket viewer-count event (real-time unique viewers)
+      setState(() { _likeCount = summary['likes'] ?? 0; _donationTotal = summary['donations']?.toDouble() ?? 0.0; });
       _checkPrivacyPermissions();
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
       if (mounted) {
@@ -149,11 +150,13 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     try { _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60.0)); } catch (_) {}
   }
 
-  Future<void> _recordView() async {
-    if (_currentVideoId == null) return;
-    final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
-    try { final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'view', createdAt: AppConfig.currentUtc); await ServiceLocator.instance.videoRepository.addInteraction(interaction); } catch (_) {}
-  }
+  // _recordView ถูกปิดการใช้งานแล้ว — WebSocket Server นับ unique viewers ผ่าน room จัดการที่ Server โดยตรง
+  // หากต้องการเก็บสถิติ historical views ให้แยกระบบนับสถิติ (analytics) ออกจาก "กำลังรับชม" (real-time viewers)
+  // Future<void> _recordView() async {
+  //   if (_currentVideoId == null) return;
+  //   final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
+  //   try { final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'view', createdAt: AppConfig.currentUtc); await ServiceLocator.instance.videoRepository.addInteraction(interaction); } catch (_) {}
+  // }
 
   Future<void> _loadTrendingVideos() async {
     try {
@@ -302,7 +305,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     _interactionSub?.cancel(); _supabaseInteractionSub?.unsubscribe(); _progressSub?.cancel(); _rescueIncomingSub?.cancel(); _videoStatusSub?.cancel(); _emergencySub?.cancel();
     _videoPlayerController?.removeListener(_syncGpsWithVideo); _videoPlayerController?.dispose(); _videoPlayerController = null;
     _chewieController?.dispose(); _chewieController = null;
-    setState(() { _currentVideoId = newVideoId; _highlightVideoId = null; _currentVideo = null; _dbGpsTracks.clear(); _routePoints.clear(); _responders.clear(); _lastSyncedVideoTrack = null; _likeCount = 0; _donationTotal = 0.0; });
+    setState(() { _currentVideoId = newVideoId; _highlightVideoId = null; _currentVideo = null; _dbGpsTracks.clear(); _routePoints.clear(); _responders.clear(); _lastSyncedVideoTrack = null; _likeCount = 0; _donationTotal = 0.0; _viewerCount = 0; });
     _setupWebSocketStreams(); _loadInitialData();
   }
 
