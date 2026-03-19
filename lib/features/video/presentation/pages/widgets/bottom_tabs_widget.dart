@@ -8,6 +8,7 @@ class BottomTabsWidget extends StatelessWidget {
   final Function(int) onTabSelected;
   final VoidCallback onEmergencyTabSelected;
   final bool isChatVisible;
+  final bool isEligibleResponder;
 
   const BottomTabsWidget({
     super.key,
@@ -17,6 +18,7 @@ class BottomTabsWidget extends StatelessWidget {
     required this.onTabSelected,
     required this.onEmergencyTabSelected,
     this.isChatVisible = false,
+    this.isEligibleResponder = false,
   });
 
   @override
@@ -31,7 +33,7 @@ class BottomTabsWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Live Tab
-          if (showThaiMhung) ...[
+          if (showThaiMhung && !isEligibleResponder) ...[
             if (isChatVisible)
               ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
@@ -89,7 +91,8 @@ class BottomTabsWidget extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           // ความสัมพันธ์ Tab
-          if (isChatVisible)
+          if (!isEligibleResponder) ...[
+            if (isChatVisible)
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
               child: GlassTabButton(
@@ -113,10 +116,11 @@ class BottomTabsWidget extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          const SizedBox(width: 8),
+              ),
+            const SizedBox(width: 8),
+          ],
           // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท)
-          if (!isChatVisible)
+          if (!isChatVisible && !isEligibleResponder)
             Expanded(
             child: Center(
               child: ConstrainedBox(

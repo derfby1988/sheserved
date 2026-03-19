@@ -27,7 +27,10 @@ import 'widgets/emergency_map_section.dart';
 import 'widgets/emergency_ui_overlay.dart';
 import 'widgets/floating_back_button.dart';
 import 'widgets/emergency_chat_widget.dart';
+import 'widgets/rescue_accept_panel_widget.dart';
+import 'widgets/rescue_control_panel_widget.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import 'package:sheserved/features/auth/data/repositories/user_repository.dart';
 
 // Part files for logic
 part 'parts/emergency_reporting_logic.dart';
@@ -39,8 +42,9 @@ part 'parts/emergency_navigation_logic.dart';
 class EmergencyLivePage extends StatefulWidget {
   final String? videoId;
   final String? responseId;
+  final bool autoOpenChat;
 
-  const EmergencyLivePage({super.key, this.videoId, this.responseId});
+  const EmergencyLivePage({super.key, this.videoId, this.responseId, this.autoOpenChat = false});
 
   @override
   State<EmergencyLivePage> createState() => _EmergencyLivePageState();
@@ -70,6 +74,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   StreamSubscription? _myLocationStreamSub;
   StreamSubscription? _emergencySub;
   StreamSubscription? _compassSub;
+  StreamSubscription? _viewerCountSub;
   
   double? _deviceHeading;
   VideoPlayerController? _videoPlayerController;
@@ -106,12 +111,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   bool _canViewUnblurred = false;
   bool _isUiVisible = true;
   bool _isChatVisible = false;
+  bool _hasRejected = false;
 
   @override
   void initState() {
     super.initState();
     _currentVideoId = widget.videoId;
     _currentResponseId = widget.responseId;
+    _isChatVisible = widget.autoOpenChat;
 
     _liveBlinkController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000))..repeat(reverse: true);
     _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat();
@@ -126,6 +133,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
 
   @override
   void dispose() {
+    if (_currentVideoId != null) {
+      WebSocketService().leaveVideoRoom(_currentVideoId!);
+    }
     _videoPlayerController?.removeListener(_syncGpsWithVideo);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
@@ -141,6 +151,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _myLocationStreamSub?.cancel();
     _emergencySub?.cancel();
     _compassSub?.cancel();
+    _viewerCountSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();
@@ -230,10 +241,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                 setState(() => _isUiVisible = !_isUiVisible);
               }
             },
-            onToggleChat: () => setState(() => _isChatVisible = !_isChatVisible),
-            isChatVisible: _isChatVisible,
-            content: _buildMainContent(),
-          ),
+             onToggleChat: () => setState(() => _isChatVisible = !_isChatVisible),
+             isChatVisible: _isChatVisible,
+             onDeclineRescue: _declineRescueDialog,
+             content: _buildMainContent(),
+           ),
 
           // Layer 3: Floating Back Button (Must be on top of layers 1 & 2)
           Positioned(
@@ -267,6 +279,32 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               ),
               ),
             ),
+          
+          // Layer 5: Rescue Accept Panel (Must be on topmost layer, over chat window)
+          if (_isUiVisible && _isEligibleResponder() && _selectedTab == 0)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).padding.bottom + 48,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: RescueAcceptPanelWidget(
+                  onAccept: _acceptRescue,
+                ),
+              ),
+            ),
+          
+          // Layer 6: Rescue Control Panel (MUST BE ABOVE CHAT AND OVERLAY)
+          if (_isUiVisible && _currentResponseId != null && _selectedTab == 0)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).padding.bottom + 105, // อยู่เหนือ Bottom Tabs
+              child: RescueControlPanelWidget(
+                onOpenInMaps: _openInGoogleMaps,
+                onUpdateStatus: _updateRescueStatus,
+              ),
+            ),
         ],
       ),
       ),
@@ -288,6 +326,80 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     if (_isThaiMhungReporting) return 'thaimhung';
 
     return 'viewer';
+  }
+
+  bool _isEligibleResponder() {
+    if (_hasRejected) return false;
+    final user = AuthService.instance.currentUser;
+    if (user == null || _currentVideo == null) return false;
+    
+    // 1. If user is already responding, hide the button
+    if (_currentResponseId != null) return false;
+    
+    final currentUserId = AuthService.instance.userId?.toString();
+    final ownerId = _currentVideo?.userId?.toString();
+    final authedUserId = user.id.toString();
+    
+    // 2. Owner cannot respond to their own incident
+    final isOwner = (ownerId != null) && (ownerId.trim() == authedUserId.trim() || (currentUserId != null && ownerId.trim() == currentUserId.trim()));
+    if (isOwner) return false;
+    
+    // 3. Category Check - Does this user's profession match the incident category?
+    final catId = _currentVideo?.categoryId;
+    final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
+    if (category == null || category.volunteerProfessionIds.isEmpty) return false;
+    
+    final userProfId = user.professionId;
+    if (!category.volunteerProfessionIds.contains(userProfId)) return false;
+    
+    // 4. Profession-based De-duplication (New Rule)
+    // If someone with SAME PROFESSION already accepted, this user cannot accept.
+    for (var responder in _responders) {
+      if (responder['professionId'] == userProfId && responder['status'] != 'cancelled') {
+        // Someone from the same profession is already responding.
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  Future<void> _declineRescueDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ปฏิเสธการช่วยเหลือ', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+        content: const Text('ยืนยันว่าจะปฏิเสธการช่วยเหลือเหตุการณ์นี้ใช่หรือไม่?', style: TextStyle(fontFamily: 'SukhumvitSet')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('ยืนยัน', style: TextStyle(color: Colors.red))),
+        ],
+      )
+    );
+    if (confirm == true) {
+      if (!mounted) return;
+      setState(() {
+        _hasRejected = true;
+        _isChatVisible = false; // กลับสู่โหมด emergency ปกติ (ซ่อนแชทด้วยเผื่อเปิดค้างไว้)
+      });
+      final userId = AuthService.instance.userId;
+      if (userId != null && _currentVideoId != null) {
+        await ServiceLocator.instance.videoRepository.rejectIncident(videoId: _currentVideoId!, responderId: userId);
+        
+        // Save to dismissed alert IDs so it disappears from Home page stack
+        try {
+          final repo = ServiceLocator.instance.userRepository;
+          final saved = await repo.getUiPreference(userId, 'dismissed_emergency_alert_ids');
+          final list = saved != null && saved.isNotEmpty ? saved.split(',').toList() : <String>[];
+          if (!list.contains(_currentVideoId!)) {
+            list.add(_currentVideoId!);
+            await repo.saveUiPreference(userId, 'dismissed_emergency_alert_ids', list.join(','));
+          }
+        } catch (e) {
+          debugPrint('Error saving dismissed alert on reject: $e');
+        }
+      }
+    }
   }
 
   Widget _buildMainContent() {

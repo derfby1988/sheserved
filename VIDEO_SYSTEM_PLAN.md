@@ -452,7 +452,7 @@ REDIS_URL=redis://localhost:6379
 ### 3. Explicit Mapping First
 - ทุกการแจ้งเตือนในหน้า Home ที่เป็นแบบ Stacked Cards จะต้องผ่านการตรวจสอบความตรวจสอบความสัมพันธ์ (Relevance Check) ระหว่าง `categoryId` และ `professionId` ในตาราง `donation_categories` และต้อง **อยู่ภายในรัศมีที่ผู้ใช้กำหนด** เท่านั้น หากไม่ครบเงื่อนไข ระบบจะไม่แสดงผลการแจ้งเตือนแบบเร่งด่วน (ยกเว้นโหมดไทยมุงที่มีเงื่อนไขเฉพาะ)
 
-## Role-Based Dual-Channel Alert System (Final Architecture 2026-03-14)
+## Role-Based Dual-Channel Alert System (Final Architecture — Updated 2026-03-19)
 
 นโยบายการแยกช่องทางแจ้งเตือนเพื่อความชัดเจนตามบทบาทผู้ใช้ (Role) และความเร่งด่วนของสถานการณ์:
 
@@ -463,28 +463,46 @@ REDIS_URL=redis://localhost:6379
     - บังคับ Consultation Widget เข้าสู่ Mini Mode และชิดขอบซ้าย (`leftCenter`) ทันที
     - แผนที่ทำการ Auto-Focus ไปยังตำแหน่งเหตุการณ์
 - **เป้าหมาย:** เพื่อการตัดสินใจและ "ตอบรับเหตุ" (Accept Help) ทันทีในฐานะเจ้าหน้าที่
+- **เงื่อนไขโค้ด (Flutter):** `isProfessional == true && hasLocation && distance <= user.alertRadius`
 
 ### 2. ช่องทางไทยมุง (Community Channel — Passive Notification)
-- **กลุ่มเป้าหมาย:** ผู้ใช้ทั่วไปที่ยอมรับการแจ้งเตือนในหน้า Profile และอยู่ในรัศมี `alertRadius` (รวมถึงเจ้าหน้าที่ที่อยู่นอกสายงานของเหตุนั้น)
+- **กลุ่มเป้าหมาย:** ผู้ใช้ที่เปิดสวิตช์ **"แจ้งเหตุฉุกเฉินใกล้ตัว (ไทยมุง)"** ในแถบจิตอาสาหน้า Profile และ **ไม่ใช่** Professional สำหรับเหตุการณ์นั้นโดยตรง (เพื่อป้องกันการแจ้งซ้ำซ้อนกับ Stacked Cards)
 - **การแสดงผล:** **Right-side Badge ใน HomeHeaderSection**
 - **ผลข้างเคียง (Side Effects):**
     - **ไม่มี** การขยับตำแหน่งของ Consultation Widget (Non-intrusive)
     - ไม่มีการ์ดสีแดงเด้งขึ้นมาบังแผนที่
 - **เป้าหมาย:** เพื่อ "แจ้งให้ทราบและเชิญชวน" สนับสนุนเหตุการณ์ใกล้ตัวโดยไม่รบกวนการใช้งานปกติ
+- **เงื่อนไขโค้ด (Flutter):** `user.isThaiMhungEnabled == true && !isProfessional && hasLocation && distance <= user.alertRadius`
 
-### 3. ตารางสรุปการทำงาน (Alert Routing Table)
+> **หมายเหตุสำคัญ:** `video.isThaiMhungEnabled` (ค่าที่ผู้แจ้งเหตุตั้งไว้) **ไม่ได้ใช้เป็นเงื่อนไขกรองผู้รับ** เพราะเป็นสิทธิ์ฝั่งผู้รับ ไม่ใช่ผู้ส่ง — การตัดสินใจว่าจะรับแจ้งเตือนหรือไม่อยู่ที่ `user.isThaiMhungEnabled` ของผู้รับ (Recipient-First Policy)
 
-| สถานะผู้ใช้ | ตรงตามสิทธิวิชาชีพ (Pro) | อยู่ในรัศมีพื้นที่รับผิดชอบ | UI ที่หน้า Home |
-| :--- | :---: | :---: | :--- |
-| **เจ้าหน้าที่ตรงสายงาน** | ✅ | ✅ | **Stacked Cards** (Intrusive) |
-| **เจ้าหน้าที่นอกสายงาน** | ❌ | ✅ | **Header Badge** (Passive) |
-| **ผู้ใช้ทั่วไป (ไทยมุง)** | ❌ | ✅ | **Header Badge** (Passive) |
-| **ไม่อยู่ในเงื่อนไข** | ❌ | ❌ | **ไม่แสดงผล** |
+### 3. De-duplication Rule (กฎป้องกันการแจ้งเตือนซ้ำซ้อน)
+- วิดีโอหนึ่งรายการจะแสดงผลได้บน**ช่องทางเดียวเท่านั้น**ต่อผู้ใช้หนึ่งคน:
+  - ถ้า `isProfessional == true` → แสดงเฉพาะ **Stacked Cards** (ไม่แสดงใน Header)
+  - ถ้า `isProfessional == false` และ `user.isThaiMhungEnabled == true` → แสดงเฉพาะ **Header Badge**
+  - ถ้าทั้งสองเงื่อนไขไม่ตรง → ไม่แสดงผล
 
-### 4. กฎการยกเว้นแจ้งเตือนตัวเอง (Self-Reporter Exclusion — Strict Policy)
+### 4. ตารางสรุปการทำงาน (Alert Routing Table — Updated 2026-03-19)
+
+| สถานะผู้ใช้ | isProfessional | isThaiMhungEnabled | อยู่ในรัศมี | UI ที่หน้า Home |
+| :--- | :---: | :---: | :---: | :--- |
+| **เจ้าหน้าที่ตรงสายงาน** | ✅ | any | ✅ | **Stacked Cards** เท่านั้น |
+| **เจ้าหน้าที่นอกสายงาน + เปิดไทยมุง** | ❌ | ✅ | ✅ | **Header Badge** เท่านั้น |
+| **ผู้ใช้ทั่วไป + เปิดไทยมุง** | ❌ | ✅ | ✅ | **Header Badge** เท่านั้น |
+| **ผู้ใช้ทั่วไป + ปิดไทยมุง** | ❌ | ❌ | any | **ไม่แสดงผล** |
+| **ไม่อยู่ในรัศมี** | any | any | ❌ | **ไม่แสดงผล** |
+
+### 5. กฎการยกเว้นแจ้งเตือนตัวเอง (Self-Reporter Exclusion — Strict Policy)
 - **นโยบาย:** ระบบจะ **ไม่ทำการแจ้งเตือนทุกช่องทาง** (ทั้ง Stacked Cards และ Header Badge) ให้กับผู้ที่ส่งรายงานเหตุการณ์นั้นๆ ด้วยตนเอง (Self-Reporter) ไม่ให้เจ้าของ/ผู้แจ้งหน้าบ้านเห็นการ์ดของตัวเอง
 - **การติดตามผล:** หากแจ้งเหตุสำเร็จ (Upload Success) ระบบจะนำผู้แจ้งเข้าสู่ "ระบบแผนที่ติดตามโดยอัตโนมัติ" ในแถบ Command Center ทันที (ไม่ต้องพึ่ง Stacked Cards แจ้งเตือนแต่อย่างใด)
-- **เงื่อนไขทางเทคนิค:** ตรวจสอบจาก `payload.userId != currentUser.id` อย่างเคร่งครัด
+- **เงื่อนไขทางเทคนิค:** ตรวจสอบจาก `video.userId != user.id` อย่างเคร่งครัดตั้งแต่ขั้นแรก (บรรทัดแรกสุด of loop) ก่อนตรวจสอบเงื่อนไขอื่นๆ
+
+### 6. Tap-to-Navigate Flow (Optimistic UI & Persistence)
+เพื่อให้ผู้ใช้รู้สึกถึงการตอบสนองที่รวดเร็ว (Fast Feedback) เมื่อมีการกดที่ Header Badge:
+1.  **Optimistic UI Removal**: ระบบจะสั่งลบการแจ้งเตือนออกจากลิสต์ที่แสดงบนหน้าจอทันที (setState) พร้อมเพิ่ม ID ลงใน `_dismissedAlertIds` ในทันทีที่กด
+2.  **Persistent Recording**: ระบบจะทำการบันทึกสถานะการปิด (Dismiss) ลงในฐานข้อมูลแบบ Background (Non-blocking) เพื่อไม่ให้การแจ้งเตือนเดิมกลับมาแสดงซ้ำอีกหลังเปลี่ยนหน้า
+3.  **Instant Navigation**: นำทางผู้ใช้ไปยังหน้า `EmergencyLivePage` ทันที พร้อมเปิดโหมด Chat อัตโนมัติ (`autoOpenChat: true`)
+4.  **Auto-Refresh on Back**: เมื่อผู้ใช้กดกลับมาจากหน้าเหตุการณ์ ระบบจะทำการโหลดข้อมูลสถานะการปิดและการแจ้งเตือนใหม่โดยอัตโนมัติ เพื่อให้หน้า Home เป็นปัจจุบันเสมอ
 
 ---
 

@@ -56,20 +56,51 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
   Future<void> _loadChatHistory() async {
     try {
+      // ลอง API หลักก่อน (Active messages)
       final url = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat';
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      debugPrint('[Chat] Loading history from: $url');
+      
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
+      debugPrint('[Chat] Response status: ${response.statusCode}, body length: ${response.body.length}');
+      
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
-        setState(() {
+        debugPrint('[Chat] Got ${data.length} active messages');
+        
+        if (data.isNotEmpty) {
+          if (mounted) setState(() {
+            _messages.clear();
+            _messages.addAll(data.map((e) => Map<String, dynamic>.from(e)));
+            _isLoadingHistory = false;
+          });
+          _scrollToBottom();
+          return;
+        }
+      }
+
+      // ถ้า Active ไม่มีข้อมูล ลอง Archived endpoint
+      final archivedUrl = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat/archived';
+      debugPrint('[Chat] Trying archived endpoint: $archivedUrl');
+      
+      final archivedResponse = await http.get(Uri.parse(archivedUrl)).timeout(const Duration(seconds: 6));
+      
+      if (archivedResponse.statusCode == 200 && mounted) {
+        final List<dynamic> archivedData = jsonDecode(archivedResponse.body);
+        debugPrint('[Chat] Got ${archivedData.length} archived messages');
+        
+        if (mounted) setState(() {
           _messages.clear();
-          _messages.addAll(data.map((e) => Map<String, dynamic>.from(e)));
+          _messages.addAll(archivedData.map((e) => Map<String, dynamic>.from(e)));
           _isLoadingHistory = false;
         });
         _scrollToBottom();
-      } else {
-        if (mounted) setState(() => _isLoadingHistory = false);
+        return;
       }
-    } catch (_) {
+
+      if (mounted) setState(() => _isLoadingHistory = false);
+    } catch (e, stack) {
+      debugPrint('[Chat] _loadChatHistory ERROR: $e');
+      debugPrint('[Chat] Stack: $stack');
       if (mounted) setState(() => _isLoadingHistory = false);
     }
   }

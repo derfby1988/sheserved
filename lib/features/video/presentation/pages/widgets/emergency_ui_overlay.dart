@@ -21,6 +21,7 @@ class EmergencyUiOverlay extends StatelessWidget {
   final VoidCallback onAcceptRescue;
   final VoidCallback onToggleUi;
   final VoidCallback onToggleChat;
+  final VoidCallback onDeclineRescue;
   final bool isChatVisible;
 
   const EmergencyUiOverlay({
@@ -41,17 +42,20 @@ class EmergencyUiOverlay extends StatelessWidget {
     required this.onAcceptRescue,
     required this.onToggleUi,
     required this.onToggleChat,
+    required this.onDeclineRescue,
     this.isChatVisible = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bool showAcceptPanel = isEligibleResponder && selectedTab == 0;
+
     return Positioned.fill(
       child: IgnorePointer(
         ignoring: !isUiVisible,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onTap: onToggleUi,
+          onTap: showAcceptPanel ? onDeclineRescue : onToggleUi,
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 300),
             opacity: isUiVisible ? 1.0 : 0.0,
@@ -67,26 +71,13 @@ class EmergencyUiOverlay extends StatelessWidget {
                   // Main Split Content based on Tab
                   Expanded(
                     child: GestureDetector(
-                      onTap: onToggleUi,
+                      onTap: showAcceptPanel ? onDeclineRescue : onToggleUi,
                       behavior: HitTestBehavior.translucent,
                       child: SingleChildScrollView(
                         child: content,
                       ),
                     ),
                   ),
-
-                  // Rescue Control Panel
-                  if (currentResponseId != null && selectedTab == 0)
-                    RescueControlPanelWidget(
-                      onOpenInMaps: onOpenInMaps,
-                      onUpdateStatus: onUpdateStatus,
-                    ),
-
-                  // Rescue Accept Panel
-                  if (isEligibleResponder && selectedTab == 0)
-                    RescueAcceptPanelWidget(
-                      onAccept: onAcceptRescue,
-                    ),
 
                   // Bottom Right Actions (Chat Button)
                   if (selectedTab != 2 && !isThaiMhungReporting && hasVideo)
@@ -108,6 +99,7 @@ class EmergencyUiOverlay extends StatelessWidget {
                     onTabSelected: onTabSelected,
                     onEmergencyTabSelected: onEmergencyTabSelected,
                     isChatVisible: isChatVisible,
+                    isEligibleResponder: isEligibleResponder,
                   ),
                   const SizedBox(height: 12),
                 ],

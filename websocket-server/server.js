@@ -259,18 +259,56 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} unsubscribed from user ${userId}`);
   });
 
+  // Helper สำหรับนับ Unique Viewers (ป้องกันนับซ้ำถ้ายูสเซอร์เดิมเปิดหลาย tab/socket)
+  const getUniqueViewerCount = (roomId) => {
+    const roomSockets = io.sockets.adapter.rooms.get(roomId);
+    if (!roomSockets) return 0;
+    const uniqueUsers = new Set();
+    for (const sid of roomSockets) {
+      const uid = connectedUsers.get(sid);
+      uniqueUsers.add(uid ? uid : sid); // ถ้ารู้ userId ให้นับเป็น 1, ถ้าไม่รู้ก็สมมติ 1 socket = 1 คน
+    }
+    return uniqueUsers.size;
+  };
+
   // Join a room (for group tracking)
   socket.on('join-room', (data) => {
     const { roomId } = data;
-    socket.join(`room-${roomId}`);
+    const fullRoom = `room-${roomId}`;
+    socket.join(fullRoom);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
+
+    // ถ้าเป็น video room → broadcast viewer-count ให้ทุกคนในห้อง (Unique)
+    if (roomId && roomId.startsWith('video-')) {
+      const videoId = roomId.replace('video-', '');
+      if (!socket._videoRooms) socket._videoRooms = new Set();
+      socket._videoRooms.add(videoId);
+
+      const count = getUniqueViewerCount(fullRoom);
+      io.to(fullRoom).emit('viewer-count', { videoId, count });
+      console.log(`[ViewerCount] ${videoId}: ${count} unique viewers`);
+    }
   });
 
   // Leave a room
   socket.on('leave-room', (data) => {
     const { roomId } = data;
-    socket.leave(`room-${roomId}`);
+    const fullRoom = `room-${roomId}`;
+    socket.leave(fullRoom);
     console.log(`Socket ${socket.id} left room ${roomId}`);
+
+    // ถ้าเป็น video room → broadcast viewer-count ให้ทุกคนในห้อง (Unique)
+    if (roomId && roomId.startsWith('video-')) {
+      const videoId = roomId.replace('video-', '');
+      if (socket._videoRooms) socket._videoRooms.delete(videoId);
+
+      // นับหลัง leave (socket ออกไปแล้ว)
+      setImmediate(() => {
+        const count = getUniqueViewerCount(fullRoom);
+        io.to(fullRoom).emit('viewer-count', { videoId, count });
+        console.log(`[ViewerCount] ${videoId}: ${count} unique viewers after leave`);
+      });
+    }
   });
 
   // Disconnect handler
@@ -282,6 +320,18 @@ io.on('connection', (socket) => {
 
       // Notify others that user is offline
       socket.broadcast.emit('user-offline', { userId });
+    }
+
+    // Broadcast updated viewer-count (Unique) สำหรับทุก video room ที่ socket นี้เคย join
+    if (socket._videoRooms && socket._videoRooms.size > 0) {
+      setImmediate(() => {
+        for (const videoId of socket._videoRooms) {
+          const fullRoom = `room-video-${videoId}`;
+          const count = getUniqueViewerCount(fullRoom);
+          io.to(fullRoom).emit('viewer-count', { videoId, count });
+          console.log(`[ViewerCount] disconnect → ${videoId}: ${count} unique viewers`);
+        }
+      });
     }
   });
 

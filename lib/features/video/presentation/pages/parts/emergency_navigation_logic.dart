@@ -68,9 +68,10 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   void _loadInitialData() async {
     await _loadEmergencyCategories();
     if (_currentVideoId != null) {
+      // 1. บันทึก View ก่อน (รวมผู้ดูปัจจุบัน) แล้วค่อย query summary ใหม่
+      await _recordView();
       final summary = await ServiceLocator.instance.videoRepository.getInteractionSummary(_currentVideoId!);
       setState(() { _likeCount = summary['likes'] ?? 0; _donationTotal = summary['donations']?.toDouble() ?? 0.0; _viewerCount = summary['views'] ?? 0; });
-      _recordView();
       _checkPrivacyPermissions();
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
       if (mounted) {
@@ -83,7 +84,13 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         });
         _checkPrivacyPermissions();
       }
-      if (video != null && video.previewUrl != null) _initializePlayer(video.previewUrl!, isLocal: video.localFilePath != null);
+      if (video != null) {
+        if (video.localFilePath != null && File(video.localFilePath!).existsSync()) {
+          _initializePlayer(video.localFilePath!, isLocal: true);
+        } else if (video.bunnyUrl != null && video.bunnyUrl!.isNotEmpty) {
+          _initializePlayer(video.bunnyUrl!, isLocal: false);
+        }
+      }
       _loadThaiMhungPhotos();
       final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(_currentVideoId!);
       if (tracks.isNotEmpty) {
@@ -103,13 +110,26 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       if (mounted) {
         setState(() {
           double parseDouble(dynamic value) { if (value == null) return 0.0; if (value is num) return value.toDouble(); if (value is String) return double.tryParse(value) ?? 0.0; return 0.0; }
+          final String? myUserId = AuthService.instance.userId;
+          
           for (int i = 0; i < responders.length; i++) {
-            var r = responders[i]; r['currentLat'] = r['startLat']; r['currentLng'] = r['startLng'];
+            var r = responders[i]; 
+            r['currentLat'] = r['startLat']; 
+            r['currentLng'] = r['startLng'];
+            
+            // Check if user is already a responder
+            if (myUserId != null && r['volunteerId'] == myUserId) {
+              _currentResponseId = r['id']?.toString();
+            }
+            
             if (r['startLat'] != null && r['startLng'] != null && _currentVideo != null) {
               final double distanceMeters = Geolocator.distanceBetween(parseDouble(r['startLat']), parseDouble(r['startLng']), _currentVideo!.latitude, _currentVideo!.longitude);
               final double distanceKm = distanceMeters / 1000; r['distanceKm'] = distanceKm;
               final int mins = (distanceKm / 40 * 60).round().clamp(1, 120); r['estimatedMinutes'] = mins;
-            } else { r['estimatedMinutes'] = 0; r['distanceKm'] = 0.0; }
+            } else { 
+              r['estimatedMinutes'] = 0; 
+              r['distanceKm'] = 0.0; 
+            }
             r['currentSpeed'] = 15.0; 
           }
           _responders = responders;
@@ -129,7 +149,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     try { _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60.0)); } catch (_) {}
   }
 
-  void _recordView() async {
+  Future<void> _recordView() async {
     if (_currentVideoId == null) return;
     final userId = ServiceLocator.instance.currentUser?.id ?? 'anonymous';
     try { final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'view', createdAt: AppConfig.currentUtc); await ServiceLocator.instance.videoRepository.addInteraction(interaction); } catch (_) {}
@@ -211,16 +231,70 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     final userId = AuthService.instance.currentUser?.id;
     if (userId == null) return;
     try {
-      final responseId = await ServiceLocator.instance.videoRepository.acceptIncident(videoId: _currentVideoId!, responderId: userId, latitude: _userLocation?.latitude, longitude: _userLocation?.longitude);
-      if (mounted) setState(() { _currentResponseId = responseId; _checkPrivacyPermissions(); _initCompass(); });
+      final responseId = await ServiceLocator.instance.videoRepository.acceptIncident(
+        videoId: _currentVideoId!, 
+        responderId: userId, 
+        latitude: _userLocation?.latitude, 
+        longitude: _userLocation?.longitude
+      );
+      if (responseId == null) throw Exception('ไม่สามารถบันทึกการเข้ารับงานได้');
+      
+      if (mounted) {
+        setState(() { 
+          _currentResponseId = responseId; 
+          _checkPrivacyPermissions(); 
+          _initCompass(); 
+        });
+      }
+      
       final user = AuthService.instance.currentUser;
-      if (user != null && _userLocation != null) _responders.add({ 'id': responseId, 'volunteerId': userId, 'status': 'accepted', 'volunteerName': user.fullName, 'professionName': 'อาสาสมัคร', 'professionColor': '#FF3B30', 'currentLat': _userLocation!.latitude, 'currentLng': _userLocation!.longitude, 'distanceKm': 0.0, 'estimatedMinutes': 0 });
+      if (user != null && _userLocation != null) {
+        _responders.add({ 
+          'id': responseId, 
+          'volunteerId': userId, 
+          'status': 'accepted', 
+          'volunteerName': user.fullName, 
+          'professionName': 'อาสาสมัคร', 
+          'professionColor': '#FF3B30', 
+          'currentLat': _userLocation!.latitude, 
+          'currentLng': _userLocation!.longitude, 
+          'distanceKm': 0.0, 
+          'estimatedMinutes': 0 
+        });
+      }
+      
       final socket = WebSocketService().socket;
-      if (socket != null && socket.connected) socket.emit('rescue-status-update', { 'videoId': _currentVideoId, 'volunteerId': userId, 'victimId': _currentVideo?.userId, 'status': 'accepted', 'responseId': _currentResponseId });
-      _startResponderTracking(); _adjustMapBounds();
+      if (socket != null && socket.connected) {
+        socket.emit('rescue-status-update', { 
+          'videoId': _currentVideoId, 
+          'volunteerId': userId, 
+          'victimId': _currentVideo?.userId, 
+          'status': 'accepted', 
+          'responseId': _currentResponseId 
+        });
+      }
+      
+      _startResponderTracking(); 
+      _adjustMapBounds();
+      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณได้รับภารกิจช่วยเหลือแล้ว! กำลังนำทาง...'), backgroundColor: Colors.blue, behavior: SnackBarBehavior.floating));
-    } catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ไม่สามารถตอบรับความช่วยเหลือได้ในขณะนี้'))); }
+      
+      // Auto-dismiss alert card on Home Page after accept
+      try {
+        final repo = ServiceLocator.instance.userRepository;
+        final saved = await repo.getUiPreference(userId, 'dismissed_emergency_alert_ids');
+        final list = saved != null && saved.isNotEmpty ? saved.split(',').toList() : <String>[];
+        if (!list.contains(_currentVideoId!)) {
+          list.add(_currentVideoId!);
+          await repo.saveUiPreference(userId, 'dismissed_emergency_alert_ids', list.join(','));
+        }
+      } catch (e) {
+        debugPrint('Error auto-dismissing alert on accept: $e');
+      }
+    } catch (_) { 
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ไม่สามารถตอบรับความช่วยเหลือได้ในขณะนี้'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating)); 
+    }
   }
 
   void _switchVideo(String newVideoId) {
@@ -245,10 +319,31 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   void _initializePlayer(String url, {bool isLocal = false}) {
     if (_videoPlayerController != null) { _videoPlayerController!.removeListener(_syncGpsWithVideo); _videoPlayerController!.dispose(); }
+    
+    // Auto-correct local IP changes in URLs from database
+    if (!isLocal && url.contains(':3000') && !url.startsWith(AppConfig.localApiUrl)) {
+      url = url.replaceAll(RegExp(r'http://[0-9\.]+:\d+'), AppConfig.localApiUrl);
+    }
+    
     _videoPlayerController = isLocal ? VideoPlayerController.file(File(url)) : VideoPlayerController.networkUrl(Uri.parse(url));
     _videoPlayerController!.initialize().then((_) {
       if (mounted) {
-        setState(() { _chewieController = ChewieController(videoPlayerController: _videoPlayerController!, aspectRatio: _videoPlayerController!.value.aspectRatio, autoPlay: true, looping: false, showControls: true, placeholder: Container(color: Colors.black), errorBuilder: (context, errorMessage) => Center(child: Text(errorMessage, style: const TextStyle(color: Colors.white)) )); });
+        setState(() { 
+          _chewieController = ChewieController(
+            videoPlayerController: _videoPlayerController!, 
+            aspectRatio: _videoPlayerController!.value.aspectRatio, 
+            autoPlay: true, 
+            looping: false, 
+            showControls: true, 
+            placeholder: Container(color: Colors.black), 
+            errorBuilder: (context, errorMessage) => Center(child: Text(errorMessage, style: const TextStyle(color: Colors.white)) ),
+          ); 
+        });
+        
+        // EXPLICIT PLAY FOR IOS AUTO-PALY IMPROVEMENT
+        _videoPlayerController!.setVolume(1.0);
+        _videoPlayerController!.play();
+        
         _videoPlayerController!.addListener(_syncGpsWithVideo);
         _adjustMapBounds();
       }

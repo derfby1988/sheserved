@@ -139,14 +139,15 @@ class HomeHeaderSection extends StatelessWidget {
                     });
                   }
 
-                  // รายการยา (Mock)
+                  // เรียงลำดับ alert ล่าสุดขึ้นบนสุด (Newest First)
+                  combinedItems.sort((a, b) =>
+                      (b['time'] as DateTime).compareTo(a['time'] as DateTime));
+
+                  // Medicine reminder แสดงท้ายสุดเสมอ (ไม่นำมา sort ปน)
                   combinedItems.add({
-                    'time': DateTime.now().subtract(const Duration(hours: 1)), // จำลองว่าเกิดก่อน
+                    'time': DateTime(2000), // เวลาเก่ามากเพื่อให้อยู่ล่างสุด
                     'type': 'medicine',
                   });
-
-                  // เรียงลำดับจากใหม่สุดไปเก่าสุด
-                  combinedItems.sort((a, b) => (b['time'] as DateTime).compareTo(a['time'] as DateTime));
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -154,10 +155,24 @@ class HomeHeaderSection extends StatelessWidget {
                       if (item['type'] == 'alert') {
                         final alert = item['data'];
                         final videoId = alert['videoId']?.toString() ?? '';
-                        final categoryName = alert['categoryName'] ?? 'ฉุกเฉิน';
+                        final categoryName = alert['categoryName'] ?? 'แจ้งเหตุ';
+                        final isVolunteer = alert['isVolunteer'] == true;
                         
-                        // กรณีมีหลายเหตุ จะลิสต์แยกกัน หรือรวมกันก็ได้ ในที่นี้แยกกันตามเวลาดังนั้นใช้ "มีเหตุ + ประเภท"
-                        final text = alerts.length == 1 ? 'มีเหตุ$categoryName' : 'มีเหตุ$categoryName';
+                        // สร้างข้อความระยะทาง
+                        final distanceVal = alert['distance'] as double? ?? 0.0;
+                        String distanceText = '';
+                        if (distanceVal > 0) {
+                          if (distanceVal < 1000) {
+                            distanceText = ' ${distanceVal.toStringAsFixed(0)} ม.';
+                          } else {
+                            distanceText = ' ${(distanceVal / 1000).toStringAsFixed(1)} กม.';
+                          }
+                        }
+                        
+                        // ข้อความสำหรับ จิตอาสา vs บุคคลทั่วไป
+                        final text = (isVolunteer ? 'ขอจิตอาสาช่วย$categoryName' : 'เกิด$categoryName') + distanceText;
+                        final textColor = isVolunteer ? const Color(0xFFF5A623) : const Color(0xFFFF3B30);
+                        final icon = isVolunteer ? Icons.volunteer_activism : Icons.emergency;
 
                         return Dismissible(
                           key: Key(videoId),
@@ -183,13 +198,25 @@ class HomeHeaderSection extends StatelessWidget {
                             onTap: () => onAlertTapped?.call(videoId),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text(
-                                text,
-                                style: AppTextStyles.caption.copyWith(
-                                  color: const Color(0xFFFF3B30),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.right,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Icon(icon, color: textColor, size: 9),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      text,
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: textColor,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      textAlign: TextAlign.right,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -310,13 +337,14 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
             }
             return false;
           },
-          child: RawScrollbar(
+          child: Scrollbar(
             controller: _scrollController,
-            thumbColor: AppColors.textOnPrimary.withValues(alpha: 0.5),
+            thumbVisibility: true, // ตรวจสอบให้แน่ใจว่าเห็น Scrollbar เสมอถ้าเลื่อนได้
+            thickness: 4,
             radius: const Radius.circular(4),
-            thickness: 3,
             child: SingleChildScrollView(
               controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(), // บังคับให้ Scroll ได้เสมอเพื่อเลื่อนดูข้อความ
               child: widget.child,
             ),
           ),

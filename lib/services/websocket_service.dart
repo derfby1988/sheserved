@@ -31,9 +31,9 @@ class WebSocketService {
   final _videoStatusController = StreamController<Map<String, dynamic>>.broadcast();
   final _videoInteractionController = StreamController<Map<String, dynamic>>.broadcast();
   
-  // Emergency Stream Controller
   final _emergencyNotificationController = StreamController<Map<String, dynamic>>.broadcast();
   final _rescueIncomingController = StreamController<Map<String, dynamic>>.broadcast();
+  final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -57,6 +57,7 @@ class WebSocketService {
   // Emergency Getters
   Stream<Map<String, dynamic>> get emergencyNotificationStream => _emergencyNotificationController.stream;
   Stream<Map<String, dynamic>> get rescueIncomingStream => _rescueIncomingController.stream;
+  Stream<Map<String, dynamic>> get viewerCountStream => _viewerCountController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -197,6 +198,10 @@ class WebSocketService {
       _socket!.on('rescue-incoming', (data) {
         debugPrint('Rescue incoming notification received: $data');
         _rescueIncomingController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('viewer-count', (data) {
+        _viewerCountController.add(Map<String, dynamic>.from(data));
       });
       
       _socket!.on('emergency-chat-message', (data) {
@@ -491,6 +496,7 @@ class WebSocketService {
     _videoInteractionController.close();
     _emergencyNotificationController.close();
     _rescueIncomingController.close();
+    _viewerCountController.close();
     _emergencyChatController.close();
   }
 

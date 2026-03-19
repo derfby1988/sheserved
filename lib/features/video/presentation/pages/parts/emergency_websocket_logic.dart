@@ -12,22 +12,44 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
   void _setupWebSocketStreams() {
     final ws = WebSocketService();
+    _connectionSub?.cancel();
     _connectionSub = ws.connectionStream.listen((connected) { if (mounted) setState(() => _isConnected = connected); });
 
-    if (_currentVideoId != null) {
-      ws.joinVideoRoom(_currentVideoId!);
-      _interactionSub = ws.videoInteractionStream.listen((data) {
-        if (data['videoId'] == _currentVideoId) {
-          if (mounted) {
-            setState(() { if (data['type'] == 'like') _likeCount++; if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0); if (data['type'] == 'view') _viewerCount++; });
-          }
+    // Video Interaction & Viewer Count (Always listen, filter by _currentVideoId)
+    _interactionSub?.cancel();
+    _interactionSub = ws.videoInteractionStream.listen((data) {
+      if (_currentVideoId != null && data['videoId'] == _currentVideoId) {
+        if (mounted) {
+          setState(() { 
+            if (data['type'] == 'like') _likeCount++; 
+            if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0); 
+            if (data['type'] == 'view') _viewerCount++; 
+          });
         }
-      });
-      _supabaseInteractionSub = ServiceLocator.instance.videoRepository.subscribeToInteractions(_currentVideoId!, (payload) {
-         if (mounted) { setState(() { if (payload['type'] == 'like') _likeCount++; if (payload['type'] == 'gift') _donationTotal += (payload['value'] ?? 0); if (payload['type'] == 'view') _viewerCount++; }); }
-      });
+      }
+    });
+
+    _viewerCountSub?.cancel();
+    _viewerCountSub = ws.viewerCountStream.listen((data) {
+      if (_currentVideoId != null && data['videoId'] == _currentVideoId) {
+        if (mounted) setState(() => _viewerCount = data['count'] ?? 0);
+      }
+    });
+
+    _progressSub?.cancel();
+    _progressSub = ws.videoProgressStream.listen((data) {
+      if (_currentVideoId != null && data['videoId'] == _currentVideoId && data['location'] != null) {
+        final loc = data['location'];
+        final point = LatLng(loc['lat'], loc['lng']);
+        if (mounted) setState(() { _routePoints.add(point); });
+      }
+    });
+
+    if (_currentVideoId != null) {
+      _subscribeToVideoEvents(_currentVideoId!);
     }
 
+    _emergencySub?.cancel();
     _emergencySub = ws.emergencyNotificationStream.listen((data) {
       final currentUserId = AuthService.instance.userId?.toString();
       final reporterId = data['userId']?.toString() ?? data['senderId']?.toString();
@@ -38,14 +60,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       } else { _loadTrendingVideos(); }
     });
 
-    _progressSub = ws.videoProgressStream.listen((data) {
-      if (data['videoId'] == _currentVideoId && data['location'] != null) {
-        final loc = data['location'];
-        final point = LatLng(loc['lat'], loc['lng']);
-        if (mounted) setState(() { _routePoints.add(point); });
-      }
-    });
-
+    _rescueIncomingSub?.cancel();
     _rescueIncomingSub = ws.rescueIncomingStream.listen((data) {
       if (mounted) {
          final status = data['status'];
@@ -53,10 +68,23 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
          if (status == 'accepted') { msg = 'กู้ภัยกำลังเดินทางมาหาคุณ...'; _loadResponders(); }
          else if (status == 'arrived') msg = 'กู้ภัยเดินทางมาถึงที่เกิดเหตุแล้ว!';
          else if (status == 'resolved') msg = 'ภารกิจของกู้ภัยเสร็จสิ้น!';
-         if (msg.isNotEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.airport_shuttle, color: Colors.white), const SizedBox(width: 8), Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)))]), backgroundColor: status == 'resolved' ? Colors.green : Colors.orange.shade800, duration: const Duration(seconds: 5), behavior: SnackBarBehavior.floating)); }
+         
+         if (msg.isNotEmpty) {
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+             content: Row(children: [
+               const Icon(Icons.airport_shuttle, color: Colors.white), 
+               const SizedBox(width: 8), 
+               Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)))
+             ]), 
+             backgroundColor: status == 'resolved' ? Colors.green : Colors.blueAccent, 
+             duration: const Duration(seconds: 5), 
+             behavior: SnackBarBehavior.floating,
+           ));
+         }
       }
     });
 
+    _locationSub?.cancel();
     _locationSub = ws.locationStream.listen((data) {
       if (!mounted) return;
       final String? userId = data['userId'];
@@ -64,32 +92,39 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       setState(() {
         bool found = false;
         for (int i = 0; i < _responders.length; i++) {
-          if (_responders[i]['volunteer_id'] == userId || _responders[i]['id'] == userId) {
-            _responders[i]['currentLat'] = data['latitude'];
-            _responders[i]['currentLng'] = data['longitude'];
-            if (data['speed'] != null) _responders[i]['currentSpeed'] = data['speed'];
-            if (_routePoints.isNotEmpty) {
-              final incidentPoint = _routePoints.last;
-              final distanceMeters = Geolocator.distanceBetween(data['latitude'], data['longitude'], incidentPoint.latitude, incidentPoint.longitude);
-              _responders[i]['distanceKm'] = distanceMeters / 1000.0;
-              double speedMps = data['speed'] ?? 11.1; 
-              if (speedMps < 2.0) speedMps = 11.1;
-              _responders[i]['estimatedMinutes'] = (distanceMeters / speedMps / 60).round();
-            }
+          if (_responders[i]['userId'] == userId) {
+            _responders[i]['latitude'] = data['latitude'];
+            _responders[i]['longitude'] = data['longitude'];
             found = true;
+            break;
           }
         }
-        if (found) _adjustMapBounds();
-      });
-    });
-
-    if (_currentVideoId != null) {
-      _videoStatusSub = ws.videoStatusStream.listen((data) {
-        if (data['videoId'] == _currentVideoId && data['status'] == 'ready') {
-           final url = data['url'];
-           if (url != null) _initializePlayer(url);
+        if (!found) {
+          _responders.add({
+            'userId': userId,
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'fullName': data['fullName'] ?? 'Responder',
+          });
         }
       });
-    }
+    });
+  }
+
+  void _subscribeToVideoEvents(String videoId) {
+    final ws = WebSocketService();
+    ws.joinVideoRoom(videoId);
+    
+    // Supabase subscription (one-time or per video)
+    _supabaseInteractionSub?.unsubscribe();
+    _supabaseInteractionSub = ServiceLocator.instance.videoRepository.subscribeToInteractions(videoId, (payload) {
+       if (mounted && _currentVideoId == videoId) { 
+         setState(() { 
+           if (payload['type'] == 'like') _likeCount++; 
+           if (payload['type'] == 'gift') _donationTotal += (payload['value'] ?? 0); 
+           if (payload['type'] == 'view') _viewerCount++; 
+         }); 
+       }
+    });
   }
 }

@@ -309,6 +309,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
       
       Position? position = await Geolocator.getLastKnownPosition();
+      
+      // PROFESSION DEDUPLICATION FOR HOME PAGE
+      // Fetch which incidents already have a responder from the same profession
+      final userProfessionId = user.professionId;
+      final activeVideoIds = activeVideos.map((v) => v.id).toList();
+      Set<String> takenByMyProfession = {};
+      if (userProfessionId != null && activeVideoIds.isNotEmpty) {
+        takenByMyProfession = await videoRepo.getTakenIncidentVideoIdsByProfession(activeVideoIds, userProfessionId);
+      }
 
       for (var video in activeVideos) {
         // 0. Self-Reporter Exclusion
@@ -321,15 +330,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
               : null;
           if (category != null) {
-            final userProfessionId = user.professionId;
             if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
               isProfessional = true;
             }
           }
         }
 
-        bool isThaiMhungEnabled = (video.isThaiMhungEnabled ?? false) && user.isThaiMhungEnabled;
-        
         double distance = 0;
         bool hasLocation = false;
         if (video.latitude != null && video.longitude != null && position != null) {
@@ -348,16 +354,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           'address': video.address,
           'title': video.title,
           'createdAt': video.createdAt,
+          'isVolunteer': user.isVolunteer, // สถานะจิตอาสาจาก Profile ของผู้ใช้
+          'distance': distance, // เพิ่มระยะทางเพื่อนำไปแสดงผล
         };
 
+        // === ช่องทางที่ 1: Stacked Cards (Professional — Mission Call) ===
+        // เงื่อนไข: professionId ตรงกับ volunteerProfessionIds ของหมวดหมู่ + อยู่ในรัศมี
+        // (New Rule: + ต้องไม่มีใครในอาชีพเดียวกันรับงานไปแล้ว)
         if (isProfessional) {
-          // Professional: Must be within responsibility radius (Mission Call)
           if (hasLocation && distance <= user.alertRadius) {
-            if (!_dismissedAlertIds.contains(video.id)) {
+            // Check if alert is NOT manually dismissed AND NOT taken by someone of same profession
+            if (!_dismissedAlertIds.contains(video.id) && !takenByMyProfession.contains(video.id)) {
               newProfessional.add(alertData);
             }
           }
-        } else if (isThaiMhungEnabled) {
+        }
+
+        // === ช่องทางที่ 2: Header Badge (Thai Mhung — Passive Notification) ===
+        // เงื่อนไข: ผู้ใช้เปิดไทยมุงในหน้า Profile + อยู่ในรัศมี + ไม่ใช่ Professional สำหรับเหตุนี้
+        // (หรือเป็น Professional แต่แอบโดนซ่อนการ์ดไปแล้วก็ไม่ควรแสดงตรงนี้ซ้ำ)
+        if (user.isThaiMhungEnabled && !isProfessional) {
           if (hasLocation && distance <= user.alertRadius) {
             if (!_dismissedAlertIds.contains(video.id)) {
               newThaiMhung.add(alertData);
@@ -1250,16 +1266,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                       });
                                     },
                                     onAlertTapped: (videoId) {
-                                      _recordDismissedAlert(videoId);
+                                      // 1. นำการ์ดออกทันที (Optimistic UI)
                                       setState(() {
                                         _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                        _dismissedAlertIds.add(videoId);
                                       });
+                                      // 2. บันทึก dismiss ลง DB (non-blocking)
+                                      _recordDismissedAlert(videoId);
+                                      // 3. นำทางไปหน้า Emergency Live Chat
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) => EmergencyLivePage(videoId: videoId),
+                                          builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
                                         ),
-                                      );
+                                      ).then((_) {
+                                        _loadDismissedAlerts().then((_) => _loadActiveAlerts());
+                                      });
                                     },
                                     onHealthTap: () async {
                                       if (ServiceLocator.instance.currentUser != null) {
@@ -1595,9 +1617,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => EmergencyLivePage(videoId: videoId),
+              builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
             ),
-          );
+          ).then((_) {
+            _loadDismissedAlerts().then((_) => _loadActiveAlerts());
+          });
           return false; // Don't remove it visually from the list yet
         }
         return false;
@@ -1626,9 +1650,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EmergencyLivePage(videoId: videoId),
+                      builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
                     ),
-                  );
+                  ).then((_) {
+                    _loadDismissedAlerts().then((_) => _loadActiveAlerts());
+                  });
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

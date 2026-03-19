@@ -207,6 +207,24 @@ class VideoRepository {
     return null;
   }
 
+  /// ปฏิเสธการช่วยเหลือเหตุการณ์ (บันทึกลงตารางจริงเพื่อให้สถานะสมบูรณ์)
+  Future<void> rejectIncident({
+    required String videoId,
+    required String responderId,
+  }) async {
+    try {
+      await _client.from('incident_responses').upsert({
+        'video_id': videoId,
+        'volunteer_id': responderId,
+        'status': 'cancelled',
+        'resolved_at': AppConfig.currentUtc.toIso8601String(),
+      }, onConflict: 'video_id, volunteer_id');
+      debugPrint('VideoRepository: ✅ Synced rejectIncident to Supabase (cancelled)');
+    } catch (e) {
+      debugPrint('VideoRepository: ❌ Supabase rejectIncident failed: $e');
+    }
+  }
+
   /// Accept an emergency rescue job — Legacy method ใช้ Supabase โดยตรง
   /// ✅ Deprecated: ใช้ acceptIncident() แทน (รองรับ Dual-Write)
   /// คงไว้เพื่อ backward compatibility กับโค้ดเก่าที่ยังเรียกใช้อยู่
@@ -259,8 +277,32 @@ class VideoRepository {
     await _client.from('video_interactions').insert(interaction.toJson());
   }
 
-  /// ดึงจำนวน Interaction สรุป
+  /// ดึงจำนวน Interaction สรุป (Local-First → Supabase Fallback)
+  /// ✅ ตาม auth_data_guidelines: ไม่ใช้ _client.auth.currentUser
   Future<Map<String, dynamic>> getInteractionSummary(String videoId) async {
+    // ---- Primary Path: Local API ----
+    // addInteraction() บันทึกลง Local DB ก่อน → ต้องดึง summary จาก Local ด้วย
+    if (AppConfig.useLocalDatabase) {
+      try {
+        final response = await http
+            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/interactions'))
+            .timeout(const Duration(seconds: 3));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          debugPrint('VideoRepository: ✅ getInteractionSummary from Local API: $data');
+          return {
+            'likes': data['likes'] ?? 0,
+            'donations': (data['donations'] as num?)?.toDouble() ?? 0.0,
+            'views': data['views'] ?? 0,
+          };
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: Local getInteractionSummary failed → fallback to Supabase: $e');
+      }
+    }
+
+    // ---- Fallback Path: Supabase Cloud ----
     final likes = await _client
         .from('video_interactions')
         .select('id')
@@ -587,6 +629,39 @@ class VideoRepository {
     }
   }
   
+  /// ตรวจสอบว่าวิดีโอรายการใดบ้างที่มีจิตอาสาในสาขานั้นๆ รับงานไปแล้ว (ใช้สำหรับกรองในหน้า Home)
+  Future<Set<String>> getTakenIncidentVideoIdsByProfession(List<String> videoIds, String professionId) async {
+    if (videoIds.isEmpty) return {};
+    try {
+      final response = await _client
+          .from('incident_responses')
+          .select('video_id, user_group_roles!incident_responses_volunteer_id_fkey(profession_id)')
+          .inFilter('video_id', videoIds)
+          .inFilter('status', ['accepted', 'arrived']);
+
+      final Set<String> takenVideoIds = {};
+      for (var row in response as List) {
+        final videoId = row['video_id'] as String?;
+        final roles = row['user_group_roles'];
+        
+        String? responderProfId;
+        if (roles is Map) {
+          responderProfId = roles['profession_id']?.toString();
+        } else if (roles is List && roles.isNotEmpty) {
+          responderProfId = roles.first['profession_id']?.toString();
+        }
+
+        if (videoId != null && responderProfId == professionId) {
+          takenVideoIds.add(videoId);
+        }
+      }
+      return takenVideoIds;
+    } catch (e) {
+      debugPrint('Error in getTakenIncidentVideoIdsByProfession: $e');
+      return {};
+    }
+  }
+
   /// Get list of responders (volunteers) currently rushing to this incident
   Future<List<Map<String, dynamic>>> getIncidentResponders(String videoId) async {
     try {
@@ -597,6 +672,7 @@ class VideoRepository {
             id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
             consumer_profiles!incident_responses_volunteer_id_fkey(full_name),
             user_group_roles!incident_responses_volunteer_id_fkey(
+               profession_id,
                professions(name, color_hex)
             )
           ''')
@@ -608,6 +684,7 @@ class VideoRepository {
       for (var row in response as List) {
         String? volunteerName;
         String? professionName;
+        String? professionId;
 
         // Extract name
         final profile = row['consumer_profiles'];
@@ -621,7 +698,9 @@ class VideoRepository {
         final roles = row['user_group_roles'];
         String? professionColor;
         if (roles is List && roles.isNotEmpty) {
-           final prof = roles.first['professions'];
+           final firstRole = roles.first;
+           professionId = firstRole['profession_id']?.toString();
+           final prof = firstRole['professions'];
            if (prof != null) {
               professionName = prof['name'];
               professionColor = prof['color_hex'];
@@ -638,6 +717,7 @@ class VideoRepository {
           'volunteerName': volunteerName ?? 'อาสาสมัคร',
           'professionName': professionName ?? 'ทีมกู้ภัย',
           'professionColor': professionColor,
+          'professionId': professionId,
         });
       }
 

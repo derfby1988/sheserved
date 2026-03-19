@@ -160,14 +160,18 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       final userId = AuthService.instance.userId;
       if (userId == null) throw Exception("User not logged in");
       final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyVideo(userId: userId, videoFile: file, gpsTracks: _recordedGpsTracks, categoryId: _selectedEmergencyCategoryId);
+      final ws = WebSocketService();
       if (videoId != null && mounted) {
         final newVideo = Video(id: videoId, userId: userId, title: 'Emergency Incident', type: VideoType.emergency, status: VideoStatus.processing, latitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['latitude'] : 0.0, longitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['longitude'] : 0.0, createdAt: AppConfig.currentUtc, localFilePath: file.path, categoryId: _selectedEmergencyCategoryId, categoryName: _selectedEmergencyCategory?.name ?? 'เหตุฉุกเฉิน');
         setState(() { _trendingVideos.insert(0, newVideo); _currentVideoId = videoId; _currentVideo = newVideo; });
         _initializePlayer(file.path, isLocal: true);
         _checkPrivacyPermissions();
+        
+        // OWNER MUST JOIN ROOM TO BE COUNTED AS VIEWER
+        if (!ws.isConnected) { await ws.connect(userId: userId); }
+        if (ws.isConnected) _subscribeToVideoEvents(videoId);
       }
       if (_selectedEmergencyCategoryId != null) {
-        final ws = WebSocketService();
         ws.sendEmergencyAlert(userId: userId, categoryId: _selectedEmergencyCategoryId ?? '', videoId: videoId, type: 'video', isThaiMhungEnabled: true);
       }
       if (!mounted) return;
