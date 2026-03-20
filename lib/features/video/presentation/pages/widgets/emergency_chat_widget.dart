@@ -36,9 +36,21 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   late StreamSubscription _chatSubscription;
   bool _isLoadingHistory = true;
 
+  // ── Anti-spam state ──
+  DateTime? _lastMessageTime;
+  final int _cooldownSeconds = 3; 
+  final int _maxChars = 100; 
+  final Map<int, bool> _expandedMessages = {};
+
+  // ── Filter state ──
+  late bool _isFilterActive;
+
   @override
   void initState() {
     super.initState();
+    
+    // ตั้งค่าเริ่มต้นของตัวกรอง: ให้เปิดขึ้นอัตโนมัติถ้าเป็นกลุ่มสิทธิ์สูง
+    _isFilterActive = widget.role == 'reporter' || widget.role == 'responder';
 
     _loadChatHistory();
 
@@ -48,7 +60,11 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         final isDuplicate = _messages.any((m) => m['id'] != null && m['id'] == incoming['id']);
         if (!isDuplicate) {
           setState(() => _messages.add(incoming));
-          _scrollToBottom();
+          // ถ้าเปิดฟิลเตอร์อยู่ และข้อความใหม่ไม่ใช่กลุ่มที่ตรงกับฟิลเตอร์ ก็ไม่ต้องเลื่อนจอ
+          final isPrivilegedRole = incoming['role'] == 'reporter' || incoming['role'] == 'responder';
+          if (!_isFilterActive || isPrivilegedRole) {
+            _scrollToBottom();
+          }
         }
       }
     });
@@ -56,9 +72,19 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     WebSocketService().joinEmergencyChat(widget.videoId, widget.userId, widget.role);
   }
 
+  @override
+  void didUpdateWidget(covariant EmergencyChatWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // หากฐานะ (Role) ของผู้ใช้เปลี่ยนกลางคันเป็นกลุ่มสิทธิ์สูง ให้เปิดฟิลเตอร์แชทอัตโนมัติ
+    if (widget.role != oldWidget.role && (widget.role == 'reporter' || widget.role == 'responder')) {
+      setState(() {
+        _isFilterActive = true;
+      });
+    }
+  }
+
   Future<void> _loadChatHistory() async {
     try {
-      // ลอง API หลักก่อน (Active messages)
       final url = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat';
       debugPrint('[Chat] Loading history from: $url');
       
@@ -80,7 +106,6 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         }
       }
 
-      // ถ้า Active ไม่มีข้อมูล ลอง Archived endpoint
       final archivedUrl = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat/archived';
       debugPrint('[Chat] Trying archived endpoint: $archivedUrl');
       
@@ -131,6 +156,38 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
+
+    if (text.length > _maxChars) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ข้อความยาวเกินไป (สูงสุด 100 ตัวอักษร)'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastMessageTime != null) {
+      final difference = now.difference(_lastMessageTime!).inSeconds;
+      final requiredCooldown = (widget.role == 'reporter' || widget.role == 'responder') ? 1 : _cooldownSeconds;
+      if (difference < requiredCooldown) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('กรุณารอ ${requiredCooldown - difference} วินาทีก่อนส่งข้อความถัดไป'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+    }
+
+    if (widget.role == 'viewer' || widget.role == 'thaimhung') {
+      final linkRegex = RegExp(r'(https?:\/\/|www\.)[^\s]+');
+      if (linkRegex.hasMatch(text)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่อนุญาตให้ส่งลิงก์ในห้องแชท'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+    }
+
+    _lastMessageTime = now;
+
     WebSocketService().sendEmergencyChatMessage(
       videoId: widget.videoId,
       userId: widget.userId,
@@ -186,26 +243,77 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // โปร่งใสสมบูรณ์ ไม่มีพื้นหลัง ไม่มี blur
+    final isPrivilegedUser = widget.role == 'reporter' || widget.role == 'responder';
+
     return Column(
       children: [
-        // ── Close button แบบลอย ──
-        Align(
-          alignment: Alignment.topRight,
-          child: GestureDetector(
-            onTap: widget.onClose,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
-                ],
+        // ── Top Bar ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // ── Filter Toggle (สำหรับผู้แจ้งและเจ้าหน้าที่) ──
+            if (isPrivilegedUser) ...[
+              Container(
+                padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _isFilterActive ? Colors.lightBlueAccent.withValues(alpha: 0.5) : Colors.white24, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _isFilterActive ? Icons.filter_alt : Icons.filter_alt_outlined, 
+                      color: _isFilterActive ? Colors.lightBlueAccent : Colors.white70, 
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'ผู้แจ้ง & จนท.',
+                      style: TextStyle(fontFamily: 'Sukhumvit Set', color: _isFilterActive ? Colors.white : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 2),
+                    SizedBox(
+                      height: 18,
+                      width: 32,
+                      child: Transform.scale(
+                        scale: 0.55,
+                        child: Switch(
+                          value: _isFilterActive,
+                          activeColor: Colors.white,
+                          activeTrackColor: Colors.blueAccent,
+                          inactiveThumbColor: Colors.white70,
+                          inactiveTrackColor: Colors.white24,
+                          onChanged: (val) {
+                            setState(() => _isFilterActive = val);
+                            if (val) _scrollToBottom();
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: const Icon(Icons.close, color: Colors.white, size: 16),
+              const SizedBox(width: 8),
+            ],
+
+            // ── Close button ──
+            GestureDetector(
+              onTap: widget.onClose,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+                  ],
+                ),
+                child: const Icon(Icons.close, color: Colors.white, size: 16),
+              ),
             ),
-          ),
+          ],
         ),
         const SizedBox(height: 4),
 
@@ -228,7 +336,11 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       );
     }
 
-    if (_messages.isEmpty) {
+    final displayMessages = _isFilterActive 
+        ? _messages.where((m) => m['role'] == 'reporter' || m['role'] == 'responder').toList()
+        : _messages;
+
+    if (displayMessages.isEmpty) {
       return Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -237,7 +349,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            'ยังไม่มีการสนทนา',
+            _isFilterActive ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่' : 'ยังไม่มีการสนทนา',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
           ),
         ),
@@ -250,28 +362,27 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        itemCount: _messages.length,
+        itemCount: displayMessages.length,
         itemBuilder: (context, index) {
-          final msg = _messages[index];
+          final msg = displayMessages[index];
           final isMe = msg['userId'] == widget.userId;
           
-          // Check if previous message is from the same user
           bool showLabel = true;
           if (index > 0) {
-            final prevMsg = _messages[index - 1];
+            final prevMsg = displayMessages[index - 1];
             if (prevMsg['userId'] == msg['userId']) {
               showLabel = false;
             }
           }
           
-          return _buildBubble(msg, isMe, showLabel);
+          return _buildBubble(msg, isMe, showLabel, index);
         },
       ),
     );
   }
 
   // ── Chat Bubble ลอยบนแผนที่ ──
-  Widget _buildBubble(Map<String, dynamic> msg, bool isMe, bool showLabel) {
+  Widget _buildBubble(Map<String, dynamic> msg, bool isMe, bool showLabel, int index) {
     final role = msg['role'] ?? 'viewer';
     final professionName = msg['professionName'] as String?;
     final rawName = msg['userName'] ?? 'Unknown';
@@ -380,16 +491,34 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                   width: 0.5,
                 ),
               ),
-              child: Text(
-                content,
-                style: TextStyle(
-                  fontFamily: 'Sukhumvit Set',
-                  color: color, 
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  height: 1.15,
-                  shadows: const [Shadow(color: Colors.black54, blurRadius: 3)],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    content,
+                    maxLines: _expandedMessages[index] == true ? null : 3,
+                    overflow: _expandedMessages[index] == true ? TextOverflow.visible : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Sukhumvit Set',
+                      color: color, 
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 1.15,
+                      shadows: const [Shadow(color: Colors.black54, blurRadius: 3)],
+                    ),
+                  ),
+                  if (content.length > 60 && _expandedMessages[index] != true)
+                    GestureDetector(
+                      onTap: () => setState(() => _expandedMessages[index] = true),
+                      child: const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text(
+                          '...อ่านเพิ่มเติม',
+                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -432,15 +561,19 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               controller: _messageController,
               style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.black, fontSize: 13), // เปลี่ยนตัวอักษรเป็นสีดำ
               maxLines: 1,
+              enableInteractiveSelection: false, // 🚫 ป้องกันการกดค้างเพื่อ Paste
+              contextMenuBuilder: (context, editableTextState) => const SizedBox.shrink(), // 🚫 ซ่อน Context Menu (Cut, Copy, Paste)
               decoration: InputDecoration(
                 hintText: 'พิมพ์ข้อความ...',
-                hintStyle: TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.black54, fontSize: 13), // เปลี่ยนสี hint เป็นเทาเข้ม
+                hintStyle: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.black54, fontSize: 13), // เปลี่ยนสี hint เป็นเทาเข้ม
+                counterText: '', // ซ่อน counter default
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
               ),
+              maxLength: _maxChars,
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
