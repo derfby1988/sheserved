@@ -174,16 +174,15 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
 
                           final bool hasLocalPreview = video.localFilePath != null;
                           final bool isStillProcessing = video.status == VideoStatus.processing;
-                          final bool showPlaceholder = isStillProcessing && !hasLocalPreview;
-
-                          if (showPlaceholder) {
-                            return const VideoSkeletonWidget(isTrendingCard: true);
-                          }
 
                           return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
                             onTap: () {
+                              debugPrint('[TrendingPanel] Card tapped! video.id: ${video.id}, currentVideoId: ${widget.currentVideoId}');
                               if (video.id != widget.currentVideoId) {
                                 widget.onSwitchVideo(video.id);
+                              } else {
+                                debugPrint('[TrendingPanel] Already on this video.');
                               }
                             },
                             child: AnimatedBuilder(

@@ -66,6 +66,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   void _loadInitialData() async {
+    _fetchProfessionName();
     await _loadEmergencyCategories();
     if (_currentVideoId != null) {
       // หมายเหตุ: ไม่เรียก _recordView() แล้ว เพราะ WebSocket Server นับ unique viewers ผ่าน room membership

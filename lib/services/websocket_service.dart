@@ -416,6 +416,7 @@ class WebSocketService {
     required String userName,
     required String content,
     String? profileImageUrl,
+    String? professionName,
   }) {
     if (!_isConnected || _socket == null) return;
     _socket!.emit('send-emergency-message', {
@@ -425,6 +426,7 @@ class WebSocketService {
       'userName': userName,
       'content': content,
       'profileImageUrl': profileImageUrl,
+      'professionName': professionName,
     });
   }
   

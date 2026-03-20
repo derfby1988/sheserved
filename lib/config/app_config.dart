@@ -24,7 +24,7 @@ class AppConfig {
 
   /// IP ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server
   /// เปลี่ยนเป็น 127.0.0.1 หากรันบนเครื่องเดียวกัน
-  static const String mainMachineIp = '192.168.0.118'; // IP เครื่องหลักของคุณ
+  static const String mainMachineIp = '192.168.1.164'; // IP เครื่องหลักของคุณ
 
   /// URL ของ WebSocket Server
   static const String localApiUrl = 'http://$mainMachineIp:3000';

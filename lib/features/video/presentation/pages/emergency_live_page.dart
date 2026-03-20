@@ -112,6 +112,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   bool _isUiVisible = true;
   bool _isChatVisible = false;
   bool _hasRejected = false;
+  String? _currentProfessionName;
 
   @override
   void initState() {
@@ -274,6 +275,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                 userId: AuthService.instance.userId ?? 'unknown',
                 userName: AuthService.instance.currentUser?.fullName ?? 'Anonymous',
                 role: _getChatRole(),
+                professionName: _currentProfessionName,
                 profileImageUrl: AuthService.instance.currentUser?.profileImageUrl,
                 onClose: () => setState(() => _isChatVisible = false),
               ),
@@ -497,6 +499,22 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           }),
         ),
       );
+    }
+  }
+
+  /// ดึงชื่ออาชีพของผู้ใช้ปัจจุบัน (เพื่อแสดงใน Chat สำหรับ Responder)
+  Future<void> _fetchProfessionName() async {
+    final user = AuthService.instance.currentUser;
+    if (user != null && user.professionId != null) {
+      try {
+        final repo = ServiceLocator.instance.professionRepository;
+        final profession = await repo.getProfessionById(user.professionId!);
+        if (profession != null && mounted) {
+          setState(() => _currentProfessionName = profession.name);
+        }
+      } catch (e) {
+        debugPrint('Error fetching profession name: $e');
+      }
     }
   }
 }

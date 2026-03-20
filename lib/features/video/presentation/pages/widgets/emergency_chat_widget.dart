@@ -11,6 +11,7 @@ class EmergencyChatWidget extends StatefulWidget {
   final String userName;
   final String role;
   final String? profileImageUrl;
+  final String? professionName;
   final VoidCallback onClose;
 
   const EmergencyChatWidget({
@@ -20,6 +21,7 @@ class EmergencyChatWidget extends StatefulWidget {
     required this.userName,
     required this.role,
     this.profileImageUrl,
+    this.professionName,
     required this.onClose,
   });
 
@@ -136,8 +138,20 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       userName: widget.userName,
       content: text,
       profileImageUrl: widget.profileImageUrl,
+      professionName: widget.professionName,
     );
     _messageController.clear();
+  }
+
+  String _formatShortName(String rawName) {
+    if (rawName.isEmpty) return 'Unknown';
+    final parts = rawName.split(' ');
+    if (parts.length > 1) {
+      if (parts.last.isNotEmpty) {
+        return '${parts[0]} ${parts.last[0]}.';
+      }
+    }
+    return rawName;
   }
 
   Color _roleColor(String role) {
@@ -145,16 +159,18 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       case 'reporter':   return const Color(0xFFFF9500); // Orange
       case 'responder':  return const Color(0xFF007AFF); // Blue
       case 'thaimhung':  return const Color(0xFFFF2D78); // Pink
+      case 'viewer':     return const Color(0xFFFF2D78); // Pink (โหมดสนับสนุน)
       default:           return const Color(0xFF8E8E93); // Grey
     }
   }
 
-  String _roleLabel(String role) {
+  String _roleLabel(String role, String shortName, {String? professionName}) {
     switch (role) {
       case 'reporter':  return 'ผู้แจ้งเหตุ';
-      case 'responder': return 'เจ้าหน้าที่';
-      case 'thaimhung': return 'ไทยมุง';
-      default:          return 'ผู้ชม';
+      case 'responder': return professionName?.isNotEmpty == true ? professionName! : 'เจ้าหน้าที่';
+      case 'thaimhung': return shortName;
+      case 'viewer':    return shortName;
+      default:          return shortName;
     }
   }
 
@@ -238,23 +254,38 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         itemBuilder: (context, index) {
           final msg = _messages[index];
           final isMe = msg['userId'] == widget.userId;
-          return _buildBubble(msg, isMe);
+          
+          // Check if previous message is from the same user
+          bool showLabel = true;
+          if (index > 0) {
+            final prevMsg = _messages[index - 1];
+            if (prevMsg['userId'] == msg['userId']) {
+              showLabel = false;
+            }
+          }
+          
+          return _buildBubble(msg, isMe, showLabel);
         },
       ),
     );
   }
 
   // ── Chat Bubble ลอยบนแผนที่ ──
-  Widget _buildBubble(Map<String, dynamic> msg, bool isMe) {
+  Widget _buildBubble(Map<String, dynamic> msg, bool isMe, bool showLabel) {
     final role = msg['role'] ?? 'viewer';
+    final professionName = msg['professionName'] as String?;
+    final rawName = msg['userName'] ?? 'Unknown';
+    final shortName = _formatShortName(rawName);
+    
     final color = _roleColor(role);
-    final label = _roleLabel(role);
-    final name = msg['userName'] ?? 'Unknown';
+    final label = _roleLabel(role, shortName, professionName: professionName);
     final content = msg['content'] ?? '';
     final time = _formatTimestamp(msg['timestamp']);
 
+    final bool isViewerOrThaimhung = role == 'viewer' || role == 'thaimhung';
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: EdgeInsets.only(bottom: 2, top: showLabel ? 6 : 0),
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
@@ -262,34 +293,67 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // ── sender label ──
-            if (!isMe)
+            if (showLabel)
               Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 2),
+                padding: EdgeInsets.only(
+                  left: isMe ? 0 : 4,
+                  right: isMe ? 4 : 0,
+                  bottom: 2,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(4),
+                    if (!isMe) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          label,
+                          style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                      child: Text(
-                        label,
-                        style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      if (!isViewerOrThaimhung) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          shortName,
+                          style: TextStyle(
+                            fontFamily: 'Sukhumvit Set',
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            shadows: [Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4)],
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      if (!isViewerOrThaimhung) ...[
+                        Text(
+                          shortName,
+                          style: TextStyle(
+                            fontFamily: 'Sukhumvit Set',
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            shadows: [Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4)],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          label,
+                          style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      name,
-                      style: TextStyle(
-                        fontFamily: 'Sukhumvit Set',
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        shadows: [Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4)],
-                      ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -299,22 +363,17 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.56),
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
               decoration: BoxDecoration(
-                // พื้นหลังแค่เล็กน้อยเพื่อให้อ่านได้ ไม่บังแผนที่
                 color: isMe
                     ? color.withValues(alpha: 0.15)
                     : Colors.black.withValues(alpha: 0.52),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(14),
-                  topRight: const Radius.circular(14),
-                  bottomLeft: isMe ? const Radius.circular(14) : Radius.zero,
-                  bottomRight: isMe ? Radius.zero : const Radius.circular(14),
+                  topLeft: showLabel && !isMe ? Radius.zero : const Radius.circular(14),
+                  topRight: showLabel && isMe ? Radius.zero : const Radius.circular(14),
+                  bottomLeft: const Radius.circular(14),
+                  bottomRight: const Radius.circular(14),
                 ),
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
                 ],
                 border: Border.all(
                   color: isMe ? color.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.12),
@@ -325,7 +384,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                 content,
                 style: TextStyle(
                   fontFamily: 'Sukhumvit Set',
-                  color: color, // ⬅️ เปลี่ยนสีตัวอักษรตามกลุ่ม
+                  color: color, 
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   height: 1.15,
@@ -334,36 +393,17 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               ),
             ),
 
-            // ── timestamp + my role badge ──
+            // ── timestamp ──
             Padding(
               padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isMe) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        label,
-                        style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontFamily: 'Sukhumvit Set',
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 9,
-                      shadows: [Shadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 3)],
-                    ),
-                  ),
-                ],
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontFamily: 'Sukhumvit Set',
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 9,
+                  shadows: [Shadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 3)],
+                ),
               ),
             ),
           ],

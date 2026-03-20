@@ -605,8 +605,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send-emergency-message', async (data) => {
-    const { videoId, userId, role, userName, content, profileImageUrl } = data;
-    console.log(`[Chat] Message in ${videoId} from ${userName} (${role}): ${content}`);
+    const { videoId, userId, role, userName, content, profileImageUrl, professionName } = data;
+    console.log(`[Chat] Message in ${videoId} from ${userName} (${role}/${professionName || 'no-prof'}): ${content}`);
 
     const messagePayload = {
       id: require('crypto').randomUUID(), // ✅ UUID แทน Date.now() เพื่อป้องกัน ID ชนกัน
@@ -616,6 +616,7 @@ io.on('connection', (socket) => {
       userName,
       content,
       profileImageUrl,
+      professionName,
       timestamp: new Date().toISOString()
     };
 
@@ -647,7 +648,7 @@ io.on('connection', (socket) => {
         await pool.query(
           `INSERT INTO chat_messages (id, room_id, sender_id, content, created_at, metadata)
            VALUES ($1, $2, $3, $4, NOW(), $5)`,
-          [messagePayload.id, roomId, userId, content, JSON.stringify({ role, userName, profileImageUrl })]
+          [messagePayload.id, roomId, userId, content, JSON.stringify({ role, userName, profileImageUrl, professionName })]
         );
 
         // Update room's last message
@@ -722,7 +723,8 @@ app.get('/api/videos/:videoId/chat', async (req, res) => {
          m.created_at         AS "timestamp",
          m.metadata->>'role'         AS role,
          m.metadata->>'userName'     AS "userName",
-         m.metadata->>'profileImageUrl' AS "profileImageUrl"
+         m.metadata->>'profileImageUrl' AS "profileImageUrl",
+         m.metadata->>'professionName' AS "professionName"
        FROM chat_messages m
        JOIN chat_rooms r ON m.room_id = r.id
        WHERE r.video_id = $1
@@ -754,7 +756,8 @@ app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
          a.created_at         AS "timestamp",
          a.metadata->>'role'         AS role,
          a.metadata->>'userName'     AS "userName",
-         a.metadata->>'profileImageUrl' AS "profileImageUrl"
+         a.metadata->>'profileImageUrl' AS "profileImageUrl",
+         a.metadata->>'professionName' AS "professionName"
        FROM chat_messages_archive a
        WHERE a.video_id = $1
        ORDER BY a.created_at ASC
