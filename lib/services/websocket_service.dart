@@ -349,6 +349,7 @@ class WebSocketService {
     String? type,
     String? text,
     bool isThaiMhungEnabled = false,
+    String? incidentId, // ✅ สำหรับเชื่อมโยงภาพไทยมุงกับเหตุการณ์หลัก
   }) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
@@ -362,8 +363,9 @@ class WebSocketService {
       'type': type,
       'text': text,
       'isThaiMhungEnabled': isThaiMhungEnabled,
+      'incidentId': incidentId, // ✅ ส่ง incidentId ไปยัง server
     });
-    debugPrint('Sent emergency alert for category: $categoryId, thaiMhung: $isThaiMhungEnabled');
+    debugPrint('Sent emergency alert for category: $categoryId, incidentId: $incidentId, thaiMhung: $isThaiMhungEnabled');
   }
 
   /// Send Rescue Status Update (Feedback loop)

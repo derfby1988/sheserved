@@ -56,6 +56,9 @@ class DonationCategory {
   final int displayOrder;
   final List<String> volunteerProfessionIds;
   final List<DonationCategoryField> customFields;
+  // รายชื่อ profession_id ที่ต้องอนุมัติทั้งหมดก่อนคำร้องจะ active ได้
+  // สามารถมีหลายกลุ่มอาชีพ และทุกกลุ่มต้องอนุมัติครบ
+  final List<String> approverProfessionIds;
 
   const DonationCategory({
     required this.id,
@@ -66,6 +69,7 @@ class DonationCategory {
     this.displayOrder = 0,
     this.volunteerProfessionIds = const [],
     this.customFields = const [],
+    this.approverProfessionIds = const [],
   });
 
   factory DonationCategory.fromJson(Map<String, dynamic> json) {
@@ -82,6 +86,13 @@ class DonationCategory {
       }
     }
 
+    List<String> approverIds = [];
+    if (json['approver_profession_ids'] != null) {
+      if (json['approver_profession_ids'] is List) {
+        approverIds = List<String>.from(json['approver_profession_ids']);
+      }
+    }
+
     return DonationCategory(
       id: json['id'],
       name: json['name'] ?? '',
@@ -93,6 +104,7 @@ class DonationCategory {
           : int.tryParse(json['display_order']?.toString() ?? '0') ?? 0,
       volunteerProfessionIds: volunteerIds,
       customFields: fields,
+      approverProfessionIds: approverIds,
     );
   }
 
@@ -106,6 +118,7 @@ class DonationCategory {
       'display_order': displayOrder,
       'volunteer_profession_ids': volunteerProfessionIds,
       'custom_fields': customFields.map((e) => e.toJson()).toList(),
+      'approver_profession_ids': approverProfessionIds,
     };
   }
 }
@@ -115,6 +128,7 @@ class DonationRequest {
   final String id;
   final String? userId;
   final String categoryId;
+  final String? videoId;
   final String title;
   final String? description;
   final double? targetAmount;
@@ -138,6 +152,7 @@ class DonationRequest {
     required this.id,
     this.userId,
     required this.categoryId,
+    this.videoId,
     required this.title,
     this.description,
     this.targetAmount,
@@ -170,6 +185,7 @@ class DonationRequest {
       id: json['id'],
       userId: json['user_id'],
       categoryId: json['category_id'] ?? '',
+      videoId: json['video_id'],
       title: json['title'] ?? '',
       description: json['description'],
       targetAmount: json['target_amount'] != null ? parseDouble(json['target_amount']) : null,
@@ -197,6 +213,7 @@ class DonationRequest {
     return {
       'id': id,
       'category_id': categoryId,
+      'video_id': videoId,
       'title': title,
       'description': description,
       'target_amount': targetAmount,

@@ -239,7 +239,9 @@ module.exports = (pool) => {
 
             res.json({
                 message: `${modeName} photos upload successful (${files.length}/${quota})`,
-                video: { ...videoRecord, photo_urls: photoUrls }
+                video: { ...videoRecord, photo_urls: photoUrls },
+                photo_urls: photoUrls,
+                incidentId: incidentId
             });
         } catch (error) {
             console.error('Upload Error:', error);

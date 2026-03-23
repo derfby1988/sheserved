@@ -57,6 +57,44 @@ class VideoRepository {
   }
 
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
+  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) ตามแผนใหม่ §3
+  Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId) async {
+    try {
+      // 1. ลองดึงจากตารางไทยมุงโดยตรงก่อน (Real table ตามแผน §3)
+      final response1 = await _client
+          .from('thai_mhung_photos')
+          .select()
+          .eq('video_id', videoId)
+          .order('created_at', ascending: true);
+      
+      final results1 = List<Map<String, dynamic>>.from(response1 as List);
+      if (results1.isNotEmpty) {
+        return results1.map((v) => {
+          ...v,
+          'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
+        }).toList();
+      }
+
+      // 2. Fallback: ถ้าตารางหลักไม่มี/ยังไม่ได้ migration ให้ดึงจากตาราง videos รหัสแบบเดิม
+      final response2 = await _client
+          .from('videos')
+          .select()
+          .eq('type', 'thai_mhung_photo')
+          .eq('category_id', videoId) 
+          .order('created_at', ascending: true);
+      
+      final results2 = List<Map<String, dynamic>>.from(response2 as List);
+      return results2.map((v) => {
+        'id': v['id'],
+        'photo_url': _ensureFullUrl(v['local_file_path'] ?? v['bunny_url'] ?? v['thumbnail_url'] ?? ''),
+        'created_at': v['created_at'],
+      }).toList();
+    } catch (e) {
+      debugPrint('VideoRepository: Error fetching gallery photos: $e');
+      return [];
+    }
+  }
+
   Future<List<Video>> getEmergencyVideos() async {
     // Attempt Local API first
     try {
@@ -454,7 +492,29 @@ class VideoRepository {
 
     final respStr = await response.stream.bytesToString();
     final data = jsonDecode(respStr);
-    return data['video']?['id']?.toString() ?? data['id']?.toString();
+    final String? vId = data['video']?['id']?.toString() ?? data['id']?.toString();
+    
+    // ดักจับและประมวลผลรูปภาพสำหรับระบบ Thai Mhung §3
+    if (isThaiMhung && vId != null) {
+      final List<dynamic> urls = data['photo_urls'] ?? (data['video'] != null ? data['video']['photo_urls'] : null) ?? data['urls'] ?? [];
+      if (urls.isNotEmpty) {
+        for (var url in urls) {
+          try {
+            await _client.from('thai_mhung_photos').insert({
+              'video_id': incidentId ?? vId,
+              'user_id': userId,
+              'photo_url': url.toString(),
+              'latitude': gpsTracks.isNotEmpty ? gpsTracks.last['latitude'] : null,
+              'longitude': gpsTracks.isNotEmpty ? gpsTracks.last['longitude'] : null,
+            });
+          } catch (e) {
+            debugPrint('VideoRepository: Error dual-writing to thai_mhung_photos: $e');
+          }
+        }
+      }
+    }
+    
+    return vId;
   }
 
   /// ดึงพิกัดล่าสุดของ Live/วิดีโอ ที่กำลังออนไลน์หรือประมวลผลเสร็จแล้ว
@@ -753,5 +813,32 @@ class VideoRepository {
       debugPrint('Error checking volunteer status: $e');
       return false;
     }
+  }
+
+  /// (Public helper สำหรับใช้ใน Widget)
+  String ensureFullUrl(String url) => _ensureFullUrl(url);
+
+  String _ensureFullUrl(String url) {
+    if (url.isEmpty) return '';
+    final baseUrl = AppConfig.localApiUrl;
+
+    // ✅ ถ้ามี 'localhost' ให้เปลี่ยนเป็น IP ทันทีตาม AppConfig
+    if (url.contains('localhost')) {
+      final fixedUrl = url.replaceAll('http://localhost:3000', baseUrl);
+      debugPrint('VideoRepository: Fixed localhost URL: $fixedUrl');
+      return fixedUrl;
+    }
+
+    if (url.startsWith('http')) return url;
+    
+    String fullUrl;
+    if (url.startsWith('/')) {
+      fullUrl = '$baseUrl$url';
+    } else {
+      fullUrl = '$baseUrl/$url';
+    }
+    
+    debugPrint('VideoRepository: Normalized URL: $fullUrl');
+    return fullUrl;
   }
 }

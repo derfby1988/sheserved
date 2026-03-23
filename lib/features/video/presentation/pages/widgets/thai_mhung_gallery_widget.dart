@@ -9,20 +9,11 @@ class ThaiMhungPhoto {
   ThaiMhungPhoto({required this.id, required this.url, this.userName});
 }
 
-// ============================================================
-// ThaiMhungGalleryWidget
-// แสดงรูปในช่วง [currentPage-2 ... currentPage ... currentPage+2]
-// ตามแผน §4 Thai Mhung: "แสดงรูปตัวอย่างข้างซ้าย/ขวาสูงสุด 2 รูป"
-// Ellipsis (..) แสดงเมื่อมีรูปที่อยู่นอก window ด้านซ้ายหรือขวา
-// ============================================================
 class ThaiMhungGalleryWidget extends StatefulWidget {
   final List<ThaiMhungPhoto> photos;
   final Function(ThaiMhungPhoto) onPhotoTap;
-  /// true = ผู้ใช้มีสิทธิ์เห็นภาพต้นฉบับ (ไม่เบลอ)
-  /// false (default) = แสดง Face Blur overlay
   final bool canViewUnblurred;
 
-  /// จำนวนรูปที่แสดงแต่ละด้านรอบ currentPage (ตาม spec = 2)
   static const int windowRadius = 2;
 
   const ThaiMhungGalleryWidget({
@@ -56,7 +47,6 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
     super.dispose();
   }
 
-  /// ✅ visible window: แสดงเฉพาะ index ในช่วง ±windowRadius รอบ currentPage
   List<({ThaiMhungPhoto photo, int originalIndex})> get _visiblePhotos {
     final r = ThaiMhungGalleryWidget.windowRadius;
     final start = (_currentPage - r).clamp(0, widget.photos.length - 1);
@@ -67,10 +57,8 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
     ];
   }
 
-  /// มีรูปนอก window ทางซ้ายหรือไม่
   bool get _hasMoreLeft => _currentPage > ThaiMhungGalleryWidget.windowRadius;
 
-  /// มีรูปนอก window ทางขวาหรือไม่
   bool get _hasMoreRight =>
       _currentPage < widget.photos.length - 1 - ThaiMhungGalleryWidget.windowRadius;
 
@@ -79,7 +67,6 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
     if (widget.photos.isEmpty) return const SizedBox.shrink();
 
     final visible = _visiblePhotos;
-    final itemWidth = MediaQuery.of(context).size.width * 0.25;
 
     return Container(
       height: 120,
@@ -98,22 +85,14 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white24),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: const SizedBox.expand(),
-              ),
-            ),
           ),
 
-          // ✅ แสดงเฉพาะรูปใน visible window ±2 รอบ currentPage
-          SizedBox(
-            height: 110,
+          // Photos Row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Left Ellipsis - แสดงเมื่อมีรูปที่ซ่อนอยู่ทางซ้าย
                 if (_hasMoreLeft) _buildEllipsis(onTap: () {
                   _pageController.animateToPage(
                     (_currentPage - ThaiMhungGalleryWidget.windowRadius - 1).clamp(0, widget.photos.length - 1),
@@ -122,60 +101,58 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                   );
                 }),
 
-                // รูปที่อยู่ใน visible window เท่านั้น
                 ...visible.map((item) {
                   final isSelected = item.originalIndex == _currentPage;
-                  return AnimatedScale(
-                    scale: isSelected ? 1.1 : 0.8,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutBack,
-                    child: SizedBox(
-                      width: itemWidth,
-                      child: GestureDetector(
-                        onTap: () {
-                          if (isSelected) {
-                            widget.onPhotoTap(item.photo);
-                          } else {
-                            _pageController.animateToPage(
-                              item.originalIndex,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          }
-                        },
-                        child: Hero(
-                          tag: 'thai_mhung_photo_${item.photo.id}',
-                          child: Stack(
-                            children: [
-                              // Base image
-                              Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected ? Colors.blue : Colors.white38,
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                  boxShadow: [
-                                    if (isSelected)
-                                      BoxShadow(
-                                        color: Colors.blue.withValues(alpha: 0.4),
-                                        blurRadius: 10,
-                                        spreadRadius: 2,
-                                      ),
-                                  ],
-                                  image: DecorationImage(
-                                    image: NetworkImage(item.photo.url),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                              // Face blur overlay — แสดงเมื่อไม่มีสิทธิ์เห็นต้นฉบับ
-                              if (!widget.canViewUnblurred)
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        if (isSelected) {
+                          widget.onPhotoTap(item.photo);
+                        } else {
+                          _pageController.animateToPage(
+                            item.originalIndex,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        }
+                      },
+                      child: Hero(
+                        tag: 'thai_mhung_photo_${item.photo.id}',
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected ? Colors.blue : Colors.white38,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Stack(
+                              children: [
                                 Positioned.fill(
-                                  child: _FaceBlurOverlay(),
+                                  child: ImageFiltered(
+                                    imageFilter: widget.canViewUnblurred 
+                                        ? ImageFilter.blur(sigmaX: 0, sigmaY: 0) 
+                                        : ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                    child: Image.network(
+                                      item.photo.url,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        color: Colors.grey[900],
+                                        child: const Icon(Icons.broken_image, color: Colors.white24),
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                            ],
+                                if (!widget.canViewUnblurred)
+                                  const Center(
+                                    child: Icon(Icons.privacy_tip, color: Colors.white70, size: 20),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -183,7 +160,6 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                   );
                 }),
 
-                // Right Ellipsis - แสดงเมื่อมีรูปที่ซ่อนอยู่ทางขวา
                 if (_hasMoreRight) _buildEllipsis(onTap: () {
                   _pageController.animateToPage(
                     (_currentPage + ThaiMhungGalleryWidget.windowRadius + 1).clamp(0, widget.photos.length - 1),
@@ -195,7 +171,7 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
             ),
           ),
 
-          // PageController listener — invisible, รับ swipe gesture จากผู้ใช้
+          // PageController listener
           Positioned.fill(
             child: PageView.builder(
               controller: _pageController,
@@ -227,59 +203,6 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
             fontSize: 12,
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Simulated Face Blur Overlay
-/// ใช้ BackdropFilter + CustomPainter เพื่อทำ Bokeh-style blur บริเวณหน้าคน
-/// ในระบบ Production จะส่งภาพผ่าน MediaPipe บน Server แทน
-class _FaceBlurOverlay extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Stack(
-        children: [
-          // Full blur layer หลัก (Gaussian Blur สม่ำเสมอ)
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: Container(color: Colors.transparent),
-          ),
-          // Privacy icon + label
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 16),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'ซ่อนภาพ',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

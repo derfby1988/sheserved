@@ -9,7 +9,8 @@ import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart'
 import 'package:intl/intl.dart';
 
 class DonationCreatePage extends StatefulWidget {
-  const DonationCreatePage({super.key});
+  final String? videoId;
+  const DonationCreatePage({super.key, this.videoId});
 
   @override
   State<DonationCreatePage> createState() => _DonationCreatePageState();
@@ -222,6 +223,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
       final requestData = {
         'user_id': userId,
         'category_id': _selectedCategoryId,
+        'video_id': widget.videoId,
         'community_id': _selectedCommunityId ?? 'unknown', // Set default since UI removed
         'title': _title,
         'description': _description,

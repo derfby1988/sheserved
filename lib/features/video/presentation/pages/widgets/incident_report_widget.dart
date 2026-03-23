@@ -53,8 +53,8 @@ class IncidentReportWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool categorySelected = selectedEmergencyCategoryId != null;
-    final bool canRecord = categorySelected && !isLoadingCategories;
+    final bool categorySelected = isThaiMhungMode || selectedEmergencyCategoryId != null;
+    final bool canRecord = isThaiMhungMode || (categorySelected && !isLoadingCategories);
 
     final screenSize = MediaQuery.of(context).size;
     final maxPreviewHeight = screenSize.height * 0.75;
@@ -133,7 +133,7 @@ class IncidentReportWidget extends StatelessWidget {
                           ? SizedBox.expand(child: CameraPreview(cameraController!))
                           : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
                     ),
-                    if (!isRecording && prepCountdown == 0)
+                    if (!isRecording && prepCountdown == 0 && !isThaiMhungMode)
                       Positioned(
                         left: 0,
                         right: 0,
@@ -344,71 +344,7 @@ class IncidentReportWidget extends StatelessWidget {
                 ),
               ),
             ),
-            if (isThaiMhungMode) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'โหมดไทยมุง: ถ่ายภาพได้สูงสุด $maxPhotos ภาพ (${capturedPhotos.length}/$maxPhotos)',
-                        style: const TextStyle(
-                          fontFamily: 'SukhumvitSet',
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // ✅ Yield Way Button (ตามแผน §4 Yield Way Feedback System)
-              GestureDetector(
-                onTap: onYieldWay,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF007AFF), Color(0xFF00C7BE)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.directions_car, color: Colors.white, size: 22),
-                      SizedBox(width: 10),
-                      Text(
-                        'ช่วยกดปุ่ม "ให้ทาง" (Yield Way)',
-                        style: TextStyle(
-                          fontFamily: 'SukhumvitSet',
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            const SizedBox(height: 12),
             const SizedBox(height: 24),
             if (isPhotoMode && capturedPhotos.isNotEmpty) ...[
               SizedBox(

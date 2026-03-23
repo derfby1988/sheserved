@@ -103,7 +103,27 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       }
     }
     await _loadTrendingVideos();
-    if (_currentVideoId != null) _loadResponders();
+    if (_currentVideoId != null) {
+      _loadResponders();
+      _loadGalleryPhotos();
+    }
+  }
+
+  Future<void> _loadGalleryPhotos() async {
+    if (_currentVideoId == null) return;
+    try {
+      final results = await ServiceLocator.instance.videoRepository.getThaiMhungGalleryPhotos(_currentVideoId!);
+      if (mounted) {
+        setState(() {
+          _thaiMhungPhotos = results.map((e) => ThaiMhungPhoto(
+            id: e['id']?.toString() ?? '',
+            url: e['photo_url']?.toString() ?? '',
+          )).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading gallery photos: $e');
+    }
   }
 
   Future<void> _loadResponders() async {
@@ -317,7 +337,12 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
     if (perm == LocationPermission.deniedForever) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GPS ถูกปฏิเสธถาวร กรุณาเปิดในตั้งค่า'))); return; }
-    setState(() { _selectedTab = 0; _isThaiMhungReporting = true; _loadInitialData(); });
+    setState(() { 
+      _selectedTab = 0; 
+      _isThaiMhungReporting = true; 
+      _isPhotoMode = true; // บังคับโหมดภาพถ่ายสำหรับไทยมุง
+      _loadInitialData(); 
+    });
     _initCamera();
   }
 

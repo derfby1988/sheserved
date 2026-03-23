@@ -57,7 +57,14 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (mounted && data['videoId'] != _currentVideoId && !isSelfReport) {
         setState(() { _highlightVideoId = data['videoId']; });
         _loadTrendingVideos();
-      } else { _loadTrendingVideos(); }
+      } else { 
+        _loadTrendingVideos(); 
+      }
+
+      // ✅ ถ้าเป็นไทยมุงแจ้งภาพในเหตุการณ์ที่กำลังเปิดอยู่ ให้รีโหลด Gallery
+      if (data['type'] == 'photo' && data['incidentId'] == _currentVideoId) {
+        _loadGalleryPhotos();
+      }
     });
 
     _rescueIncomingSub?.cancel();

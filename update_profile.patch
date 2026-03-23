@@ -1,0 +1,180 @@
+--- lib/features/profile/presentation/pages/profile_page.dart
++++ lib/features/profile/presentation/pages/profile_page.dart
+@@ -58,6 +58,8 @@
+   // สิทธิ์ผู้นำชุมชน
+   bool _isLocalLeader = false;
++  bool _isApproverEnabled = true;
++  int _approvalRadius = 500;
+ 
+   @override
+   void initState() {
+@@ -100,5 +102,9 @@
+             _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+           }
++
++          // Load settings for approver
++          _isApproverEnabled = _dynamicData['is_approver_enabled'] == 'true' || _dynamicData['is_approver_enabled'] == null;
++          _approvalRadius = int.tryParse(_dynamicData['approval_radius'] ?? '500') ?? 500;
+ 
+           _initControllers();
+@@ -262,4 +268,5 @@
+               ] else if (_selectedTabIndex == 3) ...[
++                _buildApproverSettings(),
+                 DonationRequestManagementPanel(
+                   repository: _donationRepository,
+                   userId: AuthService.instance.userId,
+@@ -690,4 +697,110 @@
+   }
+ 
++  Future<void> _updateApproverSettings({bool? enabled, int? radius}) async {
++    if (_user == null) return;
++    bool newEnabled = enabled ?? _isApproverEnabled;
++    final newRadius = radius ?? _approvalRadius;
++    
++    try {
++      if (enabled != null) {
++        await supa.Supabase.instance.client.from('user_registration_data').upsert({
++          'user_id': _user!.id,
++          'field_id': 'is_approver_enabled',
++          'field_value': newEnabled.toString(),
++          'updated_at': DateTime.now().toIso8601String(),
++        }, onConflict: 'user_id,field_id');
++      }
++      if (radius != null) {
++        await supa.Supabase.instance.client.from('user_registration_data').upsert({
++          'user_id': _user!.id,
++          'field_id': 'approval_radius',
++          'field_value': newRadius.toString(),
++          'updated_at': DateTime.now().toIso8601String(),
++        }, onConflict: 'user_id,field_id');
++      }
++      
++      // Save locally to dynamicData so we don't have to refetch
++      _dynamicData['is_approver_enabled'] = newEnabled.toString();
++      _dynamicData['approval_radius'] = newRadius.toString();
++      
++      if (mounted) {
++        setState(() {
++          _isApproverEnabled = newEnabled;
++          _approvalRadius = newRadius;
++        });
++      }
++    } catch(e) {
++      debugPrint('Error updating approver settings: $e');
++    }
++  }
++
++  Widget _buildApproverSettings() {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Text(
++          'การตั้งค่าการอนุมัติ',
++          style: AppTextStyles.heading3.copyWith(color: Colors.teal),
++        ),
++        const SizedBox(height: 16),
++        Container(
++          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
++          decoration: BoxDecoration(
++            color: Colors.white,
++            borderRadius: BorderRadius.circular(12),
++            border: Border.all(color: Colors.grey[200]!),
++            boxShadow: [
++              BoxShadow(
++                color: Colors.black.withValues(alpha: 0.05),
++                blurRadius: 10,
++                offset: const Offset(0, 4),
++              ),
++            ],
++          ),
++          child: Row(
++            mainAxisAlignment: MainAxisAlignment.spaceBetween,
++            children: [
++              Expanded(
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    Text(
++                      'เข้าร่วมอนุมัติรายการบริจาค',
++                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
++                    ),
++                    Text(
++                      'แสดงตามสิทธิ์ที่กำหนดไว้ใน dialog flow การอนุมัติ แถบหมวดหมู่ หน้าจัดการระบบบริจาค',
++                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
++                    ),
++                  ],
++                ),
++              ),
++              Switch(
++                value: _isApproverEnabled,
++                onChanged: (value) => _updateApproverSettings(enabled: value),
++                activeThumbColor: Colors.teal,
++              ),
++            ],
++          ),
++        ),
++        const SizedBox(height: 24),
++        // พื้นที่อนุมัติการบริจาค
++        Container(
++          padding: const EdgeInsets.all(16),
++          decoration: BoxDecoration(
++            color: Colors.white,
++            borderRadius: BorderRadius.circular(12),
++            border: Border.all(color: Colors.grey[200]!),
++          ),
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Row(
++                mainAxisAlignment: MainAxisAlignment.spaceBetween,
++                children: [
++                  Text(
++                    'พื้นที่อนุมัติการบริจาค',
++                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
++                  ),
++                  Container(
++                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
++                    decoration: BoxDecoration(
++                      color: Colors.teal.withValues(alpha: 0.1),
++                      borderRadius: BorderRadius.circular(8),
++                    ),
++                    child: Text(
++                      _approvalRadius >= 1000 
++                        ? '${(_approvalRadius / 1000).toStringAsFixed(1)} กม.' 
++                        : '$_approvalRadius ม.',
++                      style: AppTextStyles.bodySmall.copyWith(
++                        color: Colors.teal,
++                        fontWeight: FontWeight.bold,
++                      ),
++                    ),
++                  ),
++                ],
++              ),
++              const SizedBox(height: 8),
++              Text(
++                'โดยคำนวนระยะทางจากที่อยู่ปัจจุบันของผู้อนุมัติ ไปยังตำแหน่งหรือสถานที่ที่ผู้ร้องขอการบริจาคต้องการนำไปใช้',
++                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
++              ),
++              const SizedBox(height: 16),
++              Slider(
++                value: _approvalRadius.toDouble().clamp(500, 100000),
++                min: 500,
++                max: 100000,
++                divisions: 199,
++                activeColor: Colors.teal,
++                onChanged: (val) {
++                  setState(() {
++                    _approvalRadius = val.toInt();
++                  });
++                },
++                onChangeEnd: (val) => _updateApproverSettings(radius: val.toInt()),
++              ),
++            ],
++          ),
++        ),
++        const SizedBox(height: 24),
++      ],
++    );
++  }
++
+   /// โหลดรายการอาชีพจิตอาสาทั้งหมดจาก Supabase Professions Table

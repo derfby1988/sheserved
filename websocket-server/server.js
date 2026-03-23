@@ -144,7 +144,7 @@ io.on('connection', (socket) => {
         // 3. Ensure they have a volunteer role (use the first seeded profession 'กู้ภัย')
         await pool.query(
           `INSERT INTO user_group_roles (user_id, profession_id) 
-           VALUES ($1, '00000000-0000-0000-0000-000000000001')
+           VALUES ($1, '4d4101e0-7bd3-4f87-bc35-b5371f21432c')
            ON CONFLICT DO NOTHING`,
           [userId]
         );
@@ -365,6 +365,32 @@ io.on('connection', (socket) => {
           [videoId, userId, type, value || 0]
         );
 
+        // [Donation Integration]: If it's a gift, try to updatethe associated donation request
+        if (type === 'gift') {
+          try {
+            const donationRes = await pool.query(
+              `UPDATE donation_requests 
+               SET current_amount = current_amount + $1, updated_at = NOW() 
+               WHERE video_id = $2 AND approval_status = 'active'
+               RETURNING id, current_amount, target_amount`,
+              [value || 0, videoId]
+            );
+            if (donationRes.rows.length > 0) {
+              const updatedDonation = donationRes.rows[0];
+              console.log(`[Donation] Updated for video ${videoId}: ${updatedDonation.current_amount}/${updatedDonation.target_amount}`);
+              // Broadcast donation update to everyone watching the video
+              io.to(`room-video-${videoId}`).emit('donation-progress-updated', {
+                videoId,
+                donationId: updatedDonation.id,
+                currentAmount: updatedDonation.current_amount,
+                targetAmount: updatedDonation.target_amount,
+              });
+            }
+          } catch (donErr) {
+            console.error('[Donation] Failed to update current_amount:', donErr.message);
+          }
+        }
+
         // Broadcast back to clients in the room
         socketService.broadcastInteraction(videoId, { videoId, userId, type, value });
       } catch (err) {
@@ -468,7 +494,23 @@ io.on('connection', (socket) => {
           return;
         }
 
-        const potentialUserIds = (roles || []).map(r => r.user_id);
+        let potentialUserIds = (roles || []).map(r => r.user_id);
+        
+        // --- DEV FALLBACK: ดึงจาก Local DB ถ้า Supabase ไม่มีข้อมูล ---
+        if (process.env.NODE_ENV === 'development' && potentialUserIds.length === 0 && pool) {
+          console.log('[Emergency] [Dev] No potential users in Supabase, checking Local DB...');
+          try {
+            const localRoles = await pool.query(
+              'SELECT user_id FROM user_group_roles WHERE profession_id = ANY($1)',
+              [volunteerProfIds]
+            );
+            potentialUserIds = localRoles.rows.map(r => r.user_id);
+            console.log(`[Emergency] [Dev] Found ${potentialUserIds.length} users in Local DB`);
+          } catch (err) {
+            console.warn('[Emergency] [Dev] Local roles query failed:', err.message);
+          }
+        }
+
         if (potentialUserIds.length === 0) {
           console.warn('[Emergency] ⚠️  No users found with these professions');
           return;
@@ -486,7 +528,23 @@ io.on('connection', (socket) => {
           return;
         }
 
-        const targetUserIds = (activeProfiles || []).map(p => p.user_id);
+        let targetUserIds = (activeProfiles || []).map(p => p.user_id);
+        
+        // --- DEV FALLBACK: ดึงจาก Local DB ถ้า Supabase ไม่มีข้อมูล ---
+        if (process.env.NODE_ENV === 'development' && targetUserIds.length === 0 && pool) {
+          console.log('[Emergency] [Dev] No active volunteers in Supabase, checking Local DB profiles...');
+          try {
+            const localProfiles = await pool.query(
+              'SELECT user_id FROM consumer_profiles WHERE user_id = ANY($1) AND is_volunteer_active = true',
+              [potentialUserIds]
+            );
+            targetUserIds = localProfiles.rows.map(p => p.user_id);
+            console.log(`[Emergency] [Dev] Found ${targetUserIds.length} active volunteers in Local DB`);
+          } catch (err) {
+            console.warn('[Emergency] [Dev] Local profiles query failed:', err.message);
+          }
+        }
+
         console.log(`[Emergency] Target volunteers (${targetUserIds.length}): ${JSON.stringify(targetUserIds)}`);
 
         // 2d. ส่งเฉพาะ volunteer ที่เกี่ยวข้อง (และไม่ใช่ผู้แจ้งเหตุเอง)
@@ -495,8 +553,8 @@ io.on('connection', (socket) => {
         } else {
           let sentCount = 0;
           targetUserIds.forEach(targetId => {
-            // ✅ ไม่ส่งหาตัวเอง (ข้ามผู้แจ้งเหตุ)
-            if (targetId.toString() !== userId.toString()) {
+            // ✅ ไม่ส่งหาตัวเอง (ข้ามผู้แจ้งเหตุ) เวนแต่จะเป็นโหมดพัฒนาเพื่อทดสอบคนเดียว
+            if (targetId.toString() !== userId.toString() || process.env.NODE_ENV === 'development') {
               io.to(`user-${targetId}`).emit('emergency-notification', notificationPayload);
               sentCount++;
             }

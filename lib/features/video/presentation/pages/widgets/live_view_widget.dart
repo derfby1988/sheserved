@@ -4,6 +4,8 @@ import 'video_player_widget.dart';
 import 'viewer_count_widget.dart';
 import 'action_buttons_widget.dart';
 import 'trending_panel_widget.dart';
+import 'thai_mhung_gallery_widget.dart';
+import 'thai_mhung_ruler_gallery_widget.dart';
 import '../../../models/video_models.dart';
 import 'package:chewie/chewie.dart';
 
@@ -124,7 +126,14 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                           ],
                         ),
                       ),
-                      SizedBox(width: (constraints.maxWidth - 32) * 0.55),
+                      // Thai Mhung Gallery (Ruler Picker) วางด้านขวาของวิดีโอ
+                      if (widget.currentVideoId != null) ...[
+                        const SizedBox(width: 8),
+                        ThaiMhungRulerGalleryWidget(
+                          videoId: widget.currentVideoId!,
+                          height: videoHeight, // ความสูงเท่ากับ Video Player พอดี
+                        ),
+                      ],
                     ],
                   ),
                 ),

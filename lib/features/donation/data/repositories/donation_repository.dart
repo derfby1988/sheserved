@@ -42,16 +42,26 @@ class DonationRepository {
   }
 
   /// ดึงคำร้องขอการบริจาค (กรองตามหมวดหมู่ได้)
-  Future<List<DonationRequest>> getRequests({String? categoryId}) async {
+  Future<List<DonationRequest>> getRequests({
+    String? categoryId,
+    String? userId,
+    bool bypassStatusFilter = false,
+  }) async {
     var query = _client.from('donation_requests').select();
     
     if (categoryId != null) {
       query = query.eq('category_id', categoryId);
     }
+
+    if (userId != null) {
+      query = query.eq('user_id', userId);
+    }
     
-    final response = await query
-        .eq('approval_status', DonationApprovalStatus.active.name)
-        .order('created_at', ascending: false);
+    if (!bypassStatusFilter) {
+      query = query.eq('approval_status', DonationApprovalStatus.active.name);
+    }
+    
+    final response = await query.order('created_at', ascending: false);
     
     return (response as List)
         .map((json) => DonationRequest.fromJson(json))
@@ -121,7 +131,14 @@ class DonationRepository {
 
   /// อัปเดตหมวดหมู่
   Future<void> updateCategory(String id, Map<String, dynamic> data) async {
-    await _client.from('donation_categories').update(data).eq('id', id);
+    try {
+      print('[DonationRepository] Updating category $id with data: $data');
+      await _client.from('donation_categories').update(data).eq('id', id);
+      print('[DonationRepository] Category update success');
+    } catch (e) {
+      print('[DonationRepository] Category update error: $e');
+      rethrow;
+    }
   }
 
   /// ลบหมวดหมู่
@@ -145,30 +162,6 @@ class DonationRepository {
     await _client.from('donation_requests').delete().eq('id', id);
   }
 
-  /// อนุมัติคำร้องขอ (Flow หลายขั้นตอน)
-  Future<void> approveRequest(String requestId, DonationApprovalStatus currentStatus, String approverId) async {
-    DonationApprovalStatus nextStatus;
-    Map<String, dynamic> updateData = {};
-
-    if (currentStatus == DonationApprovalStatus.pending_local) {
-      nextStatus = DonationApprovalStatus.pending_storage;
-      updateData = {
-        'approval_status': nextStatus.name,
-        'local_verified_at': DateTime.now().toIso8601String(),
-      };
-    } else if (currentStatus == DonationApprovalStatus.pending_storage) {
-      nextStatus = DonationApprovalStatus.active;
-      updateData = {
-        'approval_status': nextStatus.name,
-        'storage_approved_by': approverId,
-      };
-    } else {
-      return;
-    }
-
-    await _client.from('donation_requests').update(updateData).eq('id', requestId);
-  }
-
   /// ดึงข้อมูลชุมชนทั้งหมด
   Future<List<Map<String, dynamic>>> getCommunities() async {
     final response = await _client.from('communities').select('*').order('name');
@@ -183,36 +176,175 @@ class DonationRepository {
   }
 
 
-  /// ดึงรายการที่รออนุมัติ (กรองตามสิทธิ)
-  Future<List<DonationRequest>> getPendingRequests(String userId, {bool isStorageAdmin = false}) async {
-    // 1. ดึงข้อมูลชุมชนที่ผู้ใช้คนนี้เป็นผู้นำ
-    final communityResponse = await _client
-        .from('communities')
-        .select('id')
-        .eq('leader_id', userId);
-    final ledCommunityIds = (communityResponse as List).map((c) => c['id'] as String).toList();
+  /// ดึง profession_id ทั้งหมดที่ผู้ใช้นี้มีสิทธิ์อนุมัติ (ผ่าน user_group_roles)
+  Future<List<String>> getUserApproverProfessions(String userId) async {
+    try {
+      final response = await _client
+          .from('user_group_roles')
+          .select('profession_id')
+          .eq('user_id', userId)
+          .eq('is_active', true);
+      return (response as List).map((r) => r['profession_id'] as String).toList();
+    } catch (e) {
+      return [];
+    }
+  }
 
-    // 2. กำหนดสถานะที่ผู้ใช้มีสิทธิเห็น
+  /// ตรวจสอบว่าผู้ใช้มีสิทธิ์อนุมัติบริจาคในหมวดหมู่ใดบ้าง
+  Future<bool> isLocalLeader(String userId) async {
+    final profIds = await getUserApproverProfessions(userId);
+    if (profIds.isEmpty) return false;
+    // ตรวจสอบว่า profession นั้นอยู่ใน approver_profession_ids ของหมวดใดหมวดหนึ่ง
+    try {
+      final cats = await _client
+          .from('donation_categories')
+          .select('approver_profession_ids');
+      for (final cat in (cats as List)) {
+        final approvers = cat['approver_profession_ids'] as List? ?? [];
+        if (approvers.any((a) => profIds.contains(a.toString()))) return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// ดึงประวัติการอนุมัติของคำร้องนั้น
+  Future<List<Map<String, dynamic>>> getRequestApprovals(String requestId) async {
+    final response = await _client
+        .from('donation_request_approvals')
+        .select('*, profession:professions(name), approver:users(first_name, last_name)')
+        .eq('request_id', requestId);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// อนุมัติคำร้อง: บันทึกลง donation_request_approvals
+  /// จากนั้นตรวจสอบว่าครบทุกกลุ่มอาชีพหรือยัง → ถ้าครบ → active
+  Future<void> approveRequest(
+    String requestId,
+    DonationApprovalStatus currentStatus,
+    String approverId, {
+    String? professionId, // profession ที่ผู้อนุมัติใช้ในการอนุมัติครั้งนี้
+  }) async {
+    if (currentStatus == DonationApprovalStatus.pending_local) {
+      // 1. บันทึกการอนุมัติของ profession นี้
+      if (professionId != null) {
+        await _client.from('donation_request_approvals').upsert({
+          'request_id': requestId,
+          'profession_id': professionId,
+          'approved_by': approverId,
+          'status': 'approved',
+          'approved_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'request_id,profession_id');
+      }
+
+      // 2. ดึงหมวดหมู่ของคำร้องนี้
+      final reqData = await _client
+          .from('donation_requests')
+          .select('category_id')
+          .eq('id', requestId)
+          .single();
+      final categoryId = reqData['category_id'] as String;
+
+      // 3. ดึงรายชื่อ profession ที่ต้องอนุมัติในหมวดนี้
+      final catData = await _client
+          .from('donation_categories')
+          .select('approver_profession_ids')
+          .eq('id', categoryId)
+          .single();
+      final requiredIds = List<String>.from(
+          (catData['approver_profession_ids'] as List? ?? []).map((e) => e.toString()));
+
+      // 4. ดึงรายชื่อ profession ที่อนุมัติแล้ว
+      final approvedData = await _client
+          .from('donation_request_approvals')
+          .select('profession_id')
+          .eq('request_id', requestId)
+          .eq('status', 'approved');
+      final approvedIds = (approvedData as List).map((r) => r['profession_id'].toString()).toSet();
+
+      // 5. ถ้าครบทุก profession → active
+      final allApproved = requiredIds.every((id) => approvedIds.contains(id));
+      final newStatus = allApproved
+          ? DonationApprovalStatus.active.name
+          : DonationApprovalStatus.pending_local.name;
+
+      await _client.from('donation_requests').update({
+        'approval_status': newStatus,
+        'local_verified_at': DateTime.now().toIso8601String(),
+      }).eq('id', requestId);
+
+    } else if (currentStatus == DonationApprovalStatus.pending_storage) {
+      await _client.from('donation_requests').update({
+        'approval_status': DonationApprovalStatus.active.name,
+        'storage_approved_by': approverId,
+      }).eq('id', requestId);
+    }
+  }
+
+  /// ดึงรายการที่รออนุมัติสำหรับผู้ใช้นี้
+  /// กรองจาก profession ของผู้ใช้ที่อยู่ใน approver_profession_ids ของแต่ละหมวดหมู่
+  /// และยังไม่ได้อนุมัติสำหรับ profession นั้น
+  Future<List<DonationRequest>> getPendingRequests(String userId, {bool isStorageAdmin = false}) async {
+    // 1. ดึง profession ที่ผู้ใช้มี
+    final userProfIds = await getUserApproverProfessions(userId);
+
     List<String> statuses = [];
-    if (ledCommunityIds.isNotEmpty) statuses.add(DonationApprovalStatus.pending_local.name);
+    List<String> categoriesUserCanApprove = [];
+
+    if (userProfIds.isNotEmpty) {
+      // 2. หาหมวดหมู่ที่ profession ของผู้ใช้อยู่ใน approver_profession_ids
+      final cats = await _client
+          .from('donation_categories')
+          .select('id, approver_profession_ids');
+      for (final cat in (cats as List)) {
+        final approvers = List<String>.from(
+            (cat['approver_profession_ids'] as List? ?? []).map((e) => e.toString()));
+        if (approvers.any((a) => userProfIds.contains(a))) {
+          categoriesUserCanApprove.add(cat['id'].toString());
+        }
+      }
+      if (categoriesUserCanApprove.isNotEmpty) {
+        statuses.add(DonationApprovalStatus.pending_local.name);
+      }
+    }
     if (isStorageAdmin) statuses.add(DonationApprovalStatus.pending_storage.name);
 
     if (statuses.isEmpty) return [];
 
-    var query = _client.from('donation_requests').select().inFilter('approval_status', statuses);
+    // 3. ดึงคำร้องที่ยังรออนุมัติ
+    final response = await _client
+        .from('donation_requests')
+        .select()
+        .inFilter('approval_status', statuses)
+        .order('created_at');
 
-    final response = await query.order('created_at');
-    final List<DonationRequest> allRelevant = (response as List).map((json) => DonationRequest.fromJson(json)).toList();
+    final List<DonationRequest> all =
+        (response as List).map((json) => DonationRequest.fromJson(json)).toList();
 
-    // กรองขั้นสุดท้ายตามสิทธิ
-    return allRelevant.where((req) {
+    if (userProfIds.isEmpty) {
+      return all.where((r) => r.approvalStatus == DonationApprovalStatus.pending_storage).toList();
+    }
+
+    // 4. กรองเฉพาะหมวดหมู่ที่ผู้ใช้มีสิทธิ์ AND ยังไม่ได้อนุมัติด้วย profession นั้น
+    // ดึงรายการที่ professor นี้อนุมัติไปแล้ว
+    final alreadyApproved = await _client
+        .from('donation_request_approvals')
+        .select('request_id, profession_id')
+        .eq('status', 'approved')
+        .inFilter('profession_id', userProfIds);
+    final approvedSet = <String>{};
+    for (final row in (alreadyApproved as List)) {
+      approvedSet.add('${row['request_id']}_${row['profession_id']}');
+    }
+
+    return all.where((req) {
       if (req.approvalStatus == DonationApprovalStatus.pending_local) {
-        return ledCommunityIds.contains(req.communityId);
+        if (!categoriesUserCanApprove.contains(req.categoryId)) return false;
+        // ตรวจสอบว่ายังมี profession ของผู้ใช้ที่ยังไม่ได้อนุมัติ
+        return userProfIds.any((pid) => !approvedSet.contains('${req.id}_$pid'));
       }
-      if (req.approvalStatus == DonationApprovalStatus.pending_storage) {
-        return isStorageAdmin;
-      }
-      return false;
+      return req.approvalStatus == DonationApprovalStatus.pending_storage && isStorageAdmin;
     }).toList();
   }
 

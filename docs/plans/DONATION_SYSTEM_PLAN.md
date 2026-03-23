@@ -1,0 +1,174 @@
+# แผนพัฒนาระบบบริจาค (Donation System Plan)
+> อัปเดตล่าสุด: 23 มี.ค. 2569
+
+## 1. วิสัยทัศน์และเป้าหมาย
+ระบบบริจาค Sheserved มุ่งสร้างแพลตฟอร์มความช่วยเหลือซึ่งกันและกันที่โปร่งใส ตรวจสอบได้ และมีประสิทธิภาพสูง
+
+- **ความโปร่งใส**: ระบบ Multi-Category Approval — ทุกหมวดหมู่ผู้ใช้ที่กำหนดต้องอนุมัติครบก่อนเปิดรับบริจาค
+- **เชื่อมต่อแบบ Real-time**: เชื่อมกับระบบ Live Video เพื่อรับบริจาคทันทีขณะไลฟ์
+- **ตรวจสอบได้**: ทุกขั้นตอนมีการบันทึกผู้อนุมัติ, เวลา, และหมวดหมู่ผู้ใช้
+
+---
+
+## 2. บทบาทและสิทธิ์ของผู้ใช้
+
+| บทบาท | หน้าที่ | วิธีตรวจสอบสิทธิ์ |
+|--------|---------|-----------------| 
+| **ผู้ร้องขอ** | ยื่นคำร้องขอรับความช่วยเหลือ | ผู้ใช้ทุกคน |
+| **ผู้อนุมัติหมวดหมู่ผู้ใช้** | อนุมัติตามที่กำหนดใน `approver_profession_ids` ของแต่ละหมวดหมู่บริจาค | Profession ของผู้ใช้อยู่ในหมวดหมู่ (`user_categories.id`) ที่ระบุใน `approver_profession_ids` |
+| **จิตอาสา** | ช่วยเหลือปฏิบัติการ ตามสิทธิ์ใน `volunteer_profession_ids` | `user_group_roles.profession_id` อยู่ใน `donation_categories.volunteer_profession_ids` |
+| **ผู้บริจาค** | ดูข้อมูลและร่วมบริจาค | ผู้ใช้ทุกคน |
+
+> [!IMPORTANT]
+> **เงื่อนไขความโปร่งใส**: ผู้ร้องขอ (Requester) จะต้อง **ไม่ใช่บุคคลเดียวกับ** ผู้อนุมัติ (Approver) ในทุกขั้นตอนของการอนุมัติ (Multi-Level Approval)
+
+---
+
+## 3. โครงสร้างฐานข้อมูล
+
+### ตาราง `donation_categories`
+| คอลัมน์ | ชนิดข้อมูล | คำอธิบาย |
+|---------|-----------|----------|
+| `id` | UUID | รหัสหลัก |
+| `name` | TEXT | ชื่อหมวดหมู่ (ภาษาไทย) |
+| `name_en` | TEXT | ชื่อหมวดหมู่ (ภาษาอังกฤษ) |
+| `icon_name` | TEXT | ชื่อไอคอน Material |
+| `is_emergency` | BOOLEAN | เป็นหมวดหมู่ฉุกเฉินหรือไม่ |
+| `approver_profession_ids` | TEXT[] | ✅ รายชื่อ **User Category IDs** (เช่น `local_leader`, `provider`) ที่ต้องอนุมัติ **ครบทุกกลุ่ม** ลำดับใน array = ลำดับการอนุมัติ |
+| `volunteer_profession_ids` | TEXT[] | รายชื่อ **Profession IDs** ของจิตอาสาที่เกี่ยวข้อง (รายอาชีพ) ไม่มีอำนาจอนุมัติ แต่มีสิทธิ์ช่วยเหลือ |
+| `custom_fields` | JSONB | ฟิลด์ข้อมูลพิเศษสำหรับหมวดหมู่นี้ |
+
+### ตาราง `donation_request_approvals`
+| คอลัมน์ | ชนิดข้อมูล | คำอธิบาย |
+|---------|-----------|----------|
+| `request_id` | UUID → donation_requests | คำร้องที่กำลังอนุมัติ |
+| `profession_id` | UUID → professions | อาชีพของผู้ใช้ที่กดอนุมัติ |
+| `approved_by` | UUID → users | ผู้ใช้ที่กดอนุมัติ |
+| `status` | TEXT | `approved` / `rejected` |
+| `approved_at` | TIMESTAMPTZ | เวลาที่อนุมัติ |
+
+### ตาราง `donation_requests`
+| คอลัมน์ | ชนิดข้อมูล | คำอธิบาย |
+|---------|-----------|----------|
+| `id` | UUID | รหัสหลัก |
+| `user_id` | UUID → users | ผู้ร้องขอ |
+| `category_id` | UUID → donation_categories | หมวดหมู่ |
+| `video_id` | UUID → videos | ✅ ลิงก์กับวิดีโอ Live |
+| `title` | TEXT | หัวข้อคำร้อง |
+| `approval_status` | TEXT | `pending_local` → `active` / `rejected` |
+| `local_verified_at` | TIMESTAMPTZ | เวลาที่กลุ่มอนุมัติครบ |
+| `storage_approved_by` | UUID | ผู้ดูแลคลังขั้นสุดท้าย |
+
+---
+
+## 4. Flow การทำงาน (Multi-Category Approval)
+
+```
+[ผู้ร้องขอ] → ยื่นคำร้อง (pending_local)
+    ↓
+[หมวดหมู่ผู้ใช้ลำดับที่ 1] → ผู้ใช้ในหมวดหมู่นั้นกดอนุมัติ → บันทึกใน donation_request_approvals
+    ↓
+[หมวดหมู่ผู้ใช้ลำดับที่ 2] → ผู้ใช้ในหมวดหมู่นั้นกดอนุมัติ → บันทึกใน donation_request_approvals
+    ↓  ...รอครบทุกหมวดหมู่...
+[ครบทุกหมวดหมู่] → approval_status = active
+    ↓
+[ผู้บริจาค] → เห็นคำร้องที่ active → ร่วมบริจาคได้
+```
+
+> ถ้าไม่มี `approver_profession_ids` กำหนดไว้ → คำร้องจะคงสถานะ `pending_local` ตลอด
+
+---
+
+## 5. การเชื่อมต่อกับระบบวิดีโอ (Live Video Integration) ✅
+
+- `donation_requests.video_id` ลิงก์กับ Live Video
+- WebSocket Server: gift → อัปเดต `current_amount` อัตโนมัติ + Broadcast `donation-progress-updated`
+
+---
+
+## 6. การจัดการและอนุมัติในหน้าโปรไฟล์ (User Profile Tabs) ✅
+
+ผู้ใช้สามารถจัดการกิจกรรมเกี่ยวกับการบริจาคได้โดยตรงจากหน้าโปรไฟล์ผ่าน 4 แถบหลัก:
+
+1. **โปรไฟล์**: ข้อมูลพื้นฐานและอาชีพ
+2. **จิตอาสา**: การตั้งค่ารัศมีและการแจ้งเตือนเหตุ (ถอดฟีเจอร์สิทธิ์ดูวิดีโอต้นฉบับออกแล้ว)
+3. **อนุมัติบริจาค**: (แสดงเฉพาะผู้มีสิทธิ์) ใช้สำหรับตรวจสอบและกดยืนยันคำร้องจากผู้อื่นตามลำดับ Flow
+4. **คำร้องขอ**: `DonationRequestManagementPanel` - **(ย้ายมาจากหน้า Admin)** ให้ผู้ใช้ดูรายการที่ตนเองร้องขอ, ติดตามสถานะ (Pending/Active), แก้ไข หรือสร้างคำร้องใหม่
+   - **เพิ่มการตั้งค่าการอนุมัติ**: มีส่วนเปิด-ปิด "เข้าร่วมอนุมัติรายการบริจาค" และตั้งค่า "พื้นที่อนุมัติการบริจาค" ซึ่งจะคำนวณระยะทางจากที่อยู่ปัจจุบันของผู้อนุมัติไปยังสถานที่ที่ผู้ร้องขอต้องการนำไปใช้
+
+**ตรรกะการแสดงแถบ "อนุมัติบริจาค":**
+1. เรียก `DonationRepository.getUserApproverCategories(userId)` → ดึง `user_categories.id` ที่ผู้ใช้คนนั้นสังกัด
+2. ตรวจสอบว่ามีหมวดหมู่นี้ใน `approver_profession_ids` ของคำร้องใดหรือไม่
+3. หากมี → แสดงแถบ "อนุมัติบริจาค" ในโปรไฟล์
+4. `LeaderVerificationPage`: กรองและแสดงเฉพาะคำร้องที่ **ยังไม่ได้อนุมัติ** จากหมวดหมู่ของผู้ใช้ และ **ไม่ใช่คำร้องของตนเอง**
+
+---
+
+## 7. การจัดการระบบบริจาคสำหรับผู้ดูแล (Admin Panel - Settings) ✅
+
+หน้า `DonationAdminPage` จะเน้นไปที่การจัดการโครงสร้างพื้นฐานของระบบ (Settings) โดยตัดส่วนการจัดการคำร้องรายบุคคลออกไปเพื่อให้ไปอยู่ในความดูแลของเจ้าของคำร้องเอง (ใน Profile)
+
+แถบที่เหลือใน Admin Panel:
+1. **หมวดหมู่**: เพิ่ม/ลด/แก้ไข หมวดหมู่หลัก
+2. **ศูนย์อนุมัติ**: ภาพรวมการอนุมัติระดับคลังสินค้า (Storage Admin)
+3. **ช่วยเหลือฉุกเฉิน**: จัดการสิทธิ์จิตอาสา/ผู้ตอบโต้เหตุ
+4. **ประวัติ**: ดูรายการบริจาคที่สำเร็จแล้วทั้งหมด
+
+แต่ละการ์ดหมวดหมู่มีปุ่ม 4 ปุ่ม:
+
+| ปุ่ม | ไอคอน | สี | หน้าที่ |
+|------|------|-----|---------|
+| **ฟิลด์** | list_alt | เขียว | จัดการ custom fields |
+| **Flow อนุมัติ** | account_tree | เขียวน้ำทะเล | กำหนดหมวดหมู่ผู้ใช้ที่รับผิดชอบอนุมัติ + เรียงลำดับ |
+| **แก้ไข** | edit | น้ำเงิน | แก้ชื่อ/ไอคอน/สิทธิ์จิตอาสา (รายอาชีพ) |
+| **ลบ** | delete | แดง | ลบหมวดหมู่ (confirm dialog) |
+
+### Dialog "แก้ไข" (`_showCategoryDialog`)
+- จัดการ: ชื่อ, ไอคอน, ฉุกเฉิน, **สิทธิ์จิตอาสา** (`volunteer_profession_ids`)
+- ดึงจากรายชื่อ `_volunteerProfessions` (อาชีพที่มี `is_volunteer = true`)
+- เก็บเป็น **UUID**
+
+### Dialog "Flow อนุมัติ" (`_showApproverDialog`) — **แยกต่างหาก**
+- **ส่วนบน**: Checklist เลือกจาก `_userCategories` (ตารางหน้าบ้านคือ **หมวดหมู่ผู้ใช้จริง** เช่น ผู้นำชุมชน, ผู้ให้บริการ, ผู้ซื้อ/ผู้รับบริการ)
+- **ส่วนล่าง**: `ReorderableListView` ลากเพื่อเรียงลำดับ → ลำดับมีผลต่อ Approval Flow
+- เก็บข้อมูล `approver_profession_ids` เป็น **User Category IDs เป็น String Text**
+
+### Approval Stepper ในการ์ด (`_buildApprovalStepper`)
+```
+🗳 ต้องผ่าน 3 หมวดหมู่จึงเปิดรับบริจาคได้
+
+  ●──────────●──────────●
+  1          2          3
+ผู้นำชุมชน  ผู้ให้บริการ  ผู้ซื้อฯ
+```
+- ซิงค์แสดงผลชื่อหมวดหมู่ที่ดึงมาจาก `_userCategories` และอัปเดตแบบ real-time
+
+---
+
+## 8. Checklist การดำเนินงาน
+
+### ฐานข้อมูล
+- [x] ตาราง `donation_categories`, `donation_requests`, `donation_contributions`
+- [x] ตาราง `user_categories` ที่บรรจุหมวดหมู่หลักของผู้ใช้
+- [x] ให้ `approver_profession_ids` (TEXT[]) เก็บ **User Category ID** แทน Profession UUID
+
+### Flutter — Models & Repository
+- [x] `DonationAdminPage` อ้างอิง `UserCategory` ในการสร้าง Flow
+- [x] `DonationRepository` เพิ่มฟังก์ชันรับค่าและบันทึก Category ID ของผู้ใช้อนุมัติลง DB
+- [ ] `DonationRepository.approveRequest()`: เพิ่มการตรวจสอบไม่ให้ `userId` ของผู้อนุมัติตรงกับ `userId` ของผู้ร้องขอ (Self-approval restriction)
+
+### Flutter — UI
+- [x] `_showApproverDialog`: เปลี่ยนจากการโชว์ทุกรายอาชีพ เป็น **เฉพาะหมวดหมู่ผู้ใช้จากตารางจริงเท่านั้น**
+- [x] Approval Stepper ในการ์ด: แสดงผลจาก Category name
+- [x] จัดการลากเพื่อเรียงลำดับลื่นไหล (Drag-to-Order)
+- [ ] `LeaderVerificationPage`: กรองไม่ให้คำร้องของผู้ใช้เอง (Self-posted) ปรากฏในรายการที่ต้องอนุมัติ
+
+---
+
+## 9. ข้อควรระวัง (Auth Guidelines)
+
+> ✅ ปฏิบัติตาม `/Users/dave_macmini/sheserved/.agent/workflows/auth_data_guidelines.md`
+> 
+> - **ห้าม** ใช้ `Supabase.instance.client.auth.currentUser` เพื่อดึง User ID
+> - **ใช้** `ServiceLocator.instance.currentUser` เสมอใน UI Layer
+> - `DonationRepository` รับ `userId` เป็น parameter ไม่ดึงเองภายใน

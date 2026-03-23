@@ -124,8 +124,8 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
 
   Future<void> _sendPhotos() async {
     if (_capturedPhotos.isEmpty) return;
-    String? categoryId = _selectedEmergencyCategoryId;
-    if (categoryId == null) return;
+    String? categoryId = _isThaiMhungReporting ? _currentVideo?.categoryId : _selectedEmergencyCategoryId;
+    if (categoryId == null && !_isThaiMhungReporting) return;
 
     showDialog(context: context, barrierDismissible: false, builder: (context) => const AlertDialog(content: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text('กำลังอัปโหลดรูปภาพเหตุฉุกเฉิน...')])));
 
@@ -142,11 +142,23 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         incidentId: _isThaiMhungReporting ? _currentVideoId : null,
       );
       final ws = WebSocketService();
-      ws.sendEmergencyAlert(userId: userId, categoryId: categoryId, videoId: videoId, type: 'photo', isThaiMhungEnabled: true);
+      ws.sendEmergencyAlert(
+        userId: userId, 
+        categoryId: categoryId ?? 'thai_mhung', 
+        videoId: videoId, 
+        type: 'photo', 
+        isThaiMhungEnabled: true,
+        incidentId: _currentVideoId, // ✅ เชื่อมโยงกับเหตุการณ์หลัก
+      );
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปโหลดรูปภาพฉุกเฉินสำเร็จ'), backgroundColor: Colors.green));
-      setState(() { _capturedPhotos.clear(); _recordedGpsTracks.clear(); _selectedTab = 0; });
+      setState(() { 
+        _capturedPhotos.clear(); 
+        _recordedGpsTracks.clear(); 
+        _selectedTab = 0; 
+        _isThaiMhungReporting = false; // กลับสู่หน้า Emergency หลัก
+      });
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
