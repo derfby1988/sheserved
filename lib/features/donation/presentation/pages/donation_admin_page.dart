@@ -530,13 +530,30 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           leading: const Icon(Icons.drag_handle, color: Colors.grey),
                           title: Text(field.label),
                           subtitle: Text('ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              setDialogState(() {
-                                fields.removeAt(index);
-                              });
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                tooltip: 'แก้ไข',
+                                onPressed: () async {
+                                  final editedField = await _showAddFieldDialog(existingField: field);
+                                  if (editedField != null) {
+                                    setDialogState(() {
+                                      fields[index] = editedField;
+                                    });
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () {
+                                  setDialogState(() {
+                                    fields.removeAt(index);
+                                  });
+                                },
+                              ),
+                            ],
                           ),
                         );
                       },
@@ -590,18 +607,157 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     );
   }
 
-  Future<DonationCategoryField?> _showAddFieldDialog() {
-    final labelController = TextEditingController();
-    final idController = TextEditingController();
-    String type = 'text';
-    bool isRequired = false;
+  void _showGlobalFieldsDialog() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final fields = await widget.repository.getGlobalFields();
+      if (context.mounted) Navigator.pop(context); // close loading
+
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.settings, color: Colors.teal),
+                    SizedBox(width: 8),
+                    Text('จัดการฟอร์มพื้นฐาน'),
+                  ],
+                ),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8.0),
+                        child: Text(
+                          'ข้อมูลเหล่านี้คือช่องที่ผู้ร้องขอทุกคนต้องกรอกเป็นพื้นฐาน คุณสามารถแก้ไข ลบ หรือเพิ่มให้ตรงกับความต้องการของระบบได้',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                      if (fields.isEmpty) const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text('ไม่มีฟอร์มพื้นฐาน'),
+                      ),
+                      if (fields.isNotEmpty) Expanded(
+                        child: ReorderableListView.builder(
+                          shrinkWrap: true,
+                          itemCount: fields.length,
+                          onReorder: (oldIndex, newIndex) {
+                            setDialogState(() {
+                              if (newIndex > oldIndex) newIndex -= 1;
+                              final item = fields.removeAt(oldIndex);
+                              fields.insert(newIndex, item);
+                            });
+                          },
+                          itemBuilder: (context, index) {
+                            final field = fields[index];
+                            return ListTile(
+                              key: ValueKey(field.id),
+                              leading: const Icon(Icons.drag_handle, color: Colors.grey),
+                              title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}'),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, color: Colors.blue),
+                                    tooltip: 'แก้ไข',
+                                    onPressed: () async {
+                                      final updatedField = await _showAddFieldDialog(existingField: field);
+                                      if (updatedField != null) {
+                                        setDialogState(() {
+                                          fields[index] = updatedField;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    tooltip: 'ลบฟิลด์นี้',
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        fields.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const Divider(),
+                      TextButton.icon(
+                        onPressed: () async {
+                          final newField = await _showAddFieldDialog();
+                          if (newField != null) {
+                            setDialogState(() {
+                              fields.add(newField);
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.add_circle, color: Colors.teal),
+                        label: const Text('เพิ่มช่องข้อมูลใหม่', style: TextStyle(color: Colors.teal)),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      try {
+                        await widget.repository.saveGlobalFields(fields);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกฟอร์มพื้นฐานเรียบร้อยแล้ว'), backgroundColor: Colors.green));
+                        }
+                      } catch (e) {
+                        debugPrint('Error saving global fields: $e');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e'), backgroundColor: Colors.red));
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.save, color: Colors.white, size: 18),
+                    label: const Text('บันทึกการจัดเรียง', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      }
+    }
+  }
+
+  Future<DonationCategoryField?> _showAddFieldDialog({DonationCategoryField? existingField}) {
+    final labelController = TextEditingController(text: existingField?.label ?? '');
+    final idController = TextEditingController(text: existingField?.id ?? '');
+    String type = existingField?.type ?? 'text';
+    bool isRequired = existingField?.isRequired ?? false;
 
     return showDialog<DonationCategoryField>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: const Text('เพิ่มฟิลด์ใหม่'),
+            title: Text(existingField == null ? 'เพิ่มฟิลด์ใหม่' : 'แก้ไขฟิลด์'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -615,6 +771,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                     DropdownMenuItem(value: 'long_text', child: Text('ข้อความยาว (Long Text)')),
                     DropdownMenuItem(value: 'number', child: Text('ตัวเลข (Number)')),
                     DropdownMenuItem(value: 'date', child: Text('วันที่ (Date)')),
+                    DropdownMenuItem(value: 'community_dropdown', child: Text('เลือกชุมชน (Community Dropdown)')),
+                    DropdownMenuItem(value: 'address_picker', child: Text('ที่อยู่แบบละเอียดยืนยันพื้นที่ (Address)')),
+                    DropdownMenuItem(value: 'boolean', child: Text('สวิตช์เปิด/ปิด (Switch Boolean)')),
                   ],
                   onChanged: (val) => setDialogState(() => type = val!),
                 ),
@@ -652,18 +811,34 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _showCategoryDialog(),
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('เพิ่มหมวดหมู่ใหม่', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showGlobalFieldsDialog(),
+                  icon: const Icon(Icons.settings_applications, color: Colors.white),
+                  label: const Text('ตั้งค่าข้อมูลพื้นฐาน', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showCategoryDialog(),
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text('เพิ่มหมวดหมู่ใหม่', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(

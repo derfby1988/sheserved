@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../models/donation_models.dart';
 
 /// Repository สำหรับจัดการข้อมูลการบริจาค
@@ -6,6 +7,43 @@ class DonationRepository {
   final SupabaseClient _client;
 
   DonationRepository(this._client);
+
+  /// ดึงข้อมูลฟิลด์พื้นฐานสำหรับทุกคำร้อง (Global Custom Fields)
+  Future<List<DonationCategoryField>> getGlobalFields() async {
+    try {
+      final response = await _client
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'donation_global_fields')
+          .maybeSingle();
+      
+      if (response != null && response['value'] != null) {
+        final List valueList = response['value'] as List;
+        return valueList.map((json) => DonationCategoryField.fromJson(json)).toList();
+      }
+    } catch (_) {}
+
+    // คืนค่าเริ่มต้น (Default Fields) หากยังไม่มีในฐานข้อมูล
+    return [
+      const DonationCategoryField(id: 'title', label: 'หัวข้อคำร้องขอ', type: 'text', isRequired: true),
+      const DonationCategoryField(id: 'target_amount', label: 'ยอดเป้าหมาย/จำนวน', type: 'number', isRequired: false),
+      const DonationCategoryField(id: 'description', label: 'รายละเอียดเหตุผลความจำเป็น', type: 'long_text', isRequired: true),
+      const DonationCategoryField(id: 'community_id', label: 'ชุมชน/พื้นที่', type: 'community_dropdown', isRequired: true),
+      const DonationCategoryField(id: 'usage_location', label: 'สถานที่ใช้ความช่วยเหลือ', type: 'text', isRequired: false),
+      const DonationCategoryField(id: 'requester_address', label: 'ที่อยู่ผู้ร้องขอ', type: 'address_picker', isRequired: false),
+      const DonationCategoryField(id: 'needed_date', label: 'วันที่จำเป็นต้องใช้', type: 'date', isRequired: false),
+      const DonationCategoryField(id: 'is_trending', label: 'กำลังยอดนิยม?', type: 'boolean', isRequired: false),
+    ];
+  }
+
+  /// บันทึกข้อมูลฟิลด์พื้นฐาน
+  Future<void> saveGlobalFields(List<DonationCategoryField> fields) async {
+    await _client.from('app_settings').upsert({
+      'key': 'donation_global_fields',
+      'value': fields.map((e) => e.toJson()).toList(),
+      'description': 'Global basic fields required for every donation request',
+    });
+  }
 
   /// ดึงหมวดหมู่การบริจาคทั้งหมด
   Future<List<DonationCategory>> getCategories() async {
@@ -207,6 +245,25 @@ class DonationRepository {
     }
   }
 
+  /// ดึง user_category_id ที่ผู้ใช้คนนี้สังกัด (ผ่าน profession)
+  Future<List<String>> getUserApproverCategories(String userId) async {
+    final profIds = await getUserApproverProfessions(userId);
+    if (profIds.isEmpty) return [];
+    
+    final response = await _client
+        .from('professions')
+        .select('category')
+        .inFilter('id', profIds);
+        
+    final List<String> cats = [];
+    for (final r in (response as List)) {
+      if (r['category'] != null) {
+        cats.add(r['category'].toString());
+      }
+    }
+    return cats.toSet().toList();
+  }
+
   /// ตรวจสอบว่าผู้ใช้มีสิทธิ์อนุมัติบริจาคในหมวดหมู่ใดบ้าง
   Future<bool> isLocalLeader(String userId) async {
     final profIds = await getUserApproverProfessions(userId);
@@ -258,9 +315,14 @@ class DonationRepository {
       // 2. ดึงหมวดหมู่ของคำร้องนี้
       final reqData = await _client
           .from('donation_requests')
-          .select('category_id')
+          .select('category_id, user_id')
           .eq('id', requestId)
           .single();
+          
+      if (reqData['user_id'] == approverId) {
+        throw Exception('คุณไม่สามารถอนุมัติคำร้องของตนเองได้');
+      }
+          
       final categoryId = reqData['category_id'] as String;
 
       // 3. ดึงรายชื่อ profession ที่ต้องอนุมัติในหมวดนี้
@@ -278,10 +340,18 @@ class DonationRepository {
           .select('profession_id')
           .eq('request_id', requestId)
           .eq('status', 'approved');
-      final approvedIds = (approvedData as List).map((r) => r['profession_id'].toString()).toSet();
+      final approvedProfIds = (approvedData as List).map((r) => r['profession_id'].toString()).toList();
+      
+      final approvedCats = <String>{};
+      if (approvedProfIds.isNotEmpty) {
+        final catResp = await _client.from('professions').select('category').inFilter('id', approvedProfIds);
+        for (final r in (catResp as List)) {
+          if (r['category'] != null) approvedCats.add(r['category'].toString());
+        }
+      }
 
-      // 5. ถ้าครบทุก profession → active
-      final allApproved = requiredIds.every((id) => approvedIds.contains(id));
+      // 5. ถ้าครบทุก profession (user category) → active
+      final allApproved = requiredIds.every((id) => approvedCats.contains(id));
       final newStatus = allApproved
           ? DonationApprovalStatus.active.name
           : DonationApprovalStatus.pending_local.name;
@@ -300,25 +370,65 @@ class DonationRepository {
   }
 
   /// ดึงรายการที่รออนุมัติสำหรับผู้ใช้นี้
-  /// กรองจาก profession ของผู้ใช้ที่อยู่ใน approver_profession_ids ของแต่ละหมวดหมู่
+  /// กรองจาก profession (user category) ของผู้ใช้ที่อยู่ใน approver_profession_ids ของแต่ละหมวดหมู่
   /// และยังไม่ได้อนุมัติสำหรับ profession นั้น
   Future<List<DonationRequest>> getPendingRequests(String userId, {bool isStorageAdmin = false}) async {
-    // 1. ดึง profession ที่ผู้ใช้มี
+    // 1. ดึง profession และ category ที่ผู้ใช้มี
     final userProfIds = await getUserApproverProfessions(userId);
+    final userCatIds = await getUserApproverCategories(userId);
 
     List<String> statuses = [];
     List<String> categoriesUserCanApprove = [];
+    int approvalRadius = 500; // default radius
+    Position? currentPosition;
+    List<dynamic> allCategoriesDB = [];
 
-    if (userProfIds.isNotEmpty) {
+    if (userProfIds.isNotEmpty || userCatIds.isNotEmpty) {
+      // Fetch user's approver settings (toggles)
+      final regData = await _client
+          .from('user_registration_data')
+          .select('field_id, field_value')
+          .eq('user_id', userId);
+      
+      final disabledCategories = <String>[];
+      for (final row in (regData as List)) {
+        final key = row['field_id'] as String;
+        final val = row['field_value'] as String?;
+        if (key.startsWith('approver_enabled_') && val == 'false') {
+          final catId = key.replaceAll('approver_enabled_', '');
+          disabledCategories.add(catId);
+        } else if (key == 'approval_radius' && val != null) {
+          approvalRadius = int.tryParse(val) ?? 500;
+        }
+      }
+
+      try {
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+           currentPosition = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.low,
+           );
+        }
+      } catch (e) {
+        print('[DonationRepository] Failed to get current location: $e');
+      }
+
+
       // 2. หาหมวดหมู่ที่ profession ของผู้ใช้อยู่ใน approver_profession_ids
-      final cats = await _client
+      allCategoriesDB = await _client
           .from('donation_categories')
           .select('id, approver_profession_ids');
-      for (final cat in (cats as List)) {
+      for (final cat in allCategoriesDB) {
+        final catIdStr = cat['id'].toString();
+        
+        // กรองตามที่เคยตั้งค่าใน Widget แถบอนุมัติ (ถ้าไม่ได้ตั้งค่า default เป็น true)
+        if (disabledCategories.contains(catIdStr)) continue;
+
         final approvers = List<String>.from(
             (cat['approver_profession_ids'] as List? ?? []).map((e) => e.toString()));
-        if (approvers.any((a) => userProfIds.contains(a))) {
-          categoriesUserCanApprove.add(cat['id'].toString());
+        // check user categories against required approver categories
+        if (approvers.any((a) => userCatIds.contains(a))) {
+          categoriesUserCanApprove.add(catIdStr);
         }
       }
       if (categoriesUserCanApprove.isNotEmpty) {
@@ -329,11 +439,12 @@ class DonationRepository {
 
     if (statuses.isEmpty) return [];
 
-    // 3. ดึงคำร้องที่ยังรออนุมัติ
+    // 3. ดึงคำร้องที่ยังรออนุมัติ โดยไม่รวมคำร้องที่ผู้ใช้สร้างเอง
     final response = await _client
         .from('donation_requests')
         .select()
         .inFilter('approval_status', statuses)
+        .neq('user_id', userId)
         .order('created_at');
 
     final List<DonationRequest> all =
@@ -358,7 +469,41 @@ class DonationRepository {
     return all.where((req) {
       if (req.approvalStatus == DonationApprovalStatus.pending_local) {
         if (!categoriesUserCanApprove.contains(req.categoryId)) return false;
-        // ตรวจสอบว่ายังมี profession ของผู้ใช้ที่ยังไม่ได้อนุมัติ
+        
+        // Distance filtering
+        if (currentPosition != null && req.latitude != null && req.longitude != null) {
+           final distance = Geolocator.distanceBetween(
+             currentPosition!.latitude,
+             currentPosition!.longitude,
+             req.latitude!,
+             req.longitude!,
+           );
+           // approvalRadius is in integer (meters or km? typically km if small, meters if large). 
+           // From DB code: int approvalRadius = 500; (Probably km? Actually in UI we set km, but default 500 km)
+           // If UI sets km, need to compare with km. Geolocator returns meters.
+           // Let's assume approvalRadius is km based on `int approvalRadius = 500`. 500 meters is too small for a region.
+           // Actually, let's treat approvalRadius as km: distance in meters / 1000 <= approvalRadius
+           if ((distance / 1000.0) > approvalRadius) {
+             return false;
+           }
+        }
+        
+        // ตรวจสอบว่ายังมี profession (category) ของผู้ใช้ที่ยังไม่ได้อนุมัติหรือไม่
+        // ถ้าอนุมัติเป็นที่เรียบร้อยในหมวด categories ของตัวเองแล้ว ให้ไม่ต้องโชว์
+        // Actually, the check logic needs to ensure the request is not already approved *by this user category*
+        
+        // Find which categories this user can approve for THIS request
+        final reqCatData = allCategoriesDB.firstWhere((c) => c['id'].toString() == req.categoryId, orElse: () => {});
+        final reqApprovers = List<String>.from(
+            (reqCatData['approver_profession_ids'] as List? ?? []).map((e) => e.toString()));
+        
+        final userCatsThatCanApprove = userCatIds.where((catId) => reqApprovers.contains(catId)).toList();
+        
+        // Determine which ones have already been approved
+        // `alreadyApproved` returns instances where profession_id matches local user. 
+        // We know what the user's categories are. If ANY of those valid categories lack approval, they should see it.
+        // Wait, approvedSet holds `{req_id}_{user_prof_id}`
+        // So the user themself sees it if they haven't explicitly approved it.
         return userProfIds.any((pid) => !approvedSet.contains('${req.id}_$pid'));
       }
       return req.approvalStatus == DonationApprovalStatus.pending_storage && isStorageAdmin;

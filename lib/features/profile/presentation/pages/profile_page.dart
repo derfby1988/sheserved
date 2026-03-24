@@ -20,6 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/presentation/pages/leader_verification_page.dart';
 import '../../../donation/presentation/widgets/donation_request_management_panel.dart';
+import '../../../donation/presentation/widgets/donation_approver_settings_widget.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -239,7 +240,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Row(
                   children: [
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
+                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 3 : 2),
                         child: _buildTabItem(
                           icon: Icons.person_outline,
                           text: _profession?.name ?? 'โปรไฟล์',
@@ -250,7 +251,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false))
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
+                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 3 : 2),
                         child: _buildTabItem(
                           icon: Icons.volunteer_activism_outlined,
                           text: 'จิตอาสา',
@@ -261,7 +262,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     if (_canApproveDonation)
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / 4,
+                        width: MediaQuery.of(context).size.width / 3,
                         child: _buildTabItem(
                           icon: Icons.admin_panel_settings_outlined,
                           text: 'อนุมัติบริจาค',
@@ -270,16 +271,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = 2),
                         ),
                       ),
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
-                      child: _buildTabItem(
-                        icon: Icons.assignment_outlined,
-                        text: 'คำร้องขอ',
-                        isActive: _selectedTabIndex == 3,
-                        activeColor: Colors.purple,
-                        onTap: () => setState(() => _selectedTabIndex = 3),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -306,11 +297,19 @@ class _ProfilePageState extends State<ProfilePage> {
               ] else if (_selectedTabIndex == 1) ...[
                 _buildNotificationSettings(),
               ] else if (_selectedTabIndex == 2 && _canApproveDonation) ...[
+                DonationApproverSettingsWidget(
+                  repository: _donationRepository,
+                  userId: _user?.id,
+                ),
+                const SizedBox(height: 8),
                 const LeaderVerificationPage(),
-              ] else if (_selectedTabIndex == 3) ...[
+                const SizedBox(height: 24),
+                const Divider(thickness: 1.5),
+                const SizedBox(height: 8),
                 DonationRequestManagementPanel(
                   repository: _donationRepository,
                   userId: _user?.id,
+                  showCreateButton: false,
                 ),
               ],
               if (_isEditing && _selectedTabIndex == 0) ...[

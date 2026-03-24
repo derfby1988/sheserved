@@ -87,28 +87,45 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const TlzDrawer(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (ServiceLocator.instance.currentUser != null) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DonationCreatePage()),
-            );
-          } else {
-            // Guest mode: Redirect to login and return here to auto-create
-            Navigator.pushNamed(
-              context, 
-              '/login',
-              arguments: {
-                'route': '/donate',
-                'arguments': 'auto_create',
-              },
-            );
-          }
-        },
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-        label: const Text('สร้างคำร้องขอ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 4, right: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'ขั้นตอน 1: ข้อมูลความต้องการ → รอกลุ่มอาชีพอนุมัติ',
+              style: TextStyle(color: Colors.white, fontSize: 11),
+            ),
+          ),
+          FloatingActionButton.extended(
+            onPressed: () {
+              if (ServiceLocator.instance.currentUser != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+                );
+              } else {
+                Navigator.pushNamed(
+                  context,
+                  '/login',
+                  arguments: {
+                    'route': '/donate',
+                    'arguments': 'auto_create',
+                  },
+                );
+              }
+            },
+            backgroundColor: AppColors.primary,
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+            label: const Text('ขอรับบริจาค', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
       body: StreamBuilder<List<DonationCategory>>(
         stream: _repository.watchCategories(),

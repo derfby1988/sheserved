@@ -8,11 +8,14 @@ import '../../../../core/constants/app_text_styles.dart';
 class DonationRequestManagementPanel extends StatefulWidget {
   final DonationRepository repository;
   final String? userId; // If provided, only show requests for this user
+  /// ถ้า false จะซ่อนปุ่ม "สร้างใหม่" (เมื่อฝังใน Profile tab แทนหน้า dashboard)
+  final bool showCreateButton;
   
   const DonationRequestManagementPanel({
     super.key, 
     required this.repository,
     this.userId,
+    this.showCreateButton = true,
   });
 
   @override
@@ -23,11 +26,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
   List<DonationRequest> _requests = [];
   List<DonationCategory> _categories = [];
   List<Map<String, dynamic>> _communities = [];
-  
-  // Settings
-  Map<String, bool> _categoryApproverToggles = {};
-  int _approvalRadius = 500;
-  List<DonationCategory> _approverEnabledCategories = [];
   
   // Approvals tracker
   Map<String, int> _approvedCounts = {}; // req.id -> count
@@ -55,47 +53,11 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
         widget.repository.getRequests(userId: widget.userId, bypassStatusFilter: true),
         widget.repository.getCategories(),
         widget.repository.getCommunities(),
-        if (widget.userId != null)
-           Supabase.instance.client.from('user_registration_data').select().eq('user_id', widget.userId!),
-        if (widget.userId != null)
-           widget.repository.getUserApproverProfessions(widget.userId!),
       ]);
       
       final reqs = results[0] as List<DonationRequest>;
       final cats = results[1] as List<DonationCategory>;
       final comms = results[2] as List<Map<String, dynamic>>;
-      
-      List<dynamic> regData = [];
-      List<String> userProfIds = [];
-      if (widget.userId != null && results.length > 3) {
-        regData = results[3] as List<dynamic>;
-        userProfIds = results[4] as List<String>;
-      }
-
-      // Settings setup
-      _approvalRadius = 500;
-      _categoryApproverToggles.clear();
-      _approverEnabledCategories.clear();
-
-      for (var row in regData) {
-        final key = row['field_id'] as String;
-        final val = row['field_value'] as String?;
-        if (key == 'approval_radius' && val != null) {
-          _approvalRadius = int.tryParse(val) ?? 500;
-        } else if (key.startsWith('approver_enabled_') && val != null) {
-          final catId = key.replaceAll('approver_enabled_', '');
-          _categoryApproverToggles[catId] = (val == 'true');
-        }
-      }
-
-      for (final cat in cats) {
-        if (userProfIds.isNotEmpty && cat.approverProfessionIds.any((pid) => userProfIds.contains(pid))) {
-          _approverEnabledCategories.add(cat);
-          if (!_categoryApproverToggles.containsKey(cat.id)) {
-            _categoryApproverToggles[cat.id] = true; // default true if not set
-          }
-        }
-      }
 
       // Fetch approvals for progress tracking
       final reqIds = reqs.map((e) => e.id).toList();
@@ -158,20 +120,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     } catch (e) {
       debugPrint('Error loading requests: $e');
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _updateApproverSetting(String key, String value) async {
-    if (widget.userId == null) return;
-    try {
-      await Supabase.instance.client.from('user_registration_data').upsert({
-        'user_id': widget.userId,
-        'field_id': key,
-        'field_value': value,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,field_id');
-    } catch (e) {
-      debugPrint('Error updating setting $key: $e');
     }
   }
 
@@ -327,96 +275,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     );
   }
 
-  Widget _buildApproverSettingsCard() {
-    if (_approverEnabledCategories.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.teal.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.teal.withValues(alpha: 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.admin_panel_settings, color: Colors.teal),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('สถานะผู้อนุมัติของคุณ', style: AppTextStyles.heading3.copyWith(color: Colors.teal)),
-                    Text('เลือกรับผิดชอบดูแลคำร้องตามหมวดหมู่', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade600)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 8),
-          
-          ..._approverEnabledCategories.map((cat) {
-            final isEnabled = _categoryApproverToggles[cat.id] ?? false;
-            return SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('เข้าร่วมอนุมัติหมวด: ${cat.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              value: isEnabled,
-              activeThumbColor: Colors.teal,
-              onChanged: (val) {
-                setState(() => _categoryApproverToggles[cat.id] = val);
-                _updateApproverSetting('approver_enabled_${cat.id}', val.toString());
-              },
-            );
-          }),
-
-          const SizedBox(height: 16),
-          Text('พื้นที่อนุมัติการบริจาค', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text('ระยะจากที่อยู่ปัจจุบันถึงสถานที่ใช้บริจาค', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: _approvalRadius.toDouble().clamp(500, 100000),
-                  min: 500,
-                  max: 100000,
-                  divisions: 199,
-                  activeColor: Colors.teal,
-                  onChanged: (val) => setState(() => _approvalRadius = val.toInt()),
-                  onChangeEnd: (val) => _updateApproverSetting('approval_radius', val.toInt().toString()),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: Colors.teal.shade50, borderRadius: BorderRadius.circular(12)),
-                child: Text(
-                  _approvalRadius >= 1000 ? '${(_approvalRadius / 1000).toStringAsFixed(1)} กม.' : '$_approvalRadius ม.',
-                  style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildRequestCard(DonationRequest req, DonationCategory? cat) {
     final requiredApprovals = cat?.approverProfessionIds.length ?? 0;
@@ -592,23 +450,39 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildApproverSettingsCard(),
-        
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('รายการคำร้องขอของคุณ', style: AppTextStyles.heading3.copyWith(color: AppColors.primary)),
-            ElevatedButton.icon(
-              onPressed: () => _showRequestDialog(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('สร้างใหม่', style: TextStyle(fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.showCreateButton
+                      ? 'รายการคำร้องขอของคุณ'
+                      : 'คำร้องขอของคุณ',
+                  style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+                ),
+                if (!widget.showCreateButton)
+                  Text(
+                    'คำร้องที่ส่งแล้ว รอสถานะจากกลุ่มอาชีพ',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+              ],
             ),
+            if (widget.showCreateButton)
+              ElevatedButton.icon(
+                onPressed: () => _showRequestDialog(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('สร้างใหม่', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 16),

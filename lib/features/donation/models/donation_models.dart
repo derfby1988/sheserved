@@ -146,6 +146,8 @@ class DonationRequest {
   final String? localLeaderId;
   final String? communityId;
   final DateTime? localVerifiedAt;
+  final double? latitude;
+  final double? longitude;
   final Map<String, dynamic> customData;
 
   const DonationRequest({
@@ -170,6 +172,8 @@ class DonationRequest {
     this.localLeaderId,
     this.communityId,
     this.localVerifiedAt,
+    this.latitude,
+    this.longitude,
     this.customData = const {},
   });
 
@@ -205,6 +209,8 @@ class DonationRequest {
       localLeaderId: json['local_leader_id'],
       communityId: json['community_id'],
       localVerifiedAt: json['local_verified_at'] != null ? DateTime.parse(json['local_verified_at']) : null,
+      latitude: json['latitude'] != null ? parseDouble(json['latitude']) : null,
+      longitude: json['longitude'] != null ? parseDouble(json['longitude']) : null,
       customData: json['custom_data'] as Map<String, dynamic>? ?? {},
     );
   }
@@ -231,6 +237,8 @@ class DonationRequest {
       'local_leader_id': localLeaderId,
       'community_id': communityId,
       'local_verified_at': localVerifiedAt?.toIso8601String(),
+      'latitude': latitude,
+      'longitude': longitude,
       'custom_data': customData,
     };
   }

@@ -26,15 +26,13 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
   double _targetAmount = 0;
   String? _selectedCategoryId;
   String? _selectedCommunityId;
-  DateTime? _neededDate;
-  bool _neededDateError = false; // [FIX 3] validation state for date
   Map<String, dynamic> _customData = {};
-  final TextEditingController _locationController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   ThaiAddress? _selectedAddress;
-
   List<DonationCategory> _categories = [];
   List<Map<String, dynamic>> _communities = [];
+  bool _addressError = false;
+  
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -47,7 +45,6 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
 
   @override
   void dispose() {
-    _locationController.dispose();
     _amountController.dispose();
     super.dispose();
   }
@@ -94,25 +91,15 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     return !nonMonetaryKeywords.any((k) => nameEn.contains(k));
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null && picked != _neededDate) {
-      setState(() {
-        _neededDate = picked;
-        _neededDateError = false; // clear error when selected
-      });
-    }
-  }
 
   Future<void> _reviewAndSubmit() async {
     if (!_formKey.currentState!.validate()) return;
-
-    // UI fields removed, no need to validate _neededDate or _selectedCommunityId
+    
+    if (_selectedAddress == null) {
+       setState(() => _addressError = true);
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาระบุที่อยู่ผู้ร้องขอ')));
+       return;
+    }
 
     _formKey.currentState!.save();
 
@@ -220,22 +207,26 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     setState(() => _isSubmitting = true);
 
     try {
+      // custom_data รองรับ field ทุกประเภทที่ Admin กำหนดผ่าน Dialog
+      // รวมถึงข้อมูลผู้นำชุมชนจาก ThaiAddressPicker หากต้องการ
+      final enrichedCustomData = {
+        ..._customData,
+        if (_selectedAddress?.localGovType != null)
+          'local_gov_type': _selectedAddress!.localGovType,
+        if (_selectedAddress?.leaderRole?.leaderTitleTh != null)
+          'leader_title': _selectedAddress!.leaderRole!.leaderTitleTh,
+      };
+
       final requestData = {
         'user_id': userId,
         'category_id': _selectedCategoryId,
         'video_id': widget.videoId,
-        'community_id': _selectedCommunityId ?? 'unknown', // Set default since UI removed
         'title': _title,
         'description': _description,
-        'target_amount': _showAmountField ? _targetAmount : null,
-        'current_amount': 0,
-        'needed_date': (_neededDate ?? DateTime.now().add(const Duration(days: 30))).toIso8601String(), // Set default
-        'usage_location': _locationController.text.isEmpty ? 'ไม่ระบุ' : _locationController.text, // Set default
         'requester_address': _selectedAddress?.fullAddress ?? '',
         'approval_status': DonationApprovalStatus.pending_local.name,
         'status': 'active',
-        'is_trending': false,
-        'custom_data': _customData,
+        'custom_data': enrichedCustomData,
       };
 
       await _repository.createRequest(requestData);
@@ -260,21 +251,22 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     }
   }
 
-  // [FIX 2] Progress step indicator widget
+  // Progress step indicator widget
   Widget _buildProgressIndicator() {
     final bool section1Done = _selectedCategoryId != null && _title.isNotEmpty;
+    final bool section2Done = _selectedAddress != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Row(
         children: [
-          _progressStep(1, 'ข้อมูลความต้องการ', isActive: true, isDone: section1Done),
+          _progressStep(1, 'ข้อมูลพื้นฐาน', isActive: true, isDone: section1Done),
           Expanded(
             child: Container(
               height: 2,
               color: section1Done ? AppColors.primary : Colors.grey[300],
             ),
           ),
-          _progressStep(2, 'การยืนยันพื้นที่', isActive: section1Done, isDone: _selectedAddress != null),
+          _progressStep(2, 'ภูมิลำเนา', isActive: section1Done, isDone: section2Done),
         ],
       ),
     );
@@ -465,11 +457,12 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                             DropdownButtonFormField<String>(
                               decoration: _buildInputDecoration(hintText: 'หมวดหมู่การบริจาค', prefixIcon: Icons.category_rounded),
                               value: _selectedCategoryId,
+                              isExpanded: true,
                               icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[500]),
                               items: _categories.map((cat) {
                                 return DropdownMenuItem(
                                   value: cat.id,
-                                  child: Text(cat.name, style: AppTextStyles.bodyMedium),
+                                  child: Text(cat.name, style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis),
                                 );
                               }).toList(),
                               onChanged: (val) {
@@ -481,7 +474,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                               },
                               validator: (val) => val == null ? 'กรุณาเลือกหมวดหมู่' : null,
                             ),
-
+                            
                             // Progressive Disclosure: แสดงฟิลด์เพิ่มเติมหลังเลือกหมวดหมู่
                             AnimatedCrossFade(
                               duration: const Duration(milliseconds: 400),
@@ -508,27 +501,73 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                                   const SizedBox(height: 16),
                                   // Title
                                   TextFormField(
-                                    decoration: _buildInputDecoration(hintText: 'หัวข้อคำร้องขอ (เช่น ขอรับผ้าห่ม)', prefixIcon: Icons.title_rounded),
+                                    decoration: _buildInputDecoration(hintText: 'ระบุรายละเอียดสิ่งที่ต้องการให้ชัดเจน(อีกครั้ง)', prefixIcon: Icons.title_rounded),
                                     style: AppTextStyles.bodyMedium,
                                     validator: (val) => (val == null || val.isEmpty) ? 'กรุณาระบุหัวข้อ' : null,
                                     onChanged: (val) => setState(() => _title = val),
                                     onSaved: (val) => _title = val ?? '',
                                   ),
+/* 
+                            const SizedBox(height: 16),
+
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: _neededDateError ? Colors.redAccent : Colors.grey[200]!)),
+                              title: Text(_neededDate == null ? 'วันที่จำเป็นต้องใช้ (คลิกเพื่อเลือก)' : 'ต้องใช้ภายใน: ${DateFormat('dd/MM/yyyy').format(_neededDate!)}', style: AppTextStyles.bodyMedium.copyWith(color: _neededDate == null ? Colors.grey[500] : AppColors.textPrimary)),
+                              trailing: const Icon(Icons.calendar_today, color: AppColors.primary),
+                              tileColor: Colors.grey[50],
+                              onTap: () => _selectDate(context),
+                            ),
+                            if (_neededDateError)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 16, top: 4),
+                                child: Text('กรุณาเลือกวันที่จำเป็นต้องใช้', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                              ), */
+                            
+
+
+
+/*                             const SizedBox(height: 16),
+
+                            TextFormField(
+                              controller: _locationController,
+                              decoration: _buildInputDecoration(hintText: 'สถานที่ใช้ความช่วยเหลือ', prefixIcon: Icons.place_rounded),
+                              style: AppTextStyles.bodyMedium,
+                              validator: (val) => (val == null || val.isEmpty) ? 'กรุณาระบุสถานที่ใช้' : null,
+                            ), */
+                                  
                                   const SizedBox(height: 16),
+                                  
                                   // [SMART] Amount + Description or Custom Fields
                                   if (!_hasCategoryCustomFields) ...[
                                     if (_showAmountField) ...[
-                                      TextFormField(
-                                        controller: _amountController,
-                                        decoration: _buildInputDecoration(hintText: 'จำนวนเงินหรือยอดเป้าหมาย (บาท)', prefixIcon: Icons.monetization_on_rounded),
-                                        keyboardType: TextInputType.number,
-                                        style: AppTextStyles.bodyMedium,
-                                        validator: (val) => (val == null || val.isEmpty) ? 'กรุณาระบุยอดเป้าหมาย' : null,
-                                        onSaved: (val) => _targetAmount = double.tryParse(val ?? '0') ?? 0,
+                                      Row(
+                                        children: [
+   /*                                        Expanded(
+                                            child: TextFormField(
+                                              controller: _amountController,
+                                              decoration: _buildInputDecoration(hintText: 'ยอดเป้าหมาย', prefixIcon: Icons.monetization_on_rounded),
+                                              keyboardType: TextInputType.number,
+                                              style: AppTextStyles.bodyMedium,
+                                              validator: (val) => (val == null || val.isEmpty) ? 'ระบุเป้าหมาย' : null,
+                                              onSaved: (val) => _targetAmount = double.tryParse(val ?? '0') ?? 0,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16), */
+/*                                           Expanded(
+                                            child: TextFormField(
+                                              decoration: _buildInputDecoration(hintText: 'ยอดปัจจุบัน', prefixIcon: Icons.account_balance_wallet_rounded),
+                                              keyboardType: TextInputType.number,
+                                              style: AppTextStyles.bodyMedium,
+                                              initialValue: '0',
+                                              onSaved: (val) => _currentAmount = double.tryParse(val ?? '0') ?? 0,
+                                            ),
+                                          ), */
+                                        ],
                                       ),
                                       const SizedBox(height: 16),
                                     ],
-                                    TextFormField(
+/*                                     TextFormField(
                                       decoration: _buildInputDecoration(hintText: 'รายละเอียดเหตุผลความจำเป็น...', prefixIcon: Icons.description_rounded).copyWith(
                                         alignLabelWithHint: true,
                                       ),
@@ -536,7 +575,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                                       maxLines: 4,
                                       validator: (val) => (val == null || val.isEmpty) ? 'กรุณาเพิ่มรายละเอียด' : null,
                                       onSaved: (val) => _description = val ?? '',
-                                    ),
+                                    ), */
                                   ] else ...[
                                     Padding(
                                       padding: const EdgeInsets.only(top: 4, bottom: 8),
@@ -545,7 +584,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                                           Icon(Icons.tune, size: 14, color: Colors.grey[500]),
                                           const SizedBox(width: 6),
                                           Text(
-                                            'ฟิลด์นี้ถูกกำหนดโดยผู้ดูแลระบบ',
+                                            'ข้อมูลที่จำเป็นสำหรับการบริจาคประเภทนี้',
                                             style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 12),
                                           ),
                                         ],
@@ -561,9 +600,9 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                         ),
                       ),
 
-                      // Section 2 + Submit: แสดงเฉพาะเมื่อเลือกหมวดหมู่แล้ว
+                      // Section 2 + Submit
                       if (_selectedCategoryId != null) ...[
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
                       // Section 2: Verification and Location
                       Container(
@@ -582,14 +621,53 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildSectionTitle('การยืนยันพื้นที่', Icons.security_rounded, 'เริ่มจากกรอกรหัสไปรษณีย์เพื่อระบุที่อยู่อัตโนมัติ'),
+                            _buildSectionTitle('ภูมิลำเนาของผู้ขอรับบริจาค', Icons.list_alt_rounded, 'Sheserved จะค้นหาผู้นำชุมชนให้อัตโนมัติ'),
 
-                            // Thai Address Picker (Cascading)
-                            ThaiAddressPicker(
-                              onAddressSelected: (address) {
-                                setState(() => _selectedAddress = address);
-                              },
+/*                             DropdownButtonFormField<String>(
+                              decoration: _buildInputDecoration(hintText: 'ชุมชน/พื้นที่', prefixIcon: Icons.location_city_rounded),
+                              value: _selectedCommunityId,
+                              isExpanded: true,
+                              icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[500]),
+                              items: _communities.map((c) => DropdownMenuItem(value: c['id'].toString(), child: Text(c['name'] ?? 'ไม่ทราบชื่อ', style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis))).toList(),
+                              onChanged: (val) => setState(() => _selectedCommunityId = val),
+                              validator: (val) => val == null ? 'กรุณาเลือกชุมชน' : null,
+                            ), */
+
+                            const SizedBox(height: 16),
+
+                            // Using ThaiAddressPicker here
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: _addressError ? Colors.redAccent : Colors.transparent, width: 1.5),
+                              ),
+                              child: ThaiAddressPicker(
+                                initialAddress: _selectedAddress,
+                                onAddressSelected: (address) {
+                                  setState(() {
+                                    _selectedAddress = address;
+                                    _addressError = false;
+                                  });
+                                },
+                              ),
                             ),
+                            if (_addressError)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 16, top: 4),
+                                child: Text('กรุณาระบุที่อยู่ผู้ร้องขอ', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                              ),
+
+/*                             const SizedBox(height: 16),
+                            SwitchListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                              title: const Text('กำลังยอดนิยม?', style: TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: const Text('ต้องการแสดงคำร้องนี้ในรายการยอดนิยม', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              value: _isTrending,
+                              activeColor: Colors.orange,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              tileColor: Colors.orange.withValues(alpha: 0.05),
+                              onChanged: (val) => setState(() => _isTrending = val),
+                            ), */
                           ],
                         ),
                       ),
@@ -630,7 +708,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                           ),
                         ),
                        ),
-                      ], // end if (_selectedCategoryId != null)
+                      ],
                       const SizedBox(height: 40),
                     ],
                   ),
