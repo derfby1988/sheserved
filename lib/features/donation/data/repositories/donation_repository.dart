@@ -176,15 +176,32 @@ class DonationRepository {
   }
 
 
-  /// ดึง profession_id ทั้งหมดที่ผู้ใช้นี้มีสิทธิ์อนุมัติ (ผ่าน user_group_roles)
+  /// ดึง profession_id ทั้งหมดที่ผู้ใช้นี้มีสิทธิ์อนุมัติ (ทั้งจากตาราง users และ user_group_roles)
   Future<List<String>> getUserApproverProfessions(String userId) async {
     try {
+      final List<String> allProfIds = [];
+
+      // 1. ดึงอาชีพหลักจากการลงทะเบียน (users table)
+      final userResponse = await _client
+          .from('users')
+          .select('profession_id')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (userResponse != null && userResponse['profession_id'] != null) {
+        allProfIds.add(userResponse['profession_id'] as String);
+      }
+
+      // 2. ดึงจากสิทธิ์เพิ่มเติม (user_group_roles table)
       final response = await _client
           .from('user_group_roles')
           .select('profession_id')
           .eq('user_id', userId)
           .eq('is_active', true);
-      return (response as List).map((r) => r['profession_id'] as String).toList();
+          
+      allProfIds.addAll((response as List).map((r) => r['profession_id'] as String));
+
+      return allProfIds.toSet().toList();
     } catch (e) {
       return [];
     }

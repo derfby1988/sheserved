@@ -323,6 +323,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
   late TextEditingController _nameController;
   late TextEditingController _descriptionController;
   String _selectedIcon = 'category';
+  bool _canApproveDonation = false;
   bool _isSaving = false;
   bool get isEditing => widget.category != null;
 
@@ -348,6 +349,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
     _nameController = TextEditingController(text: widget.category?.name ?? '');
     _descriptionController = TextEditingController(text: widget.category?.description ?? '');
     _selectedIcon = widget.category?.iconName ?? 'category';
+    _canApproveDonation = widget.category?.canApproveDonation ?? false;
   }
 
   @override
@@ -379,6 +381,35 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
               controller: _descriptionController,
               decoration: const InputDecoration(
                 labelText: 'คำอธิบาย (ไม่บังคับ)',
+              ),
+            ),
+            const SizedBox(height: 24),
+            // --- Toggle: อนุมัติบริจาค ---
+            Container(
+              decoration: BoxDecoration(
+                color: _canApproveDonation
+                    ? Colors.teal.shade50
+                    : AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _canApproveDonation
+                      ? Colors.teal.shade300
+                      : AppColors.border,
+                ),
+              ),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                title: const Text(
+                  'อนุมัติบริจาคได้',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'ผู้ใช้ในหมวดหมู่นี้จะเห็นแถบ "อนุมัติบริจาค" ในหน้าโปรไฟล์',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _canApproveDonation,
+                activeColor: Colors.teal,
+                onChanged: (val) => setState(() => _canApproveDonation = val),
               ),
             ),
             const SizedBox(height: 24),
@@ -463,6 +494,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
         'description': _descriptionController.text.trim(),
         'icon_name': _selectedIcon,
         'is_active': true,
+        'can_approve_donation': _canApproveDonation,
       };
 
       if (isEditing) {

@@ -47,10 +47,8 @@ class _ProfilePageState extends State<ProfilePage> {
   File? _tempProfileImage;
   int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
 
-  // สิทธิ์ผู้นำชุมชน
-  bool _isLocalLeader = false;
-  bool _isApproverEnabled = true;
-  int _approvalRadius = 500;
+  // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
+  bool _canApproveDonation = false;
 
   // ฟีเจอร์กำหนดอาชีพที่เห็นวิดีโอไม่เบลอ
   List<prof.Profession> _allVolunteerProfessions = [];
@@ -73,7 +71,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       _loadProfile();
       _loadVolunteerProfessions();
-      _checkLocalLeaderStatus();
+      _checkCanApproveDonationStatus();
     });
   }
 
@@ -108,8 +106,6 @@ class _ProfilePageState extends State<ProfilePage> {
           }
 
           // Load settings for approver
-          _isApproverEnabled = _dynamicData['is_approver_enabled'] == 'true' || _dynamicData['is_approver_enabled'] == null;
-          _approvalRadius = int.tryParse(_dynamicData['approval_radius'] ?? '500') ?? 500;
 
           _initControllers();
           _isLoading = false;
@@ -131,15 +127,39 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Future<void> _checkLocalLeaderStatus() async {
+  Future<void> _checkCanApproveDonationStatus() async {
     final userId = AuthService.instance.userId;
     if (userId == null) return;
     try {
-      final repo = DonationRepository(supa.Supabase.instance.client);
-      final result = await repo.isLocalLeader(userId);
-      if (mounted) setState(() => _isLocalLeader = result);
+      // ดึง profession_id ของ user
+      final userRow = await supa.Supabase.instance.client
+          .from('users')
+          .select('profession_id')
+          .eq('id', userId)
+          .maybeSingle();
+      final professionId = userRow?['profession_id'] as String?;
+      if (professionId == null) return;
+
+      // ดึง category ของ profession นั้น
+      final profRow = await supa.Supabase.instance.client
+          .from('professions')
+          .select('category')
+          .eq('id', professionId)
+          .maybeSingle();
+      final categoryId = profRow?['category'] as String?;
+      if (categoryId == null) return;
+
+      // ตรวจ can_approve_donation จาก user_categories
+      final catRow = await supa.Supabase.instance.client
+          .from('user_categories')
+          .select('can_approve_donation')
+          .eq('id', categoryId)
+          .maybeSingle();
+      final canApprove = catRow?['can_approve_donation'] as bool? ?? false;
+
+      if (mounted) setState(() => _canApproveDonation = canApprove);
     } catch (e) {
-      debugPrint('ProfilePage: Error checking leader status: $e');
+      debugPrint('ProfilePage: Error checking can_approve_donation: $e');
     }
   }
 
@@ -219,7 +239,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Row(
                   children: [
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / (_isLocalLeader ? 4 : 3),
+                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
                         child: _buildTabItem(
                           icon: Icons.person_outline,
                           text: _profession?.name ?? 'โปรไฟล์',
@@ -230,7 +250,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false))
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / (_isLocalLeader ? 4 : 3),
+                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
                         child: _buildTabItem(
                           icon: Icons.volunteer_activism_outlined,
                           text: 'จิตอาสา',
@@ -239,7 +259,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = 1),
                         ),
                       ),
-                    if (_isLocalLeader)
+                    if (_canApproveDonation)
                       SizedBox(
                         width: MediaQuery.of(context).size.width / 4,
                         child: _buildTabItem(
@@ -251,7 +271,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                     SizedBox(
-                      width: MediaQuery.of(context).size.width / (_isLocalLeader ? 4 : 3),
+                      width: MediaQuery.of(context).size.width / (_canApproveDonation ? 4 : 3),
                       child: _buildTabItem(
                         icon: Icons.assignment_outlined,
                         text: 'คำร้องขอ',
@@ -285,12 +305,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 ..._buildDynamicFields(),
               ] else if (_selectedTabIndex == 1) ...[
                 _buildNotificationSettings(),
-              ] else if (_selectedTabIndex == 2 && _isLocalLeader) ...[
+              ] else if (_selectedTabIndex == 2 && _canApproveDonation) ...[
                 const LeaderVerificationPage(),
               ] else if (_selectedTabIndex == 3) ...[
-                _buildApproverSettings(),
                 DonationRequestManagementPanel(
                   repository: _donationRepository,
+                  userId: _user?.id,
                 ),
               ],
               if (_isEditing && _selectedTabIndex == 0) ...[
@@ -746,157 +766,6 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _updateApproverSettings({bool? enabled, int? radius}) async {
-    if (_user == null) return;
-    bool newEnabled = enabled ?? _isApproverEnabled;
-    final newRadius = radius ?? _approvalRadius;
-    
-    try {
-      if (enabled != null) {
-        await supa.Supabase.instance.client.from('user_registration_data').upsert({
-          'user_id': _user!.id,
-          'field_id': 'is_approver_enabled',
-          'field_value': newEnabled.toString(),
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'user_id,field_id');
-      }
-      if (radius != null) {
-        await supa.Supabase.instance.client.from('user_registration_data').upsert({
-          'user_id': _user!.id,
-          'field_id': 'approval_radius',
-          'field_value': newRadius.toString(),
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'user_id,field_id');
-      }
-      
-      // Save locally to dynamicData so we don't have to refetch
-      _dynamicData['is_approver_enabled'] = newEnabled.toString();
-      _dynamicData['approval_radius'] = newRadius.toString();
-      
-      if (mounted) {
-        setState(() {
-          _isApproverEnabled = newEnabled;
-          _approvalRadius = newRadius;
-        });
-      }
-    } catch(e) {
-      debugPrint('Error updating approver settings: $e');
-    }
-  }
-
-  Widget _buildApproverSettings() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'การตั้งค่าการอนุมัติ',
-          style: AppTextStyles.heading3.copyWith(color: Colors.teal),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'เข้าร่วมอนุมัติรายการบริจาค',
-                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'แสดงตามสิทธิ์ที่กำหนดไว้ใน dialog flow การอนุมัติ แถบหมวดหมู่ หน้าจัดการระบบบริจาค',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _isApproverEnabled,
-                onChanged: (value) => _updateApproverSettings(enabled: value),
-                activeThumbColor: Colors.teal,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        // พื้นที่อนุมัติการบริจาค
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'พื้นที่อนุมัติการบริจาค',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _approvalRadius >= 1000 
-                        ? '${(_approvalRadius / 1000).toStringAsFixed(1)} กม.' 
-                        : '$_approvalRadius ม.',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.teal,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'โดยคำนวนระยะทางจากที่อยู่ปัจจุบันของผู้อนุมัติ ไปยังตำแหน่งหรือสถานที่ที่ผู้ร้องขอการบริจาคต้องการนำไปใช้',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              Slider(
-                value: _approvalRadius.toDouble().clamp(500, 100000),
-                min: 500,
-                max: 100000,
-                divisions: 199,
-                activeColor: Colors.teal,
-                onChanged: (val) {
-                  setState(() {
-                    _approvalRadius = val.toInt();
-                  });
-                },
-                onChangeEnd: (val) => _updateApproverSettings(radius: val.toInt()),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-      ],
     );
   }
 

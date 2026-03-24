@@ -7,6 +7,8 @@ class UserCategory {
   final String? iconName;
   final int displayOrder;
   final bool isActive;
+  /// กำหนดว่าหมวดหมู่นี้มีสิทธิ์อนุมัติคำร้องบริจาคหรือไม่
+  final bool canApproveDonation;
 
   const UserCategory({
     required this.id,
@@ -16,6 +18,7 @@ class UserCategory {
     this.iconName,
     this.displayOrder = 0,
     this.isActive = true,
+    this.canApproveDonation = false,
   });
 
   /// ค่าคงที่สำหรับหมวดหมู่หลัก (เพื่อความปลอดภัยในการอ้างอิงโค้ดส่วนอื่น)
@@ -52,6 +55,7 @@ class UserCategory {
       'icon_name': iconName,
       'display_order': displayOrder,
       'is_active': isActive,
+      'can_approve_donation': canApproveDonation,
     };
   }
 
@@ -64,6 +68,7 @@ class UserCategory {
       iconName: json['icon_name'],
       displayOrder: json['display_order'] ?? 0,
       isActive: json['is_active'] ?? true,
+      canApproveDonation: json['can_approve_donation'] ?? false,
     );
   }
 
@@ -75,6 +80,7 @@ class UserCategory {
     String? iconName,
     int? displayOrder,
     bool? isActive,
+    bool? canApproveDonation,
   }) {
     return UserCategory(
       id: id ?? this.id,
@@ -84,6 +90,7 @@ class UserCategory {
       iconName: iconName ?? this.iconName,
       displayOrder: displayOrder ?? this.displayOrder,
       isActive: isActive ?? this.isActive,
+      canApproveDonation: canApproveDonation ?? this.canApproveDonation,
     );
   }
 
