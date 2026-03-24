@@ -901,84 +901,53 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
     }
     final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
-    final DateTime initialDate = _dynamicFieldValues['${field.fieldId}_date'] as DateTime? ?? 
-                               DateTime.now().subtract(const Duration(days: 6570));
-    
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: AppColors.primary,
-          width: 1.5,
+    final bool hasDate = controller.text.isNotEmpty;
+
+    return InkWell(
+      onTap: () => _selectDateForField(field.fieldId, controller),
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: hasDate ? AppColors.primary : Colors.grey[200]!,
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-      ),
-      child: Row(
-        children: [
-          // Day/Month Selection
-          Expanded(
-            child: InkWell(
-              onTap: () => _selectDateForField(field.fieldId, controller),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(28),
-                bottomLeft: Radius.circular(28),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.calendar_today_outlined, color: AppColors.primary, size: 24),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        controller.text.isEmpty 
-                          ? '${field.label}${field.isRequired ? " *" : ""}'
-                          : controller.text.substring(0, controller.text.lastIndexOf(' ') - 4),
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: controller.text.isEmpty ? AppColors.textHint : AppColors.primary,
-                          decoration: controller.text.isEmpty ? null : TextDecoration.underline,
-                          decorationStyle: controller.text.isEmpty ? null : TextDecorationStyle.dashed,
-                          fontWeight: controller.text.isEmpty ? null : FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              color: hasDate ? AppColors.primary : Colors.grey[400],
+              size: 20,
             ),
-          ),
-          Container(width: 1, height: 30, color: AppColors.primary.withOpacity(0.3)),
-          // Year Selection
-          InkWell(
-            onTap: () async {
-              final int? selectedYear = await _showThaiYearPicker(context, initialDate.year);
-              if (selectedYear != null) {
-                setState(() {
-                  final newDate = DateTime(selectedYear, initialDate.month, initialDate.day);
-                  _dynamicFieldValues['${field.fieldId}_date'] = newDate;
-                  controller.text = '${newDate.day} ${_getThaiShortMonth(newDate.month)} ${newDate.year + 543}';
-                });
-              }
-            },
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(28),
-              bottomRight: Radius.circular(28),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            const SizedBox(width: 12),
+            Expanded(
               child: Text(
-                controller.text.isEmpty ? 'พ.ศ.' : controller.text.substring(controller.text.lastIndexOf(' ') + 1),
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                  decoration: TextDecoration.underline,
-                  decorationStyle: TextDecorationStyle.dashed,
+                hasDate
+                    ? controller.text
+                    : '${field.label}${field.isRequired ? " *" : ""}',
+                style: TextStyle(
+                  color: hasDate ? AppColors.primary : Colors.grey[400],
+                  fontSize: 15,
+                  fontWeight: hasDate ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ),
-          ),
-        ],
+            if (hasDate)
+              Icon(Icons.edit_calendar_outlined,
+                  color: AppColors.primary.withOpacity(0.5), size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -1016,81 +985,27 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
-    final int currentYearBE = DateTime.now().year + 543;
-    final int startYearBE = initialYear + 543;
-    final int selectedIndex = currentYearBE - startYearBE;
-    
-    // Calculate initial scroll offset (roughly 3 items per row, row height ~50)
-    final double initialOffset = (selectedIndex ~/ 3) * 50.0;
-    final ScrollController scrollController = ScrollController(initialScrollOffset: initialOffset);
-    
-    return showDialog<int>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('เลือกปี พ.ศ.', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: Scrollbar(
-              controller: scrollController,
-              thumbVisibility: true,
-              child: GridView.builder(
-                controller: scrollController,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 2,
-                ),
-                itemCount: currentYearBE - (1900 + 543) + 1,
-                itemBuilder: (context, index) {
-                  final yearBE = currentYearBE - index;
-                  final bool isSelected = yearBE == startYearBE;
-                  return InkWell(
-                    onTap: () => Navigator.pop(context, yearBE - 543),
-                    child: Container(
-                      margin: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : null,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '$yearBE',
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.black,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                scrollController.dispose();
-                Navigator.pop(context);
-              },
-              child: const Text('ยกเลิก'),
-            ),
-          ],
-        );
-      },
-    );
-  }
   
+  // Step 1: เลือกปี พ.ศ. ก่อน → Step 2: เลือกวัน/เดือนในปฏิทิน
   Future<void> _selectDateForField(String fieldId, TextEditingController controller) async {
-    final DateTime initialDate = _dynamicFieldValues['${fieldId}_date'] as DateTime? ?? 
+    final DateTime currentDate = _dynamicFieldValues['${fieldId}_date'] as DateTime? ?? 
                                DateTime.now().subtract(const Duration(days: 6570));
-    
-    // Show Thai Date Picker directly with the existing/default value
+
+    // Step 1: แสดง Year Picker (พ.ศ.) ก่อน
+    final int? selectedYear = await _showThaiYearPicker(context, currentDate.year);
+    if (selectedYear == null) return; // ผู้ใช้ยกเลิก
+
+    // Step 2: เปิดปฏิทินพร้อม initial ที่ปีที่เลือก
+    final DateTime initialForCalendar = DateTime(
+      selectedYear,
+      currentDate.month,
+      currentDate.day.clamp(1, _daysInMonth(selectedYear, currentDate.month)),
+    );
+
+    if (!mounted) return;
     final DateTime? picked = await showThaiDatePicker(
       context,
-      initialDate: initialDate,
+      initialDate: initialForCalendar,
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
       era: Era.be,
@@ -1104,6 +1019,116 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       });
     }
   }
+
+  int _daysInMonth(int year, int month) =>
+      DateTime(year, month + 1, 0).day;
+
+  /// แสดง Dialog ให้เลือกปี พ.ศ. แบบ Grid พร้อม scroll โฟกัสปีที่เลือกไว้แล้ว
+  Future<int?> _showThaiYearPicker(BuildContext context, int initialYearCE) async {
+    final int currentYearBE = DateTime.now().year + 543;
+    final int currentInitialBE = initialYearCE + 543;
+    final int totalItems = currentYearBE - 2443 + 1;
+    // index ของปีที่เลือก (grid เรียงจากใหม่ → เก่า)
+    final int selectedIndex = currentYearBE - currentInitialBE;
+    // row ที่ปีที่เลือกอยู่ (3 คอลัมน์)
+    final int selectedRow = selectedIndex ~/ 3;
+
+    final ScrollController scrollController = ScrollController();
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, _) {
+          // scroll ไปยังปีที่เลือกหลัง frame แรก build เสร็จ
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (scrollController.hasClients && scrollController.position.maxScrollExtent > 0) {
+              final int totalRows = (totalItems / 3).ceil();
+              // คำนวณ offset แบบ proportional จาก maxScrollExtent จริง
+              final double target = (selectedRow / totalRows.toDouble()) *
+                  scrollController.position.maxScrollExtent;
+              scrollController.animateTo(
+                target.clamp(0.0, scrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.calendar_month, color: AppColors.primary, size: 22),
+                const SizedBox(width: 8),
+                Text('เลือกปี พ.ศ.',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                const Spacer(),
+                Text('(ระบุปีก่อน)',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.normal)),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 300,
+              child: Scrollbar(
+                controller: scrollController,
+                thumbVisibility: true,
+                child: GridView.builder(
+                  controller: scrollController,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 2,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: totalItems,
+                  itemBuilder: (_, index) {
+                    final yearBE = currentYearBE - index;
+                    final bool isSelected = yearBE == currentInitialBE;
+                    return InkWell(
+                      onTap: () => Navigator.pop(ctx, yearBE - 543),
+                      borderRadius: BorderRadius.circular(10),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.primary : null,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.primary.withOpacity(0.2),
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$yearBE',
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : Colors.black87,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    try { scrollController.dispose(); } catch (_) {}
+    return result;
+  }
+
   
   void _selectImageForField(String fieldId) {
     // TODO: Implement image picker
