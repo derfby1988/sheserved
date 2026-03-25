@@ -6,6 +6,7 @@ import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../admin/models/profession.dart' hide VerificationStatus;
 import '../../../admin/models/registration_field_config.dart';
 import '../../../../features/admin/data/repositories/profession_repository.dart';
@@ -901,54 +902,18 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
     }
     final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
-    final bool hasDate = controller.text.isNotEmpty;
+    final DateTime? selectedDate = _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
 
-    return InkWell(
-      onTap: () => _selectDateForField(field.fieldId, controller),
-      borderRadius: BorderRadius.circular(28),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: hasDate ? AppColors.primary : Colors.grey[200]!,
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(
-              Icons.calendar_today_outlined,
-              color: hasDate ? AppColors.primary : Colors.grey[400],
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                hasDate
-                    ? controller.text
-                    : '${field.label}${field.isRequired ? " *" : ""}',
-                style: TextStyle(
-                  color: hasDate ? AppColors.primary : Colors.grey[400],
-                  fontSize: 15,
-                  fontWeight: hasDate ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ),
-            if (hasDate)
-              Icon(Icons.edit_calendar_outlined,
-                  color: AppColors.primary.withOpacity(0.5), size: 18),
-          ],
-        ),
-      ),
+    return ThaiBuddhistDatePickerField(
+      value: selectedDate,
+      label: field.label,
+      isRequired: field.isRequired,
+      onDateSelected: (date) {
+        setState(() {
+          _dynamicFieldValues['${field.fieldId}_date'] = date;
+          controller.text = ThaiDateUtils.formatShortDateBE(date);
+        });
+      },
     );
   }
   
@@ -985,149 +950,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  
-  // Step 1: เลือกปี พ.ศ. ก่อน → Step 2: เลือกวัน/เดือนในปฏิทิน
-  Future<void> _selectDateForField(String fieldId, TextEditingController controller) async {
-    final DateTime currentDate = _dynamicFieldValues['${fieldId}_date'] as DateTime? ?? 
-                               DateTime.now().subtract(const Duration(days: 6570));
 
-    // Step 1: แสดง Year Picker (พ.ศ.) ก่อน
-    final int? selectedYear = await _showThaiYearPicker(context, currentDate.year);
-    if (selectedYear == null) return; // ผู้ใช้ยกเลิก
-
-    // Step 2: เปิดปฏิทินพร้อม initial ที่ปีที่เลือก
-    final DateTime initialForCalendar = DateTime(
-      selectedYear,
-      currentDate.month,
-      currentDate.day.clamp(1, _daysInMonth(selectedYear, currentDate.month)),
-    );
-
-    if (!mounted) return;
-    final DateTime? picked = await showThaiDatePicker(
-      context,
-      initialDate: initialForCalendar,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      era: Era.be,
-      locale: 'th_TH',
-    );
-
-    if (picked != null) {
-      setState(() {
-        _dynamicFieldValues['${fieldId}_date'] = picked;
-        controller.text = '${picked.day} ${_getThaiShortMonth(picked.month)} ${picked.year + 543}';
-      });
-    }
-  }
-
-  int _daysInMonth(int year, int month) =>
-      DateTime(year, month + 1, 0).day;
-
-  /// แสดง Dialog ให้เลือกปี พ.ศ. แบบ Grid พร้อม scroll โฟกัสปีที่เลือกไว้แล้ว
-  Future<int?> _showThaiYearPicker(BuildContext context, int initialYearCE) async {
-    final int currentYearBE = DateTime.now().year + 543;
-    final int currentInitialBE = initialYearCE + 543;
-    final int totalItems = currentYearBE - 2443 + 1;
-    // index ของปีที่เลือก (grid เรียงจากใหม่ → เก่า)
-    final int selectedIndex = currentYearBE - currentInitialBE;
-    // row ที่ปีที่เลือกอยู่ (3 คอลัมน์)
-    final int selectedRow = selectedIndex ~/ 3;
-
-    final ScrollController scrollController = ScrollController();
-
-    final result = await showDialog<int>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, _) {
-          // scroll ไปยังปีที่เลือกหลัง frame แรก build เสร็จ
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (scrollController.hasClients && scrollController.position.maxScrollExtent > 0) {
-              final int totalRows = (totalItems / 3).ceil();
-              // คำนวณ offset แบบ proportional จาก maxScrollExtent จริง
-              final double target = (selectedRow / totalRows.toDouble()) *
-                  scrollController.position.maxScrollExtent;
-              scrollController.animateTo(
-                target.clamp(0.0, scrollController.position.maxScrollExtent),
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Row(
-              children: [
-                Icon(Icons.calendar_month, color: AppColors.primary, size: 22),
-                const SizedBox(width: 8),
-                Text('เลือกปี พ.ศ.',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
-                const Spacer(),
-                Text('(ระบุปีก่อน)',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.normal)),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: 300,
-              child: Scrollbar(
-                controller: scrollController,
-                thumbVisibility: true,
-                child: GridView.builder(
-                  controller: scrollController,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 2,
-                    crossAxisSpacing: 4,
-                    mainAxisSpacing: 4,
-                  ),
-                  itemCount: totalItems,
-                  itemBuilder: (_, index) {
-                    final yearBE = currentYearBE - index;
-                    final bool isSelected = yearBE == currentInitialBE;
-                    return InkWell(
-                      onTap: () => Navigator.pop(ctx, yearBE - 543),
-                      borderRadius: BorderRadius.circular(10),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppColors.primary : null,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.primary.withOpacity(0.2),
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '$yearBE',
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.black87,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    try { scrollController.dispose(); } catch (_) {}
-    return result;
-  }
 
   
   void _selectImageForField(String fieldId) {
@@ -1894,7 +1717,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   String _getThaiShortMonth(int month) {
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    return months[month - 1];
+    return ThaiDateUtils.getThaiShortMonth(month);
   }
 }

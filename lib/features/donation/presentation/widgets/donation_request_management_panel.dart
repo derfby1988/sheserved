@@ -4,6 +4,8 @@ import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
+import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 
 class DonationRequestManagementPanel extends StatefulWidget {
   final DonationRepository repository;
@@ -129,12 +131,15 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     final targetController = TextEditingController(text: request?.targetAmount?.toString());
     final currentController = TextEditingController(text: request?.currentAmount.toString());
     final usageLocationController = TextEditingController(text: request?.usageLocation);
-    final requesterAddressController = TextEditingController(text: request?.requesterAddress);
-    
+
     DateTime? selectedNeededDate = request?.neededDate;
     String? selectedCategoryId = request?.categoryId ?? (_categories.isNotEmpty ? _categories.first.id : null);
     String? selectedCommunityId = request?.communityId;
     bool isTrending = request?.isTrending ?? false;
+    // ที่อยู่ผู้ร้องขอ — ใช้ ThaiAddress แทน controller
+    // parse จากข้อมูลเดิมเพื่อแสดงให้ถูกต้องใน summary text (initialAddress ใช้ไม่ได้เพราะไม่มี postal code)
+    ThaiAddress? selectedRequesterAddress;
+    bool addressError = false;
 
     showModalBottomSheet(
       context: context,
@@ -196,21 +201,47 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                   const SizedBox(height: 16),
                   TextField(controller: usageLocationController, decoration: InputDecoration(labelText: 'สถานที่ใช้ความช่วยเหลือ', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
                   const SizedBox(height: 16),
-                  TextField(controller: requesterAddressController, decoration: InputDecoration(labelText: 'ที่อยู่ผู้ร้องขอ', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
+                  
+                  // ── ที่อยู่ผู้ร้องขอ — ThaiAddressPicker ──
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ที่อยู่ผู้ร้องขอ',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: addressError ? Colors.redAccent : Colors.grey.shade300,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: ThaiAddressPicker(
+                          initialAddress: selectedRequesterAddress,
+                          onAddressSelected: (address) {
+                            setModalState(() {
+                              selectedRequesterAddress = address;
+                              addressError = false;
+                            });
+                          },
+                        ),
+                      ),
+                      if (addressError)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4, top: 4),
+                          child: Text('กรุณาระบุที่อยู่ผู้ร้องขอ', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
-                  ListTile(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
-                    title: Text(selectedNeededDate == null ? 'เลือกวันที่จำเป็นต้องใช้' : 'ต้องใช้ภายใน: ${selectedNeededDate.toString().split(' ')[0]}'),
-                    trailing: const Icon(Icons.calendar_today, color: AppColors.primary),
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: selectedNeededDate ?? DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (date != null) setModalState(() => selectedNeededDate = date);
-                    },
+                  ThaiBuddhistDatePickerField(
+                    value: selectedNeededDate,
+                    label: 'วันที่จำเป็นต้องใช้',
+                    hint: 'เลือกวันที่จำเป็นต้องใช้',
+                    onDateSelected: (date) => setModalState(() => selectedNeededDate = date),
                   ),
                   const SizedBox(height: 16),
                   SwitchListTile(
@@ -244,7 +275,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                           'target_amount': double.tryParse(targetController.text) ?? 0.0,
                           'current_amount': double.tryParse(currentController.text) ?? 0.0,
                           'usage_location': usageLocationController.text,
-                          'requester_address': requesterAddressController.text,
+                          'requester_address': selectedRequesterAddress?.fullAddress ?? '',
                           'needed_date': selectedNeededDate?.toIso8601String(),
                           'is_trending': isTrending,
                           'status': 'active',
