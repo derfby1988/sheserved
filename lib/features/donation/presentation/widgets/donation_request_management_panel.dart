@@ -6,6 +6,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
+import '../pages/donation_create_page.dart';
 
 class DonationRequestManagementPanel extends StatefulWidget {
   final DonationRepository repository;
@@ -13,11 +14,15 @@ class DonationRequestManagementPanel extends StatefulWidget {
   /// ถ้า false จะซ่อนปุ่ม "สร้างใหม่" (เมื่อฝังใน Profile tab แทนหน้า dashboard)
   final bool showCreateButton;
   
+  /// จำกัดความสูงสูงสุด และให้ภายใน Scroll ได้ (ถ้ามีค่า)
+  final double? maxHeight;
+  
   const DonationRequestManagementPanel({
     super.key, 
     required this.repository,
     this.userId,
     this.showCreateButton = true,
+    this.maxHeight,
   });
 
   @override
@@ -489,7 +494,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
               children: [
                 Text(
                   widget.showCreateButton
-                      ? 'รายการคำร้องขอของคุณ'
+                      ? 'ขอรับบริจาค'
                       : 'คำร้องขอของคุณ',
                   style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
                 ),
@@ -504,9 +509,12 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
             ),
             if (widget.showCreateButton)
               ElevatedButton.icon(
-                onPressed: () => _showRequestDialog(),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+                ).then((_) => _loadRequests()),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('สร้างใหม่', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: const Text('ขอ', style: TextStyle(fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -530,21 +538,38 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
               children: [
                 Icon(Icons.assignment_outlined, size: 48, color: Colors.grey.shade400),
                 const SizedBox(height: 16),
-                Text('ไม่มีรายการคำร้องขอ', style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
+                Text('ยังไม่ได้ขอรับบริจาค', style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
               ],
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _requests.length,
-            itemBuilder: (context, index) {
-              final req = _requests[index];
-              final cat = _categories.where((c) => c.id == req.categoryId).firstOrNull;
-              return _buildRequestCard(req, cat);
-            },
-          ),
+          widget.maxHeight != null
+              ? ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: widget.maxHeight!),
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _requests.length,
+                      itemBuilder: (context, index) {
+                        final req = _requests[index];
+                        final cat = _categories.where((c) => c.id == req.categoryId).firstOrNull;
+                        return _buildRequestCard(req, cat);
+                      },
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _requests.length,
+                  itemBuilder: (context, index) {
+                    final req = _requests[index];
+                    final cat = _categories.where((c) => c.id == req.categoryId).firstOrNull;
+                    return _buildRequestCard(req, cat);
+                  },
+                ),
           
         const SizedBox(height: 32),
       ],

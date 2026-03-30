@@ -8,6 +8,7 @@ enum FieldType {
   image,
   multilineText,
   dropdown,
+  addressPicker,
 }
 
 extension FieldTypeExtension on FieldType {
@@ -29,6 +30,8 @@ extension FieldTypeExtension on FieldType {
         return 'ข้อความหลายบรรทัด';
       case FieldType.dropdown:
         return 'ตัวเลือก (Dropdown)';
+      case FieldType.addressPicker:
+        return 'ที่อยู่ (Address Picker)';
     }
   }
 
@@ -50,6 +53,8 @@ extension FieldTypeExtension on FieldType {
         return 'notes';
       case FieldType.dropdown:
         return 'arrow_drop_down_circle';
+      case FieldType.addressPicker:
+        return 'location_on';
     }
   }
 
@@ -71,6 +76,10 @@ extension FieldTypeExtension on FieldType {
         return FieldType.multilineText;
       case 'dropdown':
         return FieldType.dropdown;
+      case 'address_picker':
+        return FieldType.addressPicker;
+      case 'addressPicker': // รองรับ camelCase เผื่อไว้
+        return FieldType.addressPicker;
       default:
         return FieldType.text;
     }

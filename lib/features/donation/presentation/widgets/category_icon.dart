@@ -29,32 +29,32 @@ class CategoryIcon extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 45,
-              height: 45,
-              decoration: const BoxDecoration(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
               child: Center(
                 child: Container(
-                  width: 20,
-                  height: 20,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    border: Border.all(color: iconColor, width: 1.5),
-                    borderRadius: BorderRadius.circular(3),
+                    color: iconColor.withOpacity(0.12),
+                    shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, size: 14, color: iconColor),
+                  child: Icon(icon, size: 18, color: iconColor),
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             SizedBox(
               width: 80,
               child: Text(

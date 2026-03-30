@@ -695,20 +695,23 @@ class VideoRepository {
     try {
       final response = await _client
           .from('incident_responses')
-          .select('video_id, user_group_roles!incident_responses_volunteer_id_fkey(profession_id)')
+          .select('video_id, users:volunteer_id(user_group_roles(profession_id))')
           .inFilter('video_id', videoIds)
           .inFilter('status', ['accepted', 'arrived']);
 
       final Set<String> takenVideoIds = {};
       for (var row in response as List) {
         final videoId = row['video_id'] as String?;
-        final roles = row['user_group_roles'];
+        final userData = row['users'];
         
         String? responderProfId;
-        if (roles is Map) {
-          responderProfId = roles['profession_id']?.toString();
-        } else if (roles is List && roles.isNotEmpty) {
-          responderProfId = roles.first['profession_id']?.toString();
+        if (userData is Map && userData['user_group_roles'] != null) {
+          final roles = userData['user_group_roles'];
+          if (roles is List && roles.isNotEmpty) {
+            responderProfId = roles.first['profession_id']?.toString();
+          } else if (roles is Map) {
+            responderProfId = roles['profession_id']?.toString();
+          }
         }
 
         if (videoId != null && responderProfId == professionId) {
@@ -726,45 +729,51 @@ class VideoRepository {
   Future<List<Map<String, dynamic>>> getIncidentResponders(String videoId) async {
     try {
       // Query incident_responses and join with consumer_profiles for name
-      final response = await _client
-          .from('incident_responses')
-          .select('''
-            id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
-            consumer_profiles!incident_responses_volunteer_id_fkey(full_name),
-            user_group_roles!incident_responses_volunteer_id_fkey(
-               profession_id,
-               professions(name, color_hex)
-            )
-          ''')
-          .eq('video_id', videoId)
-          .inFilter('status', ['accepted', 'arrived'])
-          .order('accepted_at', ascending: true);
+        final response = await _client
+            .from('incident_responses')
+            .select('''
+              id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
+              users:volunteer_id(
+                consumer_profiles(full_name),
+                user_group_roles(
+                   profession_id,
+                   professions(name, color_hex)
+                )
+              )
+            ''')
+            .eq('video_id', videoId)
+            .inFilter('status', ['accepted', 'arrived'])
+            .order('accepted_at', ascending: true);
 
       final List<Map<String, dynamic>> responders = [];
       for (var row in response as List) {
         String? volunteerName;
         String? professionName;
         String? professionId;
-
-        // Extract name
-        final profile = row['consumer_profiles'];
-        if (profile is Map) {
-           volunteerName = profile['full_name'];
-        } else if (profile is List && profile.isNotEmpty) {
-           volunteerName = profile.first['full_name'];
-        }
-
-        // Extract profession
-        final roles = row['user_group_roles'];
         String? professionColor;
-        if (roles is List && roles.isNotEmpty) {
-           final firstRole = roles.first;
-           professionId = firstRole['profession_id']?.toString();
-           final prof = firstRole['professions'];
-           if (prof != null) {
+
+        // Extract user data
+        final userData = row['users'];
+        if (userData is Map) {
+          // Extract name from consumer_profiles
+          final profile = userData['consumer_profiles'];
+          if (profile is Map) {
+            volunteerName = profile['full_name'];
+          } else if (profile is List && profile.isNotEmpty) {
+            volunteerName = profile.first['full_name'];
+          }
+
+          // Extract profession from user_group_roles
+          final roles = userData['user_group_roles'];
+          if (roles is List && roles.isNotEmpty) {
+            final firstRole = roles.first;
+            professionId = firstRole['profession_id']?.toString();
+            final prof = firstRole['professions'];
+            if (prof != null) {
               professionName = prof['name'];
               professionColor = prof['color_hex'];
-           }
+            }
+          }
         }
 
         responders.add({

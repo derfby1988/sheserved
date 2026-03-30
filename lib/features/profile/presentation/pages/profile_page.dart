@@ -304,13 +304,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 8),
                 const LeaderVerificationPage(),
                 const SizedBox(height: 24),
-                const Divider(thickness: 1.5),
-                const SizedBox(height: 8),
-                DonationRequestManagementPanel(
-                  repository: _donationRepository,
-                  userId: _user?.id,
-                  showCreateButton: false,
-                ),
               ],
               if (_isEditing && _selectedTabIndex == 0) ...[
                 const SizedBox(height: 32),
@@ -319,8 +312,19 @@ class _ProfilePageState extends State<ProfilePage> {
                   onPressed: _isSaving ? null : _handleSave,
                   isLoading: _isSaving,
                 ),
-                const SizedBox(height: 50),
               ],
+              if (_selectedTabIndex == 0) ...[
+                const SizedBox(height: 40),
+                const Divider(thickness: 1.5, color: Color(0xFFEEEEEE)),
+                const SizedBox(height: 16),
+                DonationRequestManagementPanel(
+                  repository: _donationRepository,
+                  userId: _user?.id,
+                  showCreateButton: true,
+                  maxHeight: 550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
+                ),
+              ],
+              const SizedBox(height: 50),
             ]),
           ),
         ),

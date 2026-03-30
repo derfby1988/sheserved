@@ -20,6 +20,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
   String? _currentUserId;
   List<DonationRequest> _pendingRequests = [];
   List<String> _userProfessionIds = []; // profession IDs ของผู้ใช้ปัจจุบัน
+  String _userCategoryNamesStr = 'ผู้นำชุมชน';
   bool _isLoading = true;
 
   @override
@@ -36,6 +37,19 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
       // โหลด profession IDs ของผู้ใช้
       final profIds = await _repository.getUserApproverProfessions(user.id);
       if (mounted) setState(() => _userProfessionIds = profIds);
+      
+      // Load actual user category names
+      try {
+        final catIds = await _repository.getUserApproverCategories(user.id);
+        if (catIds.isNotEmpty) {
+           final catResp = await Supabase.instance.client.from('user_categories').select('name').inFilter('id', catIds);
+           if (catResp is List && catResp.isNotEmpty) {
+               final names = catResp.map((x) => x['name'].toString()).toList();
+               if (mounted) setState(() => _userCategoryNamesStr = names.join(', '));
+           }
+        }
+      } catch (_) {}
+
       await _fetchPendingRequests(user.id);
     } else {
       if (mounted) setState(() => _isLoading = false);
@@ -66,11 +80,32 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
 
   Future<void> _approveRequest(DonationRequest req) async {
     if (_currentUserId == null) return;
-    // หา professionId แรกของผู้ใช้ที่อยู่ใน approverProfessionIds ของหมวดหมู่นี้
-    // (ถ้าผู้ใช้มีหลาย profession และ match หลายอัน ใช้อันแรก)
-    final String? matchedProfId = _userProfessionIds.isNotEmpty
-        ? _userProfessionIds.first
-        : null;
+
+    // ✅ Bug #3 Fix: หา professionId ที่ตรงกับ category ของ request นั้นจริงๆ
+    // ไม่ใช่แค่เลือก first แบบ blind ซึ่งอาจผิด profession
+    String? matchedProfId;
+    try {
+      if (_userProfessionIds.isNotEmpty) {
+        // 1. ดึง user_category IDs ที่ category นี้ต้องการ
+        final requiredCatIds = await _repository.getCategoryApproverIds(req.categoryId);
+        // 2. ดึง map ของ professionId → user_category_id
+        final profCatMap = await _repository.getProfessionCategoryMap(_userProfessionIds);
+        // 3. หา professionId แรกที่ตรงกับ required category
+        for (final pid in _userProfessionIds) {
+          final cat = profCatMap[pid];
+          if (cat != null && requiredCatIds.contains(cat)) {
+            matchedProfId = pid;
+            break;
+          }
+        }
+        // Fallback: ใช้ first ถ้าหาไม่เจอ (เช่น admin override)
+        matchedProfId ??= _userProfessionIds.first;
+      }
+    } catch (e) {
+      debugPrint('LeaderVerificationPage: Error finding matched profession: $e');
+      matchedProfId = _userProfessionIds.isNotEmpty ? _userProfessionIds.first : null;
+    }
+
     try {
       await _repository.approveRequest(
         req.id,
@@ -311,7 +346,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                       style: AppTextStyles.heading5.copyWith(color: Colors.teal, fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      'รายการต่อไปนี้รอการยืนยันจากผู้นำชุมชน (คุณ)',
+                      'รายการต่อไปนี้รอการยืนยันจากคุณ ($_userCategoryNamesStr)',
                       style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[600]),
                     ),
                   ],

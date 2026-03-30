@@ -301,7 +301,21 @@ class DonationRepository {
     String? professionId, // profession ที่ผู้อนุมัติใช้ในการอนุมัติครั้งนี้
   }) async {
     if (currentStatus == DonationApprovalStatus.pending_local) {
-      // 1. บันทึกการอนุมัติของ profession นี้
+      // ✅ Bug #1 Fix: Validate ก่อน write ทุกครั้ง
+      // 1. ดึงหมวดหมู่ของคำร้องและตรวจ self-approval ก่อนเสมอ
+      final reqData = await _client
+          .from('donation_requests')
+          .select('category_id, user_id')
+          .eq('id', requestId)
+          .single();
+
+      if (reqData['user_id'] == approverId) {
+        throw Exception('คุณไม่สามารถอนุมัติคำร้องของตนเองได้');
+      }
+
+      final categoryId = reqData['category_id'] as String;
+
+      // 2. บันทึกการอนุมัติของ profession นี้ (หลัง validate ผ่านแล้ว)
       if (professionId != null) {
         await _client.from('donation_request_approvals').upsert({
           'request_id': requestId,
@@ -312,20 +326,7 @@ class DonationRepository {
         }, onConflict: 'request_id,profession_id');
       }
 
-      // 2. ดึงหมวดหมู่ของคำร้องนี้
-      final reqData = await _client
-          .from('donation_requests')
-          .select('category_id, user_id')
-          .eq('id', requestId)
-          .single();
-          
-      if (reqData['user_id'] == approverId) {
-        throw Exception('คุณไม่สามารถอนุมัติคำร้องของตนเองได้');
-      }
-          
-      final categoryId = reqData['category_id'] as String;
-
-      // 3. ดึงรายชื่อ profession ที่ต้องอนุมัติในหมวดนี้
+      // 3. ดึงรายชื่อ user category ที่ต้องอนุมัติในหมวดนี้
       final catData = await _client
           .from('donation_categories')
           .select('approver_profession_ids')
@@ -341,7 +342,7 @@ class DonationRepository {
           .eq('request_id', requestId)
           .eq('status', 'approved');
       final approvedProfIds = (approvedData as List).map((r) => r['profession_id'].toString()).toList();
-      
+
       final approvedCats = <String>{};
       if (approvedProfIds.isNotEmpty) {
         final catResp = await _client.from('professions').select('category').inFilter('id', approvedProfIds);
@@ -350,7 +351,7 @@ class DonationRepository {
         }
       }
 
-      // 5. ถ้าครบทุก profession (user category) → active
+      // 5. ถ้าครบทุก user category → active
       final allApproved = requiredIds.every((id) => approvedCats.contains(id));
       final newStatus = allApproved
           ? DonationApprovalStatus.active.name
@@ -376,6 +377,7 @@ class DonationRepository {
     // 1. ดึง profession และ category ที่ผู้ใช้มี
     final userProfIds = await getUserApproverProfessions(userId);
     final userCatIds = await getUserApproverCategories(userId);
+    final profCatMap = await getProfessionCategoryMap(userProfIds);
 
     List<String> statuses = [];
     List<String> categoriesUserCanApprove = [];
@@ -500,11 +502,26 @@ class DonationRepository {
         final userCatsThatCanApprove = userCatIds.where((catId) => reqApprovers.contains(catId)).toList();
         
         // Determine which ones have already been approved
-        // `alreadyApproved` returns instances where profession_id matches local user. 
-        // We know what the user's categories are. If ANY of those valid categories lack approval, they should see it.
-        // Wait, approvedSet holds `{req_id}_{user_prof_id}`
-        // So the user themself sees it if they haven't explicitly approved it.
-        return userProfIds.any((pid) => !approvedSet.contains('${req.id}_$pid'));
+        // ตรวจสอบว่าในหมวดหมู่ผู้ใช้ที่ตัวเรามีสิทธิ์อนุมัติคำร้องนี้ (userCatsThatCanApprove)
+        // มีหมวดหมู่ไหนที่ 'ยังไม่ได้ถูกอนุมัติ' ด้วยวิชาชีพใดๆ ของเราที่ตรงกับหมวดหมู่นั้นบ้าง
+        bool needsApproval = false;
+        
+        for (final reqCatApproverId in reqApprovers) {
+          // ถ้าเราไม่ได้มีหมวดหมู่นี้ ก็ข้ามไป
+          if (!userCatsThatCanApprove.contains(reqCatApproverId)) continue;
+          
+          // ดูว่าเรามี profession ใดบ้างที่ตกอยู่ในหมวดหมู่นี้
+          final pids = userProfIds.where((pid) => profCatMap[pid] == reqCatApproverId).toList();
+          
+          // ถ้าไม่มีสัก profession ในหมวดนี้ที่อนุมัติแล้วแปลว่ายังต้องอนุมัติ
+          bool hasApprovedAsThisCat = pids.any((pid) => approvedSet.contains('${req.id}_$pid'));
+          if (!hasApprovedAsThisCat) {
+            needsApproval = true;
+            break;
+          }
+        }
+        
+        return needsApproval;
       }
       return req.approvalStatus == DonationApprovalStatus.pending_storage && isStorageAdmin;
     }).toList();
@@ -527,5 +544,61 @@ class DonationRepository {
   /// เพิ่มข้อมูลการบริจาค (จำลอง Flow การชำระเงิน)
   Future<void> addContribution(Map<String, dynamic> data) async {
     await _client.from('donation_contributions').insert(data);
+  }
+
+  // =====================================================
+  // HELPER METHODS (Bug Fixes)
+  // =====================================================
+
+  /// ✅ Bug #4 Fix: ตรวจสอบว่าผู้ใช้เป็น Storage Admin จาก DB จริง
+  Future<bool> isStorageAdmin(String userId) async {
+    try {
+      final response = await _client
+          .from('users')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle();
+      if (response == null) return false;
+      final role = response['role']?.toString() ?? '';
+      return role == 'admin' || role == 'storage_admin';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// ✅ Bug #3 Fix: ดึง approver user_category IDs ของหมวดหมู่บริจาคนั้น
+  Future<List<String>> getCategoryApproverIds(String categoryId) async {
+    try {
+      final data = await _client
+          .from('donation_categories')
+          .select('approver_profession_ids')
+          .eq('id', categoryId)
+          .maybeSingle();
+      if (data == null) return [];
+      return List<String>.from(
+          (data['approver_profession_ids'] as List? ?? []).map((e) => e.toString()));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// ✅ Bug #3 Fix: ดึง map ของ professionId → user_category_id
+  Future<Map<String, String>> getProfessionCategoryMap(List<String> professionIds) async {
+    if (professionIds.isEmpty) return {};
+    try {
+      final response = await _client
+          .from('professions')
+          .select('id, category')
+          .inFilter('id', professionIds);
+      final map = <String, String>{};
+      for (final r in (response as List)) {
+        if (r['id'] != null && r['category'] != null) {
+          map[r['id'].toString()] = r['category'].toString();
+        }
+      }
+      return map;
+    } catch (e) {
+      return {};
+    }
   }
 }

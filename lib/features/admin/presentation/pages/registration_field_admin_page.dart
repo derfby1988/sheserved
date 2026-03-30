@@ -414,6 +414,8 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
         return Icons.notes;
       case FieldType.dropdown:
         return Icons.arrow_drop_down_circle_outlined;
+      case FieldType.addressPicker:
+        return Icons.location_on_outlined;
     }
   }
 
@@ -435,6 +437,8 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
         return Colors.indigo;
       case FieldType.dropdown:
         return Colors.amber;
+      case FieldType.addressPicker:
+        return Colors.red;
     }
   }
 
@@ -965,6 +969,8 @@ class FieldPreviewPage extends StatelessWidget {
         return Icons.notes;
       case FieldType.dropdown:
         return Icons.arrow_drop_down_circle_outlined;
+      case FieldType.addressPicker:
+        return Icons.location_on_outlined;
       default:
         return Icons.text_fields;
     }

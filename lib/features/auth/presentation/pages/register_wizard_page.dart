@@ -7,6 +7,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
+import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../../../admin/models/profession.dart' hide VerificationStatus;
 import '../../../admin/models/registration_field_config.dart';
 import '../../../../features/admin/data/repositories/profession_repository.dart';
@@ -822,6 +823,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         return _buildDynamicDateField(field);
       case FieldType.multilineText:
         return _buildDynamicTextField(field, maxLines: 3);
+      case FieldType.addressPicker:
+        return _buildDynamicAddressPickerField(field);
       default:
         return _buildDynamicTextField(field);
     }
@@ -916,6 +919,53 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       },
     );
   }
+
+  Widget _buildDynamicAddressPickerField(RegistrationFieldConfig field) {
+    if (!_dynamicFieldValues.containsKey('${field.fieldId}_address')) {
+      _dynamicFieldValues['${field.fieldId}_address'] = null;
+    }
+    final currentAddress = _dynamicFieldValues['${field.fieldId}_address'] as ThaiAddress?;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: Colors.grey[200]!,
+          width: 1.5,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.location_on_outlined, color: Colors.grey[400], size: 22),
+              const SizedBox(width: 12),
+              Text(
+                '${field.label}${field.isRequired ? " *" : ""}',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ThaiAddressPicker(
+            initialAddress: currentAddress,
+            onAddressSelected: (address) {
+              setState(() {
+                _dynamicFieldValues['${field.fieldId}_address'] = address;
+                // Also store a string representation if needed by the backend
+                _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController(text: address.fullAddress);
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
   
   Widget _buildDynamicImageField(RegistrationFieldConfig field) {
     final imagePath = _dynamicFieldValues['${field.fieldId}_image'] as String?;
@@ -945,6 +995,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         return Icons.notes;
       case FieldType.dropdown:
         return Icons.arrow_drop_down_circle_outlined;
+      case FieldType.addressPicker:
+        return Icons.location_on_outlined;
       default:
         return Icons.text_fields;
     }

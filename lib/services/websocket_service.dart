@@ -64,7 +64,7 @@ class WebSocketService {
   /// Singleton instance
   factory WebSocketService({String? serverUrl}) {
     _instance ??= WebSocketService._(
-      serverUrl ?? 'http://localhost:3000', // Default server URL
+      serverUrl ?? AppConfig.websocketUrl, // ใช้ค่าจาก Config เป็นหลักแทน localhost
     );
     return _instance!;
   }

@@ -639,14 +639,15 @@ class _LoginPageState extends State<LoginPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, dynamic> && args['redirect'] != null) {
-            Navigator.pushReplacementNamed(
-              context, 
-              args['redirect'], 
-              arguments: args['args']
-            );
+          if (args is Map<String, dynamic>) {
+            final String? target = args['redirect'] ?? args['route'];
+            final dynamic targetArgs = args['args'] ?? args['arguments'];
+            if (target != null) {
+              Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+            } else {
+              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+            }
           } else if (args is String) {
-            // Fallback for old style string redirect
             Navigator.pushReplacementNamed(context, args);
           } else {
             Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -725,14 +726,15 @@ class _LoginPageState extends State<LoginPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, dynamic> && args['redirect'] != null) {
-            Navigator.pushReplacementNamed(
-              context, 
-              args['redirect'], 
-              arguments: args['args']
-            );
+          if (args is Map<String, dynamic>) {
+            final String? target = args['redirect'] ?? args['route'];
+            final dynamic targetArgs = args['args'] ?? args['arguments'];
+            if (target != null) {
+              Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+            } else {
+              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+            }
           } else if (args is String) {
-            // Fallback for old style string redirect
             Navigator.pushReplacementNamed(context, args);
           } else {
             Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);

@@ -53,6 +53,7 @@ dependencies:
   
   # HTTP Client
   http: ^1.2.0
+  csv: ^6.0.0
   
   # Thai BE Date Picker
   thai_buddhist_date: ^0.2.7

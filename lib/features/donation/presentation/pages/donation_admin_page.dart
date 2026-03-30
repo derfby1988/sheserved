@@ -53,11 +53,14 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
     // ✅ ใช้ ServiceLocator ตาม Auth Data Guidelines (ห้ามใช้ Supabase Auth โดยตรง)
     final user = ServiceLocator.instance.currentUser;
     if (user != null) {
-      setState(() {
-        _currentUserId = user.id;
-        // TODO: ตรวจสอบ role จาก public.users table แทน email
-        _isStorageAdmin = true; // ชั่วคราว - ผู้ใช้ที่ login แล้วถือว่ามีสิทธิ
-      });
+      // ✅ Bug #4 Fix: ตรวจสอบ role จาก DB จริง แทน hardcode true
+      final isAdmin = await _repository.isStorageAdmin(user.id);
+      if (mounted) {
+        setState(() {
+          _currentUserId = user.id;
+          _isStorageAdmin = isAdmin;
+        });
+      }
     }
   }
 
@@ -179,57 +182,79 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     final nameController = TextEditingController(text: category?.name);
     final iconController = TextEditingController(text: category?.iconName);
     bool isEmergency = category?.isEmergency ?? false;
-    List<String> selectedVolunteers = List.from(category?.volunteerProfessionIds ?? []);
     bool isSaving = false;
+
+    final List<Map<String, dynamic>> availableIcons = [
+      {'name': 'emergency_share', 'icon': Icons.emergency_share, 'label': 'ฉุกเฉิน / แชร์'},
+      {'name': 'gavel', 'icon': Icons.gavel, 'label': 'กฎหมาย / ค้อน'},
+      {'name': 'local_fire_department', 'icon': Icons.local_fire_department, 'label': 'ไฟไหม้ / ดับเพลิง'},
+      {'name': 'water_damage', 'icon': Icons.water_damage, 'label': 'น้ำท่วม'},
+      {'name': 'payments', 'icon': Icons.payments, 'label': 'การเงิน'},
+      {'name': 'inventory_2', 'icon': Icons.inventory_2, 'label': 'สิ่งของ / กล่อง'},
+      {'name': 'restaurant', 'icon': Icons.restaurant, 'label': 'อาหาร'},
+      {'name': 'favorite', 'icon': Icons.favorite, 'label': 'ความรัก / หัวใจ'},
+      {'name': 'home', 'icon': Icons.home, 'label': 'ที่พัก / บ้าน'},
+      {'name': 'local_shipping', 'icon': Icons.local_shipping, 'label': 'เดินทาง / ขนส่ง'},
+      {'name': 'elderly', 'icon': Icons.elderly, 'label': 'ผู้สูงอายุ / ผู้ป่วย'},
+      {'name': 'healing', 'icon': Icons.healing, 'label': 'ปฐมพยาบาล / การแพทย์'},
+      {'name': 'pets', 'icon': Icons.pets, 'label': 'สัตว์เลี้ยง'},
+      {'name': 'warning', 'icon': Icons.warning_amber_rounded, 'label': 'แจ้งเตือน / ระวัง'},
+    ];
+
+    String selectedIcon = category?.iconName ?? 'favorite';
+    if (!availableIcons.any((i) => i['name'] == selectedIcon)) {
+      selectedIcon = 'favorite'; // Default fallback
+    }
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(category == null ? 'เพิ่มหมวดหมู่' : 'แก้ไขหมวดหมู่'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(category == null ? 'เพิ่มหมวดหมู่' : 'แก้ไขหมวดหมู่', style: const TextStyle(fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อหมวดหมู่')),
-                TextField(controller: iconController, decoration: const InputDecoration(labelText: 'ชื่อไอคอน (Material/Slug)')),
-                SwitchListTile(
-                  title: const Text('เป็นเหตุฉุกเฉิน?'),
-                  value: isEmergency,
-                  onChanged: isSaving ? null : (val) => setDialogState(() => isEmergency = val),
-                  contentPadding: EdgeInsets.zero,
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedIcon,
+                  decoration: InputDecoration(
+                    labelText: 'สัญลักษณ์/ไอคอน',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                  items: availableIcons.map((i) => DropdownMenuItem(
+                    value: i['name'] as String,
+                    child: Row(
+                      children: [
+                        Icon(i['icon'] as IconData, color: Colors.teal),
+                        const SizedBox(width: 12),
+                        Text(i['label'] as String),
+                      ]
+                    )
+                  )).toList(),
+                  onChanged: (val) {
+                     if (val != null) {
+                       setDialogState(() {
+                         selectedIcon = val;
+                         iconController.text = val;
+                       });
+                     }
+                  }
                 ),
-                if (_volunteerProfessions.isNotEmpty) ...[
-                  const Divider(height: 24),
-                  Row(children: [
-                    const Icon(Icons.volunteer_activism, size: 16, color: Colors.blue),
-                    const SizedBox(width: 6),
-                    Text('สิทธิ์จิตอาสา',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue[800])),
-                  ]),
-                  const SizedBox(height: 2),
-                  const Text('อาชีพจิตอาสาที่มีสิทธิ์เข้าช่วยเหลือในหมวดหมู่นี้',
-                      style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  ..._volunteerProfessions.map((prof) {
-                    final isSelected = selectedVolunteers.contains(prof.id);
-                    return CheckboxListTile(
-                      title: Text(prof.name, style: const TextStyle(fontSize: 13)),
-                      value: isSelected,
-                      activeColor: Colors.blue,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: isSaving ? null : (val) {
-                        setDialogState(() {
-                          if (val == true) selectedVolunteers.add(prof.id);
-                          else selectedVolunteers.remove(prof.id);
-                        });
-                      },
-                    );
-                  }),
-                ],
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('เป็นเหตุฉุกเฉิน?', style: TextStyle(fontWeight: FontWeight.w500)),
+                  value: isEmergency,
+                  activeColor: Colors.redAccent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  tileColor: Colors.grey.shade50,
+                  onChanged: isSaving ? null : (val) => setDialogState(() => isEmergency = val),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
               ],
             ),
           ),
@@ -252,9 +277,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                       try {
                         final data = {
                           'name': nameController.text.trim(),
-                          'icon_name': iconController.text.trim(),
+                          'icon_name': selectedIcon, // Save the selected icon
                           'is_emergency': isEmergency,
-                          'volunteer_profession_ids': selectedVolunteers,
+                          'volunteer_profession_ids': category?.volunteerProfessionIds ?? [],
                           // ไม่แตะ approver_profession_ids — จัดการใน Flow อนุมัติ dialog
                           'approver_profession_ids': category?.approverProfessionIds ?? [],
                         };
@@ -297,6 +322,111 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Text('บันทึก'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showVolunteerProfessionsDialog(DonationCategory category) {
+    if (_volunteerProfessions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่มีข้อมูลวิชาชีพจิตอาสาในระบบ')),
+      );
+      return;
+    }
+
+    List<String> selectedVolunteers = List.from(category.volunteerProfessionIds);
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.volunteer_activism, color: Colors.blue),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('สิทธิ์จิตอาสา', style: TextStyle(fontWeight: FontWeight.bold))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('เลือกวิชาชีพที่มีสิทธิ์ให้ความช่วยเหลือในหมวด "${category.name}"',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                const SizedBox(height: 16),
+                ..._volunteerProfessions.map((prof) {
+                  final isSelected = selectedVolunteers.contains(prof.id);
+                  return Card(
+                    elevation: 0,
+                    color: isSelected ? Colors.blue.withValues(alpha: 0.05) : Colors.grey.shade50,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: isSelected ? Colors.blue.withValues(alpha: 0.3) : Colors.transparent),
+                    ),
+                    child: CheckboxListTile(
+                      title: Text(prof.name, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                      value: isSelected,
+                      activeColor: Colors.blue,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: isSaving ? null : (val) {
+                        setDialogState(() {
+                          if (val == true) selectedVolunteers.add(prof.id);
+                          else selectedVolunteers.remove(prof.id);
+                        });
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(context),
+              child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      setDialogState(() => isSaving = true);
+                      try {
+                        final data = {
+                          'volunteer_profession_ids': selectedVolunteers,
+                        };
+                        await widget.repository.updateCategory(category.id, data);
+                        await _loadCategories();
+                        if (mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('อัปเดตสิทธิ์จิตอาสาสำเร็จ ✓'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDialogState(() => isSaving = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: isSaving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('บันทึก', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -942,58 +1072,74 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                             ],
                             const Divider(height: 18),
                             // ปุ่มจัดการ
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                _actionBtn(
-                                  icon: Icons.list_alt_rounded,
-                                  label: 'ฟิลด์',
-                                  color: Colors.green,
-                                  onTap: () => _showCustomFieldsDialog(cat),
-                                ),
-                                const SizedBox(width: 8),
-                                _actionBtn(
-                                  icon: Icons.account_tree_rounded,
-                                  label: 'Flow อนุมัติ',
-                                  color: Colors.teal,
-                                  onTap: () => _showApproverDialog(cat),
-                                ),
-                                const SizedBox(width: 8),
-                                _actionBtn(
-                                  icon: Icons.edit_rounded,
-                                  label: 'แก้ไข',
-                                  color: AppColors.primary,
-                                  onTap: () => _showCategoryDialog(cat),
-                                ),
-                                const SizedBox(width: 8),
-                                _actionBtn(
-                                  icon: Icons.delete_rounded,
-                                  label: 'ลบ',
-                                  color: Colors.red,
-                                  onTap: () async {
-                                    final confirmed = await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                        title: const Text('ยืนยันการลบ'),
-                                        content: Text('ลบหมวดหมู่ "${cat.name}" ใช่หรือไม่?\nการกระทำนี้ไม่สามารถยกเลิกได้'),
-                                        actions: [
-                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
-                                          ElevatedButton(
-                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                            onPressed: () => Navigator.pop(ctx, true),
-                                            child: const Text('ลบ', style: TextStyle(color: Colors.white)),
-                                          ),
-                                        ],
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Scrollbar(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.only(bottom: 8), // เพิ่มพื้นที่ให้ scrollbar เล็กน้อย
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min, // ให้ Row มีขนาดเท่ากับปุ่มรวมกัน
+                                    children: [
+                                      _actionBtn(
+                                        icon: Icons.list_alt_rounded,
+                                        label: 'ฟิลด์บริจาค(เฉพาะ)',
+                                        color: Colors.green,
+                                        onTap: () => _showCustomFieldsDialog(cat),
                                       ),
-                                    );
-                                    if (confirmed == true) {
-                                      await widget.repository.deleteCategory(cat.id);
-                                      _loadCategories();
-                                    }
-                                  },
+                                      const SizedBox(width: 8),
+                                      _actionBtn(
+                                        icon: Icons.account_tree_rounded,
+                                        label: 'ผู้อนุมัติบริจาค',
+                                        color: Colors.teal,
+                                        onTap: () => _showApproverDialog(cat),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _actionBtn(
+                                        icon: Icons.volunteer_activism_rounded,
+                                        label: 'สิทธิ์อาสา',
+                                        color: Colors.blue,
+                                        onTap: () => _showVolunteerProfessionsDialog(cat),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _actionBtn(
+                                        icon: Icons.edit_rounded,
+                                        label: 'แก้ไขหมวดหมู่',
+                                        color: AppColors.primary,
+                                        onTap: () => _showCategoryDialog(cat),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _actionBtn(
+                                        icon: Icons.delete_rounded,
+                                        label: 'ลบหมวดหมู่', // แก้คำผิดหมวดหมุ่เป็นหมวดหมู่ด้วย
+                                        color: Colors.red,
+                                        onTap: () async {
+                                          final confirmed = await showDialog<bool>(
+                                            context: context,
+                                            builder: (ctx) => AlertDialog(
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                              title: const Text('ยืนยันการลบ'),
+                                              content: Text('ลบหมวดหมู่ "${cat.name}" ใช่หรือไม่?\nการกระทำนี้ไม่สามารถยกเลิกได้'),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+                                                ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                  onPressed: () => Navigator.pop(ctx, true),
+                                                  child: const Text('ลบ', style: TextStyle(color: Colors.white)),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirmed == true) {
+                                            await widget.repository.deleteCategory(cat.id);
+                                            _loadCategories();
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ],
+                              ),
                             ),
                           ],
                         ),
@@ -1063,7 +1209,7 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.teal.withOpacity(0.3),
+                                      color: Colors.teal.withValues(alpha: 0.3),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1136,7 +1282,7 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -1152,9 +1298,6 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
   }
 }
 
-/// แผงจัดการคำร้องขอ
-
-
 /// แผงศูนย์อนุมัติ (Approval Center)
 class _ApprovalCenterPanel extends StatefulWidget {
   final DonationRepository repository;
@@ -1168,6 +1311,8 @@ class _ApprovalCenterPanel extends StatefulWidget {
 
 class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   List<DonationRequest> _pendingRequests = [];
+  // ✅ Bug #2 Fix: เก็บ professionIds ของผู้ใช้ เพื่อส่งไปใน approveRequest()
+  List<String> _userProfessionIds = [];
   bool _isLoading = true;
 
   @override
@@ -1179,29 +1324,67 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   Future<void> _loadPending() async {
     if (widget.userId == null) return;
     setState(() => _isLoading = true);
-    final reqs = await widget.repository.getPendingRequests(widget.userId!, isStorageAdmin: widget.isStorageAdmin);
-    setState(() {
-      _pendingRequests = reqs;
-      _isLoading = false;
-    });
+    // ✅ Bug #2 Fix: โหลด professionIds คู่ขนานกับคำร้อง
+    final results = await Future.wait([
+      widget.repository.getPendingRequests(widget.userId!, isStorageAdmin: widget.isStorageAdmin),
+      widget.repository.getUserApproverProfessions(widget.userId!),
+    ]);
+    if (mounted) {
+      setState(() {
+        _pendingRequests = (results[0] as List<DonationRequest>)
+            .where((r) => r.approvalStatus == DonationApprovalStatus.pending_storage)
+            .toList();
+        _userProfessionIds = results[1] as List<String>;
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// ✅ Bug #2 Fix: หา professionId ที่ถูกต้องสำหรับ request นั้นๆ แล้วส่งหา approveRequest()
+  Future<void> _doApprove(DonationRequest req) async {
+    if (widget.userId == null) return;
+    String? profId;
+    if (req.approvalStatus == DonationApprovalStatus.pending_local && _userProfessionIds.isNotEmpty) {
+      // หา profession ที่ตรงกับ category ของ request
+      try {
+        final requiredCatIds = await widget.repository.getCategoryApproverIds(req.categoryId);
+        final profCatMap = await widget.repository.getProfessionCategoryMap(_userProfessionIds);
+        for (final pid in _userProfessionIds) {
+          final cat = profCatMap[pid];
+          if (cat != null && requiredCatIds.contains(cat)) {
+            profId = pid;
+            break;
+          }
+        }
+        // Fallback: ใช้ first ถ้าหาไม่เจอ
+        profId ??= _userProfessionIds.first;
+      } catch (_) {
+        profId = _userProfessionIds.isNotEmpty ? _userProfessionIds.first : null;
+      }
+    }
+    await widget.repository.approveRequest(
+      req.id, req.approvalStatus, widget.userId!,
+      professionId: profId,
+    );
+    _loadPending();
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.userId == null) return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
+    if (!widget.isStorageAdmin) return const Center(child: Text('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะผู้ดูแลคลัง/Admin)'));
+    
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
+        const Padding(
+          padding: EdgeInsets.all(16.0),
           child: Text(
-            widget.isStorageAdmin 
-              ? 'รายการรอพิจารณาสถานที่จัดเก็บ' 
-              : 'รายการรอพิจารณาที่คุณได้รับสิทธิ',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            'รายการรอพิจารณาสถานที่จัดเก็บ',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
         Expanded(
-          child: _isLoading 
+          child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _pendingRequests.isEmpty
                 ? const Center(child: Text('ไม่มีรายการรออนุมัติ'))
@@ -1229,9 +1412,28 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.check_circle, color: Colors.green),
+                                // ✅ Bug #2 Fix: ใช้ _doApprove() ที่ส่ง professionId ที่ถูกต้อง
                                 onPressed: () async {
-                                  await widget.repository.approveRequest(req.id, req.approvalStatus, widget.userId!);
-                                  _loadPending();
+                                  try {
+                                    await _doApprove(req);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('✅ ยืนยันคำร้องสำเร็จ'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('เกิดข้อผิดพลาด: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
                                 },
                               ),
                               IconButton(
@@ -1258,8 +1460,8 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
       case DonationApprovalStatus.pending_storage: return 'รอตรวจสถานที่เก็บ';
       default: return 'อื่นๆ';
     }
+    }
   }
-}
 
 
 /// แผงประวัติการบริจาค

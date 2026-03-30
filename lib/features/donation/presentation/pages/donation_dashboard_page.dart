@@ -87,45 +87,27 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const TlzDrawer(),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(bottom: 4, right: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              'ขั้นตอน 1: ข้อมูลความต้องการ → รอกลุ่มอาชีพอนุมัติ',
-              style: TextStyle(color: Colors.white, fontSize: 11),
-            ),
-          ),
-          FloatingActionButton.extended(
-            onPressed: () {
-              if (ServiceLocator.instance.currentUser != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const DonationCreatePage()),
-                );
-              } else {
-                Navigator.pushNamed(
-                  context,
-                  '/login',
-                  arguments: {
-                    'route': '/donate',
-                    'arguments': 'auto_create',
-                  },
-                );
-              }
-            },
-            backgroundColor: AppColors.primary,
-            icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-            label: const Text('ขอรับบริจาค', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          if (ServiceLocator.instance.currentUser != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+            );
+          } else {
+            Navigator.pushNamed(
+              context,
+              '/login',
+              arguments: {
+                'redirect': '/donate',
+                'args': 'auto_create',
+              },
+            );
+          }
+        },
+        backgroundColor: AppColors.primary,
+        icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+        label: const Text('ขอรับบริจาค', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: StreamBuilder<List<DonationCategory>>(
         stream: _repository.watchCategories(),
@@ -141,198 +123,238 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
             builder: (context, reqSnapshot) {
               final trendingRequests = reqSnapshot.data?.where((r) => r.isTrending).toList() ?? [];
               
-              return CustomScrollView(
-                slivers: [
-                  // Hero Banner with TlzAppTopBar
-                  SliverToBoxAdapter(
-                    child: Stack(
+              return SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // Banner & Emergency Section Layout (Stack)
+                    Stack(
                       children: [
+                        // 1. Background Image Banner
                         Container(
                           width: double.infinity,
-                          height: 220, // Increased height to accommodate TopBar
+                          height: 250,
                           decoration: const BoxDecoration(
                             image: DecorationImage(
                               image: AssetImage("assets/images/donation_banner.png"),
                               fit: BoxFit.cover,
                             ),
-                            borderRadius: BorderRadius.only(
-                              bottomLeft: Radius.circular(32),
-                              bottomRight: Radius.circular(32),
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withOpacity(0.6),
+                                  Colors.transparent,
+                                   Colors.black.withOpacity(0.1),
+                                ],
+                                stops: const [0.0, 0.4, 1.0],
+                              ),
                             ),
                           ),
                         ),
-                        // Top Bar Overlay
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: SafeArea(
-                            bottom: false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              child: TlzAppTopBar.onLight(
-                                onMenuPressed: () => Scaffold.of(context).openDrawer(),
-                                searchHintText: 'ค้นหาการบริจาค...',
-                                showQRButton: false,
+                        // 2. Top Bar
+                        SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: TlzAppTopBar.onLight(
+                              onMenuPressed: () => Scaffold.of(context).openDrawer(),
+                              searchHintText: 'ค้นหาการบริจาค...',
+                              showQRButton: false,
+                            ),
+                          ),
+                        ),
+                        // 3. Emergency Card (Overlapping Banner correctly)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 190), // Offset down to overlap bottom of banner
+                          child: Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [AppColors.primary, const Color(0xFF1B4E4E)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
                               ),
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.3),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  child: Row(
+                                    children: const [
+                                      Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 22),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'เหตุด่วน / ภัยพิบัติ',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: Row(
+                                    children: emergencyCategories.map((cat) => Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: CategoryIcon(
+                                        label: cat.name,
+                                        icon: _getIconData(cat.iconName),
+                                        iconColor: AppColors.primary,
+                                        onTap: () {},
+                                      ),
+                                    )).toList(),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                if (_stats != null) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 0),
+                                    child: DonationStatsRow(stats: _stats!),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  // Dynamic Progress Bar
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'ความคืบหน้าภาพรวม',
+                                              style: TextStyle(color: Colors.white70, fontSize: 13),
+                                            ),
+                                            Text(
+                                              '${((_stats!.received / (_stats!.requested == 0 ? 1 : _stats!.requested)) * 100).toStringAsFixed(1)}%',
+                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        _PulseProgressBar(
+                                          progress: (_stats!.received / (_stats!.requested == 0 ? 1 : _stats!.requested)).clamp(0.0, 1.0),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                  ),
 
-              // Emergency Section
-              SliverToBoxAdapter(
-                child: Container(
-                  width: double.infinity,
-                  color: const Color(0xFF97BBBB),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  margin: const EdgeInsets.only(top: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'เหตุด่วน / ฉุกเฉิน / ภัยพิบัติ',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: emergencyCategories.map((cat) => Padding(
-                            padding: const EdgeInsets.only(right: 16),
-                            child: CategoryIcon(
-                              label: cat.name,
-                              icon: _getIconData(cat.iconName),
-                              onTap: () {},
+                    // General Categories Section
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'หมวดหมู่บริการ',
+                            style: TextStyle(
+                              color: Color(0xFF2C3E50),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
-                          )).toList(),
-                        ),
+                          ),
+                          const SizedBox(height: 16),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              childAspectRatio: 0.85,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 12,
+                            ),
+                            itemCount: generalCategories.length,
+                            itemBuilder: (context, index) {
+                              final cat = generalCategories[index];
+                              return CategoryIcon(
+                                label: cat.name,
+                                icon: _getIconData(cat.iconName),
+                                iconColor: const Color(0xFF76A5A5),
+                                labelColor: const Color(0xFF4A6A8A),
+                                onTap: () {},
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                      
-                      const SizedBox(height: 16),
-                      if (_stats != null) ...[
-                        DonationStatsRow(stats: _stats!),
-                        const SizedBox(height: 16),
-                        // Dynamic Progress Bar (Pulse Effect)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'ความคืบหน้าภาพรวม',
-                                style: TextStyle(color: Colors.white70, fontSize: 13),
-                              ),
-                              const SizedBox(height: 8),
-                              _PulseProgressBar(
-                                progress: (_stats!.received / _stats!.requested).clamp(0.0, 1.0),
+                    ),
+
+                    // Trending Section
+                    Padding(
+                      padding: const EdgeInsets.only(left: 20, bottom: 40),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.local_fire_department_rounded, color: Colors.orange, size: 24),
+                              SizedBox(width: 8),
+                              Text(
+                                'กำลังได้รับความนิยม',
+                                style: TextStyle(
+                                  color: Color(0xFF2C3E50),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-              ),
-
-              // General Categories Section
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'หมวดหมู่',
-                        style: TextStyle(
-                          color: Color(0xFF4A6A8A),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 4,
-                          childAspectRatio: 0.8,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 8,
-                        ),
-                        itemCount: generalCategories.length,
-                        itemBuilder: (context, index) {
-                          final cat = generalCategories[index];
-                          return CategoryIcon(
-                            label: cat.name,
-                            icon: _getIconData(cat.iconName),
-                            iconColor: const Color(0xFF76A5A5),
-                            labelColor: const Color(0xFF4A6A8A), // Dark blue for contrast on white bg
-                            onTap: () {},
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Trending Section
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16, bottom: 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'กำลังได้รับความนิยม',
-                        style: TextStyle(
-                          color: Color(0xFF4A6A8A),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 220,
-                        child: trendingRequests.isEmpty
-                          ? const Center(child: Text('ไม่มีข้อมูลยอดนิยมในขณะนี้'))
-                          : ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: trendingRequests.length,
-                              itemBuilder: (context, index) {
-                                return TrendingDonationCard(
-                                  request: trendingRequests[index],
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => DonationDetailPage(request: trendingRequests[index]),
-                                      ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: 220,
+                            child: trendingRequests.isEmpty
+                              ? const Center(child: Text('ไม่มีข้อมูลยอดนิยมในขณะนี้'))
+                              : ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: trendingRequests.length,
+                                  itemBuilder: (context, index) {
+                                    return TrendingDonationCard(
+                                      request: trendingRequests[index],
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => DonationDetailPage(request: trendingRequests[index]),
+                                          ),
+                                        );
+                                      },
                                     );
                                   },
-                                );
-                              },
-                            ),
+                                ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          );
+              );
             },
           );
         },
@@ -349,6 +371,9 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
       case 'payments': return Icons.payments;
       case 'inventory_2': return Icons.inventory_2;
       case 'restaurant': return Icons.restaurant;
+      case 'healing': return Icons.healing;
+      case 'pets': return Icons.pets;
+      case 'warning': return Icons.warning_amber_rounded;
       case 'favorite': return Icons.favorite;
       case 'home': return Icons.home;
       case 'local_shipping': return Icons.local_shipping;
@@ -390,61 +415,57 @@ class _PulseProgressBarState extends State<_PulseProgressBar> with SingleTickerP
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 6,
       width: double.infinity,
-      height: 12,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(10),
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(3),
       ),
-      child: Stack(
-        children: [
-          // Background Progress
-          FractionallySizedBox(
-            widthFactor: widget.progress,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(color: Colors.white.withOpacity(0.5), blurRadius: 4),
-                ],
-              ),
-            ),
-          ),
-          // Shimmer/Pulse Effect
-          AnimatedBuilder(
-            animation: _animation,
-            builder: (context, child) {
-              return FractionallySizedBox(
-                widthFactor: widget.progress,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: ShaderMask(
-                    shaderCallback: (rect) {
-                      return LinearGradient(
-                        begin: Alignment(_animation.value, 0),
-                        end: Alignment(_animation.value + 1.0, 0),
-                        colors: [
-                          Colors.transparent,
-                          Colors.white.withOpacity(0.4),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                      ).createShader(rect);
-                    },
-                    child: Container(color: Colors.white),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: Stack(
+          children: [
+            FractionallySizedBox(
+              widthFactor: widget.progress,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.blueAccent,
+                      Colors.cyanAccent.shade400,
+                    ],
                   ),
                 ),
-              );
-            },
-          ),
-        ],
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _animation,
+              builder: (context, child) {
+                return Positioned(
+                  left: (widget.progress * MediaQuery.of(context).size.width) * _animation.value,
+                  child: Container(
+                    width: 40,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0),
+                          Colors.white.withOpacity(0.5),
+                          Colors.white.withOpacity(0),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Skeleton Loading สำหรับ Dashboard
 class _SkeletonDashboard extends StatelessWidget {
   const _SkeletonDashboard();
 
@@ -453,63 +474,20 @@ class _SkeletonDashboard extends StatelessWidget {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
       highlightColor: Colors.grey[100]!,
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Container(height: 189, color: Colors.white),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(height: 200, color: Colors.white),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(4, (i) => CircleAvatar(radius: 30, backgroundColor: Colors.white)),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(width: 200, height: 24, color: Colors.white),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: List.generate(4, (index) => Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: CircleAvatar(radius: 30, backgroundColor: Colors.white),
-                    )),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: List.generate(3, (index) => Expanded(
-                      child: Container(height: 80, margin: const EdgeInsets.all(4), color: Colors.white),
-                    )),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(width: 100, height: 24, color: Colors.white),
-                  const SizedBox(height: 16),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 8,
-                    ),
-                    itemCount: 8,
-                    itemBuilder: (_, __) => Column(
-                      children: [
-                        CircleAvatar(radius: 25, backgroundColor: Colors.white),
-                        const SizedBox(height: 8),
-                        Container(width: 40, height: 10, color: Colors.white),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: 32),
+          Container(height: 20, width: 150, color: Colors.white),
+          const SizedBox(height: 16),
+          Row(
+            children: List.generate(2, (i) => Expanded(child: Container(height: 150, margin: const EdgeInsets.all(4), color: Colors.white))),
           ),
         ],
       ),
