@@ -283,7 +283,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                           'requester_address': selectedRequesterAddress?.fullAddress ?? '',
                           'needed_date': selectedNeededDate?.toIso8601String(),
                           'is_trending': isTrending,
-                          'status': 'active',
                           if (request == null && widget.userId != null) 'user_id': widget.userId,
                         };
                         try {

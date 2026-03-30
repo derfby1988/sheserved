@@ -233,7 +233,6 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
         'category_id': _selectedCategoryId,
         'video_id': widget.videoId,
         'approval_status': DonationApprovalStatus.pending_local.name,
-        'status': 'active',
       };
 
       // Map ค่าจาก global fields ไปยัง DB columns ที่ถูกต้อง

@@ -135,7 +135,6 @@ class DonationRequest {
   final double currentAmount;
   final String? imageUrl;
   final bool isTrending;
-  final String status;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final DonationApprovalStatus approvalStatus;
@@ -161,7 +160,6 @@ class DonationRequest {
     this.currentAmount = 0,
     this.imageUrl,
     this.isTrending = false,
-    this.status = 'active',
     required this.createdAt,
     this.updatedAt,
     this.approvalStatus = DonationApprovalStatus.pending_local,
@@ -196,7 +194,6 @@ class DonationRequest {
       currentAmount: parseDouble(json['current_amount']),
       imageUrl: json['image_url'],
       isTrending: json['is_trending'] ?? false,
-      status: json['status'] ?? 'active',
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : DateTime.now(),
@@ -226,7 +223,6 @@ class DonationRequest {
       'current_amount': currentAmount,
       'image_url': imageUrl,
       'is_trending': isTrending,
-      'status': status,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'approval_status': approvalStatus.name,
