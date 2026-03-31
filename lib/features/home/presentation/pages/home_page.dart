@@ -90,6 +90,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   final List<String> _dismissedAlertIds = [];
   static const String _kDismissedAlertsKey = 'dismissed_emergency_alert_ids';
 
+  // === Donation Status Notifications ===
+  StreamSubscription? _donationSub;
+  final List<Map<String, dynamic>> _donationAlerts = [];
+
   @override
   void initState() {
     super.initState();
@@ -117,6 +121,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _loadHomeData();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
+    _listenForDonationStatus();  // Donation status notification
 
     // Start auto-refresh timer as a fail-safe (every 90 seconds)
     _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
@@ -134,6 +139,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.dispose();
     _emergencySub?.cancel();
+    _donationSub?.cancel();
     super.dispose();
   }
 
@@ -290,6 +296,43 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         });
         _loadHomeData();
       }
+    });
+  }
+
+  // ──── Donation Status Listener ────
+
+  void _listenForDonationStatus() {
+    final currentUser = AuthService.instance.currentUser;
+    if (currentUser == null) return;
+
+    _donationSub = WebSocketService().donationStatusStream.listen((data) {
+      if (!mounted) return;
+
+      // รับเฉพาะเมื่อ event นั้นเกี่ยวกับคำร้องของ user คนนี้
+      final requestOwnerId = data['userId']?.toString() ?? data['user_id']?.toString();
+      if (requestOwnerId != currentUser.id) return;
+
+      debugPrint('HomePage: Donation status updated: $data');
+
+      setState(() {
+        final notification = {
+          'requestId': data['requestId']?.toString() ?? data['request_id']?.toString() ?? '',
+          'title': data['title']?.toString() ?? 'คำร้องบริจาค',
+          'isActive': data['status']?.toString() == 'active',
+          'updatedAt': DateTime.now(),
+        };
+        // หลีกเลี่ยง ถ้ามี request เดิมอยู่แล้ว
+        _donationAlerts.removeWhere((a) => a['requestId'] == notification['requestId']);
+        _donationAlerts.insert(0, notification);
+        // วางแอบเพื่อเคลียรหลังจาก 15 วินาที
+        Future.delayed(const Duration(seconds: 15), () {
+          if (mounted) {
+            setState(() {
+              _donationAlerts.removeWhere((a) => a['requestId'] == notification['requestId']);
+            });
+          }
+        });
+      });
     });
   }
 
@@ -1259,6 +1302,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                           : 'คะแนนสุขภาพ --%')
                                       : 'ตรวจสุขภาพ',
                                     alerts: _thaiMhungAlerts,
+                                    donationAlerts: _donationAlerts,
                                     onAlertDismissed: (videoId) {
                                       _recordDismissedAlert(videoId);
                                       setState(() {

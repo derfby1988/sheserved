@@ -625,6 +625,23 @@ io.on('connection', (socket) => {
     }
   });
 
+
+  // ── Donation Status Notification ──
+  // ส่งจาก Flutter เมื่อ approveRequest() เปลี่ยนสถานะ → ส่งต่อให้เจ้าของคำร้อง
+  socket.on('donation-request-status-updated', (data) => {
+    const { userId, requestId, title, status } = data;
+    console.log(`[Donation] Status updated: requestId=${requestId} status=${status} -> notify userId=${userId}`);
+    if (userId) {
+      io.to(`user-${userId}`).emit('donation-request-status-updated', {
+        userId,
+        requestId,
+        title: title || 'คำร้องบริจาค',
+        status,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   // Handle UI Preference Updates
   socket.on('save-ui-preference', async (data) => {
     const { userId, key, value } = data;

@@ -7,6 +7,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../pages/donation_create_page.dart';
+import 'donation_approval_history_widget.dart';
 
 class DonationRequestManagementPanel extends StatefulWidget {
   final DonationRepository repository;
@@ -17,12 +18,16 @@ class DonationRequestManagementPanel extends StatefulWidget {
   /// จำกัดความสูงสูงสุด และให้ภายใน Scroll ได้ (ถ้ามีค่า)
   final double? maxHeight;
   
+  /// ID ของคำร้องที่ต้องการให้ Focus หรือเปิดประวัติการอนุมัติไว้ตอนเริ่มต้น
+  final String? highlightRequestId;
+  
   const DonationRequestManagementPanel({
     super.key, 
     required this.repository,
     this.userId,
     this.showCreateButton = true,
     this.maxHeight,
+    this.highlightRequestId,
   });
 
   @override
@@ -36,12 +41,15 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
   
   // Approvals tracker
   Map<String, int> _approvedCounts = {}; // req.id -> count
+  // Expanded History tracking
+  String? _expandedHistoryId; // id ของคำร้องที่กำลังดู History
 
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _expandedHistoryId = widget.highlightRequestId;
     _loadData();
   }
 
@@ -50,6 +58,9 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     super.didUpdateWidget(oldWidget);
     if (widget.userId != oldWidget.userId) {
       _loadData();
+    }
+    if (widget.highlightRequestId != oldWidget.highlightRequestId) {
+      setState(() => _expandedHistoryId = widget.highlightRequestId);
     }
   }
 
@@ -417,6 +428,58 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
               ),
             ),
             
+            const SizedBox(height: 12),
+
+            // ── ปุ่มประวัติอนุมัติ ──
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _expandedHistoryId = _expandedHistoryId == req.id ? null : req.id;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.history_edu, size: 14, color: Colors.deepPurple),
+                    const SizedBox(width: 6),
+                    Text(
+                      _expandedHistoryId == req.id ? 'ซ่อนประวัติอนุมัติ' : 'ดูประวัติการอนุมัติ',
+                      style: const TextStyle(fontSize: 12, color: Colors.deepPurple, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expandedHistoryId == req.id ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
+                      color: Colors.deepPurple,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Approval History Timeline ──
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 300),
+              crossFadeState: _expandedHistoryId == req.id
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              firstChild: const SizedBox.shrink(),
+              secondChild: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: DonationApprovalHistoryWidget(
+                  requestId: req.id,
+                  repository: widget.repository,
+                ),
+              ),
+            ),
+
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

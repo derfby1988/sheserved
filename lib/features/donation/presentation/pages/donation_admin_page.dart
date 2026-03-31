@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -1161,10 +1162,34 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.teal.shade100),
         ),
-        child: const Center(
-          child: SizedBox(
-            height: 20, width: 20,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal),
+        child: Shimmer.fromColors(
+          baseColor: Colors.teal.shade200.withOpacity(0.5),
+          highlightColor: Colors.teal.shade50,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(width: 150, height: 12, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+              const SizedBox(height: 10),
+              Row(
+                children: List.generate(
+                  approverIds.isNotEmpty ? approverIds.length : 2,
+                  (index) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Container(height: 4, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2))),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  approverIds.isNotEmpty ? approverIds.length : 2,
+                  (index) => Container(width: 40, height: 10, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -1378,11 +1403,22 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
 
     if (confirm != true) return;
 
-    await widget.repository.approveRequest(
-      req.id, req.approvalStatus, widget.userId!,
-      isAdminOverride: true,
-    );
-    _loadPending();
+    try {
+      await widget.repository.approveRequest(
+        req.id, req.approvalStatus, widget.userId!,
+        isAdminOverride: true,
+      );
+      _loadPending();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
   }
 
   @override

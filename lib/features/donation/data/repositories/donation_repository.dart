@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../models/donation_models.dart';
+import '../../../../services/websocket_service.dart';
 
 /// Repository สำหรับจัดการข้อมูลการบริจาค
 class DonationRepository {
@@ -185,8 +186,9 @@ class DonationRepository {
   }
 
   /// สร้างคำร้องขอใหม่
-  Future<void> createRequest(Map<String, dynamic> data) async {
-    await _client.from('donation_requests').insert(data);
+  Future<String> createRequest(Map<String, dynamic> data) async {
+    final response = await _client.from('donation_requests').insert(data).select('id').single();
+    return response['id'] as String;
   }
 
   /// อัปเดตคำร้องขอ
@@ -301,6 +303,17 @@ class DonationRepository {
     String? professionId, // profession ที่ผู้อนุมัติใช้ในการอนุมัติครั้งนี้
     bool isAdminOverride = false, // สำหรับแอดมินลัดคิว
   }) async {
+    // ✅ Self-Approval Guard — ตรวจ ALWAYS เพื่อนการใดๆ แม้แต่เป็น Admin Override
+    final reqData = await _client
+        .from('donation_requests')
+        .select('category_id, user_id, title')
+        .eq('id', requestId)
+        .single();
+
+    if (reqData['user_id'] == approverId) {
+      throw Exception('คุณไม่สามารถอนุมัติคำร้องของตนเองได้ แม้จะมีสิทธิ์ Admin Override');
+    }
+
     if (isAdminOverride) {
       await _client.from('donation_requests').update({
         'approval_status': DonationApprovalStatus.active.name,
@@ -310,17 +323,6 @@ class DonationRepository {
     }
 
     if (currentStatus == DonationApprovalStatus.pending_local) {
-      // ✅ Bug #1 Fix: Validate ก่อน write ทุกครั้ง
-      // 1. ดึงหมวดหมู่ของคำร้องและตรวจ self-approval ก่อนเสมอ
-      final reqData = await _client
-          .from('donation_requests')
-          .select('category_id, user_id')
-          .eq('id', requestId)
-          .single();
-
-      if (reqData['user_id'] == approverId) {
-        throw Exception('คุณไม่สามารถอนุมัติคำร้องของตนเองได้');
-      }
 
       final categoryId = reqData['category_id'] as String;
 
@@ -371,6 +373,17 @@ class DonationRepository {
         'local_verified_at': DateTime.now().toIso8601String(),
       }).eq('id', requestId);
 
+      // ✅ ส่ง Real-time Notification ให้เจ้าของคำร้องบริจาค เมื่อสถานะเปลี่ยน
+      final requestOwnerId = reqData['user_id']?.toString();
+      final requestTitle = reqData['title']?.toString() ?? 'คำร้องบริจาค';
+      if (requestOwnerId != null) {
+        WebSocketService().socket?.emit('donation-request-status-updated', {
+          'userId': requestOwnerId,
+          'requestId': requestId,
+          'title': requestTitle,
+          'status': newStatus,
+        });
+      }
     }
   }
 
@@ -487,12 +500,10 @@ class DonationRepository {
              req.latitude!,
              req.longitude!,
            );
-           // approvalRadius is in integer (meters or km? typically km if small, meters if large). 
-           // From DB code: int approvalRadius = 500; (Probably km? Actually in UI we set km, but default 500 km)
-           // If UI sets km, need to compare with km. Geolocator returns meters.
-           // Let's assume approvalRadius is km based on `int approvalRadius = 500`. 500 meters is too small for a region.
-           // Actually, let's treat approvalRadius as km: distance in meters / 1000 <= approvalRadius
-           if ((distance / 1000.0) > approvalRadius) {
+           // approvalRadius is stored in meters (e.g. 500m to 100,000m)
+           // Geolocator.distanceBetween also returns meters.
+           // So we can compare them directly.
+           if (distance > approvalRadius) {
              return false;
            }
         }

@@ -34,6 +34,7 @@ class WebSocketService {
   final _emergencyNotificationController = StreamController<Map<String, dynamic>>.broadcast();
   final _rescueIncomingController = StreamController<Map<String, dynamic>>.broadcast();
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
+  final _donationStatusController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -58,6 +59,8 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get emergencyNotificationStream => _emergencyNotificationController.stream;
   Stream<Map<String, dynamic>> get rescueIncomingStream => _rescueIncomingController.stream;
   Stream<Map<String, dynamic>> get viewerCountStream => _viewerCountController.stream;
+  /// สถานะคำร้องบริจาคผ่านการอนุมัติเปลี่ยนสถานะแบบ Real-time
+  Stream<Map<String, dynamic>> get donationStatusStream => _donationStatusController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -206,6 +209,12 @@ class WebSocketService {
       
       _socket!.on('emergency-chat-message', (data) {
         _emergencyChatController.add(Map<String, dynamic>.from(data));
+      });
+
+      // Donation Status Events
+      _socket!.on('donation-request-status-updated', (data) {
+        debugPrint('WebSocket: donation-request-status-updated received: $data');
+        _donationStatusController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {

@@ -299,16 +299,25 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
         return;
       }
 
-      await _repository.createRequest(requestData);
+      final newRequestId = await _repository.createRequest(requestData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('ส่งคำร้องขอเรียบร้อยแล้ว! กำลังรอการยืนยันจากผู้นำชุมชน'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
           ),
         );
-        Navigator.pop(context);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/profile',
+          (route) => route.isFirst,
+          arguments: {
+            'tabIndex': 0,
+            'highlightRequestId': newRequestId,
+          },
+        );
       }
     } catch (e) {
       debugPrint('Error creating request: $e');

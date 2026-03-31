@@ -57,6 +57,22 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoadingProfessions = false;
   bool _isSavingUnblurred = false; // สถานะการบันทึกสิทธิ์ดูวิดีโอ
   String? _selectedCategory; // หมวดหมู่ที่กำลังเลือกอยู่
+  
+  String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map<String, dynamic>) {
+      if (args['tabIndex'] != null && _selectedTabIndex != args['tabIndex']) {
+        _selectedTabIndex = args['tabIndex'] as int;
+      }
+      if (args['highlightRequestId'] != null) {
+        _highlightRequestId = args['highlightRequestId'] as String;
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -322,6 +338,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   userId: _user?.id,
                   showCreateButton: true,
                   maxHeight: 550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
+                  highlightRequestId: _highlightRequestId,
                 ),
               ],
               const SizedBox(height: 50),

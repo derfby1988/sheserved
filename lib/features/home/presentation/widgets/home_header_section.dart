@@ -14,6 +14,8 @@ class HomeHeaderSection extends StatelessWidget {
   final List<Map<String, dynamic>> alerts;
   final Function(String videoId)? onAlertDismissed;
   final Function(String videoId)? onAlertTapped;
+  /// รายการแจ้งเตือนสถานะคำร้องบริจาค (donation_update)
+  final List<Map<String, dynamic>> donationAlerts;
 
   const HomeHeaderSection({
     super.key,
@@ -25,6 +27,7 @@ class HomeHeaderSection extends StatelessWidget {
     this.alerts = const [],
     this.onAlertDismissed,
     this.onAlertTapped,
+    this.donationAlerts = const [],
   });
 
   @override
@@ -131,6 +134,15 @@ class HomeHeaderSection extends StatelessWidget {
                   // สร้าง list รวมระหว่างรายการยา (จำลอง) และเหตุฉุกเฉิน
                   final List<Map<String, dynamic>> combinedItems = [];
                   
+                  // เพิ่ม donation alerts (สถานะคำร้องบริจาค) ก่อนเลย
+                  for (var d in donationAlerts) {
+                    combinedItems.add({
+                      'time': d['updatedAt'] as DateTime? ?? DateTime.now(),
+                      'type': 'donation_update',
+                      'data': d,
+                    });
+                  }
+
                   for (var alert in alerts) {
                     combinedItems.add({
                       'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
@@ -152,7 +164,39 @@ class HomeHeaderSection extends StatelessWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: combinedItems.map((item) {
-                      if (item['type'] == 'alert') {
+                       if (item['type'] == 'donation_update') {
+                        final d = item['data'] as Map<String, dynamic>;
+                        final title = (d['title']?.toString() ?? 'คำร้องบริจาค');
+                        final isActive = d['isActive'] == true;
+                        final textColor = isActive ? const Color(0xFF2EA04B) : const Color(0xFFF5A623);
+                        final icon = isActive ? Icons.favorite : Icons.access_time_rounded;
+                        final statusText = isActive
+                            ? '’$title’ ได้รับการอนุมัติแล้ว!'
+                            : '’$title’ รออนุมัติเพิ่มเติม';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Icon(icon, color: textColor, size: 9),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  statusText,
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: textColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.right,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else if (item['type'] == 'alert') {
                         final alert = item['data'];
                         final videoId = alert['videoId']?.toString() ?? '';
                         final categoryName = alert['categoryName'] ?? 'แจ้งเหตุ';

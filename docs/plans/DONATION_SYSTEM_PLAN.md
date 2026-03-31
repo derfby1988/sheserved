@@ -56,6 +56,16 @@
 | `category_id` | UUID → donation_categories | หมวดหมู่ |
 | `video_id` | UUID → videos | ✅ ลิงก์กับวิดีโอ Live |
 | `title` | TEXT | หัวข้อคำร้อง |
+| `current_amount` | FLOAT8 | ยอดบริจาคปัจจุบันที่ได้รับแล้ว |
+| `image_url` | TEXT | รูปภาพประกอบคำร้อง |
+| `is_trending` | BOOLEAN | ยกให้เป็นเคสด่วน/ยอดฮิต |
+| `latitude` | FLOAT8 | ละติจูด (ตำแหน่งพื้นที่ที่ขอรับบริจาค) |
+| `longitude` | FLOAT8 | ลองจิจูด |
+| `custom_data` | JSONB | ข้อมูลที่กรอกเพิ่มเติมตาม Custom Fields |
+| `needed_date` | TIMESTAMPTZ | วันที่จำเป็นต้องใช้ |
+| `requester_address` | TEXT | ที่อยู่ของผู้ร้องขอ |
+| `usage_location` | TEXT | สถานที่/รายละเอียดการไปใช้ |
+| `community_id` | UUID → communities | ชุมชนที่เกี่ยวข้อง (ถ้ามี) |
 | `approval_status` | TEXT | `pending_local` (รออนุมัติ) / `active` (อนุมัติแล้ว) / `rejected` (ปฏิเสธ) |
 | `local_verified_at` | TIMESTAMPTZ | เวลาที่กลุ่มอนุมัติครบขั้นสุดท้าย |
 
@@ -151,7 +161,24 @@
 
 ---
 
-## 8. Checklist การดำเนินงาน
+## 8. การยกเลิกและปิดรับบริจาค (Cancellation & Withdrawal)
+
+เพื่อให้ระบบมีความโปร่งใส การยกเลิกคำร้องขอบริจาคต้องเป็นไปตามเงื่อนไขดังนี้:
+
+### 8.1 การยกเลิกโดยผู้ร้องขอ (Self-Cancellation)
+| สถานะคำร้อง | เงื่อนไข | ผลลัพธ์ |
+|------------|---------|--------|
+| `pending_local` (รออนุมัติ) | ยกเลิกได้ทันที | เปลี่ยนสถานะเป็น `cancelled` (Soft Delete) |
+| `active` (เปิดรับบริจาค) | `current_amount == 0` (ยังไม่มีคนบริจาค) | เปลี่ยนสถานะเป็น `cancelled` (Soft Delete) |
+| `active` (เปิดรับบริจาค) | `current_amount > 0` (มีเงินบริจาคแล้ว) | **ไม่อนุญาตให้ยกเลิกเอง** ต้องผ่าน Admin เพื่อตรวจสอบการจัดการเงินที่ได้รับมาแล้ว |
+
+### 8.2 การปิดรับบริจาค (Withdrawal/Completion)
+- เมื่อยอดบริจาคครบตามเป้าหมาย หรือผู้ร้องขอยืนยันว่าได้รับความช่วยเหลือเพียงพอแล้ว
+- บันทึกสถานะเพื่อใช้ในการทำรายงานความโปร่งใสในภายหลัง
+
+---
+
+## 9. Checklist การดำเนินงาน
 
 ### ฐานข้อมูล
 - [x] ตาราง `donation_categories`, `donation_requests`, `donation_contributions`
@@ -161,13 +188,19 @@
 ### Flutter — Models & Repository
 - [x] `DonationAdminPage` อ้างอิง `UserCategory` ในการสร้าง Flow
 - [x] `DonationRepository` เพิ่มฟังก์ชันรับค่าและบันทึก Category ID ของผู้ใช้อนุมัติลง DB
-- [ ] `DonationRepository.approveRequest()`: เพิ่มการตรวจสอบไม่ให้ `userId` ของผู้อนุมัติตรงกับ `userId` ของผู้ร้องขอ (Self-approval restriction)
+- [x] `DonationRepository.approveRequest()`: เพิ่มการตรวจสอบไม่ให้ `userId` ของผู้อนุมัติตรงกับ `userId` ของผู้ร้องขอ (Self-approval restriction) — **❗️ บังคับใช้กับทุกเส้นทางรวมถึง Admin Override**
 
 ### Flutter — UI
 - [x] `_showApproverDialog`: เปลี่ยนจากการโชว์ทุกรายอาชีพ เป็น **เฉพาะหมวดหมู่ผู้ใช้จากตารางจริงเท่านั้น**
 - [x] Approval Stepper ในการ์ด: แสดงผลจาก Category name
 - [x] จัดการลากเพื่อเรียงลำดับลื่นไหล (Drag-to-Order)
-- [ ] `LeaderVerificationPage`: กรองไม่ให้คำร้องของผู้ใช้เอง (Self-posted) ปรากฏในรายการที่ต้องอนุมัติ
+- [x] `LeaderVerificationPage`: กรองไม่ให้คำร้องของผู้ใช้เอง (Self-posted) ปรากฏในรายการที่ต้องอนุมัติ — บังคับใช้ทั้งระดับ DB (`.neq`) และระดับ Repository guard
+
+### การยกเลิกและปิดรับบริจาค (Pending)
+- [ ] เพิ่มสถานะ `cancelled` ใน `DonationApprovalStatus`
+- [ ] พัฒนาฟังก์ชัน `cancelRequest` ใน Repository (Soft Delete)
+- [ ] ปรับแก้ UI ใน `DonationRequestManagementPanel` แยกปุ่ม "ยกเลิก" / "ลบ" ตามเงื่อนไขยอดเงินบริจาค
+- [ ] เพิ่มระบบแจ้งเตือน Admin เมื่อมีการร้องขอยกเลิกเคสที่มีเงินบริจาคแล้ว
 
 ---
 
