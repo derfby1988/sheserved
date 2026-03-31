@@ -53,7 +53,7 @@ class _DonationApproverSettingsWidgetState
       // 1. โหลด 3 อย่างแบบ parallel โดยแยก type ให้ชัดเจน
       final catsFuture = widget.repository.getCategories();
       final regFuture = Supabase.instance.client
-          .from('user_registration_data')
+          .from('user_approver_settings')
           .select()
           .eq('user_id', widget.userId!)
           .withConverter<List<dynamic>>((data) => data);
@@ -82,14 +82,12 @@ class _DonationApproverSettingsWidgetState
       int radius = 500;
       final Map<String, bool> toggles = {};
       for (var row in regRows) {
-        final key = row['field_id'] as String;
-        final val = row['field_value'] as String?;
-        if (key == 'approval_radius' && val != null) {
-          radius = int.tryParse(val) ?? 500;
-        } else if (key.startsWith('approver_enabled_') && val != null) {
-          final catId = key.replaceAll('approver_enabled_', '');
-          toggles[catId] = (val == 'true');
-        }
+        final catId = row['category_id'] as String;
+        final isEnabled = row['is_enabled'] as bool? ?? true;
+        final radiusMeters = row['radius_meters'] as int? ?? 500;
+        
+        toggles[catId] = isEnabled;
+        radius = radiusMeters; // Using the latest one found since it's global per user in UI
       }
 
       // 4. กรองเฉพาะหมวดหมู่บริจาคที่ user category นี้ต้องอนุมัติ
@@ -122,20 +120,43 @@ class _DonationApproverSettingsWidgetState
     }
   }
 
-  Future<void> _saveSetting(String key, String value) async {
+  Future<void> _saveCategorySetting(String categoryId, bool isEnabled) async {
     if (widget.userId == null) return;
     try {
-      await Supabase.instance.client.from('user_registration_data').upsert(
+      await Supabase.instance.client.from('user_approver_settings').upsert(
         {
           'user_id': widget.userId,
-          'field_id': key,
-          'field_value': value,
+          'category_id': categoryId,
+          'is_enabled': isEnabled,
+          'radius_meters': _approvalRadius,
           'updated_at': DateTime.now().toIso8601String(),
         },
-        onConflict: 'user_id,field_id',
+        onConflict: 'user_id,category_id',
       );
     } catch (e) {
-      debugPrint('DonationApproverSettingsWidget: Error saving $key: $e');
+      debugPrint('DonationApproverSettingsWidget: Error saving setting: $e');
+    }
+  }
+
+  Future<void> _saveRadiusToAllCategories(int radius) async {
+    if (widget.userId == null || _relevantCategories.isEmpty) return;
+    try {
+      final List<Map<String, dynamic>> updates = _relevantCategories.map((cat) {
+        return {
+          'user_id': widget.userId,
+          'category_id': cat.id,
+          'is_enabled': _categoryToggles[cat.id] ?? true,
+          'radius_meters': radius,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+      }).toList();
+
+      await Supabase.instance.client.from('user_approver_settings').upsert(
+        updates,
+        onConflict: 'user_id,category_id',
+      );
+    } catch (e) {
+      debugPrint('DonationApproverSettingsWidget: Error saving radius: $e');
     }
   }
 
@@ -247,7 +268,7 @@ class _DonationApproverSettingsWidgetState
               activeThumbColor: Colors.teal,
               onChanged: (val) {
                 setState(() => _categoryToggles[cat.id] = val);
-                _saveSetting('approver_enabled_${cat.id}', val.toString());
+                _saveCategorySetting(cat.id, val);
               },
             );
           }),
@@ -274,7 +295,7 @@ class _DonationApproverSettingsWidgetState
                   onChanged: (val) =>
                       setState(() => _approvalRadius = val.toInt()),
                   onChangeEnd: (val) =>
-                      _saveSetting('approval_radius', val.toInt().toString()),
+                      _saveRadiusToAllCategories(val.toInt()),
                 ),
               ),
               Container(

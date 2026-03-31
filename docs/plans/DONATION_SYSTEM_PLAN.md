@@ -56,9 +56,8 @@
 | `category_id` | UUID → donation_categories | หมวดหมู่ |
 | `video_id` | UUID → videos | ✅ ลิงก์กับวิดีโอ Live |
 | `title` | TEXT | หัวข้อคำร้อง |
-| `approval_status` | TEXT | `pending_local` → `active` / `rejected` |
-| `local_verified_at` | TIMESTAMPTZ | เวลาที่กลุ่มอนุมัติครบ |
-| `storage_approved_by` | UUID | ผู้ดูแลคลังขั้นสุดท้าย |
+| `approval_status` | TEXT | `pending_local` (รออนุมัติ) / `active` (อนุมัติแล้ว) / `rejected` (ปฏิเสธ) |
+| `local_verified_at` | TIMESTAMPTZ | เวลาที่กลุ่มอนุมัติครบขั้นสุดท้าย |
 
 ---
 
@@ -117,7 +116,7 @@
 
 แถบที่เหลือใน Admin Panel:
 1. **หมวดหมู่**: เพิ่ม/ลด/แก้ไข หมวดหมู่หลัก
-2. **ศูนย์อนุมัติ**: ภาพรวมการอนุมัติระดับคลังสินค้า (Storage Admin)
+2. **ศูนย์อนุมัติ**: ภาพรวมคำร้องรออนุมัติทั้งหมดสำหรับ **Admin Override** (สามารถกดอนุมัติลัดคิวได้โดยไม่ต้องรอกลุ่มวิชาชีพ)
 3. **ช่วยเหลือฉุกเฉิน**: จัดการสิทธิ์จิตอาสา/ผู้ตอบโต้เหตุ
 4. **ประวัติ**: ดูรายการบริจาคที่สำเร็จแล้วทั้งหมด
 

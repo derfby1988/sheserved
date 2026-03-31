@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -22,12 +23,29 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
   List<String> _userProfessionIds = []; // profession IDs ของผู้ใช้ปัจจุบัน
   String _userCategoryNamesStr = 'ผู้นำชุมชน';
   bool _isLoading = true;
+  StreamSubscription? _requestsSubscription;
 
   @override
   void initState() {
     super.initState();
     _repository = DonationRepository(Supabase.instance.client);
     _loadUserAndRequests();
+    
+    // ตั้งค่า WebSocket Real-time Listener เพื่ออัปเดตคำร้องอัตโนมัติ (Fix UX Issue #4)
+    _requestsSubscription = Supabase.instance.client
+        .from('donation_requests')
+        .stream(primaryKey: ['id'])
+        .listen((_) {
+      if (_currentUserId != null && mounted) {
+        _fetchPendingRequests(_currentUserId!);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _requestsSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUserAndRequests() async {
@@ -60,7 +78,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final reqs = await _repository.getPendingRequests(userId, isStorageAdmin: false);
+      final reqs = await _repository.getPendingRequests(userId);
       if (mounted) {
         setState(() {
           _pendingRequests = reqs;

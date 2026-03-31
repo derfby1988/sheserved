@@ -1,7 +1,6 @@
 
 enum DonationApprovalStatus {
   pending_local,
-  pending_storage,
   active,
   rejected;
 

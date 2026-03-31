@@ -299,7 +299,16 @@ class DonationRepository {
     DonationApprovalStatus currentStatus,
     String approverId, {
     String? professionId, // profession ที่ผู้อนุมัติใช้ในการอนุมัติครั้งนี้
+    bool isAdminOverride = false, // สำหรับแอดมินลัดคิว
   }) async {
+    if (isAdminOverride) {
+      await _client.from('donation_requests').update({
+        'approval_status': DonationApprovalStatus.active.name,
+        'local_verified_at': DateTime.now().toIso8601String(),
+      }).eq('id', requestId);
+      return;
+    }
+
     if (currentStatus == DonationApprovalStatus.pending_local) {
       // ✅ Bug #1 Fix: Validate ก่อน write ทุกครั้ง
       // 1. ดึงหมวดหมู่ของคำร้องและตรวจ self-approval ก่อนเสมอ
@@ -362,18 +371,13 @@ class DonationRepository {
         'local_verified_at': DateTime.now().toIso8601String(),
       }).eq('id', requestId);
 
-    } else if (currentStatus == DonationApprovalStatus.pending_storage) {
-      await _client.from('donation_requests').update({
-        'approval_status': DonationApprovalStatus.active.name,
-        'storage_approved_by': approverId,
-      }).eq('id', requestId);
     }
   }
 
   /// ดึงรายการที่รออนุมัติสำหรับผู้ใช้นี้
   /// กรองจาก profession (user category) ของผู้ใช้ที่อยู่ใน approver_profession_ids ของแต่ละหมวดหมู่
   /// และยังไม่ได้อนุมัติสำหรับ profession นั้น
-  Future<List<DonationRequest>> getPendingRequests(String userId, {bool isStorageAdmin = false}) async {
+  Future<List<DonationRequest>> getPendingRequests(String userId, {bool isAdminOverride = false}) async {
     // 1. ดึง profession และ category ที่ผู้ใช้มี
     final userProfIds = await getUserApproverProfessions(userId);
     final userCatIds = await getUserApproverCategories(userId);
@@ -388,20 +392,20 @@ class DonationRepository {
     if (userProfIds.isNotEmpty || userCatIds.isNotEmpty) {
       // Fetch user's approver settings (toggles)
       final regData = await _client
-          .from('user_registration_data')
-          .select('field_id, field_value')
+          .from('user_approver_settings')
+          .select('category_id, is_enabled, radius_meters')
           .eq('user_id', userId);
       
       final disabledCategories = <String>[];
       for (final row in (regData as List)) {
-        final key = row['field_id'] as String;
-        final val = row['field_value'] as String?;
-        if (key.startsWith('approver_enabled_') && val == 'false') {
-          final catId = key.replaceAll('approver_enabled_', '');
+        final catId = row['category_id'] as String;
+        final isEnabled = row['is_enabled'] as bool? ?? true;
+        final radiusMeters = row['radius_meters'] as int? ?? 500;
+        
+        if (!isEnabled) {
           disabledCategories.add(catId);
-        } else if (key == 'approval_radius' && val != null) {
-          approvalRadius = int.tryParse(val) ?? 500;
         }
+        approvalRadius = radiusMeters; // Using the latest one found since it's practically global per user
       }
 
       try {
@@ -433,11 +437,10 @@ class DonationRepository {
           categoriesUserCanApprove.add(catIdStr);
         }
       }
-      if (categoriesUserCanApprove.isNotEmpty) {
+      if (categoriesUserCanApprove.isNotEmpty || isAdminOverride) {
         statuses.add(DonationApprovalStatus.pending_local.name);
       }
     }
-    if (isStorageAdmin) statuses.add(DonationApprovalStatus.pending_storage.name);
 
     if (statuses.isEmpty) return [];
 
@@ -452,8 +455,12 @@ class DonationRepository {
     final List<DonationRequest> all =
         (response as List).map((json) => DonationRequest.fromJson(json)).toList();
 
+    if (isAdminOverride) {
+      return all.where((r) => r.approvalStatus == DonationApprovalStatus.pending_local).toList();
+    }
+
     if (userProfIds.isEmpty) {
-      return all.where((r) => r.approvalStatus == DonationApprovalStatus.pending_storage).toList();
+      return [];
     }
 
     // 4. กรองเฉพาะหมวดหมู่ที่ผู้ใช้มีสิทธิ์ AND ยังไม่ได้อนุมัติด้วย profession นั้น
@@ -523,7 +530,7 @@ class DonationRepository {
         
         return needsApproval;
       }
-      return req.approvalStatus == DonationApprovalStatus.pending_storage && isStorageAdmin;
+      return false;
     }).toList();
   }
 

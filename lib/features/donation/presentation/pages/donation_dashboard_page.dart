@@ -11,6 +11,7 @@ import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import 'donation_detail_page.dart';
+import 'donation_list_page.dart';
 import 'donation_create_page.dart';
 
 class DonationDashboardPage extends StatefulWidget {
@@ -219,7 +220,17 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                                         label: cat.name,
                                         icon: _getIconData(cat.iconName),
                                         iconColor: AppColors.primary,
-                                        onTap: () {},
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => DonationListPage(
+                                                categoryId: cat.id,
+                                                categoryName: cat.name,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     )).toList(),
                                   ),
@@ -298,7 +309,17 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                                 icon: _getIconData(cat.iconName),
                                 iconColor: const Color(0xFF76A5A5),
                                 labelColor: const Color(0xFF4A6A8A),
-                                onTap: () {},
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => DonationListPage(
+                                        categoryId: cat.id,
+                                        categoryName: cat.name,
+                                      ),
+                                    ),
+                                  );
+                                },
                               );
                             },
                           ),

@@ -1153,6 +1153,23 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
   }
 
   Widget _buildApprovalStepper(List<String> approverIds) {
+    if (_userCategories.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.teal.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.teal.shade100),
+        ),
+        child: const Center(
+          child: SizedBox(
+            height: 20, width: 20,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal),
+          ),
+        ),
+      );
+    }
+
     // หาชื่อหมวดหมู่จาก _userCategories
     final steps = approverIds.map((id) {
       final cat = _userCategories.where((c) => c.id == id).firstOrNull;
@@ -1324,15 +1341,14 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   Future<void> _loadPending() async {
     if (widget.userId == null) return;
     setState(() => _isLoading = true);
-    // ✅ Bug #2 Fix: โหลด professionIds คู่ขนานกับคำร้อง
     final results = await Future.wait([
-      widget.repository.getPendingRequests(widget.userId!, isStorageAdmin: widget.isStorageAdmin),
+      widget.repository.getPendingRequests(widget.userId!, isAdminOverride: widget.isStorageAdmin),
       widget.repository.getUserApproverProfessions(widget.userId!),
     ]);
     if (mounted) {
       setState(() {
         _pendingRequests = (results[0] as List<DonationRequest>)
-            .where((r) => r.approvalStatus == DonationApprovalStatus.pending_storage)
+            .where((r) => r.approvalStatus == DonationApprovalStatus.pending_local)
             .toList();
         _userProfessionIds = results[1] as List<String>;
         _isLoading = false;
@@ -1340,31 +1356,31 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
     }
   }
 
-  /// ✅ Bug #2 Fix: หา professionId ที่ถูกต้องสำหรับ request นั้นๆ แล้วส่งหา approveRequest()
   Future<void> _doApprove(DonationRequest req) async {
     if (widget.userId == null) return;
-    String? profId;
-    if (req.approvalStatus == DonationApprovalStatus.pending_local && _userProfessionIds.isNotEmpty) {
-      // หา profession ที่ตรงกับ category ของ request
-      try {
-        final requiredCatIds = await widget.repository.getCategoryApproverIds(req.categoryId);
-        final profCatMap = await widget.repository.getProfessionCategoryMap(_userProfessionIds);
-        for (final pid in _userProfessionIds) {
-          final cat = profCatMap[pid];
-          if (cat != null && requiredCatIds.contains(cat)) {
-            profId = pid;
-            break;
-          }
-        }
-        // Fallback: ใช้ first ถ้าหาไม่เจอ
-        profId ??= _userProfessionIds.first;
-      } catch (_) {
-        profId = _userProfessionIds.isNotEmpty ? _userProfessionIds.first : null;
-      }
-    }
+    
+    // แจ้งเตือนก่อนทำการลัดคิว
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Admin Override'),
+        content: const Text('คุณกำลังจะใช้อำนาจแอดมินอนุมัติคำร้องนี้ลัดคิวทุกขั้นตอน ยืนยันหรือไม่?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ยืนยันอนุมัติ', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     await widget.repository.approveRequest(
       req.id, req.approvalStatus, widget.userId!,
-      professionId: profId,
+      isAdminOverride: true,
     );
     _loadPending();
   }
@@ -1372,14 +1388,14 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   @override
   Widget build(BuildContext context) {
     if (widget.userId == null) return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
-    if (!widget.isStorageAdmin) return const Center(child: Text('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะผู้ดูแลคลัง/Admin)'));
+    if (!widget.isStorageAdmin) return const Center(child: Text('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะ Admin)'));
     
     return Column(
       children: [
         const Padding(
           padding: EdgeInsets.all(16.0),
           child: Text(
-            'รายการรอพิจารณาสถานที่จัดเก็บ',
+            'ภาพรวมคำร้องรออนุมัติทั้งหมด (Admin Override)',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
@@ -1457,7 +1473,6 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   String _getStatusLabel(DonationApprovalStatus status) {
     switch (status) {
       case DonationApprovalStatus.pending_local: return 'รอผู้นำชุมชนยืนยัน';
-      case DonationApprovalStatus.pending_storage: return 'รอตรวจสถานที่เก็บ';
       default: return 'อื่นๆ';
     }
     }

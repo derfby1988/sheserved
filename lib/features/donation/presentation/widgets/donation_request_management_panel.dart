@@ -578,7 +578,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
   Color _getStatusColor(DonationApprovalStatus status) {
     switch (status) {
       case DonationApprovalStatus.pending_local: return Colors.deepPurple;
-      case DonationApprovalStatus.pending_storage: return Colors.orange;
       case DonationApprovalStatus.active: return Colors.green;
       case DonationApprovalStatus.rejected: return Colors.red;
     }
@@ -587,7 +586,6 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
   String _getStatusLabel(DonationApprovalStatus status) {
     switch (status) {
       case DonationApprovalStatus.pending_local: return 'รอการอนุมัติจากหมวดหมู่';
-      case DonationApprovalStatus.pending_storage: return 'รอคลังสินค้าตรวจสอบ';
       case DonationApprovalStatus.active: return 'อนุมัติแล้ว (รับบริจาคได้)';
       case DonationApprovalStatus.rejected: return 'ถูกปฏิเสธ';
     }
