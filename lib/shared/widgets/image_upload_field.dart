@@ -242,7 +242,7 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
           onTap: _isUploading ? null : _showSourceDialog,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            height: hasImage ? 200 : 120,
+            constraints: const BoxConstraints(minHeight: 120),
             width: double.infinity,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
@@ -307,19 +307,21 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(15),
       child: Stack(
-        fit: StackFit.expand,
+        alignment: Alignment.center,
         children: [
           // ── ภาพ (local file หรือ cached network) ──
           if (_localFile != null)
             Image.file(
               _localFile!,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
+              width: double.infinity,
               gaplessPlayback: true,
             )
           else if (_uploadedUrl != null)
             CachedNetworkImage(
               imageUrl: _uploadedUrl!,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
+              width: double.infinity,
               placeholder: (ctx, url) => Shimmer.fromColors(
                 baseColor: Colors.grey.shade800,
                 highlightColor: Colors.grey.shade600,
@@ -372,7 +374,7 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 18),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -385,7 +387,7 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
               child: GestureDetector(
                 onTap: _showSourceDialog,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(20),
@@ -393,9 +395,9 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.edit_rounded, color: Colors.white, size: 14),
+                      Icon(Icons.edit_rounded, color: Colors.white, size: 16),
                       SizedBox(width: 4),
-                      Text('เปลี่ยน', style: TextStyle(color: Colors.white, fontSize: 12)),
+                      Text('เปลี่ยนรูป', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),

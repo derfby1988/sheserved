@@ -115,6 +115,10 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
         });
         return;
       }
+
+      // ── ซ่อนแป้นพิมพ์อัตโนมัติเมื่อตรวจสอบผ่าน ──
+      FocusScope.of(context).unfocus();
+
       setState(() {
         _provinces = provinces;
         _isLoadingProvinces = false;

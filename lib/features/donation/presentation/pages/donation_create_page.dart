@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -120,103 +121,285 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
+      barrierColor: Colors.black.withValues(alpha: 0.3), // Make barrier a bit lighter for glass effect
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutBack,
+            tween: Tween(begin: 0.85, end: 1.0),
+            builder: (context, scale, child) => Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+            child: Container(
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFFE2B0FF).withValues(alpha: 0.15),
+                    const Color(0xFF9F44D3).withValues(alpha: 0.15),
+                    const Color(0xFF00C6FF).withValues(alpha: 0.15),
+                    const Color(0xFF0072FF).withValues(alpha: 0.15),
+                  ],
+                  stops: [0.0, 0.3, 0.7, 1.0],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF9F44D3).withValues(alpha: 0.25),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
-              child: const Icon(Icons.fact_check_rounded, color: AppColors.primary),
-            ),
-            const SizedBox(width: 12),
-            const Text('ตรวจสอบข้อมูลก่อนส่ง'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _summaryRow(Icons.category_rounded, 'หมวดหมู่', cat.name),
-              // แสดงค่าจาก global fields
-              ..._globalFields.where((f) => f.id != 'category_id').map((field) {
-                final rawVal = _globalData[field.id];
-                if (rawVal == null || rawVal.toString().isEmpty) return const SizedBox.shrink();
-                String displayVal = rawVal.toString();
-                if (field.type == 'date') {
-                  final dt = rawVal is DateTime ? rawVal : DateTime.tryParse(rawVal.toString());
-                  displayVal = dt != null ? ThaiDateUtils.formatShortDateBE(dt) : rawVal.toString();
-                } else if (field.id == 'community_id') {
-                  final comm = _communities.where((c) => c['id'].toString() == rawVal.toString()).firstOrNull;
-                  displayVal = comm?['name']?.toString() ?? rawVal.toString();
-                } else if (field.type == 'boolean') {
-                  displayVal = rawVal == true ? 'ใช่' : 'ไม่ใช่';
-                } else if (field.type == 'address_picker' && _selectedAddress != null) {
-                  displayVal = _selectedAddress!.fullAddress;
-                } else if (field.type == 'number' && rawVal != null) {
-                  final num = double.tryParse(rawVal.toString());
-                  displayVal = num != null ? '฿${NumberFormat('#,##0').format(num)}' : rawVal.toString();
-                }
-                final iconData = _fieldIcon(field);
-                return _summaryRow(iconData, field.label, displayVal);
-              }),
-              // Custom fields ของหมวดหมู่
-              if (_customData.isNotEmpty) ...[
-                const Divider(height: 24),
-                Text('ข้อมูลเพิ่มเติมตามหมวดหมู่', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                ..._customData.entries.map((e) {
-                  final rawVal = e.value;
-                  String displayVal = '-';
-                  if (rawVal != null) {
-                    final dt = rawVal is DateTime ? rawVal : DateTime.tryParse(rawVal.toString());
-                    displayVal = dt != null ? ThaiDateUtils.formatShortDateBE(dt) : rawVal.toString();
-                  }
-                  return _summaryRow(Icons.data_object_rounded, e.key, displayVal);
-                }),
+              padding: const EdgeInsets.all(20.0), // Border thickness
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(29), // Inner radius
+                  color: Colors.white.withValues(alpha: 0.92), // Glass body
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400, maxHeight: 650),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Header Banner ──
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.04),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade100, width: 2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.verified_user_rounded, color: AppColors.primary, size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ตรวจสอบข้อมูล',
+                              style: AppTextStyles.heading5.copyWith(
+                                color: AppColors.primary, 
+                                fontWeight: FontWeight.bold, 
+                                fontSize: 18,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'กรุณาตรวจสอบความถูกต้องก่อนส่ง',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // ── Content ──
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Card 1: ข้อมูลหลัก
+                        _buildSectionHeader(Icons.info_outline_rounded, 'ข้อมูลพื้นฐาน'),
+                        const SizedBox(height: 12),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                            ],
+                          ),
+                          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
+                          child: Column(
+                            children: [
+                              _summaryRow(Icons.category_rounded, 'หมวดหมู่', cat.name),
+                              ..._globalFields.where((f) => f.id != 'category_id').map((field) {
+                                final rawVal = _globalData[field.id];
+                                if (rawVal == null || rawVal.toString().isEmpty) return const SizedBox.shrink();
+                                String displayVal = rawVal.toString();
+                                if (field.type == 'date') {
+                                  final dt = rawVal is DateTime ? rawVal : DateTime.tryParse(rawVal.toString());
+                                  displayVal = dt != null ? ThaiDateUtils.formatShortDateBE(dt) : rawVal.toString();
+                                } else if (field.id == 'community_id') {
+                                  final comm = _communities.where((c) => c['id'].toString() == rawVal.toString()).firstOrNull;
+                                  displayVal = comm?['name']?.toString() ?? rawVal.toString();
+                                } else if (field.type == 'boolean') {
+                                  displayVal = rawVal == true ? 'ใช่' : 'ไม่ใช่';
+                                } else if (field.type == 'address_picker' && _selectedAddress != null) {
+                                  displayVal = _selectedAddress!.fullAddress;
+                                } else if (field.type == 'number' && rawVal != null) {
+                                  final num = double.tryParse(rawVal.toString());
+                                  displayVal = num != null ? '฿${NumberFormat('#,##0').format(num)}' : rawVal.toString();
+                                }
+                                return _summaryRow(_fieldIcon(field), field.label, displayVal);
+                              }),
+                            ],
+                          ),
+                        ),
+
+                        // Card 2: ข้อมูลเพิ่มเติมตามหมวดหมู่
+                        if (_customData.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          _buildSectionHeader(Icons.dashboard_customize_rounded, 'ข้อมูลเฉพาะหมวดหมู่'),
+                          const SizedBox(height: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                              ],
+                            ),
+                            padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
+                            child: Column(
+                              children: _customData.entries.map((e) {
+                                final rawVal = e.value;
+                                if (rawVal == null || rawVal.toString().isEmpty) return const SizedBox.shrink();
+                                
+                                final customFieldList = cat.customFields ?? [];
+                                final matchField = customFieldList.where((f) => f.id == e.key).firstOrNull;
+                                final label = matchField?.label ?? e.key;
+                                final type = matchField?.type ?? 'text';
+                                
+                                String displayVal = rawVal.toString();
+                                if (type == 'image') {
+                                  displayVal = 'แนบรูปรับรองแล้ว';
+                                } else if (type == 'date') {
+                                  final dt = rawVal is DateTime ? rawVal : DateTime.tryParse(rawVal.toString());
+                                  displayVal = dt != null ? ThaiDateUtils.formatShortDateBE(dt) : rawVal.toString();
+                                } else if (type == 'number') {
+                                  final num = double.tryParse(rawVal.toString());
+                                  displayVal = num != null ? NumberFormat('#,##0.##').format(num) : rawVal.toString();
+                                } else if (type == 'boolean') {
+                                  displayVal = rawVal == true ? 'ใช่' : 'ไม่ใช่';
+                                }
+                                return _summaryRow(
+                                  matchField != null ? _fieldIcon(matchField) : Icons.data_object_rounded,
+                                  label, 
+                                  displayVal,
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                
+                // ── Footer Actions ──
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.03), offset: const Offset(0, -5), blurRadius: 10),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                          ),
+                          child: Text('กลับไปแก้ไข', style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.bold, fontSize: 15)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: AppColors.primary,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: const Text('ยืนยันส่งคำร้อง', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
-            ],
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('แก้ไข', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-            label: const Text('ยืนยันส่งคำร้อง', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
-    ) ?? false;
+    ),
+  ),
+)) ?? false;
+  }
+
+  Widget _buildSectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: Colors.grey[700]),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.grey[800], letterSpacing: 0.2),
+        ),
+      ],
+    );
   }
 
   Widget _summaryRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: AppColors.primary.withOpacity(0.6)),
-          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 16, color: AppColors.primary.withValues(alpha: 0.8)),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(text: '$label: ', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[600])),
-                  TextSpan(text: value, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 12, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.w600, height: 1.3),
+                ),
+              ],
             ),
           ),
         ],
@@ -230,10 +413,10 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     try {
       // สร้าง request data จาก global fields + custom fields
       // ฟิลด์ที่มี dedicated column จะถูก map ตรง ๆ
-      final Map<String, dynamic> requestData = {
+      final requestData = <String, dynamic>{
         'user_id': userId,
         'category_id': _selectedCategoryId,
-        'video_id': widget.videoId,
+        if (widget.videoId != null) 'video_id': widget.videoId,
         'approval_status': DonationApprovalStatus.pending_local.name,
       };
 
@@ -294,12 +477,8 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
         requestData['custom_data'] = enrichedCustomData;
       }
 
-      // title เป็น required เสมอ — ตรวจสอบขั้นสุดท้าย
-      if (requestData['title'] == null || (requestData['title'] as String).isEmpty) {
-        setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาระบุหัวข้อคำร้องขอ')));
-        return;
-      }
+      // ลบ Logic ส่วนเกินที่บังคับ/สร้าง title ออกอย่างถาวรตามที่ผู้ร้องขอ
+      // ตอนนี้ระบบจะส่งข้อมูลแบบ Dynamic จาก Global Fields เท่านั้น
 
       final newRequestId = await _repository.createRequest(requestData);
 

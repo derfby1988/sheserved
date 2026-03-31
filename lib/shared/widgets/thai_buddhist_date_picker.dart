@@ -126,7 +126,7 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
   }
 
   Future<void> _handleTap(BuildContext context) async {
-    final DateTime current = value ?? DateTime.now().subtract(const Duration(days: 6570)); // Default ~18 years ago
+    final DateTime current = value ?? DateTime.now();
 
     // Step 1: เลือกปี พ.ศ.
     final int? selectedYear = await _showThaiYearPicker(context, current.year);
@@ -144,7 +144,7 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
       context,
       initialDate: initialDate,
       firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 3650)), // อนุญาตให้เลือกอนาคตได้ 10 ปี
       era: Era.be,
       locale: 'th_TH',
     );
@@ -156,9 +156,10 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
 
   Future<int?> _showThaiYearPicker(BuildContext context, int initialYearCE) async {
     final int currentYearBE = DateTime.now().year + 543;
+    final int maxYearBE = currentYearBE + 10; // เผื่ออนาคต 10 ปี
     final int currentInitialBE = initialYearCE + 543;
-    final int totalItems = currentYearBE - 2443 + 1;
-    final int selectedIndex = currentYearBE - currentInitialBE;
+    final int totalItems = maxYearBE - 2443 + 1;
+    final int selectedIndex = maxYearBE - currentInitialBE;
     final int selectedRow = selectedIndex ~/ 3;
 
     final ScrollController scrollController = ScrollController();
@@ -209,7 +210,7 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
                   ),
                   itemCount: totalItems,
                   itemBuilder: (_, index) {
-                    final yearBE = currentYearBE - index;
+                    final yearBE = maxYearBE - index;
                     final bool isSelected = yearBE == currentInitialBE;
                     return InkWell(
                       onTap: () => Navigator.pop(ctx, yearBE - 543),
