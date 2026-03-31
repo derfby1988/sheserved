@@ -906,6 +906,7 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                     DropdownMenuItem(value: 'community_dropdown', child: Text('เลือกชุมชน (Community Dropdown)')),
                     DropdownMenuItem(value: 'address_picker', child: Text('ที่อยู่แบบละเอียดยืนยันพื้นที่ (Address)')),
                     DropdownMenuItem(value: 'boolean', child: Text('สวิตช์เปิด/ปิด (Switch Boolean)')),
+                    DropdownMenuItem(value: 'image', child: Text('รูปภาพอัปโหลด (Image Upload)')),
                   ],
                   onChanged: (val) => setDialogState(() => type = val!),
                 ),

@@ -7,7 +7,9 @@ import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
+import '../../../../shared/widgets/image_upload_field.dart';
 import 'package:intl/intl.dart';
+
 
 class DonationCreatePage extends StatefulWidget {
   final String? videoId;
@@ -435,6 +437,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
       case 'community_dropdown': return Icons.location_city_rounded;
       case 'address_picker': return Icons.home_rounded;
       case 'boolean': return Icons.toggle_on_rounded;
+      case 'image': return Icons.image_rounded;
       default: return Icons.text_fields_rounded;
     }
   }
@@ -580,6 +583,17 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
           },
         );
 
+      case 'image':
+        return ImageUploadField(
+          label: field.label,
+          isRequired: field.isRequired,
+          bucket: 'donations',
+          pathPrefix: 'requests/',
+          initialUrl: _globalData[field.id]?.toString(),
+          onUploaded: (url) => setState(() => _globalData[field.id] = url),
+          onRemoved: () => setState(() => _globalData[field.id] = null),
+        );
+
       default:
         return const SizedBox.shrink();
     }
@@ -677,6 +691,22 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             tileColor: Colors.grey[50],
             onChanged: (val) => setState(() => _customData[field.id] = val),
+          ),
+        );
+      }
+
+      // ── image upload ──
+      if (field.type == 'image') {
+        return Padding(
+          padding: const EdgeInsets.only(top: 16.0),
+          child: ImageUploadField(
+            label: field.label,
+            isRequired: field.isRequired,
+            bucket: 'donations',
+            pathPrefix: 'requests/custom/',
+            initialUrl: _customData[field.id]?.toString(),
+            onUploaded: (url) => setState(() => _customData[field.id] = url),
+            onRemoved: () => setState(() => _customData[field.id] = null),
           ),
         );
       }
