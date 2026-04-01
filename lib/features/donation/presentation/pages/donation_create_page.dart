@@ -14,7 +14,8 @@ import 'package:intl/intl.dart';
 
 class DonationCreatePage extends StatefulWidget {
   final String? videoId;
-  const DonationCreatePage({super.key, this.videoId});
+  final String? defaultCategoryId;
+  const DonationCreatePage({super.key, this.videoId, this.defaultCategoryId});
 
   @override
   State<DonationCreatePage> createState() => _DonationCreatePageState();
@@ -48,6 +49,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
   void initState() {
     super.initState();
     _repository = DonationRepository(Supabase.instance.client);
+    _selectedCategoryId = widget.defaultCategoryId;
     _loadInitialData();
   }
 
@@ -480,25 +482,37 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
       // ลบ Logic ส่วนเกินที่บังคับ/สร้าง title ออกอย่างถาวรตามที่ผู้ร้องขอ
       // ตอนนี้ระบบจะส่งข้อมูลแบบ Dynamic จาก Global Fields เท่านั้น
 
-      final newRequestId = await _repository.createRequest(requestData);
+      final newRequestId = await _repository.createRequestWithAutoApproval(
+        requestData,
+        userId, // ✅ ใช้จาก parameter
+        categoryId: _selectedCategoryId,
+        skipVolunteerCheck: widget.videoId != null, // ยกเว้นให้ถ้ามาจากการรับงานบน Live
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('ส่งคำร้องขอเรียบร้อยแล้ว! กำลังรอการยืนยันจากผู้นำชุมชน'),
+            content: Text('ส่งคำร้องขอเรียบร้อยแล้ว!'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
         );
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/profile',
-          (route) => route.isFirst,
-          arguments: {
-            'tabIndex': 0,
-            'highlightRequestId': newRequestId,
-          },
-        );
+        
+        if (widget.videoId != null) {
+          // ถ้าเปิดมาจากหน้า Live ให้ปิดหน้านี้เพื่อกลับไปดู Live ต่อ
+          Navigator.pop(context, newRequestId);
+        } else {
+          // ถ้าเปิดแบบปกติ ให้เปลี่ยนหน้าไปหน้าProfile เพื่อดูสถานะคำร้อง
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/profile',
+            (route) => route.isFirst,
+            arguments: {
+              'tabIndex': 0,
+              'highlightRequestId': newRequestId,
+            },
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error creating request: $e');

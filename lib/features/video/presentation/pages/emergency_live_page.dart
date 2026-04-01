@@ -10,6 +10,9 @@ import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../donation/models/donation_models.dart';
+import '../../../donation/data/repositories/donation_repository.dart';
+import '../../../donation/presentation/pages/donation_create_page.dart';  // ✅ เพิ่ม import
+
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:camera/camera.dart';
@@ -55,7 +58,17 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   int _selectedTab = 0;
   int _viewerCount = 0;
   int _likeCount = 0;
-  double _donationTotal = 0.0;
+  // ✅ รองรับหลายคำร้องต่อวิดีโอเดียว: Map<requestId, currentAmount>
+  Map<String, double> _requestTotals = {};
+  // เก็บรายการคำร้องที่ดึงมาสำหรับแสดงใน ActionButtonsWidget
+  List<DonationRequest> _activeDonationRequests = [];
+  int _activeRequestIndex = 0;
+  // เก็บยอดรวมสำหรับแสดง (หากไม่มีคำร้อง active ใดเลยให้แสดง 0)
+  double get _donationTotal {
+    if (_activeDonationRequests.isEmpty) return 0.0;
+    final req = _activeDonationRequests[_activeRequestIndex.clamp(0, _activeDonationRequests.length - 1)];
+    return _requestTotals[req.id] ?? req.currentAmount ?? 0.0;
+  }
   RealtimeChannel? _supabaseInteractionSub;
   LatLng? _userLocation;
   bool _isConnected = true;
@@ -128,6 +141,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
     _loadInitialData();
+    _loadDonationRequests(); // ✅ โหลดรายการคำร้องบริจาคที่แอคทีฟอยู่
     _startResponderTracking();
     _initCompass();
   }
@@ -437,13 +451,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           isThaiMhungMode: true,
         );
       } else {
-        return LiveViewWidget(
+      return LiveViewWidget(
           chewieController: _chewieController,
           currentVideoId: _currentVideoId,
           currentVideo: _currentVideo,
           formattedViewerCount: _formatCount(_viewerCount),
           likeCountFormatted: _formatCount(_likeCount),
-          donationTotalFormatted: _donationTotal.toStringAsFixed(0),
+          activeRequests: _activeDonationRequests,
+          activeRequestIndex: _activeRequestIndex,
+          // ✅ คำนวณสิทธิ์สร้างคำร้อง: Reporter (เจ้าของวิดีโอ) หรือ Responder ที่อาชีพตรง
+          userCanCreateRequest: _canCreateDonationRequest(),
+          onSwitchRequest: (forward) {
+            if (_activeDonationRequests.isEmpty) return;
+            setState(() {
+              _activeRequestIndex = ((_activeRequestIndex + (forward ? 1 : -1)) %
+                  _activeDonationRequests.length);
+            });
+          },
           trendingVideos: _trendingVideos,
           isLoadingTrending: _isLoadingTrending,
           highlightVideoId: _highlightVideoId,

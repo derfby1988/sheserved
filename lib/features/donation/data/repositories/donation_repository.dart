@@ -107,6 +107,205 @@ class DonationRepository {
         .toList();
   }
 
+  /// ✅ ดึงคำร้องทั้งหมดที่ผูกกับวิดีโอ (รองรับหลายคำร้องต่อวิดีโอเดียว)
+  /// ถ้า activeOnly = true จะดึงเฉพาะที่สถานะ active (เปิดรับบริจาคแล้ว)
+  Future<List<DonationRequest>> getRequestsByVideoId(
+    String videoId, {
+    bool activeOnly = false,
+  }) async {
+    var query = _client
+        .from('donation_requests')
+        .select()
+        .eq('video_id', videoId);
+
+    if (activeOnly) {
+      query = query.eq('approval_status', DonationApprovalStatus.active.name);
+    }
+
+    final response = await query.order('created_at', ascending: true);
+    return (response as List)
+        .map((json) => DonationRequest.fromJson(json))
+        .toList();
+  }
+
+  /// ✅ ตรวจสอบว่าอาชีพของผู้ใช้มีสิทธิ์สร้างคำร้องในหมวดหมู่นี้หรือไม่
+  /// (ต้องอยู่ใน volunteer_profession_ids ที่แอดมินกำหนด)
+  /// คืนค่า null หากมีสิทธิ์, คืนข้อความข้อผิดพลาดหากไม่มีสิทธิ์
+  Future<String?> validateVolunteerEligibility(
+    String userId,
+    String categoryId,
+  ) async {
+    try {
+      // ดึง profession IDs ของผู้ใช้
+      final userProfIds = await getUserApproverProfessions(userId);
+      if (userProfIds.isEmpty) {
+        return 'คุณยังไม่มีการกำหนดอาชีพในระบบ กรุณาอัปเดตโปรไฟล์ก่อน';
+      }
+
+      // ดึง volunteer_profession_ids ของหมวดหมู่นี้
+      final catData = await _client
+          .from('donation_categories')
+          .select('name, volunteer_profession_ids')
+          .eq('id', categoryId)
+          .maybeSingle();
+
+      if (catData == null) {
+        return 'ไม่พบข้อมูลหมวดหมู่การบริจาค';
+      }
+
+      final categoryName = catData['name']?.toString() ?? 'หมวดหมู่นี้';
+      final volunteerIds = List<String>.from(
+          (catData['volunteer_profession_ids'] as List? ?? [])
+              .map((e) => e.toString()));
+
+      // ถ้าแอดมินไม่กำหนด volunteer_profession_ids เลย → ไม่จำกัดสิทธิ์
+      if (volunteerIds.isEmpty) return null;
+
+      // ตรวจว่าอาชีพใดของผู้ใช้ที่ตรง
+      final hasEligibleProfession =
+          userProfIds.any((pid) => volunteerIds.contains(pid));
+
+      if (!hasEligibleProfession) {
+        // ดึงชื่ออาชีพที่อนุญาตมาแสดงในข้อความแจ้งเตือน
+        final profNames = await _client
+            .from('professions')
+            .select('name')
+            .inFilter('id', volunteerIds);
+        final allowedNames = (profNames as List)
+            .map((p) => p['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .join(', ');
+        return 'หมวดหมู่ "$categoryName" กำหนดให้เฉพาะอาชีพ: $allowedNames เท่านั้นที่สามารถสร้างคำร้องบริจาคได้ (อาชีพของคุณไม่ตรงกับที่แอดมินกำหนด)';
+      }
+
+      return null; // มีสิทธิ์
+    } catch (e) {
+      return null; // กรณี error ให้ผ่านไปก่อน
+    }
+  }
+
+  /// ✅ สร้างคำร้องพร้อมตรวจสอบสิทธิ์อาชีพและอนุมัติอัตโนมัติ
+  /// สำหรับใช้ใน Emergency Flow (Responder/Reporter สร้างคำร้องจากหน้า Live)
+  /// คืนค่า requestId หากสำเร็จ หรือ throw Exception พร้อมข้อความแจ้งเตือน
+  Future<String> createRequestWithAutoApproval(
+    Map<String, dynamic> data,
+    String requesterId, {
+    String? categoryId,
+    bool skipVolunteerCheck = false,
+  }) async {
+    final usedCategoryId = categoryId ?? data['category_id']?.toString();
+    if (usedCategoryId == null) {
+      throw Exception('กรุณาระบุหมวดหมู่การบริจาค');
+    }
+
+    // --- Obstacle 3: ตรวจสอบสิทธิ์อาชีพก่อน ---
+    if (!skipVolunteerCheck) {
+      final eligibilityError = await validateVolunteerEligibility(
+        requesterId, usedCategoryId);
+      if (eligibilityError != null) {
+        throw Exception(eligibilityError);
+      }
+    }
+
+    // --- สร้างคำร้อง ---
+    final newRequestId = await createRequest(data);
+
+    // --- Obstacle 1: ตรวจสอบ Auto-Approval ---
+    // ดึงอาชีพของผู้ร้องขอ
+    final userProfIds = await getUserApproverProfessions(requesterId);
+    // ดึง approver_profession_ids (user category IDs) ของหมวดหมู่
+    final catData = await _client
+        .from('donation_categories')
+        .select('approver_profession_ids')
+        .eq('id', usedCategoryId)
+        .maybeSingle();
+
+    if (catData != null && userProfIds.isNotEmpty) {
+      final requiredCatIds = List<String>.from(
+          (catData['approver_profession_ids'] as List? ?? [])
+              .map((e) => e.toString()));
+
+      if (requiredCatIds.isNotEmpty) {
+        // ดึง user_category ของอาชีพผู้ร้องขอ
+        final profCatMap = await getProfessionCategoryMap(userProfIds);
+
+        // วนหาว่าอาชีพผู้ร้องขอตรงกับ user category ในลำดับอนุมัติหรือไม่
+        for (final profId in userProfIds) {
+          final userCatId = profCatMap[profId];
+          if (userCatId != null && requiredCatIds.contains(userCatId)) {
+            // ✅ อาชีพนี้เป็นผู้อนุมัติในหมวดนี้ → บันทึกการอนุมัติอัตโนมัติ
+            try {
+              await _client.from('donation_request_approvals').upsert({
+                'request_id': newRequestId,
+                'profession_id': profId,
+                'approved_by': requesterId,
+                'status': 'approved',
+                'approved_at': DateTime.now().toIso8601String(),
+              }, onConflict: 'request_id,profession_id');
+            } catch (_) {} // ถ้าเกิด error ในขั้นนี้ให้ข้ามไป ไม่ block การสร้างคำร้อง
+          }
+        }
+
+        // ตรวจสอบว่าอนุมัติครบทุกกลุ่มแล้วหรือยัง
+        await _checkAndActivateRequest(newRequestId, usedCategoryId);
+      }
+    }
+
+    return newRequestId;
+  }
+
+  /// ตรวจสอบว่าคำร้องผ่านการอนุมัติครบทุกกลุ่มแล้วหรือไม่ → ถ้าครบ เปลี่ยนเป็น active
+  Future<void> _checkAndActivateRequest(
+      String requestId, String categoryId) async {
+    try {
+      final catData = await _client
+          .from('donation_categories')
+          .select('approver_profession_ids')
+          .eq('id', categoryId)
+          .single();
+      final requiredIds = List<String>.from(
+          (catData['approver_profession_ids'] as List? ?? [])
+              .map((e) => e.toString()));
+
+      if (requiredIds.isEmpty) {
+        // ถ้าไม่มีผู้อนุมัติที่กำหนด → active ทันที
+        await _client.from('donation_requests').update({
+          'approval_status': DonationApprovalStatus.active.name,
+          'local_verified_at': DateTime.now().toIso8601String(),
+        }).eq('id', requestId);
+        return;
+      }
+
+      // ดึงการอนุมัติที่มีอยู่แล้ว
+      final approvedData = await _client
+          .from('donation_request_approvals')
+          .select('profession_id')
+          .eq('request_id', requestId)
+          .eq('status', 'approved');
+      final approvedProfIds =
+          (approvedData as List).map((r) => r['profession_id'].toString()).toList();
+
+      if (approvedProfIds.isEmpty) return;
+
+      final approvedCats = <String>{};
+      final catResp = await _client
+          .from('professions')
+          .select('category')
+          .inFilter('id', approvedProfIds);
+      for (final r in (catResp as List)) {
+        if (r['category'] != null) approvedCats.add(r['category'].toString());
+      }
+
+      final allApproved = requiredIds.every((id) => approvedCats.contains(id));
+      if (allApproved) {
+        await _client.from('donation_requests').update({
+          'approval_status': DonationApprovalStatus.active.name,
+          'local_verified_at': DateTime.now().toIso8601String(),
+        }).eq('id', requestId);
+      }
+    } catch (_) {}
+  }
+
   /// ดึงคำร้องขอที่กำลังเป็นที่นิยม
   Future<List<DonationRequest>> getTrendingRequests() async {
     final response = await _client

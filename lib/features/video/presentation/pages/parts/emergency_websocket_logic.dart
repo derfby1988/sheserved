@@ -20,10 +20,16 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     _interactionSub = ws.videoInteractionStream.listen((data) {
       if (_currentVideoId != null && data['videoId'] == _currentVideoId) {
         if (mounted) {
-          setState(() { 
-            if (data['type'] == 'like') _likeCount++; 
-            if (data['type'] == 'gift') _donationTotal += (data['value'] ?? 0); 
-            // หมายเหตุ: ไม่นับ view ที่นี่ เพราะ viewerCountStream จัดการค่า unique viewers อยู่แล้ว
+          setState(() {
+            if (data['type'] == 'like') _likeCount++;
+            if (data['type'] == 'gift') {
+              // ✅ อัปเดตยอดตาม requestId ถ้ามี (ไม่ใช้ตัวแปรเดียวอีกต่อไป)
+              final reqId = data['requestId']?.toString();
+              final amount = (data['value'] as num?)?.toDouble() ?? 0.0;
+              if (reqId != null && reqId.isNotEmpty) {
+                _requestTotals[reqId] = (_requestTotals[reqId] ?? 0) + amount;
+              }
+            }
           });
         }
       }
@@ -128,8 +134,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
        if (mounted && _currentVideoId == videoId) { 
          setState(() { 
            if (payload['type'] == 'like') _likeCount++; 
-           if (payload['type'] == 'gift') _donationTotal += (payload['value'] ?? 0); 
-           // หมายเหตุ: ไม่นับ view ที่นี่ เพราะ viewerCountStream จัดการค่า unique viewers อยู่แล้ว
+           // ✅ ไม่เพิ่มยอด gift ที่นี่ เพราะ websocket.videoInteractionStream จัดการแยกตาม requestId อยู่แล้ว
+           // ครั้งนี้ Supabase sub ทำหน้าที่เป็น fallback เพื่อนับ like ที่เกิดขึ้นขณะ WebSocket offline เท่านั้น
          }); 
        }
     });

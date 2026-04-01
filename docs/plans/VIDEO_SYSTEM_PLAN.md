@@ -18,6 +18,14 @@
 7. **Update DB**: อัปเดตสถานะและ URL เพื่อพร้อมใช้งาน
 8. **Notify**: แจ้งสถานะและความคืบหน้าผ่าน WebSocket
 
+### 🚨 นโยบายการจัดการพื้นที่จัดเก็บข้อมูล (Storage Policy - Mandatory)
+
+เพื่อให้ระบบทำงานได้เสถียรและป้องกันปัญหาพื้นที่เครื่องหลักเต็ม (Disk Full) ให้ยึดถือแนวทางดังนี้:
+
+1. **บันทึกลง External Drive เท่านั้น**: ไฟล์วิดีโอ (Raw/Temp) และภาพหน้าปกวิดีโอ (Thumbnails) ทั้งหมด ต้องเก็บไว้ที่ `/Volumes/PostgreSQL/sheserved_videos`
+2. **ห้ามย้ายไปเก็บที่ Local Harddisk**: ห้ามเปลี่ยน `TEMP_VIDEO_PATH` ใน `.env` กลับเป็น `./temp/videos` บน Macintosh HD โดยเด็ดขาด
+3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ifconfig`) และระบุค่าให้ตรงกันทั้งใน `AppConfig.mainMachineIp` (Flutter) และ `.env` (Server) ทุกครั้งที่มีการเปลี่ยนวง Network เพื่อให้การสื่อสารระหว่างอุปกรณ์ไม่ติดขัด
+
 ### สถาปัตยกรรม
 
 ```
@@ -247,7 +255,13 @@ DB_PORT=5432
 # Server
 PORT=3000
 
-# Bunny.net
+# External Storage path (MANDATORY: MUST POINT TO EXTERNAL DRIVE)
++TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
++
++# Server Network
++LOCAL_API_URL=http://192.168.1.164:3000
++
++# Bunny.net
 BUNNY_API_KEY=<your_api_key>
 BUNNY_STORAGE_ZONE=<your_storage_zone>
 BUNNY_CDN_URL=<your_cdn_url>
@@ -256,6 +270,7 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
+LOCAL_API_URL=http://192.168.1.164:3000
 ```
 
 ## Cost Estimation
@@ -729,3 +744,22 @@ CREATE TABLE emergency_health_data (
 ```
 
 ---
+
+## 5. การผนวกรวมระบบบริจาคเข้ากับวีดีโอฉุกเฉิน (Emergency Donation Integration)
+
+จากแผนร่วมของระบบ Donation และ Video ได้ทำการบูรณาการการทำงานเพื่อให้วิดีโอฉุกเฉินหนึ่งรายการสามารถดึงดูดและรองรับยอดบริจาคได้หลายสาขาและหลากหมวดหมู่ โดยมีระบบที่ทำงานเสร็จสิ้นดังนี้:
+
+### 1. การอนุมัติคำร้องแบบอัตโนมัติ (Role-based Auto-Approval)
+- หากผู้เข้าให้ความช่วยเหลือ (Responder) ทำการสร้างคำร้องบริจาคในหน้า Live สถานะของคำร้องจะได้รับการตรวจสอบสิทธิและบันทึกข้อมูลตาราง `donation_request_approvals` ในขั้นแรกให้โดยอัตโนมัติ
+- ใช้ `createRequestWithAutoApproval` ใน `DonationRepository` เพื่อเป็นสื่อกลางหลัก
+
+### 2. ปุ่มบริจาคแบบทูเวย์ (Dual-mode Donation Button) ใน ActionButtonsWidget
+- **ผู้สร้าง (Reporter) / ผู้ช่วยเหลือรายอื่น**: หากตรงกับ `volunteer_profession_ids` จะเห็นปุ่ม "**เปิดรับบริจาค**" สีเขียว หรือ "**รับบริจาค**" สีฟ้า
+- **ผู้ชม (Viewer)**: จะไม่เห็นปุ่มใดๆ หากไม่มีคำร้องที่ Active เพื่อลดความสับสน หากมีคำร้องจะกลับกลายเป็นปุ่ม "**บริจาค**" สีส้ม
+- การกดปุ่มสร้างคำร้อง ระบบจะส่งค่าตัวแปร `videoId` และ `defaultCategoryId` ไปยังหน้า `DonationCreatePage` แบบเต็มรูปแบบอัตโนมัติ
+- ทันทีที่กดตกลง ระบบจะ Pop ปิดหน้ากลับมาโผล่ที่หน้า Live ปกติทันที พร้อมดึงคำร้องที่เพิ่งสร้างนี้มาเป็นที่คั่นหน้าหลักแสดงให้ผู้ใช้และผู้ชมคนอื่นๆ เห็น
+
+### 3. ส่วนต่อประสานตัวแสดงคำร้องแบบซ้อน (Stacked Request Carousel)
+- วิดีโอหนึ่งรายการสามารถมีคำร้องได้มากกว่าหนึ่งรายการ: 
+  - การ์ดปุ่มกดบริจาค จะดึงเอาชื่อ **Title (หมวดหมู่ของคำร้อง)** มาแสดงแทนตัวเลข (เช่น `[ 250 ] [ ค่าพยาบาลฉุกเฉิน ]`) 
+  - ผู้ชมสามารถกดลูกศร ซ้าย-ขวา ในบริเวณเดิมเพื่อสลับดูและตรวจสอบยอดของคำร้องต่างๆ (แยก Tracking ยอดผ่าน `_requestTotals` ผูกกับ `requestId` ทันทีที่ WebSocket Broadcast) โดยไม่พัง Aspect Ratio ของส่วน UI โคนวิดีโอ

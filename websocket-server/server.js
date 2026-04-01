@@ -354,8 +354,9 @@ io.on('connection', (socket) => {
 
   // Handle Video Interactions
   socket.on('video-interaction', async (data) => {
-    const { videoId, userId, type, value } = data;
-    console.log(`[Video ${videoId}] Interaction from ${userId}: ${type} (${value})`);
+    // ✅ รองรับ requestId เพื่อแยกยอดบริจาคตามคำร้องแต่ละใบในวิดีโอเดียวกัน
+    const { videoId, userId, type, value, requestId } = data;
+    console.log(`[Video ${videoId}] Interaction from ${userId}: ${type} (${value}) requestId=${requestId}`);
 
     if (pool && videoId && userId) {
       try {
@@ -365,23 +366,39 @@ io.on('connection', (socket) => {
           [videoId, userId, type, value || 0]
         );
 
-        // [Donation Integration]: If it's a gift, try to updatethe associated donation request
+        // [Donation Integration]: ถ้าเป็นการบริจาค (gift) ให้อัปเดต donation_request ที่เกี่ยวข้อง
         if (type === 'gift') {
           try {
-            const donationRes = await pool.query(
-              `UPDATE donation_requests 
-               SET current_amount = current_amount + $1, updated_at = NOW() 
-               WHERE video_id = $2 AND approval_status = 'active'
-               RETURNING id, current_amount, target_amount`,
-              [value || 0, videoId]
-            );
-            if (donationRes.rows.length > 0) {
+            let donationRes;
+            if (requestId) {
+              // ✅ มี requestId → อัปเดตเฉพาะคำร้องใบนั้น (Multi-request Support)
+              donationRes = await pool.query(
+                `UPDATE donation_requests 
+                 SET current_amount = current_amount + $1, updated_at = NOW() 
+                 WHERE id = $2 AND video_id = $3 AND approval_status = 'active'
+                 RETURNING id, current_amount, target_amount, title`,
+                [value || 0, requestId, videoId]
+              );
+            } else {
+              // ✅ ไม่มี requestId → Fallback: อัปเดตคำร้องแรกที่ active ของวิดีโอนี้
+              donationRes = await pool.query(
+                `UPDATE donation_requests 
+                 SET current_amount = current_amount + $1, updated_at = NOW() 
+                 WHERE video_id = $2 AND approval_status = 'active'
+                 ORDER BY created_at ASC
+                 LIMIT 1
+                 RETURNING id, current_amount, target_amount, title`,
+                [value || 0, videoId]
+              );
+            }
+            if (donationRes && donationRes.rows.length > 0) {
               const updatedDonation = donationRes.rows[0];
-              console.log(`[Donation] Updated for video ${videoId}: ${updatedDonation.current_amount}/${updatedDonation.target_amount}`);
-              // Broadcast donation update to everyone watching the video
+              console.log(`[Donation] Updated request ${updatedDonation.id} for video ${videoId}: ${updatedDonation.current_amount}/${updatedDonation.target_amount}`);
+              // ✅ broadcast donation update พร้อม requestId เพื่อให้ Flutter แยกยอดได้ถูกต้อง
               io.to(`room-video-${videoId}`).emit('donation-progress-updated', {
                 videoId,
-                donationId: updatedDonation.id,
+                requestId: updatedDonation.id,
+                donationTitle: updatedDonation.title,
                 currentAmount: updatedDonation.current_amount,
                 targetAmount: updatedDonation.target_amount,
               });
@@ -391,14 +408,14 @@ io.on('connection', (socket) => {
           }
         }
 
-        // Broadcast back to clients in the room
-        socketService.broadcastInteraction(videoId, { videoId, userId, type, value });
+        // Broadcast interaction กลับไปยัง clients ในห้อง พร้อม requestId
+        socketService.broadcastInteraction(videoId, { videoId, userId, type, value, requestId });
       } catch (err) {
         console.error('Failed to save interaction:', err.message);
       }
     } else {
       // Demo mode / No DB: Broadcast blindly
-      socketService.broadcastInteraction(videoId, { videoId, userId, type, value });
+      socketService.broadcastInteraction(videoId, { videoId, userId, type, value, requestId });
     }
   });
 
@@ -1445,9 +1462,33 @@ app.get('/api/sync/status', async (req, res) => {
   }
 });
 
-// Start server
+// Handle server listen with automated IP detection
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`WebSocket Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+const os = require('os');
+
+server.listen(PORT, '0.0.0.0', () => {
+  const networkInterfaces = os.networkInterfaces();
+  let localIp = 'localhost';
+
+  // ตรวจหา IP ที่ไม่ใช่ 127.0.0.1 (Loopback)
+  Object.keys(networkInterfaces).forEach((ifname) => {
+    networkInterfaces[ifname].forEach((iface) => {
+      if ('IPv4' !== iface.family || iface.internal !== false) {
+        return;
+      }
+      localIp = iface.address;
+    });
+  });
+
+  console.log(`
+  ======================================================
+  🚀 WebSocket Server (Sheserved) is READY!
+  ======================================================
+  📍 Local:    http://localhost:${PORT}
+  🌍 Network:  http://${localIp}:${PORT}
+  
+  📱 กรุณาตรวจสอบ AppConfig.java หรือ AppConfig.dart
+     และอัปเดต mainMachineIp ให้เป็น: ${localIp}
+  ======================================================
+  `);
 });

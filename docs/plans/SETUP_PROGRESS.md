@@ -102,9 +102,9 @@ psql -h <IP_ADDRESS> -U sheserved -d sheserved
 - **Filesystem:** APFS
 - **PostgreSQL Version:** 14.20
 - **Port:** 5432
-- **Database Name:** `tree_law_zoo` (จะสร้างในขั้นตอน 0.3)
-- **Database User:** `sheserved` (จะสร้างในขั้นตอน 0.3)
-- **IP Address:** ยังต้องหา (ไม่ใช่ `192.168.1.255`)
+- **Database Name:** `sheserved`
+- **Database User:** `dave_macmini`
+- **IP Address:** 192.168.1.164 (เครื่องหลัก)
 
 ---
 

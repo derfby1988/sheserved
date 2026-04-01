@@ -73,7 +73,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       final summary = await ServiceLocator.instance.videoRepository.getInteractionSummary(_currentVideoId!);
       // หมายเหตุ: ไม่ตั้ง _viewerCount จาก summary เพราะ summary['views'] คือยอดสะสม (ทั้งหมดที่เคยดู)
       // ค่า _viewerCount ที่ถูกต้องจะมาจาก WebSocket viewer-count event (real-time unique viewers)
-      setState(() { _likeCount = summary['likes'] ?? 0; _donationTotal = summary['donations']?.toDouble() ?? 0.0; });
+      setState(() { _likeCount = summary['likes'] ?? 0; });
+
       _checkPrivacyPermissions();
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
       if (mounted) {
@@ -326,8 +327,24 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     _interactionSub?.cancel(); _supabaseInteractionSub?.unsubscribe(); _progressSub?.cancel(); _rescueIncomingSub?.cancel(); _videoStatusSub?.cancel(); _emergencySub?.cancel();
     _videoPlayerController?.removeListener(_syncGpsWithVideo); _videoPlayerController?.dispose(); _videoPlayerController = null;
     _chewieController?.dispose(); _chewieController = null;
-    setState(() { _currentVideoId = newVideoId; _highlightVideoId = null; _currentVideo = null; _dbGpsTracks.clear(); _routePoints.clear(); _responders.clear(); _lastSyncedVideoTrack = null; _likeCount = 0; _donationTotal = 0.0; _viewerCount = 0; });
-    _setupWebSocketStreams(); _loadInitialData();
+    setState(() {
+      _currentVideoId = newVideoId;
+      _highlightVideoId = null;
+      _currentVideo = null;
+      _dbGpsTracks.clear();
+      _routePoints.clear();
+      _responders.clear();
+      _lastSyncedVideoTrack = null;
+      _likeCount = 0;
+      _viewerCount = 0;
+      // ✅ Reset รายการคำร้องบริจาคเมื่อสลับวิดีโอ
+      _activeDonationRequests = [];
+      _requestTotals = {};
+      _activeRequestIndex = 0;
+    });
+    _setupWebSocketStreams();
+    _loadInitialData();
+    _loadDonationRequests(); // ✅ โหลดคำร้องใหม่สำหรับวิดีโอใหม่
   }
 
   void _onThaiMhungTabSelected() async {
@@ -389,12 +406,128 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
+  /// ✅ ตรวจสอบว่าผู้ใช้คนนี้มีสิทธิ์สร้างคำร้องบริจาคแบบ Inline (ในหน้า Live) หรือไม่
+  /// - Reporter: เจ้าของวิดีโอ (ผู้แจ้งเหตุเอง)
+  /// - Responder: มี _currentResponseId และอาชีพอยู่ใน volunteer_profession_ids
+  bool _canCreateDonationRequest() {
+    final user = AuthService.instance.currentUser;
+    if (user == null || _currentVideo == null) return false;
+
+    final currentUserId = user.id?.toString();
+    final ownerId = _currentVideo?.userId?.toString();
+
+    // Reporter: เจ้าของวิดีโอ (ผู้แจ้งเหตุเอง)
+    if (ownerId != null && currentUserId != null &&
+        ownerId.trim() == currentUserId.trim()) return true;
+
+    // Responder: รับงานช่วยเหลือแล้ว และอาชีพตรงกับหมวดหมู่
+    if (_currentResponseId != null) {
+      final catId = _currentVideo?.categoryId;
+      final category =
+          _emergencyCategories.where((c) => c.id == catId).firstOrNull;
+      final userProfId = user.professionId;
+      if (category != null && userProfId != null &&
+          category.volunteerProfessionIds.contains(userProfId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _showDonationSheet() {
     if (_currentVideoId == null) return;
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => DonationSheetWidget(videoId: _currentVideoId!, onDonate: (amount) => setState(() => _donationTotal += amount) ));
+
+    if (_canCreateDonationRequest()) {
+      // ✅ โหมด Reporter/Responder: เปิด Sheet สร้างคำร้องบริจาคใหม่
+      _showCreateDonationRequestSheet();
+    } else {
+      // ✅ โหมด Viewer/ThaiMhung: เปิด Sheet เลือก/บริจาคคำร้องที่มีอยู่
+      if (_activeDonationRequests.isEmpty) return; // ซ่อนโดยไม่ไปถึงทั้งนี้เพราะปุ่มซ่อนอยู่เมื่อไม่มีคำร้อง
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => DonationSheetWidget(
+          videoId: _currentVideoId!,
+          onDonate: (amount, requestId) {
+            setState(() {
+              if (requestId != null) {
+                _requestTotals[requestId] =
+                    (_requestTotals[requestId] ?? 0) + amount;
+              }
+            });
+            final userId =
+                ServiceLocator.instance.currentUser?.id ?? 'anonymous';
+            final socket = WebSocketService().socket;
+            if (socket != null && socket.connected && _currentVideoId != null) {
+              socket.emit('video-interaction', {
+                'videoId': _currentVideoId,
+                'userId': userId,
+                'type': 'gift',
+                'value': amount,
+                if (requestId != null) 'requestId': requestId,
+              });
+            }
+          },
+        ),
+      );
+    }
+  }
+
+  /// ✅ เปิดหน้าสร้างคำร้องบริจาคสำหรับ Reporter/Responder 
+  /// ใช้ DonationCreatePage เต็มรูปแบบแทน Quick Bottom Sheet เพื่อรองรับระบบแบบเดียวกับหน้า donation
+  void _showCreateDonationRequestSheet() {
+    if (_currentVideoId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DonationCreatePage(
+          videoId: _currentVideoId,
+          defaultCategoryId: _currentVideo?.categoryId,
+        ),
+      ),
+    ).then((newRequestId) async {
+      // Reload active requests when returning
+      await _loadDonationRequests();
+      
+      // เลือกคำร้องที่เพิ่งสร้างขึ้นมาใหม่หากถูก return กลับมา
+      if (newRequestId is String && mounted) {
+        final index = _activeDonationRequests.indexWhere((r) => r.id == newRequestId);
+        if (index != -1) {
+          setState(() {
+            _activeRequestIndex = index;
+          });
+        }
+      }
+    });
+  }
+
+
+  /// ✅ ดึงรายการคำร้องบริจาคที่เปิดใช้งานสำหรับวิดีโอนี้
+  Future<void> _loadDonationRequests() async {
+    if (_currentVideoId == null) return;
+    try {
+      final repo = DonationRepository(Supabase.instance.client);
+      final requests =
+          await repo.getRequestsByVideoId(_currentVideoId!, activeOnly: true);
+      if (mounted) {
+        setState(() {
+          _activeDonationRequests = requests;
+          _activeRequestIndex = 0;
+          for (final r in requests) {
+            if (r.id != null) {
+              _requestTotals[r.id!] = r.currentAmount ?? 0.0;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[EmergencyLivePage] Failed to load donation requests: $e');
+    }
   }
 
   Future<void> _reportThaiMhungEmergency(String description) async {
+
     final userId = AuthService.instance.userId;
     if (userId == null || _capturedPhotos.isEmpty) return;
     showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
