@@ -264,3 +264,129 @@ class DonationStats {
   });
 }
 
+// =============================================================
+// PAYMENT TRANSACTION MODELS
+// =============================================================
+
+/// ช่องทางการชำระเงิน
+/// mock   → ใช้ใน Development: auto-confirm ทันที ไม่เสียเงินจริง
+/// promptpay  → Production: แสดง QR Code แล้วรอ Webhook ยืนยัน
+/// omiseCard  → Production: เชื่อม Omise SDK
+enum PaymentMethod {
+  mock,
+  promptpay,
+  omiseCard;
+
+  String get dbValue {
+    switch (this) {
+      case PaymentMethod.mock:
+        return 'mock';
+      case PaymentMethod.promptpay:
+        return 'promptpay';
+      case PaymentMethod.omiseCard:
+        return 'omise_card';
+    }
+  }
+
+  static PaymentMethod fromString(String? value) {
+    switch (value) {
+      case 'promptpay':
+        return PaymentMethod.promptpay;
+      case 'omise_card':
+        return PaymentMethod.omiseCard;
+      default:
+        return PaymentMethod.mock;
+    }
+  }
+}
+
+/// สถานะของ Transaction การชำระเงิน
+enum DonationTransactionStatus {
+  /// รอการชำระ / รอ Webhook ยืนยัน
+  pending,
+  /// ชำระสำเร็จ — `donation_requests.current_amount` ถูกอัปเดตแล้ว
+  confirmed,
+  /// ชำระล้มเหลว / ยกเลิก
+  failed;
+
+  static DonationTransactionStatus fromString(String? value) {
+    switch (value) {
+      case 'confirmed':
+        return DonationTransactionStatus.confirmed;
+      case 'failed':
+        return DonationTransactionStatus.failed;
+      default:
+        return DonationTransactionStatus.pending;
+    }
+  }
+}
+
+/// บันทึก Transaction การชำระเงินบริจาคแต่ละครั้ง
+/// สร้างขึ้นเมื่อผู้ใช้กดบริจาค และอัปเดตเมื่อชำระสำเร็จ/ล้มเหลว
+class DonationTransaction {
+  final String id;
+  final String requestId;
+  final String donorUserId;
+  final double amount;
+  final PaymentMethod paymentMethod;
+
+  /// Reference จาก Payment Gateway (null ขณะ pending ใน mock mode)
+  final String? paymentReference;
+  final DonationTransactionStatus status;
+  final DateTime? confirmedAt;
+  final DateTime createdAt;
+
+  const DonationTransaction({
+    required this.id,
+    required this.requestId,
+    required this.donorUserId,
+    required this.amount,
+    required this.paymentMethod,
+    this.paymentReference,
+    required this.status,
+    this.confirmedAt,
+    required this.createdAt,
+  });
+
+  factory DonationTransaction.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic v) {
+      if (v == null) return 0.0;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }
+
+    return DonationTransaction(
+      id: json['id'] as String,
+      requestId: json['request_id'] as String,
+      donorUserId: json['donor_user_id'] as String,
+      amount: parseDouble(json['amount']),
+      paymentMethod: PaymentMethod.fromString(json['payment_method']?.toString()),
+      paymentReference: json['payment_reference']?.toString(),
+      status: DonationTransactionStatus.fromString(json['status']?.toString()),
+      confirmedAt: json['confirmed_at'] != null
+          ? DateTime.parse(json['confirmed_at'] as String)
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'request_id': requestId,
+      'donor_user_id': donorUserId,
+      'amount': amount,
+      'payment_method': paymentMethod.dbValue,
+      'payment_reference': paymentReference,
+      'status': status.name,
+      'confirmed_at': confirmedAt?.toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+
+  bool get isPending => status == DonationTransactionStatus.pending;
+  bool get isConfirmed => status == DonationTransactionStatus.confirmed;
+  bool get isFailed => status == DonationTransactionStatus.failed;
+}

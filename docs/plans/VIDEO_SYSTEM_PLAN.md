@@ -754,12 +754,109 @@ CREATE TABLE emergency_health_data (
 - ใช้ `createRequestWithAutoApproval` ใน `DonationRepository` เพื่อเป็นสื่อกลางหลัก
 
 ### 2. ปุ่มบริจาคแบบทูเวย์ (Dual-mode Donation Button) ใน ActionButtonsWidget
-- **ผู้สร้าง (Reporter) / ผู้ช่วยเหลือรายอื่น**: หากตรงกับ `volunteer_profession_ids` จะเห็นปุ่ม "**เปิดรับบริจาค**" สีเขียว หรือ "**รับบริจาค**" สีฟ้า
+- **ผู้สร้าง (Reporter)**: จะเห็นปุ่ม "**เปิดรับบริจาค**" สีเขียว ได้ก็ต่อเมื่อมีผู้ช่วยเหลือรายอื่นคนใดคนหนึ่งเดินทางมาถึงจุดเกิดเหตุแล้ว เพื่อให้เป็นพยานว่าเกิดเหตุการณ์นั้นจริง
+- **ผู้ช่วยเหลือรายอื่น**: หากตรงกับ `volunteer_profession_ids` จะเห็นปุ่ม "**เปิดรับบริจาค**" สีเขียว หรือ "**รับบริจาค**" สีฟ้า
 - **ผู้ชม (Viewer)**: จะไม่เห็นปุ่มใดๆ หากไม่มีคำร้องที่ Active เพื่อลดความสับสน หากมีคำร้องจะกลับกลายเป็นปุ่ม "**บริจาค**" สีส้ม
 - การกดปุ่มสร้างคำร้อง ระบบจะส่งค่าตัวแปร `videoId` และ `defaultCategoryId` ไปยังหน้า `DonationCreatePage` แบบเต็มรูปแบบอัตโนมัติ
+  - **เงื่อนไข Dropdown หมวดหมู่**: ทั้ง **ผู้สร้าง (Reporter)** และ **ผู้ช่วยเหลือรายอื่น (Responder)** มีสิทธิ์สลับเปลี่ยนประเภทความช่วยเหลือใน Dropdown ได้เท่าเทียมกัน
+    - **ข้อจำกัด**: Dropdown จะแสดงเฉพาะ **หมวดหมู่บริจาคปกติ** (`is_emergency = false`) เท่านั้น — ไม่รวมหมวดหมู่ฉุกเฉิน เนื่องจากคำร้องบริจาคจากหน้า Live เป็นการขอสิ่งของหรือเงินทุน ไม่ใช่การแจ้งเหตุอีกรอบ
+    - **Default**: ระบบจะ auto-select หมวดหมู่ที่มีค่า `display_order` น้อยที่สุดในตาราง `donation_categories` (เรียงจากน้อยไปมาก) โดยอัตโนมัติ — ค่า Default ปัจจุบันตามตารางจริงคือ **"ที่พัก"** (ผู้ดูแลระบบสามารถเปลี่ยนได้โดยปรับ `display_order` ในหน้าจัดการระบบบริจาค)
 - ทันทีที่กดตกลง ระบบจะ Pop ปิดหน้ากลับมาโผล่ที่หน้า Live ปกติทันที พร้อมดึงคำร้องที่เพิ่งสร้างนี้มาเป็นที่คั่นหน้าหลักแสดงให้ผู้ใช้และผู้ชมคนอื่นๆ เห็น
 
 ### 3. ส่วนต่อประสานตัวแสดงคำร้องแบบซ้อน (Stacked Request Carousel)
 - วิดีโอหนึ่งรายการสามารถมีคำร้องได้มากกว่าหนึ่งรายการ: 
   - การ์ดปุ่มกดบริจาค จะดึงเอาชื่อ **Title (หมวดหมู่ของคำร้อง)** มาแสดงแทนตัวเลข (เช่น `[ 250 ] [ ค่าพยาบาลฉุกเฉิน ]`) 
   - ผู้ชมสามารถกดลูกศร ซ้าย-ขวา ในบริเวณเดิมเพื่อสลับดูและตรวจสอบยอดของคำร้องต่างๆ (แยก Tracking ยอดผ่าน `_requestTotals` ผูกกับ `requestId` ทันทีที่ WebSocket Broadcast) โดยไม่พัง Aspect Ratio ของส่วน UI โคนวิดีโอ
+
+---
+
+## Emergency Donation Payment Flow (Updated 2026-04-08)
+
+> **นโยบาย:** ยอดที่แสดงบนหน้าจอต้องสะท้อนเฉพาะการชำระเงินที่ **ยืนยันแล้วจริง** เท่านั้น
+> ไม่ใช้ Optimistic Accumulation อีกต่อไป เพราะผู้ใช้อาจกดหลายครั้งโดยไม่ชำระจริง
+
+### Flow ทั้งหมด (9 ขั้นตอน)
+
+```
+1. Viewer กดปุ่ม [บริจาค] → เลือกคำร้องและจำนวนเงิน
+2. ระบบสร้าง donation_transactions record (status: 'pending')
+3. Dev mode  → auto-confirm หลัง 1.5 วินาที (mock — ไม่เสียเงิน)
+   Prod mode → แสดง PromptPay QR หรือ redirect Omise
+4. (Production only) Payment Provider ส่ง Webhook ยืนยัน
+5. เรียก DB Function confirm_donation_transaction (atomic):
+     a. donation_transactions.status = 'confirmed'
+     b. donation_requests.current_amount += amount
+6. Emit WebSocket 'donation-confirmed' event พร้อม requestId + newTotal
+7. Real-time ตัวเลขอัปเดตบนจอผู้ชมทุกคนพร้อมกัน
+```
+
+### Flow ใน Code (Flutter)
+
+```dart
+// เรียกจาก donation_sheet_widget.dart หรือ emergency_navigation_logic.dart
+final result = await PaymentService.instance.initiateDonation(
+  requestId: selectedRequestId,
+  donorUserId: currentUser.id,
+  amount: selectedAmount,
+  method: PaymentMethod.mock, // Dev: ไม่เสียเงิน | Prod: .promptpay / .omiseCard
+);
+
+if (result.isConfirmed) {
+  // Emit socket event เพื่ออัปเดต Real-time ให้ผู้ชมทุกคน
+  socket.emit('video-interaction', {
+    'type': 'donation',
+    'requestId': selectedRequestId,
+    'amount': selectedAmount,
+    'videoId': currentVideoId,
+  });
+} else if (result.isPending && result.qrPayload != null) {
+  // แสดง QR Dialog สำหรับ PromptPay (Production)
+  showPromptPayQrDialog(context, qrPayload: result.qrPayload!);
+} else if (result.isFailed) {
+  showErrorSnackbar(result.error ?? 'เกิดข้อผิดพลาด');
+}
+```
+
+### ข้อแตกต่างจากระบบเดิม
+
+| หัวข้อ | ระบบเดิม | ระบบใหม่ |
+|:---|:---|:---|
+| อัปเดตยอด | Optimistic (ทันที ไม่ verify) | หลังยืนยันการชำระจริงเท่านั้น |
+| Audit Trail | ไม่มี | `donation_transactions` table ทุก transaction |
+| กันกด spam | ไม่มี | status `pending` ป้องกัน double-confirm |
+| Dev ไม่เสียเงิน | เป็นแบบนี้อยู่แล้ว | Mock mode (1.5s delay แล้ว confirm) |
+| Production | ไม่มีแผน | PromptPay QR / Omise ready |
+
+---
+
+### donation_transactions Schema
+
+```sql
+CREATE TABLE donation_transactions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id        UUID NOT NULL REFERENCES donation_requests(id) ON DELETE CASCADE,
+    donor_user_id     UUID NOT NULL,
+    amount            DECIMAL(12, 2) NOT NULL CHECK (amount > 0),
+    payment_method    VARCHAR(50)  NOT NULL DEFAULT 'mock',
+                      -- 'mock' | 'promptpay' | 'omise_card'
+    payment_reference VARCHAR(255),
+                      -- transaction ref จาก gateway (null ขณะ pending)
+    status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+                      -- 'pending' | 'confirmed' | 'failed'
+    confirmed_at      TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- DB Function (atomic): ยืนยัน transaction + อัปเดต current_amount ใน transaction เดียว
+-- เรียกผ่าน: DonationRepository.confirmTransaction(txId)
+-- SELECT confirm_donation_transaction('uuid-here', 'ref-from-gateway');
+```
+
+### Implementation Files
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `supabase/migrations/20260408000000_create_donation_transactions.sql` | Schema + RLS + DB Function |
+| `lib/features/donation/models/donation_models.dart` | `DonationTransaction`, `PaymentMethod`, `DonationTransactionStatus` |
+| `lib/features/donation/data/repositories/donation_repository.dart` | CRUD methods สำหรับ `donation_transactions` |
+| `lib/features/donation/services/payment_service.dart` | Flow controller (Mock / PromptPay / Omise) |

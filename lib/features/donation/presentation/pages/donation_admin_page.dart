@@ -988,12 +988,52 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                     ],
                   ),
                 )
-              : ListView.builder(
+              : ReorderableListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   itemCount: _categories.length,
+                  onReorder: (oldIndex, newIndex) async {
+                    if (newIndex > oldIndex) {
+                      newIndex -= 1;
+                    }
+                    if (oldIndex == newIndex) return;
+
+                    setState(() {
+                      final item = _categories.removeAt(oldIndex);
+                      _categories.insert(newIndex, item);
+                      for (int i = 0; i < _categories.length; i++) {
+                        final c = _categories[i];
+                        _categories[i] = DonationCategory(
+                          id: c.id,
+                          name: c.name,
+                          nameEn: c.nameEn,
+                          iconName: c.iconName,
+                          isEmergency: c.isEmergency,
+                          displayOrder: i + 1,
+                          volunteerProfessionIds: c.volunteerProfessionIds,
+                          customFields: c.customFields,
+                          approverProfessionIds: c.approverProfessionIds,
+                        );
+                      }
+                    });
+
+                    final List<Map<String, dynamic>> orderData = _categories.map((c) => {
+                      'id': c.id,
+                      'display_order': c.displayOrder,
+                    }).toList();
+
+                    try {
+                      await widget.repository.updateCategoriesDisplayOrder(orderData);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาดในการจัดเรียง: $e')));
+                        _loadCategories();
+                      }
+                    }
+                  },
                   itemBuilder: (context, index) {
                     final cat = _categories[index];
                     return Container(
+                      key: ValueKey(cat.id),
                       margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
                         color: Colors.white,

@@ -33,7 +33,7 @@ import 'widgets/emergency_chat_widget.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
 import 'widgets/rescue_control_panel_widget.dart';
 import 'package:flutter_compass/flutter_compass.dart';
-import 'package:sheserved/features/auth/data/repositories/user_repository.dart';
+import 'package:intl/intl.dart';
 
 // Part files for logic
 part 'parts/emergency_reporting_logic.dart';
@@ -344,41 +344,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     return 'viewer';
   }
 
-  bool _isEligibleResponder() {
-    if (_hasRejected) return false;
-    final user = AuthService.instance.currentUser;
-    if (user == null || _currentVideo == null) return false;
-    
-    // 1. If user is already responding, hide the button
-    if (_currentResponseId != null) return false;
-    
-    final currentUserId = AuthService.instance.userId?.toString();
-    final ownerId = _currentVideo?.userId?.toString();
-    final authedUserId = user.id.toString();
-    
-    // 2. Owner cannot respond to their own incident
-    final isOwner = (ownerId != null) && (ownerId.trim() == authedUserId.trim() || (currentUserId != null && ownerId.trim() == currentUserId.trim()));
-    if (isOwner) return false;
-    
-    // 3. Category Check - Does this user's profession match the incident category?
-    final catId = _currentVideo?.categoryId;
-    final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
-    if (category == null || category.volunteerProfessionIds.isEmpty) return false;
-    
-    final userProfId = user.professionId;
-    if (!category.volunteerProfessionIds.contains(userProfId)) return false;
-    
-    // 4. Profession-based De-duplication (New Rule)
-    // If someone with SAME PROFESSION already accepted, this user cannot accept.
-    for (var responder in _responders) {
-      if (responder['professionId'] == userProfId && responder['status'] != 'cancelled') {
-        // Someone from the same profession is already responding.
-        return false;
-      }
-    }
-    
-    return true;
-  }
+
 
   Future<void> _declineRescueDialog() async {
     final confirm = await showDialog<bool>(

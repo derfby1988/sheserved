@@ -12,10 +12,14 @@ class DonationSheetWidget extends StatefulWidget {
   /// Callback เมื่อบริจาค: (amount, requestId)
   final Function(int amount, String? requestId) onDonate;
 
+  /// (ใหม่) ส่งรายการคำร้องที่โหลดแล้วเข้ามา เพื่อป้องกันการ query ซ้ำ
+  final List<DonationRequest>? preloadedRequests;
+
   const DonationSheetWidget({
     super.key,
     required this.videoId,
     required this.onDonate,
+    this.preloadedRequests,
   });
 
   @override
@@ -32,7 +36,13 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
   void initState() {
     super.initState();
     _repo = DonationRepository(Supabase.instance.client);
-    _loadRequests();
+    if (widget.preloadedRequests != null) {
+      _requests = widget.preloadedRequests!;
+      _selectedRequest = _requests.isNotEmpty ? _requests.first : null;
+      _isLoading = false;
+    } else {
+      _loadRequests();
+    }
   }
 
   Future<void> _loadRequests() async {
@@ -174,10 +184,7 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
           alignment: WrapAlignment.center,
           children: [10, 50, 100, 500, 1000].map((amount) {
             return GestureDetector(
-              onTap: () {
-                Navigator.pop(context);
-                widget.onDonate(amount, _selectedRequest?.id);
-              },
+              onTap: () => _confirmAndDonate(amount),
               child: Container(
                 width: 88,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -211,7 +218,113 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
             );
           }).toList(),
         ),
+        const SizedBox(height: 20),
+        
+        // --- ช่องกรอกจำนวนเงินเอง ---
+        _buildCustomAmountField(),
       ],
+    );
+  }
+
+  Future<void> _confirmAndDonate(int amount) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('ยืนยันการบริจาค', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+        content: Text(
+          'สนับสนุน ฿${NumberFormat('#,##0').format(amount)} ให้กับ "${_selectedRequest?.title ?? 'คำร้องนี้'}"?', 
+          style: const TextStyle(fontFamily: 'SukhumvitSet')
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false), 
+            child: const Text('ยกเลิก', style: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.grey))
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B35),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(context, true), 
+            child: const Text('ยืนยัน', style: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirm == true) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onDonate(amount, _selectedRequest?.id);
+    }
+  }
+
+  Widget _buildCustomAmountField() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              keyboardType: TextInputType.number,
+              style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 16, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: 'ระบุจำนวนเงินอื่นๆ',
+                hintStyle: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.grey[400], fontSize: 14),
+                prefixIcon: const Icon(Icons.currency_bitcoin_rounded, color: Colors.grey, size: 20), // or simply text
+                prefixText: '฿ ',
+                prefixStyle: const TextStyle(fontFamily: 'SukhumvitSet', color: Color(0xFFFF6B35), fontWeight: FontWeight.bold, fontSize: 16),
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
+                ),
+              ),
+              onSubmitted: (val) {
+                final inputAmount = int.tryParse(val.replaceAll(',', ''));
+                if (inputAmount != null && inputAmount > 0) {
+                  _confirmAndDonate(inputAmount);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('กรุณาระบุจำนวนเงินที่ถูกต้อง', style: TextStyle(fontFamily: 'SukhumvitSet'))),
+                  );
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF6B35), Color(0xFFFF8F65)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  // FocusNode would be better but we can rely on onSubmitted for keyboard return
+                  // Instead, we can let user use 'Done' on keyboard
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Icon(Icons.send_rounded, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

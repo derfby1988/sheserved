@@ -60,10 +60,20 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
         _repository.getCategories(),
         _repository.getCommunities(),
       ]);
+      final allCategories = results[1] as List<DonationCategory>;
+      // กรอง emergency categories ออก — dropdown นี้แสดงเฉพาะหมวดหมู่บริจาคปกติ
+      final normalCategories = allCategories.where((c) => !c.isEmergency).toList();
       setState(() {
         _globalFields = results[0] as List<DonationCategoryField>;
-        _categories = results[1] as List<DonationCategory>;
+        _categories = normalCategories;
         _communities = results[2] as List<Map<String, dynamic>>;
+
+        // ถ้าเปิดมาจาก Live page และยังไม่มี defaultCategoryId ที่ตรงกับ normal categories
+        // ให้ auto-select หมวดหมู่แรก (default: รายการลำดับแรกของตารางจริงที่ไม่ใช่ emergency)
+        if (widget.videoId != null && (_selectedCategoryId == null ||
+            !normalCategories.any((c) => c.id == _selectedCategoryId))) {
+          _selectedCategoryId = normalCategories.isNotEmpty ? normalCategories.first.id : null;
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -963,6 +973,8 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildSectionTitle('เลือกหมวดหมู่', Icons.category_rounded, 'เลือกประเภทความช่วยเหลือที่ต้องการ'),
+                            // ทั้ง Reporter และ Responder เปลี่ยนหมวดหมู่ได้
+                            // แต่แสดงเฉพาะหมวดหมู่บริจาคปกติ (ไม่ใช่ emergency) เท่านั้น
                             DropdownButtonFormField<String>(
                               decoration: _buildInputDecoration(hintText: 'หมวดหมู่การบริจาค', prefixIcon: Icons.category_rounded),
                               value: _selectedCategoryId,
@@ -980,6 +992,12 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                               },
                               validator: (val) => val == null ? 'กรุณาเลือกหมวดหมู่' : null,
                             ),
+                            const SizedBox(height: 8),
+                            if (widget.videoId != null)
+                              Text(
+                                'เลือกประเภทสิ่งที่ต้องการรับบริจาค (ไม่รวมหมวดฉุกเฉิน)',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                              ),
                           ],
                         ),
                       ),

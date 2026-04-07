@@ -240,6 +240,15 @@ class VideoRepository {
       return result['id']?.toString();
     } catch (supabaseErr) {
       debugPrint('VideoRepository: ❌ Both Local and Supabase acceptIncident failed: $supabaseErr');
+      
+      // ✅ FK violation (code 23503) = video exists only in Local DB, not synced to Supabase yet
+      // → Return a generated local responseId so the UI can proceed without Supabase
+      final errStr = supabaseErr.toString();
+      if (errStr.contains('23503') || errStr.contains('foreign key')) {
+        final localResponseId = '${DateTime.now().millisecondsSinceEpoch}-local';
+        debugPrint('VideoRepository: ⚠️ Video is Local-only. Using local responseId: $localResponseId');
+        return localResponseId;
+      }
     }
 
     return null;

@@ -51,7 +51,7 @@ class DonationRepository {
     final response = await _client
         .from('donation_categories')
         .select()
-        .order('display_order');
+        .order('display_order', ascending: true);
     
     return (response as List)
         .map((json) => DonationCategory.fromJson(json))
@@ -64,7 +64,7 @@ class DonationRepository {
         .from('donation_categories')
         .select()
         .eq('is_emergency', true)
-        .order('display_order');
+        .order('display_order', ascending: true);
     
     return (response as List)
         .map((json) => DonationCategory.fromJson(json))
@@ -76,7 +76,7 @@ class DonationRepository {
     return _client
         .from('donation_categories')
         .stream(primaryKey: ['id'])
-        .order('display_order')
+        .order('display_order', ascending: true)
         .asyncMap((_) => getCategories());
   }
 
@@ -365,6 +365,20 @@ class DonationRepository {
   /// สร้างหมวดหมู่ใหม่
   Future<void> createCategory(Map<String, dynamic> data) async {
     await _client.from('donation_categories').insert(data);
+  }
+
+  /// อัปเดตลำดับหมวดหมู่ทั้งหมด
+  Future<void> updateCategoriesDisplayOrder(List<Map<String, dynamic>> orderData) async {
+    try {
+      for (var item in orderData) {
+        await _client.from('donation_categories')
+            .update({'display_order': item['display_order']})
+            .eq('id', item['id']);
+      }
+    } catch (e) {
+      print('[DonationRepository] Error updating categories order: $e');
+      rethrow;
+    }
   }
 
   /// อัปเดตหมวดหมู่
@@ -817,5 +831,76 @@ class DonationRepository {
     } catch (e) {
       return {};
     }
+  }
+
+  // =====================================================
+  // DONATION TRANSACTIONS (Payment Infrastructure)
+  // =====================================================
+
+  /// สร้าง Transaction ใหม่ (status: pending) เมื่อผู้ใช้เริ่ม Flow ชำระเงิน
+  /// คืน transaction id เพื่อให้ PaymentService ใช้ติดตาม
+  Future<String> createTransaction(Map<String, dynamic> data) async {
+    final response = await _client
+        .from('donation_transactions')
+        .insert(data)
+        .select('id')
+        .single();
+    return response['id'] as String;
+  }
+
+  /// ยืนยันการชำระเงิน (status: confirmed)
+  /// เรียก DB Function confirm_donation_transaction ซึ่งจะ:
+  ///   1. อัปเดต status → confirmed, ตั้ง confirmed_at
+  ///   2. atomic: บวก amount เข้า donation_requests.current_amount
+  Future<void> confirmTransaction(String transactionId, {String? paymentReference}) async {
+    await _client.rpc('confirm_donation_transaction', params: {
+      'p_transaction_id': transactionId,
+      'p_reference': paymentReference,
+    });
+  }
+
+  /// ทำเครื่องหมาย Transaction ว่าล้มเหลว (status: failed)
+  Future<void> failTransaction(String transactionId) async {
+    await _client
+        .from('donation_transactions')
+        .update({'status': 'failed'})
+        .eq('id', transactionId);
+  }
+
+  /// ดึง Transactions ทั้งหมดของคำร้องนี้ (เรียงจากใหม่ไปเก่า)
+  Future<List<DonationTransaction>> getTransactionsByRequest(String requestId) async {
+    final response = await _client
+        .from('donation_transactions')
+        .select()
+        .eq('request_id', requestId)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((json) => DonationTransaction.fromJson(json))
+        .toList();
+  }
+
+  /// ดึงประวัติการบริจาคของผู้ใช้คนนี้ (เรียงจากใหม่ไปเก่า)
+  Future<List<DonationTransaction>> getTransactionsByUser(String userId) async {
+    final response = await _client
+        .from('donation_transactions')
+        .select()
+        .eq('donor_user_id', userId)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((json) => DonationTransaction.fromJson(json))
+        .toList();
+  }
+
+  /// ดึง Transactions ที่สำเร็จทั้งหมดของคำร้อง (สำหรับแสดง audit trail)
+  Future<List<DonationTransaction>> getConfirmedTransactions(String requestId) async {
+    final response = await _client
+        .from('donation_transactions')
+        .select()
+        .eq('request_id', requestId)
+        .eq('status', 'confirmed')
+        .order('confirmed_at', ascending: false);
+    return (response as List)
+        .map((json) => DonationTransaction.fromJson(json))
+        .toList();
   }
 }

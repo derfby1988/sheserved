@@ -304,9 +304,21 @@ module.exports = (pool) => {
                 return res.status(400).json({ error: 'responderId is required' });
             }
 
+            // ✅ ตรวจสอบวิดีโอมีอยู่ใน Local DB ก่อน
+            const videoCheck = await pool.query('SELECT id FROM videos WHERE id = $1', [id]);
+            if (videoCheck.rows.length === 0) {
+                return res.status(404).json({ error: 'Video not found in local database' });
+            }
+
+            // ✅ Upsert — ถ้ารับงานซ้ำให้อัปเดตสถานะแทนที่จะ error
             const result = await pool.query(
                 `INSERT INTO incident_responses (video_id, volunteer_id, volunteer_start_lat, volunteer_start_lng, status)
                  VALUES ($1, $2, $3, $4, 'en_route')
+                 ON CONFLICT (video_id, volunteer_id) DO UPDATE
+                   SET status = 'en_route',
+                       volunteer_start_lat = EXCLUDED.volunteer_start_lat,
+                       volunteer_start_lng = EXCLUDED.volunteer_start_lng,
+                       updated_at = CURRENT_TIMESTAMP
                  RETURNING id`,
                 [id, responderId, latitude || null, longitude || null]
             );
@@ -317,7 +329,7 @@ module.exports = (pool) => {
             });
         } catch (error) {
             console.error('Accept Incident Error:', error.message);
-            res.status(500).json({ error: 'Failed to accept incident' });
+            res.status(500).json({ error: 'Failed to accept incident', detail: error.message });
         }
     });
 

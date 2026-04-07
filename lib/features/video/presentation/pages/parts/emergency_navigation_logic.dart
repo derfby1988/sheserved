@@ -236,25 +236,60 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
+  /// ตรวจสอบว่าผู้ใช้มีสิทธิ์รับงานช่วยเหลือเหตุการณ์นี้หรือไม่
+  /// Rule 1: ปฏิเสธแล้ว (_hasRejected) → ไม่มีสิทธิ์
+  /// Rule 2: รับงานไปแล้ว (_currentResponseId != null) → ไม่มีสิทธิ์
+  /// Rule 3: เจ้าของวิดีโอ (Reporter) → ไม่มีสิทธิ์
+  /// Rule 4: อาชีพต้องตรงกับ volunteerProfessionIds ของหมวดหมู่เหตุการณ์
+  /// Rule 5: Profession De-duplication — ถ้ามีคนอาชีพเดียวกันรับงานแล้ว → ไม่มีสิทธิ์
   bool _isEligibleResponder() {
+    // Rule 1: ปฏิเสธไปแล้ว
+    if (_hasRejected) return false;
+
     final user = AuthService.instance.currentUser;
     if (user == null || _currentVideo == null) return false;
+
+    // Rule 2: รับงานอยู่แล้ว
     if (_currentResponseId != null) return false;
+
     final currentUserId = AuthService.instance.userId?.toString();
     final ownerId = _currentVideo?.userId?.toString();
     final authedUserId = user.id.toString();
-    final isOwner = (ownerId != null) && (ownerId.trim() == authedUserId.trim() || (currentUserId != null && ownerId.trim() == currentUserId.trim()));
+
+    // Rule 3: เจ้าของวิดีโอ (Reporter) ไม่สามารถรับงานของตัวเองได้
+    final isOwner = (ownerId != null) &&
+        (ownerId.trim() == authedUserId.trim() ||
+            (currentUserId != null && ownerId.trim() == currentUserId.trim()));
     if (isOwner) return false;
+
+    // Rule 4: Category/Profession Match
     final catId = _currentVideo?.categoryId;
     final category = _emergencyCategories.where((c) => c.id == catId).firstOrNull;
-    if (category != null && category.volunteerProfessionIds.isNotEmpty) return category.volunteerProfessionIds.contains(user.professionId);
-    return false;
+    if (category == null || category.volunteerProfessionIds.isEmpty) return false;
+
+    final userProfId = user.professionId;
+    if (!category.volunteerProfessionIds.contains(userProfId)) return false;
+
+    // Rule 5: Profession-based De-duplication
+    // ถ้ามีคนอาชีพเดียวกันรับงานอยู่แล้ว (ไม่ใช่ cancelled) → บล็อก
+    for (final responder in _responders) {
+      if (responder['professionId'] == userProfId &&
+          responder['status'] != 'cancelled') {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   Future<void> _acceptRescue() async {
     if (_currentVideoId == null || !mounted) return;
     final userId = AuthService.instance.currentUser?.id;
     if (userId == null) return;
+    // 🔍 Debug: ตรวจสอบเงื่อนไขก่อนรับงาน
+    debugPrint('🔍 _acceptRescue: videoId=$_currentVideoId, userId=$userId');
+    debugPrint('🔍 _acceptRescue: professionId=${AuthService.instance.currentUser?.professionId}');
+    debugPrint('🔍 _acceptRescue: userLocation=$_userLocation');
     try {
       final responseId = await ServiceLocator.instance.videoRepository.acceptIncident(
         videoId: _currentVideoId!, 
@@ -262,7 +297,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         latitude: _userLocation?.latitude, 
         longitude: _userLocation?.longitude
       );
-      if (responseId == null) throw Exception('ไม่สามารถบันทึกการเข้ารับงานได้');
+      debugPrint('🔍 _acceptRescue: responseId=$responseId');
+      if (responseId == null) throw Exception('ไม่สามารถบันทึกการเข้ารับงานได้ (responseId is null)');
       
       if (mounted) {
         setState(() { 
@@ -317,8 +353,12 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       } catch (e) {
         debugPrint('Error auto-dismissing alert on accept: $e');
       }
-    } catch (_) { 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ไม่สามารถตอบรับความช่วยเหลือได้ในขณะนี้'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating)); 
+    } catch (e, stackTrace) { 
+      debugPrint('❌ _acceptRescue FAILED: $e');
+      debugPrint('❌ StackTrace: $stackTrace');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ไม่สามารถตอบรับความช่วยเหลือได้: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating)
+      ); 
     }
   }
 
@@ -408,6 +448,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   /// ✅ ตรวจสอบว่าผู้ใช้คนนี้มีสิทธิ์สร้างคำร้องบริจาคแบบ Inline (ในหน้า Live) หรือไม่
   /// - Reporter: เจ้าของวิดีโอ (ผู้แจ้งเหตุเอง)
+  ///   → แผน: ต้องมีผู้ช่วยเหลือ (Responder) เดินทางมาถึงจุดเกิดเหตุแล้ว (status="arrived") อย่างน้อย 1 คน
+  ///   เพื่อให้มีพยานว่าเกิดเหตุการณ์นั้นจริง
   /// - Responder: มี _currentResponseId และอาชีพอยู่ใน volunteer_profession_ids
   bool _canCreateDonationRequest() {
     final user = AuthService.instance.currentUser;
@@ -417,8 +459,14 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     final ownerId = _currentVideo?.userId?.toString();
 
     // Reporter: เจ้าของวิดีโอ (ผู้แจ้งเหตุเอง)
+    // เงื่อนไขเพิ่มเติม: ต้องมี responder คนใดคนหนึ่งที่ status = 'arrived' ก่อน
     if (ownerId != null && currentUserId != null &&
-        ownerId.trim() == currentUserId.trim()) return true;
+        ownerId.trim() == currentUserId.trim()) {
+      final hasArrivedResponder = _responders.any(
+        (r) => r['status'] == 'arrived',
+      );
+      return hasArrivedResponder;
+    }
 
     // Responder: รับงานช่วยเหลือแล้ว และอาชีพตรงกับหมวดหมู่
     if (_currentResponseId != null) {
@@ -432,6 +480,17 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       }
     }
     return false;
+  }
+
+  /// ✅ ตรวจสอบว่าผู้ใช้ปัจจุบันเป็น Reporter (เจ้าของวิดีโอ/ผู้แจ้งเหตุ) หรือไม่
+  bool _isCurrentUserReporter() {
+    final user = AuthService.instance.currentUser;
+    if (user == null || _currentVideo == null) return false;
+    final currentUserId = user.id?.toString();
+    final ownerId = _currentVideo?.userId?.toString();
+    return ownerId != null &&
+        currentUserId != null &&
+        ownerId.trim() == currentUserId.trim();
   }
 
   void _showDonationSheet() {
@@ -449,6 +508,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         backgroundColor: Colors.transparent,
         builder: (context) => DonationSheetWidget(
           videoId: _currentVideoId!,
+          preloadedRequests: _activeDonationRequests,
           onDonate: (amount, requestId) {
             setState(() {
               if (requestId != null) {
@@ -459,23 +519,46 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             final userId =
                 ServiceLocator.instance.currentUser?.id ?? 'anonymous';
             final socket = WebSocketService().socket;
-            if (socket != null && socket.connected && _currentVideoId != null) {
-              socket.emit('video-interaction', {
-                'videoId': _currentVideoId,
-                'userId': userId,
-                'type': 'gift',
-                'value': amount,
-                if (requestId != null) 'requestId': requestId,
-              });
-            }
+              if (socket != null && socket.connected && _currentVideoId != null) {
+                socket.emit('video-interaction', {
+                  'videoId': _currentVideoId,
+                  'userId': userId,
+                  'type': 'gift',
+                  'value': amount,
+                  if (requestId != null) 'requestId': requestId,
+                });
+              }
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.white),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'ขอบคุณที่สนับสนุนจำนวน ฿${NumberFormat('#,##0').format(amount)}', 
+                            style: const TextStyle(fontFamily: 'SukhumvitSet', color: Colors.white)
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.green.shade600,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              }
           },
         ),
       );
     }
   }
 
-  /// ✅ เปิดหน้าสร้างคำร้องบริจาคสำหรับ Reporter/Responder 
-  /// ใช้ DonationCreatePage เต็มรูปแบบแทน Quick Bottom Sheet เพื่อรองรับระบบแบบเดียวกับหน้า donation
+  /// ✅ เปิดหน้าสร้างคำร้องบริจาคสำหรับ Reporter/Responder
+  /// ทั้ง Reporter และ Responder เปลี่ยนหมวดหมู่ได้ เพียงแต่ไม่รวมหมวดฉุกเฉิน (is_emergency=true)
   void _showCreateDonationRequestSheet() {
     if (_currentVideoId == null) return;
     Navigator.push(

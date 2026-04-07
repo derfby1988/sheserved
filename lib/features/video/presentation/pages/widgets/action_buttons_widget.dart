@@ -5,8 +5,9 @@ import 'package:sheserved/features/donation/models/donation_models.dart';
 /// ActionButtonsWidget — ปุ่มโต้ตอบ: ส่งกำลังใจ / ให้ทาง / บริจาค
 ///
 /// ปุ่ม "บริจาค" ทำงาน 2 โหมดตามบทบาทผู้ใช้:
-/// - [userCanCreateRequest] = true  → โหมด "เปิดรับบริจาค" (Reporter/Responder)
-///   แสดงเสมอ ให้สร้างคำร้องบริจาคใบใหม่
+/// - [userCanCreateRequest] = true  → โหมด "เปิดรับบริจาค" (Reporter ที่มีผู้ช่วยเหลือมาถึงแล้ว / Responder)
+///   Reporter: เห็นปุ่มได้ก็ต่อเมื่อมีผู้ช่วยเหลือรายอื่นเดินทางมาถึง (status=arrived) แล้วเท่านั้น
+///   Responder: เห็นปุ่มได้ทันที (รับงานแล้ว + อาชีพตรง)
 /// - [userCanCreateRequest] = false → โหมด "บริจาค" (Viewer/ThaiMhung)
 ///   แสดงเฉพาะเมื่อมีคำร้อง active ≥ 1 ใบ เพื่อไม่สร้างความสับสน
 class ActionButtonsWidget extends StatelessWidget {
