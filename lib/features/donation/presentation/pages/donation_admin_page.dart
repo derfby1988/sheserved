@@ -17,6 +17,9 @@ import '../../../../features/video/presentation/pages/emergency_live_page.dart';
 import '../../../../features/video/models/video_models.dart';
 import '../../../../config/app_config.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
+import './widgets/category_escrow_config_dialog.dart';
+import './widgets/donation_report_panel.dart';
+import './widgets/beneficiary_admin_panel.dart';
 
 class DonationAdminPage extends StatefulWidget {
   const DonationAdminPage({super.key});
@@ -45,7 +48,7 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
       }
     });
 
-    _tabController = TabController(length: 4, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(length: 5, vsync: this, initialIndex: initialIndex);
     _repository = DonationRepository(Supabase.instance.client);
     _loadUserContext();
   }
@@ -107,7 +110,8 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
                     Tab(text: 'หมวดหมู่'),
                     Tab(text: 'ศูนย์อนุมัติ'),
                     Tab(text: 'ช่วยเหลือฉุกเฉิน'),
-                    Tab(text: 'ประวัติ'),
+                    Tab(text: 'รายงานบัญชี (CSV)'),
+                    Tab(text: 'ผู้รับมรดก'),
                   ],
                 ),
               ],
@@ -121,7 +125,8 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
           _CategoryManagementPanel(repository: _repository),
           _ApprovalCenterPanel(repository: _repository, userId: _currentUserId, isStorageAdmin: _isStorageAdmin),
           _ResponderHelpPanel(userId: _currentUserId),
-          _ContributionHistoryPanel(repository: _repository),
+          const DonationReportPanel(),
+          const BeneficiaryAdminPanel(),
         ],
       ),
     );
@@ -1145,6 +1150,21 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                       ),
                                       const SizedBox(width: 8),
                                       _actionBtn(
+                                        icon: Icons.account_balance_wallet_rounded,
+                                        label: 'Escrow & ค่าธรรมเนียม',
+                                        color: Colors.orange.shade700,
+                                        onTap: () {
+                                          showDialog(
+                                            context: context,
+                                            builder: (ctx) => CategoryEscrowConfigDialog(
+                                              category: cat,
+                                              onSaved: () => _loadCategories(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _actionBtn(
                                         icon: Icons.edit_rounded,
                                         label: 'แก้ไขหมวดหมู่',
                                         color: AppColors.primary,
@@ -1556,58 +1576,7 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
   }
 
 
-/// แผงประวัติการบริจาค
-class _ContributionHistoryPanel extends StatefulWidget {
-  final DonationRepository repository;
-  const _ContributionHistoryPanel({required this.repository});
-
-  @override
-  State<_ContributionHistoryPanel> createState() => _ContributionHistoryPanelState();
-}
-
-class _ContributionHistoryPanelState extends State<_ContributionHistoryPanel> {
-  List<Map<String, dynamic>> _history = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadHistory();
-  }
-
-  Future<void> _loadHistory() async {
-    setState(() => _isLoading = true);
-    try {
-      final history = await widget.repository.getContributions();
-      setState(() {
-        _history = history;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-
-    return ListView.builder(
-      itemCount: _history.length,
-      itemBuilder: (context, index) {
-        final item = _history[index];
-        final user = item['user'] as Map?;
-        final request = item['request'] as Map?;
-        return ListTile(
-          leading: const Icon(Icons.history, color: Colors.green),
-          title: Text('${user?['username'] ?? 'ไม่ระบุชื่อ'} บริจาค ${item['amount']} บาท'),
-          subtitle: Text('ให้กับ: ${request?['title'] ?? 'ไม่ทราบรายการ'}'),
-          trailing: Text(item['created_at'].toString().split('T')[0]),
-        );
-      },
-    );
-  }
-}
+// This file uses the new DonationReportPanel instead of _ContributionHistoryPanel
 
 /// แผงช่วยเหลือฉุกเฉินสำหรับอาชีพ (Responder Help Panel)
 class _ResponderHelpPanel extends StatefulWidget {

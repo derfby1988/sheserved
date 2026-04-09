@@ -67,5 +67,7 @@ module.exports = {
     sendProgress,
     sendStatus,
     broadcastInteraction,
-    broadcastEmergencyMessage,  // ✅ export เพื่อให้ server.js เรียกใช้ได้
+    broadcastEmergencyMessage,
+    /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
+    getIO: () => io,
 };

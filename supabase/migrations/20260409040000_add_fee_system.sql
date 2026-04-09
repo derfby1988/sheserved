@@ -167,33 +167,42 @@ ALTER TABLE public.donation_disbursement_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.donation_closure_consensus ENABLE ROW LEVEL SECURITY;
 
 -- category_fee_items: ทุกคนอ่านได้ (ผู้บริจาคต้องเห็น fee ก่อนชำระ)
+DROP POLICY IF EXISTS "fee_items_select_all" ON public.category_fee_items;
 CREATE POLICY "fee_items_select_all"
     ON public.category_fee_items FOR SELECT USING (true);
 
 -- INSERT/UPDATE/DELETE: เฉพาะ Super Admin (enforce ฝั่ง App)
+DROP POLICY IF EXISTS "fee_items_insert_all" ON public.category_fee_items;
 CREATE POLICY "fee_items_insert_all"
     ON public.category_fee_items FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "fee_items_update_all" ON public.category_fee_items;
 CREATE POLICY "fee_items_update_all"
     ON public.category_fee_items FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "fee_items_delete_all" ON public.category_fee_items;
 CREATE POLICY "fee_items_delete_all"
     ON public.category_fee_items FOR DELETE USING (true);
 
 -- donation_disbursement_logs: ทุกคนอ่านได้ (สำหรับ Transparency/Audit)
+DROP POLICY IF EXISTS "disbursement_logs_select_all" ON public.donation_disbursement_logs;
 CREATE POLICY "disbursement_logs_select_all"
     ON public.donation_disbursement_logs FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "disbursement_logs_insert_all" ON public.donation_disbursement_logs;
 CREATE POLICY "disbursement_logs_insert_all"
     ON public.donation_disbursement_logs FOR INSERT WITH CHECK (true);
 
 -- donation_closure_consensus: ทุกคนอ่านได้ (Transparency)
+DROP POLICY IF EXISTS "closure_consensus_select_all" ON public.donation_closure_consensus;
 CREATE POLICY "closure_consensus_select_all"
     ON public.donation_closure_consensus FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "closure_consensus_insert_all" ON public.donation_closure_consensus;
 CREATE POLICY "closure_consensus_insert_all"
     ON public.donation_closure_consensus FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "closure_consensus_update_all" ON public.donation_closure_consensus;
 CREATE POLICY "closure_consensus_update_all"
     ON public.donation_closure_consensus FOR UPDATE USING (true);
 
@@ -203,3 +212,10 @@ CREATE POLICY "closure_consensus_update_all"
 -- =====================================================
 -- (ไม่ seed จริงในนี้ เพราะต้องรู้ category_id ก่อน
 --  ให้ Admin ตั้งค่าใน Category Admin UI แทน)
+
+-- =====================================================
+-- ALTER TABLE: donation_categories (เพิ่ม sheserved_account_id)
+-- สำหรับรับรายได้ค่าธรรมเนียมเข้าบัญชี Sheserved
+-- =====================================================
+ALTER TABLE public.donation_categories 
+ADD COLUMN IF NOT EXISTS sheserved_account_id VARCHAR(255);

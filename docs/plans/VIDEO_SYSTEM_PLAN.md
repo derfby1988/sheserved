@@ -1898,3 +1898,28 @@ Future<BeneficiaryOrg?> resolveBeneficiary(String categoryId) async {
 | `fee_snapshot` | JSONB รายการค่าใช้จ่าย ณ เวลาสร้าง | ระบบ (คำนวณ deduction ตอน disburse) |
 | `escrow_status` | สถานะเงินใน escrow | Admin |
 
+---
+
+### 10. แผนงานในอนาคต (Future Implementations)
+
+> [!TIP]
+> ส่วนนี้เป็นการบันทึกแผนงานส่วนขยายที่ควรดำเนินการเมื่อพร้อมเปิดใช้งานระบบจริงจัง (Production) เพื่อลดภาระงานของทีม Admin และเพิ่มความปลอดภัยสูงสุด
+
+#### 10.1 ระบบจัดการคิวคืนเงิน (Refund Queue)
+จังหวะที่เงินเข้า Escrow ไปแล้ว และผู้บริจาคขอ Refund หรือ Admin สั่งปิดหมายด้วยสถานะ "ยกเลิก" ปัจจุบันฐานข้อมูลจะตีสถานะ Transaction จาก `in_escrow` เป็น `refund_pending` 
+
+**แผนพัฒนาต่อยอด:**
+- สร้าง Tab การจัดการ "รายการรอคืนเงิน" (Refund Queue) ใน Admin Dashboard
+- **แบบ Manual:** Admin ดาวน์โหลดรายงานผู้ที่อยู่ในคิว `refund_pending` โอนเงินคืนผ่านแอปธนาคาร และกดปลดล็อคสถานะเป็น `refunded`
+- **แบบ Automated:** เขียน Node.js Service เพื่อยิง API ของ Payment Gateway (เช่น Omise Reversal API) ในการ Void รหัส charge คืนเงินเข้าบัตรเครดิต โดยเมื่อ Payment Gateway ตอบรับว่าสำเร็จ ค่อยเปลี่ยนสถานะ Database อัตโนมัติ (หมายเหตุ: วิธีนี้อาจไม่รองรับ PromptPay)
+
+#### 10.2 การตั้งค่าความปลอดภัยบน Production (Security Setup)
+ห้ามให้ User ธรรมดามีสิทธิ์ดัดแปลงการโอนเงิน Escrow บน Database การทำงานส่วนนี้จึงถูกล็อคด้วย RLS ขีดสุด ดังนั้น Node.js ต้องถูกบังคับให้ใช้กุญแจผู้คุมระบบ
+
+**ตัวอย่างวิธีการตั้งค่า `.env` ที่ถูกต้องบนเซิร์ฟเวอร์:**
+```env
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+# ห้ามใช้ ANON_KEY เด็ดขาด ให้ใช้ SERVICE_ROLE_KEY เท่านั้น สำหรับ Backend Services
+SUPABASE_SERVICE_ROLE_KEY=eyJhbG... (กุญแจลับยาวๆ ที่ขึ้นต้นด้วย eyJ)
+```
+หากใช้ผิดกุญแจ (ตัวอย่างการนำ `anon_key` มาใส่) ลูปการโอนเงินคืนและ Background Service จะพังและถูกตีกลับด้วย Error 401 Unauthorized すぐに.

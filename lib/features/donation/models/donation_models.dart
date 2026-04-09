@@ -101,6 +101,13 @@ class DonationCategory {
   // สามารถมีหลายกลุ่มอาชีพ และทุกกลุ่มต้องอนุมัติครบ
   final List<String> approverProfessionIds;
 
+  // --- Escrow & Beneficiary ---
+  final String? beneficiaryOrgId;
+  final String? sheservedAccountId; // บัญชีแพลตฟอร์มรับรายได้
+  final int pauseGracePeriodHours;
+  final int transferFailureGraceHours;
+  final int cancellationGraceHours;
+
   const DonationCategory({
     required this.id,
     required this.name,
@@ -111,6 +118,11 @@ class DonationCategory {
     this.volunteerProfessionIds = const [],
     this.customFields = const [],
     this.approverProfessionIds = const [],
+    this.beneficiaryOrgId,
+    this.sheservedAccountId,
+    this.pauseGracePeriodHours = 72,
+    this.transferFailureGraceHours = 48,
+    this.cancellationGraceHours = 24,
   });
 
   factory DonationCategory.fromJson(Map<String, dynamic> json) {
@@ -146,6 +158,14 @@ class DonationCategory {
       volunteerProfessionIds: volunteerIds,
       customFields: fields,
       approverProfessionIds: approverIds,
+      beneficiaryOrgId: json['beneficiary_org_id'],
+      sheservedAccountId: json['sheserved_account_id'],
+      pauseGracePeriodHours: json['pause_grace_period_hours'] != null 
+          ? int.tryParse(json['pause_grace_period_hours'].toString()) ?? 72 : 72,
+      transferFailureGraceHours: json['transfer_failure_grace_hours'] != null 
+          ? int.tryParse(json['transfer_failure_grace_hours'].toString()) ?? 48 : 48,
+      cancellationGraceHours: json['cancellation_grace_hours'] != null 
+          ? int.tryParse(json['cancellation_grace_hours'].toString()) ?? 24 : 24,
     );
   }
 
@@ -160,6 +180,11 @@ class DonationCategory {
       'volunteer_profession_ids': volunteerProfessionIds,
       'custom_fields': customFields.map((e) => e.toJson()).toList(),
       'approver_profession_ids': approverProfessionIds,
+      'beneficiary_org_id': beneficiaryOrgId,
+      'sheserved_account_id': sheservedAccountId,
+      'pause_grace_period_hours': pauseGracePeriodHours,
+      'transfer_failure_grace_hours': transferFailureGraceHours,
+      'cancellation_grace_hours': cancellationGraceHours,
     };
   }
 }

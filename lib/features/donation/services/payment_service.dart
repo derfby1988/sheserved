@@ -31,7 +31,7 @@ class PaymentService {
   /// เริ่ม Flow การบริจาค
   ///
   /// คืน [DonationTransactionResult]:
-  ///   - confirmed → สำเร็จ (mock/production)
+  ///   - confirmed → สำเร็จ (mock/production) → transaction สถานะ in_escrow
   ///   - pending   → แสดง QR/UI รอผู้ใช้ชำระ (promptpay/omise in production)
   ///   - failed    → ล้มเหลว พร้อม error message
   Future<DonationTransactionResult> initiateDonation({
@@ -39,7 +39,7 @@ class PaymentService {
     required String donorUserId,
     required double amount,
     PaymentMethod method = PaymentMethod.mock,
-    String? promptPayId, // PromptPay ID ของผู้รับบริจาค (production)
+    String? promptPayId,
   }) async {
     try {
       // 1. สร้าง transaction record (pending)
@@ -56,7 +56,7 @@ class PaymentService {
       // 2. Route ตาม method
       switch (method) {
         case PaymentMethod.mock:
-          return await _handleMock(txId, amount);
+          return await _handleMock(txId, amount, requestId: requestId);
 
         case PaymentMethod.promptpay:
           return _handlePromptPay(txId, amount, promptPayId: promptPayId);
@@ -78,19 +78,26 @@ class PaymentService {
 
   /// จำลองการชำระเงิน: รอ 1.5 วินาที แล้ว auto-confirm
   /// ใน Dev ไม่มีเงินจริงเคลื่อนที่
+  /// หลัง confirm → เปลี่ยนสถานะ transaction เป็น in_escrow ทันที
   Future<DonationTransactionResult> _handleMock(
     String transactionId,
-    double amount,
-  ) async {
+    double amount, {
+    required String requestId,
+  }) async {
     debugPrint('[PaymentService] 🧪 Mock mode: simulating payment...');
     await Future.delayed(const Duration(milliseconds: 1500));
 
+    // 1. Confirm transaction (atomic: บวก current_amount)
     await _repo.confirmTransaction(
       transactionId,
       paymentReference: 'mock-${DateTime.now().millisecondsSinceEpoch}',
     );
 
-    debugPrint('[PaymentService] ✅ Mock payment confirmed: $transactionId');
+    // 2. ✅ Escrow Transition: เปลี่ยน status → in_escrow ทันที
+    //    เงินถือว่า "พักอยู่ที่ Beneficiary Escrow Account" แล้ว
+    await _transitionToEscrow(transactionId, requestId);
+
+    debugPrint('[PaymentService] ✅ Mock payment confirmed + in_escrow: $transactionId');
     return DonationTransactionResult.confirmed(
       transactionId: transactionId,
       amount: amount,
@@ -214,23 +221,64 @@ class PaymentService {
 
   /// เรียกเมื่อ Payment Provider ส่ง Webhook มายืนยัน
   /// ใช้ใน Production: ส่ง transactionId + reference จาก provider
+  /// หลัง confirm → เปลี่ยน status เป็น in_escrow อัตโนมัติ
   Future<bool> handleWebhookConfirmation({
     required String transactionId,
     required String paymentReference,
+    required String requestId,
   }) async {
     try {
       await _repo.confirmTransaction(
         transactionId,
         paymentReference: paymentReference,
       );
-      debugPrint('[PaymentService] 🎉 Webhook confirmed: $transactionId ($paymentReference)');
+      // ✅ Escrow Transition หลัง Webhook confirm
+      await _transitionToEscrow(transactionId, requestId);
+      debugPrint('[PaymentService] 🎉 Webhook confirmed + in_escrow: $transactionId ($paymentReference)');
       return true;
     } catch (e) {
       debugPrint('[PaymentService] Webhook confirm failed: $e');
       return false;
     }
   }
-}
+
+  // ===========================================================
+  // ESCROW TRANSITION (Private)
+  // ===========================================================
+
+  /// เปลี่ยน transaction status → in_escrow และอัปเดต donation_requests.escrow_status
+  /// เรียกหลัง confirm สำเร็จเสมอ
+  ///
+  /// หลักการ: เงินที่ถูก confirm แล้วถือว่า "อยู่ที่ Beneficiary Escrow Account" ทันที
+  /// Node.js EscrowReleaseService จะดึงข้อมูลนี้ออกมาตอนภารกิจสมบูรณ์
+  Future<void> _transitionToEscrow(String transactionId, String requestId) async {
+    try {
+      final client = Supabase.instance.client;
+
+      // 1. อัปเดต transaction status → in_escrow
+      await client
+          .from('donation_transactions')
+          .update({
+            'status': 'in_escrow',
+            'escrow_submitted_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', transactionId)
+          .eq('status', 'confirmed'); // guard: เฉพาะที่ confirmed แล้วเท่านั้น
+
+      // 2. เรียก DB Function อัปเดต donation_requests.escrow_status → in_escrow
+      await client.rpc(
+        'update_request_escrow_status',
+        params: {'p_request_id': requestId},
+      );
+
+      debugPrint('[PaymentService] 🔒 Escrow transition complete: $transactionId → in_escrow');
+    } catch (e) {
+      // ไม่ throw เพราะ payment ผ่านแล้ว เพียงแต่ escrow status ยังไม่อัปเดต
+      // Node.js cron job จะตรวจและ sync ให้ในรอบถัดไป
+      debugPrint('[PaymentService] ⚠️ Escrow transition failed (non-critical): $e');
+    }
+  }
 
 // ===========================================================
 // RESULT TYPES

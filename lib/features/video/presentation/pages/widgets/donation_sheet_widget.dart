@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/features/donation/data/repositories/donation_repository.dart';
 import 'package:sheserved/features/donation/models/donation_models.dart';
+import 'package:sheserved/features/donation/models/fee_models.dart';
 
 /// DonationSheetWidget — รองรับหลายคำร้องบริจาคต่อวิดีโอเดียว
 /// ผู้บริจาคต้องเลือกก่อนว่าจะสนับสนุนคำร้องใบไหน แล้วจึงเลือกจำนวนเงิน
@@ -227,13 +228,90 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
   }
 
   Future<void> _confirmAndDonate(int amount) async {
+    // --- Pre-payment Disclosure Calculation ---
+    double totalPercentOfGross = 0;
+    double totalPercentPerTx = 0;
+    
+    if (_selectedRequest != null && _selectedRequest!.feeSnapshot.isNotEmpty) {
+      for (final fee in _selectedRequest!.feeSnapshot) {
+        if (fee.feeType == FeeType.percentOfGross) {
+          totalPercentOfGross += (fee.rate ?? 0);
+        } else if (fee.feeType == FeeType.percentPerTransaction) {
+          totalPercentPerTx += (fee.rate ?? 0);
+        }
+      }
+    }
+
+    final platformFee = (amount * totalPercentOfGross) / 100;
+    final paymentFee = (amount * totalPercentPerTx) / 100;
+    final totalDeducted = platformFee + paymentFee;
+    final netAmount = (amount - totalDeducted).clamp(0.0, double.infinity);
+    final fmt = NumberFormat('#,##0.00');
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('ยืนยันการบริจาค', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
-        content: Text(
-          'สนับสนุน ฿${NumberFormat('#,##0').format(amount)} ให้กับ "${_selectedRequest?.title ?? 'คำร้องนี้'}"?', 
-          style: const TextStyle(fontFamily: 'SukhumvitSet')
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'สนับสนุน ฿${NumberFormat('#,##0').format(amount)} ให้กับ "${_selectedRequest?.title ?? 'คำร้องนี้'}"?', 
+                style: const TextStyle(fontFamily: 'SukhumvitSet')
+              ),
+              if (_selectedRequest != null && _selectedRequest!.feeSnapshot.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('รายละเอียดการจัดสรรเงิน (Breakdown):', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('เงินบริจาคของคุณ', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13)),
+                          Text('฿${fmt.format(amount)}', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      if (platformFee > 0)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('ค่าบริการแพลตฟอร์ม ($totalPercentOfGross%)', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, color: Colors.red)),
+                            Text('- ฿${fmt.format(platformFee)}', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, color: Colors.red)),
+                          ],
+                        ),
+                      if (paymentFee > 0)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('ค่าธรรมเนียมธุรกรรม ($totalPercentPerTx%)', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, color: Colors.orange)),
+                            Text('- ฿${fmt.format(paymentFee)}', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, color: Colors.orange)),
+                          ],
+                        ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('ผู้รับจะได้รับสุทธิ', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
+                          Text('฿${fmt.format(netAmount)}', style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -254,7 +332,6 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
     
     if (confirm == true) {
       if (!mounted) return;
-      Navigator.pop(context);
       widget.onDonate(amount, _selectedRequest?.id);
     }
   }
@@ -356,8 +433,27 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
     required bool isSelected,
     VoidCallback? onTap,
   }) {
-    final progress = (req.targetAmount ?? 0) > 0
-        ? ((req.currentAmount ?? 0) / req.targetAmount!).clamp(0.0, 1.0)
+    // --- Net Calculation ---
+    double netRatio = 1.0;
+    if (req.goalAmountGross != null && req.goalAmountGross! > 0 && req.goalAmountNet != null) {
+      netRatio = req.goalAmountNet! / req.goalAmountGross!;
+    } else if (req.feeSnapshot.isNotEmpty) {
+      double totalPercent = 0;
+      for (final fee in req.feeSnapshot) {
+        if (fee.feeType == FeeType.percentOfGross) {
+          totalPercent += (fee.rate ?? 0);
+        }
+      }
+      if (totalPercent < 100) {
+        netRatio = (100 - totalPercent) / 100;
+      }
+    }
+
+    final double displayNetTarget = req.goalAmountNet ?? ((req.targetAmount ?? 0) * netRatio);
+    final double displayNetCurrent = req.currentAmount * netRatio;
+
+    final progress = displayNetTarget > 0
+        ? (displayNetCurrent / displayNetTarget).clamp(0.0, 1.0)
         : 0.0;
     final fmt = NumberFormat('#,##0');
 
@@ -416,12 +512,12 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
                 color: Colors.black87,
               ),
             ),
-            if (req.targetAmount != null && req.targetAmount! > 0) ...[
+            if (displayNetTarget > 0) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
                   Text(
-                    '฿${fmt.format(req.currentAmount ?? 0)}',
+                    '฿${fmt.format(displayNetCurrent)}',
                     style: const TextStyle(
                       fontFamily: 'SukhumvitSet',
                       fontSize: 13,
@@ -430,7 +526,7 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
                     ),
                   ),
                   Text(
-                    ' / ฿${fmt.format(req.targetAmount!)}',
+                    ' / ฿${fmt.format(displayNetTarget)} (Net)',
                     style: TextStyle(
                       fontFamily: 'SukhumvitSet',
                       fontSize: 12,

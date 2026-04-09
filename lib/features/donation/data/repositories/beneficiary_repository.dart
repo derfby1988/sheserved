@@ -20,6 +20,7 @@ class BeneficiaryOrganization {
   final String? contactEmail;
   final String? omiseRecipientId; // Omise Recipient ID
   final String? promptpayId;      // PromptPay ID
+  final String? professionId;     // กลุ่มองค์กร/อาชีพของ Escrow
   final bool isVerified;
   final bool isActive;
   final bool isGlobalDefault;
@@ -37,6 +38,7 @@ class BeneficiaryOrganization {
     this.contactEmail,
     this.omiseRecipientId,
     this.promptpayId,
+    this.professionId,
     this.isVerified = false,
     this.isActive = false,
     this.isGlobalDefault = false,
@@ -56,6 +58,7 @@ class BeneficiaryOrganization {
       contactEmail: json['contact_email']?.toString(),
       omiseRecipientId: json['omise_recipient_id']?.toString(),
       promptpayId: json['promptpay_id']?.toString(),
+      professionId: json['profession_id']?.toString(),
       isVerified: json['is_verified'] as bool? ?? false,
       isActive: json['is_active'] as bool? ?? false,
       isGlobalDefault: json['is_global_default'] as bool? ?? false,
@@ -79,6 +82,7 @@ class BeneficiaryOrganization {
       'contact_email': contactEmail,
       'omise_recipient_id': omiseRecipientId,
       'promptpay_id': promptpayId,
+      'profession_id': professionId,
       'is_verified': isVerified,
       'is_active': isActive,
       'is_global_default': isGlobalDefault,
@@ -103,6 +107,7 @@ class BeneficiaryOrganization {
     String? contactEmail,
     String? omiseRecipientId,
     String? promptpayId,
+    String? professionId,
     bool? isVerified,
     bool? isActive,
     bool? isGlobalDefault,
@@ -118,6 +123,7 @@ class BeneficiaryOrganization {
       contactEmail: contactEmail ?? this.contactEmail,
       omiseRecipientId: omiseRecipientId ?? this.omiseRecipientId,
       promptpayId: promptpayId ?? this.promptpayId,
+      professionId: professionId ?? this.professionId,
       isVerified: isVerified ?? this.isVerified,
       isActive: isActive ?? this.isActive,
       isGlobalDefault: isGlobalDefault ?? this.isGlobalDefault,

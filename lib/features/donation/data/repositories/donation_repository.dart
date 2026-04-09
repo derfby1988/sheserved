@@ -777,6 +777,25 @@ class DonationRepository {
     await _client.from('donation_contributions').insert(data);
   }
 
+  /// ดึง Transaction ที่รอดำเนินการคืนเงิน (refund_pending)
+  Future<List<Map<String, dynamic>>> getRefundPendingTransactions(String userId) async {
+    final response = await _client
+        .from('donation_transactions')
+        .select('*, request:donation_requests(title, id)')
+        .eq('donor_user_id', userId)
+        .eq('status', 'refund_pending');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// อัปเดตความต้องการคืนเงิน (credit vs beneficiary)
+  Future<void> updateRefundPreference(String transactionId, String preference) async {
+    await _client.from('donation_transactions').update({
+      'refund_preference': preference,
+      // เมื่อเลือกแล้ว เราอาจจะเปลี่ยนสถานะเพื่อให้ Node.js ไปจัดการต่อ
+      'status': 'refund_disposed', // สถานะใหม่เพื่อบอกว่า 'จัดสรรแล้ว'
+    }).eq('id', transactionId);
+  }
+
   // =====================================================
   // HELPER METHODS (Bug Fixes)
   // =====================================================

@@ -24,6 +24,7 @@ class DonationDashboardPage extends StatefulWidget {
 class _DonationDashboardPageState extends State<DonationDashboardPage> {
   late final DonationRepository _repository;
   DonationStats? _stats;
+  List<Map<String, dynamic>> _pendingRefunds = [];
 
   @override
   void initState() {
@@ -81,6 +82,21 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
     } catch (e) {
       debugPrint('Error loading stats: $e');
     }
+
+    // Check for pending refunds
+    final currentUser = ServiceLocator.instance.currentUser;
+    if (currentUser != null) {
+      try {
+        final refunds = await _repository.getRefundPendingTransactions(currentUser.id);
+        if (mounted) {
+          setState(() {
+            _pendingRefunds = refunds;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error checking refunds: $e');
+      }
+    }
   }
 
   @override
@@ -127,6 +143,7 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
               return SingleChildScrollView(
                 child: Column(
                   children: [
+                    if (_pendingRefunds.isNotEmpty) _buildRefundAlert(),
                     // Banner & Emergency Section Layout (Stack)
                     Stack(
                       children: [
@@ -401,6 +418,135 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
       case 'elderly': return Icons.elderly;
       default: return Icons.help_outline;
     }
+  }
+
+  Widget _buildRefundAlert() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 88, left: 16, right: 16), // Bottom of Safe Top Bar
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade900,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'บางรายการบริจาคของคุณถูกยกเลิกเนื่องจากเหตุการณ์สิ้นสุด',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, color: Colors.white54, size: 16),
+                onPressed: () => setState(() => _pendingRefunds = []),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'กรุณาคลิกเลือกวิธีจัดการเงินบริจาค เพื่อสิทธิประโยชน์ของคุณ',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _showRefundResolutionDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.blue.shade900,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('ดำเนินการเลือกวิธีคืนเงิน', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRefundResolutionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('จัดการเงินคืน (Refund Resolution)', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _pendingRefunds.map((tx) {
+                  final amount = tx['amount']?.toString() ?? '0';
+                  final title = tx['request']?['title'] ?? 'คำร้องนี้';
+                  
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('รายการ: $title', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text('ยอดเงิน: ฿$amount', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                          const Divider(),
+                          const Text('เลือกวิธีจัดการ:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    await _repository.updateRefundPreference(tx['id'], 'credit');
+                                    _loadData(); // Re-check
+                                    if (mounted) Navigator.pop(ctx);
+                                  },
+                                  child: const Text('รับเครดิตในแอป', style: TextStyle(fontSize: 12)),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    await _repository.updateRefundPreference(tx['id'], 'beneficiary');
+                                    _loadData(); // Re-check
+                                    if (mounted) Navigator.pop(ctx);
+                                  },
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                                  child: const Text('มอบให้กองทุน', style: TextStyle(fontSize: 12, color: Colors.white)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ไว้ภายหลัง'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -40,6 +40,10 @@ if (supabaseUrl && supabaseAnonKey) {
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
 
+// Escrow Services
+const escrowReleaseService = require('./services/escrow-release-service');
+const escrowDeadlineChecker = require('./services/escrow-deadline-checker');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -658,6 +662,48 @@ io.on('connection', (socket) => {
       });
     }
   });
+
+  // ── Donate Closure Vote (Consensus) ──
+  // Responder โหวตว่าจะรับบริจาคต่อหรือไม่หลัง Mission Complete
+  // event: { requestId, responderId, canContinue, note? }
+  socket.on('donate-closure-vote', async (data) => {
+    const { requestId, responderId, canContinue, note } = data;
+    console.log(`[Escrow] donate-closure-vote: request=${requestId} responder=${responderId} canContinue=${canContinue}`);
+
+    if (!requestId || !responderId) {
+      socket.emit('donate-closure-vote-result', { success: false, error: 'Missing requestId or responderId' });
+      return;
+    }
+
+    const result = await escrowReleaseService.handleConsensusVote(
+      requestId,
+      responderId,
+      canContinue === true,
+      note || null,
+    );
+
+    // ส่งผลกลับให้ Responder ที่โหวต
+    socket.emit('donate-closure-vote-result', { success: true, ...result });
+    console.log(`[Escrow] Vote result: ${JSON.stringify(result)}`);
+  });
+
+  // ── Admin Manual Escrow Release ──
+  // Admin บังคับ release escrow ด้วยตนเอง
+  // event: { requestId, adminUserId }
+  socket.on('admin-release-escrow', async (data) => {
+    const { requestId, adminUserId } = data;
+    console.log(`[Escrow] admin-release-escrow: request=${requestId} admin=${adminUserId}`);
+
+    if (!requestId) {
+      socket.emit('admin-release-escrow-result', { success: false, error: 'Missing requestId' });
+      return;
+    }
+
+    const result = await escrowReleaseService.releaseEscrow(requestId, { triggeredBy: 'manual_admin' });
+    socket.emit('admin-release-escrow-result', { success: true, ...result });
+    console.log(`[Escrow] Admin release result: ${JSON.stringify(result)}`);
+  });
+
 
   // Handle UI Preference Updates
   socket.on('save-ui-preference', async (data) => {
@@ -1491,4 +1537,14 @@ server.listen(PORT, '0.0.0.0', () => {
      และอัปเดต mainMachineIp ให้เป็น: ${localIp}
   ======================================================
   `);
+
+  // 🔒 เริ่ม Escrow Deadline Checker (scheduled job ทุก 15 นาที)
+  escrowDeadlineChecker.start();
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('[Server] SIGTERM received — shutting down gracefully');
+  escrowDeadlineChecker.stop();
+  server.close(() => process.exit(0));
 });
