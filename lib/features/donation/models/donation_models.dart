@@ -1,3 +1,45 @@
+import 'fee_models.dart';
+
+// ====================================================
+// EscrowStatus — สถานะ Escrow ของคำร้องบริจาค
+// ====================================================
+
+enum EscrowStatus {
+  /// ยังไม่มี transaction ใดถูก confirm
+  notStarted,
+  /// มีเงินพักที่ Beneficiary Escrow Account อยู่
+  inEscrow,
+  /// Beneficiary โอนให้ Reporter สำเร็จแล้ว
+  released,
+  /// เงินถูกคืนให้ผู้บริจาค หรือโอนให้ Beneficiary ถาวร
+  returned;
+
+  static EscrowStatus fromString(String? value) {
+    switch (value) {
+      case 'in_escrow':
+        return EscrowStatus.inEscrow;
+      case 'released':
+        return EscrowStatus.released;
+      case 'returned':
+        return EscrowStatus.returned;
+      default:
+        return EscrowStatus.notStarted;
+    }
+  }
+
+  String get dbValue {
+    switch (this) {
+      case EscrowStatus.notStarted:
+        return 'not_started';
+      case EscrowStatus.inEscrow:
+        return 'in_escrow';
+      case EscrowStatus.released:
+        return 'released';
+      case EscrowStatus.returned:
+        return 'returned';
+    }
+  }
+}
 
 enum DonationApprovalStatus {
   pending_local,
@@ -148,6 +190,37 @@ class DonationRequest {
   final double? longitude;
   final Map<String, dynamic> customData;
 
+  // --- Escrow & Fee Fields (Escrow-via-Beneficiary Architecture) ---
+
+  /// สถานะ Escrow ของคำร้องนี้
+  final EscrowStatus escrowStatus;
+
+  /// ยอดที่ Reporter ต้องการได้รับจริง (Net Goal)
+  final double? goalAmountNet;
+
+  /// ยอดที่ระบบเปิดรับบริจาค = Net + Σfees (Gross Target)
+  final double? goalAmountGross;
+
+  /// Snapshot ของ fee items ณ เวลาสร้างคำร้อง (ป้องกัน Admin เปลี่ยน fee กระทบคำร้องเก่า)
+  final List<FeeLineItem> feeSnapshot;
+
+  // --- Pause / Closure Fields ---
+
+  /// คำร้องถูกระงับชั่วคราว (Consensus ไม่ผ่าน)
+  final bool isPaused;
+
+  /// เหตุผลที่ระงับ
+  final String? pauseReason;
+
+  /// Deadline ก่อนที่ระบบโอนเงินให้ Beneficiary อัตโนมัติ
+  final DateTime? pauseDeadline;
+
+  /// เวลาที่คำร้องถูกปิด
+  final DateTime? closedAt;
+
+  /// เหตุผลที่ปิด: 'incident_resolved' | 'manual_close' | 'expired' | 'transferred_to_beneficiary'
+  final String? closedReason;
+
   const DonationRequest({
     required this.id,
     this.userId,
@@ -172,6 +245,15 @@ class DonationRequest {
     this.latitude,
     this.longitude,
     this.customData = const {},
+    this.escrowStatus = EscrowStatus.notStarted,
+    this.goalAmountNet,
+    this.goalAmountGross,
+    this.feeSnapshot = const [],
+    this.isPaused = false,
+    this.pauseReason,
+    this.pauseDeadline,
+    this.closedAt,
+    this.closedReason,
   });
 
   factory DonationRequest.fromJson(Map<String, dynamic> json) {
@@ -208,6 +290,20 @@ class DonationRequest {
       latitude: json['latitude'] != null ? parseDouble(json['latitude']) : null,
       longitude: json['longitude'] != null ? parseDouble(json['longitude']) : null,
       customData: json['custom_data'] as Map<String, dynamic>? ?? {},
+      escrowStatus: EscrowStatus.fromString(json['escrow_status']?.toString()),
+      goalAmountNet: json['goal_amount_net'] != null ? parseDouble(json['goal_amount_net']) : null,
+      goalAmountGross: json['goal_amount_gross'] != null ? parseDouble(json['goal_amount_gross']) : null,
+      feeSnapshot: FeeBreakdown.parseFeeSnapshot(
+        json['fee_snapshot'] as List<dynamic>?,
+      ),
+      isPaused: json['is_paused'] as bool? ?? false,
+      pauseReason: json['pause_reason']?.toString(),
+      pauseDeadline: json['pause_deadline'] != null
+          ? DateTime.parse(json['pause_deadline'] as String)
+          : null,
+      closedAt:
+          json['closed_at'] != null ? DateTime.parse(json['closed_at'] as String) : null,
+      closedReason: json['closed_reason']?.toString(),
     );
   }
 
@@ -235,6 +331,15 @@ class DonationRequest {
       'latitude': latitude,
       'longitude': longitude,
       'custom_data': customData,
+      'escrow_status': escrowStatus.dbValue,
+      'goal_amount_net': goalAmountNet,
+      'goal_amount_gross': goalAmountGross,
+      'fee_snapshot': feeSnapshot.map((e) => e.toJson()).toList(),
+      'is_paused': isPaused,
+      'pause_reason': pauseReason,
+      'pause_deadline': pauseDeadline?.toIso8601String(),
+      'closed_at': closedAt?.toIso8601String(),
+      'closed_reason': closedReason,
     };
   }
 
@@ -249,6 +354,24 @@ class DonationRequest {
     if (targetAmount == null) return 0;
     return (targetAmount! - currentAmount).clamp(0, double.infinity);
   }
+
+  /// % ของ current_amount ที่สะท้อนยอด Net (หลังหักค่าธรรมเนียม)
+  /// สำหรับแสดง Progress Bar ฝั่ง Viewer ตาม VIDEO_SYSTEM_PLAN.md
+  /// progress_net = currentAmount × (netRatio) / goalAmountGross
+  double get netProgress {
+    final gross = goalAmountGross ?? targetAmount;
+    if (gross == null || gross <= 0) return progress;
+    if (feeSnapshot.isEmpty) return progress;
+    // คำนวณ net ratio จาก fee snapshot
+    final totalFeeRate = feeSnapshot
+        .where((f) => f.feeType == FeeType.percentOfGross)
+        .fold<double>(0.0, (sum, f) => sum + (f.rate ?? 0));
+    final netRatio = (100 - totalFeeRate) / 100;
+    return (currentAmount * netRatio) / gross;
+  }
+
+  bool get isClosed => closedAt != null;
+  bool get isEscrowActive => escrowStatus == EscrowStatus.inEscrow;
 }
 
 /// สถิติภาพรวมของการขอรับบริจาค

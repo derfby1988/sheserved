@@ -775,22 +775,115 @@ CREATE TABLE emergency_health_data (
 > **นโยบาย:** ยอดที่แสดงบนหน้าจอต้องสะท้อนเฉพาะการชำระเงินที่ **ยืนยันแล้วจริง** เท่านั้น
 > ไม่ใช้ Optimistic Accumulation อีกต่อไป เพราะผู้ใช้อาจกดหลายครั้งโดยไม่ชำระจริง
 
-### Flow ทั้งหมด (9 ขั้นตอน)
+---
+
+### 🏦 Escrow-via-Beneficiary Architecture (นโยบายหลัก — Updated 2026-04-08)
+
+**หลักการ:** เงินบริจาคทุกบาทที่ชำระสำเร็จจะถูกโอนไปยัง **บัญชีของหน่วยงานผู้รับมรดก (Beneficiary Escrow Account)** ทันที — ไม่เก็บไว้ในระบบ Sheserved และไม่โอนให้ผู้รับบริจาค (Reporter) จนกว่าภารกิจจะสมบูรณ์
+
+**เหตุผลของ Architecture นี้:**
+
+| เหตุผล | รายละเอียด |
+|:---|:---|
+| 🛡️ **ป้องกันภาษี** | Sheserved ไม่ "ถือ" เงินของผู้อื่น — เงินผ่านไปยัง Beneficiary (นิติบุคคล) โดยตรง ลดความเสี่ยงว่าระบบจะถูกตีความว่ารับเงิน |
+| 🔒 **ลดความเสี่ยงการเรียกเงินคืน** | หากคำร้องถูกระงับหรือยกเลิก เงินยังอยู่ที่ Beneficiary — ไม่ต้องไล่เรียกคืนจากผู้รับบริจาคที่อาจใช้ไปแล้ว |
+| ⚖️ **ความโปร่งใส** | บุคคลที่สาม (Beneficiary Org) ทำหน้าที่เหมือน "คนกลางกองกลาง" — ผู้บริจาคมีความมั่นใจว่าเงินอยู่ในมือที่ neutral |
+| 🔁 **Refund ง่ายขึ้น** | การคืนเงิน (Refund/Cancel) ไม่ต้องเรียกเงินกลับจากผู้รับบริจาค — Beneficiary ถือเงินอยู่ครบ |
+
+---
+
+### Flow เปรียบเทียบ (เดิม vs ใหม่)
 
 ```
-1. Viewer กดปุ่ม [บริจาค] → เลือกคำร้องและจำนวนเงิน
-2. ระบบสร้าง donation_transactions record (status: 'pending')
-3. Dev mode  → auto-confirm หลัง 1.5 วินาที (mock — ไม่เสียเงิน)
-   Prod mode → แสดง PromptPay QR หรือ redirect Omise
-4. (Production only) Payment Provider ส่ง Webhook ยืนยัน
-5. เรียก DB Function confirm_donation_transaction (atomic):
-     a. donation_transactions.status = 'confirmed'
-     b. donation_requests.current_amount += amount
-6. Emit WebSocket 'donation-confirmed' event พร้อม requestId + newTotal
-7. Real-time ตัวเลขอัปเดตบนจอผู้ชมทุกคนพร้อมกัน
+──────────────────────────────────────────────────────
+❌ Flow เดิม (Direct Transfer — มีความเสี่ยง):
+──────────────────────────────────────────────────────
+ผู้บริจาค → Gateway → [ระบบ Sheserved ถือเงิน?]
+                                ↓
+                     → Reporter/Recipient (ทันที?)
+                          ↑
+                     ❌ ถ้า Cancel → ต้องเรียกเงินคืน
+                     ❌ Sheserved อาจถูกตีความว่ารับเงิน
+
+──────────────────────────────────────────────────────
+✅ Flow ใหม่ (Escrow-via-Beneficiary):
+──────────────────────────────────────────────────────
+ผู้บริจาค → Gateway → Beneficiary Escrow Account
+                              ↓ (พักไว้ตลอดภารกิจ)
+                     ภารกิจสมบูรณ์ (Resolved + Consensus)
+                              ↓
+                     Beneficiary โอนให้ Reporter/Recipient
+                              ↓
+                     ✅ ถ้า Cancel → เงินยังอยู่ที่ Beneficiary
+                     ✅ Sheserved ไม่แตะเงินเลย
 ```
 
-### Flow ใน Code (Flutter)
+---
+
+### Flow ทั้งหมด (11 ขั้นตอน — Escrow Model)
+
+```
+1.  Viewer กดปุ่ม [บริจาค] → เลือกคำร้องและจำนวนเงิน
+2.  ระบบสร้าง donation_transactions record (status: 'pending')
+3.  Dev mode  → auto-confirm หลัง 1.5 วินาที (mock)
+    Prod mode → แสดง PromptPay QR หรือ redirect Omise
+
+4.  Payment Provider ส่ง Webhook ยืนยัน (Prod only)
+5.  เรียก DB Function confirm_donation_transaction (atomic):
+      a. donation_transactions.status = 'confirmed'
+      b. donation_requests.current_amount += amount
+      c. [NEW] ระบุ escrow_target = beneficiary_org_id ของ category
+6.  [NEW] ทันทีที่ confirmed → ระบบสั่ง Gateway โอนเงินไปยัง
+          Beneficiary Escrow Account แบบ batch (ไม่ใช่ทีละครั้ง)
+          → donation_transactions.status = 'in_escrow'
+
+7.  Emit WebSocket 'donation-confirmed' event พร้อม requestId + newTotal
+8.  Real-time ตัวเลขอัปเดตบนจอผู้ชมทุกคนพร้อมกัน
+
+──── ภารกิจสิ้นสุด ────
+9.  Responder ทุกรายกด "เสร็จสิ้น" + Consensus ผ่าน
+10. [NEW] ระบบส่งคำสั่ง "Release Escrow" ไปยัง Beneficiary Org
+    → Beneficiary โอนยอดสะสมทั้งหมดให้ Reporter account
+    → donation_transactions.status = 'disbursed'
+11. Emit WebSocket 'donation-disbursed' + System Message ใน Chat
+```
+
+---
+
+### Escrow Batch Transfer Policy
+
+เพื่อลด transaction fees และ overhead ของ payment gateway:
+
+| สถานการณ์ | วิธีโอนเข้า Escrow |
+|:---|:---|
+| **Real-time (Dev)** | mock — บันทึกสถานะ `in_escrow` ทันที ไม่โอนจริง |
+| **Production (PromptPay)** | รวมยอดทุก `confirmed` ของวันแล้ว batch โอนรายวัน (End-of-Day) |
+| **Production (Omise Card)** | โอนไปยัง Omise Recipient (Beneficiary) หลัง confirm ทันที |
+
+> [!NOTE]
+> Beneficiary Org ต้องลงทะเบียนเป็น **Omise Recipient** หรือ **PromptPay ที่ verify แล้ว** ก่อนจึงจะรับ escrow transfer ได้ — เป็นเงื่อนไขก่อน activate beneficiary
+
+---
+
+### สถานะใหม่ใน donation_transactions (Escrow States)
+
+```
+pending
+  ↓ (payment confirmed)
+confirmed
+  ↓ (ส่งเข้า escrow)
+in_escrow          ← เงินอยู่ที่ Beneficiary รอปล่อย
+  ↓ (mission complete + consensus)
+disbursed          ← โอนให้ Reporter สำเร็จ
+  
+  ─── กรณีพิเศษ ───
+in_escrow → cancelled_refunded    ← คำร้องยกเลิก → Beneficiary คืนเงินผู้บริจาค
+in_escrow → transferred_to_beneficiary ← ใช้ Beneficiary เก็บถาวร (ตามนโยบาย)
+```
+
+---
+
+### Flow ใน Code (Flutter — Updated)
 
 ```dart
 // เรียกจาก donation_sheet_widget.dart หรือ emergency_navigation_logic.dart
@@ -799,39 +892,64 @@ final result = await PaymentService.instance.initiateDonation(
   donorUserId: currentUser.id,
   amount: selectedAmount,
   method: PaymentMethod.mock, // Dev: ไม่เสียเงิน | Prod: .promptpay / .omiseCard
+  // [NEW] escrow target ดึงจาก donation_categories.beneficiary_org_id
 );
 
 if (result.isConfirmed) {
-  // Emit socket event เพื่ออัปเดต Real-time ให้ผู้ชมทุกคน
+  // เงินถูกส่งเข้า Escrow แล้ว — อัปเดต UI
   socket.emit('video-interaction', {
     'type': 'donation',
     'requestId': selectedRequestId,
     'amount': selectedAmount,
     'videoId': currentVideoId,
+    'escrowStatus': 'in_escrow', // [NEW]
   });
 } else if (result.isPending && result.qrPayload != null) {
-  // แสดง QR Dialog สำหรับ PromptPay (Production)
   showPromptPayQrDialog(context, qrPayload: result.qrPayload!);
 } else if (result.isFailed) {
   showErrorSnackbar(result.error ?? 'เกิดข้อผิดพลาด');
 }
 ```
 
+---
+
 ### ข้อแตกต่างจากระบบเดิม
 
-| หัวข้อ | ระบบเดิม | ระบบใหม่ |
+| หัวข้อ | ระบบเดิม | ระบบใหม่ (Escrow) |
 |:---|:---|:---|
 | อัปเดตยอด | Optimistic (ทันที ไม่ verify) | หลังยืนยันการชำระจริงเท่านั้น |
-| Audit Trail | ไม่มี | `donation_transactions` table ทุก transaction |
+| เงินพักอยู่ที่ไหน | ไม่ชัดเจน / Sheserved? | **Beneficiary Escrow Account** (บุคคลที่สาม) |
+| โอนให้ผู้รับบริจาคเมื่อไหร่ | ทันที? | **หลัง Mission Complete + Consensus เท่านั้น** |
+| กรณียกเลิก/ระงับ | ต้องเรียกเงินคืนจากผู้รับ | เงินยังอยู่ที่ Beneficiary — ไม่ต้องเรียกคืน |
+| ภาษี / ข้อกฎหมาย | เสี่ยง | Sheserved ไม่ถือเงิน → ลดความเสี่ยงอย่างมาก |
+| Audit Trail | ไม่มี | `donation_transactions` + `beneficiary_transfer_logs` |
 | กันกด spam | ไม่มี | status `pending` ป้องกัน double-confirm |
-| Dev ไม่เสียเงิน | เป็นแบบนี้อยู่แล้ว | Mock mode (1.5s delay แล้ว confirm) |
-| Production | ไม่มีแผน | PromptPay QR / Omise ready |
+| Dev ไม่เสียเงิน | เป็นแบบนี้อยู่แล้ว | Mock mode (1.5s delay → `in_escrow`) |
+| Production | ไม่มีแผน | PromptPay batch / Omise Recipient ready |
 
 ---
 
-### donation_transactions Schema
+### ข้อจำกัดและสิ่งที่ต้องพิจารณาเพิ่มเติม
+
+> [!IMPORTANT]
+> **Beneficiary Org ต้องเป็นนิติบุคคลที่จดทะเบียนถูกกฎหมาย** (มูลนิธิ / สมาคม / บริษัท) เพื่อให้การรับเงินและโอนต่อมีความถูกต้องตามกฎหมายไทย และสามารถออกใบเสร็จหรือหลักฐานการรับเงินได้
+
+> [!WARNING]
+> **กรณีที่ยังไม่มี Beneficiary Org ที่ verify แล้ว** → ให้ใช้ Dev/Mock mode เท่านั้น ห้ามรับเงินจริงจากผู้ใช้จนกว่า Beneficiary Org จะพร้อม
+
+| ข้อจำกัด | แนวทาง |
+|:---|:---|
+| Beneficiary ต้องเป็นนิติบุคคล | ตรวจสอบเอกสารก่อน activate เสมอ |
+| PromptPay batch มี delay 1 วัน | แสดง UI ชัดเจนว่า "ยอดแสดงบนจอ = ยอดสะสมที่รับรู้แล้ว" ไม่ใช่ยอดที่โอนจริงแล้ว |
+| Beneficiary ต้อง agree เป็น escrow holder | ต้องมี MOU/ข้อตกลงกับ Org ก่อน |
+| หาก Beneficiary ปฏิเสธ release | ต้องมี dispute mechanism (escrow release protocol) |
+
+---
+
+
 
 ```sql
+-- อัปเดต Schema: donation_transactions
 CREATE TABLE donation_transactions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id        UUID NOT NULL REFERENCES donation_requests(id) ON DELETE CASCADE,
@@ -841,22 +959,942 @@ CREATE TABLE donation_transactions (
                       -- 'mock' | 'promptpay' | 'omise_card'
     payment_reference VARCHAR(255),
                       -- transaction ref จาก gateway (null ขณะ pending)
-    status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-                      -- 'pending' | 'confirmed' | 'failed'
+    status            VARCHAR(40) NOT NULL DEFAULT 'pending',
+                      -- ดูรายละเอียด 'สถานะใหม่' ในหัวข้อ Escrow States
     confirmed_at      TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- DB Function (atomic): ยืนยัน transaction + อัปเดต current_amount ใน transaction เดียว
--- เรียกผ่าน: DonationRepository.confirmTransaction(txId)
 -- SELECT confirm_donation_transaction('uuid-here', 'ref-from-gateway');
 ```
 
-### Implementation Files
+---
+
+## Donation Closure Policy (นโยบายปิดรับบริจาคหลังจบเหตุการณ์)
+
+### หลักการหลัก: Donation follows Incident Lifecycle
+
+```
+สถานะ incident_responses.status:
+  en_route  → resolved
+                ↓
+  donation_requests.approval_status:
+  active    → closed
+```
+
+### รูปแบบการสิ้นสุดการรับบริจาค
+
+#### รูปแบบที่ 1 — Consensus-Based Lifecycle: การจัดการยอดหลังจบภารกิจ
+
+**ทริกเกอร์:** เมื่อ Responder **"ทุกราย"** กดปุ่ม **"เสร็จสิ้น"** (status: 'resolved')
+
+**Action & Policy:**  
+1. **สถานะเริ่มต้นหลังภารกิจจบ:** ระบบจะเปลี่ยนสถานะคำร้องบริจาคเป็น **"Pending Approval for Extension"** (หรือเข้าสู่โหมดพักชั่วคราว)
+2. **เงื่อนไขการเปิดรับบริจาคต่อ:** 
+   - ต้องได้รับการอนุญาต (Authorize) จาก **Responder "ทุกราย"** ที่ปฏิบัติหน้าที่ในเหตุการณ์นั้น
+   - หากมี Responder **"แม้แต่เพียงรายเดียว"** ไม่อนุญาต → ระบบจะทำการ **"หยุดพักการรับบริจาค (Paused)"** ทันที
+3. **การแจ้งเตือน (Notifications):**
+   - **แจ้ง Reporter:** ส่งระบบแจ้งเตือนว่า "การรับบริจาคถูกระงับชั่วคราวเนื่องจากความเห็นของทีมช่วยเหลือไม่เป็นเอกฉันท์"
+   - **แจ้งผู้บริจาค (Thai Mhung):** เมื่อกดปุ่มบริจาค ระบบจะแสดงข้อความแจ้งสาเหตุว่า "ระบบหยุดพักการรับบริจาคชั่วคราวเพื่อตรวจสอบความจำเป็นเพิ่มเติมโดยเจ้าหน้าที่"
+4. **ความโปร่งใสผ่าน Live Chat (System Audit Trail):**
+   - ทุกๆ การดำเนินการที่เกี่ยวข้องกับคำร้องบริจาค จะต้อง **ส่งข้อความระบบ (System Message)** ลงไปในแท็บ Chat ของ Live ทันที เพื่อบันทึกเป็นประวัติศาสตร์การเปิด-ปิด
+   - **เหตุการณ์ที่จะส่งข้อความระบบ มีดังนี้:** 
+     - **สร้างคำร้องใหม่:** *"[ระบบ] ผู้รายงาน/เจ้าหน้าที่ C ได้เปิดรับบริจาคใหม่: [ชื่อคำร้อง]"*
+     - **อนุญาต/ระงับ (จาก Consensus):** 
+       - *"[ระบบ] เจ้าหน้าที่ A อนุญาตให้เปิดรับบริจาคต่อหลังจบภารกิจ"*
+       - *"[ระบบ] เจ้าหน้าที่ B โหวตระงับการรับบริจาค → ระบบเข้าสู่โหมดพักชั่วคราว"*
+     - **ปิดรับบริจาค (Manual/Auto-Close):** *"[ระบบ] คำร้องบริจาค [ชื่อคำร้อง] ถูกปิดรับแล้ว"*
+   - **เป้าหมาย:** เพื่อให้ทุกคนที่เข้ามารับชม รวมถึงผู้บริจาคไทยมุง ได้เห็นไทม์ไลน์และประวัติการตัดสินใจของเจ้าหน้าที่อย่างโปร่งใสว่าใครมีส่วนร่วมในการตัดสินใจบ้างตั้งแต่เริ่มเปิดจนถึงปิดรับบริจาค
+5. **หากเห็นชอบครบทุกคน:** คำร้องจะคงสถานะ `active` เพื่อให้โอนเงินเข้าเหตุการณ์ที่จบไปแล้วได้ตามปกติ
+
+> [!IMPORTANT]
+> **ทำไมต้องมีระบบหยุดพัก?** เพื่อความโปร่งใสสูงสุด และป้องกันการเรียกร้องยอดบริจาคเกินความจำเป็นจริงหลังจบเหตุการณ์ หากผู้อยู่หน้างาน (Responder) เห็นว่าความช่วยเหลือนั้นเกินพอแล้ว ระบบต้องสามารถหยุดพักเพื่อตรวจสอบได้ทันที
+
+> [!NOTE]
+> คำร้องที่ status = 'pending' (ยังไม่ชำระ) ณ ขณะที่ระบบเข้าสู่โหมดพัก จะถูกระงับการจ่ายเงินจนกว่าจะได้รับความเห็นชอบครบจากทุกฝ่าย หรือถูกยกเลิกหากมีการโหวตระงับถาวร
+
+---
+
+#### รูปแบบที่ 2 — Manual Close: Reporter/Responder ปิดเอง
+
+**ทริกเกอร์:** Reporter หรือ Responder กดปุ่ม **"ปิดรับบริจาค"** บนคำร้องของตนเอง
+
+**Action:**  
+→ อัปเดต `donation_requests.approval_status = 'closed'`  
+→ Broadcast `'donation-request-closed'` เฉพาะคำร้องนั้น  
+
+**เงื่อนไข:** เฉพาะเจ้าของคำร้อง (`user_id`) หรือ Responder ที่มีสิทธิ์เท่านั้น
+
+---
+
+#### รูปแบบที่ 3 — Time-Based Expiry (Optional)
+
+**ทริกเกอร์:** คำร้องเปิดเกิน X วัน โดยไม่มีกิจกรรม (ยอดไม่ขยับ)
+
+**Action:** Supabase Scheduled Function ตั้งค่า daily cron  
+→ ปิดคำร้องที่ `approval_status = 'active'` และ `created_at < NOW() - INTERVAL '7 days'`
+
+---
+
+### DB Schema สำหรับปิดรับบริจาคและพักรับบริจาค
+
+```sql
+-- เพิ่ม Column ใน donation_requests
+ALTER TABLE donation_requests ADD COLUMN closed_at TIMESTAMPTZ;
+ALTER TABLE donation_requests ADD COLUMN closed_reason VARCHAR(50);
+  -- 'incident_resolved' | 'manual_close' | 'expired'
+
+-- เพิ่ม Column ใน donation_requests เพื่อรองรับสถานะการพัก
+ALTER TABLE donation_requests ADD COLUMN is_paused BOOLEAN DEFAULT FALSE;
+ALTER TABLE donation_requests ADD COLUMN pause_reason TEXT;
+
+-- Table สำหรับเก็บความเห็นชอบของ Responder (Post-Incident Approval)
+CREATE TABLE donation_closure_consensus (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id    UUID REFERENCES donation_requests(id) ON DELETE CASCADE,
+    responder_id  UUID NOT NULL,
+    can_continue  BOOLEAN NOT NULL, -- TRUE = อนุญาต, FALSE = ไม่อนุญาต (สั่งพัก)
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(request_id, responder_id)
+);
+
+-- DB Function: ตรวจสอบและจัดการสถานะการรับบริจาคตามความเห็น Responder
+CREATE OR REPLACE FUNCTION process_donation_consensus(p_request_id UUID)
+RETURNS void AS $$
+DECLARE
+    veto_exists BOOLEAN;
+BEGIN
+    -- 1. ตรวจสอบว่ามี Responder แม้แต่รายเดียวที่โหวต "ไม่อนุญาต" (FALSE) หรือไม่
+    SELECT EXISTS (
+        SELECT 1 FROM donation_closure_consensus 
+        WHERE request_id = p_request_id AND can_continue = FALSE
+    ) INTO veto_exists;
+
+    -- 2. จัดการสถานะตามผลโหวต
+    IF veto_exists THEN
+        UPDATE donation_requests
+        SET is_paused = TRUE,
+            pause_reason = 'ไม่ได้รับอนุมัติให้รับบริจาคต่อจากเจ้าหน้าที่อย่างเป็นเอกฉันท์'
+        WHERE id = p_request_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+---
+
+### WebSocket Events ที่ต้องเพิ่ม (สำหรับการปิดรับบริจาค)
+
+| Event | ทิศทาง | Payload | ผลลัพธ์ใน Flutter |
+|:------|:-------|:--------|:----------------|
+| `donation-request-closed` | Server → All Clients | `{ videoId, requestId, reason }` | คำร้องใน `_activeDonationRequests` ถูกเอาออก / UI เปลี่ยนสี |
+| `incident-resolved` | Server → All Clients | `{ videoId }` | Auto-trigger การขอ Consent / ปิดคำร้องรับบริจาค |
+| `donation-system-message` | Server → All Clients | `{ videoId, message, type }` | ส่ง System Message เข้า Live Chat แจ้งสถานการณ์รับบริจาคโปร่งใส |
+
+---
+
+## Beneficiary System (ระบบผู้รับมรดก — Updated 2026-04-08)
+
+เพื่อความโปร่งใสและป้องกันเงินค้างระบบ ทุกหมวดหมู่การบริจาคต้องระบุ **หน่วยงานผู้รับมรดก (Beneficiary Organization)** ที่จะรับยอดเงินแทนผู้ร้องขอเดิม ในกรณีที่ไม่สามารถดำเนินการปกติได้
+
+### นิยาม
+
+> **ผู้รับมรดก** คือหน่วยงาน/บัญชีกองกลางที่ได้รับมอบหมายล่วงหน้า ให้รับยอดเงินบริจาคในกรณีพิเศษ 3 กรณีต่อไปนี้ โดยแต่ละ `donation_categories` ควรมี beneficiary ของตัวเอง และต้องมี **Global Default Beneficiary** เป็น fallback เสมอ หาก category ใดยังไม่ได้ตั้งค่า
+
+---
+
+### 1. กรณีที่ 1 — คำร้องถูกระงับจนถึง Deadline (Pause Expiry)
+
+**ทริกเกอร์:** `is_paused = TRUE` และเวลาล่วงเลย `pause_deadline` ที่กำหนด
+
+> **Grace Period** คำนวณจาก `donation_categories.pause_grace_period_hours` ของหมวดหมู่นั้นๆ (ค่า default = 72 ชั่วโมง หากยังไม่ได้ตั้งค่า)
+
+**Flow:**
+```
+pause_deadline ถูก exceed
+    ↓
+ดึง pause_grace_period_hours จาก donation_categories
+    ↓
+ตรวจสอบ donation_transactions ที่ status = 'confirmed' แต่ยังไม่ disbursed
+    ↓
+ดึง beneficiary_org_id จาก donation_categories ของคำร้องนั้น
+    ↓
+โอนยอดสะสมทั้งหมดไปยัง beneficiary account
+    ↓
+อัปเดต donation_requests.closed_reason = 'transferred_to_beneficiary'
+    ↓
+Emit donation-system-message → Live Chat + FCM แจ้ง Reporter
+```
+
+**System Message ที่ต้องส่ง:**
+- *"[ระบบ] คำร้องบริจาค [ชื่อ] หมดเวลาพักชั่วคราว → ยอดเงิน X บาท ถูกโอนให้ [ชื่อหน่วยงาน] ตามนโยบายผู้รับมรดก"*
+
+---
+
+### 2. กรณีที่ 2 — โอนเงินไปยังผู้ร้องขอไม่สำเร็จ (Transfer Failure)
+
+**ทริกเกอร์:** Payment gateway ส่ง webhook `status = 'failed'` หรือ retry เกิน 3 ครั้ง
+
+**Flow:**
+```
+transfer failed / retry หมดแล้ว
+    ↓
+บันทึก donation_transactions.status = 'transfer_failed'
+    ↓
+แจ้ง Reporter: "บัญชีปลายทางผิดพลาด — กรุณาแก้ไขภายใน 48 ชั่วโมง"
+    ↓
+  [A] Reporter แก้บัญชีสำเร็จ → โอนซ้ำปกติ
+  [B] เกิน 48 ชั่วโมง → โอนให้ beneficiary_org_id อัตโนมัติ
+    ↓
+System Message + beneficiary_transfer_logs
+```
+
+> [!IMPORTANT]
+> ต้องมี **grace period 48 ชั่วโมง** ให้ Reporter แก้ไขบัญชีก่อนโอนให้ Beneficiary เสมอ เพื่อไม่ให้ผู้เสียหายเสียสิทธิ์โดยไม่จำเป็น
+
+---
+
+### 3. กรณีที่ 3 — ยกเลิกการบริจาค (Donation Cancellation)
+
+| สถานการณ์ย่อย | เงื่อนไข | การจัดการ |
+|:---|:---|:---|
+| **3a** | ยกเลิกก่อนชำระ (pending) | ลบ record ทิ้ง — ไม่มีเงินจริง ไม่ต้องโอนใคร |
+| **3b** | ยกเลิกหลังชำระแล้ว (confirmed) ก่อนโอน | แจ้งผู้บริจาคเลือก: Refund หรือ Donate to Beneficiary |
+| **3c** | Reporter ยกเลิกทั้งคำร้อง ขณะมียอดสะสม | Refund ทุก confirmed transaction หรือโอน Beneficiary ตาม Policy |
+
+**นโยบาย:**
+- ผู้บริจาคมีเวลาตามค่า `donation_categories.cancellation_grace_hours` (default 24 ชั่วโมง) เพื่อเลือก Refund หรือโอน Beneficiary
+- หากหมดเวลา → ระบบโอนให้ Beneficiary อัตโนมัติ
+- กำหนด Status Priority: `closed > cancelled > paused` — เมื่อ cancelled แล้ว ระบบหยุดรอ consensus ทันที
+
+---
+
+### 4. DB Schema — Beneficiary System
+
+```sql
+-- ตารางหน่วยงานผู้รับมรดก
+CREATE TABLE beneficiary_organizations (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                VARCHAR(255) NOT NULL,       -- ชื่อหน่วยงาน (นิติบุคคล)
+    registration_no     VARCHAR(100),               -- เลขทะเบียนนิติบุคคล
+    bank_name           VARCHAR(100),               -- ชื่อธนาคาร
+    bank_account        VARCHAR(50),                -- เลขบัญชี (encrypt at-rest)
+    bank_account_name   VARCHAR(255),               -- ชื่อบัญชี
+    contact_email       VARCHAR(255),
+    omise_recipient_id  VARCHAR(255),               -- Omise Recipient ID (สำหรับ auto-transfer)
+    promptpay_id        VARCHAR(50),                -- PromptPay ID (สำหรับ batch transfer)
+    is_verified         BOOLEAN DEFAULT FALSE,       -- ต้อง verify ก่อน activate เสมอ
+    is_active           BOOLEAN DEFAULT FALSE,       -- เปิดใช้ได้เฉพาะเมื่อ is_verified = TRUE
+    is_global_default   BOOLEAN DEFAULT FALSE,       -- Global Fallback เมื่อ category ไม่มี beneficiary
+    has_mou             BOOLEAN DEFAULT FALSE,       -- มี MOU กับ Sheserved แล้วหรือยัง
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW(),
+    -- Constraint: is_active ต้องเป็น TRUE ได้เฉพาะเมื่อ is_verified = TRUE
+    CONSTRAINT active_requires_verified CHECK (NOT is_active OR is_verified)
+);
+
+-- Audit Log ทุก INSERT/UPDATE ใน beneficiary_organizations (ป้องกัน Risk #1)
+CREATE TABLE beneficiary_audit_logs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id      UUID NOT NULL REFERENCES beneficiary_organizations(id),
+    changed_by  UUID NOT NULL,   -- user_id ของ super_admin ที่ทำการเปลี่ยนแปลง
+    action      VARCHAR(20) NOT NULL, -- 'INSERT' | 'UPDATE' | 'DEACTIVATE'
+    old_data    JSONB,           -- ค่าก่อนเปลี่ยน (NULL ถ้าเป็น INSERT)
+    new_data    JSONB,           -- ค่าหลังเปลี่ยน
+    changed_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- เชื่อม Category → Beneficiary (Escrow Account) + Grace Period ที่ Admin ตั้งเองได้
+ALTER TABLE donation_categories
+    ADD COLUMN beneficiary_org_id           UUID REFERENCES beneficiary_organizations(id),
+    ADD COLUMN pause_grace_period_hours     INTEGER NOT NULL DEFAULT 72
+                                            CHECK (pause_grace_period_hours BETWEEN 12 AND 720),
+                                            -- min: 12h (ป้องกัน Risk #7) | max: 30 วัน
+    ADD COLUMN transfer_failure_grace_hours INTEGER NOT NULL DEFAULT 48
+                                            CHECK (transfer_failure_grace_hours BETWEEN 6 AND 720),
+                                            -- min: 6h | max: 30 วัน
+    ADD COLUMN cancellation_grace_hours     INTEGER NOT NULL DEFAULT 24
+                                            CHECK (cancellation_grace_hours BETWEEN 1 AND 720);
+                                            -- min: 1h (Reporter กด cancel เอง ยืดหยุ่นกว่า)
+
+-- เพิ่ม columns ใน donation_requests
+ALTER TABLE donation_requests
+    ADD COLUMN pause_deadline           TIMESTAMPTZ,    -- deadline ก่อน auto-transfer to beneficiary
+    ADD COLUMN beneficiary_transfer_at  TIMESTAMPTZ,    -- เวลาที่โอนจริง
+    ADD COLUMN beneficiary_transfer_ref VARCHAR(255);   -- reference จาก gateway
+
+-- Audit Log ทุกการโอนให้ Beneficiary
+CREATE TABLE beneficiary_transfer_logs (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id     UUID NOT NULL REFERENCES donation_requests(id),
+    beneficiary_id UUID NOT NULL REFERENCES beneficiary_organizations(id),
+    amount         DECIMAL(12, 2) NOT NULL,
+    reason         VARCHAR(50) NOT NULL,
+               -- 'pause_deadline' | 'transfer_failed' | 'cancellation'
+    transfer_ref   VARCHAR(255),
+    transferred_at TIMESTAMPTZ DEFAULT NOW(),
+    note           TEXT
+);
+
+-- สถานะทั้งหมดใน donation_transactions (Escrow Model)
+-- ─────────────────────────────────────────────────────────────────
+-- 'pending'                    ← รอผู้บริจาคชำระเงิน
+-- 'confirmed'                  ← ชำระสำเร็จ รอส่งเข้า escrow
+-- 'in_escrow'                  ← เงินอยู่ที่ Beneficiary Escrow Account
+-- 'disbursed'                  ← Beneficiary โอนให้ Reporter สำเร็จ
+-- 'failed'                     ← การชำระเงินล้มเหลวตั้งแต่ต้น
+-- 'transfer_failed'            ← โอนเข้า escrow ล้มเหลว (retry ไม่ผ่าน)
+-- 'processing_transfer'        ← Lock ชั่วคราว ป้องกัน race condition
+-- 'transfer_blocked_no_beneficiary' ← ไม่มี beneficiary → ระงับ + แจ้ง Admin
+-- 'cancelled'                  ← ยกเลิกก่อนชำระ (pending → cancelled)
+-- 'refund_pending'             ← รอ Admin ดำเนินการคืนเงินด้วยตนเอง
+-- 'refunded'                   ← คืนเงินให้ผู้บริจาคสำเร็จแล้ว
+-- 'cancelled_refunded'         ← ยกเลิก + email/PromptPay คืนให้ผู้บริจาคแล้ว
+-- 'transferred_to_beneficiary' ← เงินถูกเก็บไว้กับ Beneficiary ถาวร (ตามนโยบาย)
+-- ─────────────────────────────────────────────────────────────────
+
+-- เพิ่ม column escrow tracking ใน donation_requests
+ALTER TABLE donation_requests
+    ADD COLUMN escrow_status          VARCHAR(30) DEFAULT 'not_started',
+                                      -- 'not_started' | 'in_escrow' | 'released' | 'returned'
+    ADD COLUMN escrow_released_at     TIMESTAMPTZ, -- เวลาที่ Beneficiary release เงินให้ Reporter
+    ADD COLUMN escrow_release_ref     VARCHAR(255); -- reference จาก Beneficiary transfer
+```
+
+> [!NOTE]
+> สถานะ `'processing_transfer'` ใช้เป็น Lock ชั่วคราวเพื่อป้องกัน Race Condition ระหว่าง Refund กับ Beneficiary Transfer ที่อาจเกิดพร้อมกัน ต้องใช้ `SELECT ... FOR UPDATE` ใน DB Function คู่กันเสมอ
+
+---
+
+### 5. WebSocket Events — Beneficiary System
+
+| Event | ทิศทาง | Payload | ผลลัพธ์ใน Flutter |
+|:---|:---|:---|:---|
+| `donation-transferred-to-beneficiary` | Server → All Clients | `{ videoId, requestId, beneficiaryName, amount, reason }` | System Message ใน Chat + อัปเดต UI สถานะคำร้อง |
+| `donation-cancelled` | Server → All Clients | `{ videoId, requestId, refundType }` | แจ้งผู้บริจาคแต่ละราย เลือก Refund/Beneficiary |
+| `beneficiary-transfer-pending` | Server → Reporter only | `{ requestId, deadline, reason }` | แจ้ง Reporter ให้แก้บัญชีก่อน deadline |
+
+---
+
+### 6. UI จัดการผู้รับมรดก (Admin UI)
+
+ให้เพิ่ม UI จัดการผู้รับมรดกใน **2 จุด** เพื่อความโปร่งใส:
+
+#### จุดที่ 1 — หน้าจัดการหมวดหมู่บริจาค (Category Admin Card — Full Wireframe)
+
+การ์ดแต่ละหมวดหมู่ประกอบด้วย **3 ส่วนใหม่** ที่เพิ่มเข้ามาใน scroll view เดียวกัน:
+
+> [!IMPORTANT]
+> หมวดหมู่บริจาคทุกหมวดต้องระบุ **Beneficiary Org ที่เป็นนิติบุคคลที่จดทะเบียนถูกกฎหมาย** (มูลนิธิ / สมาคม / บริษัท) เนื่องจาก Beneficiary ทำหน้าที่เป็น **Escrow Account** รับเงินบริจาคทั้งหมดตลอดภารกิจ และค่าใช้จ่ายทุกรายการต้องแสดงให้ผู้บริจาค **acknowledge ก่อนชำระเงินทุกครั้ง**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  📂 หมวดหมู่: ค่ารักษาพยาบาล          [✏️ แก้ชื่อ]       │
+│  ══════════════════════════════════════════════         │
+│                                                          │
+│  ── ส่วนที่ 1: ผู้รับมรดก / Escrow Account ─────────── │
+│                                                          │
+│  ⚠️ IMPORTANT: ต้องเป็นนิติบุคคลที่จดทะเบียนถูกกฎหมาย   │
+│  เงินบริจาคทั้งหมดจะพักที่บัญชีนี้จนภารกิจสมบูรณ์         │
+│  ─────────────────────────────────────────────          │
+│  🏥  มูลนิธิสาธารณสุขไทย                                  │
+│      ธนาคาร: กสิกรไทย  |  บัญชี: 0XX-X-XXXXX-X           │
+│      [✓ Verified] [✓ ใช้งาน]  [✏️ แก้ไข]                 │
+│                                                          │
+│  [+ เพิ่มผู้รับมรดกสำหรับหมวดหมู่นี้]                     │
+│  ⚠️ (Warning ถ้า beneficiary_org_id = NULL)               │
+│  🚫 (Block ถ้าไม่มี beneficiary + ไม่มี Global Default)   │
+│                                                          │
+│  ── ส่วนที่ 2: ระยะเวลาผ่อนผัน (Grace Period) ────────  │
+│                                                          │
+│  กรณีคำร้องถูกระงับจนถึง Deadline   (min: 12h)           │
+│  [ 72  ] ชั่วโมง  ← NumberField (12–720)                 │
+│                                                          │
+│  กรณีโอนเงินไม่สำเร็จ (Transfer Failure)  (min: 6h)      │
+│  [ 48  ] ชั่วโมง  ← NumberField (6–720)                  │
+│                                                          │
+│  กรณียกเลิกการบริจาค (Cancellation)  (min: 1h)           │
+│  [ 24  ] ชั่วโมง  ← NumberField (1–720)                  │
+│                                                          │
+│  ℹ️ ค่าที่บันทึกมีผลกับคำร้องใหม่เท่านั้น                 │
+│                                                          │
+│  ── ส่วนที่ 3: ค่าใช้จ่ายแพลตฟอร์ม (Platform Fees) ───  │
+│                                                          │
+│  ℹ️ ยอดที่ผู้บริจาคเห็น = ยอดสุทธิหลังหักค่าใช้จ่าย     │
+│                                                          │
+│  🏦 บัญชีรับรายได้ของแพลตฟอร์ม (Sheserved Account)       │
+│  [ dropdown เลือกบัญชีของ Sheserved ที่ลงทะเบียนไว้ ▼ ] │
+│  ℹ️ ค่าใช้จ่ายทั้งหมดจะถูกโอนเข้าบัญชีนี้หลังจบภารกิจ     │
+│                                                          │
+│  รายการค่าใช้จ่าย                                        │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ #  ชื่อรายการ          ประเภท         จำนวน    │    │
+│  │ 1  Sheserved Service   % of gross    [ 2.5 ] %  │    │
+│  │ 2  Omise Gateway Fee   % per txn     [ 1.75] %  │    │
+│  │ 3  Transfer Fee        Fixed ฿       [ 25  ] ฿  │    │
+│  │                 [✏️ แก้ไข]  [🗑️ ลบ]  [↕️ เรียง]  │    │
+│  └─────────────────────────────────────────────────┘    │
+│  [+ เพิ่มรายการค่าใช้จ่าย]  ← ไม่จำกัดจำนวนรายการ       │
+│                                                          │
+│  📊 Live Preview (อ้างอิง Net Goal: 1,000 ฿)            │
+│  🎯 Net Goal:                        1,000.00 ฿         │
+│  ─────────────────────────────────────────────          │
+│  + Sheserved Service 2.5%:          +   25.77 ฿         │
+│  + Omise Gateway Fee 1.75%:         +   18.04 ฿         │
+│  + Transfer Fee (Fixed):            +   25.00 ฿         │
+│  ─────────────────────────────────────────────          │
+│  🏦 Gross Target (ต้องเปิดรับ):      1,068.81 ฿         │
+│                                                          │
+│  ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──         │
+│  [💾 บันทึกการตั้งค่าทั้งหมด]                             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**หมายเหตุ UI — ส่วนที่ 2 (Grace Period):**
+- Min floor: Pause = **12h** / Transfer Failure = **6h** / Cancellation = **1h**
+- Max: 720h (30 วัน) — validate ทั้ง Client และ Server
+- แสดง label "(ค่าเริ่มต้นระบบ)" เมื่อยังไม่เคยตั้งค่า
+- แสดง diff `72h → 96h` ก่อนบันทึกเสมอ
+- Warning dialog ถ้าตั้งต่ำกว่า default เกิน 50%
+
+**หมายเหตุ UI — ส่วนที่ 3 (Platform Fees):**
+- ไม่จำกัด % สูงสุด — Admin เป็นผู้รับผิดชอบตามกฎหมายที่บังคับใช้
+- Live Preview คำนวณ real-time: `Gross = Net ÷ (1 − Σ%fees) + Σfixed_fees`
+- `fee_snapshot` ถูก save ลง `donation_requests` ณ เวลาสร้างคำร้อง — Admin เปลี่ยน fee ภายหลังไม่กระทบคำร้องที่มีอยู่
+- ส่งออกรายงาน fee breakdown ต่อการ disburse ได้จาก Tab "รายงาน"
+
+---
+
+#### ส่วนที่ 3 ในการ์ด — 💰 รายละเอียด Fee Types (ขยายความ)
+
+Admin สามารถ **เพิ่มรายการค่าใช้จ่ายได้ไม่จำกัด** ต่อหมวดหมู่ — ไม่มีการจำกัด % ล่วงหน้า
+
+**ประเภทค่าใช้จ่ายที่รองรับ (เลือกได้ต่อรายการ):**
+
+| `fee_type` | ความหมาย | วิธีคำนวณ |
+|:---|:---|:---|
+| `percent_of_gross` | % ของยอด escrow รวม | `rate × gross_amount` |
+| `fixed_baht` | จำนวนเงินคงที่ (฿) | `amount` ต่อการ disburse 1 ครั้ง |
+| `percent_per_transaction` | % ต่อ transaction ที่ชำระ | `rate × transaction_amount` |
+
+**Wireframe ส่วน Fee ในการ์ดหมวดหมู่:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ──────────────────────────────────────────────         │
+│  💰  ค่าใช้จ่ายแพลตฟอร์ม (Platform Fees)                │
+│  ℹ️ ยอดที่ผู้บริจาคเห็น = ยอดสุทธิหลังหักค่าใช้จ่าย    │
+│                                                          │
+│  รายการค่าใช้จ่าย                                        │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ #  ชื่อรายการ          ประเภท         จำนวน    │    │
+│  │ 1  Sheserved Service   % of gross    [ 2.5 ] %  │    │
+│  │ 2  Omise Gateway Fee   % per txn     [ 1.75] %  │    │
+│  │ 3  Transfer Fee        Fixed ฿       [ 25  ] ฿  │    │
+│  │ + เพิ่มรายการใหม่                               │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                          │
+│  [+ เพิ่มรายการค่าใช้จ่าย]  ← ไม่จำกัดจำนวนรายการ      │
+│                                                          │
+│  ──────────────────────────────────────────────         │
+│  📊 Live Preview (ยอดอ้างอิง: 1,000 ฿ net goal)         │
+│                                                          │
+│  🎯 ยอดที่ผู้รับต้องการ (Net Goal):    1,000.00 ฿       │
+│  ─────────────────────────────────────────────          │
+│  บวก Sheserved Service 2.5%:         +  25.77 ฿        │
+│  บวก Omise Gateway Fee 1.75%:        +  18.04 ฿        │
+│  บวก Transfer Fee (Fixed):           +  25.00 ฿        │
+│  ─────────────────────────────────────────────          │
+│  🏦 ยอดที่ต้องเปิดรับบริจาค (Gross):  1,068.81 ฿       │
+│                                                          │
+│  ℹ️ ผู้บริจาคจะเห็น Net Goal 1,000 ฿ บนหน้าจอ         │
+│     ระบบเปิดรับจริง 1,068.81 ฿ (จ่ายครบ = Net ครบ)     │
+│                                                          │
+│  [💾 บันทึกรายการค่าใช้จ่าย]                             │
+└──────────────────────────────────────────────────────────┘
+```
+
+> [!IMPORTANT]
+> **ไม่มีการกำหนด % สูงสุดในระบบ** — Admin มีอำนาจกำหนดค่าใช้จ่ายตามความเหมาะสมและกฎหมายที่บังคับใช้ในขณะนั้น ทั้งนี้ Fee ทุกรายการต้องแสดงให้ผู้บริจาค **acknowledge ก่อนชำระเงินทุกครั้ง** เพื่อความโปร่งใสและป้องกันข้อพิพาท
+
+---
+
+### Net Goal / Gross Target UX Model (นโยบายการแสดงยอดบนหน้าจอ)
+
+**หลักการ:** ยอดที่ผู้ใช้ทุกคน (ไทยมุง, Responder, Viewer) เห็นบนหน้า Emergency Live คือ **"ยอด Net"** ที่ปลายทางต้องการจริง — ระบบจะเปิดรับบริจาคให้ได้ **Gross = Net + ค่าใช้จ่ายทั้งหมด** โดยอัตโนมัติ
+
+```
+Reporter ตั้ง Net Goal: 1,000 ฿  ← "ฉันต้องการเงิน 1,000 ฿"
+                ↓
+ระบบคำนวณ Gross Target:
+    Gross = Net ÷ (1 − total_percent_fees) − total_fixed_fees
+    Gross ≈ 1,068.81 ฿  ← "ต้องเปิดรับเท่านี้จึงได้ Net ครบ"
+                ↓
+หน้าจอ Emergency แสดง:
+    "ยอดที่ต้องการ: 1,000 ฿"  ← ทุกคนเห็น Net Goal
+    Progress Bar: สะท้อน % ของ Gross ที่รับมาแล้ว
+                ↓
+ผู้บริจาคชำระเงิน → เงินสะสมใน Escrow (Gross)
+                ↓
+เมื่อ Gross ≥ 1,068.81 ฿ → ปิดรับ / Mission complete
+                ↓
+Disburse: Gross − Fees = 1,000 ฿ net → Reporter ✅
+```
+
+**ผลลัพธ์ต่อ UX:**
+- ผู้บริจาครู้สึกว่า "บริจาคครบตามที่ปลายทางต้องการ" ทุกบาท
+- ไม่มีความสับสนเรื่อง "บริจาคไปแล้ว แต่ผู้รับได้น้อยกว่า"
+- Sheserved เก็บค่าใช้จ่ายจาก Gross ส่วนเกินโดยอัตโนมัติ
+
+> [!NOTE]
+> Reporter เห็น **ทั้ง Net Goal และ Gross Target** ในหน้า Create Donation Request เพื่อให้รู้ว่าต้องเปิดรับเท่าไหร่จึงได้เงินครบตามต้องการ — ผู้ชมเห็นเฉพาะ Net Goal เท่านั้น
+
+---
+
+### DB Schema — Flexible Fee System
+
+```sql
+-- ตารางรายการค่าใช้จ่ายต่อ Category (แทน hardcoded columns)
+CREATE TABLE category_fee_items (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id     UUID NOT NULL REFERENCES donation_categories(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,        -- ชื่อรายการ เช่น "Sheserved Service Fee"
+    fee_type        VARCHAR(50) NOT NULL,
+                    -- 'percent_of_gross' | 'fixed_baht' | 'percent_per_transaction'
+    rate            DECIMAL(10,4),                -- ค่า % (เช่น 2.5 = 2.5%) — NULL ถ้า fixed_baht
+    amount          DECIMAL(12,2),               -- ฿ คงที่ — NULL ถ้าเป็น %
+    display_order   INTEGER DEFAULT 0,           -- ลำดับแสดงผล
+    is_active       BOOLEAN DEFAULT TRUE,
+    note            TEXT,                        -- หมายเหตุ Admin (เหตุผลของค่าใช้จ่าย)
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT fee_type_valid CHECK (
+        fee_type IN ('percent_of_gross', 'fixed_baht', 'percent_per_transaction')
+    ),
+    CONSTRAINT rate_or_amount CHECK (
+        (fee_type = 'fixed_baht' AND amount IS NOT NULL AND rate IS NULL) OR
+        (fee_type != 'fixed_baht' AND rate IS NOT NULL AND amount IS NULL)
+    )
+);
+
+-- เพิ่ม Net Goal / Gross Target ใน donation_requests
+ALTER TABLE donation_requests
+    ADD COLUMN goal_amount_net    DECIMAL(12,2),  -- ยอดที่ผู้รับต้องการจริง (แสดงบนจอ)
+    ADD COLUMN goal_amount_gross  DECIMAL(12,2),  -- ยอดที่ต้องเปิดรับ (net + fees)
+    ADD COLUMN fee_snapshot       JSONB;          -- snapshot ของ fee items ณ เวลาสร้างคำร้อง
+                                                  -- ป้องกัน Admin เปลี่ยน fee หลังสร้าง
+
+-- Log การหักค่าใช้จ่ายต่อ disburse (แทน donation_fee_logs เดิม)
+CREATE TABLE donation_disbursement_logs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id      UUID NOT NULL REFERENCES donation_requests(id),
+    disbursed_at    TIMESTAMPTZ DEFAULT NOW(),
+    gross_amount    DECIMAL(12,2) NOT NULL,          -- ยอด escrow รวมก่อนหัก
+    net_amount      DECIMAL(12,2) NOT NULL,          -- ยอดสุทธิที่โอนให้ Reporter
+    fee_breakdown   JSONB NOT NULL,                  -- รายละเอียดทุกรายการที่หัก
+                    -- [{ name, fee_type, rate, amount, deducted }]
+    total_fees      DECIMAL(12,2) NOT NULL,          -- ยอดค่าใช้จ่ายรวม
+    recipient_account VARCHAR(255),                  -- บัญชีของ Reporter
+    transfer_ref    VARCHAR(255),                    -- reference จาก gateway
+    disbursed_by    VARCHAR(50) DEFAULT 'system'     -- 'system' | 'manual_admin'
+);
+```
+
+---
+
+### Escrow Disburse Flow (Updated — พร้อม Fee Deduction)
+
+```
+1. Mission Complete + Consensus ผ่านทุกราย
+      ↓
+2. ดึง fee_snapshot จาก donation_requests (ไม่ใช้ category fee ปัจจุบัน)
+      ↓
+3. คำนวณยอดทุก confirmed transactions ใน escrow (gross_amount)
+      ↓
+4. คำนวณค่าใช้จ่ายแต่ละรายการตาม fee_snapshot:
+     ├── percent_of_gross   → rate × gross_amount
+     ├── percent_per_txn    → Σ (rate × each_transaction_amount)
+     └── fixed_baht         → amount (คงที่ ครั้งเดียว)
+      ↓
+5. net_amount = gross_amount − Σ(all_fees)
+      ↓
+6. ตรวจสอบ min_net_amount:
+     ถ้า net_amount < 0 → Error: ค่าใช้จ่ายเกินยอด → Alert Admin
+      ↓
+7. โอน net_amount ไปยัง Reporter (ผ่าน Beneficiary)
+      ↓
+8. บันทึก donation_disbursement_logs พร้อม fee_breakdown (JSONB)
+      ↓
+9. Emit 'donation-disbursed':
+   { videoId, requestId, grossAmount, netAmount, totalFees, feeBreakdown }
+      ↓
+10. System Message ใน Live Chat:
+    "[ระบบ] โอนเงินสำเร็จ — ยอดสุทธิ 1,000 ฿ ถึงผู้รับแล้ว
+     (ยอดรวม 1,068.81 ฿ หักค่าใช้จ่าย 68.81 ฿)"
+```
+
+---
+
+### Reporting System — ประวัติการโอนและค่าใช้จ่าย
+
+**Tab ใหม่ในหน้าจัดการบริจาค: "รายงาน (Reports)"**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  📋  รายงานการโอนเงินและค่าใช้จ่าย                       │
+│  ──────────────────────────────────────────────         │
+│  [ช่วงเวลา: เดือนนี้ ▼]  [หมวดหมู่: ทั้งหมด ▼]          │
+│  [ส่งออก CSV]  [ส่งออก PDF]                              │
+│                                                          │
+│  สรุป                                                    │
+│  ยอดรวม Gross:    45,230.00 ฿                            │
+│  ยอดรวม Fees:      3,215.50 ฿  (7.11%)                  │
+│  ยอดรวม Net:      42,014.50 ฿                            │
+│                                                          │
+│  รายการ (ล่าสุดก่อน)                                     │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ วันที่       │ คำร้อง    │ Gross  │ Fee   │ Net   │  │
+│  │ 2026-04-08  │ [ลิงก์]   │ 1,069฿ │  69฿  │ 1,000฿│  │
+│  │ 2026-04-07  │ [ลิงก์]   │   535฿ │  35฿  │   500฿│  │
+│  └───────────────────────────────────────────────────┘  │
+│  [ดูรายละเอียด Fee Breakdown] ← กดแต่ละแถว             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Implementation Files เพิ่มเติม:**
 
 | ไฟล์ | บทบาท |
 |:---|:---|
-| `supabase/migrations/20260408000000_create_donation_transactions.sql` | Schema + RLS + DB Function |
-| `lib/features/donation/models/donation_models.dart` | `DonationTransaction`, `PaymentMethod`, `DonationTransactionStatus` |
-| `lib/features/donation/data/repositories/donation_repository.dart` | CRUD methods สำหรับ `donation_transactions` |
-| `lib/features/donation/services/payment_service.dart` | Flow controller (Mock / PromptPay / Omise) |
+| `supabase/migrations/XXXXXX_add_fee_system.sql` | `category_fee_items`, `donation_disbursement_logs`, alter `donation_requests` |
+| `lib/features/donation/models/fee_item_model.dart` | `CategoryFeeItem`, `DisbursementLog`, `FeeBreakdown` |
+| `lib/features/donation/services/fee_calculator_service.dart` | คำนวณ gross จาก net + snapshot fee |
+| `lib/features/admin/pages/disbursement_report_page.dart` | Reporting UI + Export |
+| `websocket-server/services/disbursement-service.js` | escrow release + fee deduction logic |
+
+
+
+
+
+#### จุดที่ 2 — Tab ใหม่ในหน้าจัดการบริจาค (Donation Admin)
+เพิ่ม Tab **"ผู้รับมรดก"** ที่แสดง:
+- รายการ `beneficiary_organizations` ทั้งหมด (active/inactive)
+- สถิติ: จำนวนครั้ง/ยอดเงินรวมที่โอนให้ Beneficiary แทนผู้ร้องขอเดิม
+- ปุ่ม เพิ่ม / แก้ไข / ปิดใช้งาน Beneficiary
+- Badge ⚠️ แสดง category ที่ยังไม่ได้กำหนด beneficiary
+
+> [!IMPORTANT]
+> เฉพาะ **Super Admin** เท่านั้นที่มีสิทธิ์เพิ่ม/แก้ไข beneficiary — ต้องบันทึก audit log ทุก update และ beneficiary ต้องผ่านขั้นตอน verify บัญชีธนาคารก่อน activate เสมอ
+
+---
+
+### 7. ปัญหาที่อาจเกิดขึ้น (Risk Analysis)
+
+---
+
+#### ความเสี่ยงที่ 1 — 🔐 Beneficiary Data ถูก Inject โอนเงินผิดบัญชี
+
+**ปัญหา:** ผู้ไม่ประสงค์ดีเข้าถึง Admin UI แล้วแก้ไขข้อมูลบัญชีธนาคารของ Beneficiary ทำให้เงินโอนไปผิดปลายทาง
+
+**แนวทางแก้ไข:**
+- **Permission Guard**: เฉพาะ Role `super_admin` เท่านั้นที่แก้ไข `beneficiary_organizations` ได้ — บังคับด้วย Supabase RLS Policy
+- **Verify ก่อน Activate**: บัญชีใหม่ที่เพิ่มเข้ามาต้องมีสถานะ `is_verified = FALSE` ก่อน และต้องผ่านขั้นตอน verify (เช่น Admin รายที่สองยืนยัน หรือแนบเอกสารหน้าบัญชี) ก่อน Activate
+- **Immutable Audit Log**: ทุก INSERT/UPDATE ใน `beneficiary_organizations` ต้องบันทึก log พร้อม `changed_by`, `changed_at`, `old_value`, `new_value` ด้วย Supabase Trigger
+- **Masked Display**: แสดงเลขบัญชีแบบ masked (`0XX-X-XXXXX-X`) ในหน้า Admin เสมอ — ต้องกด "เปิดเผยเลขเต็ม" พร้อม re-authenticate ก่อน
+
+```sql
+-- RLS Policy: เฉพาะ super_admin เท่านั้น
+CREATE POLICY "super_admin_only_beneficiary"
+ON beneficiary_organizations
+USING (
+    EXISTS (
+        SELECT 1 FROM user_group_roles
+        WHERE user_id = auth.uid() AND role = 'super_admin'
+    )
+);
+
+-- Trigger: Audit log ทุก update
+CREATE OR REPLACE FUNCTION log_beneficiary_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO beneficiary_audit_logs (org_id, changed_by, old_data, new_data, changed_at)
+    VALUES (NEW.id, auth.uid(), row_to_json(OLD), row_to_json(NEW), NOW());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trg_beneficiary_audit
+AFTER UPDATE ON beneficiary_organizations
+FOR EACH ROW EXECUTE FUNCTION log_beneficiary_changes();
+```
+
+---
+
+#### ความเสี่ยงที่ 2 — ⏰ Race Condition ระหว่าง Refund กับ Beneficiary Transfer
+
+**ปัญหา:** ผู้บริจาคกดขอ Refund ขณะที่ระบบ (Scheduled Job) กำลังโอนเงินให้ Beneficiary พร้อมกัน — อาจเกิดการ double-process หรือเงินเดินทาง 2 ทาง
+
+**แนวทางแก้ไข:**
+- **State Lock**: ก่อนดำเนินการโอนใดๆ ต้องอัปเดต `donation_transactions.status = 'processing_transfer'` ด้วย atomic query ก่อนเสมอ
+- **Optimistic Locking**: ใช้ `WHERE status = 'confirmed'` ในเงื่อนไข UPDATE — ถ้า rows affected = 0 แสดงว่ามีคนอื่น Lock ไปก่อนแล้ว ให้ abort
+- **DB Function Atomic**: ห่อทั้ง "lock + transfer" ไว้ใน DB Function เดียวด้วย Transaction เพื่อป้องกัน partial state
+
+```sql
+-- DB Function: atomic lock + beneficiary transfer
+CREATE OR REPLACE FUNCTION initiate_beneficiary_transfer(
+    p_request_id UUID,
+    p_reason VARCHAR
+) RETURNS BOOLEAN AS $$
+DECLARE
+    locked_count INTEGER;
+BEGIN
+    -- Step 1: Lock ทุก confirmed transactions ของคำร้องนี้
+    UPDATE donation_transactions
+    SET status = 'processing_transfer'
+    WHERE request_id = p_request_id
+      AND status = 'confirmed'  -- ป้องกัน race: ถ้าใครเปลี่ยน status ไปแล้วจะไม่ได้รับผล
+    ;
+    GET DIAGNOSTICS locked_count = ROW_COUNT;
+
+    -- ถ้าไม่มี row ถูก lock → มีคนอื่น process อยู่แล้ว
+    IF locked_count = 0 THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Step 2: บันทึก beneficiary_transfer_logs (โอนจริงผ่าน payment service)
+    INSERT INTO beneficiary_transfer_logs (request_id, beneficiary_id, amount, reason)
+    SELECT p_request_id, dc.beneficiary_org_id, SUM(dt.amount), p_reason
+    FROM donation_transactions dt
+    JOIN donation_requests dr ON dr.id = dt.request_id
+    JOIN donation_categories dc ON dc.id = dr.category_id
+    WHERE dt.request_id = p_request_id AND dt.status = 'processing_transfer'
+    GROUP BY dc.beneficiary_org_id;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+---
+
+#### ความเสี่ยงที่ 3 — 🏦 PromptPay/Omise ไม่รองรับ Auto-Refund ทุกกรณี
+
+**ปัญหา:** PromptPay ไม่มี API สำหรับ Refund (โอนกลับ) — Omise รองรับ Refund เฉพาะ Card เท่านั้น ไม่รองรับ PromptPay QR ที่ชำระไปแล้ว
+
+**แนวทางแก้ไข แบบ Phase:**
+
+| Phase | การทำงาน | เงื่อนไข |
+|:---|:---|:---|
+| **Phase 1 (ปัจจุบัน)** | Admin รับ notification → โอนเงินคืนมือ → mark `status = 'refunded'` | ใช้ระหว่าง Dev/Staging |
+| **Phase 2** | Omise Refund API สำหรับ Card payment | เมื่อเปิด Production + ใช้ Omise Card |
+| **Phase 3** | PromptPay: แจ้งผู้บริจาคให้กรอกบัญชีรับคืน → โอนผ่าน SCB/KBank Open API | ระยะยาว |
+
+**นโยบาย fallback ที่ต้องมีเสมอ:**
+- ทุก Refund request ต้องส่ง FCM แจ้ง Admin ทันที
+- มีหน้า Admin "รายการรอ Refund" เพื่อจัดการ manual โดยไม่ตกหล่น
+- `donation_transactions.status = 'refund_pending'` สำหรับรอ Admin ดำเนินการ
+
+---
+
+#### ความเสี่ยงที่ 4 — 📢 ผู้บริจาคไม่รู้ว่าเงินถูกโอนไปยัง Beneficiary แทน
+
+**ปัญหา:** ผู้บริจาคชำระเงินแล้วคาดหวังว่าเงินจะไปถึงผู้ร้องขอโดยตรง แต่ระบบโอนให้ Beneficiary แทน — หากไม่มีการแจ้งให้ทราบอาจเกิดข้อพิพาท
+
+**แนวทางแก้ไข:**
+- **Mandatory FCM**: ทุกกรณีที่ transfer ไปยัง Beneficiary ต้องส่ง Push Notification ถึงผู้บริจาคทันที พร้อมระบุ ชื่อหน่วยงาน + เหตุผล
+- **In-app Timeline**: หน้าประวัติการบริจาคต้องแสดง final status ของแต่ละ transaction อย่างชัดเจน เช่น:
+  - ✅ `โอนให้ผู้ร้องขอแล้ว`
+  - 🔁 `โอนให้ [ชื่อหน่วยงาน] แทน — เหตุผล: คำร้องถูกระงับเกินระยะเวลา`
+  - 💰 `คืนเงินแล้ว`
+- **Pre-consent Disclosure**: ก่อนชำระเงิน ระบบต้องแสดง disclaimer ว่า *"ในกรณีที่คำร้องถูกระงับหรือยกเลิก ยอดเงินอาจถูกโอนให้หน่วยงาน [ชื่อ] แทน"* และให้ผู้บริจาค acknowledge ก่อน
+
+---
+
+#### ความเสี่ยงที่ 5 — 🏷️ Category ยังไม่มี Beneficiary ขณะที่ต้องโอนเงิน
+
+**ปัญหา:** Admin ยังไม่ได้ตั้งค่า `beneficiary_org_id` ใน category นั้นๆ แต่เกิดเหตุการณ์ที่ต้องโอนให้ Beneficiary — ระบบจะโอนไปที่ไหน?
+
+**แนวทางแก้ไข:**
+
+```
+ลำดับ Fallback ของ Beneficiary Lookup:
+  1. donation_categories.beneficiary_org_id  ← ตั้งค่าต่อ category (อันดับแรก)
+      ↓ ถ้า NULL
+  2. beneficiary_organizations WHERE is_global_default = TRUE  ← กองกลางระบบ
+      ↓ ถ้าไม่มี global default
+  3. ระงับการโอน + แจ้ง Super Admin ทันที (email + FCM)
+     บันทึก status = 'transfer_blocked_no_beneficiary'
+     ← ห้ามปล่อยให้เงินค้างโดยไม่มีจุดหมาย
+```
+
+- **Admin Warning**: Category ที่ `beneficiary_org_id = NULL` ต้องมีป้าย ⚠️ สีส้มใน Category Admin ตลอดเวลา
+- **Block Activation**: หาก Category ไม่มี beneficiary และไม่มี Global Default → ระบบ **ห้ามสร้างคำร้องบริจาค** ใน category นั้น (block ที่ UI และ API layer)
+
+---
+
+#### ความเสี่ยงที่ 6 — 🔄 Reporter ยกเลิกคำร้องขณะ Consensus ยังไม่ครบ
+
+**ปัญหา:** Reporter กดยกเลิกคำร้อง แต่มี Responder บางรายที่กดโหวต consensus ไปแล้ว และมีเงินสะสมอยู่ในคำร้อง — สถานะจะ conflict กัน
+
+**แนวทางแก้ไข:**
+- **Status Priority Rule (Strict):** `closed > cancelled > paused > active`
+  - เมื่อ `cancelled` → ระบบหยุดรับ consensus vote ทันที (ignore vote ที่มาทีหลัง)
+  - เมื่อ `cancelled` → เริ่ม cancellation grace period ตาม `cancellation_grace_hours`
+- **Notify All Responders**: ส่ง System Message ลง Live Chat ทันทีว่า:
+  *"[ระบบ] Reporter ได้ยกเลิกคำร้องบริจาค [ชื่อ] — การโหวต Consensus ถูกยกเลิกโดยอัตโนมัติ"*
+- **DB Guard**: ใช้ CHECK constraint หรือ trigger ป้องกันการ INSERT ลง `donation_closure_consensus` เมื่อ request ถูก cancel แล้ว
+
+```sql
+-- Trigger: ป้องกัน consensus vote เมื่อ request ถูก cancel
+CREATE OR REPLACE FUNCTION guard_consensus_on_cancel()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM donation_requests
+        WHERE id = NEW.request_id
+          AND (approval_status = 'closed' OR closed_reason = 'cancelled')
+    ) THEN
+        RAISE EXCEPTION 'Cannot vote on a cancelled or closed request';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_guard_consensus
+BEFORE INSERT ON donation_closure_consensus
+FOR EACH ROW EXECUTE FUNCTION guard_consensus_on_cancel();
+```
+
+---
+
+#### ความเสี่ยงที่ 7 — ⚡ Grace Period ถูกตั้งค่าต่ำเกินไปจนผู้เสียหายไม่ทัน
+
+**ปัญหา:** Admin อาจตั้ง `pause_grace_period_hours = 1` ทำให้ผู้ร้องขอ (Reporter) ไม่ทันรู้ตัวก่อนที่เงินจะถูกโอนให้ Beneficiary ไปแล้ว
+
+**แนวทางแก้ไข:**
+- **Minimum Floor**: กำหนด minimum ที่ **12 ชั่วโมง** ใน DB (`CHECK (pause_grace_period_hours >= 12)`) และใน UI (`min: 12`) สำหรับ Pause Deadline case
+  - กรณี Transfer Failure: minimum **6 ชั่วโมง**
+  - กรณี Cancellation: minimum **1 ชั่วโมง** (ยืดหยุ่นกว่า เพราะเจ้าของกด cancel เอง)
+- **Warning Dialog**: ถ้า Admin ตั้งค่าต่ำกว่า default เกิน 50% ให้แสดง dialog เตือน เช่น:
+  *"คุณกำลังตั้งระยะเวลาผ่อนผันต่ำกว่าค่าเริ่มต้น (24h → 12h) ซึ่งอาจทำให้ผู้ร้องขอไม่มีเวลาเพียงพอในการดำเนินการ ยืนยันหรือไม่?"*
+- **Notification Trigger**: ระบบต้องส่งแจ้งเตือนล่วงหน้าให้ Reporter เมื่อเหลือเวลา **25% ของ grace period** เสมอ (เช่น grace = 48h → แจ้งเมื่อเหลือ 12h)
+
+---
+
+#### ความเสี่ยงที่ 8 — 🏚️ Beneficiary Account ถูกปิดหรือยกเลิกในภายหลัง
+
+**ปัญหา:** Beneficiary organization ที่เคย active อยู่ ถูก `is_active = FALSE` หลังจากที่มีคำร้องที่รออยู่ — ระบบจะโอนไปยังบัญชีที่ปิดแล้ว
+
+**แนวทางแก้ไข:**
+- **Deactivation Check**: ก่อน deactivate beneficiary ระบบต้องตรวจสอบว่ามี `donation_requests` ที่ `is_paused = TRUE` และ `beneficiary_org_id` ชี้มาที่ org นี้หรือไม่ — ถ้ามีให้ **block การ deactivate** พร้อมแจ้งจำนวนคำร้องที่ affected
+- **Cascading Reassign**: หากต้องการ deactivate จริง ต้อง reassign beneficiary ของทุก category ที่ใช้ org นี้ก่อน หรือกำหนด org ใหม่แทนผ่าน dialog
+- **Runtime Check**: ทุกครั้งที่ระบบจะโอนเงิน ต้อง validate ว่า `beneficiary_organizations.is_active = TRUE` อีกครั้งก่อนส่ง — ถ้า FALSE ให้ escalate ไปยัง Global Default
+
+```dart
+// beneficiary_transfer_service.dart
+Future<BeneficiaryOrg?> resolveBeneficiary(String categoryId) async {
+  // 1. ลอง category-level beneficiary ก่อน
+  final cat = await beneficiaryRepo.getCategoryBeneficiary(categoryId);
+  if (cat != null && cat.isActive) return cat;
+
+  // 2. Fallback: Global Default
+  final global = await beneficiaryRepo.getGlobalDefault();
+  if (global != null && global.isActive) return global;
+
+  // 3. ไม่มี beneficiary ที่ใช้งานได้ → block + alert Admin
+  await adminAlertService.notifyNoBeneficiary(categoryId);
+  return null;
+}
+```
+
+---
+
+#### ความเสี่ยงที่ 9 — 💸 Partial Transfer (โอนสำเร็จบางส่วน บางส่วนล้มเหลว)
+
+**ปัญหา:** คำร้องหนึ่งมีหลาย `donation_transactions` ที่ confirmed — ระบบโอนสำเร็จบาง transaction แต่บางอันล้มเหลวระหว่างทาง ยอดในระบบกับความจริงไม่ตรงกัน
+
+**แนวทางแก้ไข:**
+- **All-or-Nothing Policy**: ห่อการโอนทั้งหมดของคำร้องเดียวไว้ใน **DB Transaction เดียว** — ถ้า transaction ใดล้มเหลว ให้ rollback ทั้งหมด (ไม่ partial commit)
+- **Batch Transfer**: รวมยอดทั้งหมดของคำร้องเป็น **การโอนครั้งเดียว** (single transfer) ไปยัง beneficiary แทนการโอนทีละ transaction — ลด overhead และ failure point
+- **Idempotency Key**: สร้าง `idempotency_key` สำหรับแต่ละ beneficiary transfer เพื่อให้ retry ซ้ำได้โดยไม่โอนซ้ำ (ใช้ `request_id + reason` เป็น key)
+- **Transfer Status Tracking**: อัปเดต `donation_transactions.status` ทั้งหมดเป็น `'transferred_to_beneficiary'` พร้อมกันใน transaction เดียวเท่านั้น
+
+---
+
+### 8. Implementation Files (Beneficiary + Fee + Escrow System)
+
+#### 📦 Database Migrations
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `supabase/migrations/XXXXXX_add_beneficiary_system.sql` | `beneficiary_organizations`, `beneficiary_audit_logs`, `beneficiary_transfer_logs`, RLS + Triggers |
+| `supabase/migrations/XXXXXX_add_escrow_columns.sql` | เพิ่ม `escrow_status`, `escrow_released_at`, `escrow_release_ref` ใน `donation_requests` |
+| `supabase/migrations/XXXXXX_add_grace_period_columns.sql` | เพิ่ม `pause_grace_period_hours`, `transfer_failure_grace_hours`, `cancellation_grace_hours`, `beneficiary_org_id` ใน `donation_categories` |
+| `supabase/migrations/XXXXXX_add_fee_system.sql` | `category_fee_items`, `donation_disbursement_logs`, เพิ่ม `goal_amount_net`, `goal_amount_gross`, `fee_snapshot` ใน `donation_requests` |
+
+#### 🎯 Models (Dart)
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `lib/features/donation/models/beneficiary_model.dart` | `BeneficiaryOrganization`, `BeneficiaryAuditLog`, `BeneficiaryTransferLog` |
+| `lib/features/donation/models/fee_item_model.dart` | `CategoryFeeItem`, `FeeBreakdown`, `DisbursementLog` |
+| `lib/features/donation/models/donation_request_model.dart` | อัปเดต: เพิ่ม `goalAmountNet`, `goalAmountGross`, `feeSnapshot`, `escrowStatus` |
+
+#### 🗄️ Repositories (Dart)
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `lib/features/donation/data/repositories/beneficiary_repository.dart` | CRUD `beneficiary_organizations` + fallback lookup chain |
+| `lib/features/donation/data/repositories/fee_repository.dart` | CRUD `category_fee_items`, ดึง fee snapshot ตอนสร้าง request |
+| `lib/features/donation/data/repositories/disbursement_repository.dart` | บันทึก/ดึง `donation_disbursement_logs` |
+
+#### ⚙️ Services (Dart)
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `lib/features/donation/services/fee_calculator_service.dart` | คำนวณ Gross จาก Net Goal + fee snapshot, คำนวณ net ตอน disburse |
+| `lib/features/donation/services/beneficiary_transfer_service.dart` | Beneficiary lookup (fallback chain), atomic lock + transfer |
+| `lib/features/donation/services/escrow_release_service.dart` | Orchestrate: Fee deduction → Net calculation → Beneficiary release |
+
+#### 🖥️ Admin UI Pages (Dart/Flutter)
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `lib/features/admin/pages/beneficiary_management_page.dart` | Tab "ผู้รับมรดก": รายการ orgs, สถิติ, verify workflow |
+| `lib/features/admin/pages/disbursement_report_page.dart` | Tab "รายงาน": ประวัติโอน, fee breakdown, Export CSV/PDF |
+| `lib/features/admin/widgets/category_card_widget.dart` | อัปเดต: เพิ่ม Beneficiary section + Grace Period section + Fee section |
+| `lib/features/admin/widgets/fee_item_list_widget.dart` | Editable list ของ `category_fee_items` + Add/Edit/Delete |
+| `lib/features/admin/widgets/fee_live_preview_widget.dart` | Live Preview: คำนวณ Gross จาก Net แบบ real-time |
+
+#### 🌐 WebSocket Server (Node.js)
+
+| ไฟล์ | บทบาท |
+|:---|:---|
+| `websocket-server/services/beneficiary-service.js` | Beneficiary lookup, atomic lock, transfer to Beneficiary escrow |
+| `websocket-server/services/disbursement-service.js` | Escrow release + fee deduction + emit `donation-disbursed` |
+| `websocket-server/jobs/escrow-deadline-checker.js` | Scheduled job: ตรวจ `pause_deadline` ที่เกินกำหนด → trigger transfer |
+
+---
+
+### 9. หมายเหตุสำคัญ — `current_amount` vs Net/Gross Model
+
+> [!IMPORTANT]
+> ตาราง `donation_requests.current_amount` ที่มีอยู่เดิมต้องถูก reinterpret ให้ชัดเจนว่าเก็บ **ยอด Gross ที่รับเข้ามาจริง** (เงินที่ผู้บริจาคชำระแล้ว) — ไม่ใช่ยอด Net
+>
+> **หน้า Emergency Live ต้องแปลงค่าก่อนแสดง:**
+> ```
+> displayed_amount = current_amount × (net_goal / gross_target)
+>                 ≈ current_amount × net_ratio
+> ```
+> เพื่อให้ Progress Bar และตัวเลขบนจอสะท้อน "ยอด Net สะสม" ที่ผู้ชมเข้าใจง่าย
+
+**สรุป field ที่เกี่ยวข้องใน `donation_requests`:**
+
+| Field | ความหมาย | ใครเห็น |
+|:---|:---|:---|
+| `goal_amount_net` | ยอดที่ผู้รับต้องการจริง | **ทุกคน** (แสดงบนจอ) |
+| `goal_amount_gross` | ยอดที่ต้องเปิดรับ (net + fees) | Reporter เท่านั้น |
+| `current_amount` | ยอด Gross ที่รับเข้ามาจริงสะสม | ระบบ (แปลงเป็น net ก่อนแสดง) |
+| `fee_snapshot` | JSONB รายการค่าใช้จ่าย ณ เวลาสร้าง | ระบบ (คำนวณ deduction ตอน disburse) |
+| `escrow_status` | สถานะเงินใน escrow | Admin |
+

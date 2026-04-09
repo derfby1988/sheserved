@@ -22,6 +22,8 @@ import 'package:hive/hive.dart';
 import 'auth_service.dart';
 import '../features/video/data/repositories/video_repository.dart';
 import '../features/donation/data/repositories/donation_repository.dart';
+import '../features/donation/data/repositories/beneficiary_repository.dart';
+import '../features/donation/data/repositories/fee_repository.dart';
 
 /// Service Locator สำหรับจัดการ Dependencies
 /// ใช้รูปแบบ Singleton เพื่อให้เข้าถึงได้จากทุกที่
@@ -47,6 +49,8 @@ class ServiceLocator {
   FdaApiService? _fdaApiService;
   VideoRepository? _videoRepository;
   DonationRepository? _donationRepository;
+  BeneficiaryRepository? _beneficiaryRepository;
+  FeeRepository? _feeRepository;
   
   // Flags
   bool _isInitialized = false;
@@ -178,6 +182,8 @@ class ServiceLocator {
       _pharmacyRepository = PharmacyRepository(supabaseClient);
       _videoRepository = VideoRepository(supabaseClient);
       _donationRepository = DonationRepository(supabaseClient);
+      _beneficiaryRepository = BeneficiaryRepository(supabaseClient);
+      _feeRepository = FeeRepository(supabaseClient);
     }
 
 
@@ -278,6 +284,23 @@ class ServiceLocator {
       _donationRepository = DonationRepository(Supabase.instance.client);
     }
     return _donationRepository!;
+  }
+
+  /// BeneficiaryRepository — เข้าถึงผ่าน ServiceLocator.instance.beneficiaryRepository
+  /// ✅ Auth Guideline: ดึง userId สำหรับ audit logs ผ่าน ServiceLocator.instance.currentUser?.id
+  BeneficiaryRepository get beneficiaryRepository {
+    if (_beneficiaryRepository == null) {
+      _beneficiaryRepository = BeneficiaryRepository(Supabase.instance.client);
+    }
+    return _beneficiaryRepository!;
+  }
+
+  /// FeeRepository — CRUD fee items + คำนวณ Gross Target / Net Goal / Fee Snapshot
+  FeeRepository get feeRepository {
+    if (_feeRepository == null) {
+      _feeRepository = FeeRepository(Supabase.instance.client);
+    }
+    return _feeRepository!;
   }
 
   /// Get Unified Repository (recommended)
