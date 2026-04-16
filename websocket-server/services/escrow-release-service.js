@@ -134,18 +134,25 @@ async function releaseEscrow(requestId, options = { triggeredBy: 'consensus' }) 
         return { result: 'no_funds', message: 'ไม่มี transaction ที่อยู่ใน escrow' };
     }
 
-    // 3. Lock transactions ด้วย processing_transfer (ป้องกัน double-process)
-    const txIds = transactions.map(t => t.id);
-    const { error: lockError } = await supabase
-        .from('donation_transactions')
-        .update({ status: 'processing_transfer', updated_at: new Date().toISOString() })
-        .in('id', txIds)
-        .eq('status', 'in_escrow'); // guard: เฉพาะที่ยังเป็น in_escrow
+    // 3. Lock transactions ด้วย SQL Function (ป้องกัน Race Condition ด้วย FOR UPDATE NOWAIT)
+    const lockedTxIds = [];
+    for (const tx of transactions) {
+        // ใช้ Database RPC ที่รับประกัน Pessimistic Locking
+        const { data: lockOk, error: lockErr } = await supabase.rpc('process_escrow_transfer', { p_transaction_id: tx.id });
+        if (!lockErr && lockOk) {
+            lockedTxIds.push(tx.id);
+        } else if (lockErr) {
+            console.warn(`[EscrowRelease] Lock fail for ${tx.id}:`, lockErr.message);
+        }
+    }
 
-    if (lockError) throw new Error(`Lock failed: ${lockError.message}`);
+    if (lockedTxIds.length === 0) {
+        return { result: 'no_funds', message: 'ไม่สามารถ Lock transaction ใดๆ ได้ อาจโดน process ไปแล้ว' };
+    }
 
-    // 4. คำนวณยอดรวม (gross) และค่าธรรมเนียม
-    const grossAmount = transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    // 4. คำนวณยอดรวม (gross) และค่าธรรมเนียม จากเฉพาะรายการที่ Lock สำเร็จ 100%
+    const lockedTransactions = transactions.filter(t => lockedTxIds.includes(t.id));
+    const grossAmount = lockedTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
     const feeBreakdown = _calculateFees(grossAmount, request.fee_snapshot || []);
 
     console.log(`[EscrowRelease] Gross=฿${grossAmount.toFixed(2)} Fees=฿${feeBreakdown.totalFees.toFixed(2)} Net=฿${feeBreakdown.netAmount.toFixed(2)}`);
@@ -175,7 +182,7 @@ async function releaseEscrow(requestId, options = { triggeredBy: 'consensus' }) 
             status: 'disbursed',
             updated_at: new Date().toISOString(),
         })
-        .in('id', txIds);
+        .in('id', lockedTxIds);
 
     // 7. อัปเดต donation_requests → escrow_status: released + closed_at
     await supabase

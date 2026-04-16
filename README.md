@@ -55,7 +55,7 @@ See detailed setup guides:
 │  WebSocket Server   │────────▶│  Port: 5432          │
 │                     │ Network │  Database: tree_law_ │
 │  .env:              │         │  User: sheserved_ │
-│  DB_HOST=192.168.1.164 │         │  zoo_user            │
+│  DB_HOST=192.168.1.117 │         │  zoo_user            │
 └─────────────────────┘         └──────────────────────┘
               │                            │
               │                            │
@@ -138,11 +138,11 @@ cd websocket-server
 Copy `.env.example` to `.env` and configure:
 
 ```env
-DB_HOST=192.168.1.164
+DB_HOST=192.168.1.117
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.1.164:3000
+LOCAL_API_URL=http://192.168.1.117:3000
 DB_NAME=sheserved
 DB_USER=sheserved
 DB_PASSWORD=<password>

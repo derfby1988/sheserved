@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../../../services/auth_service.dart';
 
 /// Header Section Widget สำหรับหน้า Home
 /// แสดงข้อมูลสถานะสุขภาพ, โปรไฟล์, และข้อมูลทานยา
@@ -105,12 +106,21 @@ class HomeHeaderSection extends StatelessWidget {
                               color: AppColors.textOnPrimary,
                               width: 2,
                             ),
+                            image: AuthService.instance.currentUser?.profileImageUrl != null &&
+                                   AuthService.instance.currentUser!.profileImageUrl!.isNotEmpty
+                                ? DecorationImage(
+                                    image: NetworkImage(AuthService.instance.currentUser!.profileImageUrl!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
-                          child: const Icon(
-                            Icons.person,
-                            color: AppColors.primary,
-                            size: 36,
-                          ),
+                          child: (AuthService.instance.currentUser?.profileImageUrl == null || AuthService.instance.currentUser!.profileImageUrl!.isEmpty)
+                              ? const Icon(
+                                  Icons.person,
+                                  color: AppColors.primary,
+                                  size: 36,
+                                )
+                              : null,
                         ),
                       ),
                     ),

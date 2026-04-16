@@ -7,7 +7,8 @@ import '../../../../admin/data/repositories/profession_repository.dart';
 import '../../../../admin/models/profession.dart';
 
 class BeneficiaryAdminPanel extends StatefulWidget {
-  const BeneficiaryAdminPanel({super.key});
+  final int initialTabIndex; // เพิ่มเพื่อรองรับการกระโดดมาที่แท็บ "รอตรวจสอบ"
+  const BeneficiaryAdminPanel({super.key, this.initialTabIndex = 0});
 
   @override
   State<BeneficiaryAdminPanel> createState() => _BeneficiaryAdminPanelState();
@@ -276,14 +277,48 @@ class _BeneficiaryAdminPanelState extends State<BeneficiaryAdminPanel> {
               ),
             ),
           
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Expanded(
-            child: _organizations.isEmpty 
-              ? const Center(child: Text('ไม่มีข้อมูลหน่วยงาน ผู้รับมรดก', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: _organizations.length,
-                  itemBuilder: (context, index) {
-                    final org = _organizations[index];
+            child: DefaultTabController(
+              length: 2,
+              initialIndex: widget.initialTabIndex,
+              child: Column(
+                children: [
+                  const TabBar(
+                    labelColor: AppColors.primary,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: AppColors.primary,
+                    tabs: [
+                      Tab(text: 'อนุมัติแล้ว (Verified)'),
+                      Tab(text: 'รอตรวจสอบ (Pending)'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _buildOrganizationList(_organizations.where((o) => o.isVerified).toList()),
+                        _buildOrganizationList(_organizations.where((o) => !o.isVerified).toList()),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrganizationList(List<BeneficiaryOrganization> orgs) {
+    if (orgs.isEmpty) {
+      return const Center(child: Text('ไม่มีข้อมูลหน่วยงาน', style: TextStyle(color: Colors.grey)));
+    }
+    return ListView.builder(
+      itemCount: orgs.length,
+      itemBuilder: (context, index) {
+        final org = orgs[index];
                     return Card(
                       elevation: 1,
                       margin: const EdgeInsets.only(bottom: 12),
@@ -324,10 +359,6 @@ class _BeneficiaryAdminPanelState extends State<BeneficiaryAdminPanel> {
                       ),
                     );
                   },
-                ),
-          ),
-        ],
-      ),
-    );
+                );
   }
 }

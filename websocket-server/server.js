@@ -44,6 +44,9 @@ const videoRoutes = require('./routes/video');
 const escrowReleaseService = require('./services/escrow-release-service');
 const escrowDeadlineChecker = require('./services/escrow-deadline-checker');
 
+// Sync Service
+const { reconcileLocalToCloud } = require('./services/sync-service');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -82,6 +85,13 @@ if (USE_DATABASE) {
         pool = null;
       } else {
         console.log('✅ Database connected successfully');
+        // --- 4. การจัดการ State ข้ามอุปกรณ์ ด้วย WebSocket / Local Sync ---
+        // Reconcile Local -> Cloud upon startup
+        if (supabase) {
+           reconcileLocalToCloud(pool, supabase).catch(err => {
+               console.error('[Sync] Startup sync failed:', err.message);
+           });
+        }
       }
     });
   } catch (error) {
@@ -123,40 +133,6 @@ io.on('connection', (socket) => {
 
     console.log(`User ${userId} connected (socket: ${socket.id})`);
 
-    // --- DEV AUTO-SEEDING ---
-    // ⚠️  ทำงานเฉพาะ NODE_ENV=development เท่านั้น
-    // ป้องกัน Security Risk: ไม่ให้ assign role กู้ภัยอัตโนมัติบน Production
-    if (process.env.NODE_ENV === 'development' && pool) {
-      try {
-        const username = `user_${userId.substring(0, 5)}`;
-        // 1. Ensure user exists
-        await pool.query(
-          `INSERT INTO users (id, first_name, username, verification_status) 
-           VALUES ($1, $2, $3, 'verified')
-           ON CONFLICT (id) DO NOTHING`,
-          [userId, 'Dev User', username]
-        );
-
-        // 2. Ensure consumer profile exists (for volunteer_active status)
-        await pool.query(
-          `INSERT INTO consumer_profiles (user_id, is_volunteer_active) 
-           VALUES ($1, true)
-           ON CONFLICT (user_id) DO NOTHING`,
-          [userId]
-        );
-
-        // 3. Ensure they have a volunteer role (use the first seeded profession 'กู้ภัย')
-        await pool.query(
-          `INSERT INTO user_group_roles (user_id, profession_id) 
-           VALUES ($1, '4d4101e0-7bd3-4f87-bc35-b5371f21432c')
-           ON CONFLICT DO NOTHING`,
-          [userId]
-        );
-        console.log(`[Dev] Auto-seeded user ${userId} as Rescuer`);
-      } catch (err) {
-        console.warn('[Dev] Auto-seed failed (this is fine):', err.message);
-      }
-    }
 
     // Join user's personal room
     socket.join(`user-${userId}`);

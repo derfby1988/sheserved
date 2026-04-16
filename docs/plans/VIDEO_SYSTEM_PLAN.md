@@ -126,78 +126,8 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
 
 ## Database Schema
 
-```sql
--- หลักสำหรับเก็บข้อมูลวิดีโอ
-CREATE TABLE videos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
-    type VARCHAR(20) DEFAULT 'normal', -- normal, emergency
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    bunny_video_id VARCHAR(255),
-    bunny_url TEXT,
-    thumbnail_url TEXT,
-    duration INTEGER,
-    file_size BIGINT,
-    status VARCHAR(50) DEFAULT 'processing',
-    progress INTEGER DEFAULT 0,
-    address TEXT,
-    road VARCHAR(255),
-    soi VARCHAR(255),
-    alley VARCHAR(255),
-    village VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
--- สำหรับเก็บตำแหน่งพิกัดที่สัมพันธ์กับเวลาในวิดีโอ (สำหรับแสดงผลบน Map)
-CREATE TABLE video_gps_tracks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(11, 8) NOT NULL,
-    timestamp_offset INTEGER NOT NULL, -- วินาทีที่เท่าไหร่ของวิดีโอ
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- สำหรับเก็บ Interaction (Likes, Views, Gifting)
-CREATE TABLE video_interactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL,
-    type VARCHAR(20), -- like, gift, view
-    value INTEGER DEFAULT 0, -- จำนวนเงินบริจาคหรือค่าอื่นๆ
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- สำหรับเก็บสถานะการตอบรับช่วยเหลือของอาชีพต่างๆ
--- ✅ อัปเดต 2026-03-14: ตรงกับ Supabase Production Schema จริง
-CREATE TABLE incident_responses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    -- ✅ ชื่อ Field จริงใน DB คือ volunteer_id (ไม่ใช่ responder_id)
-    -- FK ชื่อ: incident_responses_volunteer_id_fkey
-    volunteer_id UUID NOT NULL REFERENCES consumer_profiles(id),
-    status VARCHAR(20) DEFAULT 'en_route',
-    -- Status ที่ใช้จริง: 'en_route' | 'accepted' | 'arrived' | 'resolved' | 'cancelled'
-    accepted_at TIMESTAMP,                -- เวลาที่รับงาน
-    arrived_at TIMESTAMP,                 -- เวลาที่ถึงที่เกิดเหตุ
-    resolved_at TIMESTAMP,                -- เวลาที่ปิดงาน (resolved/cancelled)
-    volunteer_start_lat DOUBLE PRECISION, -- ละติจูดจุดออกตัวของ volunteer
-    volunteer_start_lng DOUBLE PRECISION, -- ลองจิจูดจุดออกตัวของ volunteer
-    notes TEXT,                           -- หมายเหตุเพิ่มเติม
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- ป้องกัน volunteer เดิมรับงานเดิมซ้ำ
-    UNIQUE (video_id, volunteer_id)
-);
-
--- ⚠️ หมายเหตุสำคัญสำหรับทีม:
--- ห้ามใช้ชื่อ responder_id ในโค้ดใหม่ใดๆ ทั้งสิ้น
--- FK constraint ที่ใช้ Join ใน Supabase query:
---   consumer_profiles!incident_responses_volunteer_id_fkey(full_name)
---   user_group_roles!incident_responses_volunteer_id_fkey(...)
-
+[SQL Schema Implemented]
 
 
 ## Technology Stack
@@ -259,7 +189,7 @@ PORT=3000
 +TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
 +
 +# Server Network
-+LOCAL_API_URL=http://192.168.1.164:3000
++LOCAL_API_URL=http://192.168.1.142:3000
 +
 +# Bunny.net
 BUNNY_API_KEY=<your_api_key>
@@ -270,7 +200,7 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.1.164:3000
+LOCAL_API_URL=http://192.168.1.142:3000
 ```
 
 ## Cost Estimation
@@ -724,24 +654,9 @@ final response = await http.get(url).timeout(const Duration(seconds: 5));
 
 ### 4. โครงสร้างข้อมูลเบื้องต้น (Schema Proposal)
 
-```sql
--- สำหรับเก็บสิทธิการเข้าถึงข้อมูลสุขภาพ
-CREATE TABLE emergency_health_settings (
-    user_id UUID PRIMARY KEY REFERENCES consumer_profiles(id),
-    is_auto_trigger_enabled BOOLEAN DEFAULT false,
-    allowed_profession_ids UUID[], -- รายชื่อกลุ่มอาชีพที่อนุญาต
-    authorized_contact_ids UUID[], -- รายชื่อบุคคลที่สามารถกดปลดล็อกแทนได้
-    data_scope JSONB, -- กำหนดว่าอนุญาตให้เห็นข้อมูลส่วนไหนบ้าง
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
--- สำหรับเก็บข้อมูลสุขภาพที่เข้ารหัส
-CREATE TABLE emergency_health_data (
-    user_id UUID PRIMARY KEY REFERENCES consumer_profiles(id),
-    encrypted_payload TEXT, -- ข้อมูลที่ผ่านการเข้ารหัส (Blood Type, Allergies, etc.)
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+[SQL Schema Implemented]
+
 
 ---
 
@@ -948,26 +863,9 @@ if (result.isConfirmed) {
 
 
 
-```sql
--- อัปเดต Schema: donation_transactions
-CREATE TABLE donation_transactions (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id        UUID NOT NULL REFERENCES donation_requests(id) ON DELETE CASCADE,
-    donor_user_id     UUID NOT NULL,
-    amount            DECIMAL(12, 2) NOT NULL CHECK (amount > 0),
-    payment_method    VARCHAR(50)  NOT NULL DEFAULT 'mock',
-                      -- 'mock' | 'promptpay' | 'omise_card'
-    payment_reference VARCHAR(255),
-                      -- transaction ref จาก gateway (null ขณะ pending)
-    status            VARCHAR(40) NOT NULL DEFAULT 'pending',
-                      -- ดูรายละเอียด 'สถานะใหม่' ในหัวข้อ Escrow States
-    confirmed_at      TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
--- DB Function (atomic): ยืนยัน transaction + อัปเดต current_amount ใน transaction เดียว
--- SELECT confirm_donation_transaction('uuid-here', 'ref-from-gateway');
-```
+[SQL Schema Implemented]
+
 
 ---
 
@@ -1039,48 +937,9 @@ CREATE TABLE donation_transactions (
 
 ### DB Schema สำหรับปิดรับบริจาคและพักรับบริจาค
 
-```sql
--- เพิ่ม Column ใน donation_requests
-ALTER TABLE donation_requests ADD COLUMN closed_at TIMESTAMPTZ;
-ALTER TABLE donation_requests ADD COLUMN closed_reason VARCHAR(50);
-  -- 'incident_resolved' | 'manual_close' | 'expired'
 
--- เพิ่ม Column ใน donation_requests เพื่อรองรับสถานะการพัก
-ALTER TABLE donation_requests ADD COLUMN is_paused BOOLEAN DEFAULT FALSE;
-ALTER TABLE donation_requests ADD COLUMN pause_reason TEXT;
+[SQL Schema Implemented]
 
--- Table สำหรับเก็บความเห็นชอบของ Responder (Post-Incident Approval)
-CREATE TABLE donation_closure_consensus (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id    UUID REFERENCES donation_requests(id) ON DELETE CASCADE,
-    responder_id  UUID NOT NULL,
-    can_continue  BOOLEAN NOT NULL, -- TRUE = อนุญาต, FALSE = ไม่อนุญาต (สั่งพัก)
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(request_id, responder_id)
-);
-
--- DB Function: ตรวจสอบและจัดการสถานะการรับบริจาคตามความเห็น Responder
-CREATE OR REPLACE FUNCTION process_donation_consensus(p_request_id UUID)
-RETURNS void AS $$
-DECLARE
-    veto_exists BOOLEAN;
-BEGIN
-    -- 1. ตรวจสอบว่ามี Responder แม้แต่รายเดียวที่โหวต "ไม่อนุญาต" (FALSE) หรือไม่
-    SELECT EXISTS (
-        SELECT 1 FROM donation_closure_consensus 
-        WHERE request_id = p_request_id AND can_continue = FALSE
-    ) INTO veto_exists;
-
-    -- 2. จัดการสถานะตามผลโหวต
-    IF veto_exists THEN
-        UPDATE donation_requests
-        SET is_paused = TRUE,
-            pause_reason = 'ไม่ได้รับอนุมัติให้รับบริจาคต่อจากเจ้าหน้าที่อย่างเป็นเอกฉันท์'
-        WHERE id = p_request_id;
-    END IF;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
 
 ---
 
@@ -1172,95 +1031,9 @@ System Message + beneficiary_transfer_logs
 
 ### 4. DB Schema — Beneficiary System
 
-```sql
--- ตารางหน่วยงานผู้รับมรดก
-CREATE TABLE beneficiary_organizations (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name                VARCHAR(255) NOT NULL,       -- ชื่อหน่วยงาน (นิติบุคคล)
-    registration_no     VARCHAR(100),               -- เลขทะเบียนนิติบุคคล
-    bank_name           VARCHAR(100),               -- ชื่อธนาคาร
-    bank_account        VARCHAR(50),                -- เลขบัญชี (encrypt at-rest)
-    bank_account_name   VARCHAR(255),               -- ชื่อบัญชี
-    contact_email       VARCHAR(255),
-    omise_recipient_id  VARCHAR(255),               -- Omise Recipient ID (สำหรับ auto-transfer)
-    promptpay_id        VARCHAR(50),                -- PromptPay ID (สำหรับ batch transfer)
-    is_verified         BOOLEAN DEFAULT FALSE,       -- ต้อง verify ก่อน activate เสมอ
-    is_active           BOOLEAN DEFAULT FALSE,       -- เปิดใช้ได้เฉพาะเมื่อ is_verified = TRUE
-    is_global_default   BOOLEAN DEFAULT FALSE,       -- Global Fallback เมื่อ category ไม่มี beneficiary
-    has_mou             BOOLEAN DEFAULT FALSE,       -- มี MOU กับ Sheserved แล้วหรือยัง
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW(),
-    -- Constraint: is_active ต้องเป็น TRUE ได้เฉพาะเมื่อ is_verified = TRUE
-    CONSTRAINT active_requires_verified CHECK (NOT is_active OR is_verified)
-);
 
--- Audit Log ทุก INSERT/UPDATE ใน beneficiary_organizations (ป้องกัน Risk #1)
-CREATE TABLE beneficiary_audit_logs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id      UUID NOT NULL REFERENCES beneficiary_organizations(id),
-    changed_by  UUID NOT NULL,   -- user_id ของ super_admin ที่ทำการเปลี่ยนแปลง
-    action      VARCHAR(20) NOT NULL, -- 'INSERT' | 'UPDATE' | 'DEACTIVATE'
-    old_data    JSONB,           -- ค่าก่อนเปลี่ยน (NULL ถ้าเป็น INSERT)
-    new_data    JSONB,           -- ค่าหลังเปลี่ยน
-    changed_at  TIMESTAMPTZ DEFAULT NOW()
-);
+[SQL Schema Implemented]
 
--- เชื่อม Category → Beneficiary (Escrow Account) + Grace Period ที่ Admin ตั้งเองได้
-ALTER TABLE donation_categories
-    ADD COLUMN beneficiary_org_id           UUID REFERENCES beneficiary_organizations(id),
-    ADD COLUMN pause_grace_period_hours     INTEGER NOT NULL DEFAULT 72
-                                            CHECK (pause_grace_period_hours BETWEEN 12 AND 720),
-                                            -- min: 12h (ป้องกัน Risk #7) | max: 30 วัน
-    ADD COLUMN transfer_failure_grace_hours INTEGER NOT NULL DEFAULT 48
-                                            CHECK (transfer_failure_grace_hours BETWEEN 6 AND 720),
-                                            -- min: 6h | max: 30 วัน
-    ADD COLUMN cancellation_grace_hours     INTEGER NOT NULL DEFAULT 24
-                                            CHECK (cancellation_grace_hours BETWEEN 1 AND 720);
-                                            -- min: 1h (Reporter กด cancel เอง ยืดหยุ่นกว่า)
-
--- เพิ่ม columns ใน donation_requests
-ALTER TABLE donation_requests
-    ADD COLUMN pause_deadline           TIMESTAMPTZ,    -- deadline ก่อน auto-transfer to beneficiary
-    ADD COLUMN beneficiary_transfer_at  TIMESTAMPTZ,    -- เวลาที่โอนจริง
-    ADD COLUMN beneficiary_transfer_ref VARCHAR(255);   -- reference จาก gateway
-
--- Audit Log ทุกการโอนให้ Beneficiary
-CREATE TABLE beneficiary_transfer_logs (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id     UUID NOT NULL REFERENCES donation_requests(id),
-    beneficiary_id UUID NOT NULL REFERENCES beneficiary_organizations(id),
-    amount         DECIMAL(12, 2) NOT NULL,
-    reason         VARCHAR(50) NOT NULL,
-               -- 'pause_deadline' | 'transfer_failed' | 'cancellation'
-    transfer_ref   VARCHAR(255),
-    transferred_at TIMESTAMPTZ DEFAULT NOW(),
-    note           TEXT
-);
-
--- สถานะทั้งหมดใน donation_transactions (Escrow Model)
--- ─────────────────────────────────────────────────────────────────
--- 'pending'                    ← รอผู้บริจาคชำระเงิน
--- 'confirmed'                  ← ชำระสำเร็จ รอส่งเข้า escrow
--- 'in_escrow'                  ← เงินอยู่ที่ Beneficiary Escrow Account
--- 'disbursed'                  ← Beneficiary โอนให้ Reporter สำเร็จ
--- 'failed'                     ← การชำระเงินล้มเหลวตั้งแต่ต้น
--- 'transfer_failed'            ← โอนเข้า escrow ล้มเหลว (retry ไม่ผ่าน)
--- 'processing_transfer'        ← Lock ชั่วคราว ป้องกัน race condition
--- 'transfer_blocked_no_beneficiary' ← ไม่มี beneficiary → ระงับ + แจ้ง Admin
--- 'cancelled'                  ← ยกเลิกก่อนชำระ (pending → cancelled)
--- 'refund_pending'             ← รอ Admin ดำเนินการคืนเงินด้วยตนเอง
--- 'refunded'                   ← คืนเงินให้ผู้บริจาคสำเร็จแล้ว
--- 'cancelled_refunded'         ← ยกเลิก + email/PromptPay คืนให้ผู้บริจาคแล้ว
--- 'transferred_to_beneficiary' ← เงินถูกเก็บไว้กับ Beneficiary ถาวร (ตามนโยบาย)
--- ─────────────────────────────────────────────────────────────────
-
--- เพิ่ม column escrow tracking ใน donation_requests
-ALTER TABLE donation_requests
-    ADD COLUMN escrow_status          VARCHAR(30) DEFAULT 'not_started',
-                                      -- 'not_started' | 'in_escrow' | 'released' | 'returned'
-    ADD COLUMN escrow_released_at     TIMESTAMPTZ, -- เวลาที่ Beneficiary release เงินให้ Reporter
-    ADD COLUMN escrow_release_ref     VARCHAR(255); -- reference จาก Beneficiary transfer
-```
 
 > [!NOTE]
 > สถานะ `'processing_transfer'` ใช้เป็น Lock ชั่วคราวเพื่อป้องกัน Race Condition ระหว่าง Refund กับ Beneficiary Transfer ที่อาจเกิดพร้อมกัน ต้องใช้ `SELECT ... FOR UPDATE` ใน DB Function คู่กันเสมอ
@@ -1454,52 +1227,9 @@ Disburse: Gross − Fees = 1,000 ฿ net → Reporter ✅
 
 ### DB Schema — Flexible Fee System
 
-```sql
--- ตารางรายการค่าใช้จ่ายต่อ Category (แทน hardcoded columns)
-CREATE TABLE category_fee_items (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_id     UUID NOT NULL REFERENCES donation_categories(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,        -- ชื่อรายการ เช่น "Sheserved Service Fee"
-    fee_type        VARCHAR(50) NOT NULL,
-                    -- 'percent_of_gross' | 'fixed_baht' | 'percent_per_transaction'
-    rate            DECIMAL(10,4),                -- ค่า % (เช่น 2.5 = 2.5%) — NULL ถ้า fixed_baht
-    amount          DECIMAL(12,2),               -- ฿ คงที่ — NULL ถ้าเป็น %
-    display_order   INTEGER DEFAULT 0,           -- ลำดับแสดงผล
-    is_active       BOOLEAN DEFAULT TRUE,
-    note            TEXT,                        -- หมายเหตุ Admin (เหตุผลของค่าใช้จ่าย)
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT fee_type_valid CHECK (
-        fee_type IN ('percent_of_gross', 'fixed_baht', 'percent_per_transaction')
-    ),
-    CONSTRAINT rate_or_amount CHECK (
-        (fee_type = 'fixed_baht' AND amount IS NOT NULL AND rate IS NULL) OR
-        (fee_type != 'fixed_baht' AND rate IS NOT NULL AND amount IS NULL)
-    )
-);
 
--- เพิ่ม Net Goal / Gross Target ใน donation_requests
-ALTER TABLE donation_requests
-    ADD COLUMN goal_amount_net    DECIMAL(12,2),  -- ยอดที่ผู้รับต้องการจริง (แสดงบนจอ)
-    ADD COLUMN goal_amount_gross  DECIMAL(12,2),  -- ยอดที่ต้องเปิดรับ (net + fees)
-    ADD COLUMN fee_snapshot       JSONB;          -- snapshot ของ fee items ณ เวลาสร้างคำร้อง
-                                                  -- ป้องกัน Admin เปลี่ยน fee หลังสร้าง
+[SQL Schema Implemented]
 
--- Log การหักค่าใช้จ่ายต่อ disburse (แทน donation_fee_logs เดิม)
-CREATE TABLE donation_disbursement_logs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id      UUID NOT NULL REFERENCES donation_requests(id),
-    disbursed_at    TIMESTAMPTZ DEFAULT NOW(),
-    gross_amount    DECIMAL(12,2) NOT NULL,          -- ยอด escrow รวมก่อนหัก
-    net_amount      DECIMAL(12,2) NOT NULL,          -- ยอดสุทธิที่โอนให้ Reporter
-    fee_breakdown   JSONB NOT NULL,                  -- รายละเอียดทุกรายการที่หัก
-                    -- [{ name, fee_type, rate, amount, deducted }]
-    total_fees      DECIMAL(12,2) NOT NULL,          -- ยอดค่าใช้จ่ายรวม
-    recipient_account VARCHAR(255),                  -- บัญชีของ Reporter
-    transfer_ref    VARCHAR(255),                    -- reference จาก gateway
-    disbursed_by    VARCHAR(50) DEFAULT 'system'     -- 'system' | 'manual_admin'
-);
-```
 
 ---
 
@@ -1602,31 +1332,9 @@ CREATE TABLE donation_disbursement_logs (
 - **Immutable Audit Log**: ทุก INSERT/UPDATE ใน `beneficiary_organizations` ต้องบันทึก log พร้อม `changed_by`, `changed_at`, `old_value`, `new_value` ด้วย Supabase Trigger
 - **Masked Display**: แสดงเลขบัญชีแบบ masked (`0XX-X-XXXXX-X`) ในหน้า Admin เสมอ — ต้องกด "เปิดเผยเลขเต็ม" พร้อม re-authenticate ก่อน
 
-```sql
--- RLS Policy: เฉพาะ super_admin เท่านั้น
-CREATE POLICY "super_admin_only_beneficiary"
-ON beneficiary_organizations
-USING (
-    EXISTS (
-        SELECT 1 FROM user_group_roles
-        WHERE user_id = auth.uid() AND role = 'super_admin'
-    )
-);
 
--- Trigger: Audit log ทุก update
-CREATE OR REPLACE FUNCTION log_beneficiary_changes()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO beneficiary_audit_logs (org_id, changed_by, old_data, new_data, changed_at)
-    VALUES (NEW.id, auth.uid(), row_to_json(OLD), row_to_json(NEW), NOW());
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+[SQL Schema Implemented]
 
-CREATE TRIGGER trg_beneficiary_audit
-AFTER UPDATE ON beneficiary_organizations
-FOR EACH ROW EXECUTE FUNCTION log_beneficiary_changes();
-```
 
 ---
 
@@ -1639,41 +1347,9 @@ FOR EACH ROW EXECUTE FUNCTION log_beneficiary_changes();
 - **Optimistic Locking**: ใช้ `WHERE status = 'confirmed'` ในเงื่อนไข UPDATE — ถ้า rows affected = 0 แสดงว่ามีคนอื่น Lock ไปก่อนแล้ว ให้ abort
 - **DB Function Atomic**: ห่อทั้ง "lock + transfer" ไว้ใน DB Function เดียวด้วย Transaction เพื่อป้องกัน partial state
 
-```sql
--- DB Function: atomic lock + beneficiary transfer
-CREATE OR REPLACE FUNCTION initiate_beneficiary_transfer(
-    p_request_id UUID,
-    p_reason VARCHAR
-) RETURNS BOOLEAN AS $$
-DECLARE
-    locked_count INTEGER;
-BEGIN
-    -- Step 1: Lock ทุก confirmed transactions ของคำร้องนี้
-    UPDATE donation_transactions
-    SET status = 'processing_transfer'
-    WHERE request_id = p_request_id
-      AND status = 'confirmed'  -- ป้องกัน race: ถ้าใครเปลี่ยน status ไปแล้วจะไม่ได้รับผล
-    ;
-    GET DIAGNOSTICS locked_count = ROW_COUNT;
 
-    -- ถ้าไม่มี row ถูก lock → มีคนอื่น process อยู่แล้ว
-    IF locked_count = 0 THEN
-        RETURN FALSE;
-    END IF;
+[SQL Schema Implemented]
 
-    -- Step 2: บันทึก beneficiary_transfer_logs (โอนจริงผ่าน payment service)
-    INSERT INTO beneficiary_transfer_logs (request_id, beneficiary_id, amount, reason)
-    SELECT p_request_id, dc.beneficiary_org_id, SUM(dt.amount), p_reason
-    FROM donation_transactions dt
-    JOIN donation_requests dr ON dr.id = dt.request_id
-    JOIN donation_categories dc ON dc.id = dr.category_id
-    WHERE dt.request_id = p_request_id AND dt.status = 'processing_transfer'
-    GROUP BY dc.beneficiary_org_id;
-
-    RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
 
 ---
 
@@ -1744,26 +1420,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
   *"[ระบบ] Reporter ได้ยกเลิกคำร้องบริจาค [ชื่อ] — การโหวต Consensus ถูกยกเลิกโดยอัตโนมัติ"*
 - **DB Guard**: ใช้ CHECK constraint หรือ trigger ป้องกันการ INSERT ลง `donation_closure_consensus` เมื่อ request ถูก cancel แล้ว
 
-```sql
--- Trigger: ป้องกัน consensus vote เมื่อ request ถูก cancel
-CREATE OR REPLACE FUNCTION guard_consensus_on_cancel()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM donation_requests
-        WHERE id = NEW.request_id
-          AND (approval_status = 'closed' OR closed_reason = 'cancelled')
-    ) THEN
-        RAISE EXCEPTION 'Cannot vote on a cancelled or closed request';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_guard_consensus
-BEFORE INSERT ON donation_closure_consensus
-FOR EACH ROW EXECUTE FUNCTION guard_consensus_on_cancel();
-```
+[SQL Schema Implemented]
+
 
 ---
 
@@ -1923,3 +1582,39 @@ SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbG... (กุญแจลับยาวๆ ที่ขึ้นต้นด้วย eyJ)
 ```
 หากใช้ผิดกุญแจ (ตัวอย่างการนำ `anon_key` มาใส่) ลูปการโอนเงินคืนและ Background Service จะพังและถูกตีกลับด้วย Error 401 Unauthorized すぐに.
+
+#### 10.3 ระบบลงทะเบียนรับมรดก (Partner Onboarding Portal / Self-Service Verification)
+ในเวอร์ชันเปิดใช้งานจริง (Production) แพลตฟอร์มควรยกเลิกการให้ Admin เป็นผู้กรอกข้อมูลการเงินขององค์กรมูลนิธิด้วยตนเอง (Manual Data Entry) เพื่อเพิ่ม Scalability ตามหลัก Platform Economy
+**แผนพัฒนาต่อยอด:**
+- **Database (Supabase):** 
+  - เพิ่มฟิลด์ `owner_user_id` ในตาราง `beneficiary_organizations` เพื่อผูกบัญชีมูลนิธิเข้ากับ User ของแอป
+  - เพิ่มฟิลด์ `document_urls` (JSONB) เพื่อเก็บลิงก์รูปถ่ายสมุดบัญชีและไฟล์ MOU สัญญา
+- **User App (Front-end): Concurrent Registration & Post-Registration UI** 
+  - **ลงทะเบียนแบบคู่ขนาน (Concurrent Flow):** ในจังหวะที่ผู้ใช้ลงทะเบียนขอสิทธิ์วิชาชีพ (Profession Verification) ระบบสามารถเสนอหน้าต่างพ่วงให้แนบเอกสาร "ตัวแทนมูลนิธิ/รับมรดก" ไปพร้อมกันได้เลย โดยไม่ต้องรอวิชาชีพอนุมัติก่อน (แยกอิสระ) ข้อมูลจะส่งแยกกันไปเข้าคิว `Application Review` และ `Beneficiary Pending` พร้อมกัน
+  - **แถบอนุมัติบริจาคในหน้า Profile (Post-Registration):** หากผู้ใช้ข้ามขั้นตอนไปก่อน ให้มีจุดเข้าถึง (Entry Point) เป็นเมนู "ลงทะเบียนองค์กรมูลนิธิ/MOU" ภายใต้แถบ "อนุมัติบริจาค (Donation/Escrow Settings)" ในหน้า Profile ส่วนตัว เพื่อให้สามารถยื่นเจตจำนงในภายหลังได้ด้วยตนเอง
+- **Admin UI: Unified Admin Flow (ตรวจแบบไร้รอยต่อ)** 
+  - เปลี่ยนบทบาทของ Admin ใน "แถบผู้รับมรดก" จากคนกรอกข้อมูล เป็น "คนตรวจ (Auditor)" 
+  - เพิ่มแท็บย่อย **"รอตรวจสอบ (Pending Approval)"**
+  - **Seamless Navigation:** ในหน้า "ตรวจสอบผู้สมัคร (Application Review)" หาก User คนที่แอดมินกำลังตรวจวิชาชีพอยู่ มีเอกสารมูลนิธิรอตรวจอยู่ด้วย ระบบจะขึ้น Badge/ปุ่มลัด สีสดใส เช่น `มีบัญชีมูลนิธิรอตรวจ` เมื่อแอดมินกดยืนยันวิชาชีพเสร็จ สามารถกดปุ่มนี้เพื่อ Route (`Navigator.push`) ข้ามไปยังหน้า "รอตรวจสอบ (Pending Approval)" ในแถบผู้รับมรดกได้อย่างต่อเนื่องโดยไม่ต้องกดถอยหลังกลับไปหาเมนูหลัก
+
+---
+
+## 11. Security & Implementation Safety (Updated 2026-04-16)
+
+เพื่อปิดความเสี่ยงในการทำงานจริงบนระบบ Escrow & Notification ได้มีการอัปเดตแกนหลัก 4 ส่วนดังนี้:
+
+### 11.1 ป้องกัน Race Condition ของระบบ Escrow (Pessimistic Locking)
+- **Database RP**: ใช้ DB Function (`process_escrow_transfer`) ใน PostgreSQL ที่เรียกใช้ `SELECT ... FOR UPDATE NOWAIT` ในการล็อก Transaction อย่างเด็ดขาด ปิดช่องโหว่การใช้ Application-level Lock ที่อาจเกิดบั๊กเมื่อมีคำขอ Refund กับ Release โผล่มาพร้อมกัน
+
+### 11.2 แยกสคริปต์ Dev Auto-Seeding อย่างเด็ดขาด
+- **Strict Environment**: ป้องกันการให้สิทธิ์เจ้าหน้าที่กู้ภัยมั่วซั่วบน Production โดยลบโค้ด Auto-Seed ออกจาก `server.js` อย่างสมบูรณ์ 
+- **ย้ายไปที่ Scripts**: รวมไว้ในไฟล์ `scripts/seeders/dev-seed.js` และให้ผู้พัฒนาสั่งรันด้วย `npm run seed:dev <userId>` ด้วยตนเองเท่านั้น (ทำงานได้แค่ในโหมด Development)
+
+### 11.3 Webhook & Gateway Resiliency (BullMQ)
+- **ระบบคิวแยก**: คิว Payment Transfer จะดูแลด้วย BullMQ 
+- **Exponential Backoff**: โอนเงินล้มเหลวด้วยปัญหา Network จะถูกจัดคิววนกลับพร้อมระยะเวลา Backoff ที่ทวีคูณขึ้น
+- **Circuit Breaker**: หาก Gateway พังเกิน Limit (เช่น 5 ครั้ง) จะเข้าสู่โหมดพัก (Open Circuit) และปรับสถานะ Transaction เป็น `transfer_failed` เพื่อส่งแจ้งเตือนให้ Admin Manual Retry ได้ทันท่วงที ป้องกันปัญหาเงินค้างท่อ
+
+### 11.4 Local Sync State Management
+- **Startup Reconciliation**: เพิ่ม `is_synced` ให้ฐานข้อมูลวิดีโอ 
+- เครื่อง Server วิดีโอหลัก (Node.js) จะทำการรัน `reconcileLocalToCloud()` ทุกครั้งที่เปิดเครื่อง หากฐานข้อมูลในรถและบนคลาวด์ไม่ตรงกันเนื่องจากสภาวะอินเทอร์เน็ตหลุด มันจะ Upsert ข้อมูลการยอด Like/View คืนกลับเข้าสู่ Supabase ให้ทันทีเป็นสิ่งแรก

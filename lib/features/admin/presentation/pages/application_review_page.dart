@@ -4,6 +4,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../models/profession.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// หน้าตรวจสอบผู้สมัครลงทะเบียน
 class ApplicationReviewPage extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   List<RegistrationApplication> _applications = [];
   bool _isLoading = true;
   VerificationStatus _selectedStatus = VerificationStatus.pending;
+  Set<String> _usersWithPendingBeneficiary = {};
 
   @override
   void initState() {
@@ -48,9 +50,27 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
     try {
       final apps = await _repo.getApplications(_selectedStatus);
+      
+      // ดึงข้อมูล owner_user_id ที่มีมูลนิธิรอตรวจสอบ (is_verified = false) แบบรวดเร็ว
+      Set<String> pendingOrgsUserIds = {};
+      try {
+        final res = await Supabase.instance.client
+            .from('beneficiary_organizations')
+            .select('owner_user_id')
+            .eq('is_verified', false)
+            .not('owner_user_id', 'is', null);
+        
+        for (var row in res) {
+          pendingOrgsUserIds.add(row['owner_user_id'].toString());
+        }
+      } catch (e) {
+        debugPrint('Error loading pending beneficiaries: $e');
+      }
+
       if (mounted) {
         setState(() {
           _applications = apps;
+          _usersWithPendingBeneficiary = pendingOrgsUserIds;
           _isLoading = false;
         });
       }
@@ -373,6 +393,44 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 ),
               ],
 
+              // ปุ่มพิเศษตรวจสอบบัญชีมูลนิธิถ้าตรวจสอบเจอ
+              if (_usersWithPendingBeneficiary.contains(application.oderId)) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_balance, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'ตรวจพบเอกสารตัวแทนมูลนิธิ/MOU รอการอนุมัติอยู่',
+                          style: TextStyle(color: Colors.deepOrange, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                           ScaffoldMessenger.of(context).showSnackBar(
+                             const SnackBar(content: Text('กรุณาอนุมัติวิชาชีพก่อน แล้วจึงคลิกไปตรวจมูลนิธิ'))
+                           );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('รออนุมัติวิชาชีพ'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // Action buttons for pending
               if (application.status == VerificationStatus.pending) ...[
                 const SizedBox(height: 12),
@@ -505,6 +563,27 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
           ),
         );
         _loadApplications(); // Refresh list
+
+        // Seamless Navigation Check
+        if (_usersWithPendingBeneficiary.contains(application.oderId)) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('อนุมัติวิชาชีพสำเร็จ'),
+              content: const Text('ผู้ใช้นี้มี "เอกสารมูลนิธิ/MOU" รอตรวจสอบอยู่ ต้องการไปยังหน้าผู้รับมรดกเพื่อตรวจสอบต่อเลยหรือไม่?'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ไว้ทีหลัง')),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pushNamed(context, '/admin/donations', arguments: {'initialIndex': 4}); // ไปที่ Beneficiary Tab
+                  },
+                  child: const Text('ไปตรวจสอบเลย'),
+                ),
+              ],
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

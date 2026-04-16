@@ -263,6 +263,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           width: 45,
                           height: 45,
                           decoration: BoxDecoration(
+                            color: AppColors.backgroundWhite,
                             shape: BoxShape.circle,
                             border: Border.all(color: AppColors.primaryLight, width: 2),
                             boxShadow: [
@@ -272,11 +273,17 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                                 offset: const Offset(0, 3),
                               ),
                             ],
-                            image: const DecorationImage(
-                              image: NetworkImage('https://i.pravatar.cc/150?img=32'),
-                              fit: BoxFit.cover,
-                            ),
+                            image: AuthService.instance.currentUser?.profileImageUrl != null &&
+                                   AuthService.instance.currentUser!.profileImageUrl!.isNotEmpty
+                                ? DecorationImage(
+                                    image: NetworkImage(AuthService.instance.currentUser!.profileImageUrl!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
+                          child: (AuthService.instance.currentUser?.profileImageUrl == null || AuthService.instance.currentUser!.profileImageUrl!.isEmpty)
+                              ? const Icon(Icons.person, color: AppColors.primaryLight)
+                              : null,
                         ),
                       ),
                     ],
@@ -689,9 +696,8 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
           children: [
             Flexible(
               child: isUnderlined && underlineText != null
-                ? RichText(
-                    textAlign: TextAlign.right,
-                    text: TextSpan(
+                ? Text.rich(
+                    TextSpan(
                       style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.textPrimary,
                         fontSize: fontSize ?? (isSubItem ? 12 : 14),
@@ -709,6 +715,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                         ),
                       ],
                     ),
+                    textAlign: TextAlign.right,
                   )
                 : Text(
                     title,

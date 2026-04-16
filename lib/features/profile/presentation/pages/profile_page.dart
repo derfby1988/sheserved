@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -46,6 +48,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _thaiMhungEnabled = true; // ความสมัครใจไทยมุง
   int _alertRadius = 500; // รัศมีการแจ้งเตือน (เมตร)
   File? _tempProfileImage;
+  bool _isUploadingAvatar = false;
   int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
 
   // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
@@ -317,7 +320,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   repository: _donationRepository,
                   userId: _user?.id,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
+                _buildBeneficiaryRegistrationEntry(),
+                const SizedBox(height: 16),
                 const LeaderVerificationPage(),
                 const SizedBox(height: 24),
               ],
@@ -346,6 +351,59 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBeneficiaryRegistrationEntry() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.orange.shade200),
+      ),
+      color: Colors.orange.shade50,
+      child: InkWell(
+        onTap: () {
+          // TODO: สร้างและนำทางไปยัง BeneficiaryRegistrationPage
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('กำลังเปิดหน้าลงทะเบียนองค์กรมูลนิธิ...')),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.account_balance, color: Colors.white),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ลงทะเบียนองค์กรมูลนิธิ/MOU',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.deepOrange),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'เป็นตัวแทนบัญชีรับมรดกเพื่อนำไปใช้บรรเทาสาธารณภัย',
+                      style: TextStyle(fontSize: 12, color: Colors.deepOrange),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.orange),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -397,24 +455,42 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 16),
           Stack(
             children: [
-              CircleAvatar(
-                radius: 60,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                backgroundImage: _tempProfileImage != null
-                    ? FileImage(_tempProfileImage!)
-                    : (_user?.profileImageUrl != null
-                        ? NetworkImage(_user!.profileImageUrl!)
-                        : null) as ImageProvider?,
-                child: _user?.profileImageUrl == null && _tempProfileImage == null
-                    ? const Icon(Icons.person, size: 60, color: AppColors.primary)
-                    : null,
+              GestureDetector(
+                onTap: _isUploadingAvatar ? null : _showImagePickerDropdown,
+                child: ClipOval(
+                  child: Container(
+                    width: 120, // radius 60
+                    height: 120,
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    child: _isUploadingAvatar 
+                      ? const Center(child: CircularProgressIndicator(color: AppColors.primary)) 
+                      : _user?.profileImageUrl != null
+                            ? Image.network(
+                                _user!.profileImageUrl!,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                      value: loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (c, e, s) => const Icon(Icons.person, size: 60, color: AppColors.primary),
+                              )
+                            : const Icon(Icons.person, size: 60, color: AppColors.primary),
+                  ),
+                ),
               ),
-              if (_isEditing)
+              if (!_isUploadingAvatar)
                 Positioned(
                   bottom: 0,
                   right: 0,
                   child: GestureDetector(
-                    onTap: _pickImage,
+                    onTap: _showImagePickerDropdown,
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: const BoxDecoration(
@@ -1112,13 +1188,95 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Future<void> _pickImage() async {
+  void _showImagePickerDropdown() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('ถ่ายรูป (Camera)'),
+              onTap: () {
+                Navigator.pop(context);
+                _processAndUploadAvatar(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('เลือกจากคลังภาพ (Gallery)'),
+              onTap: () {
+                Navigator.pop(context);
+                _processAndUploadAvatar(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _processAndUploadAvatar(ImageSource source) async {
+    if (_user == null) return;
+    
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
+    final pickedFile = await picker.pickImage(source: source);
+    if (pickedFile == null) return;
+    
+    setState(() => _isUploadingAvatar = true);
+    
+    try {
+      // 1. บีบอัดไฟล์ (Compress)
+      final tempDir = await getTemporaryDirectory();
+      final targetPath = '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
+      
+      final compressedFile = await FlutterImageCompress.compressAndGetFile(
+        pickedFile.path,
+        targetPath,
+        quality: 70,       // ลดคุณภาพลงเหลือ 70%
+        minWidth: 800,     // จำกัดความกว้างสูงสุด
+        minHeight: 800,    // จำกัดความสูงสูงสุด
+      );
+      
+      if (compressedFile == null) throw Exception('บีบอัดภาพไม่สำเร็จ');
+
+      // 2. อัปโหลดลง Storage
+      final userId = _user!.id;
+      final fileName = 'profiles/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final supabase = Supabase.instance.client;
+      
+      await supabase.storage.from('avatars').upload(fileName, File(compressedFile.path));
+      final imageUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+      // 3. บันทึกลงตารางจริง (users table)
+      await supabase.from('users').update({
+        'profile_image_url': imageUrl,
+      }).eq('id', userId);
+      
+      // อัปเดต State และ Local Session
       setState(() {
-        _tempProfileImage = File(image.path);
+        _user = _user!.copyWith(profileImageUrl: imageUrl);
+        _tempProfileImage = null;
       });
+      AuthService.instance.login(_user!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('อัปเดตภาพโปรไฟล์สำเร็จ'), backgroundColor: AppColors.success),
+        );
+      }
+    } catch (e) {
+      debugPrint('Avatar upload error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เกิดข้อผิดพลาดในการอัปโหลด: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
     }
   }
 
@@ -1169,17 +1327,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
 
       // Handle Profile Image Upload
-      if (_tempProfileImage != null) {
-         try {
-           final fileName = 'profiles/$userId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-           final supabase = Supabase.instance.client;
-           await supabase.storage.from('public').upload(fileName, _tempProfileImage!);
-           final imageUrl = supabase.storage.from('public').getPublicUrl(fileName);
-           coreData['profile_image_url'] = imageUrl;
-         } catch (e) {
-           debugPrint('Image upload failed: $e');
-         }
-      }
+      // (ระบบถูกย้ายไปให้เป็น _processAndUploadAvatar ที่ทำหน้าที่อัปโหลดอัตโนมัติแล้ว)
 
       await _repository.updateProfile(
         userId: userId,
