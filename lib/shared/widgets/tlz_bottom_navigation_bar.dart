@@ -40,14 +40,16 @@ class TlzBottomNavigationBar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onIndexChanged;
   final VoidCallback onAddPressed;
-  final ScrollController? scrollController;
+  final bool hasNewDonationAlert;
+  final bool isVisible;
 
   const TlzBottomNavigationBar({
     super.key,
     required this.currentIndex,
     required this.onIndexChanged,
     required this.onAddPressed,
-    this.scrollController,
+    this.hasNewDonationAlert = false,
+    this.isVisible = true,
   });
 
   @override
@@ -55,43 +57,7 @@ class TlzBottomNavigationBar extends StatefulWidget {
 }
 
 class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
-  bool _isVisible = true;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.scrollController?.addListener(_onScroll);
-  }
-
-  @override
-  void didUpdateWidget(covariant TlzBottomNavigationBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.scrollController != widget.scrollController) {
-      oldWidget.scrollController?.removeListener(_onScroll);
-      widget.scrollController?.addListener(_onScroll);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.scrollController?.removeListener(_onScroll);
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (widget.scrollController == null) return;
-    
-    final direction = widget.scrollController!.position.userScrollDirection;
-    if (direction == ScrollDirection.reverse) {
-      if (_isVisible) {
-        setState(() => _isVisible = false);
-      }
-    } else if (direction == ScrollDirection.forward) {
-      if (!_isVisible) {
-        setState(() => _isVisible = true);
-      }
-    }
-  }
+  // ไม่ต้องใช้ _onScroll ในนี้แล้ว อาศัย widget.isVisible แทน
 
   // ─── จานสีจาก Reference ─── //
   // ดึงจากภาพต้นแบบ: ปุ่มดาร์กสีเทาดำ charcoal มีผิว olive
@@ -126,7 +92,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
 
     return AnimatedSlide(
       duration: const Duration(milliseconds: 300),
-      offset: _isVisible ? Offset.zero : const Offset(0, 1.5),
+      offset: widget.isVisible ? Offset.zero : const Offset(0, 1.5),
       curve: Curves.easeInOut,
       child: Padding(
         padding: EdgeInsets.only(left: hPad, right: hPad, bottom: bottomMargin),
@@ -155,7 +121,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildGlassBubbleNav(1, Icons.volunteer_activism_rounded, s, hasNotification: true),
+                        _buildGlassBubbleNav(1, Icons.volunteer_activism_rounded, s, hasNotification: widget.hasNewDonationAlert),
                         _buildAddButton(s),
                         _buildGlassBubbleNav(3, Icons.local_pharmacy_rounded, s),
                         _buildGlassBubbleNav(4, Icons.person_rounded, s),
@@ -191,21 +157,32 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18.0, sigmaY: 18.0),
-          child: CustomPaint(
-            foregroundPainter: _GlassEdgePainter(radius: radius),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(radius),
-                color: Colors.white.withOpacity(0.01),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // ─── เนื้อหาด้านหน้าเพื่อดันขนาด Stack ─── //
+          child,
+          // ─── พื้นหลังกระจก (ถูก Clip ไว้ให้อยู่ในกรอบ) วางไว้ล่างสุด ─── //
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18.0, sigmaY: 18.0),
+                child: CustomPaint(
+                  foregroundPainter: _GlassEdgePainter(radius: radius),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(radius),
+                      color: Colors.white.withOpacity(0.01),
+                    ),
+                  ),
+                ),
               ),
-              child: child,
             ),
           ),
-        ),
+          // ─── วางเนื้อหาทับอีกครั้งเพื่อให้ไม่ถูกกระจกบัง ─── //
+          child,
+        ],
       ),
     );
   }
@@ -217,11 +194,15 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
     final fontSize = (13 * s).roundToDouble();
 
     return GestureDetector(
-      onTap: () => widget.onIndexChanged(index),
+      onTap: () {
+        if (widget.currentIndex != index) {
+          widget.onIndexChanged(index);
+        }
+      },
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
+        curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
           horizontal: isSelected ? 14 * s : 10 * s,
           vertical: 8 * s,
@@ -257,25 +238,27 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
               children: [
                 Icon(
                   icon,
-                  color: isSelected ? Colors.white : _defaultIconColor, // สีขาวถูกใช้เพื่อไล่เฉดสีทับ
+                  color: isSelected ? Colors.white : _defaultIconColor, // สีขาวไล่เฉดเมื่อ active
                   size: iconSize,
                 ),
                 if (isSelected) ...[
-                  SizedBox(width: 6 * s),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.white, // ใช้ขาวให้ Gradient วาดทับได้เต็มที่
-                      fontWeight: FontWeight.w700,
-                      fontSize: fontSize,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+                   SizedBox(width: 6 * s),
+                   Text(
+                     label,
+                     style: TextStyle(
+                       color: Colors.white,
+                       fontWeight: FontWeight.w700,
+                       fontSize: fontSize,
+                       letterSpacing: 0.3,
+                     ),
+                   ),
                 ]
               ],
             );
 
-            if (!isSelected) return content;
+            if (!isSelected) {
+              return content;
+            }
 
             // ─── ใช้ ShaderMask เพื่อทำ Text Gradient ส้ม-ชมพู-ม่วง ตามภาพ Reference ─── //
             return ShaderMask(
@@ -302,64 +285,100 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
     final isSelected = widget.currentIndex == index;
     final iconSize = (22 * s).roundToDouble();
     final pad = (9 * s).roundToDouble();
+    
+    // ปรับให้ขยายลอยตัวใหญ่ขึ้นเท่ากับภาพตัวอย่าง
+    final scale = isSelected ? 1.35 : 1.0;
+    final yOffset = isSelected ? -0.4 : 0.0;
 
     return GestureDetector(
-      onTap: () => widget.onIndexChanged(index),
+      onTap: () {
+        if (widget.currentIndex != index) {
+          widget.onIndexChanged(index);
+        }
+      },
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
+      child: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
-        padding: EdgeInsets.all(pad),
-        decoration: BoxDecoration(
-          // ─── เนื้อลูกแก้ว: ใสแทบมองทะลุ ─── //
-          color: isSelected
-              ? _activeBtnColor // ปุ่ม Active: ครีม ivory
-              : Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isSelected
-                ? Colors.white.withOpacity(0.9)
-                : Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
-            width: 1.0,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? _activeIconColor : _defaultIconColor,
-              size: iconSize,
-            ),
-            if (hasNotification)
-              Positioned(
-                top: -2,
-                right: -2,
-                child: Container(
-                  width: 11,
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.redAccent.withOpacity(0.35),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                ),
+        curve: Curves.easeOutBack,
+        offset: Offset(0, yOffset),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          scale: scale,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: EdgeInsets.all(pad),
+            decoration: BoxDecoration(
+              // ─── เนื้อลูกแก้ว: ใสแทบมองทะลุ ─── //
+              color: isSelected
+                  ? _activeBtnColor // ปุ่ม Active: ครีม ivory
+                  : Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected
+                    ? Colors.white.withOpacity(0.9)
+                    : Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
+                width: 1.0,
               ),
-          ],
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Builder(builder: (context) {
+                  final iconWidget = Icon(
+                    icon,
+                    color: isSelected ? Colors.white : _defaultIconColor,
+                    size: iconSize,
+                  );
+                  
+                  if (!isSelected) return iconWidget;
+                  
+                  return ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [
+                        Color(0xFFEA8039), // ส้มซ้าย
+                        Color(0xFFC95B6A), // ชมพูแสดตรงกลาง
+                        Color(0xFF7438B0), // ม่วงขวา
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    blendMode: BlendMode.srcIn,
+                    child: iconWidget,
+                  );
+                }),
+                if (hasNotification)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 11,
+                      height: 11,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent.withOpacity(0.35),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -367,38 +386,41 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
 
   /// ─── ปุ่ม + ตรงกลาง: ดาร์กสี charcoal + ไอคอนเขียวอ่อน ─── ///
   Widget _buildAddButton(double s) {
-    final iconSize = (26 * s).roundToDouble();
-    final pad = (10 * s).roundToDouble();
+    // ไม่ขยายค้างไว้แล้ว ให้เป็นขนาดปกติเสมอ
+    final scale = 1.0;
+    final yOffset = 0.0;
+
+    final iconSize = (22 * s).roundToDouble();
+    final pad = (9 * s).roundToDouble();
 
     return GestureDetector(
       onTap: widget.onAddPressed,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: EdgeInsets.all(pad),
-        decoration: BoxDecoration(
-          color: _darkBtnColor,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withOpacity(0.12),
-            width: 1.2,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutBack,
+        offset: Offset(0, yOffset),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          scale: scale,
+          child: Container(
+            padding: EdgeInsets.all(pad),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
+                width: 1.0,
+              ),
+              boxShadow: null,
+            ),
+            child: Icon(
+              Icons.add,
+              color: _defaultIconColor,
+              size: iconSize,
+            ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.20),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-            BoxShadow(
-              color: _darkBtnIconColor.withOpacity(0.08),
-              blurRadius: 12,
-              spreadRadius: -2,
-            ),
-          ],
-        ),
-        child: Icon(
-          Icons.add,
-          color: _darkBtnIconColor,
-          size: iconSize,
         ),
       ),
     );

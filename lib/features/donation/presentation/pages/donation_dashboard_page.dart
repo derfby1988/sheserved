@@ -129,6 +129,9 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
       body: StreamBuilder<List<DonationCategory>>(
         stream: _repository.watchCategories(),
         builder: (context, catSnapshot) {
+          if (catSnapshot.hasError) {
+            return Center(child: Text('เกิดข้อผิดพลาดในการโหลดหมวดหมู่: ${catSnapshot.error}'));
+          }
           if (!catSnapshot.hasData) return const _SkeletonDashboard();
           
           final categories = catSnapshot.data!;
@@ -138,6 +141,9 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
           return StreamBuilder<List<DonationRequest>>(
             stream: _repository.watchRequests(),
             builder: (context, reqSnapshot) {
+              if (reqSnapshot.hasError) {
+                return Center(child: Text('เกิดข้อผิดพลาดในการโหลดรายการ: ${reqSnapshot.error}'));
+              }
               final trendingRequests = reqSnapshot.data?.where((r) => r.isTrending).toList() ?? [];
               
               return SingleChildScrollView(

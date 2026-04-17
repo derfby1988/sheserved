@@ -63,9 +63,6 @@ class TrendingDonationCard extends StatelessWidget {
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
-                      shadows: [
-                        Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1)),
-                      ],
                     ),
                   ),
                 ),

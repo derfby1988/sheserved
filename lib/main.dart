@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
+import 'core/layout/main_app_layout.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/auth/presentation/pages/register_page.dart';
@@ -124,7 +125,7 @@ class SheservedApp extends StatelessWidget {
         Locale('th', 'TH'),
         Locale('en', 'US'),
       ],
-      home: const HomePage(),
+      home: const MainAppLayout(),
       routes: {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterWizardPage(),
@@ -133,7 +134,7 @@ class SheservedApp extends StatelessWidget {
         '/health-data-entry': (context) => const HealthDataEntryPage(),
         '/package-healthcare': (context) => const PackageHealthCarePage(),
         '/test': (context) => const TestWebSocketWidget(),
-        '/home': (context) => const HomePage(),
+        '/home': (context) => const MainAppLayout(),
 
         '/admin/professions': (context) => const ProfessionAdminPage(),
         '/admin/applications': (context) => const ApplicationReviewPage(),

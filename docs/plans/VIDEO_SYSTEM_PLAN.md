@@ -189,7 +189,7 @@ PORT=3000
 +TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
 +
 +# Server Network
-+LOCAL_API_URL=http://192.168.1.142:3000
++LOCAL_API_URL=http://192.168.0.120:3000
 +
 +# Bunny.net
 BUNNY_API_KEY=<your_api_key>
@@ -200,7 +200,7 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.1.142:3000
+LOCAL_API_URL=http://192.168.0.120:3000
 ```
 
 ## Cost Estimation

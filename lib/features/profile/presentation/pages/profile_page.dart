@@ -86,7 +86,11 @@ class _ProfilePageState extends State<ProfilePage> {
     // Auth re-verify as per login_navigation_guide
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!AuthService.instance.isLoggedIn) {
-        Navigator.pushReplacementNamed(context, '/login', arguments: '/profile');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
         return;
       }
       _loadProfile();
@@ -219,7 +223,25 @@ class _ProfilePageState extends State<ProfilePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _user == null
-              ? const Center(child: Text('ไม่พบข้อมูลผู้ใช้'))
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์ของคุณ'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/login', arguments: '/profile');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('เข้าสู่ระบบ / สมัครสมาชิก'),
+                      ),
+                    ],
+                  ),
+                )
               : SafeArea(
                   top: false, 
                   child: _buildContent(),

@@ -36,7 +36,9 @@ const _kConsultPosKey = 'home_consultation_position';
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final bool isActive;
+
+  const HomePage({super.key, this.isActive = true});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -142,6 +144,36 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _emergencySub?.cancel();
     _donationSub?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _onResumeFromTab();
+      } else {
+        _onPauseFromTab();
+      }
+    }
+  }
+
+  void _onResumeFromTab() {
+    debugPrint('HomePage: Resumed from tab switch');
+    _loadActiveAlerts();
+    if (_refreshTimer == null || !_refreshTimer!.isActive) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+        if (mounted && widget.isActive) {
+          _loadActiveAlerts();
+        }
+      });
+    }
+  }
+
+  void _onPauseFromTab() {
+    debugPrint('HomePage: Paused from tab switch (Saving memory & battery)');
+    _refreshTimer?.cancel();
+    // ถ้ามีการดึงพิกัด Location อย่างหนัก สามารถ pause สตรีมตรงนี้ได้เลย (ตัวอย่าง: _locationStream?.pause())
   }
 
   @override
@@ -1190,37 +1222,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      extendBody: true,
-      drawer: const TlzDrawer(),
-      drawerEnableOpenDragGesture: true,
-      bottomNavigationBar: Builder(
-        builder: (context) {
-          return TlzBottomNavigationBar(
-            scrollController: _scrollController,
-            currentIndex: 0,
-            onIndexChanged: (index) {
-              if (index == 0) {
-                // Already at Home, optionally scroll to top
-              } else if (index == 1) {
-                Navigator.pushNamed(context, '/donate'); // ไปยังหน้า Donation
-              } else if (index == 3) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PharmacyProductsPage()),
-                ); // ไปยังหน้า ยา & ความงาม
-              } else if (index == 4) {
-                Navigator.pushNamed(context, '/profile');
-              }
-            },
-            onAddPressed: () {
-              Navigator.pushNamed(context, '/emergency-live'); // ไปยังหน้า Emergency
-            },
-          );
-        }
-      ),
-      body: Builder(
+    return Container(
+      color: AppColors.background,
+      child: Builder(
         builder: (context) => GestureDetector(
           behavior: HitTestBehavior.translucent,
           onHorizontalDragStart: _onHorizontalDragStart,
