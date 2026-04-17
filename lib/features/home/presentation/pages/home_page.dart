@@ -12,6 +12,7 @@ import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
+import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products_page.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'dart:async';
 import '../widgets/background_permission_dialog.dart';
@@ -1191,8 +1192,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      extendBody: true,
       drawer: const TlzDrawer(),
       drawerEnableOpenDragGesture: true,
+      bottomNavigationBar: Builder(
+        builder: (context) {
+          return TlzBottomNavigationBar(
+            scrollController: _scrollController,
+            currentIndex: 0,
+            onIndexChanged: (index) {
+              if (index == 0) {
+                // Already at Home, optionally scroll to top
+              } else if (index == 1) {
+                Navigator.pushNamed(context, '/donate'); // ไปยังหน้า Donation
+              } else if (index == 3) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PharmacyProductsPage()),
+                ); // ไปยังหน้า ยา & ความงาม
+              } else if (index == 4) {
+                Navigator.pushNamed(context, '/profile');
+              }
+            },
+            onAddPressed: () {
+              Navigator.pushNamed(context, '/emergency-live'); // ไปยังหน้า Emergency
+            },
+          );
+        }
+      ),
       body: Builder(
         builder: (context) => GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -1200,8 +1227,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           onHorizontalDragUpdate: (details) => _onHorizontalDragUpdate(details, context),
           onHorizontalDragEnd: (details) => _onHorizontalDragEnd(details, context),
           child: Container(
-            color: AppColors.primary, 
+            // นำสีพื้นหลังทึบออกเพื่อไม่ให้ไปทับซ้อนช่วงล่างของจอ 
+            // (ข้างใน Stack มี Positioned top มารับ overscroll อยู่แล้ว)
             child: SafeArea(
+              bottom: false, // ปิดกันขอบล่าง เพื่อให้อ่านเนื้อหาทะลุลงไปหลัง Navigation Bar ได้
               child: Stack(
                 children: [
                   // พื้นหลังสี primary กันช่องว่างเมื่อ overscroll
@@ -1284,7 +1313,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                               },
                                               onBookmarkTap: _onToggleBookmark,
                                             ),
-                                        const SizedBox(height: 32),
+                                        const SizedBox(height: 120), // เพิ่มพื้นที่เว้นว่างเผื่อให้ Navigation Bar ลอยอยู่ด้านบนโดยไม่บังเนื้อหาสุดท้าย
                                       ],
                                     ),
                                   ),
