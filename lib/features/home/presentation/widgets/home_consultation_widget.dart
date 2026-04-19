@@ -216,7 +216,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Animated Ratio Border (Like Health Card Score)
+              // Animated Ratio Border (3D Ring — Golden Yellow / Soft Blue)
               if (!isMini)
                 AnimatedBuilder(
                   animation: _ratioAnimation,
@@ -227,29 +227,15 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                       child: CustomPaint(
                         painter: RatioCirclePainter(
                           providerRatio: _ratioAnimation.value,
-                          providerColor: AppColors.primary.withOpacity(0.4),
-                          recipientColor: AppColors.accent.withOpacity(0.4),
+                          providerColor: const Color(0xFFE8B930).withOpacity(0.1),
+                          recipientColor: const Color(0xFF7EADD6).withOpacity(0.1),
                           providerLabel: 'ผู้ให้บริการ',
                           recipientLabel: 'รอปรึกษา',
-                          strokeWidth: 14 * (baseSize / 280),
+                          strokeWidth: 22 * (baseSize / 280),
                         ),
                       ),
                     );
                   },
-                ),
-              
-              // Decoration Ring Elements (ซ่อนใน Mini Mode)
-              if (!isMini)
-                SizedBox(
-                  width: baseSize,
-                  height: baseSize,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      _buildRingDot(baseSize, 0, 18),
-                      _buildRingDot(baseSize, 180, 18),
-                    ],
-                  ),
                 ),
               
               // Inner UI Area
@@ -257,32 +243,34 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                 width: isMini ? baseSize : innerSize,
                 height: isMini ? baseSize : innerSize,
                 decoration: BoxDecoration(
-                  color: AppColors.backgroundWhite,
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                     colors: [
-                      AppColors.backgroundWhite,
-                      AppColors.backgroundWhite.withOpacity(0.9),
-                      AppColors.backgroundWhite.withOpacity(0.8),
+                      Color(0xFFBBBA9E), // warm olive-gray (top-left highlight)
+                      Color(0xFFA5A68E), // olive transition
+                      Color(0xFF8EA8BA), // cool blue-gray transition
+                      Color(0xFF7EA0BC), // cool blue-gray (bottom-right shadow)
                     ],
-                    stops: const [0.0, 0.8, 1.0],
+                    stops: [0.0, 0.35, 0.65, 1.0],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(isMini ? 0.15 : 0.08),
-                      blurRadius: isMini ? 8 : 15,
-                      spreadRadius: isMini ? 0 : 2,
-                      offset: Offset(0, isMini ? 2 : 4),
+                      color: Colors.black.withOpacity(isMini ? 0.2 : 0.12),
+                      blurRadius: isMini ? 10 : 18,
+                      spreadRadius: isMini ? 0 : 1,
+                      offset: Offset(0, isMini ? 3 : 5),
                     ),
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.05),
-                      blurRadius: 20,
-                      spreadRadius: -5,
+                      color: const Color(0xFF7EA0BC).withOpacity(0.15),
+                      blurRadius: 15,
+                      spreadRadius: -3,
                     ),
                   ],
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.5),
-                    width: 1.5,
+                    color: Colors.white.withOpacity(0.45),
+                    width: 2.5,
                   ),
                 ),
                 child: Stack(
@@ -298,7 +286,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                             height: dottedSize,
                             child: CustomPaint(
                               painter: DottedCirclePainter(
-                                color: AppColors.primary.withOpacity(0.4),
+                                color: Colors.white.withOpacity(0.15),
                                 strokeWidth: 1.5,
                                 dashWidth: 4,
                                 dashSpace: 3,
@@ -406,7 +394,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Icon(
           Icons.medical_services,
           size: (24 * scale).clamp(16.0, 32.0),
-          color: isOffline ? AppColors.textHint : AppColors.primary,
+          color: isOffline ? Colors.white38 : Colors.white,
         ),
         SizedBox(height: 2 * scale),
         // Online Count with Pulsating Dot
@@ -440,7 +428,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               style: TextStyle(
                 fontSize: (11 * scale).clamp(8.0, 14.0),
                 fontWeight: FontWeight.bold,
-                color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+                color: onlineCount > 0 ? AppColors.success : Colors.white54,
               ),
             ),
           ],
@@ -481,7 +469,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Icon(
           Icons.medical_services,
           size: iconSize,
-          color: isOffline ? AppColors.textHint : AppColors.textPrimary,
+          color: isOffline ? Colors.white38 : Colors.white,
         ),
         
         SizedBox(height: 6 * (baseSize / 280)),
@@ -496,7 +484,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Text(
           'ปรึกษา',
           style: AppTextStyles.heading3.copyWith(
-            color: isOffline ? AppColors.textSecondary : AppColors.textPrimary,
+            color: isOffline ? Colors.white54 : Colors.white,
             fontWeight: FontWeight.bold,
             fontSize: 20 * (baseSize / 280),
           ),
@@ -513,7 +501,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           textAlign: TextAlign.center,
           text: TextSpan(
             style: AppTextStyles.bodyMedium.copyWith(
-              color: isOffline ? AppColors.textHint : AppColors.textPrimary,
+              color: isOffline ? Colors.white38 : Colors.white70,
               fontSize: 12 * (baseSize / 280),
             ),
             children: [
@@ -521,7 +509,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               TextSpan(
                 text: '&',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
+                  color: Colors.white54,
                   fontSize: 12 * (baseSize / 280),
                 ),
               ),
@@ -537,7 +525,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
             'ขณะนี้อยู่นอกเวลาทำการ',
             textAlign: TextAlign.center,
             style: AppTextStyles.caption.copyWith(
-              color: AppColors.error.withOpacity(0.7),
+              color: const Color(0xFFFF8A80),
               fontWeight: FontWeight.w600,
               fontSize: 10 * (baseSize / 280),
             ),
@@ -562,7 +550,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               width: 10,
               height: 10,
               decoration: BoxDecoration(
-                color: onlineCount > 0 ? AppColors.success : AppColors.textHint,
+                color: onlineCount > 0 ? AppColors.success : Colors.white38,
                 shape: BoxShape.circle,
                 boxShadow: onlineCount > 0 ? [
                   BoxShadow(
@@ -579,7 +567,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         _buildAnimatedCount(
           onlineCount,
           style: AppTextStyles.bodySmall.copyWith(
-            color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+            color: onlineCount > 0 ? AppColors.success : Colors.white54,
             fontWeight: onlineCount > 0 ? FontWeight.bold : FontWeight.normal,
             fontSize: 14 * (baseSize / 280),
           ),
@@ -587,7 +575,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Text(
           ' ราย',
           style: AppTextStyles.bodySmall.copyWith(
-            color: onlineCount > 0 ? AppColors.success : AppColors.textSecondary,
+            color: onlineCount > 0 ? AppColors.success : Colors.white54,
             fontSize: 14 * (baseSize / 280),
           ),
         ),
@@ -717,7 +705,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
     return Text(
       parts.join(' | '),
       style: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.textSecondary,
+        color: Colors.white54,
         fontSize: 10 * (baseSize / 280),
       ),
     );

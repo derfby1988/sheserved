@@ -151,94 +151,83 @@ class RatioCirclePainter extends CustomPainter {
     const gap = 0.15; // Gap between arcs in radians
     const totalAvailableAngle = 2 * math.pi - (2 * gap);
     
-    // 1. Draw Background Track (Dimmer version)
+    // 1. Background Track (subtle white ring — 3D base plate)
     final bgPaint = Paint()
-      ..color = Colors.black.withOpacity(0.05)
+      ..color = Colors.white.withOpacity(0.1)
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawCircle(center, radius, bgPaint);
 
-    // 2. Draw Arc Glow (Shadow Layer)
-    if (showGlow) {
-      final glowPaint = Paint()
-        ..strokeWidth = strokeWidth * 1.2
+    // Helper: Draw 3D arc with shadow + gradient + highlight layers
+    void draw3DArc(double startAngle, double sweepAngle, Color color, 
+        String label, double labelAngle) {
+      if (sweepAngle < 0.02) return;
+      
+      // Layer 1: Drop Shadow (shifted down, blurred, darker)
+      final shadowPaint = Paint()
+        ..strokeWidth = strokeWidth + 2
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        ..color = color.withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawArc(rect.translate(0, 3), startAngle, sweepAngle, false, shadowPaint);
 
-      if (providerRatio > 0.02) {
-        final sweepAngle = totalAvailableAngle * providerRatio;
-        final startAngle = (-math.pi / 2) - (sweepAngle / 2);
-        glowPaint.color = providerColor.withOpacity(0.3);
-        canvas.drawArc(rect, startAngle, sweepAngle, false, glowPaint);
-      }
-
-      if (providerRatio < 0.98) {
-        final sweepAngleRecipient = totalAvailableAngle * (1 - providerRatio);
-        final startAngleRecipient = (math.pi / 2) - (sweepAngleRecipient / 2);
-        glowPaint.color = recipientColor.withOpacity(0.3);
-        canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, glowPaint);
-      }
-    }
-
-    // 3. Draw Main Arcs with Gradients
-    final providerPaint = Paint()
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    if (providerRatio > 0.02) {
-      final sweepAngle = totalAvailableAngle * providerRatio;
-      final startAngle = (-math.pi / 2) - (sweepAngle / 2);
+      // Layer 2: Main arc with sweep gradient for 3D depth
+      final mainPaint = Paint()
+        ..strokeWidth = strokeWidth
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
       
-      providerPaint.shader = ui.Gradient.sweep(
+      final baseOpacity = color.opacity;
+      mainPaint.shader = ui.Gradient.sweep(
         center,
         [
-          providerColor.withOpacity(0.6),
-          providerColor,
-          providerColor.withOpacity(0.6),
+          color.withOpacity(baseOpacity * 0.7), // Start slightly more transparent
+          color,                                // Middle (100% of input opacity)
+          color.withOpacity(baseOpacity * 0.9), // End slightly more transparent
         ],
         [0.0, 0.5, 1.0],
         TileMode.clamp,
         startAngle,
         startAngle + sweepAngle,
       );
-      
-      canvas.drawArc(rect, startAngle, sweepAngle, false, providerPaint);
+      canvas.drawArc(rect, startAngle, sweepAngle, false, mainPaint);
 
-      if (providerLabel.isNotEmpty && providerRatio > 0.15) {
-        _drawTextOnArc(canvas, providerLabel, radius, center, -math.pi / 2, Colors.white, strokeWidth);
+      // Layer 3: Inner-edge highlight (thin bright line for 3D bevel)
+      if (sweepAngle > 0.3) {
+        final hlRadius = radius - strokeWidth * 0.28;
+        final hlRect = Rect.fromCircle(center: center, radius: hlRadius);
+        final hlPaint = Paint()
+          ..strokeWidth = strokeWidth * 0.18
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..color = Colors.white.withOpacity(0.35);
+        canvas.drawArc(hlRect, startAngle + 0.08, sweepAngle - 0.16, false, hlPaint);
+      }
+
+      // Arc Label Text
+      if (label.isNotEmpty) {
+        final ratio = sweepAngle / totalAvailableAngle;
+        if (ratio > 0.15) {
+          _drawTextOnArc(canvas, label, radius, center, labelAngle, Colors.white, strokeWidth);
+        }
       }
     }
 
-    final recipientPaint = Paint()
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    // 2. Provider Arc (top — golden yellow)
+    if (providerRatio > 0.02) {
+      final sweepAngle = totalAvailableAngle * providerRatio;
+      final startAngle = (-math.pi / 2) - (sweepAngle / 2);
+      draw3DArc(startAngle, sweepAngle, providerColor, providerLabel, -math.pi / 2);
+    }
 
+    // 3. Recipient Arc (bottom — soft blue)
     if (providerRatio < 0.98) {
       final sweepAngleRecipient = totalAvailableAngle * (1 - providerRatio);
       final startAngleRecipient = (math.pi / 2) - (sweepAngleRecipient / 2);
-      
-      recipientPaint.shader = ui.Gradient.sweep(
-        center,
-        [
-          recipientColor.withOpacity(0.6),
-          recipientColor,
-          recipientColor.withOpacity(0.6),
-        ],
-        [0.0, 0.5, 1.0],
-        TileMode.clamp,
-        startAngleRecipient,
-        startAngleRecipient + sweepAngleRecipient,
-      );
-
-      canvas.drawArc(rect, startAngleRecipient, sweepAngleRecipient, false, recipientPaint);
-
-      if (recipientLabel.isNotEmpty && (1 - providerRatio) > 0.15) {
-        _drawTextOnArc(canvas, recipientLabel, radius, center, math.pi / 2, Colors.white, strokeWidth);
-      }
+      draw3DArc(startAngleRecipient, sweepAngleRecipient, recipientColor, 
+          recipientLabel, math.pi / 2);
     }
   }
 
@@ -271,7 +260,10 @@ class RatioCirclePainter extends CustomPainter {
         }
     }
 
-    const double fontSize = 11.0;
+    // Auto-calculate font size to fit within the ring's stroke band.
+    // Thai vowels+tone marks can stack up to ~2.5x fontSize in height,
+    // so we use 35% of strokeWidth to guarantee full glyphs stay inside.
+    final double fontSize = (strokeWidth * 0.35).clamp(6.0, 12.0);
     final double charAngleSpan = (fontSize * 0.85) / radius;
     final double totalTextAngle = clusters.length * charAngleSpan;
     
@@ -286,7 +278,7 @@ class RatioCirclePainter extends CustomPainter {
           color: color,
           fontSize: fontSize,
           fontWeight: FontWeight.bold,
-          height: 1.0,
+          height: 1.0, // tight line height to avoid Thai vowel clipping
           shadows: [
             Shadow(color: Colors.black.withOpacity(0.4), blurRadius: 4),
           ],
@@ -311,6 +303,8 @@ class RatioCirclePainter extends CustomPainter {
         canvas.rotate(angle + math.pi / 2);
       }
       
+      // Paint centered — use height/2 so above-baseline Thai vowels (vowels on top)
+      // are included and don't clip at the outer edge of the stroke.
       textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
       canvas.restore();
 

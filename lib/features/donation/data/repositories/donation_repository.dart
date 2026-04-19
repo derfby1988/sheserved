@@ -71,13 +71,32 @@ class DonationRepository {
         .toList();
   }
 
-  /// ดึงข้อมูลหมวดหมู่แบบ Real-time
-  Stream<List<DonationCategory>> watchCategories() {
-    return _client
-        .from('donation_categories')
-        .stream(primaryKey: ['id'])
-        .order('display_order', ascending: true)
-        .asyncMap((_) => getCategories());
+  /// ดึงข้อมูลหมวดหมู่แบบ Real-time (พร้อมระบบ Fallback)
+  Stream<List<DonationCategory>> watchCategories() async* {
+    // 1. Fetch ทันทีผ่าน HTTP (Guest โหลดได้)
+    try {
+      yield await getCategories();
+    } catch (_) {}
+
+    // 2. ถ้าเป็น Guest (ไม่ได้ Login) ให้หยุดแค่นี้ ไม่ต้องง้อ Realtime
+    if (_client.auth.currentUser == null) {
+      return;
+    }
+
+    // 3. Subscribe Realtime (เฉพาะคนที่ Login)
+    try {
+      final stream = _client
+          .from('donation_categories')
+          .stream(primaryKey: ['id'])
+          .order('display_order', ascending: true)
+          .asyncMap((_) => getCategories());
+          
+      await for (final data in stream) {
+        yield data;
+      }
+    } catch (e) {
+      print('Supabase Realtime Error (watchCategories): $e');
+    }
   }
 
   /// ดึงคำร้องขอการบริจาค (กรองตามหมวดหมู่ได้)
@@ -349,13 +368,40 @@ class DonationRepository {
     );
   }
 
-  /// ดึงข้อมูลคำร้องขอแบบ Real-time
-  Stream<List<DonationRequest>> watchRequests({String? categoryId}) {
-    return _client
+  /// ดึงข้อมูลคำร้องขอแบบ Real-time (พร้อมระบบ Fallback)
+  Stream<List<DonationRequest>> watchRequests({String? categoryId}) async* {
+    // 1. Fetch ทันทีผ่าน HTTP (Guest โหลดได้)
+    try {
+      yield await getRequests(categoryId: categoryId);
+    } catch (_) {}
+
+    // 2. ถ้าเป็น Guest (ไม่ได้ Login) ให้หยุดแค่นี้
+    if (_client.auth.currentUser == null) {
+      return;
+    }
+
+    // 3. Subscribe Realtime (เฉพาะคนที่ Login)
+    try {
+      final stream = _client
+          .from('donation_requests')
+          .stream(primaryKey: ['id'])
+          .eq('approval_status', DonationApprovalStatus.active.name)
+          .asyncMap((_) => getRequests(categoryId: categoryId));
+
+      await for (final data in stream) {
+        yield data;
+      }
+    } catch (e) {
+      print('Supabase Realtime Error (watchRequests): $e');
+    }
+  }
+
+  /// ยกเลิกคำร้องขอรับบริจาค (Soft Delete โดยเปลี่ยนสถานะ)
+  Future<void> cancelRequest(String requestId) async {
+    await _client
         .from('donation_requests')
-        .stream(primaryKey: ['id'])
-        .eq('approval_status', DonationApprovalStatus.active.name)
-        .asyncMap((_) => getRequests(categoryId: categoryId));
+        .update({'approval_status': DonationApprovalStatus.cancelled.name})
+        .eq('id', requestId);
   }
 
   // =====================================================

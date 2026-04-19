@@ -154,6 +154,14 @@ class SheservedApp extends StatelessWidget {
         '/rescue-map': (context) => const RescuePage(),
       },
       onGenerateRoute: (settings) {
+        if (settings.name == '/main-app') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final int initialIndex = args?['index'] ?? 0;
+          return MaterialPageRoute(
+            builder: (context) => MainAppLayout(initialIndex: initialIndex),
+          );
+        }
+
         if (settings.name == '/chat-room') {
           final roomId = settings.arguments as String;
           return MaterialPageRoute(

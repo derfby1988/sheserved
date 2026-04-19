@@ -36,7 +36,15 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
     // Check for auto-create argument (redirected from login)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = ModalRoute.of(context)?.settings.arguments;
-      if (args == 'auto_create' && ServiceLocator.instance.currentUser != null) {
+      
+      bool shouldAutoCreate = false;
+      if (args == 'auto_create') {
+        shouldAutoCreate = true;
+      } else if (args is Map && (args['action'] == 'auto_create' || (args['args'] is Map && args['args']['action'] == 'auto_create'))) {
+        shouldAutoCreate = true;
+      }
+
+      if (shouldAutoCreate && ServiceLocator.instance.currentUser != null) {
         _handleAutoCreateAfterLogin();
       }
     });
@@ -104,27 +112,41 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const TlzDrawer(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (ServiceLocator.instance.currentUser != null) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DonationCreatePage()),
-            );
-          } else {
-            Navigator.pushNamed(
-              context,
-              '/login',
-              arguments: {
-                'redirect': '/donate',
-                'args': 'auto_create',
-              },
-            );
-          }
-        },
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-        label: const Text('ขอรับบริจาค', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80.0), // เลื่อนปุ่มให้สูงขึ้นจาก BottomNavigationBar ขึ้นไปอีก
+        child: SizedBox(
+          height: 35, // กำหนดความสูง 35px ตามต้องการ
+          child: FloatingActionButton.extended(
+            onPressed: () {
+              if (ServiceLocator.instance.currentUser != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+                );
+              } else {
+                Navigator.pushNamed(
+                  context,
+                  '/login',
+                  arguments: {
+                    'route': '/main-app',
+                    'args': {'index': 1, 'action': 'auto_create'},
+                  },
+                );
+              }
+            },
+            elevation: 4,
+            backgroundColor: AppColors.primary,
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white, size: 18), // ลดขนาดไอคอนลงนิดหน่อย
+            label: const Text(
+              'ขอรับบริจาค', 
+              style: TextStyle(
+                color: Colors.white, 
+                fontWeight: FontWeight.bold,
+                fontSize: 13, // ลดขนาดฟอนต์ลงนิดหน่อยเพื่อให้สมดุลกับความสูง 35px
+              )
+            ),
+          ),
+        ),
       ),
       body: StreamBuilder<List<DonationCategory>>(
         stream: _repository.watchCategories(),
@@ -352,7 +374,7 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
 
                     // Trending Section
                     Padding(
-                      padding: const EdgeInsets.only(left: 20, bottom: 40),
+                      padding: const EdgeInsets.only(left: 20, top: 32, bottom: 40),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

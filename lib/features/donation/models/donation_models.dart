@@ -44,7 +44,8 @@ enum EscrowStatus {
 enum DonationApprovalStatus {
   pending_local,
   active,
-  rejected;
+  rejected,
+  cancelled;
 
   static DonationApprovalStatus fromString(String? status) {
     return DonationApprovalStatus.values.firstWhere(

@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:sheserved/core/constants/app_colors.dart';
 
 /// วิดเจ็ต Navigation Bar ส่วนกลางที่ออกแบบมาให้ลอยเด่น (Floating) อยู่เหนือเนื้อหาด้วยสไตล์ Glassmorphism
 /// 
@@ -17,7 +18,7 @@ import 'package:flutter/rendering.dart';
 ///   bottomNavigationBar: Builder(
 ///     builder: (context) => TlzBottomNavigationBar(
 ///       currentIndex: 0,
-///       scrollController: _scrollController, // ใส่ตัวนี้เพื่อมี Animation ซ่อน/แสดงอัตโนมัติ
+///       isVisible: _isNavBarVisible, // ส่งจาก parent (เช่น NotificationListener) เพื่อซ่อน/แสดง
 ///       onIndexChanged: (index) { /* เปลี่ยนหน้า */ },
 ///       onAddPressed: () { /* กดปุ่มแจ้งเหตุ */ },
 ///     ),
@@ -40,7 +41,7 @@ class TlzBottomNavigationBar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onIndexChanged;
   final VoidCallback onAddPressed;
-  final bool hasNewDonationAlert;
+  final Set<int> notificationIndices;
   final bool isVisible;
 
   const TlzBottomNavigationBar({
@@ -48,7 +49,7 @@ class TlzBottomNavigationBar extends StatefulWidget {
     required this.currentIndex,
     required this.onIndexChanged,
     required this.onAddPressed,
-    this.hasNewDonationAlert = false,
+    this.notificationIndices = const {},
     this.isVisible = true,
   });
 
@@ -60,14 +61,8 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
   // ไม่ต้องใช้ _onScroll ในนี้แล้ว อาศัย widget.isVisible แทน
 
   // ─── จานสีจาก Reference ─── //
-  // ดึงจากภาพต้นแบบ: ปุ่มดาร์กสีเทาดำ charcoal มีผิว olive
-  static const _darkBtnColor = Color(0xFF3A3D33);
-  // ไอคอนในปุ่มดาร์ก: สีเขียวอมเหลือง / ครีมอ่อน
-  static const _darkBtnIconColor = Color(0xFFCCD68A);
   // ปุ่ม Active: สีครีม ivory อ่อนนุ่ม
   static const _activeBtnColor = Color(0xFFF0EDD8);
-  // ไอคอนสถานะ Active: สีเทาดำ
-  static const _activeIconColor = Color(0xFF2C2D28);
   // ไอคอนปกติ: สีเทา olive อ่อน
   static const _defaultIconColor = Color(0xFF5C5E54);
 
@@ -121,7 +116,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildGlassBubbleNav(1, Icons.volunteer_activism_rounded, s, hasNotification: widget.hasNewDonationAlert),
+                        _buildGlassBubbleNav(1, Icons.volunteer_activism_rounded, s, hasNotification: widget.notificationIndices.contains(1)),
                         _buildAddButton(s),
                         _buildGlassBubbleNav(3, Icons.local_pharmacy_rounded, s),
                         _buildGlassBubbleNav(4, Icons.person_rounded, s),
@@ -144,13 +139,13 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 20,
             spreadRadius: 0,
             offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 40,
             spreadRadius: -4,
             offset: const Offset(0, 16),
@@ -160,8 +155,13 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // ─── เนื้อหาด้านหน้าเพื่อดันขนาด Stack ─── //
-          child,
+          // ─── เนื้อหาด้านหน้าเพื่อดันขนาด Stack โดยห้าม interact และซ่อนไว้ ─── //
+          IgnorePointer(
+            child: Opacity(
+              opacity: 0,
+              child: child,
+            ),
+          ),
           // ─── พื้นหลังกระจก (ถูก Clip ไว้ให้อยู่ในกรอบ) วางไว้ล่างสุด ─── //
           Positioned.fill(
             child: ClipRRect(
@@ -173,7 +173,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(radius),
-                      color: Colors.white.withOpacity(0.01),
+                      color: Colors.white.withValues(alpha: 0.01),
                     ),
                   ),
                 ),
@@ -195,6 +195,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
 
     return GestureDetector(
       onTap: () {
+        HapticFeedback.lightImpact();
         if (widget.currentIndex != index) {
           widget.onIndexChanged(index);
         }
@@ -212,18 +213,18 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
           borderRadius: BorderRadius.circular(28),
           // ขอบขาวเล็กมากสำหรับปุ่ม Active (เหมือนขอบเม็ดกระจก)
           border: isSelected
-              ? Border.all(color: Colors.white.withOpacity(0.9), width: 1.0)
+              ? Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.0)
               : null,
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
                   // Inner glow effect: เงาสีขาวเพื่อให้ดูนูน
                   BoxShadow(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     blurRadius: 1,
                     spreadRadius: -1,
                     offset: const Offset(0, -1),
@@ -292,6 +293,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
 
     return GestureDetector(
       onTap: () {
+        HapticFeedback.lightImpact();
         if (widget.currentIndex != index) {
           widget.onIndexChanged(index);
         }
@@ -312,18 +314,18 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
               // ─── เนื้อลูกแก้ว: ใสแทบมองทะลุ ─── //
               color: isSelected
                   ? _activeBtnColor // ปุ่ม Active: ครีม ivory
-                  : Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
+                  : Colors.white.withValues(alpha: 0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
               shape: BoxShape.circle,
               border: Border.all(
                 color: isSelected
-                    ? Colors.white.withOpacity(0.9)
-                    : Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
+                    ? Colors.white.withValues(alpha: 0.9)
+                    : Colors.white.withValues(alpha: 0.35), // ขอบลูกแก้วจางๆ
                 width: 1.0,
               ),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 6,
                         offset: const Offset(0, 3),
                       ),
@@ -364,12 +366,12 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                       width: 11,
                       height: 11,
                       decoration: BoxDecoration(
-                        color: Colors.redAccent,
+                        color: AppColors.error,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 1.8),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.redAccent.withOpacity(0.35),
+                            color: AppColors.error.withValues(alpha: 0.35),
                             blurRadius: 4,
                           ),
                         ],
@@ -386,41 +388,30 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
 
   /// ─── ปุ่ม + ตรงกลาง: ดาร์กสี charcoal + ไอคอนเขียวอ่อน ─── ///
   Widget _buildAddButton(double s) {
-    // ไม่ขยายค้างไว้แล้ว ให้เป็นขนาดปกติเสมอ
-    final scale = 1.0;
-    final yOffset = 0.0;
-
     final iconSize = (22 * s).roundToDouble();
     final pad = (9 * s).roundToDouble();
 
     return GestureDetector(
-      onTap: widget.onAddPressed,
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        widget.onAddPressed();
+      },
       behavior: HitTestBehavior.opaque,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
-        offset: Offset(0, yOffset),
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutBack,
-          scale: scale,
-          child: Container(
-            padding: EdgeInsets.all(pad),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
-                width: 1.0,
-              ),
-              boxShadow: null,
-            ),
-            child: Icon(
-              Icons.add,
-              color: _defaultIconColor,
-              size: iconSize,
-            ),
+      child: Container(
+        padding: EdgeInsets.all(pad),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.15),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.error.withValues(alpha: 0.5),
+            width: 1.0,
           ),
+          boxShadow: null,
+        ),
+        child: Icon(
+          Icons.emergency_rounded,
+          color: AppColors.error,
+          size: iconSize,
         ),
       ),
     );
@@ -461,8 +452,8 @@ class _GlassEdgePainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.center,
         colors: [
-          Colors.white.withOpacity(0.50),
-          Colors.white.withOpacity(0.0),
+          Colors.white.withValues(alpha: 0.50),
+          Colors.white.withValues(alpha: 0.0),
         ],
       ).createShader(rect)
       ..style = PaintingStyle.stroke

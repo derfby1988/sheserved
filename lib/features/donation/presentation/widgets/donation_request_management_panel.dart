@@ -484,50 +484,105 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.edit, size: 16), 
-                  label: const Text('แก้ไข'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.blue,
-                    side: const BorderSide(color: Colors.blue),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                  ),
-                  onPressed: () => _showRequestDialog(req),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.delete, size: 16), 
-                  label: const Text('ลบ'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                  ),
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('ยืนยันลบคำร้อง', style: TextStyle(color: Colors.red)),
-                        content: const Text('คุณแน่ใจหรือไม่ว่าต้องการลบคำร้องขอนี้? ข้อมูลจะไม่สามารถกู้คืนได้'),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                            onPressed: () => Navigator.pop(context, true), 
-                            child: const Text('ยืนยันลบ')
-                          ),
-                        ],
+                if (req.approvalStatus != DonationApprovalStatus.cancelled) ...[
+                  // กรณีที่มียอดเงินบริจาคเข้ามาแล้ว
+                  if (req.currentAmount > 0) ...[
+                     Container(
+                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                       decoration: BoxDecoration(
+                         color: Colors.amber.shade50,
+                         borderRadius: BorderRadius.circular(8),
+                         border: Border.all(color: Colors.amber.shade200),
+                       ),
+                       child: const Row(
+                         children: [
+                           Icon(Icons.lock_outline, size: 14, color: Colors.amber),
+                           SizedBox(width: 4),
+                           Text('มีเงินบริจาคแล้ว: ติดต่อ Admin เพื่อแก้ไข/ยกเลิก', style: TextStyle(fontSize: 10, color: Colors.brown)),
+                         ],
+                       ),
+                     ),
+                  ] else ...[
+                    // กรณีที่ยังไม่มีเงินบริจาค ทำได้ทุกอย่าง
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.edit, size: 16), 
+                      label: const Text('แก้ไข'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        side: const BorderSide(color: Colors.blue),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                       ),
-                    );
-                    if (confirm == true) {
-                      await widget.repository.deleteRequest(req.id);
-                      _loadRequests();
-                    }
-                  },
-                ),
+                      onPressed: () => _showRequestDialog(req),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.cancel_outlined, size: 16), 
+                      label: const Text('ยกเลิก'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                      ),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('ยืนยันการยกเลิก'),
+                            content: const Text('คุณแน่ใจหรือไม่ว่าต้องการยกเลิกคำร้องขอนี้? คำร้องจะไม่ออกแสดงสู่สาธารณะ'),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ปิดตัวเลือก', style: TextStyle(color: Colors.grey))),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                onPressed: () => Navigator.pop(context, true), 
+                                child: const Text('ยืนยันยกเลิก')
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          await widget.repository.cancelRequest(req.id);
+                          _loadRequests();
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.delete, size: 16), 
+                      label: const Text('ลบ'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                      ),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('ยืนยันลบคำร้อง', style: TextStyle(color: Colors.red)),
+                            content: const Text('คุณแน่ใจหรือไม่ว่าต้องการลบคำร้องขอนี้? ข้อมูลจะไม่สามารถกู้คืนได้'),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                onPressed: () => Navigator.pop(context, true), 
+                                child: const Text('ยืนยันลบ')
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          await widget.repository.deleteRequest(req.id);
+                          _loadRequests();
+                        }
+                      },
+                    ),
+                  ],
+                ],
               ],
             ),
           ],
@@ -643,6 +698,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
       case DonationApprovalStatus.pending_local: return Colors.deepPurple;
       case DonationApprovalStatus.active: return Colors.green;
       case DonationApprovalStatus.rejected: return Colors.red;
+      case DonationApprovalStatus.cancelled: return Colors.grey;
     }
   }
 
@@ -651,6 +707,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
       case DonationApprovalStatus.pending_local: return 'รอการอนุมัติจากหมวดหมู่';
       case DonationApprovalStatus.active: return 'อนุมัติแล้ว (รับบริจาคได้)';
       case DonationApprovalStatus.rejected: return 'ถูกปฏิเสธ';
+      case DonationApprovalStatus.cancelled: return 'ยกเลิกคำร้องแล้ว';
     }
   }
 }

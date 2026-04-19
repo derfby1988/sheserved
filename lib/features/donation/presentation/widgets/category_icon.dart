@@ -54,19 +54,26 @@ class CategoryIcon extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             SizedBox(
-              width: 80,
+              width: 76,
+              height: 32, // บังคับความสูงคงที่สำหรับ 2 บรรทัดพอดี
               child: Text(
                 label,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                strutStyle: const StrutStyle(
+                  fontSize: 11,
+                  height: 1.2,
+                  forceStrutHeight: true,
+                ),
                 style: AppTextStyles.caption.copyWith(
                   color: labelColor ?? Colors.white,
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  height: 1.1,
+                  fontSize: 11,
+                  height: 1.2,
+                  letterSpacing: -0.3, // บีบตัวอักษรลงนิดหน่อยให้พอดียิ่งขึ้น
                 ),
               ),
             ),

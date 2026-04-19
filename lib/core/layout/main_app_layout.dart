@@ -7,6 +7,7 @@ import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products
 import 'package:sheserved/features/profile/presentation/pages/profile_page.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_drawer.dart';
+import 'package:sheserved/services/service_locator.dart';
 
 class MainAppLayout extends StatefulWidget {
   final int initialIndex;
@@ -35,21 +36,17 @@ class _MainAppLayoutState extends State<MainAppLayout> {
     super.dispose();
   }
 
-  /// ป้องกันการกด Back แล้วแอปเด้งออก ให้เด้งกลับหน้า Home ก่อน
-  Future<bool> _onWillPop() async {
-    if (_currentIndex != 0) {
-      setState(() {
-        _currentIndex = 0;
-      });
-      return false; // ห้ามแอปปิด ให้สลับกลับหน้า Home
-    }
-    return true; // อนุญาตให้แอปปิดถ้าอยู่หน้า Home แล้ว
-  }
-
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          setState(() {
+            _currentIndex = 0;
+          });
+        }
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         extendBody: true, // สำคัญมาก เพื่อให้ Navigation Bar โปร่งใสแสดงทะลุเห็นเนื้อหาได้
@@ -96,6 +93,20 @@ class _MainAppLayoutState extends State<MainAppLayout> {
           currentIndex: _currentIndex,
           onIndexChanged: (index) {
             if (index == 2) return; // ปุ่มบวกตรงกลางเราใช้ onAddPressed แยกทำงานไว้แล้ว
+            
+            // บังคับ Login หากเลือกหน้า Donation (Index 1) แล้วยังไม่ได้ Login
+            if (index == 1 && ServiceLocator.instance.currentUser == null) {
+              Navigator.pushNamed(
+                context, 
+                '/login',
+                arguments: {
+                  'route': '/main-app',
+                  'args': {'index': 1}
+                }, // ส่ง argument แบบนี้เพื่อให้ Login เสร็จแล้วเด้งกลับมาหน้าบริจาคพร้อมแถบเมนูด้านล่าง
+              );
+              return;
+            }
+
             setState(() {
               _currentIndex = index;
             });

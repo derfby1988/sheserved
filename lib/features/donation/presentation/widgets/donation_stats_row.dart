@@ -77,29 +77,38 @@ class DonationStatsRow extends StatelessWidget {
           ),
           // Title
           Positioned(
-            left: 0,
-            right: 0,
+            left: 30, // หลบไอคอนวงกลม
+            right: 4,
             top: 4,
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: Colors.black,
-                fontWeight: FontWeight.w600,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14, // ลดขนาดเริ่มต้นนิดหน่อย
+                ),
               ),
             ),
           ),
           // Value
           Positioned(
-            left: 0,
-            right: 0,
+            left: 4,
+            right: 4,
             top: 27,
-            child: Text(
-              value.toInt().toString(),
-              textAlign: TextAlign.center,
-              style: AppTextStyles.heading2.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                value.toInt().toString(),
+                textAlign: TextAlign.center,
+                style: AppTextStyles.heading2.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
