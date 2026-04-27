@@ -35,6 +35,7 @@ class WebSocketService {
   final _rescueIncomingController = StreamController<Map<String, dynamic>>.broadcast();
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   final _donationStatusController = StreamController<Map<String, dynamic>>.broadcast();
+  final _thaiMhungPhotoController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -61,6 +62,8 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get viewerCountStream => _viewerCountController.stream;
   /// สถานะคำร้องบริจาคผ่านการอนุมัติเปลี่ยนสถานะแบบ Real-time
   Stream<Map<String, dynamic>> get donationStatusStream => _donationStatusController.stream;
+  /// ภาพไทยมุงใหม่เข้ามาแบบ Real-time ผ่าน WebSocket
+  Stream<Map<String, dynamic>> get thaiMhungPhotoStream => _thaiMhungPhotoController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -215,6 +218,12 @@ class WebSocketService {
       _socket!.on('donation-request-status-updated', (data) {
         debugPrint('WebSocket: donation-request-status-updated received: $data');
         _donationStatusController.add(Map<String, dynamic>.from(data));
+      });
+
+      // Thai Mhung Photo Events
+      _socket!.on('new-thaimhung-photo', (data) {
+        debugPrint('WebSocket: new-thaimhung-photo received: $data');
+        _thaiMhungPhotoController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -511,6 +520,7 @@ class WebSocketService {
     _rescueIncomingController.close();
     _viewerCountController.close();
     _emergencyChatController.close();
+    _thaiMhungPhotoController.close();
   }
 
   /// Send rescue status update

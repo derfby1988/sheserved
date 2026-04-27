@@ -3,13 +3,22 @@ import 'package:flutter/material.dart';
 import '../../../../../services/service_locator.dart';
 import '../../../../../services/websocket_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'dart:ui' as dart_ui;
+import '../../../../../config/app_config.dart';
 class ThaiMhungRulerPhoto {
   final String id;
   final String photoUrl;
   final DateTime createdAt;
+  final double? latitude;
+  final double? longitude;
 
-  ThaiMhungRulerPhoto({required this.id, required this.photoUrl, required this.createdAt});
+  ThaiMhungRulerPhoto({
+    required this.id, 
+    required this.photoUrl, 
+    required this.createdAt,
+    this.latitude,
+    this.longitude,
+  });
 
   factory ThaiMhungRulerPhoto.fromJson(Map<String, dynamic> json) {
     // ใช้ VideoRepository เพื่อ normalize URL เสมอ (กรณี realtime payload ส่งเป็น relative path)
@@ -20,6 +29,8 @@ class ThaiMhungRulerPhoto {
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at']) 
           : DateTime.now(),
+      latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
+      longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
     );
   }
 }
@@ -27,21 +38,31 @@ class ThaiMhungRulerPhoto {
 class ThaiMhungRulerGalleryWidget extends StatefulWidget {
   final String videoId;
   final double height;
-  
+  final bool canViewUnblurred;
+  final void Function(int index, String photoUrl)? onPhotoTap;
+  final void Function(int index, String photoUrl)? onPhotoChanged;
+  final void Function(ThaiMhungRulerPhoto photo)? onNewPhotoArrived;
+
   const ThaiMhungRulerGalleryWidget({
     super.key,
     required this.videoId,
     required this.height,
+    this.canViewUnblurred = false,
+    this.onPhotoTap,
+    this.onPhotoChanged,
+    this.onNewPhotoArrived,
   });
 
   @override
-  State<ThaiMhungRulerGalleryWidget> createState() => _ThaiMhungRulerGalleryWidgetState();
+  State<ThaiMhungRulerGalleryWidget> createState() => ThaiMhungRulerGalleryWidgetState();
 }
 
-class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget> {
+class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget> {
   final List<ThaiMhungRulerPhoto> _photos = [];
   bool _isLoading = true;
   RealtimeChannel? _subscription;
+  StreamSubscription? _wsPhotoSub;
+  Timer? _pollTimer;
   int _currentIndex = 0;
   final FixedExtentScrollController _scrollController = FixedExtentScrollController();
   
@@ -52,6 +73,116 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
     super.initState();
     _fetchPhotos();
     _subscribeToNewPhotos();
+    _subscribeToWebSocketPhotos();
+    _startPolling();
+  }
+
+  /// ✅ Fallback Polling: ทุก 5 วินาทีจะเช็คว่ามีภาพใหม่ไหม (กรณี WebSocket/Supabase Realtime ไม่ทำงาน)
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _pollForNewPhotos();
+    });
+  }
+
+  Future<void> _pollForNewPhotos() async {
+    if (!mounted) return;
+    try {
+      final repo = ServiceLocator.instance.videoRepository;
+      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId);
+      final newPhotos = results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList();
+      
+      if (newPhotos.length > _photos.length && mounted) {
+        // มีภาพใหม่เข้ามา!
+        final existingUrls = _photos.map((p) => p.photoUrl).toSet();
+        final arrivedPhotos = newPhotos.where((p) => !existingUrls.contains(p.photoUrl)).toList();
+
+        if (arrivedPhotos.isNotEmpty) {
+          setState(() {
+            for (final photo in arrivedPhotos) {
+              _photos.insert(0, photo);
+              _newItemIds.add(photo.id);
+            }
+          });
+
+          // แจ้งภาพล่าสุดที่เข้ามาขึ้นไปแสดงบนแผนที่
+          final lastArrived = arrivedPhotos.first;
+          if (widget.onNewPhotoArrived != null) {
+            widget.onNewPhotoArrived!(lastArrived);
+          }
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.animateToItem(
+                0,
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.elasticOut,
+              );
+            }
+          });
+
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted) {
+              setState(() {
+                for (final photo in arrivedPhotos) {
+                  _newItemIds.remove(photo.id);
+                }
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[Gallery Poll] Error: $e');
+    }
+  }
+
+  /// ✅ ช่องทาง Real-time หลัก: รับภาพใหม่ผ่าน WebSocket (เร็ว + เสถียร)
+  void _subscribeToWebSocketPhotos() {
+    _wsPhotoSub = WebSocketService().thaiMhungPhotoStream.listen((data) {
+      final incidentId = data['incidentId']?.toString() ?? data['video_id']?.toString() ?? '';
+      if (incidentId != widget.videoId) return; // ไม่ใช่ incident เดียวกัน
+
+      final photoUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(
+        data['photo_url']?.toString() ?? '',
+      );
+      if (photoUrl.isEmpty) return;
+
+      // ป้องกันซ้ำ (กรณี Supabase Realtime ก็ส่งมาด้วย)
+      final isDuplicate = _photos.any((p) => p.photoUrl == photoUrl);
+      if (isDuplicate) return;
+
+      final newPhoto = ThaiMhungRulerPhoto(
+        id: data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        photoUrl: photoUrl,
+        createdAt: data['created_at'] != null ? DateTime.tryParse(data['created_at']) ?? DateTime.now() : DateTime.now(),
+        latitude: data['latitude'] != null ? double.tryParse(data['latitude'].toString()) : null,
+        longitude: data['longitude'] != null ? double.tryParse(data['longitude'].toString()) : null,
+      );
+
+      if (mounted) {
+        setState(() {
+          _photos.insert(0, newPhoto);
+          _newItemIds.add(newPhoto.id);
+
+          if (widget.onNewPhotoArrived != null) {
+            widget.onNewPhotoArrived!(newPhoto);
+          }
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.animateToItem(
+                0,
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.elasticOut,
+              );
+              Future.delayed(const Duration(seconds: 5), () {
+                if (mounted) setState(() => _newItemIds.remove(newPhoto.id));
+              });
+            }
+          });
+        });
+      }
+    });
   }
 
   Future<void> _fetchPhotos() async {
@@ -95,13 +226,19 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
             final newPhoto = ThaiMhungRulerPhoto.fromJson(payload.newRecord);
             if (mounted) {
               setState(() {
-                _photos.insert(_currentIndex, newPhoto);
+                // ภาพใหม่ให้ไปแทรกที่ตำแหน่งแรกสุดเสมอ (บนสุด)
+                _photos.insert(0, newPhoto);
                 _newItemIds.add(newPhoto.id);
+                
+                if (widget.onNewPhotoArrived != null) {
+                  widget.onNewPhotoArrived!(newPhoto);
+                }
                 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
+                    // เลื่อนโฟกัสไปที่ภาพบนสุด (Index 0) แทนที่ตำแหน่งเดิม
                     _scrollController.animateToItem(
-                      _currentIndex,
+                      0,
                       duration: const Duration(milliseconds: 800),
                       curve: Curves.elasticOut,
                     );
@@ -129,8 +266,12 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
       if (_subscription != null) {
         Supabase.instance.client.removeChannel(_subscription!);
       }
+      _wsPhotoSub?.cancel();
+      _pollTimer?.cancel();
       _fetchPhotos();
       _subscribeToNewPhotos();
+      _subscribeToWebSocketPhotos();
+      _startPolling();
     }
   }
 
@@ -139,46 +280,133 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
     if (_subscription != null) {
       Supabase.instance.client.removeChannel(_subscription!);
     }
+    _wsPhotoSub?.cancel();
+    _pollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _showLightbox(String imageUrl) {
+  void animateToIndex(int index) {
+    if (!mounted || _photos.isEmpty || index < 0 || index >= _photos.length) return;
+    if (_scrollController.hasClients) {
+      _scrollController.animateToItem(
+        index,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void showLightbox(int initialIndex) {
+    if (!mounted || _photos.isEmpty) return;
+    
+    // ประกาศ PageController เพื่อให้ PageView เริ่มต้นที่รูปที่กด
+    final PageController pageController = PageController(initialPage: initialIndex);
+    int currentViewIndex = initialIndex;
+
     showDialog(
       context: context,
       barrierColor: Colors.black87,
-      builder: (context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                color: Colors.transparent,
-                child: Center(
-                  child: InteractiveViewer(
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return const CircularProgressIndicator(color: Colors.pinkAccent);
-                      },
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Center(
+                      child: PageView.builder(
+                        controller: pageController,
+                        itemCount: _photos.length,
+                        onPageChanged: (idx) {
+                          setModalState(() {
+                            currentViewIndex = idx;
+                          });
+                          // ขยับ Ruler ข้างหลังตามรูปที่ดูอยู่ด้วย (Optional Sync)
+                          if (_scrollController.hasClients) {
+                             _scrollController.animateToItem(
+                               idx,
+                               duration: const Duration(milliseconds: 300),
+                               curve: Curves.easeOut,
+                             );
+                          }
+                        },
+                        itemBuilder: (context, index) {
+                          final pUrl = _photos[index].photoUrl;
+                          return InteractiveViewer(
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                widget.canViewUnblurred
+                                  ? Image.network(
+                                      pUrl,
+                                      fit: BoxFit.contain,
+                                      loadingBuilder: (context, child, progress) {
+                                        if (progress == null) return child;
+                                        return const CircularProgressIndicator(color: Colors.pinkAccent);
+                                      },
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                    )
+                                  : ImageFiltered(
+                                      imageFilter: dart_ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                                      child: Image.network(
+                                        pUrl,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                      ),
+                                    ),
+                                if (!widget.canViewUnblurred)
+                                  const Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.privacy_tip, color: Colors.white70, size: 40),
+                                        SizedBox(height: 8),
+                                        Text('จำเป็นต้องมีสิทธิ์เพื่อดูภาพชัด', style: TextStyle(color: Colors.white70, fontSize: 16, decoration: TextDecoration.none)),
+                                      ]
+                                    )
+                                  ),
+                              ]
+                            )
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          Positioned(
-            top: 40,
-            right: 20,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 30),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-        ],
+              // ตัวนับภาพ (Image Counter)
+              Positioned(
+                top: 50,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${currentViewIndex + 1} / ${_photos.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, decoration: TextDecoration.none),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          );
+        }
       ),
     );
   }
@@ -260,6 +488,9 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
             physics: const FixedExtentScrollPhysics(),
             onSelectedItemChanged: (index) {
               setState(() => _currentIndex = index);
+              if (widget.onPhotoChanged != null && _photos.isNotEmpty) {
+                 widget.onPhotoChanged!(index, _photos[index].photoUrl);
+              }
             },
             childDelegate: ListWheelChildBuilderDelegate(
               childCount: _photos.length,
@@ -271,7 +502,11 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
                 return GestureDetector(
                   onTap: () {
                     if (isSelected) {
-                      _showLightbox(photo.photoUrl);
+                      if (widget.onPhotoTap != null) {
+                        widget.onPhotoTap!(index, photo.photoUrl);
+                      } else {
+                        showLightbox(index);
+                      }
                     } else {
                       _scrollController.animateToItem(
                         index,
@@ -302,18 +537,34 @@ class _ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidge
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.network(
-                            photo.photoUrl,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, progress) {
-                              if (progress == null) return child;
-                              return Container(color: Colors.black12);
-                            },
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              color: Colors.grey[900],
-                              child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
+                          widget.canViewUnblurred 
+                            ? Image.network(
+                                photo.photoUrl,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, progress) {
+                                  if (progress == null) return child;
+                                  return Container(color: Colors.black12);
+                                },
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  color: Colors.grey[900],
+                                  child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
+                                ),
+                              )
+                            : ImageFiltered(
+                                imageFilter: dart_ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                child: Image.network(
+                                  photo.photoUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    color: Colors.grey[900],
+                                    child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
+                                  ),
+                                ),
+                              ),
+                          if (!widget.canViewUnblurred)
+                            const Center(
+                              child: Icon(Icons.privacy_tip, color: Colors.white70, size: 20),
                             ),
-                          ),
                           if (isNew)
                             Positioned(
                               top: 2,

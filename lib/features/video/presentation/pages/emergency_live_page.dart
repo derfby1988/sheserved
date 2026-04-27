@@ -22,6 +22,7 @@ import 'package:chewie/chewie.dart';
 import '../../models/video_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/live_view_widget.dart';
+import 'widgets/thai_mhung_ruler_gallery_widget.dart';
 import 'widgets/incident_report_widget.dart';
 import 'widgets/relationship_view_widget.dart';
 import 'widgets/donation_sheet_widget.dart';
@@ -146,6 +147,31 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _initCompass();
   }
 
+  ThaiMhungRulerPhoto? _floatingMapPhoto;
+  Timer? _floatingPhotoTimer;
+
+  void _handleNewPhotoArrived(ThaiMhungRulerPhoto photo) {
+    setState(() {
+      _floatingMapPhoto = photo;
+    });
+
+    if (photo.latitude != null && photo.longitude != null) {
+      _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(photo.latitude!, photo.longitude!),
+            zoom: 18,
+          ),
+        ),
+      );
+    }
+
+    _floatingPhotoTimer?.cancel();
+    _floatingPhotoTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _floatingMapPhoto = null);
+    });
+  }
+
   @override
   void dispose() {
     if (_currentVideoId != null) {
@@ -170,6 +196,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();
+    _floatingPhotoTimer?.cancel();
     _cameraController?.dispose();
     super.dispose();
   }
@@ -213,12 +240,58 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             },
             currentResponseId: _currentResponseId,
             deviceHeading: _deviceHeading,
-            thaiMhungPhotos: _thaiMhungPhotos,
             isThaiMhungReporting: _isThaiMhungReporting,
-            canViewUnblurred: _canViewUnblurred,
-            onPhotoTap: _showPhotoDetail,
             onBackTap: () => Navigator.of(context).pop(),
           ),
+
+          // Floating New Photo Effect
+          if (_currentVideoId != null)
+             Positioned.fill(
+               child: IgnorePointer(
+                 child: Align(
+                   alignment: Alignment.center,
+                   child: AnimatedOpacity(
+                     opacity: _floatingMapPhoto != null ? 1.0 : 0.0,
+                     duration: const Duration(milliseconds: 600),
+                     child: _floatingMapPhoto != null ? Container(
+                       margin: const EdgeInsets.only(bottom: 120), // ยกขึ้นไม่ให้โดนบัง
+                       padding: const EdgeInsets.all(8),
+                       decoration: BoxDecoration(
+                         color: Colors.black.withOpacity(0.6),
+                         borderRadius: BorderRadius.circular(16),
+                         border: Border.all(color: Colors.pinkAccent.withOpacity(0.5), width: 2),
+                         boxShadow: [
+                           BoxShadow(
+                             color: Colors.pinkAccent.withOpacity(0.3),
+                             blurRadius: 20,
+                             spreadRadius: 5,
+                           ),
+                         ],
+                       ),
+                       child: Column(
+                         mainAxisSize: MainAxisSize.min,
+                         children: [
+                           const Text(
+                             '✨ พิกัดภาพถ่ายใหม่',
+                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                           ),
+                           const SizedBox(height: 8),
+                           ClipRRect(
+                             borderRadius: BorderRadius.circular(8),
+                             child: Image.network(
+                               _floatingMapPhoto!.photoUrl,
+                               height: 150,
+                               fit: BoxFit.cover,
+                               errorBuilder: (context, _, __) => const Icon(Icons.broken_image, color: Colors.white54, size: 40),
+                             ),
+                           ),
+                         ],
+                       ),
+                     ) : const SizedBox.shrink(),
+                   ),
+                 ),
+               ),
+             ),
 
           // Layer 2: Main UI Interaction Overlay
           EmergencyUiOverlay(
@@ -418,30 +491,30 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         );
       } else {
       return LiveViewWidget(
-          chewieController: _chewieController,
-          currentVideoId: _currentVideoId,
-          currentVideo: _currentVideo,
-          formattedViewerCount: _formatCount(_viewerCount),
-          likeCountFormatted: _formatCount(_likeCount),
-          activeRequests: _activeDonationRequests,
-          activeRequestIndex: _activeRequestIndex,
-          // ✅ คำนวณสิทธิ์สร้างคำร้อง: Reporter (เจ้าของวิดีโอ) หรือ Responder ที่อาชีพตรง
-          userCanCreateRequest: _canCreateDonationRequest(),
-          onSwitchRequest: (forward) {
-            if (_activeDonationRequests.isEmpty) return;
-            setState(() {
-              _activeRequestIndex = ((_activeRequestIndex + (forward ? 1 : -1)) %
-                  _activeDonationRequests.length);
-            });
-          },
-          trendingVideos: _trendingVideos,
-          isLoadingTrending: _isLoadingTrending,
-          highlightVideoId: _highlightVideoId,
-          canViewUnblurred: _canViewUnblurred,
-          onLike: _onLike,
-          onDonate: _showDonationSheet,
-          onSwitchVideo: _switchVideo,
-        );
+        chewieController: _chewieController,
+        currentVideoId: _currentVideoId,
+        currentVideo: _currentVideo,
+        formattedViewerCount: _formatCount(_viewerCount),
+        likeCountFormatted: _formatCount(_likeCount),
+        activeRequests: _activeDonationRequests,
+        activeRequestIndex: _activeRequestIndex,
+        userCanCreateRequest: _canCreateDonationRequest(),
+        onSwitchRequest: (forward) {
+          if (_activeDonationRequests.isEmpty) return;
+          setState(() {
+            _activeRequestIndex = ((_activeRequestIndex + (forward ? 1 : -1)) %
+                _activeDonationRequests.length);
+          });
+        },
+        trendingVideos: _trendingVideos,
+        isLoadingTrending: _isLoadingTrending,
+        highlightVideoId: _highlightVideoId,
+        canViewUnblurred: _canViewUnblurred,
+        onLike: _onLike,
+        onDonate: _showDonationSheet,
+        onSwitchVideo: _switchVideo,
+        onNewPhotoArrived: _handleNewPhotoArrived,
+      );
       }
     } else if (_selectedTab == 1) {
       return RelationshipViewWidget(

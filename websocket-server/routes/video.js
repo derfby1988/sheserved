@@ -263,6 +263,21 @@ module.exports = (pool) => {
             await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoId]);
             socketService.sendStatus(userId || userIdFromRequest, videoId, 'ready', { progress: 100 });
 
+            // 5. ✅ Broadcast ภาพใหม่ไปยังทุก Client ในห้อง Incident
+            if (isThaiMhung && incidentId) {
+                const latestTrack = gpsTracks ? (() => { try { const t = JSON.parse(gpsTracks); return Array.isArray(t) && t.length > 0 ? t[t.length - 1] : null; } catch(e) { return null; } })() : null;
+                for (const url of photoUrls) {
+                    socketService.broadcastNewThaiMhungPhoto(incidentId, {
+                        photo_url: url,
+                        user_id: userId || userIdFromRequest,
+                        latitude: latestTrack ? latestTrack.latitude : null,
+                        longitude: latestTrack ? latestTrack.longitude : null,
+                        created_at: new Date().toISOString(),
+                        video_id: incidentId,
+                    });
+                }
+            }
+
             res.json({
                 message: `${modeName} photos upload successful (${files.length}/${quota})`,
                 video: { ...videoRecord, photo_urls: photoUrls },

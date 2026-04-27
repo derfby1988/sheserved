@@ -57,54 +57,20 @@ class VideoRepository {
   }
 
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
-  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) หรือ Fallback ผ่าน videos table
+  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) 
   /// @param videoId คือ incident (emergency) video ID ที่ภาพเหล่านั้นอ้างอิง
-  ///
-  /// ลำดับการค้นหา:
-  /// 1. Local API (เร็วที่สุด ดึงจาก Local PostgreSQL)
-  /// 2. Supabase: thai_mhung_photos table (ตาราง §3 ตามแผน)
-  /// 3. Supabase: videos table WHERE type='thai_mhung_photo' (fallback)
   Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId) async {
     try {
-      // 📌 สิ่งสำคัญ: ภาพไทยมุงจะถูกผูกกับ category_id (donation_category_id) ไม่ใช่ videoId โดยตรง
-      // ดังนั้นต้องดึง category_id ของ incident video ตัวหลักขึ้นมาก่อน
-      String? incidentCategoryId;
+      final List<Map<String, dynamic>> finalPhotos = [];
       
-      try {
-        final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId')).timeout(const Duration(seconds: 2));
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          incidentCategoryId = data['category_id']?.toString();
-        }
-      } catch (e) {
-        debugPrint('VideoRepository: Local fetch incident failed: $e');
-      }
-
-      // ถ้าไม่เจอใน Local API ค่อยไปหาใน Supabase
-      if (incidentCategoryId == null) {
-        final incidentVideo = await _client
-            .from('videos')
-            .select('category_id')
-            .eq('id', videoId)
-            .maybeSingle();
-        incidentCategoryId = incidentVideo?['category_id']?.toString();
-      }
-      
-      debugPrint('VideoRepository: Incident $videoId has categoryId=$incidentCategoryId');
-      
-      if (incidentCategoryId == null) {
-        debugPrint('VideoRepository: No categoryId found for video $videoId - no gallery possible');
-        return [];
-      }
-
-      // === 1. ลอง Local API ก่อน (เร็วที่สุด) ===
+      // === 1. Local API Fast-Path (ไม่มี Delay) ===
+      // แฟ้มภาพไทยมุงถูกเก็บด้วยโครงสร้าง /[incidentId]/thaimhung/[uploadVideoId]/[filename.jpg]
       try {
         final response = await http
-            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos?type=thai_mhung_photo&category_id=$incidentCategoryId'))
+            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos?type=thai_mhung_photo'))
             .timeout(const Duration(seconds: 3));
         if (response.statusCode == 200) {
           final List data = jsonDecode(response.body);
-          final photos = <Map<String, dynamic>>[];
           for (final v in data) {
             final photoUrlsRaw = v['photo_urls'];
             List<String> photoUrls = [];
@@ -116,96 +82,60 @@ class VideoRepository {
             
             if (photoUrls.isNotEmpty) {
               for (int i = 0; i < photoUrls.length; i++) {
-                photos.add({
-                  'id': '${v['id']}_$i',
-                  'photo_url': _ensureFullUrl(photoUrls[i]),
-                  'created_at': v['created_at'],
-                  'user_id': v['user_id'],
-                });
+                final url = _ensureFullUrl(photoUrls[i]);
+                // ✅ แก้ Data Pollution: กรองเฉพาะรูปที่เป็นของ Incident ID นี้เท่านั้น
+                if (url.contains('/$videoId/thaimhung/')) {
+                  finalPhotos.add({
+                    'id': '${v['id']}_$i',
+                    'photo_url': url,
+                    'created_at': v['created_at'],
+                    'user_id': v['user_id'],
+                  });
+                }
               }
             } else if (v['bunny_url'] != null && v['bunny_url'].toString().isNotEmpty) {
-              photos.add({
-                'id': v['id'],
-                'photo_url': _ensureFullUrl(v['bunny_url'].toString()),
-                'created_at': v['created_at'],
-                'user_id': v['user_id'],
+               final url = _ensureFullUrl(v['bunny_url'].toString());
+               if (url.contains('/$videoId/thaimhung/')) {
+                 finalPhotos.add({
+                    'id': v['id'],
+                    'photo_url': url,
+                    'created_at': v['created_at'],
+                    'user_id': v['user_id'],
+                  });
+               }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: Local gallery fetch failed: $e');
+      }
+
+      // === 2. Supabase Fallback (ในกรณีดูย้อนหลัง) ===
+      if (finalPhotos.isEmpty) {
+        try {
+          final response1 = await _client
+              .from('thai_mhung_photos')
+              .select()
+              .eq('video_id', videoId)
+              .order('created_at', ascending: true);
+          
+          final results1 = List<Map<String, dynamic>>.from(response1 as List);
+          if (results1.isNotEmpty) {
+            debugPrint('VideoRepository: ✅ Gallery loaded ${results1.length} photos exclusively for incident $videoId');
+            for (var v in results1) {
+              finalPhotos.add({
+                ...v,
+                'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
               });
             }
           }
-          if (photos.isNotEmpty) {
-            debugPrint('VideoRepository: ✅ Gallery loaded ${photos.length} photos from Local API');
-            return photos;
-          }
-        }
-      } catch (e) {
-        debugPrint('VideoRepository: Local gallery fetch failed (normal if server off): $e');
-      }
-
-      // === 2. Supabase: thai_mhung_photos table (ตาราง §3 ตามแผน) ===
-      try {
-        final response1 = await _client
-            .from('thai_mhung_photos')
-            .select()
-            .eq('video_id', videoId)
-            .order('created_at', ascending: true);
-        
-        final results1 = List<Map<String, dynamic>>.from(response1 as List);
-        if (results1.isNotEmpty) {
-          debugPrint('VideoRepository: ✅ Gallery loaded ${results1.length} photos from thai_mhung_photos table');
-          return results1.map((v) => {
-            ...v,
-            'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
-          }).toList();
-        }
-      } catch (e) {
-        debugPrint('VideoRepository: thai_mhung_photos table fetch failed (might not exist yet): $e');
-      }
-
-      // === 3. Supabase Fallback: videos table WHERE type='thai_mhung_photo' ===
-
-      final response2 = await _client
-          .from('videos')
-          .select()
-          .eq('type', 'thai_mhung_photo')
-          .eq('category_id', incidentCategoryId)
-          .order('created_at', ascending: true)
-          .limit(30);
-      
-      final allResults = List<Map<String, dynamic>>.from(response2 as List);
-      
-      // แตก photo_urls ออกเป็นรายรูปแยกกัน
-      final List<Map<String, dynamic>> photos = [];
-      for (final v in allResults) {
-        final photoUrlsRaw = v['photo_urls'];
-        List<String> photoUrls = [];
-        if (photoUrlsRaw is List) {
-          photoUrls = photoUrlsRaw.map((u) => u.toString()).toList();
-        } else if (photoUrlsRaw is String) {
-          try { photoUrls = List<String>.from(jsonDecode(photoUrlsRaw)); } catch (_) {}
-        }
-        
-        if (photoUrls.isNotEmpty) {
-          for (int i = 0; i < photoUrls.length; i++) {
-            photos.add({
-              'id': '${v['id']}_$i',
-              'photo_url': _ensureFullUrl(photoUrls[i]),
-              'created_at': v['created_at'],
-            });
-          }
-        } else {
-          final url = v['bunny_url'] ?? v['thumbnail_url'] ?? '';
-          if (url.toString().isNotEmpty) {
-            photos.add({
-              'id': v['id'],
-              'photo_url': _ensureFullUrl(url.toString()),
-              'created_at': v['created_at'],
-            });
-          }
+        } catch (e) {
+          debugPrint('VideoRepository: Supabase thai_mhung_photos fetch failed: $e');
         }
       }
-      
-      debugPrint('VideoRepository: Gallery fallback found ${photos.length} photos from videos table (categoryId=$incidentCategoryId)');
-      return photos;
+
+      // เรียงลำดับเอาภาพใหม่สุดขึ้นก่อน
+      return finalPhotos.reversed.toList();
     } catch (e) {
       debugPrint('VideoRepository: Error fetching gallery photos: $e');
       return [];

@@ -62,12 +62,27 @@ function broadcastEmergencyMessage(videoId, messageData) {
     io.to(`emergency-chat-${videoId}`).emit('emergency-chat-message', messageData);
 }
 
+/**
+ * Broadcast new Thai Mhung photo to all viewers in the incident room
+ * @param {string} incidentId - The video/incident ID that viewers have joined
+ * @param {object} photoData - { photo_url, user_id, latitude, longitude, created_at }
+ */
+function broadcastNewThaiMhungPhoto(incidentId, photoData) {
+    if (!io) return;
+    console.log(`[ThaiMhung] Broadcasting new photo to room video-${incidentId}`);
+    io.to(`video-${incidentId}`).emit('new-thaimhung-photo', {
+        incidentId,
+        ...photoData,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
     sendStatus,
     broadcastInteraction,
     broadcastEmergencyMessage,
+    broadcastNewThaiMhungPhoto,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'map_background_widget.dart';
 import 'responder_compass_widget.dart';
-import 'thai_mhung_gallery_widget.dart';
 import 'floating_back_button.dart';
 import '../../../models/video_models.dart';
 import '../../../../donation/models/donation_models.dart';
@@ -20,10 +19,7 @@ class EmergencyMapSection extends StatelessWidget {
   final VoidCallback onMapTap;
   final String? currentResponseId;
   final double? deviceHeading;
-  final List<ThaiMhungPhoto> thaiMhungPhotos;
   final bool isThaiMhungReporting;
-  final bool canViewUnblurred;
-  final Function(ThaiMhungPhoto) onPhotoTap;
   final VoidCallback onBackTap;
 
   const EmergencyMapSection({
@@ -40,10 +36,7 @@ class EmergencyMapSection extends StatelessWidget {
     required this.onMapTap,
     required this.currentResponseId,
     required this.deviceHeading,
-    required this.thaiMhungPhotos,
     required this.isThaiMhungReporting,
-    required this.canViewUnblurred,
-    required this.onPhotoTap,
     required this.onBackTap,
   });
 
@@ -86,18 +79,6 @@ class EmergencyMapSection extends StatelessWidget {
             ),
           ),
 
-        // Layer 1.5: Gallery
-        if (isUiVisible && selectedTab == 0 && !isThaiMhungReporting && thaiMhungPhotos.isNotEmpty)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 150,
-            child: ThaiMhungGalleryWidget(
-              photos: thaiMhungPhotos,
-              onPhotoTap: onPhotoTap,
-              canViewUnblurred: canViewUnblurred,
-            ),
-          ),
 
       ],
     );
