@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 
 class ThaiMhungPhoto {
   final String id;
@@ -133,24 +132,29 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                             child: Stack(
                               children: [
                                 Positioned.fill(
-                                  child: ImageFiltered(
-                                    imageFilter: widget.canViewUnblurred 
-                                        ? ImageFilter.blur(sigmaX: 0, sigmaY: 0) 
-                                        : ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                                    child: Image.network(
-                                      item.photo.url,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => Container(
-                                        color: Colors.grey[900],
-                                        child: const Icon(Icons.broken_image, color: Colors.white24),
-                                      ),
+                                  // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
+                                  child: Image.network(
+                                    item.photo.url,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      color: Colors.grey[900],
+                                      child: const Icon(Icons.broken_image, color: Colors.white24),
                                     ),
                                   ),
                                 ),
-                                if (!widget.canViewUnblurred)
-                                  const Center(
-                                    child: Icon(Icons.privacy_tip, color: Colors.white70, size: 20),
+                                // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
+                                Positioned(
+                                  bottom: 3,
+                                  right: 3,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
                                   ),
+                                ),
                               ],
                             ),
                           ),

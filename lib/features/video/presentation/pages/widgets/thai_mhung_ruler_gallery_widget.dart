@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../../services/service_locator.dart';
 import '../../../../../services/websocket_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:ui' as dart_ui;
 import '../../../../../config/app_config.dart';
 class ThaiMhungRulerPhoto {
   final String id;
@@ -339,35 +338,40 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
-                                widget.canViewUnblurred
-                                  ? Image.network(
-                                      pUrl,
-                                      fit: BoxFit.contain,
-                                      loadingBuilder: (context, child, progress) {
-                                        if (progress == null) return child;
-                                        return const CircularProgressIndicator(color: Colors.pinkAccent);
-                                      },
-                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
-                                    )
-                                  : ImageFiltered(
-                                      imageFilter: dart_ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                                      child: Image.network(
-                                        pUrl,
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
-                                      ),
+                                // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
+                                // ไม่ต้องเบลอซ้ำที่ client ไม่ว่าจะมีสิทธิ์หรือไม่ก็ตาม
+                                Image.network(
+                                  pUrl,
+                                  fit: BoxFit.contain,
+                                  loadingBuilder: (context, child, progress) {
+                                    if (progress == null) return child;
+                                    return const CircularProgressIndicator(color: Colors.pinkAccent);
+                                  },
+                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                ),
+                                // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
+                                Positioned(
+                                  bottom: 16,
+                                  right: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                if (!widget.canViewUnblurred)
-                                  const Center(
-                                    child: Column(
+                                    child: const Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.privacy_tip, color: Colors.white70, size: 40),
-                                        SizedBox(height: 8),
-                                        Text('จำเป็นต้องมีสิทธิ์เพื่อดูภาพชัด', style: TextStyle(color: Colors.white70, fontSize: 16, decoration: TextDecoration.none)),
-                                      ]
-                                    )
+                                        Icon(Icons.face_retouching_off, color: Colors.white70, size: 14),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'สงวนสิทธิ์ภาพบุคคล',
+                                          style: TextStyle(color: Colors.white70, fontSize: 11, decoration: TextDecoration.none),
+                                        ),
+                                      ],
+                                    ),
                                   ),
+                                ),
                               ]
                             )
                           );
@@ -518,34 +522,33 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          widget.canViewUnblurred 
-                            ? Image.network(
-                                photo.photoUrl,
-                                fit: BoxFit.cover,
-                                loadingBuilder: (context, child, progress) {
-                                  if (progress == null) return child;
-                                  return Container(color: Colors.black12);
-                                },
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  color: Colors.grey[900],
-                                  child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
-                                ),
-                              )
-                            : ImageFiltered(
-                                imageFilter: dart_ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                                child: Image.network(
-                                  photo.photoUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => Container(
-                                    color: Colors.grey[900],
-                                    child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
-                                  ),
-                                ),
-                              ),
-                          if (!widget.canViewUnblurred)
-                            const Center(
-                              child: Icon(Icons.privacy_tip, color: Colors.white70, size: 20),
+                          // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
+                          // ไม่ต้องเบลอซ้ำทั้งภาพ — เพื่อให้เห็นรายละเอียดเหตุการณ์ได้ชัดเจน
+                          Image.network(
+                            photo.photoUrl,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return Container(color: Colors.black12);
+                            },
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: Colors.grey[900],
+                              child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
                             ),
+                          ),
+                          // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
+                          Positioned(
+                            bottom: 2,
+                            right: 2,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
+                            ),
+                          ),
                           if (isNew)
                             Positioned(
                               top: 2,

@@ -6,6 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
 const socketService = require('../services/socket-service');
+const faceBlurService = require('../services/face-blur-service');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -217,13 +218,31 @@ module.exports = (pool) => {
                 const newPath = path.join(reportDir, file.filename);
                 // Move file from root destDir to reportDir
                 fs.renameSync(file.path, newPath);
-                
+
+                // ✅ Thai Mhung Face Blur: เบลอเฉพาะใบหน้าก่อน broadcast
+                // สร้างชื่อไฟล์ output แยกต่างหาก เช่น uuid_anon.jpg
+                let finalFilePath = newPath;
+                if (isThaiMhung) {
+                    const ext = path.extname(file.filename);
+                    const anonFilename = `${path.basename(file.filename, ext)}_anon${ext}`;
+                    const anonPath = path.join(reportDir, anonFilename);
+                    const blurResult = await faceBlurService.blurFacesInImage(newPath, anonPath);
+                    if (blurResult.success) {
+                        finalFilePath = anonPath;
+                        // ✅ ลบไฟล์ต้นฉบับหลังเบลอสำเร็จ เพื่อปกป้อง Privacy
+                        try { fs.unlinkSync(newPath); } catch (_) {}
+                    }
+                    // ถ้าล้มเหลว → ใช้ต้นฉบับตามเดิม (blurResult.outputPath = newPath)
+                    finalFilePath = blurResult.outputPath;
+                }
+
                 // Construct URL correctly
+                const finalFilename = path.basename(finalFilePath);
                 let relativePath;
                 if (isThaiMhung && incidentId) {
-                    relativePath = `${incidentId}/thaimhung/${videoId}/${file.filename}`;
+                    relativePath = `${incidentId}/thaimhung/${videoId}/${finalFilename}`;
                 } else {
-                    relativePath = `${videoId}/${file.filename}`;
+                    relativePath = `${videoId}/${finalFilename}`;
                 }
                 
                 // ✅ ใช้ full URL เพื่อให้ Client แสดงผลได้ทันที
