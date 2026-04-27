@@ -57,38 +57,155 @@ class VideoRepository {
   }
 
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
-  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) ตามแผนใหม่ §3
+  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) หรือ Fallback ผ่าน videos table
+  /// @param videoId คือ incident (emergency) video ID ที่ภาพเหล่านั้นอ้างอิง
+  ///
+  /// ลำดับการค้นหา:
+  /// 1. Local API (เร็วที่สุด ดึงจาก Local PostgreSQL)
+  /// 2. Supabase: thai_mhung_photos table (ตาราง §3 ตามแผน)
+  /// 3. Supabase: videos table WHERE type='thai_mhung_photo' (fallback)
   Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId) async {
     try {
-      // 1. ลองดึงจากตารางไทยมุงโดยตรงก่อน (Real table ตามแผน §3)
-      final response1 = await _client
-          .from('thai_mhung_photos')
-          .select()
-          .eq('video_id', videoId)
-          .order('created_at', ascending: true);
+      // 📌 สิ่งสำคัญ: ภาพไทยมุงจะถูกผูกกับ category_id (donation_category_id) ไม่ใช่ videoId โดยตรง
+      // ดังนั้นต้องดึง category_id ของ incident video ตัวหลักขึ้นมาก่อน
+      String? incidentCategoryId;
       
-      final results1 = List<Map<String, dynamic>>.from(response1 as List);
-      if (results1.isNotEmpty) {
-        return results1.map((v) => {
-          ...v,
-          'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
-        }).toList();
+      try {
+        final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId')).timeout(const Duration(seconds: 2));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          incidentCategoryId = data['category_id']?.toString();
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: Local fetch incident failed: $e');
       }
 
-      // 2. Fallback: ถ้าตารางหลักไม่มี/ยังไม่ได้ migration ให้ดึงจากตาราง videos รหัสแบบเดิม
+      // ถ้าไม่เจอใน Local API ค่อยไปหาใน Supabase
+      if (incidentCategoryId == null) {
+        final incidentVideo = await _client
+            .from('videos')
+            .select('category_id')
+            .eq('id', videoId)
+            .maybeSingle();
+        incidentCategoryId = incidentVideo?['category_id']?.toString();
+      }
+      
+      debugPrint('VideoRepository: Incident $videoId has categoryId=$incidentCategoryId');
+      
+      if (incidentCategoryId == null) {
+        debugPrint('VideoRepository: No categoryId found for video $videoId - no gallery possible');
+        return [];
+      }
+
+      // === 1. ลอง Local API ก่อน (เร็วที่สุด) ===
+      try {
+        final response = await http
+            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos?type=thai_mhung_photo&category_id=$incidentCategoryId'))
+            .timeout(const Duration(seconds: 3));
+        if (response.statusCode == 200) {
+          final List data = jsonDecode(response.body);
+          final photos = <Map<String, dynamic>>[];
+          for (final v in data) {
+            final photoUrlsRaw = v['photo_urls'];
+            List<String> photoUrls = [];
+            if (photoUrlsRaw is List) {
+              photoUrls = photoUrlsRaw.map((u) => u.toString()).toList();
+            } else if (photoUrlsRaw is String) {
+              try { photoUrls = List<String>.from(jsonDecode(photoUrlsRaw)); } catch (_) {}
+            }
+            
+            if (photoUrls.isNotEmpty) {
+              for (int i = 0; i < photoUrls.length; i++) {
+                photos.add({
+                  'id': '${v['id']}_$i',
+                  'photo_url': _ensureFullUrl(photoUrls[i]),
+                  'created_at': v['created_at'],
+                  'user_id': v['user_id'],
+                });
+              }
+            } else if (v['bunny_url'] != null && v['bunny_url'].toString().isNotEmpty) {
+              photos.add({
+                'id': v['id'],
+                'photo_url': _ensureFullUrl(v['bunny_url'].toString()),
+                'created_at': v['created_at'],
+                'user_id': v['user_id'],
+              });
+            }
+          }
+          if (photos.isNotEmpty) {
+            debugPrint('VideoRepository: ✅ Gallery loaded ${photos.length} photos from Local API');
+            return photos;
+          }
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: Local gallery fetch failed (normal if server off): $e');
+      }
+
+      // === 2. Supabase: thai_mhung_photos table (ตาราง §3 ตามแผน) ===
+      try {
+        final response1 = await _client
+            .from('thai_mhung_photos')
+            .select()
+            .eq('video_id', videoId)
+            .order('created_at', ascending: true);
+        
+        final results1 = List<Map<String, dynamic>>.from(response1 as List);
+        if (results1.isNotEmpty) {
+          debugPrint('VideoRepository: ✅ Gallery loaded ${results1.length} photos from thai_mhung_photos table');
+          return results1.map((v) => {
+            ...v,
+            'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
+          }).toList();
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: thai_mhung_photos table fetch failed (might not exist yet): $e');
+      }
+
+      // === 3. Supabase Fallback: videos table WHERE type='thai_mhung_photo' ===
+
       final response2 = await _client
           .from('videos')
           .select()
           .eq('type', 'thai_mhung_photo')
-          .eq('category_id', videoId) 
-          .order('created_at', ascending: true);
+          .eq('category_id', incidentCategoryId)
+          .order('created_at', ascending: true)
+          .limit(30);
       
-      final results2 = List<Map<String, dynamic>>.from(response2 as List);
-      return results2.map((v) => {
-        'id': v['id'],
-        'photo_url': _ensureFullUrl(v['local_file_path'] ?? v['bunny_url'] ?? v['thumbnail_url'] ?? ''),
-        'created_at': v['created_at'],
-      }).toList();
+      final allResults = List<Map<String, dynamic>>.from(response2 as List);
+      
+      // แตก photo_urls ออกเป็นรายรูปแยกกัน
+      final List<Map<String, dynamic>> photos = [];
+      for (final v in allResults) {
+        final photoUrlsRaw = v['photo_urls'];
+        List<String> photoUrls = [];
+        if (photoUrlsRaw is List) {
+          photoUrls = photoUrlsRaw.map((u) => u.toString()).toList();
+        } else if (photoUrlsRaw is String) {
+          try { photoUrls = List<String>.from(jsonDecode(photoUrlsRaw)); } catch (_) {}
+        }
+        
+        if (photoUrls.isNotEmpty) {
+          for (int i = 0; i < photoUrls.length; i++) {
+            photos.add({
+              'id': '${v['id']}_$i',
+              'photo_url': _ensureFullUrl(photoUrls[i]),
+              'created_at': v['created_at'],
+            });
+          }
+        } else {
+          final url = v['bunny_url'] ?? v['thumbnail_url'] ?? '';
+          if (url.toString().isNotEmpty) {
+            photos.add({
+              'id': v['id'],
+              'photo_url': _ensureFullUrl(url.toString()),
+              'created_at': v['created_at'],
+            });
+          }
+        }
+      }
+      
+      debugPrint('VideoRepository: Gallery fallback found ${photos.length} photos from videos table (categoryId=$incidentCategoryId)');
+      return photos;
     } catch (e) {
       debugPrint('VideoRepository: Error fetching gallery photos: $e');
       return [];
@@ -117,11 +234,12 @@ class VideoRepository {
   }
 
   /// ดึงภาพไทยมุงที่เกี่ยวข้องกับหมวดหมู่เหตุการณ์
+  /// Bug Fix: ใช้ type 'thai_mhung_photo' ให้ตรงกับค่าที่ uploadEmergencyPhotos() บันทึกจริง
   Future<List<Video>> getThaiMhungPhotos(String categoryId) async {
     final response = await _client
         .from('videos')
         .select()
-        .eq('type', 'emergency_photo')
+        .eq('type', 'thai_mhung_photo') // แก้จาก 'emergency_photo' → ให้ตรงกับค่าที่บันทึกจริง
         .eq('category_id', categoryId)
         .order('created_at', ascending: false)
         .limit(10);
@@ -841,10 +959,20 @@ class VideoRepository {
     final baseUrl = AppConfig.localApiUrl;
 
     // ✅ ถ้ามี 'localhost' ให้เปลี่ยนเป็น IP ทันทีตาม AppConfig
-    if (url.contains('localhost')) {
-      final fixedUrl = url.replaceAll('http://localhost:3000', baseUrl);
-      debugPrint('VideoRepository: Fixed localhost URL: $fixedUrl');
-      return fixedUrl;
+    if (url.contains('localhost:3000')) {
+      return url.replaceAll('http://localhost:3000', baseUrl);
+    }
+
+    // ✅ Auto-correct IP เก่าที่บันทึกไว้ในฐานข้อมูล
+    // URL จาก server จะมี pattern http://[IP]:3000/temp/videos/...
+    // ถ้า IP ไม่ตรงกับปัจจุบัน ให้แทนที่อัตโนมัติ
+    if (url.contains(':3000') && url.startsWith('http')) {
+      final currentHost = 'http://${AppConfig.mainMachineIp}:3000';
+      if (!url.startsWith(currentHost)) {
+        final corrected = url.replaceFirst(RegExp(r'http://[0-9\.]+:3000'), currentHost);
+        return corrected;
+      }
+      return url;
     }
 
     if (url.startsWith('http')) return url;
@@ -856,7 +984,6 @@ class VideoRepository {
       fullUrl = '$baseUrl/$url';
     }
     
-    debugPrint('VideoRepository: Normalized URL: $fullUrl');
     return fullUrl;
   }
 }

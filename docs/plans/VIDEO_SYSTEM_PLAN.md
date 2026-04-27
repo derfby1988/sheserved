@@ -189,7 +189,7 @@ PORT=3000
 +TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
 +
 +# Server Network
-+LOCAL_API_URL=http://192.168.0.120:3000
++LOCAL_API_URL=http://169.254.158.45:3000
 +
 +# Bunny.net
 BUNNY_API_KEY=<your_api_key>
@@ -200,7 +200,7 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.0.120:3000
+LOCAL_API_URL=http://169.254.158.45:3000
 ```
 
 ## Cost Estimation
@@ -1618,3 +1618,10 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbG... (กุญแจลับยาวๆ ที
 ### 11.4 Local Sync State Management
 - **Startup Reconciliation**: เพิ่ม `is_synced` ให้ฐานข้อมูลวิดีโอ 
 - เครื่อง Server วิดีโอหลัก (Node.js) จะทำการรัน `reconcileLocalToCloud()` ทุกครั้งที่เปิดเครื่อง หากฐานข้อมูลในรถและบนคลาวด์ไม่ตรงกันเนื่องจากสภาวะอินเทอร์เน็ตหลุด มันจะ Upsert ข้อมูลการยอด Like/View คืนกลับเข้าสู่ Supabase ให้ทันทีเป็นสิ่งแรก
+
+### 11.5 Unified Database & Race Condition Avoidance (Thai Mhung Gallery)
+- **ปัญหาเดิม**: หากแอปพลิเคชันพยายามสอบถามข้อมูลคลิปวิดีโอ (เช่น `category_id`) หรือดึงรายการภาพจากฝั่ง Cloud (Supabase) ในเสี้ยววินาทีหลังจากที่อัปโหลดเสร็จ แต่สคริปต์ Auto-sync 30 วินาทียังไม่ทำงาน ข้อมูลจะตอบกลับเป็น `null` ทำให้แกลลอรี่ภาพกลายเป็นค่าว่าง
+- **การแก้ไข (Local API Fast-path)**: โค้ดใน Application (เช่น `VideoRepository.getThaiMhungGalleryPhotos`) บังคับให้วิ่งไปสืบค้นจาก **Local Node.js API** ก่อนเสมอเป็น **1st Priority** 
+  - `GET /api/videos/:id` เพื่อสืบค้น `category_id` จากในเครื่องทันที
+  - `GET /api/videos?type=...&category_id=...` เพื่อดึงภาพจาก Local Storage โดยตรงทันที
+- **ผลลัพธ์**: ขจัดการถูกบล็อกจากจังหวะความเร็วของอินเทอร์เน็ต ทำให้แสดงภาพไทยมุงที่เพิ่งถ่ายได้ภายในหน่วยมิลลิวินาที 

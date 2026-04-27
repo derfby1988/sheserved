@@ -33,6 +33,32 @@ module.exports = (pool) => {
     // Initialize video service with the pool
     videoService.init(pool);
 
+    // Get videos List by type (Local API fallback for gallery/live stream)
+    router.get('/', async (req, res) => {
+        try {
+            const { type, category_id } = req.query;
+            let query = 'SELECT * FROM videos WHERE 1=1';
+            let params = [];
+            
+            if (type) {
+                params.push(type);
+                query += ` AND type = $${params.length}`;
+            }
+            if (category_id) {
+                params.push(category_id);
+                query += ` AND category_id = $${params.length}`;
+            }
+            
+            query += ' ORDER BY created_at ASC LIMIT 50';
+            
+            const result = await pool.query(query, params);
+            res.json(result.rows);
+        } catch (error) {
+            console.error('[API] Error fetching videos list:', error);
+            res.status(500).json({ error: 'Failed to fetch videos' });
+        }
+    });
+
     // Upload video
     router.post('/upload', upload.single('video'), async (req, res) => {
         try {

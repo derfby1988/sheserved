@@ -159,6 +159,8 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         _selectedTab = 0; 
         _isThaiMhungReporting = false; // กลับสู่หน้า Emergency หลัก
       });
+      // ✅ โหลดข้อมูลภาพแกลลอรี่ใหม่ทันทีหลังอัปโหลด
+      _loadGalleryPhotos();
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);

@@ -10,7 +10,7 @@ class AppConfig {
   /// - unified: ใช้ทั้ง Local และ Supabase ซิงค์กันอัตโนมัติ (แนะนำสำหรับเครื่องหลัก)
   /// - localOnly: ใช้แค่ Local PostgreSQL
   /// - supabaseOnly: ใช้แค่ Supabase Cloud (แนะนำสำหรับเครื่องรอง/Client)
-  static const DatabaseMode databaseMode = DatabaseMode.supabaseOnly;
+  static const DatabaseMode databaseMode = DatabaseMode.unified;
 
   /// เปิดใช้งาน Auto Sync (สำหรับ Unified mode เท่านั้น)
   static const bool enableAutoSync = true;
@@ -24,7 +24,7 @@ class AppConfig {
 
   /// IP ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server
   /// เปลี่ยนเป็น 127.0.0.1 หากรันบนเครื่องเดียวกัน
-  static const String mainMachineIp = '192.168.0.111'; // IP เครื่องหลักของคุณ
+  static const String mainMachineIp = '192.168.1.142'; // LAN IP ที่ Android/iOS ทุกเครื่องในวงเดียวกันเชื่อมต่อได้
 
   /// URL ของ WebSocket Server
   static const String localApiUrl = 'http://$mainMachineIp:3000';

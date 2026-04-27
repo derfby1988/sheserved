@@ -94,7 +94,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           _initializePlayer(video.bunnyUrl!, isLocal: false);
         }
       }
-      _loadThaiMhungPhotos();
+      // หมายเหตุ: _loadGalleryPhotos() ทำหน้าที่ดึงภาพไทยมุงที่ด้านล่างแล้ว (line 109)
+      // ไม่เรียก _loadThaiMhungPhotos() ซ้ำ เพื่อป้องกัน race condition (setState เขียนทับกัน)
       final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(_currentVideoId!);
       if (tracks.isNotEmpty) {
           _dbGpsTracks = tracks;
@@ -114,16 +115,23 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (_currentVideoId == null) return;
     try {
       final results = await ServiceLocator.instance.videoRepository.getThaiMhungGalleryPhotos(_currentVideoId!);
+      debugPrint('[Gallery] Raw results count: ${results.length}');
+      
       if (mounted) {
-        setState(() {
-          _thaiMhungPhotos = results.map((e) => ThaiMhungPhoto(
+        final photos = results
+          .map((e) => ThaiMhungPhoto(
             id: e['id']?.toString() ?? '',
             url: e['photo_url']?.toString() ?? '',
-          )).toList();
-        });
+            userName: e['user_id']?.toString(),
+          ))
+          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty) // กรอง URL ว่างออก
+          .toList();
+        
+        debugPrint('[Gallery] Valid photos after filter: ${photos.length}');
+        setState(() { _thaiMhungPhotos = photos; });
       }
     } catch (e) {
-      debugPrint('Error loading gallery photos: $e');
+      debugPrint('[Gallery] Error loading gallery photos: $e');
     }
   }
 
@@ -617,7 +625,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     try {
       List<File> files = _capturedPhotos.map((x) => File(x.path)).toList();
       final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(userId: userId, photoFiles: files, gpsTracks: _recordedGpsTracks, categoryId: _selectedEmergencyCategoryId);
-      if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งข้อมูลไทยมุงสำเร็จ ขอบคุณที่ร่วมช่วยสังคม!'), backgroundColor: Colors.green)); setState(() { _capturedPhotos.clear(); _selectedTab = 0; _isThaiMhungReporting = false; }); }
+      if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งข้อมูลไทยมุงสำเร็จ ขอบคุณที่ร่วมช่วยสังคม!'), backgroundColor: Colors.green)); setState(() { _capturedPhotos.clear(); _selectedTab = 0; _isThaiMhungReporting = false; }); _loadGalleryPhotos(); }
     } catch (_) { if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาดในการส่งข้อมูล'))); } }
   }
 
