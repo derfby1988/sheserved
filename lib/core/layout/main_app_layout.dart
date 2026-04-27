@@ -112,6 +112,15 @@ class _MainAppLayoutState extends State<MainAppLayout> {
             });
           },
           onAddPressed: () {
+            // ✅ ตรวจสอบ Login ก่อนเข้าหน้า Emergency (ตาม Login Navigation Workflow)
+            if (ServiceLocator.instance.currentUser == null) {
+              Navigator.pushNamed(
+                context,
+                '/login',
+                arguments: '/emergency-live', // หลัง Login สำเร็จ ให้พาไปหน้า Emergency ทันที
+              );
+              return;
+            }
             Navigator.pushNamed(context, '/emergency-live');
           },
         ),

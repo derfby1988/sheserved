@@ -422,26 +422,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
     }
 
     if (_photos.isEmpty) {
-      return Container(
-        height: widget.height,
-        width: 70,
-        margin: const EdgeInsets.only(left: 4),
-        decoration: BoxDecoration(
-          color: Colors.black12,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.photo_library_outlined, color: Colors.white10, size: 20),
-              SizedBox(height: 4),
-              Text('ไม่มีรูป', style: TextStyle(color: Colors.white10, fontSize: 8)),
-            ],
-          ),
-        ),
-      );
+      return const SizedBox.shrink(); // ซ่อนไปเลยถ้ายังไม่มีภาพ
     }
 
     final double itemHeight = widget.height * 0.25; 

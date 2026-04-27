@@ -254,7 +254,9 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                     ],
                   ),
                 ),
-                Positioned(
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCirc,
                   top: 0,
                   bottom: widget.currentVideoId == null || _isKeyboardOpen ? null : 0,
                   height: widget.currentVideoId == null 
@@ -262,12 +264,15 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                       : (_isKeyboardOpen ? videoHeight : null),
                   right: 0,
                   width: (constraints.maxWidth - 32) * 0.35,
-                  child: TrendingPanelWidget(
-                    trendingVideos: widget.trendingVideos,
-                    isLoadingTrending: widget.isLoadingTrending,
-                    currentVideoId: widget.currentVideoId,
-                    highlightVideoId: widget.highlightVideoId,
-                    onSwitchVideo: widget.onSwitchVideo,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: TrendingPanelWidget(
+                      trendingVideos: widget.trendingVideos,
+                      isLoadingTrending: widget.isLoadingTrending,
+                      currentVideoId: widget.currentVideoId,
+                      highlightVideoId: widget.highlightVideoId,
+                      onSwitchVideo: widget.onSwitchVideo,
+                    ),
                   ),
                 ),
               ],

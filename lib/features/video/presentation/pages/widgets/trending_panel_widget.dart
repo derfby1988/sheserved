@@ -68,8 +68,12 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutQuart,
+      alignment: Alignment.topCenter,
+      child: Container(
+        decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.6),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
@@ -82,6 +86,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min, // ให้ Column หดความสูงเท่าที่จำเป็น
         children: [
           const SizedBox(height: 10),
           Container(
@@ -101,18 +106,22 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
             ),
           ),
           const SizedBox(height: 12),
-          Expanded(
+          Flexible( // ใช้ Flexible แทน Expanded เพื่อให้หดตามเนื้อหาได้หากมีน้อย
             child: widget.isLoadingTrending
                 ? _buildSkeletonList()
                 : widget.trendingVideos.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'ไม่มีข้อมูล',
-                          style: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.black54),
+                    ? const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Center(
+                          child: Text(
+                            'ไม่มีข้อมูล',
+                            style: TextStyle(fontFamily: 'SukhumvitSet', color: Colors.black54),
+                          ),
                         ),
                       )
                     : ListView.builder(
                         controller: _scrollController,
+                        shrinkWrap: true, // ยืดหดความสูงตามจำนวนการ์ด
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         itemCount: widget.trendingVideos.length,
                         itemBuilder: (context, index) {
@@ -174,6 +183,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
 
                           final bool hasLocalPreview = video.localFilePath != null;
                           final bool isStillProcessing = video.status == VideoStatus.processing;
+                          final bool isSelected = video.id == widget.currentVideoId; // ลำดับที่ผู้ใช้กำลังดูอยู่
 
                           return GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -188,17 +198,23 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                             child: AnimatedBuilder(
                               animation: _pulseController,
                               builder: (context, child) {
-                                return Container(
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOutCirc,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   width: double.infinity,
                                   decoration: BoxDecoration(
                                     color: isNewEmergency 
                                         ? Colors.red.withOpacity(0.9 + (0.1 * _pulseController.value))
-                                        : Colors.blueGrey[900],
+                                        : isSelected
+                                            ? Colors.amber[900]?.withOpacity(0.85) // สีส้มทองแสดงถึงการโฟกัส
+                                            : Colors.blueGrey[900],
                                     borderRadius: BorderRadius.circular(12),
                                     border: isNewEmergency
                                         ? Border.all(color: Colors.white, width: 2)
-                                        : null,
+                                        : isSelected
+                                            ? Border.all(color: Colors.amberAccent, width: 2.5) // กรอบสีเด่น
+                                            : Border.all(color: Colors.transparent, width: 2.5),
                                     boxShadow: isNewEmergency
                                         ? [
                                             BoxShadow(
@@ -207,23 +223,40 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                               spreadRadius: 2 * _pulseController.value,
                                             )
                                           ]
-                                        : null,
+                                        : isSelected
+                                            ? [
+                                                BoxShadow( // แสงเรืองรองใต้ปุ่ม
+                                                  color: Colors.orangeAccent.withOpacity(0.5),
+                                                  blurRadius: 8,
+                                                  spreadRadius: 2,
+                                                )
+                                              ]
+                                            : null,
                                     image: video.thumbnailUrl != null
                                         ? DecorationImage(
                                             image: NetworkImage(video.thumbnailUrl!),
                                             fit: BoxFit.cover,
                                             colorFilter: ColorFilter.mode(
-                                                (isNewEmergency ? Colors.red : Colors.black)
-                                                    .withOpacity(0.4),
+                                                (isNewEmergency 
+                                                    ? Colors.red 
+                                                    : isSelected 
+                                                        ? Colors.orange // ย้อมสีจางๆ ให้รู้ว่าเลือกอยู่
+                                                        : Colors.black)
+                                                    .withOpacity(isSelected ? 0.3 : 0.4),
                                                 BlendMode.darken),
                                           )
                                         : null,
-                                  ),
-                                  child: child,
-                                );
+                                    ), // closes BoxDecoration
+                                    child: child,
+                                ); // closes return AnimatedContainer
                               },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                              child: AnimatedPadding(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOutCirc,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 8, 
+                                  vertical: isSelected ? 16 : 10, // ยืดการ์ดที่ถูกเลือกให้สูงขึ้น
+                                ),
                                 child: FittedBox(
                                   alignment: Alignment.centerLeft,
                                   fit: BoxFit.scaleDown,
@@ -285,7 +318,8 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
           const SizedBox(height: 10),
         ],
       ),
-    );
+    ),
+   );
   }
 
   Widget _buildSkeletonList() {
