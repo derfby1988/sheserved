@@ -1223,7 +1223,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background,
+      color: AppColors.primary,
       child: Builder(
         builder: (context) => GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -1260,17 +1260,30 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   SizedBox(
                                     key: _mapAreaKey,
                                     height: _mapHeight,
-                                    child: HomeMapBackground(
-                                      focusedAlert: _focusedAlert,
-                                      onTap: () {
-                                        if (_focusedAlert != null) {
-                                          setState(() {
-                                            _focusedAlert = null;
-                                            // Restoration of consultation position when focus is cleared
-                                            _loadConsultationPosition(introDelay: Duration.zero);
-                                          });
-                                        }
+                                    child: ShaderMask(
+                                      shaderCallback: (rect) {
+                                        return const LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            Colors.transparent,
+                                            Colors.black,
+                                          ],
+                                          stops: [0.0, 0.15],
+                                        ).createShader(Rect.fromLTRB(0, 0, rect.width, rect.height));
                                       },
+                                      blendMode: BlendMode.dstIn,
+                                      child: HomeMapBackground(
+                                        focusedAlert: _focusedAlert,
+                                        onTap: () {
+                                          if (_focusedAlert != null) {
+                                            setState(() {
+                                              _focusedAlert = null;
+                                              _loadConsultationPosition(introDelay: Duration.zero);
+                                            });
+                                          }
+                                        },
+                                      ),
                                     ),
                                   ),
                                   Container(

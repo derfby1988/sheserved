@@ -38,7 +38,7 @@ class HomeHeaderSection extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       decoration: BoxDecoration(
-        color: AppColors.primary,
+        gradient: AppColors.primaryGradient,
         borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(32),
           bottomRight: Radius.circular(32),
@@ -400,27 +400,6 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(), // บังคับให้ Scroll ได้เสมอเพื่อเลื่อนดูข้อความ
               child: widget.child,
-            ),
-          ),
-        ),
-        // เงาไล่ระดับ (Gradient Fade)
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 20, // ความสูงของเงา
-          child: IgnorePointer(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.primary.withValues(alpha: 0.0),
-                    AppColors.primary,
-                  ],
-                ),
-              ),
             ),
           ),
         ),

@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // Primary Colors - Green จาก Figma Design
-  static const Color primary = Color(0xFF71BE0A); // Green สำหรับ header (#71BE0A)
-  static const Color primaryLight = Color(0xFFA7E062); // Bright lime green สำหรับ dotted border (#A7E062 หรือ #A9E267)
-  static const Color primaryDark = Color(0xFF6AA84F); // Darker saturated green สำหรับจุดเล็กๆ
+  // Primary Colors - สีเขียวมินต์/Seafoam (จากภาพตัวอย่าง)
+  static const Color primary = Color(0xFF6DD5B1); 
+  static const Color primaryLight = Color(0xFF58C2F3); 
+  static const Color primaryDark = Color(0xFF45B095); 
 
   // Secondary Colors - น้ำตาลธรรมชาติ
   static const Color secondary = Color(0xFF795548);
@@ -63,10 +63,15 @@ class AppColors {
   static const Color shadow = Color(0x1A000000);
 
   // Gradient
-  static const LinearGradient primaryGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [primary, primaryLight],
+  static final LinearGradient primaryGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      const Color(0xFF6DD5B1).withValues(alpha: 0.98), // เขียวมินต์ทึบ (บน)
+      const Color(0xFF6DD5B1).withValues(alpha: 0.50), // เริ่มจางกลางๆ
+      const Color(0xFF58C2F3).withValues(alpha: 0.0),  // โปร่งใส 100% (ล่าง)
+    ],
+    stops: const [0.0, 0.45, 1.0],
   );
 
   static const LinearGradient valleyGradient = LinearGradient(
