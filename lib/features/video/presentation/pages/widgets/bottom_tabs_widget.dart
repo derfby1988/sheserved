@@ -47,7 +47,7 @@ class BottomTabsWidget extends StatelessWidget {
                         width: 8, height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color.lerp(Colors.red, Colors.red.withValues(alpha: 0.3), blinkAnimation.value),
+                          color: Color.lerp(Colors.red, Colors.red.withOpacity(0.3), blinkAnimation.value),
                         ),
                       );
                     },
@@ -76,7 +76,7 @@ class BottomTabsWidget extends StatelessWidget {
                             shape: BoxShape.circle,
                             color: Color.lerp(
                               Colors.red,
-                              Colors.red.withValues(alpha: 0.3),
+                              Colors.red.withOpacity(0.3),
                               blinkAnimation.value,
                             ),
                           ),

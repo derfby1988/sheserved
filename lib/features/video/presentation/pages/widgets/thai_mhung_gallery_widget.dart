@@ -80,7 +80,7 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
             height: 90,
             width: MediaQuery.of(context).size.width * 0.9,
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.2),
+              color: Colors.black.withOpacity(0.2),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white24),
             ),

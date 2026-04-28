@@ -208,7 +208,7 @@ class _DonationApproverSettingsWidgetState
         border: Border.all(color: Colors.teal.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.teal.withValues(alpha: 0.05),
+            color: Colors.teal.withOpacity(0.05),
             blurRadius: 15,
             offset: const Offset(0, 4),
           ),
@@ -223,7 +223,7 @@ class _DonationApproverSettingsWidgetState
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                    color: Colors.teal.withValues(alpha: 0.1),
+                    color: Colors.teal.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8)),
                 child: const Icon(Icons.admin_panel_settings, color: Colors.teal),
               ),

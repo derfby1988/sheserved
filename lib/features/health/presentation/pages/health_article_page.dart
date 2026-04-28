@@ -3880,12 +3880,12 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                           decoration: BoxDecoration(
                             color: const Color(
                               0xFF1E3A8A,
-                            ).withValues(alpha: 0.05),
+                            ).withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: const Color(
                                 0xFF1E3A8A,
-                              ).withValues(alpha: 0.2),
+                              ).withOpacity(0.2),
                             ),
                           ),
                           child: Wrap(
@@ -3904,7 +3904,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                     side: BorderSide(
                                       color: const Color(
                                         0xFF1E3A8A,
-                                      ).withValues(alpha: 0.3),
+                                      ).withOpacity(0.3),
                                     ),
                                   ),
                                 )
@@ -4051,7 +4051,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                         backgroundColor: isSelected
                                             ? const Color(
                                                 0xFF1E3A8A,
-                                              ).withValues(alpha: 0.1)
+                                              ).withOpacity(0.1)
                                             : Colors.grey[100],
                                         child: Icon(
                                           Icons.medication,

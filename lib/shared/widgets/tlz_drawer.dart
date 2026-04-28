@@ -827,7 +827,7 @@ class _DrawerCurvePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.primary.withValues(alpha: 0.9) // ปรับให้โปร่งใสแบบแก้ว
+      ..color = AppColors.primary.withOpacity(0.9) // ปรับให้โปร่งใสแบบแก้ว
       ..style = PaintingStyle.fill;
 
     final path = Path();

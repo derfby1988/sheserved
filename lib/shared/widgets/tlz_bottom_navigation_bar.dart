@@ -139,13 +139,13 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 20,
             spreadRadius: 0,
             offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withOpacity(0.03),
             blurRadius: 40,
             spreadRadius: -4,
             offset: const Offset(0, 16),
@@ -173,7 +173,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(radius),
-                      color: Colors.white.withValues(alpha: 0.01),
+                      color: Colors.white.withOpacity(0.01),
                     ),
                   ),
                 ),
@@ -213,18 +213,18 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
           borderRadius: BorderRadius.circular(28),
           // ขอบขาวเล็กมากสำหรับปุ่ม Active (เหมือนขอบเม็ดกระจก)
           border: isSelected
-              ? Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.0)
+              ? Border.all(color: Colors.white.withOpacity(0.9), width: 1.0)
               : null,
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
                   // Inner glow effect: เงาสีขาวเพื่อให้ดูนูน
                   BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Colors.white.withOpacity(0.7),
                     blurRadius: 1,
                     spreadRadius: -1,
                     offset: const Offset(0, -1),
@@ -314,18 +314,18 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
               // ─── เนื้อลูกแก้ว: ใสแทบมองทะลุ ─── //
               color: isSelected
                   ? _activeBtnColor // ปุ่ม Active: ครีม ivory
-                  : Colors.white.withValues(alpha: 0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
+                  : Colors.white.withOpacity(0.08), // ปุ่มปกติ: ใสเกือบหมด แค่มีฝ้าเล็กน้อย
               shape: BoxShape.circle,
               border: Border.all(
                 color: isSelected
-                    ? Colors.white.withValues(alpha: 0.9)
-                    : Colors.white.withValues(alpha: 0.35), // ขอบลูกแก้วจางๆ
+                    ? Colors.white.withOpacity(0.9)
+                    : Colors.white.withOpacity(0.35), // ขอบลูกแก้วจางๆ
                 width: 1.0,
               ),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
+                        color: Colors.black.withOpacity(0.06),
                         blurRadius: 6,
                         offset: const Offset(0, 3),
                       ),
@@ -371,7 +371,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                         border: Border.all(color: Colors.white, width: 1.8),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.error.withValues(alpha: 0.35),
+                            color: AppColors.error.withOpacity(0.35),
                             blurRadius: 4,
                           ),
                         ],
@@ -400,10 +400,10 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
       child: Container(
         padding: EdgeInsets.all(pad),
         decoration: BoxDecoration(
-          color: AppColors.error.withValues(alpha: 0.15),
+          color: AppColors.error.withOpacity(0.15),
           shape: BoxShape.circle,
           border: Border.all(
-            color: AppColors.error.withValues(alpha: 0.5),
+            color: AppColors.error.withOpacity(0.5),
             width: 1.0,
           ),
           boxShadow: null,
@@ -452,8 +452,8 @@ class _GlassEdgePainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.center,
         colors: [
-          Colors.white.withValues(alpha: 0.50),
-          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withOpacity(0.50),
+          Colors.white.withOpacity(0.0),
         ],
       ).createShader(rect)
       ..style = PaintingStyle.stroke

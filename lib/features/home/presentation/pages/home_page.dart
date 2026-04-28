@@ -15,6 +15,7 @@ import 'package:sheserved/features/video/presentation/pages/emergency_live_page.
 import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products_page.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'dart:async';
+import 'dart:io' show Platform;
 import '../widgets/background_permission_dialog.dart';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
@@ -1188,11 +1189,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
 
     // คำนวณความสูงแผนที่อัตโนมัติ:
-    // Map ถูก shift ลงมาด้วย SizedBox(headerHeight / 2) แล้ว
-    // ดังนั้น mapHeight = ระยะจากกึ่งกลาง Header ถึงกึ่งกลาง Pharmacy
-    // = (headerHeight / 2) + spacing(16) + consultHeight + spacing(24) + (pharmacyHeight / 2)
+    // บน iOS: แผนที่เริ่มที่ใต้ header เต็มๆ (Top Offset = headerHeight)
+    // บน Android: แผนที่เริ่มที่กึ่งกลาง header (Top Offset = headerHeight / 2)
+    // เป้าหมายคือให้จุดสิ้นสุด (Bottom) อยู่ที่กึ่งกลาง Pharmacy Card เหมือนกัน
     if (_headerSectionHeight > 0 && _consultationHeight > 0 && _pharmacyHeight > 0) {
-      final calculatedHeight = (_headerSectionHeight / 2) + 16 + _consultationHeight + 24 + (_pharmacyHeight / 2);
+      final double mapStartOffset = Platform.isIOS ? _headerSectionHeight : (_headerSectionHeight / 2);
+      final double targetBottomPoint = _headerSectionHeight + 16 + _consultationHeight + 24 + (_pharmacyHeight / 2);
+      final double calculatedHeight = targetBottomPoint - mapStartOffset;
+      
       if (calculatedHeight > 0 && calculatedHeight != _mapHeight) {
         setState(() {
           _mapHeight = calculatedHeight;
@@ -1238,6 +1242,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               child: Stack(
                 children: [
                   // พื้นหลังสี primary กันช่องว่างเมื่อ overscroll
+                  // (outer Container ที่ครอบทั้งหน้าจอมีสีเขียวอยู่แล้วสำหรับพื้นที่เหนือ SafeArea)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -1252,38 +1257,61 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         children: [
                           const SizedBox(height: 70), 
                           Stack(
+                            clipBehavior: Clip.hardEdge,
                             children: [
                               Column(
                                 children: [
-                                  // เลื่อน Map ลงมาเริ่มที่กึ่งกลาง HeaderSection
-                                  SizedBox(height: _headerSectionHeight / 2),
+                                  // iOS: เลื่อนแผนที่ลงมาเริ่มที่ใต้ header เต็มๆ เพื่อไม่ให้ platform view ทับ header gradient
+                                  // Android: เริ่มที่กึ่งกลาง header เพื่อให้เห็นแผนที่ลอดผ่านส่วนโปร่งใสของ header
+                                  SizedBox(height: Platform.isIOS ? _headerSectionHeight : _headerSectionHeight / 2),
                                   SizedBox(
                                     key: _mapAreaKey,
                                     height: _mapHeight,
-                                    child: ShaderMask(
-                                      shaderCallback: (rect) {
-                                        return const LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.transparent,
-                                            Colors.black,
-                                          ],
-                                          stops: [0.0, 0.15],
-                                        ).createShader(Rect.fromLTRB(0, 0, rect.width, rect.height));
-                                      },
-                                      blendMode: BlendMode.dstIn,
-                                      child: HomeMapBackground(
-                                        focusedAlert: _focusedAlert,
-                                        onTap: () {
-                                          if (_focusedAlert != null) {
-                                            setState(() {
-                                              _focusedAlert = null;
-                                              _loadConsultationPosition(introDelay: Duration.zero);
-                                            });
-                                          }
-                                        },
-                                      ),
+                                    child: ClipRect(
+                                      child: Stack(
+                                        clipBehavior: Clip.hardEdge,
+                                        children: [
+                                        // แผนที่ (platform view) — ไม่ใช้ ShaderMask เพราะ iOS platform view bypass มัน
+                                        Positioned.fill(
+                                          child: HomeMapBackground(
+                                            focusedAlert: _focusedAlert,
+                                            onTap: () {
+                                              if (_focusedAlert != null) {
+                                                setState(() {
+                                                  _focusedAlert = null;
+                                                  _loadConsultationPosition(introDelay: Duration.zero);
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                        // Gradient overlay วางทับด้านบนแผนที่ — ใช้แทน ShaderMask
+                                        // ทาสีเขียวจางลงจากบนลงล่างเพื่อให้ blend กับ header ได้เนียน
+                                        Positioned(
+                                          top: 0,
+                                          left: 0,
+                                          right: 0,
+                                          height: _mapHeight * 0.20,
+                                          child: IgnorePointer(
+                                            child: Container(
+                                              decoration: const BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Color(0xFF6DD5B1), // เขียวมินต์ทึบ (ต่อเนื่องจาก header)
+                                                    Color(0xB36DD5B1), // 70%
+                                                    Color(0x666DD5B1), // 40%
+                                                    Color(0x006DD5B1), // โปร่งใส 100%
+                                                  ],
+                                                  stops: [0.0, 0.3, 0.6, 1.0],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                     ),
                                   ),
                                   Container(
@@ -1337,92 +1365,97 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 ],
                               ),
                               // Foreground Layer - Actions (Consultation, Pharmacy) are NOT blocked by article loading
-                              Column(
-                                children: [
-                                  HomeHeaderSection(
-                                    sectionKey: _headerSectionKey,
-                                    isLoading: ServiceLocator.instance.currentUser != null && _healthScore == null,
-                                    headerText: ServiceLocator.instance.currentUser != null 
-                                      ? (_healthScore != null 
-                                          ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
-                                          : 'คะแนนสุขภาพ --%')
-                                      : 'ตรวจสุขภาพ',
-                                    alerts: _thaiMhungAlerts,
-                                    donationAlerts: _donationAlerts,
-                                    onAlertDismissed: (videoId) {
-                                      _recordDismissedAlert(videoId);
-                                      setState(() {
-                                        _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
-                                      });
-                                    },
-                                    onAlertTapped: (videoId) {
-                                      // 1. นำการ์ดออกทันที (Optimistic UI)
-                                      setState(() {
-                                        _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
-                                        _dismissedAlertIds.add(videoId);
-                                      });
-                                      // 2. บันทึก dismiss ลง DB (non-blocking)
-                                      _recordDismissedAlert(videoId);
-                                      // 3. นำทางไปหน้า Emergency Live Chat
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
-                                        ),
-                                      ).then((_) {
-                                        _loadDismissedAlerts().then((_) => _loadActiveAlerts());
-                                      });
-                                    },
-                                    onHealthTap: () async {
-                                      if (ServiceLocator.instance.currentUser != null) {
-                                        await Navigator.pushNamed(context, '/health');
-                                        _loadHealthScore();
-                                      } else {
-                                        await Navigator.pushNamed(
-                                          context, 
-                                          '/login',
-                                          arguments: '/health',
-                                        );
-                                        _loadHealthScore();
-                                      }
-                                    },
-                                     onProfileTap: () {
-                                       if (ServiceLocator.instance.currentUser != null) {
-                                         Navigator.pushNamed(context, '/profile');
-                                       } else {
-                                         Navigator.pushNamed(
-                                           context,
-                                           '/login',
-                                           arguments: '/profile',
-                                         );
-                                       }
-                                     },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ
-                                  // เมื่ออยู่มุม: แสดง Placeholder เพื่อรักษาขนาดแผนที่
-                                  if (_isConsultationMini) 
-                                    SizedBox(
-                                      key: _consultationKey,
-                                      height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
-                                      child: const SizedBox(height: 90), // Placeholder internal
-                                    )
-                                  else
-                                    GestureDetector(
-                                      onLongPressStart: _onConsultationLongPressStart,
-                                      onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
-                                      onLongPressEnd: _onConsultationLongPressEnd,
-                                      child: HomeConsultationWidget(
-                                        key: _consultationKey,
-                                      ),
+                              // Opacity(0.999) บังคับ saveLayer ซึ่งสร้าง compositing layer แยก
+                              // ทำให้ render เหนือ Google Maps platform view (UIKitView) บน iOS
+                              Opacity(
+                                opacity: 0.999,
+                                child: Column(
+                                  children: [
+                                    HomeHeaderSection(
+                                      sectionKey: _headerSectionKey,
+                                      isLoading: ServiceLocator.instance.currentUser != null && _healthScore == null,
+                                      headerText: ServiceLocator.instance.currentUser != null 
+                                        ? (_healthScore != null 
+                                            ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
+                                            : 'คะแนนสุขภาพ --%')
+                                        : 'ตรวจสุขภาพ',
+                                      alerts: _thaiMhungAlerts,
+                                      donationAlerts: _donationAlerts,
+                                      onAlertDismissed: (videoId) {
+                                        _recordDismissedAlert(videoId);
+                                        setState(() {
+                                          _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                        });
+                                      },
+                                      onAlertTapped: (videoId) {
+                                        // 1. นำการ์ดออกทันที (Optimistic UI)
+                                        setState(() {
+                                          _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                          _dismissedAlertIds.add(videoId);
+                                        });
+                                        // 2. บันทึก dismiss ลง DB (non-blocking)
+                                        _recordDismissedAlert(videoId);
+                                        // 3. นำทางไปหน้า Emergency Live Chat
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
+                                          ),
+                                        ).then((_) {
+                                          _loadDismissedAlerts().then((_) => _loadActiveAlerts());
+                                        });
+                                      },
+                                      onHealthTap: () async {
+                                        if (ServiceLocator.instance.currentUser != null) {
+                                          await Navigator.pushNamed(context, '/health');
+                                          _loadHealthScore();
+                                        } else {
+                                          await Navigator.pushNamed(
+                                            context, 
+                                            '/login',
+                                            arguments: '/health',
+                                          );
+                                          _loadHealthScore();
+                                        }
+                                      },
+                                       onProfileTap: () {
+                                         if (ServiceLocator.instance.currentUser != null) {
+                                           Navigator.pushNamed(context, '/profile');
+                                         } else {
+                                           Navigator.pushNamed(
+                                             context,
+                                             '/login',
+                                             arguments: '/profile',
+                                           );
+                                         }
+                                       },
                                     ),
-                                  const SizedBox(height: 24),
-                                  HomePharmacyCard(
-                                    key: _pharmacyKey,
-                                    onSearchTap: () => _showSnackBar(context, 'ค้นหาร้านยา'),
-                                  ),
-                                  const SizedBox(height: 24),
-                                ],
+                                    const SizedBox(height: 16),
+                                    // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ
+                                    // เมื่ออยู่มุม: แสดง Placeholder เพื่อรักษาขนาดแผนที่
+                                    if (_isConsultationMini) 
+                                      SizedBox(
+                                        key: _consultationKey,
+                                        height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
+                                        child: const SizedBox(height: 90), // Placeholder internal
+                                      )
+                                    else
+                                      GestureDetector(
+                                        onLongPressStart: _onConsultationLongPressStart,
+                                        onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
+                                        onLongPressEnd: _onConsultationLongPressEnd,
+                                        child: HomeConsultationWidget(
+                                          key: _consultationKey,
+                                        ),
+                                      ),
+                                    const SizedBox(height: 24),
+                                    HomePharmacyCard(
+                                      key: _pharmacyKey,
+                                      onSearchTap: () => _showSnackBar(context, 'ค้นหาร้านยา'),
+                                    ),
+                                    const SizedBox(height: 24),
+                                  ],
+                                ),
                               ),
                               // Floating Stacked Alerts - Layered above Pharmacy but below Consultation
                               if (_professionalAlerts.isNotEmpty)
@@ -1526,11 +1559,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   width: 22,
                   height: 22,
                   decoration: BoxDecoration(
-                    color: AppColors.textSecondary.withValues(alpha: 0.8),
+                    color: AppColors.textSecondary.withOpacity(0.8),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Colors.black.withOpacity(0.2),
                         blurRadius: 4,
                         offset: const Offset(0, 1),
                       ),
@@ -1615,7 +1648,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         boxShadow: _showTopBarBorderRadius
             ? [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
+                  color: Colors.black.withOpacity(0.15),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -1803,7 +1836,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
+                                color: Colors.white.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(color: Colors.white30),
                               ),
@@ -1818,7 +1851,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
+                              color: Colors.white.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.white30),
                             ),

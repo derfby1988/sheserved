@@ -71,7 +71,7 @@ class HomeHeaderSection extends StatelessWidget {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(3),
                                 child: LinearProgressIndicator(
-                                  backgroundColor: Colors.white.withValues(alpha: 0.3),
+                                  backgroundColor: Colors.white.withOpacity(0.3),
                                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                                 ),
                               ),
@@ -301,8 +301,8 @@ class HomeHeaderSection extends StatelessWidget {
 
   Widget _buildShimmerNotifications() {
     return Shimmer.fromColors(
-      baseColor: Colors.white.withValues(alpha: 0.2),
-      highlightColor: Colors.white.withValues(alpha: 0.4),
+      baseColor: Colors.white.withOpacity(0.2),
+      highlightColor: Colors.white.withOpacity(0.4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -414,7 +414,7 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.2), // วงกลมดำโปร่งแสงเป็นพื้นหลัง
+                  color: Colors.black.withOpacity(0.2), // วงกลมดำโปร่งแสงเป็นพื้นหลัง
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(

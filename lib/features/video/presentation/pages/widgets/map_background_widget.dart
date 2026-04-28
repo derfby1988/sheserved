@@ -149,7 +149,7 @@ class MapBackgroundWidget extends StatelessWidget {
                         LatLng(r['currentLat'], r['currentLng']),
                         routePoints.last, // ลากไปยังจุดล่าสุดของที่เกิดเหตุ
                       ],
-                      color: Colors.blue.withValues(alpha: 0.6),
+                      color: Colors.blue.withOpacity(0.6),
                       width: 4,
                       patterns: [PatternItem.dash(20), PatternItem.gap(10)], // ทำเป็นเส้นประเพื่อให้ดูแตกต่าง
                     );
@@ -163,7 +163,7 @@ class MapBackgroundWidget extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
               child: Container(
-                color: Colors.black.withValues(alpha: 0.15),
+                color: Colors.black.withOpacity(0.15),
               ),
             ),
           ),

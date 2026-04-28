@@ -315,8 +315,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                               shape: BoxShape.circle,
                               gradient: RadialGradient(
                                 colors: [
-                                  _themeColor.withValues(alpha: 0.1),
-                                  _themeColor.withValues(alpha: 0.05),
+                                  _themeColor.withOpacity(0.1),
+                                  _themeColor.withOpacity(0.05),
                                   Colors.transparent,
                                 ],
                               ),
@@ -428,10 +428,10 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                                         duration: const Duration(milliseconds: 200),
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                         decoration: BoxDecoration(
-                                          color: isPressed ? Colors.white.withValues(alpha: 0.9) : Colors.transparent,
+                                          color: isPressed ? Colors.white.withOpacity(0.9) : Colors.transparent,
                                           borderRadius: BorderRadius.circular(12),
                                           boxShadow: isPressed ? [
-                                            BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10, spreadRadius: 2)
+                                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
                                           ] : null,
                                         ),
                                         constraints: BoxConstraints(
@@ -613,7 +613,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                   fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                   letterSpacing: 1.0,
                   shadows: isSelected ? [
-                    Shadow(color: _themeColor.withValues(alpha: 0.3), blurRadius: 8),
+                    Shadow(color: _themeColor.withOpacity(0.3), blurRadius: 8),
                     const Shadow(color: Colors.white, blurRadius: 2),
                   ] : null,
                 ),
@@ -749,7 +749,7 @@ class _WheelPainter extends CustomPainter {
     // --- 1. GLASS RIM EFFECT ---
     // Outer shadow/thickness
     final rimPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.2)
+      ..color = Colors.white.withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
     canvas.drawCircle(center, outerRadius, rimPaint);
@@ -758,9 +758,9 @@ class _WheelPainter extends CustomPainter {
     final rimGlowPaint = Paint()
       ..shader = SweepGradient(
         colors: [
-          color.withValues(alpha: 0.3),
-          Colors.white.withValues(alpha: 0.1),
-          color.withValues(alpha: 0.3),
+          color.withOpacity(0.3),
+          Colors.white.withOpacity(0.1),
+          color.withOpacity(0.3),
         ],
       ).createShader(Rect.fromCircle(center: center, radius: outerRadius))
       ..style = PaintingStyle.stroke
@@ -771,8 +771,8 @@ class _WheelPainter extends CustomPainter {
     final bodyPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          Colors.white.withValues(alpha: 0.05),
-          color.withValues(alpha: 0.1),
+          Colors.white.withOpacity(0.05),
+          color.withOpacity(0.1),
         ],
       ).createShader(Rect.fromCircle(center: center, radius: outerRadius))
       ..style = PaintingStyle.fill;
@@ -780,7 +780,7 @@ class _WheelPainter extends CustomPainter {
 
     // --- 3. MECHANICAL SPOKES (10 FIXED CAKE SLICES) ---
     final spokePaint = Paint()
-      ..color = color.withValues(alpha: 0.15)
+      ..color = color.withOpacity(0.15)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 
@@ -801,17 +801,17 @@ class _WheelPainter extends CustomPainter {
       );
       
       canvas.drawLine(start, end, spokePaint);
-      canvas.drawCircle(end, 2.5, Paint()..color = color.withValues(alpha: 0.25));
+      canvas.drawCircle(end, 2.5, Paint()..color = color.withOpacity(0.25));
     }
 
     // --- 4. CENTER HUB (Glass Jewel Look) ---
     // Hub Base
-    canvas.drawCircle(center, 70, Paint()..color = Colors.white.withValues(alpha: 0.3));
+    canvas.drawCircle(center, 70, Paint()..color = Colors.white.withOpacity(0.3));
     
     // Hub Inner Shadow (Depth)
     final hubShadowPaint = Paint()
       ..shader = RadialGradient(
-        colors: [Colors.transparent, color.withValues(alpha: 0.2)],
+        colors: [Colors.transparent, color.withOpacity(0.2)],
         stops: [0.7, 1.0],
       ).createShader(Rect.fromCircle(center: center, radius: 70));
     canvas.drawCircle(center, 70, hubShadowPaint);
@@ -819,13 +819,13 @@ class _WheelPainter extends CustomPainter {
     // Ultimate Center Glow
     final glowPaint = Paint()
       ..shader = RadialGradient(
-        colors: [color.withValues(alpha: 0.4), Colors.transparent],
+        colors: [color.withOpacity(0.4), Colors.transparent],
       ).createShader(Rect.fromCircle(center: center, radius: 40));
     canvas.drawCircle(center, 40, glowPaint);
     
     // Specular highlight (Glass shine)
     final highlightPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.5)
+      ..color = Colors.white.withOpacity(0.5)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center.translate(-15, -15), 8, highlightPaint);
   }

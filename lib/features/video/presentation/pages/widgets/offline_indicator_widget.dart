@@ -7,7 +7,7 @@ class OfflineIndicatorWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: Colors.red.withValues(alpha: 0.8),
+      color: Colors.red.withOpacity(0.8),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: const Center(
         child: Row(

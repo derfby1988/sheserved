@@ -270,7 +270,7 @@ class _ChatRoomTileState extends State<_ChatRoomTile> {
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+            backgroundColor: AppColors.primary.withOpacity(0.1),
             backgroundImage: (_participants.isNotEmpty && _participants.first.profileImageUrl != null)
                 ? NetworkImage(_participants.first.profileImageUrl!)
                 : null,

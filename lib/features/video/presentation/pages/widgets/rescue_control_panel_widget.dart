@@ -19,7 +19,7 @@ class RescueControlPanelWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
@@ -32,9 +32,9 @@ class RescueControlPanelWidget extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.6), // Further transparency
+              color: Colors.white.withOpacity(0.6), // Further transparency
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+              border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -73,7 +73,7 @@ class RescueControlPanelWidget extends StatelessWidget {
                           maxLines: 1,
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade50.withValues(alpha: 0.6),
+                          backgroundColor: Colors.blue.shade50.withOpacity(0.6),
                           foregroundColor: Colors.blue,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -86,7 +86,7 @@ class RescueControlPanelWidget extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () => onUpdateStatus('arrived'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade50.withValues(alpha: 0.6),
+                          backgroundColor: Colors.orange.shade50.withOpacity(0.6),
                           foregroundColor: Colors.orange.shade900,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -109,7 +109,7 @@ class RescueControlPanelWidget extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: () => onUpdateStatus('resolved'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.withValues(alpha: 0.9),
+                        backgroundColor: Colors.green.withOpacity(0.9),
                         foregroundColor: Colors.white,
                         minimumSize: const Size(0, 42), // Width 0 but height 42
                         elevation: 0,
@@ -136,7 +136,7 @@ class RescueControlPanelWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.blue.shade100.withValues(alpha: 0.7),
+        color: Colors.blue.shade100.withOpacity(0.7),
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text(

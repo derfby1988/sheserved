@@ -133,7 +133,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.3), // Make barrier a bit lighter for glass effect
+      barrierColor: Colors.black.withOpacity(0.3), // Make barrier a bit lighter for glass effect
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
         child: Dialog(
@@ -151,21 +151,21 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
+                border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color(0xFFE2B0FF).withValues(alpha: 0.15),
-                    const Color(0xFF9F44D3).withValues(alpha: 0.15),
-                    const Color(0xFF00C6FF).withValues(alpha: 0.15),
-                    const Color(0xFF0072FF).withValues(alpha: 0.15),
+                    const Color(0xFFE2B0FF).withOpacity(0.15),
+                    const Color(0xFF9F44D3).withOpacity(0.15),
+                    const Color(0xFF00C6FF).withOpacity(0.15),
+                    const Color(0xFF0072FF).withOpacity(0.15),
                   ],
                   stops: [0.0, 0.3, 0.7, 1.0],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF9F44D3).withValues(alpha: 0.25),
+                    color: const Color(0xFF9F44D3).withOpacity(0.25),
                     blurRadius: 24,
                     spreadRadius: 2,
                   ),
@@ -176,7 +176,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(29), // Inner radius
-                  color: Colors.white.withValues(alpha: 0.92), // Glass body
+                  color: Colors.white.withOpacity(0.92), // Glass body
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 400, maxHeight: 650),
@@ -187,7 +187,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                 Container(
                   padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.04),
+                    color: AppColors.primary.withOpacity(0.04),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
                     border: Border(bottom: BorderSide(color: Colors.grey.shade100, width: 2)),
                   ),
@@ -196,7 +196,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
+                          color: AppColors.primary.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.verified_user_rounded, color: AppColors.primary, size: 28),
@@ -242,7 +242,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: Colors.grey.shade200),
                             boxShadow: [
-                              BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
                             ],
                           ),
                           padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
@@ -284,7 +284,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: Colors.grey.shade200),
                               boxShadow: [
-                                BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                                BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
                               ],
                             ),
                             padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
@@ -331,7 +331,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
                     color: Colors.white,
                     borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.03), offset: const Offset(0, -5), blurRadius: 10),
+                      BoxShadow(color: Colors.black.withOpacity(0.03), offset: const Offset(0, -5), blurRadius: 10),
                     ],
                   ),
                   child: Row(
@@ -395,10 +395,10 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.06),
+              color: AppColors.primary.withOpacity(0.06),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 16, color: AppColors.primary.withValues(alpha: 0.8)),
+            child: Icon(icon, size: 16, color: AppColors.primary.withOpacity(0.8)),
           ),
           const SizedBox(width: 12),
           Expanded(

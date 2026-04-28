@@ -1514,10 +1514,10 @@ class _ArticlesPageState extends State<ArticlesPage> {
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: _blue.withValues(alpha: 0.05),
+                            color: _blue.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: _blue.withValues(alpha: 0.2),
+                              color: _blue.withOpacity(0.2),
                             ),
                           ),
                           child: Wrap(
@@ -1534,7 +1534,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                                     backgroundColor: Colors.white,
                                     deleteIconColor: Colors.red,
                                     side: BorderSide(
-                                      color: _blue.withValues(alpha: 0.3),
+                                      color: _blue.withOpacity(0.3),
                                     ),
                                   ),
                                 )
@@ -1679,7 +1679,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                                           ),
                                       leading: CircleAvatar(
                                         backgroundColor: isSelected
-                                            ? _blue.withValues(alpha: 0.1)
+                                            ? _blue.withOpacity(0.1)
                                             : Colors.grey[100],
                                         child: Icon(
                                           Icons.medication,

@@ -262,8 +262,8 @@ class _RecommendedArticleSectionState extends State<RecommendedArticleSection> {
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
                                         colors: [
-                                          Colors.white.withValues(alpha: 0),
-                                          Colors.white.withValues(alpha: 0.85),
+                                          Colors.white.withOpacity(0),
+                                          Colors.white.withOpacity(0.85),
                                         ],
                                         stops: const [0.0, 0.35],
                                       ),

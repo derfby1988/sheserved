@@ -370,10 +370,10 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   final isSelected = selectedVolunteers.contains(prof.id);
                   return Card(
                     elevation: 0,
-                    color: isSelected ? Colors.blue.withValues(alpha: 0.05) : Colors.grey.shade50,
+                    color: isSelected ? Colors.blue.withOpacity(0.05) : Colors.grey.shade50,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: isSelected ? Colors.blue.withValues(alpha: 0.3) : Colors.transparent),
+                      side: BorderSide(color: isSelected ? Colors.blue.withOpacity(0.3) : Colors.transparent),
                     ),
                     child: CheckboxListTile(
                       title: Text(prof.name, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
@@ -1312,7 +1312,7 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.teal.withValues(alpha: 0.3),
+                                      color: Colors.teal.withOpacity(0.3),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1385,7 +1385,7 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(

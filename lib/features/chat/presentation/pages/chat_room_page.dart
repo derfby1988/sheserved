@@ -439,7 +439,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             offset: const Offset(0, -2),
             blurRadius: 10,
           ),
@@ -568,8 +568,8 @@ class _MessageBubble extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: isMe 
-                ? AppColors.primary.withValues(alpha: 0.25) 
-                : Colors.black.withValues(alpha: 0.05),
+                ? AppColors.primary.withOpacity(0.25) 
+                : Colors.black.withOpacity(0.05),
               offset: const Offset(0, 4),
               blurRadius: 10,
             ),
@@ -598,7 +598,7 @@ class _MessageBubble extends StatelessWidget {
                 Text(
                   '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                    color: (isMe ? Colors.white : Colors.black54).withValues(alpha: 0.6),
+                    color: (isMe ? Colors.white : Colors.black54).withOpacity(0.6),
                     fontSize: 10,
                   ),
                 ),
@@ -743,14 +743,14 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
                 value: _duration.inMilliseconds > 0 
                   ? _position.inMilliseconds / _duration.inMilliseconds 
                   : 0.0,
-                backgroundColor: color.withValues(alpha: 0.2),
+                backgroundColor: color.withOpacity(0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
             ),
             const SizedBox(height: 4),
             Text(
               _formatDuration(_isPlaying ? _position : _duration),
-              style: TextStyle(color: color.withValues(alpha: 0.7), fontSize: 10),
+              style: TextStyle(color: color.withOpacity(0.7), fontSize: 10),
             ),
           ],
         ),

@@ -248,10 +248,10 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFFBBBA9E), // warm olive-gray (top-left highlight)
-                      Color(0xFFA5A68E), // olive transition
-                      Color(0xFF8EA8BA), // cool blue-gray transition
-                      Color(0xFF7EA0BC), // cool blue-gray (bottom-right shadow)
+                      Color(0x80BBBA9E), // warm olive-gray (top-left highlight)
+                      Color(0x99A5A68E), // olive transition (60% opacity)
+                      Color(0x998EA8BA), // cool blue-gray transition (60% opacity)
+                      Color(0x807EA0BC), // cool blue-gray (bottom-right shadow)
                     ],
                     stops: [0.0, 0.35, 0.65, 1.0],
                   ),
@@ -469,7 +469,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Icon(
           Icons.medical_services,
           size: iconSize,
-          color: isOffline ? Colors.white38 : Colors.white,
+          color: isOffline ? const Color(0xFFBBBBBB) : Colors.white,
         ),
         
         SizedBox(height: 6 * (baseSize / 280)),
@@ -484,7 +484,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Text(
           'ปรึกษา',
           style: AppTextStyles.heading3.copyWith(
-            color: isOffline ? Colors.white54 : Colors.white,
+            color: isOffline ? const Color(0xFFCCCCCC) : Colors.white,
             fontWeight: FontWeight.bold,
             fontSize: 20 * (baseSize / 280),
           ),
@@ -501,7 +501,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           textAlign: TextAlign.center,
           text: TextSpan(
             style: AppTextStyles.bodyMedium.copyWith(
-              color: isOffline ? Colors.white38 : Colors.white70,
+              color: isOffline ? const Color(0xFFBBBBBB) : const Color(0xFFEEEEEE),
               fontSize: 12 * (baseSize / 280),
             ),
             children: [
@@ -509,7 +509,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               TextSpan(
                 text: '&',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: Colors.white54,
+                  color: const Color(0xFFDDDDDD),
                   fontSize: 12 * (baseSize / 280),
                 ),
               ),
@@ -550,7 +550,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
               width: 10,
               height: 10,
               decoration: BoxDecoration(
-                color: onlineCount > 0 ? AppColors.success : Colors.white38,
+                color: onlineCount > 0 ? AppColors.success : const Color(0xFFBBBBBB),
                 shape: BoxShape.circle,
                 boxShadow: onlineCount > 0 ? [
                   BoxShadow(
@@ -567,7 +567,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         _buildAnimatedCount(
           onlineCount,
           style: AppTextStyles.bodySmall.copyWith(
-            color: onlineCount > 0 ? AppColors.success : Colors.white54,
+            color: onlineCount > 0 ? AppColors.success : const Color(0xFFCCCCCC),
             fontWeight: onlineCount > 0 ? FontWeight.bold : FontWeight.normal,
             fontSize: 14 * (baseSize / 280),
           ),
@@ -575,7 +575,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         Text(
           ' ราย',
           style: AppTextStyles.bodySmall.copyWith(
-            color: onlineCount > 0 ? AppColors.success : Colors.white54,
+            color: onlineCount > 0 ? AppColors.success : const Color(0xFFCCCCCC),
             fontSize: 14 * (baseSize / 280),
           ),
         ),

@@ -63,15 +63,19 @@ class AppColors {
   static const Color shadow = Color(0x1A000000);
 
   // Gradient
-  static final LinearGradient primaryGradient = LinearGradient(
+  static const LinearGradient primaryGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      const Color(0xFF6DD5B1).withValues(alpha: 0.98), // เขียวมินต์ทึบ (บน)
-      const Color(0xFF6DD5B1).withValues(alpha: 0.50), // เริ่มจางกลางๆ
-      const Color(0xFF58C2F3).withValues(alpha: 0.0),  // โปร่งใส 100% (ล่าง)
+      Color(0xFA6DD5B1), // 98% — ทึบเกือบเต็ม (บน)
+      Color(0xE66DD5B1), // 90%
+      Color(0xB36DD5B1), // 70%
+      Color(0x806DD5B1), // 50% — กลาง
+      Color(0x4D6DD5B1), // 30%
+      Color(0x266DD5B1), // 15%
+      Color(0x006DD5B1), // 0% — โปร่งใส 100% (ล่าง)
     ],
-    stops: const [0.0, 0.45, 1.0],
+    stops: [0.0, 0.15, 0.30, 0.45, 0.60, 0.80, 1.0],
   );
 
   static const LinearGradient valleyGradient = LinearGradient(

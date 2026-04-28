@@ -174,11 +174,11 @@ class _VideoProcessingBadgeState extends State<VideoProcessingBadge>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.9),
+          color: Colors.orange.withOpacity(0.9),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.orange.withValues(alpha: 0.4),
+              color: Colors.orange.withOpacity(0.4),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),

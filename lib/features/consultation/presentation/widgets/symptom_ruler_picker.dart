@@ -127,7 +127,7 @@ class _SymptomRulerPickerState extends State<SymptomRulerPicker> {
                         fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                         color: isCurrent 
                           ? AppColors.primary 
-                          : Colors.grey.withValues(alpha: 0.5),
+                          : Colors.grey.withOpacity(0.5),
                         letterSpacing: 0,
                       ),
                       child: FittedBox(
@@ -149,7 +149,7 @@ class _SymptomRulerPickerState extends State<SymptomRulerPicker> {
               decoration: BoxDecoration(
                 border: Border.symmetric(
                   vertical: BorderSide(
-                    color: AppColors.primary.withValues(alpha: 0.15),
+                    color: AppColors.primary.withOpacity(0.15),
                     width: 1.2,
                   ),
                 ),

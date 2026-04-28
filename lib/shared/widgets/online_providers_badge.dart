@@ -184,9 +184,9 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
+        border: Border.all(color: color.withOpacity(0.25), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -225,7 +225,7 @@ class _OnlineProvidersBadgeState extends State<OnlineProvidersBadge>
                   height: 14,
                   child: LinearProgressIndicator(
                     color: color,
-                    backgroundColor: color.withValues(alpha: 0.15),
+                    backgroundColor: color.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 )
@@ -326,7 +326,7 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -341,8 +341,8 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  AppColors.primary.withValues(alpha: 0.12),
-                  AppColors.primaryLight.withValues(alpha: 0.06),
+                  AppColors.primary.withOpacity(0.12),
+                  AppColors.primaryLight.withOpacity(0.06),
                 ],
               ),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -352,7 +352,7 @@ class _AllGroupsOnlinePanelState extends State<AllGroupsOnlinePanel> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.15),
+                    color: AppColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.people_alt_rounded, color: AppColors.primary, size: 20),
@@ -480,8 +480,8 @@ class _TotalOnlineBadgeState extends State<_TotalOnlineBadge>
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: widget.count > 0
-              ? AppColors.success.withValues(alpha: 0.12)
-              : Colors.grey.withValues(alpha: 0.1),
+              ? AppColors.success.withOpacity(0.12)
+              : Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: widget.count > 0
@@ -556,7 +556,7 @@ class _ProfessionOnlineRow extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: professionColor.withValues(alpha: 0.12),
+              color: professionColor.withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
@@ -596,7 +596,7 @@ class _ProfessionOnlineRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.1),
+              color: statusColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(

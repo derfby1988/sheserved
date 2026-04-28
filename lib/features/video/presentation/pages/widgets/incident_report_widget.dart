@@ -144,7 +144,7 @@ class IncidentReportWidget extends StatelessWidget {
                             gradient: LinearGradient(
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
-                              colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+                              colors: [Colors.black.withOpacity(0.85), Colors.transparent],
                             ),
                             borderRadius: const BorderRadius.only(
                               bottomLeft: Radius.circular(14),
@@ -441,7 +441,7 @@ class IncidentReportWidget extends StatelessWidget {
                           boxShadow: [
                             BoxShadow(
                               color: (isRecording ? Colors.black : canRecord ? Colors.red : Colors.grey)
-                                  .withValues(alpha: 0.35),
+                                  .withOpacity(0.35),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),

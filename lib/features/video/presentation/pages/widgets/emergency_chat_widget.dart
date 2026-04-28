@@ -256,9 +256,9 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               Container(
                 padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
+                  color: Colors.black.withOpacity(0.45),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _isFilterActive ? Colors.lightBlueAccent.withValues(alpha: 0.5) : Colors.white24, width: 0.5),
+                  border: Border.all(color: _isFilterActive ? Colors.lightBlueAccent.withOpacity(0.5) : Colors.white24, width: 0.5),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -304,10 +304,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
+                  color: Colors.black.withOpacity(0.45),
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+                    BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8),
                   ],
                 ),
                 child: const Icon(Icons.close, color: Colors.white, size: 16),
@@ -345,12 +345,12 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: Colors.black.withOpacity(0.35),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
             _isFilterActive ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่' : 'ยังไม่มีการสนทนา',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
           ),
         ),
       );
@@ -418,7 +418,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.85),
+                          color: color.withOpacity(0.85),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -432,10 +432,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                           shortName,
                           style: TextStyle(
                             fontFamily: 'Sukhumvit Set',
-                            color: Colors.white.withValues(alpha: 0.9),
+                            color: Colors.white.withOpacity(0.9),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            shadows: [Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4)],
+                            shadows: [Shadow(color: Colors.black.withOpacity(0.8), blurRadius: 4)],
                           ),
                         ),
                       ],
@@ -445,10 +445,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                           shortName,
                           style: TextStyle(
                             fontFamily: 'Sukhumvit Set',
-                            color: Colors.white.withValues(alpha: 0.9),
+                            color: Colors.white.withOpacity(0.9),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            shadows: [Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4)],
+                            shadows: [Shadow(color: Colors.black.withOpacity(0.8), blurRadius: 4)],
                           ),
                         ),
                         const SizedBox(width: 4),
@@ -456,7 +456,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.85),
+                          color: color.withOpacity(0.85),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -475,8 +475,8 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
               decoration: BoxDecoration(
                 color: isMe
-                    ? color.withValues(alpha: 0.15)
-                    : Colors.black.withValues(alpha: 0.52),
+                    ? color.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.52),
                 borderRadius: BorderRadius.only(
                   topLeft: showLabel && !isMe ? Radius.zero : const Radius.circular(14),
                   topRight: showLabel && isMe ? Radius.zero : const Radius.circular(14),
@@ -484,10 +484,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                   bottomRight: const Radius.circular(14),
                 ),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2)),
+                  BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 2)),
                 ],
                 border: Border.all(
-                  color: isMe ? color.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.12),
+                  color: isMe ? color.withOpacity(0.4) : Colors.white.withOpacity(0.12),
                   width: 0.5,
                 ),
               ),
@@ -529,9 +529,9 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                 time,
                 style: TextStyle(
                   fontFamily: 'Sukhumvit Set',
-                  color: Colors.white.withValues(alpha: 0.55),
+                  color: Colors.white.withOpacity(0.55),
                   fontSize: 9,
-                  shadows: [Shadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 3)],
+                  shadows: [Shadow(color: Colors.black.withOpacity(0.7), blurRadius: 3)],
                 ),
               ),
             ),
@@ -549,9 +549,9 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       decoration: BoxDecoration(
         color: Colors.white, // เปลี่ยนพื้นหลังเป็นสีขาวเพื่อให้ตัวหนังสือสีดำเห็นชัด
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+        border: Border.all(color: Colors.white.withOpacity(0.8)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 3)),
+          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 3)),
         ],
       ),
       child: Row(
@@ -587,7 +587,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                 ),
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(color: const Color(0xFF007AFF).withValues(alpha: 0.4), blurRadius: 8),
+                  BoxShadow(color: const Color(0xFF007AFF).withOpacity(0.4), blurRadius: 8),
                 ],
               ),
               child: const Icon(Icons.send_rounded, color: Colors.white, size: 17),

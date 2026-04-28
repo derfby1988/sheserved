@@ -74,11 +74,11 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
         child: Container(
           padding: const EdgeInsets.only(top: 12, bottom: 32, left: 20, right: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
+            color: Colors.white.withOpacity(0.92),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
+                color: Colors.black.withOpacity(0.12),
                 blurRadius: 20,
                 offset: const Offset(0, -5),
               ),
@@ -198,7 +198,7 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFFF6B35).withValues(alpha: 0.35),
+                      color: const Color(0xFFFF6B35).withOpacity(0.35),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -464,7 +464,7 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFFFF6B35).withValues(alpha: 0.06)
+              ? const Color(0xFFFF6B35).withOpacity(0.06)
               : Colors.grey[50],
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
@@ -481,7 +481,7 @@ class _DonationSheetWidgetState extends State<DonationSheetWidget> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF6B35).withValues(alpha: 0.1),
+                    color: const Color(0xFFFF6B35).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(

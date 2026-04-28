@@ -493,7 +493,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -583,15 +583,15 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                     child: Container(
                       margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.4),
+                        color: Colors.white.withOpacity(0.4),
                         borderRadius: BorderRadius.circular(32),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                           width: 1.5,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.06),
+                            color: AppColors.primary.withOpacity(0.06),
                             blurRadius: 30,
                             spreadRadius: 2,
                           ),
@@ -626,7 +626,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 child: RepaintBoundary(
                   child: CustomPaint(
                     painter: _HumanSilhouettePainter(
-                      color: AppColors.primary.withValues(alpha: 0.12),
+                      color: AppColors.primary.withOpacity(0.12),
                       gender: _gender,
                     ),
                   ),
@@ -712,18 +712,18 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                                 gradient: LinearGradient(
                                   colors: isHovered
                                       ? [
-                                          AppColors.primary.withValues(alpha: 0.8),
-                                          AppColors.primaryLight.withValues(alpha: 0.9),
-                                          AppColors.primary.withValues(alpha: 0.8),
+                                          AppColors.primary.withOpacity(0.8),
+                                          AppColors.primaryLight.withOpacity(0.9),
+                                          AppColors.primary.withOpacity(0.8),
                                         ]
                                       : isConfirmed
                                           ? [
-                                              AppColors.primary.withValues(alpha: 0.4),
-                                              AppColors.primary.withValues(alpha: 0.4),
+                                              AppColors.primary.withOpacity(0.4),
+                                              AppColors.primary.withOpacity(0.4),
                                             ]
                                           : [
-                                              Colors.grey.withValues(alpha: 0.2),
-                                              Colors.grey.withValues(alpha: 0.1),
+                                              Colors.grey.withOpacity(0.2),
+                                              Colors.grey.withOpacity(0.1),
                                             ],
                                 ),
                               ),
@@ -749,7 +749,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   child: Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withOpacity(0.8),
                       shape: BoxShape.circle,
                     ),
                     child: const CircularProgressIndicator(strokeWidth: 2),
@@ -798,13 +798,13 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
         color: isHovered
             ? AppColors.primary
             : (isConfirmed || pointOnSide)
-                ? AppColors.primary.withValues(alpha: 0.5)
-                : Colors.grey.withValues(alpha: 0.3),
+                ? AppColors.primary.withOpacity(0.5)
+                : Colors.grey.withOpacity(0.3),
         shape: BoxShape.circle,
         boxShadow: isHovered
             ? [
                 BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.5),
+                  color: AppColors.primary.withOpacity(0.5),
                   blurRadius: 6,
                 )
               ]
@@ -833,15 +833,15 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), // Reduced vertical padding
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.65),
+                color: Colors.white.withOpacity(0.65),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: Colors.white.withOpacity(0.5),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: AppColors.primary.withOpacity(0.12),
                     blurRadius: 25,
                     spreadRadius: 2,
                     offset: const Offset(0, 8),
@@ -857,7 +857,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                     height: 3,
                     margin: const EdgeInsets.only(bottom: 5),
                     decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.2),
+                      color: Colors.grey.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -872,7 +872,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.3),
+                              color: AppColors.primary.withOpacity(0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -917,7 +917,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                             boxShadow: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
                               ? [
                                   BoxShadow(
-                                    color: AppColors.accent.withValues(alpha: 0.3),
+                                    color: AppColors.accent.withOpacity(0.3),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -974,7 +974,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               border: Border.all(
                 color: isSelected
                     ? AppColors.primary
-                    : Colors.grey.withValues(alpha: 0.2),
+                    : Colors.grey.withOpacity(0.2),
               ),
             ),
             child: Text(
@@ -1004,7 +1004,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -1087,9 +1087,9 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   child: Chip(
-                    backgroundColor: tagColor.withValues(alpha: 0.12),
+                    backgroundColor: tagColor.withOpacity(0.12),
                     side: BorderSide(
-                        color: tagColor.withValues(alpha: 0.4), width: 1),
+                        color: tagColor.withOpacity(0.4), width: 1),
                     avatar: Icon(point.region.icon,
                         color: tagColor, size: 18),
                     label: Text(
@@ -1101,7 +1101,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                       ),
                     ),
                     deleteIcon: const Icon(Icons.close, size: 12),
-                    deleteIconColor: tagColor.withValues(alpha: 0.7),
+                    deleteIconColor: tagColor.withOpacity(0.7),
                     onDeleted: () => _removePoint(point),
                     padding: EdgeInsets.zero,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1138,7 +1138,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                     boxShadow: _selectedPoints.isNotEmpty
                         ? [
                             BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.35),
+                              color: AppColors.primary.withOpacity(0.35),
                               blurRadius: 16,
                               offset: const Offset(0, 6),
                             ),
@@ -1195,7 +1195,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
-            color: Colors.white.withValues(alpha: 0.8),
+            color: Colors.white.withOpacity(0.8),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1210,7 +1210,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.2),
+                            color: AppColors.primary.withOpacity(0.2),
                             width: 2,
                           ),
                         ),
@@ -1221,7 +1221,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                         child: CircularProgressIndicator(
                           value: _scanProgress,
                           strokeWidth: 6,
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                          backgroundColor: AppColors.primary.withOpacity(0.1),
                           color: AppColors.primary,
                           strokeCap: StrokeCap.round,
                         ),
@@ -1295,7 +1295,7 @@ class _PulsingDot extends StatelessWidget {
             width: 16 * pulseAnim.value * 0.5,
             height: 16 * pulseAnim.value * 0.5,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.25),
+              color: color.withOpacity(0.25),
               shape: BoxShape.circle,
             ),
           ),
@@ -1307,7 +1307,7 @@ class _PulsingDot extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.5),
+                  color: color.withOpacity(0.5),
                   blurRadius: 6,
                   spreadRadius: 1,
                 ),
@@ -1360,7 +1360,7 @@ class _RipplePainter extends CustomPainter {
 
     // Small center dot
     final dotPaint = Paint()
-      ..color = const Color(0xFF71BE0A).withValues(alpha: 0.25)
+      ..color = const Color(0xFF71BE0A).withOpacity(0.25)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 3.5, dotPaint);
   }
@@ -1390,15 +1390,15 @@ class _HumanSilhouettePainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          color.withValues(alpha: 0.05),
-          color.withValues(alpha: 0.2),
-          color.withValues(alpha: 0.05),
+          color.withOpacity(0.05),
+          color.withOpacity(0.2),
+          color.withOpacity(0.05),
         ],
       ).createShader(rect)
       ..style = PaintingStyle.fill;
 
     final strokePaint = Paint()
-      ..color = color.withValues(alpha: 0.15)
+      ..color = color.withOpacity(0.15)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 

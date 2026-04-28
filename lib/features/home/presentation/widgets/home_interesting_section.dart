@@ -152,7 +152,7 @@ class _HomeInterestingSectionState extends State<HomeInterestingSection> {
               ),
               // เผื่อขวาไว้ 100px เพื่อไม่ให้ข้อความทับรูปวงกลมที่ลอยอยู่ 
               // และปรับลด top/bottom เพื่อไม่ให้ล้น
-              padding: const EdgeInsets.only(left: 20, top: 14, bottom: 14, right: 100),
+              padding: const EdgeInsets.only(left: 20, top: 10, bottom: 10, right: 100),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -170,7 +170,7 @@ class _HomeInterestingSectionState extends State<HomeInterestingSection> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   
                   Text(
                     article.category ?? '100 - 200 น.',
@@ -182,20 +182,20 @@ class _HomeInterestingSectionState extends State<HomeInterestingSection> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   
                   // Stars
                   Row(
-                    children: List.generate(5, (index) => Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: const Icon(
+                    children: List.generate(5, (index) => const Padding(
+                      padding: EdgeInsets.only(right: 2),
+                      child: Icon(
                         Icons.star,
                         color: Color(0xFFC0CA33),
                         size: 15,
                       ),
                     )),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   
                   // Add to Cart Button 
                   Container(
@@ -258,7 +258,7 @@ class _HomeInterestingSectionState extends State<HomeInterestingSection> {
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.8), // เพิ่มความโปร่งใส (80%)
+                  color: Colors.white.withOpacity(0.8), // เพิ่มความโปร่งใส (80%)
                   shape: BoxShape.circle,
                   boxShadow: const [
                     BoxShadow(

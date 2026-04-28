@@ -130,7 +130,7 @@ class ActionButtonsWidget extends StatelessWidget {
               width: 18,
               height: 22,
               decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withValues(alpha: 0.5),
+                color: const Color(0xFF6B7280).withOpacity(0.5),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(4),
                   bottomLeft: Radius.circular(4),
@@ -155,9 +155,9 @@ class ActionButtonsWidget extends StatelessWidget {
               width: 70,
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withValues(alpha: 0.8),
+                color: const Color(0xFF6B7280).withOpacity(0.8),
                 border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Center(
                 child: Text(
@@ -188,7 +188,7 @@ class ActionButtonsWidget extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
+                    color: Colors.black.withOpacity(0.2),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -217,7 +217,7 @@ class ActionButtonsWidget extends StatelessWidget {
               width: 18,
               height: 22,
               decoration: BoxDecoration(
-                color: const Color(0xFFFF6B35).withValues(alpha: 0.7),
+                color: const Color(0xFFFF6B35).withOpacity(0.7),
                 borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(4),
                   bottomRight: Radius.circular(4),
@@ -250,9 +250,9 @@ class ActionButtonsWidget extends StatelessWidget {
               width: 70,
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withValues(alpha: 0.8),
+                color: const Color(0xFF6B7280).withOpacity(0.8),
                 border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Center(
                 child: Text(
@@ -278,7 +278,7 @@ class ActionButtonsWidget extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
+                    color: Colors.black.withOpacity(0.2),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),

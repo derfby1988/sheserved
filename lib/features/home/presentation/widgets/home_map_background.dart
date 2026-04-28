@@ -453,7 +453,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
           IgnorePointer(
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.background.withValues(alpha: 0.05),
+                color: AppColors.background.withOpacity(0.05),
               ),
             ),
           ),
@@ -478,11 +478,11 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.red.shade700.withValues(alpha: 0.92),
+          color: Colors.red.shade700.withOpacity(0.92),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.red.withValues(alpha: 0.3),
+              color: Colors.red.withOpacity(0.3),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),
@@ -533,9 +533,9 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                   -1.0 + 2 * _shimmerController.value + 1, 0),
               colors: [
                 AppColors.background,
-                AppColors.background.withValues(alpha: 0.5),
+                AppColors.background.withOpacity(0.5),
                 AppColors.surface,
-                AppColors.background.withValues(alpha: 0.5),
+                AppColors.background.withOpacity(0.5),
                 AppColors.background,
               ],
               stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
@@ -546,14 +546,14 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
               CustomPaint(
                 size: Size.infinite,
                 painter: MapSkeletonPainter(
-                  color: AppColors.border.withValues(alpha: 0.3),
+                  color: AppColors.border.withOpacity(0.3),
                 ),
               ),
               Center(
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.surface.withValues(alpha: 0.9),
+                    color: AppColors.surface.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -597,7 +597,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
           end: Alignment.bottomCenter,
           colors: [
             AppColors.background,
-            AppColors.background.withValues(alpha: 0.8),
+            AppColors.background.withOpacity(0.8),
           ],
         ),
       ),
@@ -625,7 +625,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
               padding:
                   const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.surface.withValues(alpha: 0.9),
+                color: AppColors.surface.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(

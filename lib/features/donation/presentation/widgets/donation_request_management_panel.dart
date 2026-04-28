@@ -265,7 +265,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                     value: isTrending,
                     activeThumbColor: Colors.orange,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    tileColor: Colors.orange.withValues(alpha: 0.1),
+                    tileColor: Colors.orange.withOpacity(0.1),
                     onChanged: (val) => setModalState(() => isTrending = val),
                   ),
                   const SizedBox(height: 32),
@@ -384,7 +384,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _getStatusColor(req.approvalStatus).withValues(alpha: 0.1),
+                  color: _getStatusColor(req.approvalStatus).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -424,7 +424,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                 value: req.progress, 
                 minHeight: 6,
                 color: AppColors.primary,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                backgroundColor: AppColors.primary.withOpacity(0.1),
               ),
             ),
             
@@ -440,9 +440,9 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.withValues(alpha: 0.05),
+                  color: Colors.deepPurple.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.2)),
+                  border: Border.all(color: Colors.deepPurple.withOpacity(0.2)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

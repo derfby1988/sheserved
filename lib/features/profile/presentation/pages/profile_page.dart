@@ -483,7 +483,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Container(
                     width: 120, // radius 60
                     height: 120,
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     child: _isUploadingAvatar 
                       ? const Center(child: CircularProgressIndicator(color: AppColors.primary)) 
                       : _user?.profileImageUrl != null
@@ -541,7 +541,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF5A623).withValues(alpha: 0.1),
+                      color: const Color(0xFFF5A623).withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.edit, color: Color(0xFFF5A623), size: 18),
@@ -559,7 +559,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.1),
+                      color: Colors.red.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.close, color: Colors.red, size: 18),
@@ -775,7 +775,7 @@ class _ProfilePageState extends State<ProfilePage> {
             border: Border.all(color: Colors.grey[200]!),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: Colors.black.withOpacity(0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -844,7 +844,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
+                  color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -954,7 +954,7 @@ class _ProfilePageState extends State<ProfilePage> {
         border: Border.all(color: Colors.grey[200]!),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -968,7 +968,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
+                  color: Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: _isSavingUnblurred
@@ -1023,7 +1023,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       onSelected: (val) {
                         if (val) setState(() => _selectedCategory = cat.id);
                       },
-                      selectedColor: AppColors.primary.withValues(alpha: 0.1),
+                      selectedColor: AppColors.primary.withOpacity(0.1),
                       labelStyle: AppTextStyles.bodySmall.copyWith(
                         color: isSelected ? AppColors.primary : Colors.grey,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -1053,7 +1053,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 return FilterChip(
                   label: Text(p.name),
                   selected: isSelected,
-                  selectedColor: chipColor.withValues(alpha: 0.2),
+                  selectedColor: chipColor.withOpacity(0.2),
                   checkmarkColor: chipColor,
                   labelStyle: AppTextStyles.bodySmall.copyWith(
                     color: isSelected ? chipColor : Colors.grey[700],
