@@ -428,7 +428,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             aspectRatio: _videoPlayerController!.value.aspectRatio, 
             autoPlay: true, 
             looping: false, 
-            showControls: true, 
+            showControls: false, // ปิด Control เพื่อแก้ปัญหาปุ่มล้นจอในพื้นที่แคบ
             placeholder: Container(color: Colors.black), 
             errorBuilder: (context, errorMessage) => Center(child: Text(errorMessage, style: const TextStyle(color: Colors.white)) ),
           ); 

@@ -104,7 +104,7 @@ psql -h <IP_ADDRESS> -U sheserved -d sheserved
 - **Port:** 5432
 - **Database Name:** `sheserved`
 - **Database User:** `dave_macmini`
-- **IP Address:** 192.168.1.117 (เครื่องหลัก)
+- **IP Address:** 192.168.1.142 (เครื่องหลัก)
 
 ---
 

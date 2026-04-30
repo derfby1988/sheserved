@@ -152,7 +152,7 @@ class ActionButtonsWidget extends StatelessWidget {
                     bottomLeft: Radius.circular(4),
                   ),
             child: Container(
-              width: 70,
+              width: 50, // ลดจาก 70 เหลือ 50
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF6B7280).withOpacity(0.8),
@@ -164,7 +164,7 @@ class ActionButtonsWidget extends StatelessWidget {
                   _donationDisplayValue,
                   style: const TextStyle(
                     fontFamily: 'SukhumvitSet',
-                    fontSize: 14,
+                    fontSize: 12, // ลดจาก 14 เหลือ 12
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
@@ -200,7 +200,7 @@ class ActionButtonsWidget extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'SukhumvitSet',
-                  fontSize: 12,
+                  fontSize: 11, // ลดจาก 12 เหลือ 11
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),
@@ -247,7 +247,7 @@ class ActionButtonsWidget extends StatelessWidget {
               bottomLeft: Radius.circular(4),
             ),
             child: Container(
-              width: 70,
+              width: 50, // ลดจาก 70 เหลือ 50
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF6B7280).withOpacity(0.8),
@@ -259,7 +259,7 @@ class ActionButtonsWidget extends StatelessWidget {
                   value,
                   style: const TextStyle(
                     fontFamily: 'SukhumvitSet',
-                    fontSize: 14,
+                    fontSize: 12, // ลดจาก 14 เหลือ 12
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
@@ -269,7 +269,7 @@ class ActionButtonsWidget extends StatelessWidget {
           ),
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), // ลดจาก 16 เหลือ 8
               decoration: BoxDecoration(
                 color: const Color(0xFFFF6B35),
                 borderRadius: const BorderRadius.only(
@@ -290,7 +290,7 @@ class ActionButtonsWidget extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'SukhumvitSet',
-                  fontSize: 13,
+                  fontSize: 11, // ลดจาก 13 เหลือ 11
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),

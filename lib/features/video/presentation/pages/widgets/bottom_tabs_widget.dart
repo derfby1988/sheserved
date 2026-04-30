@@ -9,6 +9,7 @@ class BottomTabsWidget extends StatelessWidget {
   final VoidCallback onEmergencyTabSelected;
   final bool isChatVisible;
   final bool isEligibleResponder;
+  final bool isThaiMhungReporting;
 
   const BottomTabsWidget({
     super.key,
@@ -19,6 +20,7 @@ class BottomTabsWidget extends StatelessWidget {
     required this.onEmergencyTabSelected,
     this.isChatVisible = false,
     this.isEligibleResponder = false,
+    this.isThaiMhungReporting = false,
   });
 
   @override
@@ -95,10 +97,16 @@ class BottomTabsWidget extends StatelessWidget {
             if (isChatVisible)
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
-              child: GlassTabButton(
-                label: 'เกี่ยวดอง',
-                isActive: selectedTab == 1,
-                onTap: () => onTabSelected(1),
+              child: Visibility(
+                visible: !(selectedTab == 2 || isThaiMhungReporting),
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: GlassTabButton(
+                  label: 'เกี่ยวดอง',
+                  isActive: selectedTab == 1,
+                  onTap: () => onTabSelected(1),
+                ),
               ),
             )
           else
@@ -109,10 +117,16 @@ class BottomTabsWidget extends StatelessWidget {
                    maxHeight: maxButtonSize,
                    maxWidth: maxButtonSize,
                   ),
-                  child: GlassTabButton(
-                    label: 'เกี่ยวดอง',
-                    isActive: selectedTab == 1,
-                    onTap: () => onTabSelected(1),
+                  child: Visibility(
+                    visible: !(selectedTab == 2 || isThaiMhungReporting),
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: GlassTabButton(
+                      label: 'เกี่ยวดอง',
+                      isActive: selectedTab == 1,
+                      onTap: () => onTabSelected(1),
+                    ),
                   ),
                 ),
               ),
@@ -122,7 +136,8 @@ class BottomTabsWidget extends StatelessWidget {
           // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท)
           if (!isChatVisible && !isEligibleResponder)
             Expanded(
-            child: Center(
+            child: Align(
+              alignment: showThaiMhung ? Alignment.center : Alignment.centerRight,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxHeight: maxButtonSize,

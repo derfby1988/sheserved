@@ -386,10 +386,14 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
     );
   }
 
-  /// ─── ปุ่ม + ตรงกลาง: ดาร์กสี charcoal + ไอคอนเขียวอ่อน ─── ///
   Widget _buildAddButton(double s) {
+    final isSelected = widget.currentIndex == 2;
     final iconSize = (22 * s).roundToDouble();
     final pad = (9 * s).roundToDouble();
+
+    // ขยายและลอยตัวเหมือนปุ่มลูกแก้วปกติ
+    final scale = isSelected ? 1.35 : 1.0;
+    final yOffset = isSelected ? -0.4 : 0.0;
 
     return GestureDetector(
       onTap: () {
@@ -397,21 +401,40 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
         widget.onAddPressed();
       },
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: EdgeInsets.all(pad),
-        decoration: BoxDecoration(
-          color: AppColors.error.withOpacity(0.15),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: AppColors.error.withOpacity(0.5),
-            width: 1.0,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutBack,
+        offset: Offset(0, yOffset),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          scale: scale,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: EdgeInsets.all(pad),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.error.withOpacity(0.3) : AppColors.error.withOpacity(0.15),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? AppColors.error.withOpacity(0.8) : AppColors.error.withOpacity(0.5),
+                width: 1.0,
+              ),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.error.withOpacity(0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              Icons.emergency_rounded,
+              color: AppColors.error,
+              size: iconSize,
+            ),
           ),
-          boxShadow: null,
-        ),
-        child: Icon(
-          Icons.emergency_rounded,
-          color: AppColors.error,
-          size: iconSize,
         ),
       ),
     );

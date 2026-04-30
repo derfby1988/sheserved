@@ -31,6 +31,8 @@ class LiveViewWidget extends StatefulWidget {
   /// ✅ ผู้ใช้มีสิทธิ์สร้างคำร้องบริจาคไหม? (Reporter/Responder)
   final bool userCanCreateRequest;
   final void Function(ThaiMhungRulerPhoto photo)? onNewPhotoArrived;
+  final void Function(bool isOverlayVisible)? onOverlayChanged;
+  final GlobalKey? trendingPanelKey;
 
   const LiveViewWidget({
     super.key,
@@ -51,6 +53,8 @@ class LiveViewWidget extends StatefulWidget {
     required this.onSwitchVideo,
     this.userCanCreateRequest = false,
     this.onNewPhotoArrived,
+    this.onOverlayChanged,
+    this.trendingPanelKey,
   });
 
   @override
@@ -81,6 +85,22 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
   @override
   void didChangeMetrics() {
     _checkKeyboard();
+  }
+
+  @override
+  void didUpdateWidget(LiveViewWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentVideoId != widget.currentVideoId) {
+      if (_selectedOverlayPhotoUrl != null) {
+        setState(() {
+          _selectedOverlayPhotoUrl = null;
+          _selectedOverlayPhotoIndex = null;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          widget.onOverlayChanged?.call(false);
+        });
+      }
+    }
   }
 
   void _checkKeyboard() {
@@ -146,6 +166,8 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                               _selectedOverlayPhotoUrl = null;
                                               _selectedOverlayPhotoIndex = null;
                                             });
+                                            widget.onOverlayChanged?.call(false);
+                                            widget.chewieController?.videoPlayerController.play();
                                           } else {
                                             _galleryKey.currentState?.animateToIndex(currentIndex - 1);
                                           }
@@ -185,10 +207,14 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                                 top: 16,
                                                 right: 16,
                                                 child: GestureDetector(
-                                                  onTap: () => setState(() {
-                                                    _selectedOverlayPhotoUrl = null;
-                                                    _selectedOverlayPhotoIndex = null;
-                                                  }),
+                                                  onTap: () {
+                                                    setState(() {
+                                                      _selectedOverlayPhotoUrl = null;
+                                                      _selectedOverlayPhotoIndex = null;
+                                                    });
+                                                    widget.onOverlayChanged?.call(false);
+                                                    widget.chewieController?.videoPlayerController.play();
+                                                  },
                                                   child: Container(
                                                     decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                                                     padding: const EdgeInsets.all(6),
@@ -225,27 +251,30 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                       // Thai Mhung Gallery (Ruler Picker) วางด้านขวาของวิดีโอ
                       if (widget.currentVideoId != null) ...[
                         const SizedBox(width: 8),
-                        ThaiMhungRulerGalleryWidget(
-                          key: _galleryKey,
-                          videoId: widget.currentVideoId!,
-                          height: videoHeight, // ความสูงเท่ากับ Video Player พอดี
-                          canViewUnblurred: widget.canViewUnblurred,
-                          onPhotoTap: (index, photoUrl) {
-                            setState(() {
-                              _selectedOverlayPhotoUrl = photoUrl;
-                              _selectedOverlayPhotoIndex = index;
-                            });
-                          },
-                          onPhotoChanged: (index, photoUrl) {
-                            // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
-                            if (_selectedOverlayPhotoUrl != null) {
+                        Expanded(
+                          child: ThaiMhungRulerGalleryWidget(
+                            key: _galleryKey,
+                            videoId: widget.currentVideoId!,
+                            height: videoHeight, // ความสูงเท่ากับ Video Player พอดี
+                            canViewUnblurred: widget.canViewUnblurred,
+                            onPhotoTap: (index, photoUrl) {
                               setState(() {
                                 _selectedOverlayPhotoUrl = photoUrl;
                                 _selectedOverlayPhotoIndex = index;
                               });
-                            }
-                          },
-                          onNewPhotoArrived: widget.onNewPhotoArrived,
+                              widget.onOverlayChanged?.call(true);
+                            },
+                            onPhotoChanged: (index, photoUrl) {
+                              // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
+                              if (_selectedOverlayPhotoUrl != null) {
+                                setState(() {
+                                  _selectedOverlayPhotoUrl = photoUrl;
+                                  _selectedOverlayPhotoIndex = index;
+                                });
+                              }
+                            },
+                            onNewPhotoArrived: widget.onNewPhotoArrived,
+                          ),
                         ),
                         // สำรองพื้นที่ด้านขวา เพื่อไม่ให้ Trending Panel มาบัง Gallery
 
@@ -267,6 +296,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: TrendingPanelWidget(
+                      key: widget.trendingPanelKey,
                       trendingVideos: widget.trendingVideos,
                       isLoadingTrending: widget.isLoadingTrending,
                       currentVideoId: widget.currentVideoId,

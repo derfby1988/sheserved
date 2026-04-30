@@ -4,6 +4,8 @@ import 'bottom_tabs_widget.dart';
 import 'rescue_control_panel_widget.dart';
 import 'rescue_accept_panel_widget.dart';
 
+import '../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
+
 class EmergencyUiOverlay extends StatelessWidget {
   final bool isUiVisible;
   final bool isConnected;
@@ -66,8 +68,6 @@ class EmergencyUiOverlay extends StatelessWidget {
                 children: [
                   if (!isConnected) const OfflineIndicatorWidget(),
 
-                  // Removed top bar chat button from here
-
                   // Main Split Content based on Tab
                   Expanded(
                     child: GestureDetector(
@@ -100,8 +100,21 @@ class EmergencyUiOverlay extends StatelessWidget {
                     onEmergencyTabSelected: onEmergencyTabSelected,
                     isChatVisible: isChatVisible,
                     isEligibleResponder: isEligibleResponder,
+                    isThaiMhungReporting: isThaiMhungReporting,
                   ),
-                  const SizedBox(height: 12),
+                  if (!hasVideo && selectedTab == 0) ...[
+                    const SizedBox(height: 48),
+                    TlzBottomNavigationBar(
+                      currentIndex: 2,
+                      isVisible: true,
+                      onIndexChanged: (index) {
+                        Navigator.of(context).pop(index);
+                      },
+                      onAddPressed: onEmergencyTabSelected,
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                  ]
                 ],
               ),
             ),

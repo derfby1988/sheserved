@@ -23,6 +23,7 @@ import '../../models/video_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/live_view_widget.dart';
 import 'widgets/thai_mhung_ruler_gallery_widget.dart';
+import 'widgets/glassmorphism_video_controls.dart';
 import 'widgets/incident_report_widget.dart';
 import 'widgets/relationship_view_widget.dart';
 import 'widgets/donation_sheet_widget.dart';
@@ -56,6 +57,9 @@ class EmergencyLivePage extends StatefulWidget {
 
 class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProviderStateMixin {
   // === State Variables ===
+  final GlobalKey _trendingPanelKey = GlobalKey();
+  double _trendingPanelBottom = 0;
+  bool _isOverlayVisible = false;
   int _selectedTab = 0;
   int _viewerCount = 0;
   int _likeCount = 0;
@@ -203,6 +207,22 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
+    // วัดตำแหน่งด้านล่างของกล่องยอดนิยมหลัง Build เพื่อปรับขนาดแชท
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_trendingPanelKey.currentContext != null) {
+        final RenderBox? box = _trendingPanelKey.currentContext!.findRenderObject() as RenderBox?;
+        if (box != null) {
+          final position = box.localToGlobal(Offset.zero);
+          final bottom = position.dy + box.size.height;
+          if (_trendingPanelBottom != bottom) {
+            setState(() {
+              _trendingPanelBottom = bottom;
+            });
+          }
+        }
+      }
+    });
+
     return Scaffold(
       body: GestureDetector(
         onTap: () {
@@ -335,13 +355,25 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
              content: _buildMainContent(),
            ),
 
-          // Layer 3: Floating Back Button (Must be on top of layers 1 & 2)
+          // Layer 3: Top Bar (Back Button and Custom Video Controls)
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 16,
-            child: FloatingBackButton(
-              visible: _isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting,
-              onTap: () => Navigator.of(context).pop(),
+            right: 16,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                FloatingBackButton(
+                  visible: _isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                if (_isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting && _chewieController != null && !_isOverlayVisible) ...[
+                  const SizedBox(width: 12),
+                  GlassmorphismVideoControls(
+                    controller: _chewieController!.videoPlayerController,
+                  ),
+                ],
+              ],
             ),
           ),
           
@@ -351,10 +383,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               right: 16,
               // วางชิดด้านล่างขวาของจอ (ระดับเดียวกับปุ่ม Tab ที่เลื่อนไปซ้าย)
               bottom: MediaQuery.of(context).padding.bottom + 16,
-              width: MediaQuery.of(context).size.width * 0.55, // ขยายกล่องให้กว้างขึ้นหน่อยเมื่ออยู่ด้านล่าง
+              width: MediaQuery.of(context).size.width * 0.55, 
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.25,
+                  // คำนวณความสูงสูงสุด: จอทั้งหมด - (ตำแหน่งล่างของกล่องยอดนิยม) - ระยะแป้นพิมพ์ - ระยะห่างจากขอบล่าง - ระยะห่างจากกล่องยอดนิยม (12)
+                  maxHeight: _trendingPanelBottom > 0 
+                      ? (MediaQuery.of(context).size.height - _trendingPanelBottom - MediaQuery.of(context).viewInsets.bottom - (MediaQuery.of(context).padding.bottom + 16) - 12)
+                          .clamp(100, MediaQuery.of(context).size.height * 0.4) // ให้สูงได้สูงสุด 40% ของจอ
+                      : MediaQuery.of(context).size.height * 0.25, // Fallback
                 ),
                 child: EmergencyChatWidget(
                 key: ValueKey(_currentVideoId!), // ผูก key ให้สร้างใหม่เมื่อเปลี่ยนเหตุการณ์
@@ -514,6 +550,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         onDonate: _showDonationSheet,
         onSwitchVideo: _switchVideo,
         onNewPhotoArrived: _handleNewPhotoArrived,
+        onOverlayChanged: (visible) => setState(() => _isOverlayVisible = visible),
+        trendingPanelKey: _trendingPanelKey,
       );
       }
     } else if (_selectedTab == 1) {

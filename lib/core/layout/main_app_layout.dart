@@ -111,17 +111,27 @@ class _MainAppLayoutState extends State<MainAppLayout> {
               _currentIndex = index;
             });
           },
-          onAddPressed: () {
+          onAddPressed: () async {
             // ✅ ตรวจสอบ Login ก่อนเข้าหน้า Emergency (ตาม Login Navigation Workflow)
             if (ServiceLocator.instance.currentUser == null) {
-              Navigator.pushNamed(
+              final result = await Navigator.pushNamed(
                 context,
                 '/login',
                 arguments: '/emergency-live', // หลัง Login สำเร็จ ให้พาไปหน้า Emergency ทันที
               );
+              if (result is int && mounted) {
+                setState(() {
+                  _currentIndex = result;
+                });
+              }
               return;
             }
-            Navigator.pushNamed(context, '/emergency-live');
+            final result = await Navigator.pushNamed(context, '/emergency-live');
+            if (result is int && mounted) {
+              setState(() {
+                _currentIndex = result;
+              });
+            }
           },
         ),
       ),

@@ -76,7 +76,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
         decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.6),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1), // ลดจาก 3 เหลือ 1
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -99,13 +99,13 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
               'ยอดนิยม',
               style: TextStyle(
                 fontFamily: 'SukhumvitSet',
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Flexible( // ใช้ Flexible แทน Expanded เพื่อให้หดตามเนื้อหาได้หากมีน้อย
             child: widget.isLoadingTrending
                 ? _buildSkeletonList()
@@ -122,7 +122,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                     : ListView.builder(
                         controller: _scrollController,
                         shrinkWrap: true, // ยืดหดความสูงตามจำนวนการ์ด
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 4), // ลดจาก 8 เหลือ 4
                         itemCount: widget.trendingVideos.length,
                         itemBuilder: (context, index) {
                           final video = widget.trendingVideos[index];
@@ -254,8 +254,8 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                 duration: const Duration(milliseconds: 300),
                                 curve: Curves.easeOutCirc,
                                 padding: EdgeInsets.symmetric(
-                                  horizontal: 8, 
-                                  vertical: isSelected ? 16 : 10, // ยืดการ์ดที่ถูกเลือกให้สูงขึ้น
+                                  horizontal: 4, // ลดจาก 8 เหลือ 4
+                                  vertical: isSelected ? 12 : 8, // ลดความสูงลงเล็กน้อย
                                 ),
                                 child: FittedBox(
                                   alignment: Alignment.centerLeft,
@@ -270,7 +270,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                         style: const TextStyle(
                                           fontFamily: 'SukhumvitSet',
                                           color: Colors.white,
-                                          fontSize: 14,
+                                          fontSize: 11, // ลดจาก 14 เหลือ 11
                                           fontWeight: FontWeight.bold,
                                           shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                                         ),
@@ -282,7 +282,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                         style: const TextStyle(
                                           fontFamily: 'SukhumvitSet',
                                           color: Colors.white,
-                                          fontSize: 12,
+                                          fontSize: 9, // ลดจาก 12 เหลือ 9
                                           fontWeight: FontWeight.w500,
                                           shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
                                         ),

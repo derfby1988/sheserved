@@ -99,38 +99,12 @@ class _VideoSkeletonWidgetState extends State<VideoSkeletonWidget>
     );
   }
 
-  // Skeleton แบบ Full Player สำหรับหน้าหลัก
+  // Skeleton แบบ Full Player สำหรับหน้าหลัก (ใช้ใน VideoPlayerWidget)
   Widget _buildFullPlayerSkeleton() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Video player area
-        _buildShimmerBox(
-          width: double.infinity,
-          height: 200,
-          borderRadius: 16,
-        ),
-        const SizedBox(height: 12),
-        // Viewer count row
-        Row(
-          children: [
-            _buildShimmerBox(width: 20, height: 20, borderRadius: 10),
-            const SizedBox(width: 8),
-            _buildShimmerBox(width: 60, height: 14, borderRadius: 4),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // Action buttons row
-        Row(
-          children: [
-            _buildShimmerBox(width: 70, height: 36, borderRadius: 18),
-            const SizedBox(width: 8),
-            _buildShimmerBox(width: 70, height: 36, borderRadius: 18),
-            const SizedBox(width: 8),
-            _buildShimmerBox(width: 70, height: 36, borderRadius: 18),
-          ],
-        ),
-      ],
+    return _buildShimmerBox(
+      width: double.infinity,
+      height: double.infinity,
+      borderRadius: 40, // ให้ตรงกับ borderRadius ของ VideoPlayerWidget
     );
   }
 }

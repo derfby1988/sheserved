@@ -26,9 +26,18 @@ class VideoPlayerWidget extends StatelessWidget {
       aspectRatio = chewieController!.videoPlayerController.value.aspectRatio;
     }
 
-    return AspectRatio(
-      aspectRatio: aspectRatio,
-      child: ClipRRect(
+    return LayoutBuilder(
+      builder: (context, outerConstraints) {
+        // จำกัดความสูงของ video player ไม่ให้เกินพื้นที่แนวตั้งที่มีอยู่จริง
+        // เพื่อป้องกัน Bottom Overflow ในแนวนอน
+        final maxH = outerConstraints.maxHeight.isFinite 
+            ? outerConstraints.maxHeight 
+            : double.infinity;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: ClipRRect(
         borderRadius: BorderRadius.circular(40),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
@@ -57,24 +66,28 @@ class VideoPlayerWidget extends StatelessWidget {
 
                 if (currentVideoId == null) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.dashboard_customize_rounded,
-                            color: Colors.white70, size: iconSize),
-                        SizedBox(height: spacing),
-                        Text(
-                          'กรุณาเลือกเหตุการณ์จากแผงยอดนิยมด้านขวา\nเพื่อแสดงระบบศูนย์สั่งการและรับชมวิดีโอ',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            color: Colors.white,
-                            fontSize: titleFontSize,
-                            height: 1.4,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min, // แก้ปัญหาล้นแนวตั้งเมื่ออยู่ใน FittedBox
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.dashboard_customize_rounded,
+                              color: Colors.white70, size: iconSize),
+                          SizedBox(height: spacing * 0.5),
+                          Text(
+                            'กรุณาเลือกเหตุการณ์จากแผงยอดนิยมด้านขวา\nเพื่อแสดงระบบศูนย์สั่งการและรับชมวิดีโอ',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'SukhumvitSet',
+                              color: Colors.white,
+                              fontSize: titleFontSize,
+                              height: 1.2,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -89,59 +102,62 @@ class VideoPlayerWidget extends StatelessWidget {
                         : Stack(
                             children: [
                               const VideoSkeletonWidget(), 
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (currentVideo?.status == VideoStatus.error) ...[
-                                      Icon(Icons.error_outline,
-                                          color: Colors.red, size: iconSize),
-                                      SizedBox(height: spacing),
-                                      Text('เกิดข้อผิดพลาดในการโหลดวิดีโอ',
-                                          style: TextStyle(
-                                              fontFamily: 'SukhumvitSet',
-                                              color: Colors.white70,
-                                              fontSize: statusFontSize)),
-                                    ] else if ((currentVideo?.status ==
-                                                VideoStatus.processing ||
-                                            currentVideo?.status ==
-                                                VideoStatus.uploading) &&
-                                        currentVideo?.localFilePath == null) ...[
-                                      const Center(child: VideoProcessingBadge()), 
-                                      SizedBox(height: spacing * 1.5),
-                                      Text(
-                                        '(${currentVideo?.progress ?? 0}%)',
-                                        style: TextStyle(
-                                          fontFamily: 'SukhumvitSet',
-                                          color: Colors.white70,
-                                          fontSize: statusFontSize,
-                                        ),
-                                      ),
-                                    ] else ...[
-                                      Center(
-                                        child: Column(
-                                          children: [
-                                            SizedBox(
-                                              width: iconSize * 0.6,
-                                              height: iconSize * 0.6,
-                                              child: const CircularProgressIndicator(
-                                                  color: Colors.red, strokeWidth: 2),
-                                            ),
-                                            SizedBox(height: spacing * 1.5),
-                                            Text(
-                                              'กำลังเชื่อมต่อสัญญาณ...',
-                                              style: TextStyle(
+                              // ✅ ใช้ Center+LayoutBuilder เพื่อจำกัดความสูงและป้องกัน Bottom Overflow
+                              Positioned.fill(
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min, // สำคัญ: ใช้ความสูงแค่พอดีกับเนื้อหา
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        if (currentVideo?.status == VideoStatus.error) ...[
+                                          Icon(Icons.error_outline,
+                                              color: Colors.red, size: iconSize),
+                                          SizedBox(height: spacing),
+                                          Text(
+                                            'เกิดข้อผิดพลาดในการโหลดวิดีโอ',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
                                                 fontFamily: 'SukhumvitSet',
                                                 color: Colors.white70,
-                                                fontSize: statusFontSize,
-                                              ),
+                                                fontSize: statusFontSize),
+                                          ),
+                                        ] else if ((currentVideo?.status ==
+                                                    VideoStatus.processing ||
+                                                currentVideo?.status ==
+                                                    VideoStatus.uploading) &&
+                                            currentVideo?.localFilePath == null) ...[
+                                          const VideoProcessingBadge(),
+                                          SizedBox(height: spacing * 1.5),
+                                          Text(
+                                            '(${currentVideo?.progress ?? 0}%)',
+                                            style: TextStyle(
+                                              fontFamily: 'SukhumvitSet',
+                                              color: Colors.white70,
+                                              fontSize: statusFontSize,
                                             ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                          ),
+                                        ] else ...[
+                                          SizedBox(
+                                            width: iconSize * 0.6,
+                                            height: iconSize * 0.6,
+                                            child: const CircularProgressIndicator(
+                                                color: Colors.red, strokeWidth: 2),
+                                          ),
+                                          SizedBox(height: spacing * 1.5),
+                                          Text(
+                                            'กำลังเชื่อมต่อสัญญาณ...',
+                                            style: TextStyle(
+                                              fontFamily: 'SukhumvitSet',
+                                              color: Colors.white70,
+                                              fontSize: statusFontSize,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
@@ -166,15 +182,15 @@ class VideoPlayerWidget extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.face_retouching_off, color: Colors.white, size: 14),
-                                SizedBox(width: 6),
+                                Icon(Icons.face_retouching_off, color: Colors.white, size: 12), // ลดจาก 14 เหลือ 12
+                                SizedBox(width: 4),
                                 Text(
-                                  'สิทธิ์ภาพบุคคล (Face Blur)',
+                                  'สิทธิ์ส่วนบุคคล (Blur)', // สั้นลง
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: Colors.white70,
-                                    fontSize: 9, // Slightly smaller default
+                                    fontSize: 8, // ลดจาก 9 เหลือ 8
                                     fontFamily: 'SukhumvitSet',
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -191,7 +207,10 @@ class VideoPlayerWidget extends StatelessWidget {
             ),
           ),
         ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -126,30 +126,36 @@ class GlassTabButton extends StatelessWidget {
                 ),
               ),
               child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (leading != null) ...[
-                      leading!,
-                      const SizedBox(height: 4),
-                    ],
-                    Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontSize: 11, // เล็กลงนิดหน่อยเพื่อให้พอดีในจัตุรัส
-                        height: 1.2,
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive ? Colors.black87 : Colors.black54,
-                      ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4), // ลด padding ภายใน
+                  child: FittedBox( // ใช้ FittedBox เพื่อให้เนื้อหาทั้งหมดบีบตัวตามพื้นที่
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (leading != null) ...[
+                          leading!,
+                          const SizedBox(height: 4),
+                        ],
+                        Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 11,
+                            height: 1.1, // กระชับบรรทัดขึ้น
+                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                            color: isActive ? Colors.black87 : Colors.black54,
+                          ),
+                        ),
+                        if (trailing != null) ...[
+                          const SizedBox(height: 4),
+                          trailing!,
+                        ],
+                      ],
                     ),
-                    if (trailing != null) ...[
-                      const SizedBox(height: 4),
-                      trailing!,
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
