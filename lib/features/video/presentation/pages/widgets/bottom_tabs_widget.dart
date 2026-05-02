@@ -10,6 +10,7 @@ class BottomTabsWidget extends StatelessWidget {
   final bool isChatVisible;
   final bool isEligibleResponder;
   final bool isThaiMhungReporting;
+  final bool showEmergency;
 
   const BottomTabsWidget({
     super.key,
@@ -21,6 +22,7 @@ class BottomTabsWidget extends StatelessWidget {
     this.isChatVisible = false,
     this.isEligibleResponder = false,
     this.isThaiMhungReporting = false,
+    this.showEmergency = true,
   });
 
   @override
@@ -133,8 +135,8 @@ class BottomTabsWidget extends StatelessWidget {
               ),
             const SizedBox(width: 8),
           ],
-          // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท)
-          if (!isChatVisible && !isEligibleResponder)
+          // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท หรือเมื่อสั่งซ่อน)
+          if (!isChatVisible && !isEligibleResponder && showEmergency)
             Expanded(
             child: Align(
               alignment: showThaiMhung ? Alignment.center : Alignment.centerRight,

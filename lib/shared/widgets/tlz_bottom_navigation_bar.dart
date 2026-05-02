@@ -43,6 +43,7 @@ class TlzBottomNavigationBar extends StatefulWidget {
   final VoidCallback onAddPressed;
   final Set<int> notificationIndices;
   final bool isVisible;
+  final String? centerButtonHint;
 
   const TlzBottomNavigationBar({
     super.key,
@@ -51,6 +52,7 @@ class TlzBottomNavigationBar extends StatefulWidget {
     required this.onAddPressed,
     this.notificationIndices = const {},
     this.isVisible = true,
+    this.centerButtonHint,
   });
 
   @override
@@ -117,7 +119,40 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _buildGlassBubbleNav(1, Icons.volunteer_activism_rounded, s, hasNotification: widget.notificationIndices.contains(1)),
-                        _buildAddButton(s),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            _buildAddButton(s),
+                            if (widget.centerButtonHint != null)
+                              Positioned(
+                                top: -55 * s,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 10,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    widget.centerButtonHint!,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10 * s,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'SukhumvitSet',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                         _buildGlassBubbleNav(3, Icons.local_pharmacy_rounded, s),
                         _buildGlassBubbleNav(4, Icons.person_rounded, s),
                       ],

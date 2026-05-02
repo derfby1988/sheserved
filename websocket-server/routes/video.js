@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
 const socketService = require('../services/socket-service');
 const faceBlurService = require('../services/face-blur-service');
+const thumbnailService = require('../services/thumbnail-service');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -247,18 +248,91 @@ module.exports = (pool) => {
                 
                 // ✅ ใช้ full URL เพื่อให้ Client แสดงผลได้ทันที
                 photoUrls.push(`${localApiUrl}/temp/videos/${relativePath}`);
+                
+                // เก็บ local path เพื่อใช้ทำ Thumbnail
+                if (!req.localFilePaths) req.localFilePaths = [];
+                req.localFilePaths.push(finalFilePath);
             }
 
             // ✅ Set first photo as bunny_url for basic preview support
             const firstPhotoUrl = photoUrls.length > 0 ? photoUrls[0] : null;
 
+            // ✅ สร้าง Thumbnail (Animated WebP) โดยรวมภาพจากทุกๆ การอัปโหลดของไทยมุง
+            let thumbnailUrl = firstPhotoUrl;
+            let filesForThumbnail = [];
+
+            if (isThaiMhung && incidentId) {
+                // รวบรวมภาพล่าสุด 5 ภาพจากทุกเหตุการณ์ย่อยของไทยมุงใน incident นี้
+                const thaimhungBaseDir = path.join(baseDir, incidentId, 'thaimhung');
+                if (fs.existsSync(thaimhungBaseDir)) {
+                    let allPhotos = [];
+                    const videoDirs = fs.readdirSync(thaimhungBaseDir);
+                    for (const vDir of videoDirs) {
+                        const vDirPath = path.join(thaimhungBaseDir, vDir);
+                        if (fs.statSync(vDirPath).isDirectory()) {
+                            const photoFiles = fs.readdirSync(vDirPath).filter(f => !f.startsWith('thumb_') && (f.endsWith('.jpg') || f.endsWith('.png') || f.endsWith('.webp') || f.endsWith('.jpeg')));
+                            for (const pf of photoFiles) {
+                                const pfPath = path.join(vDirPath, pf);
+                                allPhotos.push({
+                                    path: pfPath,
+                                    mtime: fs.statSync(pfPath).mtime.getTime()
+                                });
+                            }
+                        }
+                    }
+                    // เรียงจากใหม่ไปเก่า และดึงมาสูงสุด 5 ภาพ
+                    allPhotos.sort((a, b) => b.mtime - a.mtime);
+                    filesForThumbnail = allPhotos.slice(0, 5).map(p => p.path);
+                }
+            } else if (req.localFilePaths) {
+                filesForThumbnail = req.localFilePaths;
+            }
+
+            if (filesForThumbnail.length > 0) {
+                // ถ้าเป็นไทยมุง เซฟไว้ที่โฟลเดอร์หลักของ Incident เลย จะได้ไม่ซ้ำซ้อน
+                const thumbFilename = `thumb_${isThaiMhung ? incidentId : videoId}.webp`;
+                const destDirForThumb = isThaiMhung ? path.join(baseDir, incidentId) : reportDir;
+                const thumbLocalPath = path.join(destDirForThumb, thumbFilename);
+                
+                if (!fs.existsSync(destDirForThumb)) {
+                    fs.mkdirSync(destDirForThumb, { recursive: true });
+                }
+
+                try {
+                    const thumbResult = await thumbnailService.generateThumbnail(filesForThumbnail, thumbLocalPath);
+                    if (thumbResult.success) {
+                        let thumbRelativePath;
+                        if (isThaiMhung && incidentId) {
+                            thumbRelativePath = `${incidentId}/${thumbFilename}`;
+                        } else {
+                            thumbRelativePath = `${videoId}/${thumbFilename}`;
+                        }
+                        thumbnailUrl = `${localApiUrl}/temp/videos/${thumbRelativePath}`;
+                    }
+                } catch (e) {
+                    console.error('[Thumbnail] Failed to generate thumbnail:', e);
+                }
+            }
+
             const result = await pool.query(
-                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'processing') RETURNING *`,
-                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl]
+                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, thumbnail_url, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, 'processing') RETURNING *`,
+                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl, thumbnailUrl]
             );
 
             const videoRecord = result.rows[0];
+
+            // ✅ อัปเดต Thumbnail ให้กับเหตุการณ์หลัก (Incident) โดยอัปเดตเสมอเพื่ออัปเดตภาพ Animated ล่าสุด
+            if (isThaiMhung && incidentId && thumbnailUrl) {
+                try {
+                    await pool.query(
+                        `UPDATE videos SET thumbnail_url = $1 WHERE id = $2`,
+                        [thumbnailUrl, incidentId]
+                    );
+                } catch (updateErr) {
+                    console.error('[Thumbnail] Failed to update main incident thumbnail:', updateErr);
+                }
+            }
 
             // 3. Handle GPS Tracks if provided
             if (gpsTracks) {

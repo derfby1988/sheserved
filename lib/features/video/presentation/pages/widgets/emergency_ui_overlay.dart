@@ -101,12 +101,14 @@ class EmergencyUiOverlay extends StatelessWidget {
                     isChatVisible: isChatVisible,
                     isEligibleResponder: isEligibleResponder,
                     isThaiMhungReporting: isThaiMhungReporting,
+                    showEmergency: hasVideo,
                   ),
                   if (!hasVideo && selectedTab == 0) ...[
                     const SizedBox(height: 48),
                     TlzBottomNavigationBar(
                       currentIndex: 2,
                       isVisible: true,
+                      centerButtonHint: 'กดอีกครั้งเพื่อแจ้งเหตุ',
                       onIndexChanged: (index) {
                         Navigator.of(context).pop(index);
                       },
