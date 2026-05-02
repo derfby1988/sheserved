@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/rendering.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -20,9 +21,11 @@ import '../../data/repositories/profile_repository.dart';
 import '../../../auth/data/models/user_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import '../../../donation/data/repositories/donation_repository.dart';
-import '../../../donation/presentation/pages/leader_verification_page.dart';
-import '../../../donation/presentation/widgets/donation_request_management_panel.dart';
-import '../../../donation/presentation/widgets/donation_approver_settings_widget.dart';
+import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
+import 'package:sheserved/shared/widgets/tlz_drawer.dart';
+import 'package:sheserved/features/donation/presentation/widgets/donation_approver_settings_widget.dart';
+import 'package:sheserved/features/donation/presentation/widgets/donation_request_management_panel.dart';
+import 'package:sheserved/features/donation/presentation/pages/leader_verification_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -47,12 +50,15 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
   bool _thaiMhungEnabled = true; // ความสมัครใจไทยมุง
   int _alertRadius = 500; // รัศมีการแจ้งเตือน (เมตร)
+  int _yieldWayRadius = 1000; // รัศมีการให้ทาง (เมตร)
   File? _tempProfileImage;
   bool _isUploadingAvatar = false;
   int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
+  bool _isNavBarVisible = true; // ควบคุมการแสดงผล Navigation Bar ตอนเลื่อนจอ
 
   // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
   bool _canApproveDonation = false;
+  bool _isYieldWayEnabled = false; // สิทธิการแจ้งเตือนให้ทาง (Yield Way)
 
   // ฟีเจอร์กำหนดอาชีพที่เห็นวิดีโอไม่เบลอ
   List<prof.Profession> _allVolunteerProfessions = [];
@@ -114,6 +120,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _dynamicData = data['dynamicData'];
           _thaiMhungEnabled = _user?.isThaiMhungEnabled ?? true;
           _alertRadius = _user?.alertRadius ?? 500;
+          _isYieldWayEnabled = _user?.isYieldWayEnabled ?? false;
+          _yieldWayRadius = _user?.yieldWayRadius ?? 1000;
           
           // โหลดค่า unblurred_profession_ids จาก dynamicData (user_registration_data) 
           // เพื่อความเข้ากันได้ 100% กับ Supabase Cloud โดยไม่ต้องแก้ Schema ตารางหลัก
@@ -219,7 +227,23 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      extendBody: true, // สำคัญมาก เพื่อให้ Navigation Bar ลอยทับเนื้อหาได้สวยงาม
       drawer: const TlzDrawer(),
+      bottomNavigationBar: TlzBottomNavigationBar(
+        isVisible: _isNavBarVisible,
+        currentIndex: 4,
+        onIndexChanged: (index) {
+          if (index == 4) return;
+          Navigator.pushReplacementNamed(
+            context, 
+            '/main-app', 
+            arguments: {'index': index},
+          );
+        },
+        onAddPressed: () {
+          Navigator.pushNamed(context, '/emergency-live');
+        },
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _user == null
@@ -244,7 +268,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 )
               : SafeArea(
                   top: false, 
-                  child: _buildContent(),
+                  bottom: false, // เพื่อให้เนื้อหามุดลงไปใต้ Nav Bar ได้
+                  child: NotificationListener<UserScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification.direction == ScrollDirection.reverse) {
+                        if (_isNavBarVisible) setState(() => _isNavBarVisible = false);
+                      } else if (notification.direction == ScrollDirection.forward) {
+                        if (!_isNavBarVisible) setState(() => _isNavBarVisible = true);
+                      }
+                      return false;
+                    },
+                    child: _buildContent(),
+                  ),
                 ),
     );
   }
@@ -290,7 +325,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = 0),
                         ),
                       ),
-                    if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false))
                       SizedBox(
                         width: MediaQuery.of(context).size.width / (_canApproveDonation ? 3 : 2),
                         child: _buildTabItem(
@@ -368,7 +402,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   highlightRequestId: _highlightRequestId,
                 ),
               ],
-              const SizedBox(height: 50),
+              // เว้นที่ว่างด้านล่างเพื่อให้เนื้อหาไม่ถูก Bottom Navigation Bar บัง
+              const SizedBox(height: 120),
             ]),
           ),
         ),
@@ -439,7 +474,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 50,
+        height: 49,
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -808,8 +843,55 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false)) ...[
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           _buildRadiusSection(),
+        ],
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'แจ้งเตือนช่วยเปิดทาง (Yield Way)',
+                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'รับแจ้งเตือนเมื่อมีรถฉุกเฉินกำลังวิ่งมาบนเส้นทางของคุณ',
+                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _isYieldWayEnabled,
+                onChanged: (value) => _updateYieldWayStatus(value),
+                activeThumbColor: const Color(0xFF007AFF),
+              ),
+            ],
+          ),
+        ),
+        if (_isYieldWayEnabled) ...[
+          const SizedBox(height: 16),
+          _buildYieldWayRadiusSection(),
+        ],
+        if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false) || _isYieldWayEnabled) ...[
           const SizedBox(height: 24),
           _buildUnblurredProfessionSection(),
         ],
@@ -880,6 +962,84 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Text('500 ม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
               Text('100 กม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Section แยกสำหรับตั้งรัศมีการให้ทาง
+  Widget _buildYieldWayRadiusSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF007AFF).withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF007AFF).withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.airport_shuttle, color: Color(0xFF007AFF), size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'รัศมีรับแจ้งเตือนให้ทาง',
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007AFF).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _yieldWayRadius >= 1000
+                    ? '${(_yieldWayRadius / 1000).toStringAsFixed(1)} กม.'
+                    : '$_yieldWayRadius ม.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: const Color(0xFF007AFF),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'รัศมีรอบจุดเกิดเหตุ ที่คุณยินดีช่วยเปิดทางให้รถฉุกเฉิน (หากอยู่บนเส้นทางของจิตอาสา)',
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Slider(
+            value: _yieldWayRadius.toDouble().clamp(500, 20000),
+            min: 500,
+            max: 20000,
+            divisions: 39,
+            onChanged: (value) => setState(() => _yieldWayRadius = value.round()),
+            onChangeEnd: (value) => _updateYieldWayRadius(value.round()),
+            activeColor: const Color(0xFF007AFF),
+            inactiveColor: Colors.grey[200],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('500 ม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+              Text('20 กม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
             ],
           ),
         ],
@@ -1207,6 +1367,38 @@ class _ProfilePageState extends State<ProfilePage> {
           SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _updateYieldWayStatus(bool enabled) async {
+    if (_user == null) return;
+    setState(() => _isYieldWayEnabled = enabled);
+    try {
+      await _repository.updateProfile(
+        userId: _user!.id,
+        coreData: {'is_yield_way_enabled': enabled},
+        dynamicData: {},
+        userType: _user!.userType,
+      );
+      AuthService.instance.login(_user!.copyWith(isYieldWayEnabled: enabled));
+    } catch (e) {
+      debugPrint('Error updating yield way status: $e');
+    }
+  }
+
+  Future<void> _updateYieldWayRadius(int radius) async {
+    if (_user == null) return;
+    setState(() => _yieldWayRadius = radius);
+    try {
+      await _repository.updateProfile(
+        userId: _user!.id,
+        coreData: {'yield_way_radius': radius},
+        dynamicData: {},
+        userType: _user!.userType,
+      );
+      AuthService.instance.login(_user!.copyWith(yieldWayRadius: radius));
+    } catch (e) {
+      debugPrint('Error updating yield way radius: $e');
     }
   }
 

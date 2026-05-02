@@ -294,6 +294,39 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (_currentVideoId == null || !mounted) return;
     final userId = AuthService.instance.currentUser?.id;
     if (userId == null) return;
+    
+    // ✅ เพิ่ม Dialog ยืนยันเข้าช่วยเหลือ (Confirmation Dialog) ตามแผน
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.directions_car, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('ยืนยันเข้าช่วยเหลือ', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text('คุณพร้อมที่จะเดินทางไปช่วยเหลือเหตุการณ์นี้ใช่หรือไม่?\n\nระบบจะเริ่มนำทางและแชร์ตำแหน่งของคุณไปยังผู้แจ้งเหตุทันที', style: TextStyle(fontFamily: 'SukhumvitSet')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false), 
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey, fontFamily: 'SukhumvitSet'))
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(context, true), 
+            child: const Text('ยืนยัน', style: TextStyle(color: Colors.white, fontFamily: 'SukhumvitSet'))
+          ),
+        ],
+      )
+    );
+
+    if (confirm != true || !mounted) return;
+
     // 🔍 Debug: ตรวจสอบเงื่อนไขก่อนรับงาน
     debugPrint('🔍 _acceptRescue: videoId=$_currentVideoId, userId=$userId');
     debugPrint('🔍 _acceptRescue: professionId=${AuthService.instance.currentUser?.professionId}');
@@ -640,6 +673,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       try {
         final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'like', createdAt: AppConfig.currentUtc);
         await ServiceLocator.instance.videoRepository.addInteraction(interaction);
+        // ✅ Emit via WebSocket for real-time update
+        WebSocketService().sendVideoInteraction(_currentVideoId!, userId, 'like');
       } catch (_) {}
     }
   }
@@ -656,10 +691,10 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (_currentVideoId == null) return;
     final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
     try {
-      final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'yield_way', createdAt: AppConfig.currentUtc);
+      final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'yield-way', createdAt: AppConfig.currentUtc);
       await ServiceLocator.instance.videoRepository.addInteraction(interaction);
-      final socket = WebSocketService().socket;
-      if (socket != null && socket.connected) socket.emit('yield-way-click', { 'videoId': _currentVideoId, 'userId': userId });
+      // ✅ Emit via WebSocket for real-time update
+      WebSocketService().sendVideoInteraction(_currentVideoId!, userId, 'yield-way');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ขอบคุณที่ช่วยเปิดทางให้รถฉุกเฉิน! 🚑💙'), backgroundColor: Colors.blue, behavior: SnackBarBehavior.floating));
     } catch (_) {}
   }

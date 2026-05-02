@@ -109,6 +109,10 @@ class UserModel {
   final bool isThaiMhungEnabled; // ความสมัครใจในการรับแจ้งเหตุไทยมุง
   final int alertRadius; // รัศมีการแจ้งเตือน (เมตร)
   final bool isVolunteer; // สิทธิจิตอาสา (ดึงมาจาก Profession)
+  /// รัศมีการรับแจ้งเตือนให้ทาง (เมตร) ค่าเริ่มต้น 1,000 ม.
+  final int yieldWayRadius;
+  /// ความสมัครใจในการรับแจ้งเตือนให้ทาง
+  final bool isYieldWayEnabled;
   /// รายการ Profession IDs ที่อนุญาตให้เห็นวิดีโอต้นฉบับ (ไม่ผ่านการเบลอ)
   /// เช่น ['uuid-หมอ', 'uuid-พยาบาล'] → ช่างภาพและสถาปนิกจะยังเห็นแบบเบลออยู่
   final List<String> unblurredProfessionIds;
@@ -144,6 +148,8 @@ class UserModel {
     this.isThaiMhungEnabled = true,
     this.alertRadius = 500,
     this.isVolunteer = false,
+    this.yieldWayRadius = 1000,
+    this.isYieldWayEnabled = false,
     this.unblurredProfessionIds = const [],
   });
 
@@ -173,6 +179,8 @@ class UserModel {
       'updated_at': updatedAt.toIso8601String(),
       'is_thai_mhung_enabled': isThaiMhungEnabled,
       'alert_radius': alertRadius,
+      'yield_way_radius': yieldWayRadius,
+      'is_yield_way_enabled': isYieldWayEnabled,
       'unblurred_profession_ids': unblurredProfessionIds,
       // is_volunteer can be stored in metadata or handled during fetch
     };
@@ -208,6 +216,8 @@ class UserModel {
       isThaiMhungEnabled: json['is_thai_mhung_enabled'] ?? true,
       alertRadius: json['alert_radius'] ?? 500,
       isVolunteer: json['is_volunteer'] ?? (json['professions']?['is_volunteer'] ?? false),
+      yieldWayRadius: json['yield_way_radius'] ?? 1000,
+      isYieldWayEnabled: json['is_yield_way_enabled'] ?? false,
       unblurredProfessionIds: json['unblurred_profession_ids'] != null
           ? List<String>.from(json['unblurred_profession_ids'])
           : [],
@@ -235,6 +245,8 @@ class UserModel {
     bool? isThaiMhungEnabled,
     int? alertRadius,
     bool? isVolunteer,
+    int? yieldWayRadius,
+    bool? isYieldWayEnabled,
     List<String>? unblurredProfessionIds,
   }) {
     return UserModel(
@@ -258,6 +270,8 @@ class UserModel {
       isThaiMhungEnabled: isThaiMhungEnabled ?? this.isThaiMhungEnabled,
       alertRadius: alertRadius ?? this.alertRadius,
       isVolunteer: isVolunteer ?? this.isVolunteer,
+      yieldWayRadius: yieldWayRadius ?? this.yieldWayRadius,
+      isYieldWayEnabled: isYieldWayEnabled ?? this.isYieldWayEnabled,
       unblurredProfessionIds: unblurredProfessionIds ?? this.unblurredProfessionIds,
     );
   }

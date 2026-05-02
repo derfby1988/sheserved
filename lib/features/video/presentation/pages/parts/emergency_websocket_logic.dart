@@ -22,6 +22,12 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
         if (mounted) {
           setState(() {
             if (data['type'] == 'like') _likeCount++;
+            if (data['type'] == 'yield-way-updated') {
+              _yieldWayCount = (data['count'] as num?)?.toInt() ?? 0;
+              if (data['triggerAnimation'] == true) {
+                _triggerYieldPulse();
+              }
+            }
             if (data['type'] == 'gift') {
               // ✅ อัปเดตยอดตาม requestId ถ้ามี (ไม่ใช้ตัวแปรเดียวอีกต่อไป)
               final reqId = data['requestId']?.toString();
@@ -122,6 +128,13 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
         }
       });
     });
+
+    _yieldWayAlertSub?.cancel();
+    _yieldWayAlertSub = ws.yieldWayAlertStream.listen((data) {
+      if (mounted) {
+        _showYieldWayDialog(data);
+      }
+    });
   }
 
   void _subscribeToVideoEvents(String videoId) {
@@ -139,5 +152,39 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
          }); 
        }
     });
+  }
+
+  void _showYieldWayDialog(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    // ✅ เงื่อนไขเพิ่มเติม: ถ้าเป็นคนแจ้งเหตุเอง (Reporter) ไม่ต้องเด้ง Dialog ให้ทางสำหรับงานของตัวเอง
+    final currentUserId = AuthService.instance.userId?.toString();
+    final reporterId = data['reporterId']?.toString() ?? data['victimId']?.toString();
+    
+    if (currentUserId != null && reporterId != null && currentUserId.trim() == reporterId.trim()) {
+      debugPrint('[Yield Way] Suppressing alert dialog because user is the reporter of this incident.');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => YieldWayMapDialog(
+        alertData: data,
+        onYield: () {
+          // Dialog handles the interaction emit, we just need to maybe show a snackbar
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ขอบคุณที่ช่วยเปิดทางให้รถฉุกเฉิน 🙏'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        },
+        onDecline: () {
+          // ปิดหน้า EmergencyLivePage และกลับหน้า Home
+          Navigator.of(context).pop();
+        },
+      ),
+    );
   }
 }

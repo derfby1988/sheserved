@@ -25,7 +25,9 @@ class LiveViewWidget extends StatefulWidget {
   final bool isLoadingTrending;
   final bool canViewUnblurred;
   final String? highlightVideoId;
+  final String yieldWayCount;
   final VoidCallback onLike;
+  final VoidCallback onYieldWay;
   final VoidCallback onDonate;
   final void Function(String) onSwitchVideo;
   /// ✅ ผู้ใช้มีสิทธิ์สร้างคำร้องบริจาคไหม? (Reporter/Responder)
@@ -48,7 +50,9 @@ class LiveViewWidget extends StatefulWidget {
     required this.isLoadingTrending,
     this.highlightVideoId,
     this.canViewUnblurred = false,
+    required this.yieldWayCount,
     required this.onLike,
+    required this.onYieldWay,
     required this.onDonate,
     required this.onSwitchVideo,
     this.userCanCreateRequest = false,
@@ -238,9 +242,10 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                 likeCountFormatted: widget.likeCountFormatted,
                                 activeRequests: widget.activeRequests,
                                 activeRequestIndex: widget.activeRequestIndex,
+                                yieldWayCount: widget.yieldWayCount,
                                 userCanCreateRequest: widget.userCanCreateRequest,
                                 onLike: widget.onLike,
-                                onYieldWay: () {},
+                                onYieldWay: widget.onYieldWay,
                                 onDonate: widget.onDonate,
                                 onSwitchRequest: widget.onSwitchRequest,
                               ),

@@ -88,6 +88,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   StreamSubscription? _emergencySub;
   final List<Map<String, dynamic>> _professionalAlerts = [];
   final List<Map<String, dynamic>> _thaiMhungAlerts = [];
+  final List<Map<String, dynamic>> _donationAlerts = [];
+  final List<Map<String, dynamic>> _yieldWayAlerts = []; // ✅ เก็บสถานะแจ้งเตือนให้ทาง
   Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่ (สำหรับ Professional เท่านั้น)
   List<DonationCategory> _emergencyCategories = []; // เก็บสิทธิอาสาสมัครจากตารางจริง
   final DonationRepository _donationRepo = DonationRepository(Supabase.instance.client);
@@ -95,8 +97,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   static const String _kDismissedAlertsKey = 'dismissed_emergency_alert_ids';
 
   // === Donation Status Notifications ===
-  StreamSubscription? _donationSub;
-  final List<Map<String, dynamic>> _donationAlerts = [];
+  StreamSubscription? _donationStatusSub;
+  StreamSubscription? _yieldWaySub;
+  bool _isInit = false;
 
   @override
   void initState() {
@@ -118,6 +121,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
+      // ดักเคสที่ Layout ของ Card บางตัว (เช่น Pharmacy) ยังวาดไม่เสร็จใน Frame แรก
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && (_headerSectionHeight <= 0 || _consultationHeight <= 0 || _pharmacyHeight <= 0)) {
+          _measureHeaderSectionHeight();
+        }
+      });
       // โหลดตำแหน่ง consultation หลังจาก build แรกเสร็จ (เพื่อให้วัดความสูงได้)
       _loadConsultationPosition();
     });
@@ -143,7 +152,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.dispose();
     _emergencySub?.cancel();
-    _donationSub?.cancel();
+    _donationStatusSub?.cancel();
+    _yieldWaySub?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -227,11 +238,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         _emergencyCategories = await _donationRepo.getEmergencyCategories();
       }
 
+      String categoryName = 'แจ้งเหตุ';
       if (categoryId != null) {
         final category = _emergencyCategories.any((c) => c.id == categoryId) 
             ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
             : null;
         if (category != null) {
+          categoryName = category.name;
           final userProfessionId = user.professionId;
           if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
             isProfessional = true;
@@ -310,6 +323,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
               : DateTime.now();
           
+          alert['distance'] = distance;
+          alert['isVolunteer'] = user.isVolunteer;
+          alert['categoryName'] = categoryName;
+          
           if (routeToProfessional) {
             if (!_professionalAlerts.any((a) => a['videoId'] == videoId)) {
               _professionalAlerts.insert(0, alert);
@@ -339,7 +356,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final currentUser = AuthService.instance.currentUser;
     if (currentUser == null) return;
 
-    _donationSub = WebSocketService().donationStatusStream.listen((data) {
+    _donationStatusSub?.cancel();
+    _donationStatusSub = WebSocketService().donationStatusStream.listen((data) {
       if (!mounted) return;
 
       // รับเฉพาะเมื่อ event นั้นเกี่ยวกับคำร้องของ user คนนี้
@@ -363,6 +381,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           if (mounted) {
             setState(() {
               _donationAlerts.removeWhere((a) => a['requestId'] == notification['requestId']);
+            });
+          }
+        });
+      });
+    });
+
+    // ✅ [Yield Way] Listen for route-based yield way alerts
+    _yieldWaySub?.cancel();
+    _yieldWaySub = WebSocketService().yieldWayAlertStream.listen((data) {
+      if (!mounted) return;
+      setState(() {
+        final videoId = data['videoId']?.toString() ?? '';
+        // ลบอันเก่าออก (ถ้ามี) แล้วเพิ่มอันใหม่ไปข้างหน้าสุด
+        _yieldWayAlerts.removeWhere((a) => a['videoId'] == videoId);
+        _yieldWayAlerts.insert(0, data);
+        
+        // เคลียร์ทิ้งหลังผ่านไป 20 วินาที
+        Future.delayed(const Duration(seconds: 20), () {
+          if (mounted) {
+            setState(() {
+              _yieldWayAlerts.removeWhere((a) => a['videoId'] == videoId);
             });
           }
         });
@@ -900,24 +939,33 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     try {
       final repo = ServiceLocator.get<UserRepository>();
       final profile = await repo.getConsumerProfile(currentUser.id);
-      if (mounted && profile != null) {
-        final score = profile.healthInfo?['health_score'];
-        setState(() {
-          if (score != null) {
-            if (score is num) {
-              _healthScore = score.toDouble();
-            } else if (score is String) {
-              _healthScore = double.tryParse(score) ?? 0;
+      if (mounted) {
+        if (profile != null) {
+          final score = profile.healthInfo?['health_score'];
+          setState(() {
+            if (score != null) {
+              if (score is num) {
+                _healthScore = score.toDouble();
+              } else if (score is String) {
+                _healthScore = double.tryParse(score) ?? 0;
+              } else {
+                _healthScore = 0;
+              }
             } else {
               _healthScore = 0;
             }
-          } else {
-            _healthScore = 0;
-          }
-        });
+          });
+        } else {
+          // หากไม่มีโปรไฟล์ ให้ตั้งค่าเป็น 0 เพื่อหยุดการโหลด
+          setState(() => _healthScore = 0);
+        }
       }
     } catch (e) {
       debugPrint('HomePage: Error loading health score: $e');
+      if (mounted) {
+        // หากเกิดข้อผิดพลาด ให้หยุดการโหลดโดยตั้งค่าเป็น 0
+        setState(() => _healthScore = 0);
+      }
     }
   }
 
@@ -1208,8 +1256,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _onScroll() {
     if (!mounted) return;
     
-    // วัดความสูงใหม่ถ้ายังไม่ได้ค่า
-    if (_headerSectionHeight <= 0) {
+    // วัดความสูงใหม่ถ้ายังไม่ได้ค่าครบถ้วน
+    if (_headerSectionHeight <= 0 || _consultationHeight <= 0 || _pharmacyHeight <= 0) {
       _measureHeaderSectionHeight();
       if (_headerSectionHeight <= 0) return;
     }
@@ -1381,6 +1429,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                         : 'ตรวจสุขภาพ',
                                       alerts: _thaiMhungAlerts,
                                       donationAlerts: _donationAlerts,
+                                      yieldWayAlerts: _yieldWayAlerts,
                                       onAlertDismissed: (videoId) {
                                         _recordDismissedAlert(videoId);
                                         setState(() {

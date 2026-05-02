@@ -21,6 +21,7 @@ class EmergencyMapSection extends StatelessWidget {
   final double? deviceHeading;
   final bool isThaiMhungReporting;
   final VoidCallback onBackTap;
+  final bool isYieldPulsing;
 
   const EmergencyMapSection({
     super.key,
@@ -38,6 +39,7 @@ class EmergencyMapSection extends StatelessWidget {
     required this.deviceHeading,
     required this.isThaiMhungReporting,
     required this.onBackTap,
+    this.isYieldPulsing = false,
   });
 
   @override
@@ -79,6 +81,28 @@ class EmergencyMapSection extends StatelessWidget {
             ),
           ),
 
+        // Layer 1.2: Yield Way Pulse Effect
+        IgnorePointer(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 500),
+            opacity: isYieldPulsing ? 1.0 : 0.0,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Colors.redAccent.withOpacity(0.6),
+                  width: 8,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withOpacity(0.3),
+                    blurRadius: 40,
+                    spreadRadius: 10,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
 
       ],
     );

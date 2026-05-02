@@ -22,6 +22,7 @@ class IncidentReportWidget extends StatelessWidget {
   final Function(bool) onModeChanged;
   final VoidCallback onLoadCategories;
   final VoidCallback onYieldWay; // Added Yield Way callback
+  final String yieldWayCount; // Added dynamic percentage
   final VoidCallback? onBackTap; // ✅ Added Back button callback
   final bool isThaiMhungMode;
   final int maxPhotos;
@@ -46,6 +47,7 @@ class IncidentReportWidget extends StatelessWidget {
     required this.onModeChanged,
     required this.onLoadCategories,
     required this.onYieldWay, // Required Yield Way callback
+    required this.yieldWayCount,
     this.onBackTap, // ✅ Back button
     this.isThaiMhungMode = false,
     this.maxPhotos = 3,
@@ -378,7 +380,88 @@ class IncidentReportWidget extends StatelessWidget {
             ],
             Opacity(
               opacity: canRecord ? 1.0 : 0.45,
-              child: isPhotoMode
+              child: isThaiMhungMode 
+                ? Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: GestureDetector(
+                              onTap: (canRecord && capturedPhotos.length < maxPhotos) ? onTakePhoto : null,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 18),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.red, width: 2),
+                                ),
+                                child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
+                              ),
+                            ),
+                          ),
+                          if (capturedPhotos.isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: GestureDetector(
+                                onTap: onSendPhotos,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'ส่งรูปภาพ',
+                                      style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      GestureDetector(
+                        onTap: onYieldWay,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF007AFF),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.airport_shuttle, color: Colors.white),
+                              const SizedBox(width: 12),
+                              Text(
+                                'ช่วยเปิดทางให้รถฉุกเฉิน ($yieldWayCount)',
+                                style: const TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : isPhotoMode
                   ? Row(
                       children: [
                         Expanded(
@@ -420,9 +503,7 @@ class IncidentReportWidget extends StatelessWidget {
                         ],
                       ],
                     )
-                  : isThaiMhungMode 
-                    ? const SizedBox.shrink() // No video button in Thai Mhung mode
-                    : GestureDetector(
+                  : GestureDetector(
                       onLongPressDown: canRecord ? (_) => onLongPressDownVideo() : null,
                       onLongPressEnd: (_) => onLongPressEndCancelVideo(),
                       onLongPressCancel: () => onLongPressEndCancelVideo(),

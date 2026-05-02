@@ -21,6 +21,7 @@ class ActionButtonsWidget extends StatelessWidget {
   /// false = ผู้ดูทั่วไป / ไทยมุง
   final bool userCanCreateRequest;
 
+  final String yieldWayCount;
   final VoidCallback onLike;
   final VoidCallback onYieldWay;
   final VoidCallback onDonate;
@@ -32,6 +33,7 @@ class ActionButtonsWidget extends StatelessWidget {
     super.key,
     required this.likeCountFormatted,
     required this.activeRequests,
+    required this.yieldWayCount,
     this.activeRequestIndex = 0,
     this.userCanCreateRequest = false,
     required this.onLike,
@@ -102,7 +104,7 @@ class ActionButtonsWidget extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         _buildInteractionButtonRow(
-          value: '20%',
+          value: yieldWayCount,
           label: 'ให้ทาง',
           onTap: onYieldWay,
         ),

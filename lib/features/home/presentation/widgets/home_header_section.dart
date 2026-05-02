@@ -15,8 +15,9 @@ class HomeHeaderSection extends StatelessWidget {
   final List<Map<String, dynamic>> alerts;
   final Function(String videoId)? onAlertDismissed;
   final Function(String videoId)? onAlertTapped;
-  /// รายการแจ้งเตือนสถานะคำร้องบริจาค (donation_update)
   final List<Map<String, dynamic>> donationAlerts;
+  /// ✅ [Yield Way] รายการแจ้งเตือนให้ทาง (route-based)
+  final List<Map<String, dynamic>> yieldWayAlerts;
 
   const HomeHeaderSection({
     super.key,
@@ -29,6 +30,7 @@ class HomeHeaderSection extends StatelessWidget {
     this.onAlertDismissed,
     this.onAlertTapped,
     this.donationAlerts = const [],
+    this.yieldWayAlerts = const [],
   });
 
   @override
@@ -161,6 +163,15 @@ class HomeHeaderSection extends StatelessWidget {
                     });
                   }
 
+                  // ✅ เพิ่ม Yield Way alerts
+                  for (var y in yieldWayAlerts) {
+                    combinedItems.add({
+                      'time': DateTime.now(), // แจ้งเตือนปัจจุบัน
+                      'type': 'yield_way',
+                      'data': y,
+                    });
+                  }
+
                   // เรียงลำดับ alert ล่าสุดขึ้นบนสุด (Newest First)
                   combinedItems.sort((a, b) =>
                       (b['time'] as DateTime).compareTo(a['time'] as DateTime));
@@ -204,6 +215,36 @@ class HomeHeaderSection extends StatelessWidget {
                                 ),
                               ),
                             ],
+                          ),
+                        );
+                      } else if (item['type'] == 'yield_way') {
+                        final y = item['data'] as Map<String, dynamic>;
+                        final categoryName = y['categoryName'] ?? 'เหตุฉุกเฉิน';
+                        final videoId = y['videoId']?.toString() ?? '';
+                        return GestureDetector(
+                          onTap: () => onAlertTapped?.call(videoId),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                const Icon(Icons.airport_shuttle, color: Color(0xFFFF3B30), size: 10),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    'รถฉุกเฉินกำลังมา: $categoryName',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: const Color(0xFFFF3B30),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.right,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       } else if (item['type'] == 'alert') {

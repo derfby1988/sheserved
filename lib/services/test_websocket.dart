@@ -14,7 +14,7 @@ class TestWebSocketWidget extends StatefulWidget {
 class _TestWebSocketWidgetState extends State<TestWebSocketWidget> {
   // สำหรับ web platform ใช้ 127.0.0.1 แทน localhost
   // สำหรับ mobile device ใช้ IP address ของคอมพิวเตอร์
-  final String _serverUrl = 'http://192.168.1.142:3000'; // Web: 127.0.0.1, Mobile: YOUR_COMPUTER_IP
+  final String _serverUrl = 'http://192.168.0.116:3000'; // Web: 127.0.0.1, Mobile: YOUR_COMPUTER_IP
   
   late final WebSocketService _webSocketService;
   late final LocationTrackingService _locationService;

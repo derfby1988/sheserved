@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
+import 'auth_service.dart';
 
 /// WebSocket Service for Real-time Communication
 /// Self-hosted WebSocket Server Connection
@@ -36,6 +37,8 @@ class WebSocketService {
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   final _donationStatusController = StreamController<Map<String, dynamic>>.broadcast();
   final _thaiMhungPhotoController = StreamController<Map<String, dynamic>>.broadcast();
+  // ✅ [Yield Way] Stream สำหรับรับการแจ้งเตือนให้ทาง
+  final _yieldWayAlertController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -64,6 +67,8 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get donationStatusStream => _donationStatusController.stream;
   /// ภาพไทยมุงใหม่เข้ามาแบบ Real-time ผ่าน WebSocket
   Stream<Map<String, dynamic>> get thaiMhungPhotoStream => _thaiMhungPhotoController.stream;
+  /// ✅ [Yield Way] การแจ้งเตือนให้ทางแบบ Real-time
+  Stream<Map<String, dynamic>> get yieldWayAlertStream => _yieldWayAlertController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -136,7 +141,17 @@ class WebSocketService {
         
         // Send user info after connection
         if (userId != null) {
-          _socket!.emit('user-connected', {'userId': userId});
+          final user = AuthService.instance.currentUser;
+          _socket!.emit('user-connected', {
+            'userId': userId,
+            // ✅ [Yield Way] ส่ง settings สำหรับ Server คัดกรองการให้ทาง
+            'isThaiMhungEnabled': user?.isThaiMhungEnabled ?? false,
+            'isYieldWayEnabled': user?.isYieldWayEnabled ?? false,
+            'yieldWayRadius': user?.yieldWayRadius ?? 1000,
+            // GPS ล่าสุด (ถ้ามี) — Server จะอัพเดตอีกครั้งเมื่อได้ location-update
+            'latitude': null,
+            'longitude': null,
+          });
         }
       });
       
@@ -224,6 +239,12 @@ class WebSocketService {
       _socket!.on('new-thaimhung-photo', (data) {
         debugPrint('WebSocket: new-thaimhung-photo received: $data');
         _thaiMhungPhotoController.add(Map<String, dynamic>.from(data));
+      });
+
+      // ✅ [Yield Way] รับการแจ้งเตือนให้ทางจาก Server (คัดกรองแล้วโดย route-based filter)
+      _socket!.on('yield-way-alert', (data) {
+        debugPrint('[Yield Way] Alert received: $data');
+        _yieldWayAlertController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -499,6 +520,41 @@ class WebSocketService {
       'userId': userId,
       'type': type,
       'value': value,
+    });
+  }
+
+  /// ✅ [Yield Way] ส่ง Route Polyline ของจิตอาสาเมื่อกดรับเหตุ
+  void sendVolunteerRoute({
+    required String videoId,
+    required String responseId,
+    required String encodedPolyline,
+    required double fromLat,
+    required double fromLng,
+    required double toLat,
+    required double toLng,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('volunteer-route', {
+      'videoId': videoId,
+      'responseId': responseId,
+      'encodedPolyline': encodedPolyline,
+      'fromLat': fromLat,
+      'fromLng': fromLng,
+      'toLat': toLat,
+      'toLng': toLng,
+    });
+    debugPrint('[Yield Way] Sent volunteer route for video $videoId');
+  }
+
+  /// ✅ [Yield Way] แจ้งเตือนผู้ใช้บนเส้นทางให้ทาง (เรียกจาก Admin/Server หรือ Flutter โดยตรง)
+  void requestYieldWayNotification({
+    required String videoId,
+    required String responseId,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('request-yield-way-notification', {
+      'videoId': videoId,
+      'responseId': responseId,
     });
   }
 

@@ -121,18 +121,125 @@ if (pool) {
 // Store connected users
 const connectedUsers = new Map();
 
+// ============================================================
+// ✅ [Yield Way] Helper: คัดกรองและส่งแจ้งเตือนให้ผู้ใช้บนเส้นทาง
+// ============================================================
+
+/**
+ * แปลง Google Maps encoded polyline → array ของ {lat, lng}
+ */
+function _decodePolyline(encoded) {
+  const result = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let b, shift = 0, result2 = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result2 & 1) ? ~(result2 >> 1) : (result2 >> 1);
+    shift = 0; result2 = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result2 & 1) ? ~(result2 >> 1) : (result2 >> 1);
+    result.push({ lat: lat * 1e-5, lng: lng * 1e-5 });
+  }
+  return result;
+}
+
+/**
+ * คำนวณระยะห่างระหว่าง 2 พิกัด (เมตร) — Haversine
+ */
+function _haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * ตรวจสอบว่าพิกัดผู้ใช้อยู่ใกล้เส้น polyline ภายใน tolerance (เมตร) หรือไม่
+ */
+function _isPointNearPolyline(userLat, userLng, polylinePoints, toleranceMeters = 80) {
+  for (const pt of polylinePoints) {
+    if (_haversineDistance(userLat, userLng, pt.lat, pt.lng) <= toleranceMeters) return true;
+  }
+  return false;
+}
+
+/**
+ * ส่งการแจ้งเตือน 'yield-way-alert' ให้กับผู้ใช้ที่:
+ * 1. เปิด isThaiMhungEnabled
+ * 2. อยู่ในรัศมี yieldWayRadius จากจุดเกิดเหตุ
+ * 3. ตำแหน่งปัจจุบันอยู่บนหรือใกล้เส้นทางของจิตอาสา
+ */
+async function _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, incidentLat, incidentLng) {
+  try {
+    const polylinePoints = _decodePolyline(encodedPolyline);
+    if (polylinePoints.length === 0) return;
+
+    // ดึงข้อมูล video เพื่อรู้ชื่อหมวดหมู่
+    let categoryName = 'เหตุฉุกเฉิน';
+    try {
+      const vRes = await pool.query(
+        `SELECT vc.name as category_name FROM videos v
+         LEFT JOIN video_categories vc ON v.category_id = vc.id
+         WHERE v.id = $1`, [videoId]
+      );
+      if (vRes.rows.length > 0) categoryName = vRes.rows[0].category_name || categoryName;
+    } catch (_) {}
+
+    // ตรวจสอบผู้ใช้ที่ connected อยู่ในห้อง
+    let notifiedCount = 0;
+    for (const [userId, userData] of connectedUsers) {
+      const { socketId, userLat, userLng, isYieldWayEnabled, yieldWayRadius, isVolunteer } = userData || {};
+      if (!socketId || !userLat || !userLng) continue;
+      if (!isYieldWayEnabled) continue; // ต้องเปิด is_yield_way_enabled
+
+      // เงื่อนไข Type B: อยู่ในรัศมีจากจุดเกิดเหตุ
+      const distToIncident = _haversineDistance(userLat, userLng, incidentLat, incidentLng);
+      const radius = yieldWayRadius || 1000;
+      if (distToIncident > radius) continue;
+
+      // เงื่อนไข: อยู่บน/ใกล้เส้นทาง polyline
+      if (!_isPointNearPolyline(userLat, userLng, polylinePoints)) continue;
+
+      // ส่งแจ้งเตือนให้ socket นั้น
+      io.to(socketId).emit('yield-way-alert', {
+        videoId,
+        categoryName,
+        incidentLat,
+        incidentLng,
+        userLat,
+        userLng,
+        encodedPolyline,
+        distanceMeters: Math.round(distToIncident),
+      });
+      notifiedCount++;
+    }
+    console.log(`[Yield Way] Notified ${notifiedCount} users on route for video ${videoId}`);
+  } catch (err) {
+    console.error('[Yield Way] _broadcastYieldWayAlerts error:', err.message);
+  }
+}
+
 // WebSocket Connection Handler
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // User connected event
   socket.on('user-connected', async (data) => {
-    const { userId } = data;
-    connectedUsers.set(socket.id, userId);
+    const { userId, isThaiMhungEnabled, isYieldWayEnabled, yieldWayRadius, latitude, longitude } = data;
+    // ✅ [Yield Way] เก็บข้อมูลครบถ้วนสำหรับการคัดกรองใน _broadcastYieldWayAlerts
+    connectedUsers.set(userId, {
+      socketId: socket.id,
+      userId,
+      isThaiMhungEnabled: isThaiMhungEnabled === true,
+      isYieldWayEnabled: isYieldWayEnabled === true,
+      yieldWayRadius: yieldWayRadius || 1000,
+      userLat: latitude || null,
+      userLng: longitude || null,
+    });
     socket.userId = userId;
 
-    console.log(`User ${userId} connected (socket: ${socket.id})`);
-
+    console.log(`User ${userId} connected (socket: ${socket.id}, thaiMhung: ${isThaiMhungEnabled}, yieldWay: ${isYieldWayEnabled})`);
 
     // Join user's personal room
     socket.join(`user-${userId}`);
@@ -145,6 +252,12 @@ io.on('connection', (socket) => {
   // Location update event
   socket.on('location-update', async (data) => {
     const { userId, latitude, longitude, timestamp, accuracy, speed, heading } = data;
+
+    // ✅ [Yield Way] อัพเดตตำแหน่งใน connectedUsers เพื่อใช้คัดกรองแบบ Real-time
+    if (userId && connectedUsers.has(userId)) {
+      const existing = connectedUsers.get(userId);
+      connectedUsers.set(userId, { ...existing, userLat: latitude, userLng: longitude });
+    }
 
     const locationData = {
       userId,
@@ -390,6 +503,40 @@ io.on('connection', (socket) => {
 
         // Broadcast interaction กลับไปยัง clients ในห้อง พร้อม requestId
         socketService.broadcastInteraction(videoId, { videoId, userId, type, value, requestId });
+
+        // ✅ [Yield Way Integration]: คำนวณเปอร์เซ็นต์การให้ทาง
+        if (type === 'yield-way') {
+          try {
+            // ✅ บันทึกลง yield_way_histories (ป้องกัน duplicate ด้วย ON CONFLICT)
+            await pool.query(
+              `INSERT INTO yield_way_histories (user_id, video_id)
+               VALUES ($1, $2)
+               ON CONFLICT DO NOTHING`,
+              [userId, videoId]
+            ).catch(() => {}); // ไม่ผิดพลาดถ้าตารางยังไม่มี
+
+            // นับจำนวนผู้ให้ทางทั้งหมด (Unique Users) แบบ Raw Count
+            const yieldRes = await pool.query(
+              `SELECT COUNT(DISTINCT user_id) as count FROM video_interactions 
+               WHERE video_id = $1 AND type = 'yield-way'`,
+              [videoId]
+            );
+            const yieldCount = parseInt(yieldRes.rows[0].count);
+
+            console.log(`[Yield Way] Video ${videoId}: ${yieldCount} users yielding`);
+
+            // Broadcast yield-way-updated event พร้อม raw count + animation trigger
+            io.to(`room-video-${videoId}`).emit('video-interaction', {
+              videoId,
+              type: 'yield-way-updated',
+              count: yieldCount,
+              triggerAnimation: true, // ✅ สัญญาณให้ Flutter เล่น animation บนแผนที่
+              triggeredByUserId: userId,
+            });
+          } catch (yieldErr) {
+            console.error('[Yield Way] Failed to save history:', yieldErr.message);
+          }
+        }
       } catch (err) {
         console.error('Failed to save interaction:', err.message);
       }
@@ -398,6 +545,50 @@ io.on('connection', (socket) => {
       socketService.broadcastInteraction(videoId, { videoId, userId, type, value, requestId });
     }
   });
+
+  // ✅ [Yield Way] รับ Route Polyline ของจิตอาสา — บันทึกลง DB เพื่อใช้คัดกรองผู้รับแจ้งเตือน
+  socket.on('volunteer-route', async (data) => {
+    const { videoId, responseId, encodedPolyline, fromLat, fromLng, toLat, toLng } = data;
+    console.log(`[Yield Way] Volunteer route received for video ${videoId}, response ${responseId}`);
+
+    if (pool && responseId && encodedPolyline) {
+      try {
+        await pool.query(
+          `UPDATE incident_responses 
+           SET route_polyline = $1, route_from_lat = $2, route_from_lng = $3,
+               route_to_lat = $4, route_to_lng = $5
+           WHERE id = $6`,
+          [encodedPolyline, fromLat, fromLng, toLat, toLng, responseId]
+        );
+        console.log(`[Yield Way] Route saved for response ${responseId}`);
+
+        // ทันทีหลังบันทึก route → ส่งการแจ้งเตือนให้ผู้ใช้ที่อยู่บนเส้นทาง
+        await _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, toLat, toLng);
+      } catch (err) {
+        console.error('[Yield Way] Failed to save route:', err.message);
+      }
+    }
+  });
+
+  // ✅ [Yield Way] Request Notification — เรียกซ้ำเมื่อต้องการส่งแจ้งเตือนใหม่
+  socket.on('request-yield-way-notification', async (data) => {
+    const { videoId, responseId } = data;
+    if (!pool || !videoId) return;
+    try {
+      const res = await pool.query(
+        `SELECT route_polyline, route_to_lat, route_to_lng 
+         FROM incident_responses WHERE id = $1`,
+        [responseId]
+      );
+      if (res.rows.length > 0 && res.rows[0].route_polyline) {
+        const { route_polyline, route_to_lat, route_to_lng } = res.rows[0];
+        await _broadcastYieldWayAlerts(io, pool, videoId, route_polyline, route_to_lat, route_to_lng);
+      }
+    } catch (err) {
+      console.error('[Yield Way] request-yield-way-notification error:', err.message);
+    }
+  });
+
 
   // Handle Emergency Alerts (Level 3 Best Fix: Supabase Cloud Query)
   // -------------------------------------------------------------------

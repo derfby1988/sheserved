@@ -39,6 +39,7 @@ class _RescuePageState extends State<RescuePage> {
   
   String _distanceString = '';
   String _durationString = '';
+  String? _encodedPolyline; // ✅ [Yield Way] เก็บ encoded polyline เพื่อส่งขึ้น Server
   LatLng? _volunteerLoc;
   LatLng? _emergencyLoc;
 
@@ -207,6 +208,19 @@ class _RescuePageState extends State<RescuePage> {
       _emergencyLoc ??= const LatLng(13.7300, 100.5600); // Last resort fallback
       
       await _drawRouteToEmergency(_volunteerLoc!, _emergencyLoc!);
+
+      // ✅ [Yield Way] ส่ง encoded polyline ขึ้น Server เพื่อคัดกรองผู้ใช้ที่อยู่บนเส้นทาง
+      if (_encodedPolyline != null && _activeResponseId != null) {
+        WebSocketService().sendVolunteerRoute(
+          videoId: alert['videoId'],
+          responseId: _activeResponseId!,
+          encodedPolyline: _encodedPolyline!,
+          fromLat: _volunteerLoc!.latitude,
+          fromLng: _volunteerLoc!.longitude,
+          toLat: _emergencyLoc!.latitude,
+          toLng: _emergencyLoc!.longitude,
+        );
+      }
     } catch (e) {
       debugPrint('Error accept rescue: $e');
       if (!mounted) return;
@@ -385,6 +399,9 @@ class _RescuePageState extends State<RescuePage> {
             _distanceString = leg['distance']['text'];
             _durationString = leg['duration']['text'];
           });
+
+          // ✅ [Yield Way] บันทึก encoded polyline ไว้สำหรับส่ง Server
+          _encodedPolyline = route['overview_polyline']['points'];
 
           List<PointLatLng> result = PolylinePoints.decodePolyline(route['overview_polyline']['points']);
           

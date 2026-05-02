@@ -4,6 +4,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import '../../../../services/location_tracking_service.dart';
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_text_styles.dart';
+import 'widgets/yield_way_map_dialog.dart';
 import '../../../../config/sync_config.dart';
 import '../../../../config/app_config.dart';
 import '../../../../services/websocket_service.dart';
@@ -63,6 +66,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   int _selectedTab = 0;
   int _viewerCount = 0;
   int _likeCount = 0;
+  int _yieldWayCount = 0;
+  bool _isYieldPulsing = false; // ✅ สำหรับแสดง pulse effect บนแผนที่
   // ✅ รองรับหลายคำร้องต่อวิดีโอเดียว: Map<requestId, currentAmount>
   Map<String, double> _requestTotals = {};
   // เก็บรายการคำร้องที่ดึงมาสำหรับแสดงใน ActionButtonsWidget
@@ -93,6 +98,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   StreamSubscription? _emergencySub;
   StreamSubscription? _compassSub;
   StreamSubscription? _viewerCountSub;
+  StreamSubscription? _yieldWayAlertSub;
   
   double? _deviceHeading;
   VideoPlayerController? _videoPlayerController;
@@ -176,6 +182,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     });
   }
 
+  // ✅ [Yield Way] แสดง pulse animation เมื่อมีคนกดให้ทาง
+  void _triggerYieldPulse() {
+    if (!mounted) return;
+    setState(() => _isYieldPulsing = true);
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _isYieldPulsing = false);
+    });
+  }
+
   @override
   void dispose() {
     if (_currentVideoId != null) {
@@ -197,6 +212,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _emergencySub?.cancel();
     _compassSub?.cancel();
     _viewerCountSub?.cancel();
+    _yieldWayAlertSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();
@@ -261,7 +277,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             currentResponseId: _currentResponseId,
             deviceHeading: _deviceHeading,
             isThaiMhungReporting: _isThaiMhungReporting,
-            onBackTap: () => Navigator.of(context).pop(),
+            onBackTap: () {
+              setState(() {
+                _isThaiMhungReporting = false;
+                _selectedTab = 0;
+              });
+            },
+            isYieldPulsing: _isYieldPulsing, // ✅ ส่งสถานะ pulse ให้ Map
           ),
 
           // Floating New Photo Effect
@@ -518,6 +540,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
           onLoadCategories: _loadEmergencyCategories,
           onYieldWay: _yieldWay,
+          yieldWayCount: '$_yieldWayCount คน',
           onBackTap: () => setState(() {
             _selectedTab = 0;
             _isThaiMhungReporting = false;
@@ -546,7 +569,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         isLoadingTrending: _isLoadingTrending,
         highlightVideoId: _highlightVideoId,
         canViewUnblurred: _canViewUnblurred,
+        yieldWayCount: '$_yieldWayCount คน',
         onLike: _onLike,
+        onYieldWay: _yieldWay,
         onDonate: _showDonationSheet,
         onSwitchVideo: _switchVideo,
         onNewPhotoArrived: _handleNewPhotoArrived,
@@ -592,7 +617,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           }),
           onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
           onLoadCategories: _loadEmergencyCategories,
-          onYieldWay: () {},
+          onYieldWay: _yieldWay,
+          yieldWayCount: '$_yieldWayCount คน',
           onBackTap: () => setState(() {
             _selectedTab = 0;
             _isThaiMhungReporting = false;
