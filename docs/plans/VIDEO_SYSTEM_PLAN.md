@@ -140,11 +140,12 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
 - **bullmq** - สำหรับจัดการ **Priority Queue**
 - **socket.io** - สำหรับ Progress และ Real-time Interactions
 
-### Massive Scale Architecture (Trending Panel — Updated 2026-05-07)
-เพื่อให้หน้ารายงานเหตุฉุกเฉิน (Trending Panel) รองรับข้อมูลระดับหลักหมื่นถึงหลักแสนการ์ดได้อย่างลื่นไหล ระบบถูกออกแบบด้วยเทคนิคดังต่อไปนี้:
+### Massive Scale Architecture (Trending Panel & Gallery — Updated 2026-05-07)
+เพื่อให้หน้ารายงานเหตุฉุกเฉิน (Trending Panel) และแกลลอรี่ภาพไทยมุง (Thai Mhung Gallery) รองรับข้อมูลระดับหลักหมื่นถึงหลักแสนภาพ/การ์ดได้อย่างลื่นไหล ระบบถูกออกแบบด้วยเทคนิคดังต่อไปนี้:
 1. **DB Cached Counters (Backend)**: ยกเลิกการใช้ `LEFT JOIN COUNT(*)` กับตาราง `video_interactions` ใน Query การดึงลิสต์เหตุการณ์ เพราะเมื่อตารางนี้ใหญ่ขึ้นจะทำให้ Query ช้ามาก เปลี่ยนมาเพิ่มคอลัมน์ `cached_view_count` และ `cached_like_count` ในตาราง `videos` โดยตรง และใช้ **Database Trigger** (`trg_update_interaction_counts`) เพื่ออัปเดต Counter เหล่านี้อัตโนมัติทุกครั้งที่มีการกด Like หรือ View ทำให้ Query ดึงข้อมูลหลักล้านได้ในเวลาไม่ถึงมิลลิวินาที
 2. **Infinite Scroll Pagination (Backend & Frontend)**: API `/emergency/list` ถูกปรับแก้ให้รับพารามิเตอร์ `page` และ `limit` โดยทำ `LIMIT $1 OFFSET $2` ฝั่งแอปใช้ `ScrollController` คอยจับระยะขอบล่างของการ์ด (ห่างจากขอบล่าง 200px) เพื่อส่งคำสั่ง Load More ดึงข้อมูลหน้าที่สองมาต่อท้ายลิสต์อัตโนมัติแบบไร้รอยต่อ
-3. **Image Cache Control (Frontend)**: เปลี่ยนการใช้ `Image.network` ที่เปลืองหน่วยความจำในกรณีข้อมูลล้นหลาม ไปใช้ `CachedNetworkImage` เพื่อให้ระบบมี Cache Manager จัดการรูปภาพในเครื่อง จำกัดพื้นที่และเคลียร์รูปภาพที่ไม่ได้แสดงบนหน้าจอทิ้งอัตโนมัติ พร้อมทำ Loading Shimmer และ Error Builder เพื่อให้ UI สวยงามไม่กระตุกเมื่อเน็ตเวิร์คมีปัญหา
+3. **Gallery Data Indexing (Backend)**: เพิ่มคอลัมน์ `incident_id` ในตาราง `videos` ของ PostgreSQL โดยตรง เพื่อทำ Data Relation ระหว่างรูปภาพไทยมุงกับเหตุการณ์หลัก แทนการใช้วิธีค้นหาจาก URL (String Regex Matching) ซึ่งกินทรัพยากรสูง และสร้าง API `GET /api/videos/:id/gallery` แยกเฉพาะสำหรับการทำ Pagination (แบ่งหน้าละ 20 รูป)
+4. **Image Cache Control (Frontend)**: เปลี่ยนการใช้ `Image.network` ที่เปลืองหน่วยความจำในกรณีข้อมูลล้นหลาม ไปใช้ `CachedNetworkImage` ในทุกจุดของแอป (Trending Panel, Gallery, Lightbox) เพื่อให้ระบบมี Cache Manager จัดการรูปภาพในเครื่อง จำกัดพื้นที่และเคลียร์รูปภาพที่ไม่ได้แสดงบนหน้าจอทิ้งอัตโนมัติ พร้อมทำ Loading Shimmer และ Error Builder เพื่อให้ UI สวยงามไม่กระตุกเมื่อเน็ตเวิร์คมีปัญหา
 
 ### Flutter / Frontend
 - **Supabase SDK** - สำหรับดึงข้อมูลวิดีโอและ GPS

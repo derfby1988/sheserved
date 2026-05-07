@@ -245,8 +245,14 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   Widget build(BuildContext context) {
     final isPrivilegedUser = widget.role == 'reporter' || widget.role == 'responder';
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Dismissible(
+      key: ValueKey('chat_dismiss_${widget.videoId}'),
+      direction: DismissDirection.startToEnd, // ปัดไปทางขวาเพื่อปิด
+      onDismissed: (_) {
+        widget.onClose();
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
       children: [
         // ── Top Bar ──
         Row(
@@ -324,6 +330,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         // ── Input bar ──
         _buildInputArea(),
       ],
+    ),
     );
   }
 
