@@ -463,11 +463,15 @@ io.on('connection', (socket) => {
 
     if (pool && videoId && userId) {
       try {
-        await pool.query(
-          `INSERT INTO video_interactions (video_id, user_id, type, value, created_at)
-           VALUES ($1, $2, $3, $4, NOW())`,
-          [videoId, userId, type, value || 0]
-        );
+        // ✅ [Support Analytics] 'like' toggle is handled via HTTP API (POST /:id/interactions)
+        // Skip DB insert here to avoid double-counting. Flutter emits 'like-toggled' for broadcast.
+        if (type !== 'like') {
+          await pool.query(
+            `INSERT INTO video_interactions (video_id, user_id, type, value, created_at)
+             VALUES ($1, $2, $3, $4, NOW())`,
+            [videoId, userId, type, value || 0]
+          );
+        }
 
         // [Donation Integration]: ถ้าเป็นการบริจาค (gift) ให้อัปเดต donation_request ที่เกี่ยวข้อง
         if (type === 'gift') {
@@ -554,6 +558,15 @@ io.on('connection', (socket) => {
       // Demo mode / No DB: Broadcast blindly
       socketService.broadcastInteraction(videoId, { videoId, userId, type, value, requestId });
     }
+  });
+
+  // ✅ [Support Analytics] like-toggled: Flutter emits this after HTTP toggle succeeds
+  // Server broadcasts 'like-count-updated' to all clients in the video room
+  socket.on('like-toggled', (data) => {
+    const { videoId, count, liked, userId } = data;
+    if (!videoId) return;
+    console.log(`[Like] Video ${videoId}: ${liked ? '+1' : '-1'} by ${userId}, total=${count}`);
+    io.to(`room-video-${videoId}`).emit('like-count-updated', { videoId, count, liked });
   });
 
   // ✅ [Yield Way] รับ Route Polyline ของจิตอาสา — บันทึกลง DB เพื่อใช้คัดกรองผู้รับแจ้งเตือน

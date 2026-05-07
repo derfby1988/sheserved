@@ -66,6 +66,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   int _selectedTab = 0;
   int _viewerCount = 0;
   int _likeCount = 0;
+  bool _hasLiked = false;    // ✅ [Support Analytics] DB Toggle state
+  int _likeTrigger = 0;      // ✅ [Support Analytics] increments to force chart refresh
   int _yieldWayCount = 0;
   bool _isYieldPulsing = false; // ✅ สำหรับแสดง pulse effect บนแผนที่
   // ✅ รองรับหลายคำร้องต่อวิดีโอเดียว: Map<requestId, currentAmount>
@@ -572,6 +574,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         canViewUnblurred: _canViewUnblurred,
         yieldWayCount: '$_yieldWayCount คน',
         onLike: _onLike,
+        isLiked: _hasLiked,
+        likeCount: _likeCount,
+        likeTrigger: _likeTrigger,
         onYieldWay: _yieldWay,
         onDonate: _showDonationSheet,
         onSwitchVideo: _switchVideo,

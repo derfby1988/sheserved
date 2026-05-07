@@ -147,10 +147,19 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
 3. **Gallery Data Indexing (Backend)**: เพิ่มคอลัมน์ `incident_id` ในตาราง `videos` ของ PostgreSQL โดยตรง เพื่อทำ Data Relation ระหว่างรูปภาพไทยมุงกับเหตุการณ์หลัก แทนการใช้วิธีค้นหาจาก URL (String Regex Matching) ซึ่งกินทรัพยากรสูง และสร้าง API `GET /api/videos/:id/gallery` แยกเฉพาะสำหรับการทำ Pagination (แบ่งหน้าละ 20 รูป)
 4. **Image Cache Control (Frontend)**: เปลี่ยนการใช้ `Image.network` ที่เปลืองหน่วยความจำในกรณีข้อมูลล้นหลาม ไปใช้ `CachedNetworkImage` ในทุกจุดของแอป (Trending Panel, Gallery, Lightbox) เพื่อให้ระบบมี Cache Manager จัดการรูปภาพในเครื่อง จำกัดพื้นที่และเคลียร์รูปภาพที่ไม่ได้แสดงบนหน้าจอทิ้งอัตโนมัติ พร้อมทำ Loading Shimmer และ Error Builder เพื่อให้ UI สวยงามไม่กระตุกเมื่อเน็ตเวิร์คมีปัญหา
 
+### Support Analytics System (Merit Score Trends — Updated 2026-05-07)
+ระบบแสดงผลสถิติการ "ส่งกำลังใจ" (Likes/Merit Score) แบบ Real-time เพื่อสร้าง Engagement และความโปร่งใสในเหตุการณ์ฉุกเฉิน:
+1. **Real-time Trend Visualization (Frontend)**: เพิ่ม `LikeTrendChartWidget` โดยใช้ไลบรารี `fl_chart` เพื่อแสดงกราฟพื้นที่ (Area Chart) ของยอดไลค์ย้อนหลัง 5 นาที แบ่งเป็นช่วงเวลาละ 10 วินาที (30 จุด) กราฟจะทำการขยับ (Polling) ทุกๆ 10 วินาที และจะ Refresh ข้อมูลทันทีเมื่อผู้ใช้กดไลค์หรือได้รับข้อมูลใหม่จาก Socket
+2. **Atomic DB Toggle (Backend)**: พัฒนาระบบ "Unique Like" โดยใช้ **Database Constraint** (`UNIQUE(video_id, user_id) WHERE type='like'`) ทำให้หนึ่งคนกดไลค์ได้เพียงครั้งเดียวต่อหนึ่งวิดีโอ ระบบจะทำการ Toggle (INSERT หากยังไม่มี หรือ DELETE หากมีอยู่แล้ว) โดยอัตโนมัติที่ระดับ Backend เพื่อป้องกันข้อมูลเบิ้ลและรองรับฟังก์ชันการยกเลิกการส่งกำลังใจ
+3. **Socket-based Synchronization**: เมื่อมีการกดส่งกำลังใจสำเร็จ Server จะทำการคำนวณยอดรวมล่าสุดและส่งอีเวนต์ `like-toggled` กระจาย (Broadcast) ไปยังผู้ใช้ทุกคนในห้อง Live นั้นๆ ทันที ทำให้กราฟและตัวเลขยอดรวมบนหน้าจอของทุกคนสอดคล้องกันแบบมิลลิวินาที
+4. **Interaction Feedback UI**: ปุ่มส่งกำลังใจใน `LikeTrendChartWidget` จะแสดงเป็นรูปเครื่องหมาย `+` เมื่อยังไม่ได้กด และเปลี่ยนเป็นรูปหัวใจสีส้ม ♥ เมื่อกดแล้ว พร้อมแอนิเมชันหัวใจพุ่ง (Burst) เพื่อให้รางวัลทางจิตวิทยา (Dopamine hit) แก่ผู้ที่สนับสนุนเหตุการณ์
+5. **Trend Data Performance**: ใช้ Index แบบ Composite `(video_id, type, created_at)` ในตาราง `video_interactions` เพื่อให้การ Query จัดกลุ่มข้อมูลแบบ Bucketing ทำงานได้รวดเร็วแม้จะมีข้อมูลจำนวนมาก
+
 ### Flutter / Frontend
 - **Supabase SDK** - สำหรับดึงข้อมูลวิดีโอและ GPS
 - **DonationRepository** - เชื่อมโยงปุ่ม "บริจาค" เพื่อเรียกใช้ฟังก์ชัน `getRequests()` และการชำระเงินเดิม
 - **video_player** / **chewie** - สำหรับเล่นวิดีโอ HLS
+- **fl_chart** - สำหรับแสดงกราฟ Support Analytics (Trend Chart) แบบ Real-time
 
 ### CDN/Storage
 - **Bunny.net** - HLS streaming & Storage (Thailand PoP)

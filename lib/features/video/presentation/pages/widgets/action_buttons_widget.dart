@@ -12,6 +12,7 @@ import 'package:sheserved/features/donation/models/donation_models.dart';
 ///   แสดงเฉพาะเมื่อมีคำร้อง active ≥ 1 ใบ เพื่อไม่สร้างความสับสน
 class ActionButtonsWidget extends StatelessWidget {
   final String likeCountFormatted;
+  final bool isLiked;  // ✅ [Support Analytics] DB toggle state
 
   // รายการคำร้องบริจาคที่ active อยู่ของวิดีโอนี้
   final List<DonationRequest> activeRequests;
@@ -32,6 +33,7 @@ class ActionButtonsWidget extends StatelessWidget {
   const ActionButtonsWidget({
     super.key,
     required this.likeCountFormatted,
+    this.isLiked = false,
     required this.activeRequests,
     required this.yieldWayCount,
     this.activeRequestIndex = 0,
@@ -100,6 +102,7 @@ class ActionButtonsWidget extends StatelessWidget {
         _buildInteractionButtonRow(
           value: likeCountFormatted,
           label: 'ส่งกำลังใจ',
+          isActive: isLiked,
           onTap: onLike,
         ),
         const SizedBox(height: 6),
@@ -237,7 +240,9 @@ class ActionButtonsWidget extends StatelessWidget {
     required String value,
     required String label,
     required VoidCallback onTap,
+    bool isActive = false,
   }) {
+    const orange = Color(0xFFFF6B35);
     return GestureDetector(
       onTap: onTap,
       child: Row(
@@ -249,19 +254,20 @@ class ActionButtonsWidget extends StatelessWidget {
               bottomLeft: Radius.circular(4),
             ),
             child: Container(
-              width: 50, // ลดจาก 70 เหลือ 50
+              width: 50,
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withOpacity(0.8),
-                border:
-                    Border.all(color: Colors.white.withOpacity(0.2)),
+                color: isActive
+                    ? orange.withOpacity(0.85)
+                    : const Color(0xFF6B7280).withOpacity(0.8),
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Center(
                 child: Text(
                   value,
                   style: const TextStyle(
                     fontFamily: 'SukhumvitSet',
-                    fontSize: 12, // ลดจาก 14 เหลือ 12
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
@@ -271,31 +277,44 @@ class ActionButtonsWidget extends StatelessWidget {
           ),
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), // ลดจาก 16 เหลือ 8
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFFF6B35),
+                color: isActive ? orange : orange,
                 borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(12),
                   bottomRight: Radius.circular(12),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 4,
+                    color: isActive
+                        ? orange.withOpacity(0.5)
+                        : Colors.black.withOpacity(0.2),
+                    blurRadius: isActive ? 8 : 4,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'SukhumvitSet',
-                  fontSize: 11, // ลดจาก 13 เหลือ 11
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isActive) ...[
+                    const Icon(Icons.favorite, color: Colors.white, size: 10),
+                    const SizedBox(width: 3),
+                  ],
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

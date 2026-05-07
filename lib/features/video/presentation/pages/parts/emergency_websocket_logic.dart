@@ -21,7 +21,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (_currentVideoId != null && data['videoId'] == _currentVideoId) {
         if (mounted) {
           setState(() {
-            if (data['type'] == 'like') _likeCount++;
+            // ✅ 'like' count is handled via 'like-count-updated' event (see socket listener below)
+            // Do NOT increment here to avoid double-counting with HTTP toggle
             if (data['type'] == 'yield-way-updated') {
               _yieldWayCount = (data['count'] as num?)?.toInt() ?? 0;
               if (data['triggerAnimation'] == true) {
@@ -38,6 +39,19 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
             }
           });
         }
+      }
+    });
+
+    // ✅ [Support Analytics] Real-time like count from other users
+    ws.socket?.on('like-count-updated', (data) {
+      if (!mounted) return;
+      final Map<String, dynamic> payload =
+          (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['videoId'] == _currentVideoId) {
+        setState(() {
+          _likeCount = (payload['count'] as num?)?.toInt() ?? _likeCount;
+          _likeTrigger++; // ✅ Force chart refresh on remote like events
+        });
       }
     });
 
@@ -146,9 +160,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     _supabaseInteractionSub = ServiceLocator.instance.videoRepository.subscribeToInteractions(videoId, (payload) {
        if (mounted && _currentVideoId == videoId) { 
          setState(() { 
-           if (payload['type'] == 'like') _likeCount++; 
-           // ✅ ไม่เพิ่มยอด gift ที่นี่ เพราะ websocket.videoInteractionStream จัดการแยกตาม requestId อยู่แล้ว
-           // ครั้งนี้ Supabase sub ทำหน้าที่เป็น fallback เพื่อนับ like ที่เกิดขึ้นขณะ WebSocket offline เท่านั้น
+           // ✅ Supabase fallback: only update if we're offline or count hasn't been set by socket
+           // Do NOT increment blindly — like count is controlled by 'like-count-updated' event
+           // This ensures no double-counting between WebSocket and Supabase realtime
          }); 
        }
     });

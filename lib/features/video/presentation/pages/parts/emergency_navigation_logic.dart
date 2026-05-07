@@ -75,6 +75,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       // ค่า _viewerCount ที่ถูกต้องจะมาจาก WebSocket viewer-count event (real-time unique viewers)
       setState(() { _likeCount = summary['likes'] ?? 0; });
 
+      // ✅ [Support Analytics] Load like status for current user
+      _loadLikeStatus();
+
       _checkPrivacyPermissions();
       final video = await ServiceLocator.instance.videoRepository.getVideoById(_currentVideoId!);
       if (mounted) {
@@ -729,16 +732,49 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     return count.toString();
   }
 
+  /// ✅ [Support Analytics] Toggle Like via DB Unique constraint
+  /// - HTTP POST → Server checks existing row → DELETE (unlike) or INSERT (like)
+  /// - Updates _hasLiked + _likeCount from response
+  /// - Emits 'like-toggled' socket event for real-time broadcast to room
   Future<void> _onLike() async {
     final userId = AuthService.instance.currentUser?.id ?? 'anonymous';
-    if (_currentVideoId != null) {
-      try {
-        final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'like', createdAt: AppConfig.currentUtc);
-        await ServiceLocator.instance.videoRepository.addInteraction(interaction);
-        // ✅ Emit via WebSocket for real-time update
-        WebSocketService().sendVideoInteraction(_currentVideoId!, userId, 'like');
-      } catch (_) {}
+    if (_currentVideoId == null) return;
+    try {
+      final result = await ServiceLocator.instance.videoRepository
+          .toggleLike(_currentVideoId!, userId);
+      final liked = result['liked'] as bool? ?? !_hasLiked;
+      final count = result['count'] as int? ?? _likeCount;
+      if (mounted) {
+        setState(() {
+          _hasLiked = liked;
+          _likeCount = count;
+          _likeTrigger++; // force chart refresh
+        });
+      }
+      // Broadcast to room via WebSocket so other viewers see updated count
+      final socket = WebSocketService().socket;
+      if (socket != null && socket.connected) {
+        socket.emit('like-toggled', {
+          'videoId': _currentVideoId,
+          'userId': userId,
+          'liked': liked,
+          'count': count,
+        });
+      }
+    } catch (e) {
+      debugPrint('_onLike: toggle failed — $e');
     }
+  }
+
+  /// ✅ [Support Analytics] Check initial like status when video loads
+  Future<void> _loadLikeStatus() async {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null || _currentVideoId == null) return;
+    try {
+      final liked = await ServiceLocator.instance.videoRepository
+          .getLikeStatus(_currentVideoId!, userId);
+      if (mounted) setState(() => _hasLiked = liked);
+    } catch (_) {}
   }
 
   Future<void> _loadThaiMhungPhotos() async {

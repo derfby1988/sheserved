@@ -405,7 +405,64 @@ class VideoRepository {
     };
   }
 
-  /// สร้าง RealtimeChannel สำหรับฟังเหตุการณ์ที่มีการ Insert ในตาราง video_interactions
+  /// ✅ [Support Analytics] Toggle Like — DB Unique Toggle via HTTP API
+  /// Returns { liked: bool, count: int }
+  Future<Map<String, dynamic>> toggleLike(String videoId, String userId) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/interactions'),
+            headers: {'Content-Type': 'application/json'},
+            body: '{"user_id":"$userId","type":"like","value":0}',
+          )
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {
+          'liked': data['liked'] as bool? ?? false,
+          'count': data['count'] as int? ?? 0,
+        };
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: toggleLike failed: $e');
+    }
+    return {'liked': false, 'count': 0};
+  }
+
+  /// ✅ [Support Analytics] Check if user has liked this video
+  Future<bool> getLikeStatus(String videoId, String userId) async {
+    try {
+      final response = await http
+          .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/status?userId=$userId'))
+          .timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['liked'] as bool? ?? false;
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: getLikeStatus failed: $e');
+    }
+    return false;
+  }
+
+  /// ✅ [Support Analytics] Get like trend — 10-second buckets for the last 5 minutes
+  /// Returns list of { bucket: double (epoch), count: int }
+  Future<List<Map<String, dynamic>>> getLikeTrend(String videoId) async {
+    try {
+      final response = await http
+          .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/trend'))
+          .timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('VideoRepository: getLikeTrend failed: $e');
+    }
+    return [];
+  }
+
+
   RealtimeChannel subscribeToInteractions(String videoId, void Function(Map<String, dynamic> payload) onInsert) {
     return _client.channel('public:video_interactions:$videoId')
       .onPostgresChanges(

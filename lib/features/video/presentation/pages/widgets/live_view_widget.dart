@@ -9,6 +9,7 @@ import 'thai_mhung_gallery_widget.dart';
 import 'thai_mhung_ruler_gallery_widget.dart';
 import '../../../models/video_models.dart';
 import 'package:chewie/chewie.dart';
+import 'like_trend_chart_widget.dart';
 
 class LiveViewWidget extends StatefulWidget {
   final ChewieController? chewieController;
@@ -33,6 +34,9 @@ class LiveViewWidget extends StatefulWidget {
   final void Function(String) onSwitchVideo;
   /// ✅ ผู้ใช้มีสิทธิ์สร้างคำร้องบริจาคไหม? (Reporter/Responder)
   final bool userCanCreateRequest;
+  final bool isLiked;
+  final int likeCount;
+  final int likeTrigger;
   final void Function(ThaiMhungRulerPhoto photo)? onNewPhotoArrived;
   final void Function(bool isOverlayVisible)? onOverlayChanged;
   final GlobalKey? trendingPanelKey;
@@ -58,6 +62,9 @@ class LiveViewWidget extends StatefulWidget {
     required this.onDonate,
     required this.onSwitchVideo,
     this.userCanCreateRequest = false,
+    this.isLiked = false,
+    this.likeCount = 0,
+    this.likeTrigger = 0,
     this.onNewPhotoArrived,
     this.onOverlayChanged,
     this.trendingPanelKey,
@@ -139,154 +146,171 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                   constraints: BoxConstraints(
                     minHeight: widget.currentVideoId == null ? MediaQuery.of(context).size.height * 0.4 : 0,
                   ),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        width: (constraints.maxWidth - 32) * 0.45,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Stack(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: (constraints.maxWidth - 32) * 0.45,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                VideoPlayerWidget(
-                                  chewieController: widget.chewieController,
-                                  currentVideoId: widget.currentVideoId,
-                                  currentVideo: widget.currentVideo,
-                                  canViewUnblurred: widget.canViewUnblurred,
-                                ),
-                                if (_selectedOverlayPhotoUrl != null)
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      onHorizontalDragEnd: (details) {
-                                        if (details.primaryVelocity! < 0) {
-                                          // ปัดซ้าย -> ถัดไป
-                                          _galleryKey.currentState?.animateToIndex((_selectedOverlayPhotoIndex ?? 0) + 1);
-                                        } else if (details.primaryVelocity! > 0) {
-                                          // ปัดขวา -> ก่อนหน้า
-                                          final currentIndex = _selectedOverlayPhotoIndex ?? 0;
-                                          if (currentIndex == 0) {
-                                            // ถ้าอยู่รูปแรกแล้วปัดขวา -> ปิด Overlay
-                                            setState(() {
-                                              _selectedOverlayPhotoUrl = null;
-                                              _selectedOverlayPhotoIndex = null;
-                                            });
-                                            widget.onOverlayChanged?.call(false);
-                                            widget.chewieController?.videoPlayerController.play();
-                                          } else {
-                                            _galleryKey.currentState?.animateToIndex(currentIndex - 1);
-                                          }
-                                        }
-                                      },
-                                      onTap: () {
-                                        if (_selectedOverlayPhotoIndex != null) {
-                                          _galleryKey.currentState?.showLightbox(_selectedOverlayPhotoIndex!);
-                                        }
-                                      },
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(40),
-                                        child: Container(
-                                          color: Colors.black,
-                                          child: Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              widget.canViewUnblurred
-                                                  ? Image.network(
-                                                      _selectedOverlayPhotoUrl!,
-                                                      fit: BoxFit.contain,
-                                                      loadingBuilder: (context, child, progress) {
-                                                        if (progress == null) return child;
-                                                        return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
+                                Stack(
+                                  children: [
+                                    VideoPlayerWidget(
+                                      chewieController: widget.chewieController,
+                                      currentVideoId: widget.currentVideoId,
+                                      currentVideo: widget.currentVideo,
+                                      canViewUnblurred: widget.canViewUnblurred,
+                                    ),
+                                    if (_selectedOverlayPhotoUrl != null)
+                                      Positioned.fill(
+                                        child: GestureDetector(
+                                          onHorizontalDragEnd: (details) {
+                                            if (details.primaryVelocity! < 0) {
+                                              // ปัดซ้าย -> ถัดไป
+                                              _galleryKey.currentState?.animateToIndex((_selectedOverlayPhotoIndex ?? 0) + 1);
+                                            } else if (details.primaryVelocity! > 0) {
+                                              // ปัดขวา -> ก่อนหน้า
+                                              final currentIndex = _selectedOverlayPhotoIndex ?? 0;
+                                              if (currentIndex == 0) {
+                                                // ถ้าอยู่รูปแรกแล้วปัดขวา -> ปิด Overlay
+                                                setState(() {
+                                                  _selectedOverlayPhotoUrl = null;
+                                                  _selectedOverlayPhotoIndex = null;
+                                                });
+                                                widget.onOverlayChanged?.call(false);
+                                                widget.chewieController?.videoPlayerController.play();
+                                              } else {
+                                                _galleryKey.currentState?.animateToIndex(currentIndex - 1);
+                                              }
+                                            }
+                                          },
+                                          onTap: () {
+                                            if (_selectedOverlayPhotoIndex != null) {
+                                              _galleryKey.currentState?.showLightbox(_selectedOverlayPhotoIndex!);
+                                            }
+                                          },
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(40),
+                                            child: Container(
+                                              color: Colors.black,
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  widget.canViewUnblurred
+                                                      ? Image.network(
+                                                          _selectedOverlayPhotoUrl!,
+                                                          fit: BoxFit.contain,
+                                                          loadingBuilder: (context, child, progress) {
+                                                            if (progress == null) return child;
+                                                            return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
+                                                          },
+                                                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                        )
+                                                      : ImageFiltered(
+                                                          imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                                          child: Image.network(
+                                                            _selectedOverlayPhotoUrl!,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                          ),
+                                                        ),
+                                                  Positioned(
+                                                    top: 16,
+                                                    right: 16,
+                                                    child: GestureDetector(
+                                                      onTap: () {
+                                                        setState(() {
+                                                          _selectedOverlayPhotoUrl = null;
+                                                          _selectedOverlayPhotoIndex = null;
+                                                        });
+                                                        widget.onOverlayChanged?.call(false);
+                                                        widget.chewieController?.videoPlayerController.play();
                                                       },
-                                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
-                                                    )
-                                                  : ImageFiltered(
-                                                      imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                                      child: Image.network(
-                                                        _selectedOverlayPhotoUrl!,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                      child: Container(
+                                                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                                        padding: const EdgeInsets.all(6),
+                                                        child: const Icon(Icons.close, color: Colors.white, size: 20),
                                                       ),
                                                     ),
-                                              Positioned(
-                                                top: 16,
-                                                right: 16,
-                                                child: GestureDetector(
-                                                  onTap: () {
-                                                    setState(() {
-                                                      _selectedOverlayPhotoUrl = null;
-                                                      _selectedOverlayPhotoIndex = null;
-                                                    });
-                                                    widget.onOverlayChanged?.call(false);
-                                                    widget.chewieController?.videoPlayerController.play();
-                                                  },
-                                                  child: Container(
-                                                    decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                                                    padding: const EdgeInsets.all(6),
-                                                    child: const Icon(Icons.close, color: Colors.white, size: 20),
                                                   ),
-                                                ),
+                                                ]
                                               ),
-                                            ]
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
+                                  ],
+                                ),
+                                if (widget.currentVideoId != null) ...[
+                                  const SizedBox(height: 12),
+                                  ViewerCountWidget(formattedViewerCount: widget.formattedViewerCount),
+                                  const SizedBox(height: 12),
+                                  ActionButtonsWidget(
+                                    likeCountFormatted: widget.likeCountFormatted,
+                                    isLiked: widget.isLiked,
+                                    activeRequests: widget.activeRequests,
+                                    activeRequestIndex: widget.activeRequestIndex,
+                                    yieldWayCount: widget.yieldWayCount,
+                                    userCanCreateRequest: widget.userCanCreateRequest,
+                                    onLike: widget.onLike,
+                                    onYieldWay: widget.onYieldWay,
+                                    onDonate: widget.onDonate,
+                                    onSwitchRequest: widget.onSwitchRequest,
                                   ),
+                                ],
                               ],
                             ),
-                            if (widget.currentVideoId != null) ...[
-                              const SizedBox(height: 12),
-                              ViewerCountWidget(formattedViewerCount: widget.formattedViewerCount),
-                              const SizedBox(height: 12),
-                              ActionButtonsWidget(
-                                likeCountFormatted: widget.likeCountFormatted,
-                                activeRequests: widget.activeRequests,
-                                activeRequestIndex: widget.activeRequestIndex,
-                                yieldWayCount: widget.yieldWayCount,
-                                userCanCreateRequest: widget.userCanCreateRequest,
-                                onLike: widget.onLike,
-                                onYieldWay: widget.onYieldWay,
-                                onDonate: widget.onDonate,
-                                onSwitchRequest: widget.onSwitchRequest,
+                          ),
+                          // Thai Mhung Gallery (Ruler Picker) วางด้านขวาของวิดีโอ
+                          if (widget.currentVideoId != null) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ThaiMhungRulerGalleryWidget(
+                                key: _galleryKey,
+                                videoId: widget.currentVideoId!,
+                                height: videoHeight, // ความสูงเท่ากับ Video Player พอดี
+                                canViewUnblurred: widget.canViewUnblurred,
+                                onPhotoTap: (index, photoUrl) {
+                                  setState(() {
+                                    _selectedOverlayPhotoUrl = photoUrl;
+                                    _selectedOverlayPhotoIndex = index;
+                                  });
+                                  widget.onOverlayChanged?.call(true);
+                                },
+                                onPhotoChanged: (index, photoUrl) {
+                                  // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
+                                  if (_selectedOverlayPhotoUrl != null) {
+                                    setState(() {
+                                      _selectedOverlayPhotoUrl = photoUrl;
+                                      _selectedOverlayPhotoIndex = index;
+                                    });
+                                  }
+                                },
+                                onNewPhotoArrived: widget.onNewPhotoArrived,
                               ),
-                            ],
+                            ),
+                            // สำรองพื้นที่ด้านขวา เพื่อไม่ให้ Trending Panel มาบัง Gallery
+                            SizedBox(width: (constraints.maxWidth - 32) * 0.35 + 8),
                           ],
-                        ),
+                        ],
                       ),
-                      // Thai Mhung Gallery (Ruler Picker) วางด้านขวาของวิดีโอ
-                      if (widget.currentVideoId != null) ...[
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ThaiMhungRulerGalleryWidget(
-                            key: _galleryKey,
+                      // ✅ [Support Analytics] กราฟแนวโน้ม (Trend Chart)
+                      if (widget.currentVideoId != null)
+                        SizedBox(
+                          width: (constraints.maxWidth - 32) * 0.45,
+                          child: LikeTrendChartWidget(
                             videoId: widget.currentVideoId!,
-                            height: videoHeight, // ความสูงเท่ากับ Video Player พอดี
-                            canViewUnblurred: widget.canViewUnblurred,
-                            onPhotoTap: (index, photoUrl) {
-                              setState(() {
-                                _selectedOverlayPhotoUrl = photoUrl;
-                                _selectedOverlayPhotoIndex = index;
-                              });
-                              widget.onOverlayChanged?.call(true);
-                            },
-                            onPhotoChanged: (index, photoUrl) {
-                              // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
-                              if (_selectedOverlayPhotoUrl != null) {
-                                setState(() {
-                                  _selectedOverlayPhotoUrl = photoUrl;
-                                  _selectedOverlayPhotoIndex = index;
-                                });
-                              }
-                            },
-                            onNewPhotoArrived: widget.onNewPhotoArrived,
+                            isLiked: widget.isLiked,
+                            likeCount: widget.likeCount,
+                            triggerRefresh: widget.likeTrigger,
+                            onToggleLike: widget.onLike,
                           ),
                         ),
-                        // สำรองพื้นที่ด้านขวา เพื่อไม่ให้ Trending Panel มาบัง Gallery
-
-                        SizedBox(width: (constraints.maxWidth - 32) * 0.35 + 8),
-                      ],
                     ],
                   ),
                 ),

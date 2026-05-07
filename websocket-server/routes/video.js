@@ -551,18 +551,90 @@ module.exports = (pool) => {
         }
     });
 
-    // Record interaction for a video
+    // ✅ [Support Analytics] Get like trend — 10-second buckets, last 5 minutes
+    router.get('/:id/likes/trend', async (req, res) => {
+        if (!pool) return res.json([]);
+        try {
+            const { id } = req.params;
+            const result = await pool.query(`
+                SELECT
+                    floor(extract(epoch from created_at) / 10) * 10 AS bucket,
+                    COUNT(*) AS count
+                FROM video_interactions
+                WHERE video_id = $1 AND type = 'like'
+                    AND created_at > NOW() - INTERVAL '5 minutes'
+                GROUP BY bucket
+                ORDER BY bucket
+            `, [id]);
+            res.json(result.rows.map(r => ({
+                bucket: parseFloat(r.bucket),
+                count: parseInt(r.count),
+            })));
+        } catch (error) {
+            console.error('Error fetching like trend:', error.message);
+            res.status(500).json({ error: 'Failed to fetch like trend' });
+        }
+    });
+
+    // ✅ [Support Analytics] Check if user already liked a video
+    router.get('/:id/likes/status', async (req, res) => {
+        if (!pool) return res.json({ liked: false });
+        try {
+            const { id } = req.params;
+            const { userId } = req.query;
+            if (!userId) return res.json({ liked: false });
+            const existing = await pool.query(
+                `SELECT id FROM video_interactions WHERE video_id = $1 AND user_id = $2 AND type = 'like'`,
+                [id, userId]
+            );
+            res.json({ liked: existing.rows.length > 0 });
+        } catch (error) {
+            res.status(500).json({ liked: false });
+        }
+    });
+
+    // ✅ [Support Analytics] Record interaction — DB Toggle for 'like', normal INSERT for others
     router.post('/:id/interactions', async (req, res) => {
         try {
             const { id } = req.params;
-            const { video_id, user_id, type, value } = req.body;
+            const { user_id, type, value } = req.body;
 
+            if (type === 'like' && pool) {
+                // DB Toggle: check if like exists for this user
+                const existing = await pool.query(
+                    `SELECT id FROM video_interactions WHERE video_id = $1 AND user_id = $2 AND type = 'like'`,
+                    [id, user_id]
+                );
+                let liked;
+                if (existing.rows.length > 0) {
+                    // Unlike: DELETE
+                    await pool.query(
+                        `DELETE FROM video_interactions WHERE video_id = $1 AND user_id = $2 AND type = 'like'`,
+                        [id, user_id]
+                    );
+                    liked = false;
+                } else {
+                    // Like: INSERT
+                    await pool.query(
+                        `INSERT INTO video_interactions (video_id, user_id, type, value, created_at) VALUES ($1, $2, 'like', 0, NOW())`,
+                        [id, user_id]
+                    );
+                    liked = true;
+                }
+                // Return updated count
+                const countRes = await pool.query(
+                    `SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'like'`,
+                    [id]
+                );
+                const count = parseInt(countRes.rows[0].cnt);
+                return res.json({ liked, count });
+            }
+
+            // Non-like interactions: normal INSERT
             const result = await pool.query(
-                `INSERT INTO video_interactions (video_id, user_id, type, value)
-                 VALUES ($1, $2, $3, $4) RETURNING *`,
+                `INSERT INTO video_interactions (video_id, user_id, type, value) VALUES ($1, $2, $3, $4) RETURNING *`,
                 [id, user_id, type, value || 0]
             );
-
             res.json(result.rows[0]);
         } catch (error) {
             console.error('Error recording interaction:', error.message);
