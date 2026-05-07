@@ -76,6 +76,27 @@ function broadcastNewThaiMhungPhoto(incidentId, photoData) {
     });
 }
 
+/**
+ * Broadcast thumbnail update to all clients — ให้ TrendingPanel รีเฟรชรูปพื้นหลัง Real-time
+ * Recommendation #7: WebSocket thumbnail-updated event
+ * @param {string} incidentId - ID ของ incident ที่ thumbnail เปลี่ยน
+ * @param {object} data - { incidentId, thumbnailUrl }
+ */
+function broadcastThumbnailUpdate(incidentId, data) {
+    if (!io) return;
+    console.log(`[Thumbnail] Broadcasting thumbnail-updated for incident ${incidentId}`);
+    // Broadcast ไปยังทุก client ที่อยู่ในห้อง video นั้น
+    io.to(`room-video-${incidentId}`).emit('thumbnail-updated', {
+        incidentId,
+        ...data,
+    });
+    // ✅ Broadcast ไปยัง room หลักด้วย (สำหรับ Home page TrendingPanel ที่ไม่ได้ join video room)
+    io.emit('thumbnail-updated', {
+        incidentId,
+        ...data,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
@@ -83,6 +104,7 @@ module.exports = {
     broadcastInteraction,
     broadcastEmergencyMessage,
     broadcastNewThaiMhungPhoto,
+    broadcastThumbnailUpdate,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

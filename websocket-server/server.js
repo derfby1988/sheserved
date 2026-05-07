@@ -85,6 +85,8 @@ if (USE_DATABASE) {
         pool = null;
       } else {
         console.log('✅ Database connected successfully');
+        // ✅ init thumbnail queue worker ด้วย pool ที่ยืนยันแล้ว
+        thumbnailQueue.init(pool);
         // --- 4. การจัดการ State ข้ามอุปกรณ์ ด้วย WebSocket / Local Sync ---
         // Reconcile Local -> Cloud upon startup
         if (supabase) {
@@ -113,7 +115,15 @@ app.use(express.json());
 const videoDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
 app.use('/temp/videos', express.static(videoDir));
 
+// ✅ Persistent thumbnail storage — ไม่ถูก cleanup เหมือน temp/videos
+const thumbnailUploadDir = path.join(__dirname, 'uploads/thumbnails');
+if (!require('fs').existsSync(thumbnailUploadDir)) {
+  require('fs').mkdirSync(thumbnailUploadDir, { recursive: true });
+}
+app.use('/uploads/thumbnails', express.static(thumbnailUploadDir));
+
 // Video Routes
+const thumbnailQueue = require('./services/thumbnail-queue');
 if (pool) {
   app.use('/api/videos', videoRoutes(pool));
 }

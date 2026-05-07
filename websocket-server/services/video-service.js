@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 const socketService = require('./socket-service');
+const thumbnailQueue = require('./thumbnail-queue');
 
 // Redis connection config
 const connection = {
@@ -21,6 +22,8 @@ let dbPool = null;
 
 function init(pool) {
     dbPool = pool;
+    // ✅ Bug #3 Fix: เริ่ม Thumbnail Queue Worker ด้วย pool เดียวกัน
+    thumbnailQueue.init(pool);
 }
 
 // Initialize Queue
@@ -151,6 +154,30 @@ const worker = new Worker('video-processing', async (job) => {
 
                     socketService.sendStatus(userId, videoId, 'ready', { url: finalUrl });
 
+                    // ✅ Bug #3 Fix: Extract Thumbnail Frame จากวิดีโอหลัง Transcode เสร็จ
+                    // ส่งงานไปยัง ThumbnailQueue เพื่อไม่ block main processing
+                    const thumbFilename = `thumb_${videoId}.jpg`;
+                    const thumbPath = path.join(outputDir, thumbFilename);
+                    try {
+                        await extractVideoThumbnail(inputVideoPath, thumbPath);
+                        if (fs.existsSync(thumbPath)) {
+                            // อัปโหลด frame thumbnail ผ่าน thumbnailQueue (รองรับ Bunny CDN)
+                            thumbnailQueue.addJob({
+                                filesForThumbnail: [thumbPath],
+                                thumbLocalPath: path.join(outputDir, `thumb_${videoId}.webp`),
+                                thumbFilename: `thumb_${videoId}.webp`,
+                                thumbTargetId: videoId,
+                                isThaiMhung: false,
+                                incidentId: null,
+                                videoId,
+                                localApiUrl,
+                                baseDir,
+                            }).catch(e => console.warn('[VideoThumb] Queue add failed:', e.message));
+                        }
+                    } catch (thumbErr) {
+                        console.warn(`[VideoThumb] Frame extraction failed (non-critical): ${thumbErr.message}`);
+                    }
+
                     // Determine if we should keep the HLS files locally (if not using Bunny CDN)
                     const isLocalUrl = finalUrl.startsWith(localApiUrl) || finalUrl.includes('localhost') || !process.env.BUNNY_CDN_URL || process.env.BUNNY_CDN_URL === 'https://your-pull-zone.b-cdn.net';
                     const keepOutputDir = isLocalUrl;
@@ -184,6 +211,31 @@ const worker = new Worker('video-processing', async (job) => {
     connection,
     concurrency: parseInt(process.env.MAX_CONCURRENT_TRANSCODES || '2')
 });
+
+/**
+ * Extract a single thumbnail frame from video using FFmpeg
+ * Bug #3 Fix: ดึง Frame จากวิดีโอเพื่อใช้เป็น Thumbnail ของการ์ดยอดนิยม
+ * @param {string} videoPath - Path ของวิดีโอต้นฉบับ (ก่อนหรือหลัง HLS)
+ * @param {string} outputPath - Path เซฟรูป Thumbnail (.jpg)
+ * @returns {Promise<void>}
+ */
+function extractVideoThumbnail(videoPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        if (!fs.existsSync(videoPath)) {
+            return reject(new Error(`Video file not found: ${videoPath}`));
+        }
+        ffmpeg(videoPath)
+            .screenshots({
+                count: 1,
+                timemarks: ['00:00:01'], // ดึง Frame ที่วินาทีที่ 1
+                size: '400x?',           // กว้าง 400px ความสูงปรับตามอัตราส่วน
+                folder: require('path').dirname(outputPath),
+                filename: require('path').basename(outputPath),
+            })
+            .on('end', () => resolve())
+            .on('error', (err) => reject(err));
+    });
+}
 
 /**
  * Cleanup temporary files

@@ -7,7 +7,8 @@ const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
 const socketService = require('../services/socket-service');
 const faceBlurService = require('../services/face-blur-service');
-const thumbnailService = require('../services/thumbnail-service');
+const { generateThumbnail, uploadThumbnailToBunny } = require('../services/thumbnail-service');
+const thumbnailQueue = require('../services/thumbnail-queue');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -289,29 +290,35 @@ module.exports = (pool) => {
             }
 
             if (filesForThumbnail.length > 0) {
-                // ถ้าเป็นไทยมุง เซฟไว้ที่โฟลเดอร์หลักของ Incident เลย จะได้ไม่ซ้ำซ้อน
+                // ✅ Recommendation #8: ใช้ Async Queue แทนการ generate แบบ Synchronous
+                // Respond ไปยัง Client ก่อน จากนั้น Worker จะ generate thumbnail แล้ว push ผ่าน WebSocket
                 const thumbFilename = `thumb_${isThaiMhung ? incidentId : videoId}.webp`;
                 const destDirForThumb = isThaiMhung ? path.join(baseDir, incidentId) : reportDir;
                 const thumbLocalPath = path.join(destDirForThumb, thumbFilename);
-                
+                const thumbTargetId = isThaiMhung ? incidentId : videoId;
+
                 if (!fs.existsSync(destDirForThumb)) {
                     fs.mkdirSync(destDirForThumb, { recursive: true });
                 }
 
-                try {
-                    const thumbResult = await thumbnailService.generateThumbnail(filesForThumbnail, thumbLocalPath);
-                    if (thumbResult.success) {
-                        let thumbRelativePath;
-                        if (isThaiMhung && incidentId) {
-                            thumbRelativePath = `${incidentId}/${thumbFilename}`;
-                        } else {
-                            thumbRelativePath = `${videoId}/${thumbFilename}`;
-                        }
-                        thumbnailUrl = `${localApiUrl}/temp/videos/${thumbRelativePath}`;
-                    }
-                } catch (e) {
-                    console.error('[Thumbnail] Failed to generate thumbnail:', e);
-                }
+                // ✅ Set placeholder URL ทันที (ใช้รูปแรกชั่วคราว) เพื่อให้ Client มีรูปแสดง
+                // จะถูกอัปเดตเป็น thumbnail จริงหลัง Worker เสร็จ
+                thumbnailUrl = firstPhotoUrl;
+
+                // ✅ Push thumbnail generation job ไปยัง Queue (Non-blocking)
+                thumbnailQueue.addJob({
+                    filesForThumbnail,
+                    thumbLocalPath,
+                    thumbFilename,
+                    thumbTargetId,
+                    isThaiMhung: isThaiMhung && !!incidentId,
+                    incidentId: incidentId || null,
+                    videoId,
+                    localApiUrl,
+                    baseDir,
+                }).catch(err => {
+                    console.error('[ThumbnailQueue] Failed to add job:', err.message);
+                });
             }
 
             const result = await pool.query(
@@ -416,7 +423,7 @@ module.exports = (pool) => {
                     FROM video_gps_tracks
                     ORDER BY video_id, timestamp_offset ASC
                 ) gt ON gt.video_id = v.id
-                WHERE v.type = 'emergency'
+                WHERE v.type IN ('emergency', 'emergency_photo')
                 ORDER BY v.created_at DESC
                 LIMIT 20
             `);

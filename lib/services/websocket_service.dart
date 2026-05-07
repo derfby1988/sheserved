@@ -39,6 +39,8 @@ class WebSocketService {
   final _thaiMhungPhotoController = StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Yield Way] Stream สำหรับรับการแจ้งเตือนให้ทาง
   final _yieldWayAlertController = StreamController<Map<String, dynamic>>.broadcast();
+  // ✅ [Thumbnail] Stream สำหรับ Thumbnail อัปเดตแบบ Real-time (Recommendation #7)
+  final _thumbnailUpdateController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -69,6 +71,8 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get thaiMhungPhotoStream => _thaiMhungPhotoController.stream;
   /// ✅ [Yield Way] การแจ้งเตือนให้ทางแบบ Real-time
   Stream<Map<String, dynamic>> get yieldWayAlertStream => _yieldWayAlertController.stream;
+  /// ✅ [Thumbnail] Thumbnail URL อัปเดตแบบ Real-time — TrendingPanel ใช้เพื่อรีเฟรชรูปพื้นหลังการ์ด (Recommendation #7)
+  Stream<Map<String, dynamic>> get thumbnailUpdateStream => _thumbnailUpdateController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -245,6 +249,12 @@ class WebSocketService {
       _socket!.on('yield-way-alert', (data) {
         debugPrint('[Yield Way] Alert received: $data');
         _yieldWayAlertController.add(Map<String, dynamic>.from(data));
+      });
+
+      // ✅ [Thumbnail] รับการอัปเดต Thumbnail URL แบบ Real-time — TrendingPanel
+      _socket!.on('thumbnail-updated', (data) {
+        debugPrint('[Thumbnail] thumbnail-updated received: $data');
+        _thumbnailUpdateController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {

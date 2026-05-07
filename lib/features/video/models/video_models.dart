@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../../../../config/app_config.dart';
 
 /// Video Models สำหรับระบบวิดีโอ
@@ -46,6 +47,10 @@ class Video {
   /// null = ไม่มี local cache (ดูจาก bunnyUrl แทน)
   final String? localFilePath;
 
+  /// ✅ Bug #10 Fix: URL โดยตรงของภาพแต่ละภาพ (Thai Mhung / Emergency Photos)
+  /// ใช้เป็น Fallback ถ้า thumbnailUrl ยังไม่ถูก generate
+  final List<String> photoUrls;
+
   const Video({
     required this.id,
     required this.userId,
@@ -79,6 +84,7 @@ class Video {
     this.village,
     this.isThaiMhungEnabled = false,
     this.localFilePath,
+    this.photoUrls = const [],
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
@@ -145,8 +151,48 @@ class Video {
       village: json['village']?.toString(),
       isThaiMhungEnabled: json['is_thai_mhung_enabled'] == true || json['isThaiMhungEnabled'] == true,
       localFilePath: json['local_file_path']?.toString(),
+      // ✅ Bug #6 Fix: donationTotal - parse จาก JSON แทนใช้ค่าเริ่มต้น 0
+      // ✅ Bug #10 Fix: photo_urls - parse JSON Array จาก server response
+      photoUrls: _parsePhotoUrls(json['photo_urls']),
     );
   }
+
+  /// ✅ Helper: Parse photo_urls จาก JSON ที่อาจเป็น List<dynamic> หรือ String (jsonb)
+  static List<String> _parsePhotoUrls(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is List) return raw.map((u) => u.toString()).toList();
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) return decoded.map((u) => u.toString()).toList();
+      } catch (_) {}
+    }
+    return [];
+  }
+
+  /// ✅ Recommendation #10: bestThumbnailUrl — เลือกรูปที่ดีที่สุดสำหรับ Trending Card
+  ///
+  /// ✅ IP Normalize Fix (Bug Root Cause):
+  /// DB อาจเก็บ URL ด้วย IP เก่า (เช่น 192.168.0.116, 192.168.1.142)
+  /// ทุกครั้งที่เชื่อมต่อ WiFi ใหม่ IP จะเปลี่ยน → Image.network โหลดไม่ได้
+  /// แก้โดย replace IPv4 ใน local URL ด้วย AppConfig.mainMachineIp ปัจจุบันเสมอ
+  String? get bestThumbnailUrl {
+    final raw = thumbnailUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null);
+    return _normalizeLocalUrl(raw);
+  }
+
+  /// Replace IP เก่าใน local server URL → AppConfig.mainMachineIp ปัจจุบัน
+  /// URL ที่เป็น CDN (https://) จะถูกส่งคืนตามเดิมโดยไม่แตะต้อง
+  static String? _normalizeLocalUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    if (url.startsWith('https://')) return url;
+    return url.replaceFirst(
+      RegExp(r'http://\d+\.\d+\.\d+\.\d+'),
+      'http://${AppConfig.mainMachineIp}',
+    );
+  }
+
+
 
   Video copyWith({
     String? id,
@@ -181,6 +227,7 @@ class Video {
     String? village,
     bool? isThaiMhungEnabled,
     String? localFilePath,
+    List<String>? photoUrls,
   }) {
     return Video(
       id: id ?? this.id,
@@ -215,6 +262,7 @@ class Video {
       village: village ?? this.village,
       isThaiMhungEnabled: isThaiMhungEnabled ?? this.isThaiMhungEnabled,
       localFilePath: localFilePath ?? this.localFilePath,
+      photoUrls: photoUrls ?? this.photoUrls,
     );
   }
 

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:sheserved/config/app_config.dart';
+import 'package:sheserved/services/websocket_service.dart';
 import '../../../models/video_models.dart';
 import 'video_skeleton_widget.dart';
 
@@ -27,6 +29,18 @@ class TrendingPanelWidget extends StatefulWidget {
 class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   late AnimationController _pulseController;
+  final Map<String, GlobalKey> _itemKeys = {};
+
+  // ใช้วัดขนาดจริงของ AnimatedSize โดยตรง
+  final GlobalKey _animatedSizeKey = GlobalKey();
+  double? _lastMeasuredHeight;
+  int _stableFrameCount = 0;
+  bool _isWaitingForSettle = false;
+
+  // ✅ Recommendation #7: Thumbnail URL overrides จาก WebSocket real-time update
+  // key = videoId, value = thumbnailUrl ที่ได้รับจาก server หลัง Worker generate เสร็จ
+  final Map<String, String> _thumbnailOverrides = {};
+  StreamSubscription? _thumbnailSub;
 
   @override
   void initState() {
@@ -35,12 +49,26 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
+
+    // ✅ Recommendation #7: ฟัง thumbnail-updated event จาก WebSocket
+    _thumbnailSub = WebSocketService().thumbnailUpdateStream.listen((data) {
+      if (!mounted) return;
+      final incidentId = data['incidentId']?.toString();
+      final thumbnailUrl = data['thumbnailUrl']?.toString();
+      if (incidentId != null && thumbnailUrl != null) {
+        debugPrint('[TrendingPanel] Thumbnail updated for $incidentId: $thumbnailUrl');
+        setState(() {
+          _thumbnailOverrides[incidentId] = thumbnailUrl;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _pulseController.dispose();
+    _thumbnailSub?.cancel();
     super.dispose();
   }
 
@@ -51,6 +79,96 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
     if (widget.highlightVideoId != null && 
         widget.highlightVideoId != oldWidget.highlightVideoId) {
       _scrollToTop();
+    }
+
+    // ถ้ามีการเปลี่ยนวิดีโอที่กำลังดู หรือโหลดเสร็จครั้งแรก
+    if (widget.currentVideoId != oldWidget.currentVideoId) {
+      _scrollToSelectedCard();
+    } else if (oldWidget.isLoadingTrending && !widget.isLoadingTrending) {
+      _scrollToSelectedCard();
+    }
+  }
+
+  void _scrollToSelectedCard() {
+    if (widget.currentVideoId == null) return;
+
+    // รีเซ็ต state สำหรับการวัดขนาดใหม่
+    _lastMeasuredHeight = null;
+    _stableFrameCount = 0;
+    _isWaitingForSettle = true;
+
+    // เริ่มวนลูปวัดขนาดจริงของ RenderBox ทุกเฟรม
+    _checkSizeSettled();
+  }
+
+  /// วัดความสูงจริงของ AnimatedSize widget ทุกเฟรม
+  /// เมื่อความสูงไม่เปลี่ยนติดต่อกัน 3 เฟรม → ถือว่า AnimatedSize เล่นจบ → สั่ง scroll
+  void _checkSizeSettled() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isWaitingForSettle) return;
+
+      // วัดขนาดจริงจาก RenderBox ของ AnimatedSize
+      final renderBox = _animatedSizeKey.currentContext?.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.hasSize) {
+        // ยังไม่ render → รอเฟรมถัดไป
+        _checkSizeSettled();
+        return;
+      }
+
+      final currentHeight = renderBox.size.height;
+
+      if (_lastMeasuredHeight != null && (currentHeight - _lastMeasuredHeight!).abs() < 0.5) {
+        // ความสูงเท่าเดิม (ต่างไม่เกิน 0.5px) → นับเฟรมนิ่ง
+        _stableFrameCount++;
+      } else {
+        // ความสูงยังเปลี่ยนอยู่ → รีเซ็ต
+        _stableFrameCount = 0;
+      }
+      _lastMeasuredHeight = currentHeight;
+
+      if (_stableFrameCount >= 3) {
+        // นิ่งแล้ว 3 เฟรมติด → AnimatedSize เล่นจบแน่นอน → สั่ง scroll
+        _isWaitingForSettle = false;
+        _performScroll();
+      } else {
+        // ยังไม่นิ่ง → เช็คเฟรมถัดไป
+        _checkSizeSettled();
+      }
+    });
+  }
+
+  void _performScroll() {
+    if (!mounted || widget.currentVideoId == null) return;
+
+    final key = _itemKeys[widget.currentVideoId!];
+    if (key != null && key.currentContext != null) {
+      Scrollable.ensureVisible(
+        key.currentContext!,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      // Fallback: ประเมิน offset แล้วค่อย ensureVisible อีกครั้ง
+      final index = widget.trendingVideos.indexWhere((v) => v.id == widget.currentVideoId);
+      if (index != -1 && _scrollController.hasClients) {
+        _scrollController.animateTo(
+          index * 80.0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+        ).then((_) {
+          if (!mounted) return;
+          final updatedKey = _itemKeys[widget.currentVideoId!];
+          if (updatedKey?.currentContext != null) {
+            Scrollable.ensureVisible(
+              updatedKey!.currentContext!,
+              alignment: 0.5,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+            );
+          }
+        });
+      }
     }
   }
 
@@ -69,6 +187,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
   @override
   Widget build(BuildContext context) {
     return AnimatedSize(
+      key: _animatedSizeKey,
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeOutQuart,
       alignment: Alignment.topCenter,
@@ -76,7 +195,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
         decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.6),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1), // ลดจาก 3 เหลือ 1
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -86,7 +205,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
         ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min, // ให้ Column หดความสูงเท่าที่จำเป็น
+        mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 10),
           Container(
@@ -106,7 +225,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
             ),
           ),
           const SizedBox(height: 8),
-          Flexible( // ใช้ Flexible แทน Expanded เพื่อให้หดตามเนื้อหาได้หากมีน้อย
+          Flexible(
             child: widget.isLoadingTrending
                 ? _buildSkeletonList()
                 : widget.trendingVideos.isEmpty
@@ -121,14 +240,13 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                       )
                     : ListView.builder(
                         controller: _scrollController,
-                        shrinkWrap: true, // ยืดหดความสูงตามจำนวนการ์ด
-                        padding: const EdgeInsets.symmetric(horizontal: 4), // ลดจาก 8 เหลือ 4
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         itemCount: widget.trendingVideos.length,
                         itemBuilder: (context, index) {
                           final video = widget.trendingVideos[index];
                           final bool isNewEmergency = video.id == widget.highlightVideoId;
                           
-                          // จัดรูปแบบเวลา วัน/เดือน/ปี เวลา -> วันนี้/เมื่อวาน หรือ แปลง พ.ศ. และเดือนไทย
                           final now = AppConfig.thailandNow;
                           final createdAt = AppConfig.toThailand(video.createdAt);
                           final isToday = now.year == createdAt.year && now.month == createdAt.month && now.day == createdAt.day;
@@ -156,7 +274,6 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                             dateStr = '${createdAt.day} ${thaiMonths[createdAt.month - 1]} $thaiYearShort $timeStr';
                           }
                           
-                          // ดึงชื่อประเภทเหตุการณ์จากตาราง donation_categories (มากับ Join)
                           String displayTitle = video.categoryName ?? '';
                           if (displayTitle.isEmpty || displayTitle == 'null') {
                             if (video.title.startsWith('Emergency Incident')) {
@@ -164,15 +281,12 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                             } else {
                               displayTitle = video.title;
                             }
-                            
                             if (displayTitle.isEmpty) {
                               displayTitle = video.description ?? 'เหตุฉุกเฉิน';
                             }
-                            // เผื่อมีวันที่แบบเก่าติดมา
                             displayTitle = displayTitle.replaceAll(RegExp(r'\s+\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}$'), '');
                           }
                           
-                          // ตัดความยาวไม่เกิน 30 ตัวอักษร เพื่อให้มั่นใจว่าเห็นแค่ชื่อเหตุ
                           if (displayTitle.length > 30) {
                             displayTitle = '${displayTitle.substring(0, 30)}...';
                           }
@@ -183,9 +297,18 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
 
                           final bool hasLocalPreview = video.localFilePath != null;
                           final bool isStillProcessing = video.status == VideoStatus.processing;
-                          final bool isSelected = video.id == widget.currentVideoId; // ลำดับที่ผู้ใช้กำลังดูอยู่
+                          final bool isSelected = video.id == widget.currentVideoId;
+
+                          final String? effectiveThumbnailUrl =
+                              _thumbnailOverrides[video.id] ?? video.bestThumbnailUrl;
+
+                          if (!_itemKeys.containsKey(video.id)) {
+                            _itemKeys[video.id] = GlobalKey();
+                          }
+                          final itemKey = _itemKeys[video.id];
 
                           return GestureDetector(
+                            key: itemKey,
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
                               debugPrint('[TrendingPanel] Card tapped! video.id: ${video.id}, currentVideoId: ${widget.currentVideoId}');
@@ -203,17 +326,18 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                   curve: Curves.easeOutCirc,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   width: double.infinity,
+                                  clipBehavior: Clip.hardEdge,
                                   decoration: BoxDecoration(
-                                    color: isNewEmergency 
+                                    color: isNewEmergency
                                         ? Colors.red.withOpacity(0.9 + (0.1 * _pulseController.value))
                                         : isSelected
-                                            ? Colors.amber[900]?.withOpacity(0.85) // สีส้มทองแสดงถึงการโฟกัส
+                                            ? Colors.amber[900]?.withOpacity(0.85)
                                             : Colors.blueGrey[900],
                                     borderRadius: BorderRadius.circular(12),
                                     border: isNewEmergency
                                         ? Border.all(color: Colors.white, width: 2)
                                         : isSelected
-                                            ? Border.all(color: Colors.amberAccent, width: 2.5) // กรอบสีเด่น
+                                            ? Border.all(color: Colors.amberAccent, width: 2.5)
                                             : Border.all(color: Colors.transparent, width: 2.5),
                                     boxShadow: isNewEmergency
                                         ? [
@@ -225,90 +349,59 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                           ]
                                         : isSelected
                                             ? [
-                                                BoxShadow( // แสงเรืองรองใต้ปุ่ม
+                                                BoxShadow(
                                                   color: Colors.orangeAccent.withOpacity(0.5),
                                                   blurRadius: 8,
                                                   spreadRadius: 2,
                                                 )
                                               ]
                                             : null,
-                                    image: video.thumbnailUrl != null
-                                        ? DecorationImage(
-                                            image: NetworkImage(video.thumbnailUrl!),
-                                            fit: BoxFit.cover,
-                                            colorFilter: ColorFilter.mode(
-                                                (isNewEmergency 
-                                                    ? Colors.red 
-                                                    : isSelected 
-                                                        ? Colors.orange // ย้อมสีจางๆ ให้รู้ว่าเลือกอยู่
-                                                        : Colors.black)
-                                                    .withOpacity(isSelected ? 0.3 : 0.4),
-                                                BlendMode.darken),
-                                          )
-                                        : null,
-                                    ), // closes BoxDecoration
-                                    child: child,
-                                ); // closes return AnimatedContainer
-                              },
-                              child: AnimatedPadding(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOutCirc,
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 4, // ลดจาก 8 เหลือ 4
-                                  vertical: isSelected ? 12 : 8, // ลดความสูงลงเล็กน้อย
-                                ),
-                                child: FittedBox(
-                                  alignment: Alignment.centerLeft,
-                                  fit: BoxFit.scaleDown,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        displayTitle,
-                                        maxLines: 1,
-                                        style: const TextStyle(
-                                          fontFamily: 'SukhumvitSet',
-                                          color: Colors.white,
-                                          fontSize: 11, // ลดจาก 14 เหลือ 11
-                                          fontWeight: FontWeight.bold,
-                                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        dateStr,
-                                        maxLines: 1,
-                                        style: const TextStyle(
-                                          fontFamily: 'SukhumvitSet',
-                                          color: Colors.white,
-                                          fontSize: 9, // ลดจาก 12 เหลือ 9
-                                          fontWeight: FontWeight.w500,
-                                          shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-                                        ),
-                                      ),
-                                      // แสดง Badge เมื่อเป็น Local Preview (ยังรอ Server)
-                                      if (hasLocalPreview && isStillProcessing) ...[
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.orange.withOpacity(0.85),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Text(
-                                            '⏳ ตัวอย่างจากเครื่อง',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
+                                    // ✅ Bug #5 Fix: ไม่ใช้ BoxDecoration.image → ใช้ Stack+Image.network ใน child แทน
                                   ),
-                                ),
+                                  child: child,
+                                );
+                              },
+                              // ✅ Bug #5 Fix: ใช้ Stack เป็น child ของ AnimatedBuilder
+                              // เพื่อให้ Image.network มี errorBuilder + loadingBuilder
+                              child: Stack(
+                                fit: StackFit.loose,
+                                children: [
+                                  // Layer 1: Thumbnail Background
+                                  if (effectiveThumbnailUrl != null)
+                                    Positioned.fill(
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          effectiveThumbnailUrl,
+                                          fit: BoxFit.cover,
+                                          color: (isNewEmergency
+                                                  ? Colors.red
+                                                  : isSelected ? Colors.orange : Colors.black)
+                                              .withOpacity(isSelected ? 0.3 : 0.5),
+                                          colorBlendMode: BlendMode.darken,
+                                          // ✅ errorBuilder: แสดง fallback เมื่อ URL โหลดไม่ได้
+                                          errorBuilder: (_, __, ___) => _buildPlaceholderBackground(),
+                                          // ✅ loadingBuilder: shimmer เบาๆ ขณะโหลด
+                                          loadingBuilder: (_, child, progress) =>
+                                              progress == null ? child : _buildLoadingBackground(),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Positioned.fill(child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: _buildPlaceholderBackground(),
+                                    )),
+
+                                  // Layer 2: Text + Badge
+                                  _buildCardText(
+                                    isSelected: isSelected,
+                                    displayTitle: displayTitle,
+                                    dateStr: dateStr,
+                                    hasLocalPreview: hasLocalPreview,
+                                    isStillProcessing: isStillProcessing,
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -320,6 +413,105 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
       ),
     ),
    );
+  }
+
+  /// Placeholder background เมื่อไม่มีรูปหรือโหลดไม่ได้
+  Widget _buildPlaceholderBackground() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.blueGrey[800]!,
+            Colors.blueGrey[900]!,
+          ],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.image_not_supported_outlined, color: Colors.white24, size: 20),
+      ),
+    );
+  }
+
+  /// Loading shimmer เบาๆ ขณะโหลดรูป
+  Widget _buildLoadingBackground() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (_, __) => Container(
+        color: Colors.blueGrey[900]!.withOpacity(0.7 + 0.1 * _pulseController.value),
+      ),
+    );
+  }
+
+  /// Card text content (title + date + badge)
+  Widget _buildCardText({
+    required bool isSelected,
+    required String displayTitle,
+    required String dateStr,
+    required bool hasLocalPreview,
+    required bool isStillProcessing,
+  }) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCirc,
+      padding: EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: isSelected ? 12 : 8,
+      ),
+      child: FittedBox(
+        alignment: Alignment.centerLeft,
+        fit: BoxFit.scaleDown,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayTitle,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFamily: 'SukhumvitSet',
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              dateStr,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFamily: 'SukhumvitSet',
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+                shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+              ),
+            ),
+            // Badge เมื่อเป็น Local Preview (ยังรอ Server)
+            if (hasLocalPreview && isStillProcessing) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  '⏳ ตัวอย่างจากเครื่อง',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSkeletonList() {

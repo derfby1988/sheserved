@@ -24,7 +24,7 @@
 
 1. **บันทึกลง External Drive เท่านั้น**: ไฟล์วิดีโอ (Raw/Temp) และภาพหน้าปกวิดีโอ (Thumbnails) ทั้งหมด ต้องเก็บไว้ที่ `/Volumes/PostgreSQL/sheserved_videos`
 2. **ห้ามย้ายไปเก็บที่ Local Harddisk**: ห้ามเปลี่ยน `TEMP_VIDEO_PATH` ใน `.env` กลับเป็น `./temp/videos` บน Macintosh HD โดยเด็ดขาด
-3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ifconfig`) และระบุค่าให้ตรงกันทั้งใน `AppConfig.mainMachineIp` (Flutter) และ `.env` (Server) ทุกครั้งที่มีการเปลี่ยนวง Network เพื่อให้การสื่อสารระหว่างอุปกรณ์ไม่ติดขัด
+3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ipconfig getifaddr en0`) และระบุค่าให้ตรงกันทั้งใน `AppConfig.mainMachineIp` (Flutter) และ `LOCAL_API_URL` ใน `.env` (Server) ทุกครั้งที่มีการเปลี่ยนวง Network — **ดูขั้นตอนละเอียดใน Section "🔧 Network & Configuration Runbook" ด้านล่าง**
 
 ### สถาปัตยกรรม
 
@@ -153,11 +153,17 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
   - **Badge Visibility**: ผู้ใช้ทั่วไปหรือไทยมุงจะเห็นป้ายกำกับ "สงวนสิทธิ์ภาพบุคคล (Face Blur)" ที่มุมขวาบนของวิดีโอหรือภาพถ่าย
   - **Volunteer Privilege**: สำหรับผู้เป็นเจ้าของเหตุ หรือ **ผู้ได้รับสิทธิและผ่านระบบคัดกรองให้เป็นอาชีพจิตอาสา (Verified Volunteer)** ของเหตุการณ์นั้นๆ จะ **ไม่ต้องขึ้นป้ายกำกับนี้** เพราะถือว่ามีสิทธิประเมินร่องรอยและรายละเอียดบนวิดีโอในฐานะผู้ช่วยเหลือ
   - **Thai Mhung Photo Anonymization (New)**: ปรับปรุงจากการเบลอทั้งภาพด้วย UI ฟิลเตอร์ (Gallery Blur) มาเป็นการประมวลผลที่เซิร์ฟเวอร์เพื่อเบลอ **เฉพาะใบหน้าคน** วิธีนี้จะช่วยให้เจ้าหน้าที่และไทยมุงคนอื่นๆ เห็นรายละเอียดสภาพแวดล้อมและเหตุการณ์ได้ชัดเจน (เช่น ลักษณะบาดแผล, อุปกรณ์ประกอบฉาก) ในขณะที่ยังคงปกป้องตัวตนของบุคคลในภาพได้ 100%
-- **Animated WebP Thumbnail Generation (New)**: เมื่อมีการอัปโหลดภาพจากไทยมุงเข้าสู่เหตุการณ์ (ไม่มีวิดีโอ) ระบบเซิร์ฟเวอร์จะสร้างภาพ Thumbnail อัตโนมัติ:
-  - หากมี 1 ภาพ: จะทำการย่อขนาดภาพ (Resize ความกว้าง 400px) และบันทึกเป็นไฟล์ WebP เพื่อการโหลดที่รวดเร็ว
-  - หากมีมากกว่า 1 ภาพ: จะนำภาพทั้งหมดมาย่อขนาดและต่อรวมกันเป็นภาพเคลื่อนไหว (Animated WebP) ที่มี Framerate ต่ำ (เช่น เปลี่ยนภาพทุก 2 วินาที) ทำให้ได้ไฟล์ขนาดเล็กมาก (ไม่กินทรัพยากร) และจัดเก็บในโฟลเดอร์ของเหตุการณ์นั้น เพื่อส่งให้แอปพลิเคชันนำไปแสดงผลบนการ์ดยอดนิยมได้อย่างสวยงามและลื่นไหล
+- **Thumbnail Generation Pipeline (Async BullMQ — Updated 2026-05-07)**: ระบบสร้าง Thumbnail อัตโนมัติสำหรับทุกเหตุการณ์ โดยใช้ **Async Queue** เพื่อไม่ block HTTP Request:
+  - **Non-blocking Flow**: Upload → Respond 200 ทันที → push job ไปยัง `thumbnail-generation` Queue → Worker generate WebP → UPDATE DB → emit `thumbnail-updated` socket → TrendingPanel refresh รูปพื้นหลัง Real-time
+  - **Race Condition Fix**: ใช้ `resolveOnce()` + `clearTimeout()` ป้องกัน double-resolve ใน `thumbnail-service.js`
+  - **Path Safety (JSON Array)**: ส่งไฟล์ path เป็น JSON Array แทน comma-separated string ระหว่าง JS→Python ป้องกัน path-with-comma bug
+  - **Single Image**: Resize กว้าง 400px → WebP
+  - **Multi-Image (2-5 ภาพ)**: Blurred Background + Photo Album Stack (400×300px) → WebP — รองรับ Portrait/Landscape ทุก aspect ratio
+  - **Video Frame Extraction**: วิดีโอ HLS ได้ thumbnail จาก FFmpeg Extract Frame ที่วินาทีที่ 1 หลัง Transcode เสร็จ
+  - **Bunny CDN Upload (Optional)**: Worker อัปโหลด thumbnail ไป Bunny.net ถ้า `BUNNY_API_KEY` ตั้งค่าแล้ว → CDN URL ใช้ได้ทั่วโลก ไม่ผูกกับ LAN
+  - **Thumbnail Queue**: Concurrency 4, Retry 3 ครั้ง Exponential Backoff (2s/4s/8s), เก็บ log งานสำเร็จ 100 ชิ้นสุดท้าย
 - **FFmpeg**: Transcoding เป็น HLS (รองรับทั้งวิดีโอปกติและวิดีโอที่ผ่านการทำ Face Blur แล้ว)
-- **Priority Queue**: กำหนดให้ Emergency tasks รันก่อน
+- **Priority Queue**: Priority 1 = Video Transcode, Priority 2 = Thumbnail Generation
 - **Auto Cleanup**: ลบไฟล์ชั่วคราวและไฟล์วิดีโอต้นฉบับหลังประมวลผลและอัปโหลดเสร็จสิ้น
 
 ## UI/UX Implementation Tips (Standard for Figma Design)
@@ -193,7 +199,7 @@ PORT=3000
 +TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
 +
 +# Server Network
-+LOCAL_API_URL=http://192.168.0.116:3000
++LOCAL_API_URL=http://192.168.1.132:3000
 +
 +# Bunny.net
 BUNNY_API_KEY=<your_api_key>
@@ -204,8 +210,141 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.0.116:3000
+LOCAL_API_URL=http://192.168.1.132:3000
 ```
+
+---
+
+## 🔧 Network & Configuration Runbook
+
+> บันทึก ณ วันที่ 2026-05-07 — สร้างขึ้นจากปัญหาที่เกิดขึ้นจริง — ต้องเปิดอ่านและปฏิบัติตามทุกครั้งที่เปลี่ยนสถานที่ทำงานหรือเครือข่าย WiFi
+
+---
+
+### 🚨 Checklist: เมื่อเปลี่ยน Network / IP Address
+
+**ปัญหาที่จะเกิดถ้าไม่ทำ**: การ์ดเหตุการณ์จะแสดงพื้นหลังเป็นสีดำ (thumbnail โหลดไม่ได้) เพราะ URL ใน DB ยังชี้ไป IP เก่า
+
+#### ขั้นตอนที่ 1 — ตรวจสอบ IP ปัจจุบัน
+```bash
+# บน macOS (เครื่องหลัก)
+ipconfig getifaddr en0   # WiFi
+ipconfig getifaddr en1   # Ethernet / USB
+```
+> ใช้ IP ที่ device อื่น (iPhone/iPad) ในวงเดียวกันสามารถเข้าถึงได้
+
+#### ขั้นตอนที่ 2 — อัปเดต Flutter App Config
+```dart
+// lib/config/app_config.dart
+static const String mainMachineIp = '192.168.X.X'; // ← เปลี่ยนตรงนี้
+```
+> **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize IP ใน URL เก่าให้ตรงกับค่านี้เสมอ
+
+#### ขั้นตอนที่ 3 — อัปเดต Server Environment
+```bash
+# websocket-server/.env
+LOCAL_API_URL=http://192.168.X.X:3000  # ← เปลี่ยนตรงนี้
+```
+
+#### ขั้นตอนที่ 4 — Restart Server
+```bash
+cd websocket-server
+npm start
+```
+> ตรวจสอบ log บรรทัด `🌍 Network: http://X.X.X.X:3000` ว่าตรงกับ IP ที่ตั้งไว้
+
+#### ขั้นตอนที่ 5 — ทดสอบ (Optional)
+```bash
+# จาก device อื่นในวง
+curl http://192.168.X.X:3000/api/videos/emergency/list
+# ต้องได้ JSON response ไม่ใช่ connection refused
+```
+
+---
+
+### 📋 ไฟล์ทั้งหมดที่ต้องแก้เมื่อเปลี่ยน IP
+
+| ไฟล์ | ค่าที่ต้องแก้ | หมายเหตุ |
+|------|--------------|----------|
+| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB |
+| `websocket-server/.env` | `LOCAL_API_URL` | URL ที่ Server ใช้ generate thumbnail URL |
+| `websocket-server/.env` | `LOCAL_API_URL` (ซ้ำ — ลบออก 1 บรรทัด) | ดู env template ด้านบน |
+
+> **ไม่ต้องแก้**: DB records, ไฟล์ thumbnail ที่มีอยู่ — `_normalizeLocalUrl()` จัดการให้อัตโนมัติ
+
+---
+
+### 📁 Thumbnail Storage Architecture (Updated 2026-05-07)
+
+ระบบใช้ **2 storage location** สำหรับ thumbnail ด้วยเหตุผลที่ต่างกัน:
+
+| Location | Path | วัตถุประสงค์ | อายุ |
+|----------|------|------------|------|
+| **Temp** | `temp/videos/[id]/` | ไฟล์ thumbnail ที่ generate ระหว่างประมวลผล | ชั่วคราว — ถูก cleanup |
+| **Persistent** | `uploads/thumbnails/[id]/` | ไฟล์ thumbnail สำหรับแสดง UI ถาวร | **ถาวร — ไม่ถูก cleanup** |
+| **CDN** | `https://[zone].b-cdn.net/...` | Global delivery (ถ้า Bunny.net ตั้งค่า) | ถาวรบน CDN |
+
+**URL Pattern ที่ถูกต้อง:**
+```
+# Local (LAN only)
+http://192.168.X.X:3000/uploads/thumbnails/[incidentId]/thumb_[id].webp?t=[timestamp]
+
+# CDN (Global)
+https://[storage-zone].b-cdn.net/thumbnails/[incidentId]/thumb_[id].webp
+```
+
+> ⚠️ **สาเหตุที่รูปหาย**: URL เก่าชี้ไป `temp/videos/` ซึ่งถูก cleanup แล้ว URL ใหม่ทั้งหมดจะชี้ไป `uploads/thumbnails/` แทน
+
+---
+
+### 🔄 IP Normalization — กลไกป้องกันอัตโนมัติ
+
+ระบบมี **auto-normalization** ที่ Flutter side เพื่อป้องกัน blank cards เมื่อ IP เปลี่ยน:
+
+```dart
+// lib/features/video/models/video_models.dart
+String? get bestThumbnailUrl {
+  final raw = thumbnailUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null);
+  return _normalizeLocalUrl(raw);
+}
+
+static String? _normalizeLocalUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  if (url.startsWith('https://')) return url; // CDN — ไม่ต้อง normalize
+  // Replace IPv4 เก่าด้วย IP ปัจจุบัน
+  return url.replaceFirst(
+    RegExp(r'http://\d+\.\d+\.\d+\.\d+'),
+    'http://${AppConfig.mainMachineIp}',
+  );
+}
+```
+
+**ผลลัพธ์**: แม้ DB เก็บ URL ด้วย IP เก่า `192.168.0.116` — getter จะ return `192.168.1.132:3000/...` ให้อัตโนมัติ โดยต้องอัปเดตแค่ `AppConfig.mainMachineIp` เพียงจุดเดียว
+
+---
+
+### ⚡ Quick Commands Cheatsheet
+
+```bash
+# ดู IP ปัจจุบัน
+ipconfig getifaddr en0
+
+# เริ่ม server
+cd websocket-server && npm start
+
+# ตรวจสอบ thumbnail files
+ls websocket-server/uploads/thumbnails/
+
+# ดู URL ใน DB ว่าชี้ไป IP อะไร (ต้อง psql)
+psql -U postgres -d sheserved -c \
+  "SELECT id, LEFT(thumbnail_url,60) FROM videos WHERE type='emergency' LIMIT 5;"
+
+# ตรวจ API response จริง
+curl -s http://localhost:3000/api/videos/emergency/list | python3 -c \
+  "import sys,json; [print(v.get('thumbnail_url','(null)')[:70]) for v in json.load(sys.stdin)[:5]]"
+```
+
+---
 
 ## Cost Estimation
 
@@ -539,7 +678,48 @@ socketService.sendStatus(userId, videoId, 'ready', { progress: 100 });
 
 ---
 
+### Bug Fix #1b — Stale IP ใน Thumbnail URL ทำให้การ์ดพื้นหลังเป็นสีดำ *(Updated 2026-05-07)*
+**ไฟล์ที่เคยบกพร่อง:** `lib/features/video/models/video_models.dart`, `websocket-server/services/thumbnail-queue.js`
+
+**สาเหตุ:** DB เก็บ `thumbnail_url` เป็น Full URL รวม IP (เช่น `http://192.168.0.116:3000/...`) ทุกครั้งที่เชื่อมต่อ WiFi ใหม่หรือย้ายสถานที่ IP จะเปลี่ยน → `Image.network()` โหลดรูปไม่ได้ → การ์ดแสดงพื้นหลังสีดำ
+
+**กฎที่ต้องปฏิบัติ:**
+- ห้าม hardcode IP ใน URL ที่จะเก็บลง DB — ให้ใช้ `process.env.LOCAL_API_URL` เสมอ
+- ฝั่ง Flutter **ต้องใช้ `video.bestThumbnailUrl`** แทน `video.thumbnailUrl` ตรงๆ เสมอ เพราะ getter นี้มี IP normalization built-in
+- อัปเดต `AppConfig.mainMachineIp` **เป็นจุดเดียว** ที่ต้องเปลี่ยนเมื่อ IP เปลี่ยน
+
+```dart
+// ❌ ผิด — อาจได้ URL ที่ชี้ไป IP เก่า
+Image.network(video.thumbnailUrl!)
+
+// ✅ ถูก — normalize IP อัตโนมัติ
+Image.network(video.bestThumbnailUrl!)
+```
+
+---
+
+### Bug Fix #1c — Thumbnail ถูกเก็บใน `temp/` ซึ่งถูก Cleanup *(Updated 2026-05-07)*
+**ไฟล์ที่เคยบกพร่อง:** `websocket-server/services/thumbnail-queue.js`
+
+**สาเหตุ:** Thumbnail Worker บันทึกไฟล์ `.webp` ลงใน `temp/videos/[id]/` ซึ่งเป็น directory เดียวกับไฟล์วิดีโอชั่วคราว — เมื่อ Auto Cleanup ทำงาน ไฟล์ thumbnail ถูกลบพร้อมกัน → URL ใน DB ชี้ไปไฟล์ที่ไม่มีอยู่แล้ว
+
+**กฎที่ต้องปฏิบัติ:**
+- Thumbnail ที่ใช้แสดง UI **ต้องเก็บใน `uploads/thumbnails/[id]/`** เท่านั้น (persistent directory)
+- ห้ามเก็บ thumbnail ที่จะใช้แสดง UI ใน `temp/` directory ใดๆ ทั้งสิ้น
+- Route `/uploads/thumbnails` ต้องถูก serve เป็น static files ใน `server.js` เสมอ
+
+```javascript
+// ❌ ผิด — จะถูก cleanup พร้อมวิดีโอ
+const thumbPath = path.join(tempVideoDir, videoId, 'thumb.webp');
+
+// ✅ ถูก — persistent location ไม่ถูก cleanup
+const thumbPath = path.join(__dirname, '../uploads/thumbnails', videoId, 'thumb.webp');
+```
+
+---
+
 ### Bug Fix #2 — Dev Auto-Seeding ต้องถูก Guard ด้วย `NODE_ENV`
+
 **ไฟล์ที่เคยบกพร่อง:** `websocket-server/server.js`
 
 **สาเหตุ:** โค้ด Auto-Seeding ที่สร้างขึ้นเพื่อ Development ถูกปล่อยให้ทำงานทุก Environment — ทำให้ทุก user ที่ connect บน Production ถูก assign role "กู้ภัย" โดยอัตโนมัติ เป็น Security Risk ร้ายแรง

@@ -246,6 +246,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     final isPrivilegedUser = widget.role == 'reporter' || widget.role == 'responder';
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         // ── Top Bar ──
         Row(
@@ -318,7 +319,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         const SizedBox(height: 4),
 
         // ── รายการข้อความ ──
-        Expanded(child: _buildMessageList()),
+        Flexible(child: _buildMessageList()),
 
         // ── Input bar ──
         _buildInputArea(),
@@ -329,9 +330,13 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   Widget _buildMessageList() {
     if (_isLoadingHistory) {
       return const Center(
-        child: SizedBox(
-          width: 22, height: 22,
-          child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+        heightFactor: 1.0,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: SizedBox(
+            width: 22, height: 22,
+            child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+          ),
         ),
       );
     }
@@ -341,16 +346,21 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         : _messages;
 
     if (displayMessages.isEmpty) {
-      return Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            _isFilterActive ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่' : 'ยังไม่มีการสนทนา',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Align(
+          alignment: Alignment.center,
+          heightFactor: 1.0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _isFilterActive ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่' : 'ยังไม่มีการสนทนา',
+              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+            ),
           ),
         ),
       );
@@ -361,6 +371,8 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       thumbVisibility: true,
       child: ListView.builder(
         controller: _scrollController,
+        shrinkWrap: true,
+        physics: const ClampingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         itemCount: displayMessages.length,
         itemBuilder: (context, index) {
