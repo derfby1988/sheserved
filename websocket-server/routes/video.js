@@ -322,9 +322,9 @@ module.exports = (pool) => {
             }
 
             const result = await pool.query(
-                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, thumbnail_url, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, 'processing') RETURNING *`,
-                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl, thumbnailUrl]
+                `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, thumbnail_url, incident_id, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, 'processing') RETURNING *`,
+                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl, thumbnailUrl, incidentId || null]
             );
 
             const videoRecord = result.rows[0];
@@ -482,6 +482,49 @@ module.exports = (pool) => {
             res.json(result.rows);
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch GPS tracks' });
+        }
+    });
+
+    // Get gallery photos for a specific incident with pagination
+    router.get('/:id/gallery', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 20;
+            const offset = (page - 1) * limit;
+
+            const result = await pool.query(
+                `SELECT id, photo_urls, created_at, user_id 
+                 FROM videos 
+                 WHERE type = $1 AND incident_id = $2 
+                 ORDER BY created_at DESC 
+                 LIMIT $3 OFFSET $4`,
+                ['thai_mhung_photo', id, limit, offset]
+            );
+
+            // Transform rows to return individual photos
+            const finalPhotos = [];
+            for (const row of result.rows) {
+                let urls = [];
+                if (Array.isArray(row.photo_urls)) urls = row.photo_urls;
+                else if (typeof row.photo_urls === 'string') {
+                    try { urls = JSON.parse(row.photo_urls); } catch(e) {}
+                }
+
+                for (let i = 0; i < urls.length; i++) {
+                    finalPhotos.push({
+                        id: `${row.id}_${i}`,
+                        photo_url: urls[i],
+                        created_at: row.created_at,
+                        user_id: row.user_id
+                    });
+                }
+            }
+
+            res.json(finalPhotos);
+        } catch (error) {
+            console.error('Error fetching gallery photos:', error.message);
+            res.status(500).json({ error: 'Failed to fetch gallery photos' });
         }
     });
 

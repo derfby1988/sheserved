@@ -1,3 +1,5 @@
+import 'package:cached_network_image/cached_network_image.dart';
+
 import 'package:flutter/material.dart';
 
 class ThaiMhungPhoto {
@@ -133,10 +135,10 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                               children: [
                                 Positioned.fill(
                                   // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
-                                  child: Image.network(
+                                  child: CachedNetworkImage(imageUrl: 
                                     item.photo.url,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Container(
+                                    errorWidget: (context, url, error) => Container(
                                       color: Colors.grey[900],
                                       child: const Icon(Icons.broken_image, color: Colors.white24),
                                     ),

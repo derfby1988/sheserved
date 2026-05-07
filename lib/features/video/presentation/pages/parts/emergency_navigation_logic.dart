@@ -114,7 +114,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   Future<void> _loadGalleryPhotos() async {
     if (_currentVideoId == null) return;
     try {
-      final results = await ServiceLocator.instance.videoRepository.getThaiMhungGalleryPhotos(_currentVideoId!);
+      _galleryPage = 1;
+      _hasMoreGallery = true;
+      final results = await ServiceLocator.instance.videoRepository.getThaiMhungGalleryPhotos(_currentVideoId!, page: _galleryPage, limit: 20);
       debugPrint('[Gallery] Raw results count: ${results.length}');
       
       if (mounted) {
@@ -124,14 +126,46 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             url: e['photo_url']?.toString() ?? '',
             userName: e['user_id']?.toString(),
           ))
-          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty) // กรอง URL ว่างออก
+          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty)
           .toList();
         
         debugPrint('[Gallery] Valid photos after filter: ${photos.length}');
-        setState(() { _thaiMhungPhotos = photos; });
+        setState(() { 
+          _thaiMhungPhotos = photos; 
+          if (photos.length < 20) _hasMoreGallery = false;
+        });
       }
     } catch (e) {
       debugPrint('[Gallery] Error loading gallery photos: $e');
+    }
+  }
+
+  Future<void> _loadMoreGalleryPhotos() async {
+    if (_currentVideoId == null || !_hasMoreGallery || _isLoadingMoreGallery) return;
+    if (mounted) setState(() => _isLoadingMoreGallery = true);
+    try {
+      _galleryPage++;
+      final results = await ServiceLocator.instance.videoRepository.getThaiMhungGalleryPhotos(_currentVideoId!, page: _galleryPage, limit: 20);
+      
+      if (mounted) {
+        final photos = results
+          .map((e) => ThaiMhungPhoto(
+            id: e['id']?.toString() ?? '',
+            url: e['photo_url']?.toString() ?? '',
+            userName: e['user_id']?.toString(),
+          ))
+          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty)
+          .toList();
+        
+        setState(() { 
+          _thaiMhungPhotos.addAll(photos);
+          _isLoadingMoreGallery = false;
+          if (photos.length < 20) _hasMoreGallery = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Gallery] Error loading more gallery photos: $e');
+      if (mounted) setState(() => _isLoadingMoreGallery = false);
     }
   }
 

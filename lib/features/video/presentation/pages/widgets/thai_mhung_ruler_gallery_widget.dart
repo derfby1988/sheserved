@@ -1,3 +1,5 @@
+import 'package:cached_network_image/cached_network_image.dart';
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../../services/service_locator.dart';
@@ -63,6 +65,9 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
   StreamSubscription? _wsPhotoSub;
   Timer? _pollTimer;
   int _currentIndex = 0;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   final FixedExtentScrollController _scrollController = FixedExtentScrollController();
   
   final Set<String> _newItemIds = {};
@@ -74,6 +79,13 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
     _subscribeToNewPhotos();
     _subscribeToWebSocketPhotos();
     _startPolling();
+
+    // Listen for scrolling to the end to fetch more
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+        _fetchMorePhotos();
+      }
+    });
   }
 
   /// ✅ Fallback Polling: ทุก 5 วินาทีจะเช็คว่ามีภาพใหม่ไหม (กรณี WebSocket/Supabase Realtime ไม่ทำงาน)
@@ -87,10 +99,11 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
     if (!mounted) return;
     try {
       final repo = ServiceLocator.instance.videoRepository;
-      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId);
+      // For polling new photos, we only fetch the first page
+      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: 1, limit: 20);
       final newPhotos = results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList();
       
-      if (newPhotos.length > _photos.length && mounted) {
+      if (newPhotos.isNotEmpty && mounted) {
         // มีภาพใหม่เข้ามา!
         final existingUrls = _photos.map((p) => p.photoUrl).toSet();
         final arrivedPhotos = newPhotos.where((p) => !existingUrls.contains(p.photoUrl)).toList();
@@ -186,14 +199,17 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
 
   Future<void> _fetchPhotos() async {
     try {
+      _currentPage = 1;
+      _hasMore = true;
       final repo = ServiceLocator.instance.videoRepository;
-      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId);
+      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: _currentPage, limit: 20);
 
       if (mounted) {
         setState(() {
           _photos.clear();
           _photos.addAll(results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList());
           _isLoading = false;
+          if (results.length < 20) _hasMore = false;
         });
         
         if (_photos.isNotEmpty) {
@@ -206,6 +222,26 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchMorePhotos() async {
+    if (!_hasMore || _isLoadingMore) return;
+    if (mounted) setState(() => _isLoadingMore = true);
+    try {
+      _currentPage++;
+      final repo = ServiceLocator.instance.videoRepository;
+      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: _currentPage, limit: 20);
+
+      if (mounted) {
+        setState(() {
+          _photos.addAll(results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList());
+          _isLoadingMore = false;
+          if (results.length < 20) _hasMore = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -340,14 +376,11 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                               children: [
                                 // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
                                 // ไม่ต้องเบลอซ้ำที่ client ไม่ว่าจะมีสิทธิ์หรือไม่ก็ตาม
-                                Image.network(
-                                  pUrl,
+                                CachedNetworkImage(
+                                  imageUrl: pUrl,
                                   fit: BoxFit.contain,
-                                  loadingBuilder: (context, child, progress) {
-                                    if (progress == null) return child;
-                                    return const CircularProgressIndicator(color: Colors.pinkAccent);
-                                  },
-                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                  placeholder: (context, url) => const CircularProgressIndicator(color: Colors.pinkAccent),
+                                  errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
                                 ),
                                 // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
                                 Positioned(
@@ -524,14 +557,11 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                         children: [
                           // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
                           // ไม่ต้องเบลอซ้ำทั้งภาพ — เพื่อให้เห็นรายละเอียดเหตุการณ์ได้ชัดเจน
-                          Image.network(
-                            photo.photoUrl,
+                          CachedNetworkImage(
+                            imageUrl: photo.photoUrl,
                             fit: BoxFit.cover,
-                            loadingBuilder: (context, child, progress) {
-                              if (progress == null) return child;
-                              return Container(color: Colors.black12);
-                            },
-                            errorBuilder: (context, error, stackTrace) => Container(
+                            placeholder: (context, url) => Container(color: Colors.black12),
+                            errorWidget: (context, url, error) => Container(
                               color: Colors.grey[900],
                               child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
                             ),

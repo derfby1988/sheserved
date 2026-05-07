@@ -130,7 +130,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   bool _isPhotoMode = false;
   bool _isThaiMhungReporting = false;
   final List<XFile> _capturedPhotos = [];
-  List<ThaiMhungPhoto> _thaiMhungPhotos = [];
+  List<ThaiMhungPhoto> _thaiMhungPhotos = []; int _galleryPage = 1; bool _hasMoreGallery = true; bool _isLoadingMoreGallery = false; ScrollController _galleryScrollController = ScrollController();
   final List<LatLng> _routePoints = [];
   bool _canViewUnblurred = false;
   bool _isUiVisible = true;

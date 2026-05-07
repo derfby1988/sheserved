@@ -59,51 +59,25 @@ class VideoRepository {
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
   /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) 
   /// @param videoId คือ incident (emergency) video ID ที่ภาพเหล่านั้นอ้างอิง
-  Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId) async {
+  Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId, {int page = 1, int limit = 20}) async {
     try {
       final List<Map<String, dynamic>> finalPhotos = [];
       
-      // === 1. Local API Fast-Path (ไม่มี Delay) ===
-      // แฟ้มภาพไทยมุงถูกเก็บด้วยโครงสร้าง /[incidentId]/thaimhung/[uploadVideoId]/[filename.jpg]
+      // === 1. Local API Fast-Path (Dedicated Pagination Endpoint) ===
       try {
         final response = await http
-            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos?type=thai_mhung_photo'))
+            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gallery?page=$page&limit=$limit'))
             .timeout(const Duration(seconds: 3));
         if (response.statusCode == 200) {
           final List data = jsonDecode(response.body);
           for (final v in data) {
-            final photoUrlsRaw = v['photo_urls'];
-            List<String> photoUrls = [];
-            if (photoUrlsRaw is List) {
-              photoUrls = photoUrlsRaw.map((u) => u.toString()).toList();
-            } else if (photoUrlsRaw is String) {
-              try { photoUrls = List<String>.from(jsonDecode(photoUrlsRaw)); } catch (_) {}
-            }
-            
-            if (photoUrls.isNotEmpty) {
-              for (int i = 0; i < photoUrls.length; i++) {
-                final url = _ensureFullUrl(photoUrls[i]);
-                // ✅ แก้ Data Pollution: กรองเฉพาะรูปที่เป็นของ Incident ID นี้เท่านั้น
-                if (url.contains('/$videoId/thaimhung/')) {
-                  finalPhotos.add({
-                    'id': '${v['id']}_$i',
-                    'photo_url': url,
-                    'created_at': v['created_at'],
-                    'user_id': v['user_id'],
-                  });
-                }
-              }
-            } else if (v['bunny_url'] != null && v['bunny_url'].toString().isNotEmpty) {
-               final url = _ensureFullUrl(v['bunny_url'].toString());
-               if (url.contains('/$videoId/thaimhung/')) {
-                 finalPhotos.add({
-                    'id': v['id'],
-                    'photo_url': url,
-                    'created_at': v['created_at'],
-                    'user_id': v['user_id'],
-                  });
-               }
-            }
+             final url = _ensureFullUrl(v['photo_url']?.toString() ?? '');
+             finalPhotos.add({
+               'id': v['id'],
+               'photo_url': url,
+               'created_at': v['created_at'],
+               'user_id': v['user_id'],
+             });
           }
         }
       } catch (e) {
@@ -113,11 +87,13 @@ class VideoRepository {
       // === 2. Supabase Fallback (ในกรณีดูย้อนหลัง) ===
       if (finalPhotos.isEmpty) {
         try {
+          final offset = (page - 1) * limit;
           final response1 = await _client
               .from('thai_mhung_photos')
               .select()
               .eq('video_id', videoId)
-              .order('created_at', ascending: true);
+              .order('created_at', ascending: false)
+              .range(offset, offset + limit - 1);
           
           final results1 = List<Map<String, dynamic>>.from(response1 as List);
           if (results1.isNotEmpty) {
@@ -134,8 +110,8 @@ class VideoRepository {
         }
       }
 
-      // เรียงลำดับเอาภาพใหม่สุดขึ้นก่อน
-      return finalPhotos.reversed.toList();
+      // We already order by DESC in both API and Supabase
+      return finalPhotos;
     } catch (e) {
       debugPrint('VideoRepository: Error fetching gallery photos: $e');
       return [];
