@@ -22,6 +22,7 @@ class LiveViewWidget extends StatefulWidget {
   /// เรียกเมื่อผู้ใช้กดลูกศรสลับคำร้อง
   final Function(bool forward)? onSwitchRequest;
   final List<Video> trendingVideos;
+  final VoidCallback? onLoadMoreTrending;
   final bool isLoadingTrending;
   final bool canViewUnblurred;
   final String? highlightVideoId;
@@ -47,6 +48,7 @@ class LiveViewWidget extends StatefulWidget {
     this.activeRequestIndex = 0,
     this.onSwitchRequest,
     required this.trendingVideos,
+    this.onLoadMoreTrending,
     required this.isLoadingTrending,
     this.highlightVideoId,
     this.canViewUnblurred = false,
@@ -303,6 +305,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                     child: TrendingPanelWidget(
                       key: widget.trendingPanelKey,
                       trendingVideos: widget.trendingVideos,
+                      onLoadMore: widget.onLoadMoreTrending,
                       isLoadingTrending: widget.isLoadingTrending,
                       currentVideoId: widget.currentVideoId,
                       highlightVideoId: widget.highlightVideoId,

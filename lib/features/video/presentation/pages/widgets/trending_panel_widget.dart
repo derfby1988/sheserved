@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:sheserved/config/app_config.dart';
 import 'package:sheserved/services/websocket_service.dart';
@@ -12,6 +13,7 @@ class TrendingPanelWidget extends StatefulWidget {
   final String? currentVideoId;
   final String? highlightVideoId; // ID ของวิดีโอที่เป็นเหตุฉุกเฉินใหม่
   final Function(String) onSwitchVideo;
+  final VoidCallback? onLoadMore;
 
   const TrendingPanelWidget({
     super.key,
@@ -20,6 +22,7 @@ class TrendingPanelWidget extends StatefulWidget {
     required this.currentVideoId,
     required this.onSwitchVideo,
     this.highlightVideoId,
+    this.onLoadMore,
   });
 
   @override
@@ -49,6 +52,12 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
+
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+        widget.onLoadMore?.call();
+      }
+    });
 
     // ✅ Recommendation #7: ฟัง thumbnail-updated event จาก WebSocket
     _thumbnailSub = WebSocketService().thumbnailUpdateStream.listen((data) {
@@ -371,19 +380,18 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget> with SingleTi
                                     Positioned.fill(
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(12),
-                                        child: Image.network(
-                                          effectiveThumbnailUrl,
+                                        child: CachedNetworkImage(
+                                          imageUrl: effectiveThumbnailUrl,
                                           fit: BoxFit.cover,
                                           color: (isNewEmergency
                                                   ? Colors.red
                                                   : isSelected ? Colors.orange : Colors.black)
                                               .withOpacity(isSelected ? 0.3 : 0.5),
                                           colorBlendMode: BlendMode.darken,
-                                          // ✅ errorBuilder: แสดง fallback เมื่อ URL โหลดไม่ได้
-                                          errorBuilder: (_, __, ___) => _buildPlaceholderBackground(),
-                                          // ✅ loadingBuilder: shimmer เบาๆ ขณะโหลด
-                                          loadingBuilder: (_, child, progress) =>
-                                              progress == null ? child : _buildLoadingBackground(),
+                                          // ✅ errorWidget: แสดง fallback เมื่อ URL โหลดไม่ได้
+                                          errorWidget: (_, __, ___) => _buildPlaceholderBackground(),
+                                          // ✅ placeholder: shimmer เบาๆ ขณะโหลด
+                                          placeholder: (_, __) => _buildLoadingBackground(),
                                         ),
                                       ),
                                     )

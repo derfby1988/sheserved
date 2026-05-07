@@ -142,10 +142,10 @@ class VideoRepository {
     }
   }
 
-  Future<List<Video>> getEmergencyVideos() async {
+  Future<List<Video>> getEmergencyVideos({int page = 1, int limit = 20}) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list')).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit')).timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => Video.fromJson(json)).toList();
@@ -154,12 +154,13 @@ class VideoRepository {
       debugPrint('VideoRepository: Local emergency list failed - $e');
     }
 
+    final offset = (page - 1) * limit;
     final response = await _client
         .from('videos')
         .select()
         .eq('type', 'emergency')
         .order('created_at', ascending: false)
-        .limit(20);
+        .range(offset, offset + limit - 1);
     return (response as List).map((json) => Video.fromJson(json)).toList();
   }
 

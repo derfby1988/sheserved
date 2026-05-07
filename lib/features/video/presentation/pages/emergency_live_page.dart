@@ -118,7 +118,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   List<DonationCategory> _emergencyCategories = [];
   bool _isLoadingCategories = false;
 
-  List<Video> _trendingVideos = [];
+  List<Video> _trendingVideos = []; int _trendingPage = 1; bool _hasMoreTrending = true; bool _isLoadingMoreTrending = false;
   bool _isLoadingTrending = true;
   String? _highlightVideoId;
 
@@ -566,6 +566,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           });
         },
         trendingVideos: _trendingVideos,
+        onLoadMoreTrending: _loadMoreTrendingVideos,
         isLoadingTrending: _isLoadingTrending,
         highlightVideoId: _highlightVideoId,
         canViewUnblurred: _canViewUnblurred,

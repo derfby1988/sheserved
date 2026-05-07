@@ -393,15 +393,22 @@ module.exports = (pool) => {
 
     // Get emergency videos list (trending) - with user info & interaction counts
     router.get('/emergency/list', async (req, res) => {
-        console.log('[API] Fetching emergency videos list');
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+
+        console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
         try {
+            // ✅ Optimization for Massive Scale: 
+            // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
+            // 2. Added LIMIT and OFFSET for infinite scrolling
             const result = await pool.query(`
                 SELECT v.*,
                     COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                     u.profile_image_url AS user_avatar,
                     dc.name AS category_name,
-                    COALESCE(vc.view_count, 0)::int AS viewer_count,
-                    COALESCE(lc.like_count, 0)::int AS like_count,
+                    v.cached_view_count AS viewer_count,
+                    v.cached_like_count AS like_count,
                     gt.latitude,
                     gt.longitude,
                     v.address, v.road, v.soi, v.alley, v.village
@@ -409,24 +416,14 @@ module.exports = (pool) => {
                 LEFT JOIN users u ON u.id = v.user_id
                 LEFT JOIN donation_categories dc ON dc.id::text = v.category_id::text
                 LEFT JOIN (
-                    SELECT video_id, COUNT(*) AS view_count
-                    FROM video_interactions WHERE type = 'view'
-                    GROUP BY video_id
-                ) vc ON vc.video_id = v.id
-                LEFT JOIN (
-                    SELECT video_id, COUNT(*) AS like_count
-                    FROM video_interactions WHERE type = 'like'
-                    GROUP BY video_id
-                ) lc ON lc.video_id = v.id
-                LEFT JOIN (
                     SELECT DISTINCT ON (video_id) video_id, latitude, longitude
                     FROM video_gps_tracks
                     ORDER BY video_id, timestamp_offset ASC
                 ) gt ON gt.video_id = v.id
                 WHERE v.type IN ('emergency', 'emergency_photo')
                 ORDER BY v.created_at DESC
-                LIMIT 20
-            `);
+                LIMIT $1 OFFSET $2
+            `, [limit, offset]);
 
             res.json(result.rows);
         } catch (error) {

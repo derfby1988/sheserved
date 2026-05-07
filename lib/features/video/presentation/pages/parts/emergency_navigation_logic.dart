@@ -190,9 +190,37 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   Future<void> _loadTrendingVideos() async {
     try {
-      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos();
-      if (mounted) { setState(() { _trendingVideos = videos; _isLoadingTrending = false; }); }
-    } catch (_) { if (mounted) setState(() => _isLoadingTrending = false); }
+      _trendingPage = 1;
+      _hasMoreTrending = true;
+      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos(page: _trendingPage, limit: 20);
+      if (mounted) { 
+        setState(() { 
+          _trendingVideos = videos; 
+          _isLoadingTrending = false; 
+          if (videos.length < 20) _hasMoreTrending = false;
+        }); 
+      }
+    } catch (_) { 
+      if (mounted) setState(() => _isLoadingTrending = false); 
+    }
+  }
+
+  Future<void> _loadMoreTrendingVideos() async {
+    if (!_hasMoreTrending || _isLoadingMoreTrending) return;
+    if (mounted) setState(() => _isLoadingMoreTrending = true);
+    try {
+      _trendingPage++;
+      final videos = await ServiceLocator.instance.videoRepository.getEmergencyVideos(page: _trendingPage, limit: 20);
+      if (mounted) {
+        setState(() {
+          _trendingVideos.addAll(videos);
+          _isLoadingMoreTrending = false;
+          if (videos.length < 20) _hasMoreTrending = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingMoreTrending = false);
+    }
   }
 
   Future<void> _checkPrivacyPermissions() async {
