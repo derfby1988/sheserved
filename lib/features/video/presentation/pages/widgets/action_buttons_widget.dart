@@ -130,6 +130,7 @@ class ActionButtonsWidget extends StatelessWidget {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center, // ให้ป้ายขวาเตี้ยกว่าและอยู่กึ่งกลาง
       children: [
         // ลูกศรซ้าย (เฉพาะ Viewer + หลายคำร้อง)
         if (hasMultiple && !userCanCreateRequest)
@@ -137,7 +138,7 @@ class ActionButtonsWidget extends StatelessWidget {
             onTap: () => onSwitchRequest?.call(false),
             child: Container(
               width: 18,
-              height: 22,
+              height: 22, // คงความสูงเดิมให้กดง่าย
               decoration: BoxDecoration(
                 color: const Color(0xFF6B7280).withOpacity(0.5),
                 borderRadius: const BorderRadius.only(
@@ -161,7 +162,7 @@ class ActionButtonsWidget extends StatelessWidget {
                     bottomLeft: Radius.circular(4),
                   ),
             child: Container(
-              width: 50, // ลดจาก 70 เหลือ 50
+              width: 50, // คงขนาด 50 ไว้ให้ตรงกับกล่องไลค์
               padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF6B7280).withOpacity(0.8),
@@ -169,13 +170,40 @@ class ActionButtonsWidget extends StatelessWidget {
                     Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Center(
-                child: Text(
-                  _donationDisplayValue,
-                  style: const TextStyle(
-                    fontFamily: 'SukhumvitSet',
-                    fontSize: 12, // ลดจาก 14 เหลือ 12
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Dummy Text บังคับความสูงให้เท่ากับกล่องไลค์เป๊ะๆ
+                      const Visibility(
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        visible: false,
+                        child: Text(
+                          '0',
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      // ตัวหนังสือจริงที่สามารถหดขนาดได้หากยาวเกิน
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _donationDisplayValue,
+                          style: const TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -251,6 +279,7 @@ class ActionButtonsWidget extends StatelessWidget {
       onTap: onTap,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center, // ให้ป้ายขวาเตี้ยกว่าและอยู่กึ่งกลาง
         children: [
           ClipRRect(
             borderRadius: const BorderRadius.only(
@@ -267,13 +296,40 @@ class ActionButtonsWidget extends StatelessWidget {
                 border: Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Center(
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                    fontFamily: 'SukhumvitSet',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Dummy Text บังคับความสูงให้เท่ากับกล่องไลค์เป๊ะๆ
+                      const Visibility(
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        visible: false,
+                        child: Text(
+                          '0',
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      // ตัวหนังสือจริงที่สามารถหดขนาดได้หากยาวเกิน (เช่น ให้ทาง 100K)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
