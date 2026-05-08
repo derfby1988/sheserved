@@ -252,6 +252,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                   const SizedBox(height: 12),
                                   ActionButtonsWidget(
                                     likeCountFormatted: widget.likeCountFormatted,
+                                    likeCount: widget.likeCount, // ✅ ส่งยอดไลค์ไปให้กราฟด้านใน
                                     isLiked: widget.isLiked,
                                     activeRequests: widget.activeRequests,
                                     activeRequestIndex: widget.activeRequestIndex,
@@ -299,18 +300,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                           ],
                         ],
                       ),
-                      // ✅ [Support Analytics] กราฟแนวโน้ม (Trend Chart)
-                      if (widget.currentVideoId != null)
-                        SizedBox(
-                          width: (constraints.maxWidth - 32) * 0.45,
-                          child: LikeTrendChartWidget(
-                            videoId: widget.currentVideoId!,
-                            isLiked: widget.isLiked,
-                            likeCount: widget.likeCount,
-                            triggerRefresh: widget.likeTrigger,
-                            onToggleLike: widget.onLike,
-                          ),
-                        ),
+                      // ✅ [Support Analytics] เอาโค้ด LikeTrendChartWidget ตรงนี้ออกเพราะถูกย้ายไปใน ActionButtonsWidget แล้ว
                     ],
                   ),
                 ),

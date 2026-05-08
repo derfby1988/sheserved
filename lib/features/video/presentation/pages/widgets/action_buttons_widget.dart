@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:sheserved/features/donation/models/donation_models.dart';
+import 'like_trend_chart_widget.dart'; // ✅ นำเข้า Widget ใหม่
 
 /// ActionButtonsWidget — ปุ่มโต้ตอบ: ส่งกำลังใจ / ให้ทาง / บริจาค
 ///
@@ -12,6 +13,7 @@ import 'package:sheserved/features/donation/models/donation_models.dart';
 ///   แสดงเฉพาะเมื่อมีคำร้อง active ≥ 1 ใบ เพื่อไม่สร้างความสับสน
 class ActionButtonsWidget extends StatelessWidget {
   final String likeCountFormatted;
+  final int likeCount; // ✅ เพิ่มตัวแปรยอดไลค์แบบตัวเลข
   final bool isLiked;  // ✅ [Support Analytics] DB toggle state
 
   // รายการคำร้องบริจาคที่ active อยู่ของวิดีโอนี้
@@ -33,6 +35,7 @@ class ActionButtonsWidget extends StatelessWidget {
   const ActionButtonsWidget({
     super.key,
     required this.likeCountFormatted,
+    this.likeCount = 0, // ✅ กำหนดค่าเริ่มต้น
     this.isLiked = false,
     required this.activeRequests,
     required this.yieldWayCount,
@@ -99,11 +102,12 @@ class ActionButtonsWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInteractionButtonRow(
-          value: likeCountFormatted,
-          label: 'ส่งกำลังใจ',
-          isActive: isLiked,
-          onTap: onLike,
+        // ✅ ใช้ LikeTrendChartWidget แทนแถว "ส่งกำลังใจ" แบบเดิม
+        LikeTrendChartWidget(
+          isLiked: isLiked,
+          likeCount: likeCount,
+          likeCountFormatted: likeCountFormatted,
+          onToggleLike: onLike,
         ),
         const SizedBox(height: 6),
         _buildInteractionButtonRow(

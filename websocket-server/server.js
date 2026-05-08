@@ -1707,14 +1707,37 @@ server.listen(PORT, '0.0.0.0', () => {
   let localIp = 'localhost';
 
   // ตรวจหา IP ที่ไม่ใช่ 127.0.0.1 (Loopback)
-  Object.keys(networkInterfaces).forEach((ifname) => {
-    networkInterfaces[ifname].forEach((iface) => {
-      if ('IPv4' !== iface.family || iface.internal !== false) {
-        return;
-      }
-      localIp = iface.address;
+  // ลำดับความสำคัญ: 1. LOCAL_API_URL (ถ้ามี), 2. 192.168.x.x, 3. 10.x.x.x, 4. อื่นๆ (ยกเว้น 169.254)
+  if (process.env.LOCAL_API_URL) {
+    try {
+      const url = new URL(process.env.LOCAL_API_URL);
+      localIp = url.hostname;
+    } catch (e) {
+      console.warn('⚠️  Invalid LOCAL_API_URL in .env');
+    }
+  }
+
+  if (localIp === 'localhost') {
+    Object.keys(networkInterfaces).forEach((ifname) => {
+      networkInterfaces[ifname].forEach((iface) => {
+        if ('IPv4' !== iface.family || iface.internal !== false) {
+          return;
+        }
+        
+        // ข้าม Self-assigned IP (169.254.x.x)
+        if (iface.address.startsWith('169.254')) {
+          return;
+        }
+
+        // ถ้าเจอ 192.168 หรือ 10. ให้ใช้ทันที (ส่วนใหญ่เป็น LAN IP จริง)
+        if (iface.address.startsWith('192.168') || iface.address.startsWith('10.')) {
+          localIp = iface.address;
+        } else if (localIp === 'localhost') {
+          localIp = iface.address;
+        }
+      });
     });
-  });
+  }
 
   console.log(`
   ======================================================
