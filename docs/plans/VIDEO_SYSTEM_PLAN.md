@@ -147,16 +147,23 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
 3. **Gallery Data Indexing (Backend)**: เพิ่มคอลัมน์ `incident_id` ในตาราง `videos` ของ PostgreSQL โดยตรง เพื่อทำ Data Relation ระหว่างรูปภาพไทยมุงกับเหตุการณ์หลัก แทนการใช้วิธีค้นหาจาก URL (String Regex Matching) ซึ่งกินทรัพยากรสูง และสร้าง API `GET /api/videos/:id/gallery` แยกเฉพาะสำหรับการทำ Pagination (แบ่งหน้าละ 20 รูป)
 4. **Image Cache Control (Frontend)**: เปลี่ยนการใช้ `Image.network` ที่เปลืองหน่วยความจำในกรณีข้อมูลล้นหลาม ไปใช้ `CachedNetworkImage` ในทุกจุดของแอป (Trending Panel, Gallery, Lightbox) เพื่อให้ระบบมี Cache Manager จัดการรูปภาพในเครื่อง จำกัดพื้นที่และเคลียร์รูปภาพที่ไม่ได้แสดงบนหน้าจอทิ้งอัตโนมัติ พร้อมทำ Loading Shimmer และ Error Builder เพื่อให้ UI สวยงามไม่กระตุกเมื่อเน็ตเวิร์คมีปัญหา
 
-### Support Analytics System (Merit Score Trends — Updated 2026-05-08)
-ระบบแสดงผลสถิติการ "ส่งกำลังใจ" (Likes/Merit Score) แบบ Real-time เพื่อสร้าง Engagement และความโปร่งใสในเหตุการณ์ฉุกเฉิน:
-1. **Integrated Dynamic Visualization (Frontend)**: ปรับโครงสร้าง `LikeTrendChartWidget` จากกราฟแยกส่วน เป็นระบบ **Unified Layout Component** ที่รวม 3 ส่วนเข้าด้วยกันในบรรทัดเดียว:
-    - **Left Box (ตัวเลขยอดไลค์)**: กล่องพื้นหลังสีเทาทางซ้ายสุด แสดงจำนวนรวมพร้อมหน่วย "คน" โดยใช้ `FittedBox` เพื่อย่อขนาดตัวอักษรอัตโนมัติหากยอดไลค์มีหลายหลัก (ไม่ล้นกรอบ 50px) และใช้เทคนิค **Dummy Invisible Text** ซ้อนใน `Stack` เพื่อรักษาความสูงให้เท่ากับกล่อง "ให้ทาง" แบบ 100% ตลอดเวลา (แม้ตัวหนังสือหลักจะถูกบีบสเกลเล็กลง)
-    - **Middle Bar (แถบส้มส่งกำลังใจ)**: แถบแนวนอนที่จะยืดขยายความกว้างตามสัดส่วน (Percentage) ของยอดไลค์เมื่อเทียบกับยอดสูงสุดแบบอัตโนมัติ โดยใช้ `FractionallySizedBox` หรือการคำนวณ `LayoutBuilder` แทนการใช้ `AnimationController` แบบเดิมเพื่อแก้ปัญหา Render Assertion Errors
-    - **Right Button (ปุ่มกดไลค์หัวใจ)**: ปุ่มกดรูปหัวใจที่ติดอยู่ปลายขวาของแถบส้มเสมอ โดยมัดรวมเข้ากับแถบส้มด้วย `IntrinsicHeight` + `CrossAxisAlignment.stretch` เพื่อให้ทั้งสองชิ้นนี้มีความสูงเท่ากันเป๊ะ และถูกจัดให้อยู่กึ่งกลางแนวตั้ง (Center) เสมอเมื่อเทียบกับกล่องตัวเลขด้านซ้ายที่สูงกว่า
-2. **Atomic DB Toggle (Backend)**: พัฒนาระบบ "Unique Like" โดยใช้ **Database Constraint** (`UNIQUE(video_id, user_id) WHERE type='like'`) ทำให้หนึ่งคนกดไลค์ได้เพียงครั้งเดียวต่อหนึ่งวิดีโอ ระบบจะทำการ Toggle (INSERT หากยังไม่มี หรือ DELETE หากมีอยู่แล้ว) โดยอัตโนมัติที่ระดับ Backend เพื่อป้องกันข้อมูลเบิ้ลและรองรับฟังก์ชันการยกเลิกการส่งกำลังใจ
-3. **Socket-based Synchronization**: เมื่อมีการกดส่งกำลังใจสำเร็จ Server จะทำการคำนวณยอดรวมล่าสุดและส่งอีเวนต์ `like-toggled` กระจาย (Broadcast) ไปยังผู้ใช้ทุกคนในห้อง Live นั้นๆ ทันที ทำให้กราฟและตัวเลขยอดรวมบนหน้าจอของทุกคนสอดคล้องกันแบบมิลลิวินาที
-4. **Interaction Feedback UI**: ปุ่มกดไลค์จะมีการเปลี่ยนสีและการเรืองแสง (BoxShadow) เมื่อสถานะเปลี่ยนไป พร้อมทั้งซ่อนข้อความ "ส่งกำลังใจ" ในแถบส้มหากยังไม่มีผู้กดไลค์เลย (`likeCount == 0`) เพื่อความสวยงาม
-5. **Trend Data Performance**: ใช้ Index แบบ Composite `(video_id, type, created_at)` ในตาราง `video_interactions` เพื่อให้การ Query จัดกลุ่มข้อมูลแบบ Bucketing ทำงานได้รวดเร็วแม้จะมีข้อมูลจำนวนมาก
+### Integrated Interaction & Merit Score System (Updated 2026-05-08)
+ระบบแสดงผลสถิติการ "โต้ตอบ" และ "แต้มบุญ" (Interaction Buttons & Merit Score) ทั้งหมดในรูปแบบ Unified Dynamic Visualization เพื่อสร้างความโปร่งใสและกระตุ้นการมีส่วนร่วมในเหตุการณ์ฉุกเฉิน:
+1. **Unified Dynamic Bar-Charts (Frontend)**: ปรับโครงสร้างปุ่มโต้ตอบทั้งหมด (Likes, Yield Way, Donation) ให้เป็นระบบ **Unified Layout Component** ที่สอดคล้องกัน:
+    - **Shared Design Language**: ทุกปุ่มประกอบด้วย 3 ส่วน: [Left Box (ตัวเลข)] + [Middle Bar (กราฟ)] + [Right Button (ปุ่มกด)]
+    - **Left Box (สถิติตัวเลข)**: กล่องพื้นหลังสีเทาทางซ้ายสุด แสดงจำนวนรวมพร้อมหน่วย (คน/บาท) โดยใช้เทคนิค **Dummy Invisible Text** ใน `Stack` เพื่อรักษาความสูงให้เท่ากับปุ่มกดด้านขวา 100% ตลอดเวลา และใช้ `FittedBox` ป้องกันตัวหนังสือล้นกรอบ
+    - **Middle Bar (กราฟแถบความก้าวหน้า)**: แถบสีแนวนอนที่ยืดขยายตามสัดส่วน (Actual/Target Ratio) แบบ Real-time:
+        - **Likes (ส่งกำลังใจ)**: แถบสีส้ม ยืดตามสัดส่วนยอดไลค์ปัจจุบันเทียบกับยอดสูงสุดในเหตุการณ์
+        - **Yield Way (ให้ทาง)**: แถบสีฟ้า/น้ำเงิน ยืดตามสัดส่วน `yieldWayCount` เทียบกับ `yieldWayNotifiedCount` (จำนวนคนบนเส้นทางที่ถูกแจ้งเตือน)
+        - **Donation (บริจาค)**: แถบสีทอง/ไล่เฉด ยืดตามสัดส่วน `currentAmount` เทียบกับ `goalAmountGross` ของคำร้องบริจาคใบนั้นๆ
+    - **Right Button (ปุ่มโต้ตอบ)**: ปุ่มกดที่ติดอยู่ปลายขวาของแถบกราฟเสมอ โดยมัดรวมด้วย `IntrinsicHeight` เพื่อให้ทั้งแถบและปุ่มมีความสูงเท่ากันเป๊ะและจัดวางกึ่งกลางแนวตั้งเสมอ
+2. **Atomic Interaction Logic (Backend)**: 
+    - **Unique Likes**: ใช้ Database Constraint ป้องกันการกดไลค์ซ้ำและรองรับการ Toggle
+    - **Yield Way Calculation**: Server คำนวณจำนวนผู้ที่อยู่บนเส้นทางที่แจ้งเตือนจริง (`notifiedCount`) เพื่อเป็นฐานสำหรับคำนวณเปอร์เซ็นต์ความสำเร็จของการขอทาง
+3. **Real-time Syncing & Feedback**: 
+    - ใช้ **WebSocket** กระจายอีเวนต์ `like-toggled`, `yield-way-updated` และ `donation-updated` เพื่อให้แถบกราฟขยับแบบแอนิเมชันบนหน้าจอของผู้ใช้ทุกคนทันที
+    - **Interaction Feedback UI**: ปุ่มกดจะมีการเปลี่ยนสถานะสีและการเรืองแสง (BoxShadow) เมื่อผู้ใช้กดโต้ตอบสำเร็จ
+4. **Consistency across Roles**: ระบบกราฟแบบใหม่นี้ถูกนำไปใช้ทั้งใน `ActionButtonsWidget` (สำหรับผู้ดู) และ `IncidentReportWidget` (สำหรับผู้รายงานเหตุ) เพื่อให้เกิดมาตรฐาน UX เดียวกันทั้งระบบ
 
 ### Flutter / Frontend
 - **Supabase SDK** - สำหรับดึงข้อมูลวิดีโอและ GPS

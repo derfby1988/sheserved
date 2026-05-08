@@ -69,6 +69,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   bool _hasLiked = false;    // ✅ [Support Analytics] DB Toggle state
   int _likeTrigger = 0;      // ✅ [Support Analytics] increments to force chart refresh
   int _yieldWayCount = 0;
+  int _yieldWayNotifiedCount = 0; // ✅ จำนวนผู้ที่ระบบแจ้งเตือนให้ทางไป (สำหรับคำนวณกราฟ)
   bool _isYieldPulsing = false; // ✅ สำหรับแสดง pulse effect บนแผนที่
   // ✅ รองรับหลายคำร้องต่อวิดีโอเดียว: Map<requestId, currentAmount>
   Map<String, double> _requestTotals = {};
@@ -543,6 +544,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           onLoadCategories: _loadEmergencyCategories,
           onYieldWay: _yieldWay,
           yieldWayCount: '$_yieldWayCount คน',
+          yieldWayCountValue: _yieldWayCount,
+          yieldWayNotifiedCount: _yieldWayNotifiedCount,
           onBackTap: () => setState(() {
             _selectedTab = 0;
             _isThaiMhungReporting = false;
@@ -573,6 +576,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         highlightVideoId: _highlightVideoId,
         canViewUnblurred: _canViewUnblurred,
         yieldWayCount: '$_yieldWayCount คน',
+        yieldWayCountValue: _yieldWayCount,
+        yieldWayNotifiedCount: _yieldWayNotifiedCount,
         onLike: _onLike,
         isLiked: _hasLiked,
         likeCount: _likeCount,
@@ -625,6 +630,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           onLoadCategories: _loadEmergencyCategories,
           onYieldWay: _yieldWay,
           yieldWayCount: '$_yieldWayCount คน',
+          yieldWayCountValue: _yieldWayCount,
+          yieldWayNotifiedCount: _yieldWayNotifiedCount,
           onBackTap: () => setState(() {
             _selectedTab = 0;
             _isThaiMhungReporting = false;

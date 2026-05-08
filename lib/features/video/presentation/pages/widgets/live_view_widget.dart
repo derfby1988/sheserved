@@ -28,6 +28,8 @@ class LiveViewWidget extends StatefulWidget {
   final bool canViewUnblurred;
   final String? highlightVideoId;
   final String yieldWayCount;
+  final int yieldWayCountValue; // ✅ เพิ่มค่าตัวเลข
+  final int yieldWayNotifiedCount; // ✅ เพิ่มจำนวนที่แจ้งเตือน
   final VoidCallback onLike;
   final VoidCallback onYieldWay;
   final VoidCallback onDonate;
@@ -57,6 +59,8 @@ class LiveViewWidget extends StatefulWidget {
     this.highlightVideoId,
     this.canViewUnblurred = false,
     required this.yieldWayCount,
+    this.yieldWayCountValue = 0,
+    this.yieldWayNotifiedCount = 0,
     required this.onLike,
     required this.onYieldWay,
     required this.onDonate,
@@ -257,6 +261,8 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                     activeRequests: widget.activeRequests,
                                     activeRequestIndex: widget.activeRequestIndex,
                                     yieldWayCount: widget.yieldWayCount,
+                                    yieldWayCountValue: widget.yieldWayCountValue,
+                                    yieldWayNotifiedCount: widget.yieldWayNotifiedCount,
                                     userCanCreateRequest: widget.userCanCreateRequest,
                                     onLike: widget.onLike,
                                     onYieldWay: widget.onYieldWay,

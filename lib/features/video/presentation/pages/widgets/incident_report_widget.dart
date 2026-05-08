@@ -23,6 +23,8 @@ class IncidentReportWidget extends StatelessWidget {
   final VoidCallback onLoadCategories;
   final VoidCallback onYieldWay; // Added Yield Way callback
   final String yieldWayCount; // Added dynamic percentage
+  final int yieldWayCountValue; // ✅ เพิ่มยอดตัวเลข
+  final int yieldWayNotifiedCount; // ✅ เพิ่มยอดผู้รับแจ้งเตือน
   final VoidCallback? onBackTap; // ✅ Added Back button callback
   final bool isThaiMhungMode;
   final int maxPhotos;
@@ -48,6 +50,8 @@ class IncidentReportWidget extends StatelessWidget {
     required this.onLoadCategories,
     required this.onYieldWay, // Required Yield Way callback
     required this.yieldWayCount,
+    this.yieldWayCountValue = 0,
+    this.yieldWayNotifiedCount = 0,
     this.onBackTap, // ✅ Back button
     this.isThaiMhungMode = false,
     this.maxPhotos = 3,
@@ -427,36 +431,62 @@ class IncidentReportWidget extends StatelessWidget {
                       const SizedBox(height: 16),
                       GestureDetector(
                         onTap: onYieldWay,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF007AFF),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.blue.withOpacity(0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                        child: Stack(
+                          children: [
+                            // Progress Bar Background
+                            Positioned.fill(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final double percentage = yieldWayNotifiedCount > 0 
+                                      ? (yieldWayCountValue / yieldWayNotifiedCount).clamp(0.0, 1.0) 
+                                      : 0.0;
+                                  return Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 500),
+                                      width: constraints.maxWidth * percentage,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.airport_shuttle, color: Colors.white),
-                              const SizedBox(width: 12),
-                              Text(
-                                'ช่วยเปิดทางให้รถฉุกเฉิน ($yieldWayCount)',
-                                style: const TextStyle(
-                                  fontFamily: 'SukhumvitSet',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                            ),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF007AFF).withOpacity(0.8),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white.withOpacity(0.3)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.blue.withOpacity(0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.airport_shuttle, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'ช่วยเปิดทางให้รถฉุกเฉิน ($yieldWayCount)',
+                                    style: const TextStyle(
+                                      fontFamily: 'SukhumvitSet',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

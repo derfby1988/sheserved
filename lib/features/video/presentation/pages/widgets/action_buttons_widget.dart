@@ -24,7 +24,9 @@ class ActionButtonsWidget extends StatelessWidget {
   /// false = ผู้ดูทั่วไป / ไทยมุง
   final bool userCanCreateRequest;
 
-  final String yieldWayCount;
+  final String yieldWayCount; // ✅ เพิ่มกลับมาเพื่อใช้แสดงผลข้อความ
+  final int yieldWayCountValue; // ✅ เพิ่มค่าตัวเลขเพื่อคำนวณกราฟ
+  final int yieldWayNotifiedCount; // ✅ เพิ่มจำนวนผู้ที่ถูกแจ้งเตือนเพื่อหาเปอร์เซ็นต์
   final VoidCallback onLike;
   final VoidCallback onYieldWay;
   final VoidCallback onDonate;
@@ -35,10 +37,12 @@ class ActionButtonsWidget extends StatelessWidget {
   const ActionButtonsWidget({
     super.key,
     required this.likeCountFormatted,
-    this.likeCount = 0, // ✅ กำหนดค่าเริ่มต้น
+    this.likeCount = 0,
     this.isLiked = false,
     required this.activeRequests,
-    required this.yieldWayCount,
+    required this.yieldWayCount, // ✅ ตอนนี้มีฟิลด์รองรับแล้ว
+    this.yieldWayCountValue = 0,
+    this.yieldWayNotifiedCount = 0,
     this.activeRequestIndex = 0,
     this.userCanCreateRequest = false,
     required this.onLike,
@@ -110,11 +114,7 @@ class ActionButtonsWidget extends StatelessWidget {
           onToggleLike: onLike,
         ),
         const SizedBox(height: 6),
-        _buildInteractionButtonRow(
-          value: yieldWayCount,
-          label: 'ให้ทาง',
-          onTap: onYieldWay,
-        ),
+        _buildInteractionButtonRow(),
         // ✅ ซ่อนปุ่มบริจาคสำหรับ Viewer เมื่อยังไม่มีคำร้อง active
         if (_showDonateButton) ...[
           const SizedBox(height: 6),
@@ -127,259 +127,291 @@ class ActionButtonsWidget extends StatelessWidget {
   /// แถวบริจาค — มีลูกศรสลับคำร้อง หากมีหลายใบ
   Widget _buildDonationRow() {
     final hasMultiple = activeRequests.length > 1;
+    final req = activeRequests[activeRequestIndex.clamp(0, activeRequests.length - 1)];
+    
+    // คำนวณเปอร์เซ็นต์สำหรับกราฟบริจาค
+    // ใช้ goalAmountGross (รวมค่าบริการแล้ว) ตามที่ USER ต้องการ หรือ targetAmount เป็นตัวสำรอง
+    final double target = req.goalAmountGross ?? req.targetAmount ?? 0.0;
+    final double current = req.currentAmount ?? 0.0;
+    final double percentage = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center, // ให้ป้ายขวาเตี้ยกว่าและอยู่กึ่งกลาง
-      children: [
-        // ลูกศรซ้าย (เฉพาะ Viewer + หลายคำร้อง)
-        if (hasMultiple && !userCanCreateRequest)
-          GestureDetector(
-            onTap: () => onSwitchRequest?.call(false),
-            child: Container(
-              width: 18,
-              height: 22, // คงความสูงเดิมให้กดง่าย
-              decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withOpacity(0.5),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  bottomLeft: Radius.circular(4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double leftBoxWidth = 50.0;
+        final double arrowWidth = 18.0;
+        
+        // พื้นที่ที่เหลือสำหรับกราฟ
+        double maxBarWidth = constraints.maxWidth - leftBoxWidth;
+        if (hasMultiple && !userCanCreateRequest) {
+          maxBarWidth -= (arrowWidth * 2);
+        }
+        
+        final double currentBarWidth = current == 0 ? 0.0 : maxBarWidth * percentage;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // ลูกศรซ้าย (เฉพาะ Viewer + หลายคำร้อง)
+            if (hasMultiple && !userCanCreateRequest)
+              GestureDetector(
+                onTap: () => onSwitchRequest?.call(false),
+                child: Container(
+                  width: arrowWidth,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6B7280).withOpacity(0.5),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      bottomLeft: Radius.circular(4),
+                    ),
+                  ),
+                  child: const Icon(Icons.chevron_left, color: Colors.white, size: 14),
                 ),
               ),
-              child:
-                  const Icon(Icons.chevron_left, color: Colors.white, size: 14),
-            ),
-          ),
 
-        // ค่าตัวเลข (ยอดบริจาค หรือ '+' ถ้ายังไม่มี)
-        GestureDetector(
-          onTap: onDonate,
-          child: ClipRRect(
-            borderRadius: (hasMultiple && !userCanCreateRequest)
-                ? BorderRadius.zero
-                : const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    bottomLeft: Radius.circular(4),
-                  ),
-            child: Container(
-              width: 50, // คงขนาด 50 ไว้ให้ตรงกับกล่องไลค์
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6B7280).withOpacity(0.8),
-                border:
-                    Border.all(color: Colors.white.withOpacity(0.2)),
-              ),
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Dummy Text บังคับความสูงให้เท่ากับกล่องไลค์เป๊ะๆ
-                      const Visibility(
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        visible: false,
-                        child: Text(
-                          '0',
-                          style: TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+            // ค่าตัวเลข (ยอดบริจาค หรือ '+' ถ้ายังไม่มี)
+            GestureDetector(
+              onTap: onDonate,
+              child: ClipRRect(
+                borderRadius: (hasMultiple && !userCanCreateRequest)
+                    ? BorderRadius.zero
+                    : const BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        bottomLeft: Radius.circular(4),
                       ),
-                      // ตัวหนังสือจริงที่สามารถหดขนาดได้หากยาวเกิน
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          _donationDisplayValue,
-                          style: const TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                child: Container(
+                  width: leftBoxWidth,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6B7280).withOpacity(0.8),
+                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                  ),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          const Visibility(
+                            maintainSize: true,
+                            maintainAnimation: true,
+                            maintainState: true,
+                            visible: false,
+                            child: Text('0', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800)),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // ป้ายชื่อ (เปลี่ยนสีตามโหมด)
-        GestureDetector(
-          onTap: onDonate,
-          child: Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-              decoration: BoxDecoration(
-                color: _donationLabelColor,
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(12),
-                  bottomRight: Radius.circular(12),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                _donationLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'SukhumvitSet',
-                  fontSize: 11, // ลดจาก 12 เหลือ 11
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // ลูกศรขวา (เฉพาะ Viewer + หลายคำร้อง)
-        if (hasMultiple && !userCanCreateRequest)
-          GestureDetector(
-            onTap: () => onSwitchRequest?.call(true),
-            child: Container(
-              width: 18,
-              height: 22,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF6B35).withOpacity(0.7),
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(4),
-                  bottomRight: Radius.circular(4),
-                ),
-              ),
-              child: const Icon(Icons.chevron_right,
-                  color: Colors.white, size: 14),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildInteractionButtonRow({
-    required String value,
-    required String label,
-    required VoidCallback onTap,
-    bool isActive = false,
-  }) {
-    const orange = Color(0xFFFF6B35);
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center, // ให้ป้ายขวาเตี้ยกว่าและอยู่กึ่งกลาง
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(4),
-              bottomLeft: Radius.circular(4),
-            ),
-            child: Container(
-              width: 50,
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? orange.withOpacity(0.85)
-                    : const Color(0xFF6B7280).withOpacity(0.8),
-                border: Border.all(color: Colors.white.withOpacity(0.2)),
-              ),
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Dummy Text บังคับความสูงให้เท่ากับกล่องไลค์เป๊ะๆ
-                      const Visibility(
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        visible: false,
-                        child: Text(
-                          '0',
-                          style: TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _donationDisplayValue,
+                              style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                      // ตัวหนังสือจริงที่สามารถหดขนาดได้หากยาวเกิน (เช่น ให้ทาง 100K)
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          value,
-                          style: const TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isActive ? orange : orange,
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(12),
-                  bottomRight: Radius.circular(12),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: isActive
-                        ? orange.withOpacity(0.5)
-                        : Colors.black.withOpacity(0.2),
-                    blurRadius: isActive ? 8 : 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
+
+            // กราฟแท่งบริจาค
+            IntrinsicHeight(
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (isActive) ...[
-                    const Icon(Icons.favorite, color: Colors.white, size: 10),
-                    const SizedBox(width: 3),
-                  ],
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                  GestureDetector(
+                    onTap: onDonate,
+                    child: Container(
+                      width: currentBarWidth,
+                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [_donationLabelColor.withOpacity(0.7), _donationLabelColor],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                      alignment: Alignment.centerLeft,
+                      child: current > 0 
+                        ? const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'บริจาค',
+                              style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                    ),
+                  ),
+
+                  // ป้ายชื่อ (ส่วนที่เหลือของความกว้าง หรือป้ายชื่อเดิมกรณีไม่มีกราฟ)
+                  GestureDetector(
+                    onTap: onDonate,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _donationLabelColor,
+                        borderRadius: BorderRadius.only(
+                          topRight: (hasMultiple && !userCanCreateRequest) ? Radius.zero : const Radius.circular(12),
+                          bottomRight: (hasMultiple && !userCanCreateRequest) ? Radius.zero : const Radius.circular(12),
+                        ),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          _donationLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
+
+            // ลูกศรขวา (เฉพาะ Viewer + หลายคำร้อง)
+            if (hasMultiple && !userCanCreateRequest)
+              GestureDetector(
+                onTap: () => onSwitchRequest?.call(true),
+                child: Container(
+                  width: arrowWidth,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6B35).withOpacity(0.7),
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(4),
+                      bottomRight: Radius.circular(4),
+                    ),
+                  ),
+                  child: const Icon(Icons.chevron_right, color: Colors.white, size: 14),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInteractionButtonRow() {
+    const orange = Color(0xFFFF6B35);
+    
+    // คำนวณเปอร์เซ็นต์สำหรับการให้ทาง
+    // USER ต้องการ: เทียบกับจำนวนที่ระบบแจ้งเตือนไป (yieldWayNotifiedCount)
+    final double percentage = yieldWayNotifiedCount > 0 
+        ? (yieldWayCountValue / yieldWayNotifiedCount).clamp(0.0, 1.0) 
+        : 0.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double leftBoxWidth = 50.0;
+        final double buttonWidth = 32.0; // ใช้ความกว้างเดียวกับปุ่มหัวใจเพื่อให้ Layout ตรงกัน
+        final double maxBarWidth = constraints.maxWidth - leftBoxWidth - buttonWidth;
+        final double currentBarWidth = yieldWayCountValue == 0 ? 0.0 : maxBarWidth * percentage;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 1. Left Box: ตัวเลขยอดให้ทาง
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(4),
+                bottomLeft: Radius.circular(4),
+              ),
+              child: Container(
+                width: leftBoxWidth,
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6B7280).withOpacity(0.8),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                ),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const Visibility(
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          visible: false,
+                          child: Text('0', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800)),
+                        ),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            yieldWayCount,
+                            style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // 2. กราฟแท่งให้ทาง และ ปุ่มกด
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // กราฟแท่ง
+                  Container(
+                    width: currentBarWidth,
+                    padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [orange.withOpacity(0.7), orange],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                    ),
+                    alignment: Alignment.centerLeft,
+                    child: yieldWayCountValue >= 1
+                        ? const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'ให้ทาง',
+                              maxLines: 1,
+                              style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+
+                  // ปุ่มกด (Right Box)
+                  GestureDetector(
+                    onTap: onYieldWay,
+                    child: Container(
+                      width: buttonWidth,
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      decoration: BoxDecoration(
+                        color: orange,
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(12),
+                          bottomRight: Radius.circular(12),
+                        ),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.emergency_share_rounded, color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

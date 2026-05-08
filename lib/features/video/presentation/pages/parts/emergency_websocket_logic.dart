@@ -25,6 +25,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
             // Do NOT increment here to avoid double-counting with HTTP toggle
             if (data['type'] == 'yield-way-updated') {
               _yieldWayCount = (data['count'] as num?)?.toInt() ?? 0;
+              _yieldWayNotifiedCount = (data['notifiedCount'] as num?)?.toInt() ?? 0; // ✅ รับค่าจำนวนที่แจ้งเตือนไปจาก Server
               if (data['triggerAnimation'] == true) {
                 _triggerYieldPulse();
               }
