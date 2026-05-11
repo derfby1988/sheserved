@@ -356,7 +356,8 @@ https://[storage-zone].b-cdn.net/thumbnails/[incidentId]/thumb_[id].webp
 ```dart
 // lib/features/video/models/video_models.dart
 String? get bestThumbnailUrl {
-  final raw = thumbnailUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null);
+  // บังคับใช้ภาพจากไทยมุง (photoUrls) ก่อน ถ้ามี ค่อย fallback ไปใช้ thumbnailUrl
+  final raw = photoUrls.isNotEmpty ? photoUrls.first : thumbnailUrl;
   return _normalizeLocalUrl(raw);
 }
 
@@ -566,6 +567,7 @@ curl -s http://localhost:3000/api/videos/emergency/list | python3 -c \
 - **ตำแหน่งจัดวาง**: อยู่บรรทัดฝั่งขวาขนาบข้างวิดีโอ Live (Live View Widget) โดยมีความสูงเท่ากับตัววิดีโอพอดี
 - **Wheel Carousel (Ruler Picker)**: ออกแบบในลักษณะ ListWheelScrollView หมุนขึ้นลงคล้ายกับหน้าปัดทรงกระบอก (3D Perspective) ทำให้ประหยัดพื้นที่บนหน้าจอ และให้ความรู้สึกทันสมัย
 - **Real-Time Flashing**: เมื่อมีภาพใหม่จากไทยมุงอัปโหลดเข้ามา แผ่นภาพนั้นจะถูกแทรกเข้ามาใน Carousel พร้อม Effect **กระพริบกรอบสีเหลือง/ป้ายคำว่า "หมูงใหม่"** เพื่อดึงดูดสายตาเจ้าหน้าที่ที่กำลังโฟกัสวิดีโอหลักทันที
+- **Trending Card Background Override**: ภาพหน้าปก (พื้นหลัง) ของการ์ดเหตุการณ์ในกล่องยอดนิยม (Trending Panel) จะถูกแทนที่ด้วยภาพแรกจากไทยมุงเสมอ หากมีภาพจากไทยมุงในระบบ เพื่อให้ผู้ใช้เห็นสถานการณ์ล่าสุดจากมุมมองของพยานในพื้นที่ หากยังไม่มีภาพจากไทยมุง จึงจะใช้ภาพหน้าปกวิดีโอจากผู้แจ้งเหตุตามปกติ
 - **Privacy Enforcement**: มีระบบเบลอภาพอัตโนมัติ (Image Filter Blur) และขึ้นไอคอนรูปโล่ หากผู้ใช้ไม่ใช่ Responder ตัวจริง เพื่อคุ้มครองสิทธิส่วนบุคคลของภาพผู้ประสบเหตุ
 - **Lightbox Preview**: เมื่อผู้ใช้มีสิทธิและแตะที่รูปภาพ ภาพจะขยายเต็มหน้าจอแบบ Popup (Interactive Viewer) เพื่อช่วยวิเคราะห์การทำงาน
 

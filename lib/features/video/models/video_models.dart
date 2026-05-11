@@ -171,13 +171,15 @@ class Video {
   }
 
   /// ✅ Recommendation #10: bestThumbnailUrl — เลือกรูปที่ดีที่สุดสำหรับ Trending Card
+  /// - หากมีภาพจากไทยมุง (photoUrls) ให้บังคับใช้ภาพจากไทยมุงเป็นอันดับแรก
+  /// - หากไม่มีภาพจากไทยมุง ค่อย fallback ไปใช้ภาพหน้าปกจากวิดีโอ/ภาพจากผู้แจ้งเหตุ
   ///
   /// ✅ IP Normalize Fix (Bug Root Cause):
   /// DB อาจเก็บ URL ด้วย IP เก่า (เช่น 192.168.0.116, 192.168.1.142)
   /// ทุกครั้งที่เชื่อมต่อ WiFi ใหม่ IP จะเปลี่ยน → Image.network โหลดไม่ได้
   /// แก้โดย replace IPv4 ใน local URL ด้วย AppConfig.mainMachineIp ปัจจุบันเสมอ
   String? get bestThumbnailUrl {
-    final raw = thumbnailUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null);
+    final raw = photoUrls.isNotEmpty ? photoUrls.first : thumbnailUrl;
     return _normalizeLocalUrl(raw);
   }
 
