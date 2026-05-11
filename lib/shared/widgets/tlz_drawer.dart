@@ -626,6 +626,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/admin/video-control'),
                               isSubItem: true,
                             ),
+                            _buildMenuItem(
+                              context,
+                              title: 'จัดการลายน้ำ (Watermark)',
+                              icon: Icons.branding_watermark_outlined,
+                              onTap: () => _navigateTo(context, '/admin/watermark'),
+                              isSubItem: true,
+                            ),
                           ],
                             const SizedBox(height: 32),
                           ],

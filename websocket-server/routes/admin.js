@@ -1,0 +1,120 @@
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+module.exports = (pool) => {
+    const router = express.Router();
+
+    // Admin Authentication Middleware
+    const requireAdmin = async (req, res, next) => {
+        const userId = req.headers['x-user-id'] || req.body.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized: No user ID provided' });
+        }
+        
+        try {
+            // Check if user exists and is active
+            const userCheck = await pool.query('SELECT id, is_active FROM users WHERE id = $1', [userId]);
+            if (userCheck.rows.length === 0 || !userCheck.rows[0].is_active) {
+                return res.status(403).json({ error: 'Forbidden: Invalid or inactive user' });
+            }
+            // Allow if user is valid
+            next();
+        } catch (err) {
+            console.error('Admin Auth Error:', err);
+            res.status(500).json({ error: 'Server error during authentication' });
+        }
+    };
+
+    // Configure Multer for watermark image upload
+    const storage = multer.diskStorage({
+        destination: (req, file, cb) => {
+            const dir = path.join(__dirname, '../uploads/watermarks');
+            if (!fs.existsSync(dir)){
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+            cb(null, 'watermark' + path.extname(file.originalname));
+        }
+    });
+
+    const upload = multer({
+        storage: storage,
+        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+        fileFilter: (req, file, cb) => {
+            if (file.mimetype === 'image/png') {
+                cb(null, true);
+            } else {
+                cb(new Error('Only PNG format is allowed for watermark images!'));
+            }
+        }
+    });
+
+    // GET /api/admin/watermark - Get current watermark config
+    router.get('/watermark', async (req, res) => {
+        try {
+            const result = await pool.query('SELECT * FROM watermark_configs WHERE id = 1');
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Watermark configuration not found' });
+            }
+            res.json(result.rows[0]);
+        } catch (err) {
+            console.error('Error fetching watermark config:', err);
+            res.status(500).json({ error: 'Server error' });
+        }
+    });
+
+    // PUT /api/admin/watermark - Update watermark config
+    router.put('/watermark', requireAdmin, async (req, res) => {
+        const { is_enabled, type, text_content, position, animation_type, opacity, show_incident_id, show_uploader_id } = req.body;
+        
+        try {
+            const result = await pool.query(
+                `UPDATE watermark_configs 
+                 SET is_enabled = $1, type = $2, text_content = $3, position = $4, animation_type = $5, opacity = $6, show_incident_id = $7, show_uploader_id = $8, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = 1 RETURNING *`,
+                [is_enabled, type, text_content, position, animation_type, opacity, show_incident_id, show_uploader_id]
+            );
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Watermark configuration not found' });
+            }
+            
+            res.json({ message: 'Watermark configuration updated successfully', data: result.rows[0] });
+        } catch (err) {
+            console.error('Error updating watermark config:', err);
+            res.status(500).json({ error: 'Server error' });
+        }
+    });
+
+    // POST /api/admin/watermark/upload - Upload watermark image
+    router.post('/watermark/upload', requireAdmin, upload.single('watermark_image'), async (req, res) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'Please upload a PNG file' });
+            }
+
+            // Generate URL for the uploaded image (accessible statically)
+            const imageUrl = `/uploads/watermarks/${req.file.filename}`;
+
+            // Update database with the new image URL
+            await pool.query(
+                'UPDATE watermark_configs SET image_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
+                [imageUrl]
+            );
+
+            res.json({ 
+                message: 'Watermark image uploaded successfully', 
+                imageUrl: imageUrl 
+            });
+        } catch (err) {
+            console.error('Error uploading watermark image:', err);
+            res.status(500).json({ error: err.message || 'Server error during upload' });
+        }
+    });
+
+    return router;
+};

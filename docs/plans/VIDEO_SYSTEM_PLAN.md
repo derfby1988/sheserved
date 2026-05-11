@@ -127,7 +127,27 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
 ## Database Schema
 
 
-[SQL Schema Implemented]
+### SQL Schema Implemented (Watermark Configs — Added 2026-05-11)
+```sql
+CREATE TABLE IF NOT EXISTS watermark_configs (
+    id SERIAL PRIMARY KEY,
+    is_enabled BOOLEAN DEFAULT false,
+    type VARCHAR(20) DEFAULT 'text', -- 'text' or 'image'
+    text_content TEXT,
+    image_url TEXT,
+    position VARCHAR(20) DEFAULT 'bottom-right',
+    animation_type VARCHAR(20) DEFAULT 'none',
+    opacity DECIMAL(2,1) DEFAULT 0.5,
+    show_incident_id BOOLEAN DEFAULT false,
+    show_uploader_id BOOLEAN DEFAULT false,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Initialize default config if not exists
+INSERT INTO watermark_configs (id, is_enabled, type, text_content, position)
+VALUES (1, true, 'text', 'Sheserved Official', 'bottom-right')
+ON CONFLICT (id) DO NOTHING;
+```
 
 
 ## Technology Stack
@@ -188,8 +208,14 @@ SUPABASE_ANON_KEY=[anon-key-จาก-supabase-dashboard]
   - **Video Frame Extraction**: วิดีโอ HLS ได้ thumbnail จาก FFmpeg Extract Frame ที่วินาทีที่ 1 หลัง Transcode เสร็จ
   - **Bunny CDN Upload (Optional)**: Worker อัปโหลด thumbnail ไป Bunny.net ถ้า `BUNNY_API_KEY` ตั้งค่าแล้ว → CDN URL ใช้ได้ทั่วโลก ไม่ผูกกับ LAN
   - **Thumbnail Queue**: Concurrency 4, Retry 3 ครั้ง Exponential Backoff (2s/4s/8s), เก็บ log งานสำเร็จ 100 ชิ้นสุดท้าย
+- **Dynamic Admin Watermarking (Server-side & Forensic Tracking — New 2026-05-11)**: ระบบประทับลายน้ำและ Forensic ID ลงในทุกสื่อ (วิดีโอ/ภาพถ่าย) เพื่อป้องกันการละเมิดลิขสิทธิ์และสืบหาต้นตอภาพหลุด:
+  - **Admin Control Center**: แอดมินสามารถจัดการผ่านหน้า "จัดการลายน้ำ" ในแอป (Flutter) เพื่อเปิด/ปิด, เปลี่ยนข้อความ, อัปโหลดโลโก้ PNG, ปรับ Opacity, และเลือก Animation (Marquee, Bounce, Random) แบบ Real-time
+  - **Video Watermarking (FFmpeg)**: ประทับลายน้ำแบบ Hardcode ลงในไฟล์วิดีโอ HLS ระหว่างขั้นตอน Transcoding โดยตรง รองรับทั้ง Text และ Image Overlay
+  - **Image Watermarking (Sharp - Node.js)**: สำหรับภาพถ่ายในแกลลอรี่ (Thai Mhung) และภาพร้องขอเหตุฉุกเฉิน จะใช้ไลบรารี `Sharp` ประทับลายน้ำแบบ **Synchronous** ทันทีหลังขั้นตอน Face Blur ก่อนจะ Save ลง Disk เพื่อให้ภาพที่ถูก Broadcast มีลายน้ำ 100%
+  - **Forensic ID Tracking**: หากเปิดใช้งาน ระบบจะฉีด `Incident ID` และ `Uploader ID` (User ID) เป็นข้อความจางๆ ไว้ที่มุมภาพโดยอัตโนมัติ เพื่อให้ระบุตัวบุคคลที่นำภาพออกไปเผยแพร่ในทางที่ผิดได้ (Traceability)
+  - **Thumbnail Protection**: บูรณาการเข้ากับ `Thumbnail Queue` เพื่อให้ภาพ WebP ที่แสดงใน Trending Panel และ Gallery View ทั้งหมดมีลายน้ำประทับอยู่เสมอ
 - **FFmpeg**: Transcoding เป็น HLS (รองรับทั้งวิดีโอปกติและวิดีโอที่ผ่านการทำ Face Blur แล้ว)
-- **Priority Queue**: Priority 1 = Video Transcode, Priority 2 = Thumbnail Generation
+- **Priority Queue**: Priority 1 = Video Transcode, Priority 2 = Thumbnail Generation, Priority 3 = Watermark Processing (Sync/Async)
 - **Auto Cleanup**: ลบไฟล์ชั่วคราวและไฟล์วิดีโอต้นฉบับหลังประมวลผลและอัปโหลดเสร็จสิ้น
 
 ## UI/UX Implementation Tips (Standard for Figma Design)
@@ -769,8 +795,52 @@ if (process.env.NODE_ENV === 'development' && pool) {
 
 ---
 
-### Bug Fix #3 — Thai Mhung Distance ต้องใช้ `user.alertRadius` ไม่ใช่ Hardcoded
+### Bug Fix #4 — FFmpeg `drawtext` Filter Crash (Missing `libfreetype`) — *Added 2026-05-11*
+**ไฟล์ที่บกพร่อง:** `websocket-server/services/video-service.js`
+
+**สาเหตุ:** FFmpeg binary บนเครื่อง macOS ถูกคอมไพล์มาโดยไม่มี `--enable-libfreetype` ทำให้การใช้ฟิลเตอร์ `drawtext` เพื่อทำลายน้ำแบบ Dynamic ล้มเหลว (`Filter not found`) และส่งค่า Exit Code 8 ทำให้กระบวนการ Transcode หยุดชะงัก
+
+**กฎที่ต้องปฏิบัติ:**
+- **ห้ามใช้ `drawtext` โดยตรง**: หลีกเลี่ยงการใช้ FFmpeg filter สำหรับวาดข้อความเพื่อความยืดหยุ่นในการย้ายเซิร์ฟเวอร์
+- **Sharp-based Overlays**: ให้ใช้ไลบรารี **Sharp (Node.js)** ในการสร้างไฟล์ภาพโปร่งใส (Transparent PNG) ที่มีข้อความหรือ Forensic ID ที่ต้องการ แล้วค่อยใช้ฟิลเตอร์ `overlay` ของ FFmpeg ในการซ้อนภาพลงบนวิดีโอแทน
+- **Cleanup Requirement**: ต้องมีระบบลบไฟล์ PNG ชั่วคราวเหล่านี้ทิ้งทันทีเมื่อจบงาน (ทั้งในเคส Success และ Error)
+
+```javascript
+// ✅ ถูก — สร้างภาพข้อความด้วย Sharp แล้วซ้อนด้วย overlay
+const watermarkImg = await sharp({
+  create: { width: 1280, height: 720, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+}).composite([{ input: Buffer.from('<svg>...</svg>'), gravity: 'center' }]).png().toFile(tempPath);
+
+ffmpegProcess.complexFilter([`overlay=10:10`]);
+```
+
+---
+
+### Bug Fix #5 — Video Player Crash เมื่อเปิด URL ที่เป็นรูปภาพ — *Added 2026-05-11*
+**ไฟล์ที่บกพร่อง:** `lib/features/video/presentation/pages/widgets/video_player_widget.dart`, `emergency_navigation_logic.dart`
+
+**สาเหตุ:** `VideoPlayerController` และ `Chewie` ออกแบบมาสำหรับ Video Stream เท่านั้น เมื่อพยายามโหลด URL ที่เป็นภาพนิ่ง (เช่น `.jpg`, `.webp`) จะทำให้การ Initialize ล้มเหลว เกิด Error `Bad state: No active player` หรือหน้าจอค้างที่ "กำลังเชื่อมต่อสัญญาณ..." (Infinite Loading)
+
+**กฎที่ต้องปฏิบัติ:**
+- **Pre-Initialization Check**: ก่อนเรียก `controller.initialize()` ต้องตรวจสอบนามสกุลไฟล์ของ URL เสมอ หากเป็นไฟล์ภาพ (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`) ให้ **ข้าม (return)** การโหลด VideoPlayer
+- **UI Hybrid Rendering**: ใน `VideoPlayerWidget` ต้องดักจับเคสที่เป็นรูปภาพ และสลับไปใช้ `Image.network` หรือ `Image.file` แทนการใช้ `Chewie` โดยรักษา `AspectRatio` ให้เท่ากับวิดีโอเพื่อไม่ให้ UI กระตุก
+- **Consistent Privacy UI**: ต้องคงการแสดงผล "สิทธิ์ส่วนบุคคล (Blur)" สำหรับภาพนิ่งด้วย เพื่อให้เป็นมาตรฐานเดียวกับวิดีโอ
+
+```dart
+// ✅ ถูก — ตรวจสอบก่อนโหลด
+if (url.toLowerCase().endsWith('.jpg')) return; // ข้ามใน logic
+
+// ✅ ถูก — แสดงผลสลับตามประเภทสื่อใน UI
+imageToDisplay != null 
+  ? Image.network(imageToDisplay, fit: BoxFit.cover) 
+  : Chewie(controller: chewieController!)
+```
+
+---
+
+### Bug Fix #6 — Thai Mhung Distance ต้องใช้ `user.alertRadius` ไม่ใช่ Hardcoded
 **ไฟล์ที่เคยบกพร่อง:** `lib/features/video/presentation/pages/emergency_live_page.dart`
+
 
 **สาเหตุ:** การตรวจสอบระยะทางก่อนเข้า Thai Mhung Mode ใช้ค่า `500` เมตร hardcoded แทนที่จะดึงค่า `alertRadius` ที่ผู้ใช้ตั้งไว้ในหน้า Profile — ขัดกับนโยบาย Manual Distance Control
 

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import '../../../models/video_models.dart';
@@ -89,6 +90,61 @@ class VideoPlayerWidget extends StatelessWidget {
                         ],
                       ),
                     ),
+                  );
+                }
+
+                bool isImageUrl(String? url) {
+                  if (url == null) return false;
+                  final lower = url.toLowerCase();
+                  return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.gif');
+                }
+
+                String? imageToDisplay;
+                if (currentVideo != null) {
+                  if (isImageUrl(currentVideo!.localFilePath)) {
+                    imageToDisplay = currentVideo!.localFilePath;
+                  } else if (isImageUrl(currentVideo!.bunnyUrl)) {
+                    imageToDisplay = currentVideo!.bunnyUrl;
+                  } else if (currentVideo!.photoUrls.isNotEmpty && currentVideo!.bunnyUrl == null && currentVideo!.localFilePath == null) {
+                    imageToDisplay = currentVideo!.photoUrls.first;
+                  }
+                }
+
+                if (imageToDisplay != null) {
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      imageToDisplay.startsWith('http')
+                          ? Image.network(imageToDisplay, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white, size: 50))
+                          : Image.file(File(imageToDisplay), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white, size: 50)),
+                      if (!canViewUnblurred)
+                        Positioned(
+                          top: 12,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white.withOpacity(0.15)),
+                              ),
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.face_retouching_off, color: Colors.white, size: 12),
+                                    SizedBox(width: 4),
+                                    Text('สิทธิ์ส่วนบุคคล (Blur)', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white70, fontSize: 8, fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   );
                 }
 

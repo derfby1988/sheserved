@@ -9,6 +9,7 @@ ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || 'ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const sharp = require('sharp');
 const socketService = require('./socket-service');
 const thumbnailQueue = require('./thumbnail-queue');
 
@@ -91,6 +92,17 @@ const worker = new Worker('video-processing', async (job) => {
     console.log(`[Worker] Processing video ${videoId}: ${inputVideoPath}`);
     socketService.sendStatus(userId, videoId, 'processing');
 
+    // Fetch Watermark Config
+    let watermarkConfig = null;
+    if (dbPool) {
+        try {
+            const res = await dbPool.query('SELECT * FROM watermark_configs WHERE id = 1 AND is_enabled = true');
+            if (res.rows.length > 0) watermarkConfig = res.rows[0];
+        } catch (e) {
+            console.warn('[Watermark] Failed to fetch config:', e.message);
+        }
+    }
+
     // --- Face Blur (Open Source: deface) ---
     // รันการเบลอหน้าด้วย python-deface ก่อนแปลงไฟล์
     try {
@@ -112,17 +124,113 @@ const worker = new Worker('video-processing', async (job) => {
         // Continue with original video if blur fails
     }
 
+    let tempTextImgPath = null;
+    let tempForensicImgPath = null;
+
+    if (watermarkConfig) {
+        // Generate Text Watermark Image if needed
+        if (watermarkConfig.type === 'text') {
+            const text = watermarkConfig.text_content || 'Watermark';
+            const opacity = watermarkConfig.opacity || 0.5;
+            const svgText = `
+            <svg width="400" height="60">
+              <style>.t { fill: rgba(255, 255, 255, ${opacity}); font-size: 32px; font-family: sans-serif; font-weight: bold; }</style>
+              <text x="10" y="40" class="t">${text}</text>
+            </svg>`;
+            tempTextImgPath = path.join(baseDir, `${videoId}_wm_text.png`);
+            await sharp(Buffer.from(svgText)).png().toFile(tempTextImgPath);
+        }
+
+        // Generate Forensic Text Image if needed
+        let forensicText = '';
+        if (watermarkConfig.show_incident_id) forensicText += `Ref: ${videoId}  `;
+        if (watermarkConfig.show_uploader_id) forensicText += `User: ${userId}`;
+        forensicText = forensicText.trim();
+        
+        if (forensicText) {
+            const svgForensic = `
+            <svg width="600" height="40">
+              <style>.t { fill: rgba(255, 255, 255, 0.5); font-size: 14px; font-family: sans-serif; }</style>
+              <text x="10" y="20" class="t">${forensicText}</text>
+            </svg>`;
+            tempForensicImgPath = path.join(baseDir, `${videoId}_wm_forensic.png`);
+            await sharp(Buffer.from(svgForensic)).png().toFile(tempForensicImgPath);
+        }
+    }
+
     return new Promise((resolve, reject) => {
-        ffmpeg(inputVideoPath)
-            .outputOptions([
-                '-profile:v baseline',
-                '-level 3.0',
-                '-vf scale=-2:360', // บีบอัดความละเอียดลงมาที่ 360p (ส่วนสูง 360px กว้างปรับหดตามอัตราส่วนอัตโนมัติ)
-                '-start_number 0',
-                '-hls_time 2',      // ลดเวลาของแต่ละ segment จาก 10 วินาทีเหลือ 2 วินาที เพื่อให้โหลดตอนแรกไวขึ้น
-                '-hls_list_size 0',
-                '-f hls'
-            ])
+        let ffCommand = ffmpeg(inputVideoPath);
+
+        let outputOptions = [
+            '-profile:v baseline',
+            '-level 3.0',
+            '-start_number 0',
+            '-hls_time 2',
+            '-hls_list_size 0',
+            '-f hls'
+        ];
+
+        if (watermarkConfig) {
+            const opacity = watermarkConfig.opacity || 0.5;
+            let inputs = ['[0:v]scale=-2:360[bg]'];
+            let currentBg = '[bg]';
+            let inputIdx = 1;
+
+            // Base X and Y positions
+            let xPos = 'W-w-10';
+            let yPos = 'H-h-10'; // bottom-right
+            if (watermarkConfig.position === 'top-left') { xPos = '10'; yPos = '10'; }
+            else if (watermarkConfig.position === 'top-right') { xPos = 'W-w-10'; yPos = '10'; }
+            else if (watermarkConfig.position === 'bottom-left') { xPos = '10'; yPos = 'H-h-10'; }
+            else if (watermarkConfig.position === 'center') { xPos = '(W-w)/2'; yPos = '(H-h)/2'; }
+
+            // Animations
+            if (watermarkConfig.animation_type === 'marquee') {
+                xPos = 'W-t*100'; // move left 100px per sec
+            } else if (watermarkConfig.animation_type === 'bounce') {
+                xPos = '(W-w)/2+(W/4)*sin(t)'; // Bounce
+                yPos = '(H-h)/2+(H/4)*cos(t*1.5)';
+            } else if (watermarkConfig.animation_type === 'random') {
+                xPos = 'if(eq(mod(t\\,5)\\,0)\\,random(1)*(W-w)\\,x)';
+                yPos = 'if(eq(mod(t\\,5)\\,0)\\,random(1)*(H-h)\\,y)';
+            }
+
+            if (watermarkConfig.type === 'text' && tempTextImgPath) {
+                ffCommand.input(tempTextImgPath);
+                // The opacity is already in the SVG, so no colorchannelmixer needed
+                inputs.push(`${currentBg}[${inputIdx}:v]overlay=x='${xPos}':y='${yPos}'[bg${inputIdx}]`);
+                currentBg = `[bg${inputIdx}]`;
+                inputIdx++;
+            } else if (watermarkConfig.type === 'image' && watermarkConfig.image_url) {
+                const imgPath = path.join(__dirname, '..', watermarkConfig.image_url);
+                if (fs.existsSync(imgPath)) {
+                    ffCommand.input(imgPath);
+                    inputs.push(`[${inputIdx}:v]colorchannelmixer=aa=${opacity}[wm${inputIdx}]`);
+                    inputs.push(`${currentBg}[wm${inputIdx}]overlay=x='${xPos}':y='${yPos}'[bg${inputIdx}]`);
+                    currentBg = `[bg${inputIdx}]`;
+                    inputIdx++;
+                }
+            }
+
+            if (tempForensicImgPath) {
+                ffCommand.input(tempForensicImgPath);
+                inputs.push(`${currentBg}[${inputIdx}:v]overlay=x=10:y=H-h-10[bg${inputIdx}]`);
+                currentBg = `[bg${inputIdx}]`;
+                inputIdx++;
+            }
+
+            if (inputIdx > 1) {
+                let filterStr = inputs.join(';');
+                ffCommand.complexFilter(filterStr, currentBg.replace(/\[|\]/g, ''));
+            } else {
+                outputOptions.unshift('-vf', 'scale=-2:360');
+            }
+        } else {
+            outputOptions.unshift('-vf', 'scale=-2:360');
+        }
+
+        ffCommand
+            .outputOptions(outputOptions)
             .on('progress', (progress) => {
                 const percent = Math.floor(progress.percent || 0);
                 socketService.sendProgress(userId, videoId, percent);
@@ -170,6 +278,7 @@ const worker = new Worker('video-processing', async (job) => {
                                 isThaiMhung: false,
                                 incidentId: null,
                                 videoId,
+                                userId,
                                 localApiUrl,
                                 baseDir,
                             }).catch(e => console.warn('[VideoThumb] Queue add failed:', e.message));
@@ -187,6 +296,8 @@ const worker = new Worker('video-processing', async (job) => {
                     if (inputVideoPath !== filePath && fs.existsSync(inputVideoPath)) {
                         fs.unlinkSync(inputVideoPath);
                     }
+                    if (tempTextImgPath && fs.existsSync(tempTextImgPath)) fs.unlinkSync(tempTextImgPath);
+                    if (tempForensicImgPath && fs.existsSync(tempForensicImgPath)) fs.unlinkSync(tempForensicImgPath);
                     resolve();
                 } catch (error) {
                     console.error('[Worker] Error after transcode:', error);
@@ -203,6 +314,8 @@ const worker = new Worker('video-processing', async (job) => {
                     dbPool.query('UPDATE videos SET status = $1 WHERE id = $2', ['error', videoId]).catch(e => { });
                 }
                 socketService.sendStatus(userId, videoId, 'error', { error: err.message });
+                if (tempTextImgPath && fs.existsSync(tempTextImgPath)) fs.unlinkSync(tempTextImgPath);
+                if (tempForensicImgPath && fs.existsSync(tempForensicImgPath)) fs.unlinkSync(tempForensicImgPath);
                 reject(err);
             })
             .save(hlsPath);

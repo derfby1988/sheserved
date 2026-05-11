@@ -39,6 +39,7 @@ if (supabaseUrl && supabaseAnonKey) {
 // Video System Services & Routes
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
+const adminRoutes = require('./routes/admin');
 
 // Escrow Services
 const escrowReleaseService = require('./services/escrow-release-service');
@@ -113,6 +114,26 @@ app.use(express.json());
 
 // Serve static directory for fallback video playback
 const videoDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
+
+// 🚨 ตรวจสอบ External Drive / TEMP_VIDEO_PATH
+if (process.env.TEMP_VIDEO_PATH) {
+  if (!require('fs').existsSync(process.env.TEMP_VIDEO_PATH)) {
+    console.error('');
+    console.error('  ══════════════════════════════════════════════════════════════');
+    console.error('  ⚠️  [Storage] External Drive ไม่พบ หรือยังไม่ได้ Mount!');
+    console.error(`  ❌  Path ที่ตั้งค่าไว้: ${process.env.TEMP_VIDEO_PATH}`);
+    console.error('  ──────────────────────────────────────────────────────────────');
+    console.error('  📌  วิธีแก้ไข:');
+    console.error('      1. เสียบ External Drive และรอจนแสดงใน Finder');
+    console.error('      2. หรือแก้ไข TEMP_VIDEO_PATH ใน websocket-server/.env');
+    console.error(`  ⚡  กำลังใช้ Fallback Path: ${path.join(__dirname, 'temp/videos')}`);
+    console.error('  ══════════════════════════════════════════════════════════════');
+    console.error('');
+  } else {
+    console.log(`✅ [Storage] External Drive พร้อมใช้งาน: ${process.env.TEMP_VIDEO_PATH}`);
+  }
+}
+
 app.use('/temp/videos', express.static(videoDir));
 
 // ✅ Persistent thumbnail storage — ไม่ถูก cleanup เหมือน temp/videos
@@ -122,10 +143,18 @@ if (!require('fs').existsSync(thumbnailUploadDir)) {
 }
 app.use('/uploads/thumbnails', express.static(thumbnailUploadDir));
 
+// ✅ Serve static watermarks
+const watermarksUploadDir = path.join(__dirname, 'uploads/watermarks');
+if (!require('fs').existsSync(watermarksUploadDir)) {
+  require('fs').mkdirSync(watermarksUploadDir, { recursive: true });
+}
+app.use('/uploads/watermarks', express.static(watermarksUploadDir));
+
 // Video Routes
 const thumbnailQueue = require('./services/thumbnail-queue');
 if (pool) {
   app.use('/api/videos', videoRoutes(pool));
+  app.use('/api/admin', adminRoutes(pool));
 }
 
 // Store connected users

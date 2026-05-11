@@ -8,8 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'core/layout/main_app_layout.dart';
-import 'features/home/presentation/pages/home_page.dart';
-import 'features/auth/presentation/pages/login_page.dart';
+import 'package:sheserved/features/admin/presentation/pages/video_admin_page.dart';
+import 'package:sheserved/features/admin/presentation/pages/watermark_management_page.dart';
+import 'package:sheserved/features/auth/presentation/pages/login_page.dart';
 import 'features/auth/presentation/pages/register_page.dart';
 import 'features/auth/presentation/pages/register_wizard_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
@@ -149,6 +150,8 @@ class SheservedApp extends StatelessWidget {
         '/admin/donations': (context) => const DonationAdminPage(),
         '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
         '/admin/video-control': (context) => const VideoAdminPage(),
+        '/admin/watermark': (context) => const WatermarkManagementPage(),
+        
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),

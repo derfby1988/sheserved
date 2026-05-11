@@ -510,37 +510,68 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   void _initializePlayer(String url, {bool isLocal = false}) {
-    if (_videoPlayerController != null) { _videoPlayerController!.removeListener(_syncGpsWithVideo); _videoPlayerController!.dispose(); }
-    
+    // Dispose old controller first
+    final oldController = _videoPlayerController;
+    _chewieController?.dispose();
+    _chewieController = null;
+    if (oldController != null) {
+      oldController.removeListener(_syncGpsWithVideo);
+      oldController.dispose();
+    }
+    _videoPlayerController = null;
+
     // Auto-correct local IP changes in URLs from database
     if (!isLocal && url.contains(':3000') && !url.startsWith(AppConfig.localApiUrl)) {
       url = url.replaceAll(RegExp(r'http://[0-9\.]+:\d+'), AppConfig.localApiUrl);
     }
-    
-    _videoPlayerController = isLocal ? VideoPlayerController.file(File(url)) : VideoPlayerController.networkUrl(Uri.parse(url));
-    _videoPlayerController!.initialize().then((_) {
-      if (mounted) {
-        setState(() { 
-          _chewieController = ChewieController(
-            videoPlayerController: _videoPlayerController!, 
-            aspectRatio: _videoPlayerController!.value.aspectRatio, 
-            autoPlay: true, 
-            looping: false, 
-            showControls: false, // ปิด Control เพื่อแก้ปัญหาปุ่มล้นจอในพื้นที่แคบ
-            placeholder: Container(color: Colors.black), 
-            errorBuilder: (context, errorMessage) => Center(child: Text(errorMessage, style: const TextStyle(color: Colors.white)) ),
-          ); 
-        });
-        
-        // EXPLICIT PLAY FOR IOS AUTO-PALY IMPROVEMENT
-        _videoPlayerController!.setVolume(1.0);
-        _videoPlayerController!.play();
-        
-        _videoPlayerController!.addListener(_syncGpsWithVideo);
-        _adjustMapBounds();
+
+    final lowerUrl = url.toLowerCase();
+    if (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp') || lowerUrl.endsWith('.gif')) {
+      // เป็นภาพ ไม่ใช่วิดีโอ ข้ามการโหลด VideoPlayer (UI จะจัดการแสดงภาพแทน)
+      return;
+    }
+
+    final controller = isLocal
+        ? VideoPlayerController.file(File(url))
+        : VideoPlayerController.networkUrl(Uri.parse(url));
+    _videoPlayerController = controller;
+
+    controller.initialize().then((_) {
+      // ✅ Guard: ตรวจสอบว่า widget ยังมีชีวิต และ controller ยังไม่ถูก dispose
+      // (อาจถูก dispose ก่อน then() ทำงาน หากผู้ใช้เปลี่ยนหน้าหรือ switch วิดีโอ)
+      if (!mounted || _videoPlayerController != controller) {
+        controller.dispose();
+        return;
       }
+      setState(() {
+        _chewieController = ChewieController(
+          videoPlayerController: controller,
+          aspectRatio: controller.value.aspectRatio,
+          autoPlay: true,
+          looping: false,
+          showControls: false,
+          placeholder: Container(color: Colors.black),
+          errorBuilder: (context, errorMessage) =>
+              Center(child: Text(errorMessage, style: const TextStyle(color: Colors.white))),
+        );
+      });
+
+      // EXPLICIT PLAY FOR IOS AUTO-PLAY IMPROVEMENT
+      controller.setVolume(1.0);
+      controller.play();
+
+      controller.addListener(_syncGpsWithVideo);
+      _adjustMapBounds();
+    }).catchError((e) {
+      // ✅ Guard: จัดการ error อย่างเงียบๆ เพื่อป้องกัน "Bad state: No active player"
+      debugPrint('[VideoPlayer] initialize error (may be disposed): $e');
+      if (_videoPlayerController == controller) {
+        _videoPlayerController = null;
+      }
+      controller.dispose();
     });
   }
+
 
   void _syncGpsWithVideo() {
     if (_videoPlayerController == null || !_videoPlayerController!.value.isInitialized || _dbGpsTracks.isEmpty) return;

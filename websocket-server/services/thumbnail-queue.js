@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const socketService = require('./socket-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('./thumbnail-service');
+const watermarkService = require('./watermark-service');
 
 // ✅ Redis connection (ใช้ ENV ตามที่กำหนดใน .env)
 const connection = {
@@ -67,6 +68,7 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
         isThaiMhung,
         incidentId,
         videoId,
+        userId,
         localApiUrl,
         baseDir,
     } = job.data;
@@ -83,6 +85,32 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
     const thumbResult = await generateThumbnail(existingFiles, thumbLocalPath);
     if (!thumbResult.success || !fs.existsSync(thumbLocalPath)) {
         throw new Error(thumbResult.error || 'Thumbnail file not created');
+    }
+
+    // ✅ Step 1.5: Apply Watermark to the generated Thumbnail
+    if (dbPool) {
+        try {
+            const wmRes = await dbPool.query('SELECT * FROM watermark_configs WHERE id = 1 AND is_enabled = true');
+            if (wmRes.rows.length > 0) {
+                const watermarkConfig = wmRes.rows[0];
+                const wmPath = thumbLocalPath.replace('.webp', '_wm.webp');
+                
+                const wmResult = await watermarkService.applyImageWatermark(
+                    thumbLocalPath, 
+                    wmPath, 
+                    watermarkConfig, 
+                    isThaiMhung && incidentId ? incidentId : videoId, 
+                    userId
+                );
+                
+                if (wmResult.success) {
+                    fs.unlinkSync(thumbLocalPath); // delete original un-watermarked
+                    fs.renameSync(wmPath, thumbLocalPath); // rename watermarked back to original name
+                }
+            }
+        } catch (e) {
+            console.warn('[ThumbnailWorker] Failed to apply watermark:', e.message);
+        }
     }
 
     // ✅ Step 2: Try Bunny.net CDN Upload (Recommendation #9 — optional)

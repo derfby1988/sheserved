@@ -9,6 +9,7 @@ const socketService = require('../services/socket-service');
 const faceBlurService = require('../services/face-blur-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('../services/thumbnail-service');
 const thumbnailQueue = require('../services/thumbnail-queue');
+const watermarkService = require('../services/watermark-service');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -213,6 +214,15 @@ module.exports = (pool) => {
                 fs.mkdirSync(reportDir, { recursive: true });
             }
 
+            // Fetch Watermark Config once
+            let watermarkConfig = null;
+            try {
+                const wmRes = await pool.query('SELECT * FROM watermark_configs WHERE id = 1 AND is_enabled = true');
+                if (wmRes.rows.length > 0) watermarkConfig = wmRes.rows[0];
+            } catch (e) {
+                console.warn('[Watermark] Failed to fetch config for photos:', e.message);
+            }
+
             const photoUrls = [];
             const localApiUrl = process.env.LOCAL_API_URL || 'http://localhost:3000';
             
@@ -236,6 +246,29 @@ module.exports = (pool) => {
                     }
                     // ถ้าล้มเหลว → ใช้ต้นฉบับตามเดิม (blurResult.outputPath = newPath)
                     finalFilePath = blurResult.outputPath;
+                }
+
+                // ✅ Watermark (Sharp): ประทับลายน้ำหลังเบลอ ทันทีเพื่อให้ภาพที่เก็บและ Broadcast มีลายน้ำ
+                if (watermarkConfig) {
+                    const ext = path.extname(finalFilePath);
+                    const wmFilename = `${path.basename(finalFilePath, ext)}_wm${ext}`;
+                    const wmPath = path.join(reportDir, wmFilename);
+                    
+                    const wmResult = await watermarkService.applyImageWatermark(
+                        finalFilePath, 
+                        wmPath, 
+                        watermarkConfig, 
+                        incidentId || videoId, 
+                        userId || userIdFromRequest
+                    );
+                    
+                    if (wmResult.success) {
+                        // ลบไฟล์เก่า
+                        if (finalFilePath !== newPath) {
+                            try { fs.unlinkSync(finalFilePath); } catch (_) {}
+                        }
+                        finalFilePath = wmPath;
+                    }
                 }
 
                 // Construct URL correctly
@@ -314,6 +347,7 @@ module.exports = (pool) => {
                     isThaiMhung: isThaiMhung && !!incidentId,
                     incidentId: incidentId || null,
                     videoId,
+                    userId: userId || userIdFromRequest,
                     localApiUrl,
                     baseDir,
                 }).catch(err => {
