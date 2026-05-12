@@ -73,9 +73,11 @@ class EmergencyUiOverlay extends StatelessWidget {
                     child: GestureDetector(
                       onTap: showAcceptPanel ? onDeclineRescue : onToggleUi,
                       behavior: HitTestBehavior.translucent,
-                      child: SingleChildScrollView(
-                        child: content,
-                      ),
+                      child: isThaiMhungReporting 
+                          ? content 
+                          : SingleChildScrollView(
+                              child: content,
+                            ),
                     ),
                   ),
 

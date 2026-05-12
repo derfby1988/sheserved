@@ -59,6 +59,178 @@ class IncidentReportWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isThaiMhungMode) {
+      final screenSize = MediaQuery.of(context).size;
+      final padding = MediaQuery.of(context).padding;
+      return Container(
+        width: screenSize.width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top UI (Back Button)
+            if (onBackTap != null)
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                  child: GestureDetector(
+                    onTap: onBackTap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 14),
+                          SizedBox(width: 6),
+                          Text(
+                            'ยกเลิกโหมดไทยมุง',
+                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Camera Frame
+            Container(
+              constraints: BoxConstraints(maxHeight: screenSize.height * 0.55),
+              width: double.infinity,
+              alignment: Alignment.topCenter,
+              child: cameraController != null && cameraController!.value.isInitialized
+                  ? Builder(
+                      builder: (context) {
+                        final double rawRatio = cameraController!.value.aspectRatio;
+                        final double displayRatio = rawRatio > 1 ? 1 / rawRatio : rawRatio;
+                        return AspectRatio(
+                          aspectRatio: displayRatio,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: CameraPreview(cameraController!),
+                          ),
+                        );
+                      }
+                    )
+                  : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
+            ),
+            
+            // Spacer for Map Gap (This pushes tools to the very bottom)
+            const Spacer(),
+            
+            // Bottom UI (Photos, Quota, Action Buttons)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 16),
+              child: SafeArea(
+                top: false,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (capturedPhotos.isNotEmpty) ...[
+                          SizedBox(
+                            height: 64,
+                            child: Center(
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                scrollDirection: Axis.horizontal,
+                                itemCount: capturedPhotos.length,
+                                itemBuilder: (context, index) {
+                                  return Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                    width: 64,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.white, width: 1.5),
+                                      image: DecorationImage(image: FileImage(File(capturedPhotos[index].path)), fit: BoxFit.cover),
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.topRight,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            capturedPhotos.removeAt(index);
+                                          });
+                                        },
+                                        child: const Icon(Icons.cancel, color: Colors.redAccent, size: 20),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                    if (capturedPhotos.length < maxPhotos)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        margin: const EdgeInsets.only(bottom: 8.0),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                        child: Text('เหลือโควตาถ่ายภาพ ${maxPhotos - capturedPhotos.length}/$maxPhotos', style: const TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'SukhumvitSet')),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        margin: const EdgeInsets.only(bottom: 8.0),
+                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.greenAccent)),
+                        child: const Text('ครบโควตาถ่ายภาพแล้ว', style: TextStyle(color: Colors.greenAccent, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet')),
+                      ),
+                    Row(
+                      children: [
+                        if (capturedPhotos.length < maxPhotos)
+                          Expanded(
+                            flex: 1,
+                            child: GestureDetector(
+                              onTap: onTakePhoto,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 18),
+                                decoration: BoxDecoration(
+                                  color: Colors.white, 
+                                  borderRadius: BorderRadius.circular(16), 
+                                  border: Border.all(color: Colors.red, width: 2), 
+                                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))]
+                                ),
+                                child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
+                              ),
+                            ),
+                          ),
+                        if (capturedPhotos.isNotEmpty) ...[
+                          if (capturedPhotos.length < maxPhotos) const SizedBox(width: 12),
+                          Expanded(
+                            flex: capturedPhotos.length >= maxPhotos ? 1 : 2,
+                            child: GestureDetector(
+                              onTap: onSendPhotos,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 18),
+                                decoration: BoxDecoration(
+                                  gradient: capturedPhotos.length >= maxPhotos ? const LinearGradient(colors: [Color(0xFF34C759), Color(0xFF28A745)]) : const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))],
+                                ),
+                                child: const Center(child: Text('ส่งรูปภาพ', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                );
+                },
+              ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final bool categorySelected = isThaiMhungMode || selectedEmergencyCategoryId != null;
     final bool canRecord = isThaiMhungMode || (categorySelected && !isLoadingCategories);
 
