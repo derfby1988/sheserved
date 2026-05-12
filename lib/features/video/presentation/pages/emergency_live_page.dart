@@ -370,6 +370,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             onToggleUi: () {
               if (_isChatVisible) {
                 FocusScope.of(context).unfocus();
+              } else if (_isThaiMhungReporting || _selectedTab == 2) {
+                setState(() {
+                  _selectedTab = 0;
+                  _isThaiMhungReporting = false;
+                  _isUiVisible = true;
+                });
               } else {
                 setState(() => _isUiVisible = !_isUiVisible);
               }

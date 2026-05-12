@@ -487,6 +487,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       _activeDonationRequests = [];
       _requestTotals = {};
       _activeRequestIndex = 0;
+      _capturedPhotos.clear(); // ✅ เคลียร์รูปภาพไทยมุงที่ถ่ายค้างไว้
     });
     _setupWebSocketStreams();
     _loadInitialData();

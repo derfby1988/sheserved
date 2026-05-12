@@ -355,29 +355,32 @@ class IncidentReportWidget extends StatelessWidget {
             if (isPhotoMode && capturedPhotos.isNotEmpty) ...[
               SizedBox(
                 height: 64,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: capturedPhotos.length,
-                  itemBuilder: (context, index) {
-                    return Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 64,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        image: DecorationImage(
-                          image: FileImage(File(capturedPhotos[index].path)),
-                          fit: BoxFit.cover,
+                child: Center(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: capturedPhotos.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 64,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          image: DecorationImage(
+                            image: FileImage(File(capturedPhotos[index].path)),
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                      ),
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: GestureDetector(
-                          onTap: () => (context as dynamic).setState(() => capturedPhotos.removeAt(index)), // This might need a better way if we want to follow strict encapsulation, but for now it's okay for an extraction
-                          child: const Icon(Icons.cancel, color: Colors.white, size: 20),
+                        child: Align(
+                          alignment: Alignment.topRight,
+                          child: GestureDetector(
+                            onTap: () => (context as dynamic).setState(() => capturedPhotos.removeAt(index)), // This might need a better way if we want to follow strict encapsulation, but for now it's okay for an extraction
+                            child: const Icon(Icons.cancel, color: Colors.white, size: 20),
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -387,33 +390,52 @@ class IncidentReportWidget extends StatelessWidget {
               child: isThaiMhungMode 
                 ? Column(
                     children: [
+                      if (capturedPhotos.length < maxPhotos)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            'เหลือโควตาถ่ายภาพ ${maxPhotos - capturedPhotos.length}/$maxPhotos',
+                            style: const TextStyle(color: Colors.white70, fontSize: 14, fontFamily: 'SukhumvitSet'),
+                          ),
+                        )
+                      else
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            'ครบโควตาถ่ายภาพแล้ว',
+                            style: TextStyle(color: Colors.greenAccent, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'SukhumvitSet'),
+                          ),
+                        ),
                       Row(
                         children: [
-                          Expanded(
-                            flex: 1,
-                            child: GestureDetector(
-                              onTap: (canRecord && capturedPhotos.length < maxPhotos) ? onTakePhoto : null,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 18),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: Colors.red, width: 2),
+                          if (capturedPhotos.length < maxPhotos)
+                            Expanded(
+                              flex: 1,
+                              child: GestureDetector(
+                                onTap: canRecord ? onTakePhoto : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 18),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.red, width: 2),
+                                  ),
+                                  child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
                                 ),
-                                child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
                               ),
                             ),
-                          ),
                           if (capturedPhotos.isNotEmpty) ...[
-                            const SizedBox(width: 12),
+                            if (capturedPhotos.length < maxPhotos) const SizedBox(width: 12),
                             Expanded(
-                              flex: 2,
+                              flex: capturedPhotos.length >= maxPhotos ? 1 : 2,
                               child: GestureDetector(
                                 onTap: onSendPhotos,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 18),
                                   decoration: BoxDecoration(
-                                    gradient: const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
+                                    gradient: capturedPhotos.length >= maxPhotos 
+                                      ? const LinearGradient(colors: [Color(0xFF34C759), Color(0xFF28A745)]) 
+                                      : const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: const Center(
@@ -427,67 +449,6 @@ class IncidentReportWidget extends StatelessWidget {
                             ),
                           ],
                         ],
-                      ),
-                      const SizedBox(height: 16),
-                      GestureDetector(
-                        onTap: onYieldWay,
-                        child: Stack(
-                          children: [
-                            // Progress Bar Background
-                            Positioned.fill(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final double percentage = yieldWayNotifiedCount > 0 
-                                      ? (yieldWayCountValue / yieldWayNotifiedCount).clamp(0.0, 1.0) 
-                                      : 0.0;
-                                  return Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 500),
-                                      width: constraints.maxWidth * percentage,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF007AFF).withOpacity(0.8),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.white.withOpacity(0.3)),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.blue.withOpacity(0.3),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.airport_shuttle, color: Colors.white),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'ช่วยเปิดทางให้รถฉุกเฉิน ($yieldWayCount)',
-                                    style: const TextStyle(
-                                      fontFamily: 'SukhumvitSet',
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ],
                   )
