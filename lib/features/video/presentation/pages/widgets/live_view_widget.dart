@@ -16,6 +16,7 @@ class LiveViewWidget extends StatefulWidget {
   final String? currentVideoId;
   final Video? currentVideo;
   final String formattedViewerCount;
+  final int viewerCount; // ✅ เพิ่มตัวเลขสำหรับกราฟ
   final String likeCountFormatted;
   // ✅ เปลี่ยนจากตัวแปรเดียวเป็นรายการคำร้อง (Multi-request support)
   final List<DonationRequest> activeRequests;
@@ -49,6 +50,7 @@ class LiveViewWidget extends StatefulWidget {
     required this.currentVideoId,
     required this.currentVideo,
     required this.formattedViewerCount,
+    this.viewerCount = 0,
     required this.likeCountFormatted,
     required this.activeRequests,
     this.activeRequestIndex = 0,
@@ -252,7 +254,10 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                 ),
                                 if (widget.currentVideoId != null) ...[
                                   const SizedBox(height: 12),
-                                  ViewerCountWidget(formattedViewerCount: widget.formattedViewerCount),
+                                  ViewerCountWidget(
+                                    formattedViewerCount: widget.formattedViewerCount,
+                                    viewerCount: widget.viewerCount,
+                                  ),
                                   const SizedBox(height: 12),
                                   ActionButtonsWidget(
                                     likeCountFormatted: widget.likeCountFormatted,

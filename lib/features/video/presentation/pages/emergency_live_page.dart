@@ -565,6 +565,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         currentVideoId: _currentVideoId,
         currentVideo: _currentVideo,
         formattedViewerCount: _formatCount(_viewerCount),
+        viewerCount: _viewerCount,
         likeCountFormatted: _formatCount(_likeCount),
         activeRequests: _activeDonationRequests,
         activeRequestIndex: _activeRequestIndex,
