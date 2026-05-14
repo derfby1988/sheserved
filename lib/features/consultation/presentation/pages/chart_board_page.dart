@@ -87,11 +87,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      // Use the current user's ID if the request hasn't been saved with a UID yet
-      final patientId = widget.request.userId.isNotEmpty 
-          ? widget.request.userId 
-          : currentUserId;
-      final roomId = 'consult_${patientId.substring(0, 8)}';
+      // ✅ ใช้ ID ของ Consultation Request เป็นพื้นฐานในการสร้างห้องแชท (แบบ 1:1)
+      final consultationId = widget.request.id.isNotEmpty
+          ? widget.request.id
+          : const Uuid().v4();
+      final roomId = 'consult_$consultationId';
 
       // Ensure the chat room record exists in the DB
       await _ensureConsultationRoom(roomId, currentUserId);

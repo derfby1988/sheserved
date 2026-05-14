@@ -233,7 +233,7 @@ class ConsultationRepository {
     }
   }
 
-  /// Provider รับงาน: อัปเดตสถานะ request → in_progress และบันทึก provider_id
+  /// Provider รับงาน: อัปเดตสถานะ request → in_progress และบันทึก provider_id (ระบบเดิม)
   Future<void> assignProvider({
     required String requestId,
     required String providerId,
@@ -243,6 +243,84 @@ class ConsultationRepository {
       'provider_id': providerId,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', requestId);
+  }
+
+  /// Provider รับงาน: เข้าร่วม Expert Group (ระบบใหม่ Phase 1 ป้องกัน Race Condition)
+  Future<void> assignProviderToGroup({
+    required String consultationId,
+    required String providerId,
+    required String packageId,
+    required String professionId,
+  }) async {
+    // 1. ดึงข้อมูล expert_groups ของแพ็คเกจ
+    final pkgRes = await _client
+        .from('consultation_packages')
+        .select('expert_groups')
+        .eq('id', packageId)
+        .maybeSingle();
+        
+    final expertGroups = (pkgRes?['expert_groups'] as List<dynamic>?) ?? [];
+
+    // 2. ดึงชื่อ profession เพื่อใช้เทียบ (กรณีเทียบด้วย role string)
+    final profRes = await _client
+        .from('professions')
+        .select('name')
+        .eq('id', professionId)
+        .maybeSingle();
+    final professionName = (profRes?['name'] as String?)?.toLowerCase() ?? '';
+
+    // 3. ค้นหา expert_group_id ที่ตรงกับวิชาชีพ
+    String? matchedExpertGroupId;
+    for (var g in expertGroups) {
+      if (g is Map<String, dynamic>) {
+        final idMatch = g['role'] == professionId ||
+            g['id'] == professionId ||
+            g['profession_id'] == professionId;
+
+        if (idMatch) {
+          matchedExpertGroupId = g['id'] as String?;
+          break;
+        }
+
+        final role = g['role']?.toString().toLowerCase() ?? '';
+        if (role.isNotEmpty && professionName.isNotEmpty) {
+          if (role == 'doctor' && (professionName.contains('หมอ') || professionName.contains('แพทย์'))) {
+            matchedExpertGroupId = g['id'] as String?; break;
+          }
+          if (role == 'pharmacist' && professionName.contains('เภสัช')) {
+            matchedExpertGroupId = g['id'] as String?; break;
+          }
+          if (role == 'specialist' && professionName.contains('เฉพาะทาง')) {
+            matchedExpertGroupId = g['id'] as String?; break;
+          }
+          if (role == 'professor' && professionName.contains('อาจารย์')) {
+            matchedExpertGroupId = g['id'] as String?; break;
+          }
+          if (professionName.contains(role) || role.contains(professionName)) {
+            matchedExpertGroupId = g['id'] as String?; break;
+          }
+        }
+      }
+    }
+
+    if (matchedExpertGroupId == null) {
+      throw Exception('ไม่พบกลุ่มผู้เชี่ยวชาญที่ตรงกับวิชาชีพของคุณในแพ็คเกจนี้');
+    }
+
+    // 4. เรียก RPC ด้วย expertGroupId ที่หามาได้
+    final response = await _client.rpc(
+      'assign_provider_to_group',
+      params: {
+        'p_consultation_id': consultationId,
+        'p_provider_id': providerId,
+        'p_expert_group_id': matchedExpertGroupId,
+      },
+    );
+
+    // หาก RPC รีเทิร์นค่าที่แปลว่าไม่สำเร็จ (เช่น โควต้าเต็ม)
+    if (response is Map && response['success'] == false) {
+      throw Exception(response['message'] ?? 'โควต้ากลุ่มนี้เต็มแล้ว');
+    }
   }
 
   /// Update status of a consultation request

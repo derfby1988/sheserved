@@ -52,9 +52,10 @@ class ConsultationEntry {
         bodyAreaMap['label'] as String? ??
         (bodyAreaMap.keys.isNotEmpty ? bodyAreaMap.keys.join(', ') : 'ไม่ระบุ');
 
-    final userId = map['user_id'] as String? ?? 'unknown';
-    final shortId = userId.length >= 8 ? userId.substring(0, 8) : userId;
-    final roomId = 'consult_$shortId';
+    final consultationId = map['id'] as String? ?? 'unknown';
+    // ✅ roomId ต้องสร้างจาก consultation_id เสมอ เพื่อให้เป็นแบบ 1:1
+    // และเมื่อทำ migration SQL เสร็จ จะเริ่มใช้ map['room_id'] แทนบรรทัดนี้ได้
+    final roomId = map['room_id'] as String? ?? 'consult_$consultationId';
 
     double parseDouble(dynamic value) {
       if (value == null) return 0.0;
@@ -291,11 +292,20 @@ class _HealthProgramRequestDashboardState
     if (confirm != true) return;
 
     try {
-      // 1. Assign provider ใน consultation_requests
-      await _repo.assignProvider(
-        requestId: entry.id,
+      // 1. Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
+      if (entry.packageId == null || user.professionId == null) {
+        throw Exception('ข้อมูลแพ็คเกจหรือวิชาชีพไม่สมบูรณ์ ไม่สามารถรับงานได้');
+      }
+
+      await _repo.assignProviderToGroup(
+        consultationId: entry.id,
         providerId: user.id,
+        packageId: entry.packageId!,
+        professionId: user.professionId!,
       );
+
+      // 1.5 อัปเดตสถานะ request ให้เป็น in_progress
+      await _repo.updateStatus(entry.id, 'in_progress');
 
       // 2. เปลี่ยนสถานะตัวเองเป็น busy
       await _userRepo.setAvailabilityStatus(user.id, 'busy');
