@@ -26,38 +26,241 @@ class _BodyRegion {
 }
 
 List<_BodyRegion> _bodyRegions = [
-  _BodyRegion(id: 'top_head',   nameTh: 'ศีรษะด้านบน',  nameEn: 'Top of Head',   yRatio: 0.04, xRatio: 0.50, icon: Icons.face),
-  _BodyRegion(id: 'forehead',   nameTh: 'หน้าผาก',      nameEn: 'Forehead',      yRatio: 0.07, xRatio: 0.50, icon: Icons.face_retouching_natural),
-  _BodyRegion(id: 'eyes',       nameTh: 'ดวงตา',        nameEn: 'Eyes',          yRatio: 0.09, xRatio: 0.50, icon: Icons.remove_red_eye_outlined),
-  _BodyRegion(id: 'nose_ears',  nameTh: 'จมูก/หู',      nameEn: 'Nose/Ears',     yRatio: 0.11, xRatio: 0.50, icon: Icons.hearing_outlined),
-  _BodyRegion(id: 'mouth_jaw',  nameTh: 'ปาก/กราม',     nameEn: 'Mouth/Jaw',     yRatio: 0.13, xRatio: 0.50, icon: Icons.record_voice_over_outlined),
-  _BodyRegion(id: 'neck',       nameTh: 'ลำคอ',         nameEn: 'Neck',          yRatio: 0.17, xRatio: 0.50, icon: Icons.compress),
-  _BodyRegion(id: 'shoulder',   nameTh: 'หัวไหล่',      nameEn: 'Shoulder',      yRatio: 0.22, xRatio: 0.38, icon: Icons.accessibility_new),
-  _BodyRegion(id: 'collarbone', nameTh: 'ไหปลาร้า',     nameEn: 'Collarbone',    yRatio: 0.25, xRatio: 0.42, icon: Icons.horizontal_rule),
-  _BodyRegion(id: 'upper_chest',nameTh: 'หน้าอกส่วนบน', nameEn: 'Upper Chest',   yRatio: 0.29, xRatio: 0.50, icon: Icons.monitor_heart_outlined),
-  _BodyRegion(id: 'upper_arm',  nameTh: 'ต้นแขน',       nameEn: 'Upper Arm',     yRatio: 0.33, xRatio: 0.28, icon: Icons.fitness_center),
-  _BodyRegion(id: 'lower_chest',nameTh: 'หน้าอกส่วนล่าง',nameEn: 'Lower Chest',   yRatio: 0.36, xRatio: 0.50, icon: Icons.favorite_border),
-  _BodyRegion(id: 'upper_abd',  nameTh: 'ท้องส่วนบน',   nameEn: 'Upper Abdomen', yRatio: 0.40, xRatio: 0.50, icon: Icons.restaurant_menu),
-  _BodyRegion(id: 'elbow',      nameTh: 'ข้อศอก',       nameEn: 'Elbow',         yRatio: 0.44, xRatio: 0.22, icon: Icons.adjust),
-  _BodyRegion(id: 'middle_abd', nameTh: 'รอบสะดือ',     nameEn: 'Navel Area',    yRatio: 0.47, xRatio: 0.50, icon: Icons.radio_button_checked),
-  _BodyRegion(id: 'lower_arm',  nameTh: 'แขนท่อนล่าง',  nameEn: 'Forearm',       yRatio: 0.50, xRatio: 0.20, icon: Icons.pan_tool_alt_outlined),
-  _BodyRegion(id: 'lower_abd',  nameTh: 'ท้องส่วนล่าง',  nameEn: 'Lower Abdomen', yRatio: 0.53, xRatio: 0.50, icon: Icons.water_drop_outlined),
-  _BodyRegion(id: 'wrist',      nameTh: 'ข้อมือ',       nameEn: 'Wrist',         yRatio: 0.56, xRatio: 0.18, icon: Icons.watch_outlined),
-  _BodyRegion(id: 'pelvis',     nameTh: 'เชิงกราน/ก้น', nameEn: 'Pelvis/Glutes', yRatio: 0.59, xRatio: 0.50, icon: Icons.trip_origin),
-  _BodyRegion(id: 'hand',       nameTh: 'มือ/นิ้วมือ',  nameEn: 'Hand/Fingers',  yRatio: 0.62, xRatio: 0.15, icon: Icons.back_hand_outlined),
-  _BodyRegion(id: 'upper_thigh',nameTh: 'ต้นขาส่วนบน',  nameEn: 'Upper Thigh',   yRatio: 0.66, xRatio: 0.40, icon: Icons.directions_walk),
-  _BodyRegion(id: 'mid_thigh',  nameTh: 'ต้นขาส่วนกลาง',nameEn: 'Mid Thigh',     yRatio: 0.71, xRatio: 0.38, icon: Icons.directions_run),
-  _BodyRegion(id: 'knee',       nameTh: 'หัวเข่า',      nameEn: 'Knee',          yRatio: 0.77, xRatio: 0.42, icon: Icons.lens_outlined),
-  _BodyRegion(id: 'upper_shin', nameTh: 'หน้าแข้ง/น่อง',nameEn: 'Shin/Calf',     yRatio: 0.83, xRatio: 0.42, icon: Icons.linear_scale),
-  _BodyRegion(id: 'lower_shin', nameTh: 'ข้อเท้าด้านบน',nameEn: 'Lower Shin',    yRatio: 0.88, xRatio: 0.42, icon: Icons.align_vertical_bottom),
-  _BodyRegion(id: 'ankle',      nameTh: 'ข้อเท้า',      nameEn: 'Ankle',         yRatio: 0.93, xRatio: 0.42, icon: Icons.radio_button_unchecked),
-  _BodyRegion(id: 'foot',       nameTh: 'หลังเท้า',     nameEn: 'Foot',          yRatio: 0.96, xRatio: 0.42, icon: Icons.run_circle_outlined),
-  _BodyRegion(id: 'toes',       nameTh: 'นิ้วเท้า',     nameEn: 'Toes',          yRatio: 0.99, xRatio: 0.42, icon: Icons.linear_scale_outlined),
+  _BodyRegion(
+    id: 'top_head',
+    nameTh: 'ศีรษะด้านบน',
+    nameEn: 'Top of Head',
+    yRatio: 0.04,
+    xRatio: 0.50,
+    icon: Icons.face,
+  ),
+  _BodyRegion(
+    id: 'forehead',
+    nameTh: 'หน้าผาก',
+    nameEn: 'Forehead',
+    yRatio: 0.07,
+    xRatio: 0.50,
+    icon: Icons.face_retouching_natural,
+  ),
+  _BodyRegion(
+    id: 'eyes',
+    nameTh: 'ดวงตา',
+    nameEn: 'Eyes',
+    yRatio: 0.09,
+    xRatio: 0.50,
+    icon: Icons.remove_red_eye_outlined,
+  ),
+  _BodyRegion(
+    id: 'nose_ears',
+    nameTh: 'จมูก/หู',
+    nameEn: 'Nose/Ears',
+    yRatio: 0.11,
+    xRatio: 0.50,
+    icon: Icons.hearing_outlined,
+  ),
+  _BodyRegion(
+    id: 'mouth_jaw',
+    nameTh: 'ปาก/กราม',
+    nameEn: 'Mouth/Jaw',
+    yRatio: 0.13,
+    xRatio: 0.50,
+    icon: Icons.record_voice_over_outlined,
+  ),
+  _BodyRegion(
+    id: 'neck',
+    nameTh: 'ลำคอ',
+    nameEn: 'Neck',
+    yRatio: 0.17,
+    xRatio: 0.50,
+    icon: Icons.compress,
+  ),
+  _BodyRegion(
+    id: 'shoulder',
+    nameTh: 'หัวไหล่',
+    nameEn: 'Shoulder',
+    yRatio: 0.22,
+    xRatio: 0.38,
+    icon: Icons.accessibility_new,
+  ),
+  _BodyRegion(
+    id: 'collarbone',
+    nameTh: 'ไหปลาร้า',
+    nameEn: 'Collarbone',
+    yRatio: 0.25,
+    xRatio: 0.42,
+    icon: Icons.horizontal_rule,
+  ),
+  _BodyRegion(
+    id: 'upper_chest',
+    nameTh: 'หน้าอกส่วนบน',
+    nameEn: 'Upper Chest',
+    yRatio: 0.29,
+    xRatio: 0.50,
+    icon: Icons.monitor_heart_outlined,
+  ),
+  _BodyRegion(
+    id: 'upper_arm',
+    nameTh: 'ต้นแขน',
+    nameEn: 'Upper Arm',
+    yRatio: 0.33,
+    xRatio: 0.28,
+    icon: Icons.fitness_center,
+  ),
+  _BodyRegion(
+    id: 'lower_chest',
+    nameTh: 'หน้าอกส่วนล่าง',
+    nameEn: 'Lower Chest',
+    yRatio: 0.36,
+    xRatio: 0.50,
+    icon: Icons.favorite_border,
+  ),
+  _BodyRegion(
+    id: 'upper_abd',
+    nameTh: 'ท้องส่วนบน',
+    nameEn: 'Upper Abdomen',
+    yRatio: 0.40,
+    xRatio: 0.50,
+    icon: Icons.restaurant_menu,
+  ),
+  _BodyRegion(
+    id: 'elbow',
+    nameTh: 'ข้อศอก',
+    nameEn: 'Elbow',
+    yRatio: 0.44,
+    xRatio: 0.22,
+    icon: Icons.adjust,
+  ),
+  _BodyRegion(
+    id: 'middle_abd',
+    nameTh: 'รอบสะดือ',
+    nameEn: 'Navel Area',
+    yRatio: 0.47,
+    xRatio: 0.50,
+    icon: Icons.radio_button_checked,
+  ),
+  _BodyRegion(
+    id: 'lower_arm',
+    nameTh: 'แขนท่อนล่าง',
+    nameEn: 'Forearm',
+    yRatio: 0.50,
+    xRatio: 0.20,
+    icon: Icons.pan_tool_alt_outlined,
+  ),
+  _BodyRegion(
+    id: 'lower_abd',
+    nameTh: 'ท้องส่วนล่าง',
+    nameEn: 'Lower Abdomen',
+    yRatio: 0.53,
+    xRatio: 0.50,
+    icon: Icons.water_drop_outlined,
+  ),
+  _BodyRegion(
+    id: 'wrist',
+    nameTh: 'ข้อมือ',
+    nameEn: 'Wrist',
+    yRatio: 0.56,
+    xRatio: 0.18,
+    icon: Icons.watch_outlined,
+  ),
+  _BodyRegion(
+    id: 'pelvis',
+    nameTh: 'เชิงกราน/ก้น',
+    nameEn: 'Pelvis/Glutes',
+    yRatio: 0.59,
+    xRatio: 0.50,
+    icon: Icons.trip_origin,
+  ),
+  _BodyRegion(
+    id: 'hand',
+    nameTh: 'มือ/นิ้วมือ',
+    nameEn: 'Hand/Fingers',
+    yRatio: 0.62,
+    xRatio: 0.15,
+    icon: Icons.back_hand_outlined,
+  ),
+  _BodyRegion(
+    id: 'upper_thigh',
+    nameTh: 'ต้นขาส่วนบน',
+    nameEn: 'Upper Thigh',
+    yRatio: 0.66,
+    xRatio: 0.40,
+    icon: Icons.directions_walk,
+  ),
+  _BodyRegion(
+    id: 'mid_thigh',
+    nameTh: 'ต้นขาส่วนกลาง',
+    nameEn: 'Mid Thigh',
+    yRatio: 0.71,
+    xRatio: 0.38,
+    icon: Icons.directions_run,
+  ),
+  _BodyRegion(
+    id: 'knee',
+    nameTh: 'หัวเข่า',
+    nameEn: 'Knee',
+    yRatio: 0.77,
+    xRatio: 0.42,
+    icon: Icons.lens_outlined,
+  ),
+  _BodyRegion(
+    id: 'upper_shin',
+    nameTh: 'หน้าแข้ง/น่อง',
+    nameEn: 'Shin/Calf',
+    yRatio: 0.83,
+    xRatio: 0.42,
+    icon: Icons.linear_scale,
+  ),
+  _BodyRegion(
+    id: 'lower_shin',
+    nameTh: 'ข้อเท้าด้านบน',
+    nameEn: 'Lower Shin',
+    yRatio: 0.88,
+    xRatio: 0.42,
+    icon: Icons.align_vertical_bottom,
+  ),
+  _BodyRegion(
+    id: 'ankle',
+    nameTh: 'ข้อเท้า',
+    nameEn: 'Ankle',
+    yRatio: 0.93,
+    xRatio: 0.42,
+    icon: Icons.radio_button_unchecked,
+  ),
+  _BodyRegion(
+    id: 'foot',
+    nameTh: 'หลังเท้า',
+    nameEn: 'Foot',
+    yRatio: 0.96,
+    xRatio: 0.42,
+    icon: Icons.run_circle_outlined,
+  ),
+  _BodyRegion(
+    id: 'toes',
+    nameTh: 'นิ้วเท้า',
+    nameEn: 'Toes',
+    yRatio: 0.99,
+    xRatio: 0.42,
+    icon: Icons.linear_scale_outlined,
+  ),
 ];
 
 const List<String> _medicalSymptoms = [
-  'ระบุอาการ', 'ปกติ', 'เจ็บ', 'ปวด', 'คัน', 'บวม', 'แสบ', 'ระคาย', 'กระตุก', 
-  'ชา', 'เกร็ง', 'ตึง', 'เสียด', 'ร้าว', 'อักเสบ', 'เป็นแผล'
+  'ระบุอาการ',
+  'ปกติ',
+  'เจ็บ',
+  'ปวด',
+  'คัน',
+  'บวม',
+  'แสบ',
+  'ระคาย',
+  'กระตุก',
+  'ชา',
+  'เกร็ง',
+  'ตึง',
+  'เสียด',
+  'ร้าว',
+  'อักเสบ',
+  'เป็นแผล',
 ];
 
 // ─── Side Enum ────────────────────────────────────────────────────────────
@@ -66,16 +269,23 @@ enum _BodySide { left, center, right }
 extension _BodySideExt on _BodySide {
   String get labelTh {
     switch (this) {
-      case _BodySide.left:   return 'ซ้าย';
-      case _BodySide.center: return 'กลาง';
-      case _BodySide.right:  return 'ขวา';
+      case _BodySide.left:
+        return 'ซ้าย';
+      case _BodySide.center:
+        return 'กลาง';
+      case _BodySide.right:
+        return 'ขวา';
     }
   }
+
   String get labelEn {
     switch (this) {
-      case _BodySide.left:   return 'Left';
-      case _BodySide.center: return 'Center';
-      case _BodySide.right:  return 'Right';
+      case _BodySide.left:
+        return 'Left';
+      case _BodySide.center:
+        return 'Center';
+      case _BodySide.right:
+        return 'Right';
     }
   }
 }
@@ -87,13 +297,15 @@ class _SelectedPoint {
   final String symptom; // NEW
 
   const _SelectedPoint({
-    required this.region, 
+    required this.region,
     required this.side,
     required this.symptom,
   });
 
   String get displayLabel {
-    final area = side == _BodySide.center ? region.nameTh : '${region.nameTh}(${side.labelTh})';
+    final area = side == _BodySide.center
+        ? region.nameTh
+        : '${region.nameTh}(${side.labelTh})';
     return '$area: $symptom';
   }
 
@@ -138,41 +350,70 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   late Animation<double> _rippleAnim;
 
   String get _gender {
-    return widget.request.bodyArea['gender']?.toString().toLowerCase() ?? 'unknown';
+    return widget.request.bodyArea['gender']?.toString().toLowerCase() ??
+        'unknown';
   }
 
   IconData _getIconData(String? iconName) {
     if (iconName == null) return Icons.circle;
     // Map existing icons for backward compatibility
     switch (iconName) {
-      case 'face': return Icons.face;
-      case 'face_retouching_natural': return Icons.face_retouching_natural;
-      case 'remove_red_eye_outlined': return Icons.remove_red_eye_outlined;
-      case 'hearing_outlined': return Icons.hearing_outlined;
-      case 'record_voice_over_outlined': return Icons.record_voice_over_outlined;
-      case 'compress': return Icons.compress;
-      case 'accessibility_new': return Icons.accessibility_new;
-      case 'horizontal_rule': return Icons.horizontal_rule;
-      case 'monitor_heart_outlined': return Icons.monitor_heart_outlined;
-      case 'fitness_center': return Icons.fitness_center;
-      case 'favorite_border': return Icons.favorite_border;
-      case 'restaurant_menu': return Icons.restaurant_menu;
-      case 'adjust': return Icons.adjust;
-      case 'radio_button_checked': return Icons.radio_button_checked;
-      case 'pan_tool_alt_outlined': return Icons.pan_tool_alt_outlined;
-      case 'water_drop_outlined': return Icons.water_drop_outlined;
-      case 'watch_outlined': return Icons.watch_outlined;
-      case 'trip_origin': return Icons.trip_origin;
-      case 'back_hand_outlined': return Icons.back_hand_outlined;
-      case 'directions_walk': return Icons.directions_walk;
-      case 'directions_run': return Icons.directions_run;
-      case 'lens_outlined': return Icons.lens_outlined;
-      case 'linear_scale': return Icons.linear_scale;
-      case 'align_vertical_bottom': return Icons.align_vertical_bottom;
-      case 'radio_button_unchecked': return Icons.radio_button_unchecked;
-      case 'run_circle_outlined': return Icons.run_circle_outlined;
-      case 'linear_scale_outlined': return Icons.linear_scale_outlined;
-      default: return Icons.accessibility;
+      case 'face':
+        return Icons.face;
+      case 'face_retouching_natural':
+        return Icons.face_retouching_natural;
+      case 'remove_red_eye_outlined':
+        return Icons.remove_red_eye_outlined;
+      case 'hearing_outlined':
+        return Icons.hearing_outlined;
+      case 'record_voice_over_outlined':
+        return Icons.record_voice_over_outlined;
+      case 'compress':
+        return Icons.compress;
+      case 'accessibility_new':
+        return Icons.accessibility_new;
+      case 'horizontal_rule':
+        return Icons.horizontal_rule;
+      case 'monitor_heart_outlined':
+        return Icons.monitor_heart_outlined;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      case 'favorite_border':
+        return Icons.favorite_border;
+      case 'restaurant_menu':
+        return Icons.restaurant_menu;
+      case 'adjust':
+        return Icons.adjust;
+      case 'radio_button_checked':
+        return Icons.radio_button_checked;
+      case 'pan_tool_alt_outlined':
+        return Icons.pan_tool_alt_outlined;
+      case 'water_drop_outlined':
+        return Icons.water_drop_outlined;
+      case 'watch_outlined':
+        return Icons.watch_outlined;
+      case 'trip_origin':
+        return Icons.trip_origin;
+      case 'back_hand_outlined':
+        return Icons.back_hand_outlined;
+      case 'directions_walk':
+        return Icons.directions_walk;
+      case 'directions_run':
+        return Icons.directions_run;
+      case 'lens_outlined':
+        return Icons.lens_outlined;
+      case 'linear_scale':
+        return Icons.linear_scale;
+      case 'align_vertical_bottom':
+        return Icons.align_vertical_bottom;
+      case 'radio_button_unchecked':
+        return Icons.radio_button_unchecked;
+      case 'run_circle_outlined':
+        return Icons.run_circle_outlined;
+      case 'linear_scale_outlined':
+        return Icons.linear_scale_outlined;
+      default:
+        return Icons.accessibility;
     }
   }
 
@@ -215,9 +456,10 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     _pulseAnim = Tween<double>(begin: 0.8, end: 1.4).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    _rippleAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _rippleController, curve: Curves.linear),
-    );
+    _rippleAnim = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _rippleController, curve: Curves.linear));
 
     _loadSymptomStats();
   }
@@ -225,11 +467,13 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   Future<void> _loadSymptomStats() async {
     // Start scan animation
     _scanController.forward();
-    
+
     try {
-      final stats = await ServiceLocator.instance.consultationRepository.getSymptomStatistics();
-      final dbRegions = await ServiceLocator.instance.bodyRegionRepository.getAllRegions();
-      
+      final stats = await ServiceLocator.instance.consultationRepository
+          .getSymptomStatistics();
+      final dbRegions = await ServiceLocator.instance.bodyRegionRepository
+          .getAllRegions();
+
       // Wait for at least some animation progress for better UX
       if (_scanController.value < 0.6) {
         await Future.delayed(const Duration(milliseconds: 800));
@@ -242,20 +486,25 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
             _maxSymptomCount = stats.values.reduce((a, b) => a > b ? a : b);
           }
           if (dbRegions.isNotEmpty) {
-            _bodyRegions = dbRegions.where((r) {
-              if (r.gender == 'both') return true;
-              return r.gender == _gender;
-            }).map((r) => _BodyRegion(
-              id: r.id,
-              nameTh: r.nameTh,
-              nameEn: r.nameEn,
-              yRatio: r.yRatio,
-              xRatio: r.xRatio,
-              icon: _getIconData(r.iconName),
-            )).toList();
+            _bodyRegions = dbRegions
+                .where((r) {
+                  if (r.gender == 'both') return true;
+                  return r.gender == _gender;
+                })
+                .map(
+                  (r) => _BodyRegion(
+                    id: r.id,
+                    nameTh: r.nameTh,
+                    nameEn: r.nameEn,
+                    yRatio: r.yRatio,
+                    xRatio: r.xRatio,
+                    icon: _getIconData(r.iconName),
+                  ),
+                )
+                .toList();
           }
         });
-        
+
         // Complete the scan
         await _scanController.forward(from: _scanController.value);
         if (mounted) {
@@ -287,7 +536,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
     // Provide immediate haptic feedback
     HapticFeedback.mediumImpact();
-    
+
     // Phase 1: Show loading indicator immediately
     setState(() {
       _isOpeningPopup = true;
@@ -339,7 +588,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
         // RESET selection states when organ changes via drag
         _selectedSide = null;
         _currentSymptom = _medicalSymptoms[0];
-        
+
         // Update ripple center to follow drag
         _rippleCenterY = closest.yRatio;
         _rippleCenterX = closest.xRatio + _xOffsetForSide(_selectedSide);
@@ -350,18 +599,25 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   /// Returns an x-axis offset based on the selected side
   double _xOffsetForSide(_BodySide? side) {
     switch (side) {
-      case _BodySide.left:   return -0.12;
-      case _BodySide.right:  return  0.12;
-      case _BodySide.center: return  0.0;
-      case null:             return  0.0;
+      case _BodySide.left:
+        return -0.12;
+      case _BodySide.right:
+        return 0.12;
+      case _BodySide.center:
+        return 0.0;
+      case null:
+        return 0.0;
     }
   }
 
   void _confirmSelection() {
-    if (_hoveredRegion == null || _selectedSide == null || _currentSymptom == _medicalSymptoms[0]) return;
-    
+    if (_hoveredRegion == null ||
+        _selectedSide == null ||
+        _currentSymptom == _medicalSymptoms[0])
+      return;
+
     final point = _SelectedPoint(
-      region: _hoveredRegion!, 
+      region: _hoveredRegion!,
       side: _selectedSide!,
       symptom: _currentSymptom,
     );
@@ -393,7 +649,9 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           content: const Text('กรุณาระบุบริเวณที่พบอาการอย่างน้อย 1 จุด'),
           backgroundColor: Colors.redAccent.shade200,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
       return;
@@ -401,18 +659,18 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
     // Map to normalized models
     final symptoms = _selectedPoints
-        .map((p) => SymptomPoint(
-              regionId: p.region.id,
-              side: p.side.labelEn.toLowerCase(),
-              symptom: p.symptom,
-              displayLabel: p.displayLabel,
-            ))
+        .map(
+          (p) => SymptomPoint(
+            regionId: p.region.id,
+            side: p.side.labelEn.toLowerCase(),
+            symptom: p.symptom,
+            displayLabel: p.displayLabel,
+          ),
+        )
         .toList();
 
     final updatedRequest = widget.request.copyWith(
-      bodyArea: {
-        'gender': _gender,
-      },
+      bodyArea: {'gender': _gender},
       symptoms: symptoms,
     );
 
@@ -465,11 +723,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFE8F5DA),
-            Color(0xFFF5FAF0),
-            Color(0xFFFFFFFF),
-          ],
+          colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
           stops: [0.0, 0.5, 1.0],
         ),
       ),
@@ -499,8 +753,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   ),
                 ],
               ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: AppColors.primary, size: 18),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
             ),
           ),
           const SizedBox(width: 14),
@@ -518,26 +775,24 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 ),
                 Text(
                   'แตะที่ตำแหน่ง แล้วเลือกด้านซ้าย/ขวา',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
             ),
           ),
           // Cart icon
           IconButton(
-            icon: const Icon(Icons.shopping_cart_outlined,
-                color: AppColors.cartIcon, size: 24),
+            icon: const Icon(
+              Icons.shopping_cart_outlined,
+              color: AppColors.cartIcon,
+              size: 24,
+            ),
             onPressed: () {},
           ),
         ],
       ),
     );
   }
-
-
 
   // ─── Body silhouette with tap regions ────────────────────────────────────
   Widget _buildBodySilhouette() {
@@ -574,212 +829,224 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 },
               ),
             ),
-              // Background glass card
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(32),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(32),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.6),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.06),
-                            blurRadius: 30,
-                            spreadRadius: 2,
-                          ),
-                        ],
+            // Background glass card
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.6),
+                        width: 1.5,
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.06),
+                          blurRadius: 30,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
+            ),
 
-              // Water ripple effect from selected organ center
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(32),
-                  child: AnimatedBuilder(
-                    animation: _rippleAnim,
-                    builder: (context, child) {
-                      return CustomPaint(
-                        painter: _RipplePainter(
-                          progress: _rippleAnim.value,
-                          centerX: _rippleCenterX,
-                          centerY: _rippleCenterY,
+            // Water ripple effect from selected organ center
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: AnimatedBuilder(
+                  animation: _rippleAnim,
+                  builder: (context, child) {
+                    return CustomPaint(
+                      painter: _RipplePainter(
+                        progress: _rippleAnim.value,
+                        centerX: _rippleCenterX,
+                        centerY: _rippleCenterY,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Human silhouette - Premium Gradient
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _HumanSilhouettePainter(
+                    color: AppColors.primary.withOpacity(0.12),
+                    gender: _gender,
+                  ),
+                ),
+              ),
+            ),
+
+            // === Permanent Organ Labels (identify organ names) ===
+            ..._bodyRegions.map((region) {
+              final topY = h * region.yRatio;
+              final isHovered = _hoveredRegion?.id == region.id;
+
+              return Positioned(
+                top: topY - 20,
+                left: 12,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  child: Builder(
+                    builder: (context) {
+                      final count = _symptomStats[region.id] ?? 0;
+                      // Intensity calculations:
+                      // Opacity from 0.4 (rare) to 1.0 (very frequent)
+                      double intensity = 0.45;
+                      if (_maxSymptomCount > 0) {
+                        intensity = 0.45 + (count / _maxSymptomCount) * 0.55;
+                      }
+
+                      // Font weight based on frequency
+                      FontWeight weight = FontWeight.w400;
+                      if (count > 0) {
+                        if (count >= _maxSymptomCount * 0.7) {
+                          weight = FontWeight.w800;
+                        } else if (count >= _maxSymptomCount * 0.3) {
+                          weight = FontWeight.w600;
+                        } else {
+                          weight = FontWeight.w500;
+                        }
+                      }
+
+                      return Text(
+                        region.nameTh,
+                        style: TextStyle(
+                          fontSize: isHovered ? 12 : 10,
+                          fontWeight: isHovered ? FontWeight.bold : weight,
+                          color: isHovered
+                              ? AppColors.primary
+                              : Colors.grey.shade800.withValues(
+                                  alpha: intensity,
+                                ),
+                          letterSpacing: 0.5,
                         ),
                       );
                     },
                   ),
                 ),
-              ),
+              );
+            }),
 
-              // Human silhouette - Premium Gradient
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _HumanSilhouettePainter(
-                      color: AppColors.primary.withOpacity(0.12),
-                      gender: _gender,
-                    ),
-                  ),
-                ),
-              ),
+            // Horizontal region tap lines + labels
+            ...List.generate(_bodyRegions.length, (i) {
+              final region = _bodyRegions[i];
+              final topY = h * region.yRatio;
+              final isHovered = _hoveredRegion?.id == region.id;
+              final isConfirmed = _selectedPoints.any(
+                (p) => p.region.id == region.id,
+              );
 
-              // === Permanent Organ Labels (identify organ names) ===
-              ..._bodyRegions.map((region) {
-                final topY = h * region.yRatio;
-                final isHovered = _hoveredRegion?.id == region.id;
-                
-                return Positioned(
-                  top: topY - 20,
-                  left: 12,
+              return Positioned(
+                top: topY - 12,
+                left: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: () => _onRegionTapped(region),
+                  behavior: HitTestBehavior.translucent,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    child: Builder(
-                      builder: (context) {
-                        final count = _symptomStats[region.id] ?? 0;
-                        // Intensity calculations:
-                        // Opacity from 0.4 (rare) to 1.0 (very frequent)
-                        double intensity = 0.45;
-                        if (_maxSymptomCount > 0) {
-                          intensity = 0.45 + (count / _maxSymptomCount) * 0.55;
-                        }
-                        
-                        // Font weight based on frequency
-                        FontWeight weight = FontWeight.w400;
-                        if (count > 0) {
-                          if (count >= _maxSymptomCount * 0.7) {
-                            weight = FontWeight.w800;
-                          } else if (count >= _maxSymptomCount * 0.3) {
-                            weight = FontWeight.w600;
-                          } else {
-                            weight = FontWeight.w500;
-                          }
-                        }
-
-                        return Text(
-                          region.nameTh,
-                          style: TextStyle(
-                            fontSize: isHovered ? 12 : 10,
-                            fontWeight: isHovered ? FontWeight.bold : weight,
-                            color: isHovered 
-                              ? AppColors.primary 
-                              : Colors.grey.shade800.withValues(alpha: intensity),
-                            letterSpacing: 0.5,
-                          ),
-                        );
-                      }
-                    ),
-                  ),
-                );
-              }),
-
-              // Horizontal region tap lines + labels
-              ...List.generate(_bodyRegions.length, (i) {
-                final region = _bodyRegions[i];
-                final topY = h * region.yRatio;
-                final isHovered = _hoveredRegion?.id == region.id;
-                final isConfirmed = _selectedPoints.any((p) => p.region.id == region.id);
-
-                return Positioned(
-                  top: topY - 12,
-                  left: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: () => _onRegionTapped(region),
-                    behavior: HitTestBehavior.translucent,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      height: 24,
-                      child: Row(
-                        children: [
-                          // Left endpoint dot
-                          _buildSideEndpoint(
-                              isHovered, isConfirmed, _BodySide.left),
-                          Expanded(
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              height: isHovered ? 2.0 : 0.8,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: isHovered
-                                      ? [
-                                          AppColors.primary.withOpacity(0.8),
-                                          AppColors.primaryLight.withOpacity(0.9),
-                                          AppColors.primary.withOpacity(0.8),
-                                        ]
-                                      : isConfirmed
-                                          ? [
-                                              AppColors.primary.withOpacity(0.4),
-                                              AppColors.primary.withOpacity(0.4),
-                                            ]
-                                          : [
-                                              Colors.grey.withOpacity(0.2),
-                                              Colors.grey.withOpacity(0.1),
-                                            ],
-                                ),
+                    height: 24,
+                    child: Row(
+                      children: [
+                        // Left endpoint dot
+                        _buildSideEndpoint(
+                          isHovered,
+                          isConfirmed,
+                          _BodySide.left,
+                        ),
+                        Expanded(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            height: isHovered ? 2.0 : 0.8,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: isHovered
+                                    ? [
+                                        AppColors.primary.withOpacity(0.8),
+                                        AppColors.primaryLight.withOpacity(0.9),
+                                        AppColors.primary.withOpacity(0.8),
+                                      ]
+                                    : isConfirmed
+                                    ? [
+                                        AppColors.primary.withOpacity(0.4),
+                                        AppColors.primary.withOpacity(0.4),
+                                      ]
+                                    : [
+                                        Colors.grey.withOpacity(0.2),
+                                        Colors.grey.withOpacity(0.1),
+                                      ],
                               ),
                             ),
                           ),
-                          // Right endpoint dot
-                          _buildSideEndpoint(
-                              isHovered, isConfirmed, _BodySide.right),
-                        ],
-                      ),
+                        ),
+                        // Right endpoint dot
+                        _buildSideEndpoint(
+                          isHovered,
+                          isConfirmed,
+                          _BodySide.right,
+                        ),
+                      ],
                     ),
-                  ),
-                );
-              }),
-
-              // Hovered region: draggable label + confirm button
-              if (_hoveredRegion != null)
-                _buildHoveredLabel(h),
-
-              // Feedback if popup is still 'opening' (busy UI thread)
-              if (_isOpeningPopup)
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.8),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
+              );
+            }),
 
-              // Confirmed points: small dot indicators on body
-              ..._selectedPoints.map((point) {
-                final topY = h * point.region.yRatio;
-                double leftX;
-                switch (point.side) {
-                  case _BodySide.left:
-                    leftX = w * 0.22;
-                    break;
-                  case _BodySide.center:
-                    leftX = w * 0.5 - 6;
-                    break;
-                  case _BodySide.right:
-                    leftX = w * 0.72;
-                    break;
-                }
-                return Positioned(
-                  left: leftX,
-                  top: topY - 8,
-                  child: _PulsingDot(
-                    color: AppColors.primary,
-                    pulseAnim: _pulseAnim,
+            // Hovered region: draggable label + confirm button
+            if (_hoveredRegion != null) _buildHoveredLabel(h),
+
+            // Feedback if popup is still 'opening' (busy UI thread)
+            if (_isOpeningPopup)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.8),
+                    shape: BoxShape.circle,
                   ),
-                );
-              }),
+                  child: const CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+
+            // Confirmed points: small dot indicators on body
+            ..._selectedPoints.map((point) {
+              final topY = h * point.region.yRatio;
+              double leftX;
+              switch (point.side) {
+                case _BodySide.left:
+                  leftX = w * 0.22;
+                  break;
+                case _BodySide.center:
+                  leftX = w * 0.5 - 6;
+                  break;
+                case _BodySide.right:
+                  leftX = w * 0.72;
+                  break;
+              }
+              return Positioned(
+                left: leftX,
+                top: topY - 8,
+                child: _PulsingDot(
+                  color: AppColors.primary,
+                  pulseAnim: _pulseAnim,
+                ),
+              );
+            }),
           ],
         );
       },
@@ -787,26 +1054,33 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   }
 
   Widget _buildSideEndpoint(bool isHovered, bool isConfirmed, _BodySide side) {
-    final bool pointOnSide =
-        _selectedPoints.any((p) => p.side == side);
+    final bool pointOnSide = _selectedPoints.any((p) => p.side == side);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      width: isHovered ? 10 : (isConfirmed || pointOnSide) ? 7 : 4,
-      height: isHovered ? 10 : (isConfirmed || pointOnSide) ? 7 : 4,
+      width: isHovered
+          ? 10
+          : (isConfirmed || pointOnSide)
+          ? 7
+          : 4,
+      height: isHovered
+          ? 10
+          : (isConfirmed || pointOnSide)
+          ? 7
+          : 4,
       decoration: BoxDecoration(
         color: isHovered
             ? AppColors.primary
             : (isConfirmed || pointOnSide)
-                ? AppColors.primary.withOpacity(0.5)
-                : Colors.grey.withOpacity(0.3),
+            ? AppColors.primary.withOpacity(0.5)
+            : Colors.grey.withOpacity(0.3),
         shape: BoxShape.circle,
         boxShadow: isHovered
             ? [
                 BoxShadow(
                   color: AppColors.primary.withOpacity(0.5),
                   blurRadius: 6,
-                )
+                ),
               ]
             : [],
       ),
@@ -824,14 +1098,18 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onVerticalDragUpdate: _onPopupDrag,
-        onTap: () {}, // Absorb taps to prevent them from reaching the background silhouette
+        onTap:
+            () {}, // Absorb taps to prevent them from reaching the background silhouette
         onVerticalDragEnd: (_) {},
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), // Reduced vertical padding
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 5,
+              ), // Reduced vertical padding
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.65),
                 borderRadius: BorderRadius.circular(24),
@@ -878,7 +1156,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                             ),
                           ],
                         ),
-                        child: Icon(region.icon, color: Colors.white, size: 18), // Smaller icon
+                        child: Icon(
+                          region.icon,
+                          color: Colors.white,
+                          size: 18,
+                        ), // Smaller icon
                       ),
 
                       const SizedBox(width: 12),
@@ -902,33 +1184,47 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
                       // 4. Premium 'เพิ่ม' Action
                       GestureDetector(
-                        onTap: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0]) 
-                            ? _confirmSelection 
+                        onTap:
+                            (_selectedSide != null &&
+                                _currentSymptom != _medicalSymptoms[0])
+                            ? _confirmSelection
                             : null,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7), // Reduced vertical padding
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 7,
+                          ), // Reduced vertical padding
                           decoration: BoxDecoration(
-                            gradient: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
-                              ? AppColors.goldGradient
-                              : const LinearGradient(
-                                  colors: [Color(0xFFE0E0E0), Color(0xFFF0F0F0)],
-                                ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0])
-                              ? [
-                                  BoxShadow(
-                                    color: AppColors.accent.withOpacity(0.3),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                            gradient:
+                                (_selectedSide != null &&
+                                    _currentSymptom != _medicalSymptoms[0])
+                                ? AppColors.goldGradient
+                                : const LinearGradient(
+                                    colors: [
+                                      Color(0xFFE0E0E0),
+                                      Color(0xFFF0F0F0),
+                                    ],
                                   ),
-                                ]
-                              : null,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow:
+                                (_selectedSide != null &&
+                                    _currentSymptom != _medicalSymptoms[0])
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.accent.withOpacity(0.3),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: Text(
                             'เพิ่ม',
                             style: TextStyle(
-                              color: (_selectedSide != null && _currentSymptom != _medicalSymptoms[0]) 
-                                  ? Colors.white 
+                              color:
+                                  (_selectedSide != null &&
+                                      _currentSymptom != _medicalSymptoms[0])
+                                  ? Colors.white
                                   : Colors.grey.shade500,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
@@ -981,8 +1277,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               s.labelTh,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight:
-                    isSelected ? FontWeight.bold : FontWeight.normal,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected ? Colors.white : Colors.grey.shade600,
               ),
             ),
@@ -1030,8 +1325,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           // Title row
           Row(
             children: [
-              const Icon(Icons.location_on_outlined,
-                  color: AppColors.primary, size: 18),
+              const Icon(
+                Icons.location_on_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
               const SizedBox(width: 6),
               Text(
                 'บริเวณที่เลือก (${_selectedPoints.length} จุด)',
@@ -1066,16 +1364,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: Colors.grey.shade200, width: 1),
+                border: Border.all(color: Colors.grey.shade200, width: 1),
               ),
               child: Text(
                 'แตะบนร่างกายเพื่อระบุจุดที่มีอาการ',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade400,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
               ),
             )
           else
@@ -1089,9 +1383,10 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   child: Chip(
                     backgroundColor: tagColor.withOpacity(0.12),
                     side: BorderSide(
-                        color: tagColor.withOpacity(0.4), width: 1),
-                    avatar: Icon(point.region.icon,
-                        color: tagColor, size: 18),
+                      color: tagColor.withOpacity(0.4),
+                      width: 1,
+                    ),
+                    avatar: Icon(point.region.icon, color: tagColor, size: 18),
                     label: Text(
                       point.displayLabel,
                       style: TextStyle(
@@ -1163,8 +1458,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                       ),
                       if (_selectedPoints.isNotEmpty) ...[
                         const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward_rounded,
-                            color: Colors.white, size: 18),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ],
                     ],
                   ),
@@ -1262,10 +1560,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   const SizedBox(height: 8),
                   Text(
                     'กำลังดึงสถิติจากฐานข้อมูลสุขภาพส่วนกลาง',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -1325,8 +1620,8 @@ class _PulsingDot extends StatelessWidget {
 /// simulating a water drop effect.
 class _RipplePainter extends CustomPainter {
   final double progress; // 0.0 → 1.0 (repeats)
-  final double centerX;  // 0.0 → 1.0 ratio
-  final double centerY;  // 0.0 → 1.0 ratio
+  final double centerX; // 0.0 → 1.0 ratio
+  final double centerY; // 0.0 → 1.0 ratio
 
   static const int _rippleCount = 3;
 
@@ -1379,8 +1674,7 @@ class _HumanSilhouettePainter extends CustomPainter {
 
   _HumanSilhouettePainter({required this.color, required this.gender});
 
-  bool get _isMale =>
-      gender == 'male' || gender == 'ชาย' || gender == 'm';
+  bool get _isMale => gender == 'male' || gender == 'ชาย' || gender == 'm';
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1413,11 +1707,13 @@ class _HumanSilhouettePainter extends CustomPainter {
     // === HEAD ===
     final headRadius = size.width * 0.095;
     final headPath = Path()
-      ..addOval(Rect.fromCenter(
-        center: Offset(cx, h * 0.07),
-        width: headRadius * 2,
-        height: headRadius * 2.2,
-      ));
+      ..addOval(
+        Rect.fromCenter(
+          center: Offset(cx, h * 0.07),
+          width: headRadius * 2,
+          height: headRadius * 2.2,
+        ),
+      );
     drawShape(headPath);
 
     // === NECK ===
@@ -1436,8 +1732,7 @@ class _HumanSilhouettePainter extends CustomPainter {
 
     final torsoPath = Path()
       ..moveTo(cx - size.width * shoulderW, h * 0.20)
-      ..quadraticBezierTo(
-          cx, h * 0.18, cx + size.width * shoulderW, h * 0.20)
+      ..quadraticBezierTo(cx, h * 0.18, cx + size.width * shoulderW, h * 0.20)
       ..lineTo(cx + size.width * waistW, h * 0.47)
       ..lineTo(cx + size.width * hipW, h * 0.55)
       ..lineTo(cx - size.width * hipW, h * 0.55)
@@ -1448,15 +1743,29 @@ class _HumanSilhouettePainter extends CustomPainter {
     // === ARMS ===
     final armW = _isMale ? 0.06 : 0.05;
     // Left arm
-    _drawArm(canvas, paint, strokePaint, size, cx, h,
-        startX: cx - size.width * shoulderW,
-        isLeft: true,
-        armW: armW);
+    _drawArm(
+      canvas,
+      paint,
+      strokePaint,
+      size,
+      cx,
+      h,
+      startX: cx - size.width * shoulderW,
+      isLeft: true,
+      armW: armW,
+    );
     // Right arm
-    _drawArm(canvas, paint, strokePaint, size, cx, h,
-        startX: cx + size.width * shoulderW,
-        isLeft: false,
-        armW: armW);
+    _drawArm(
+      canvas,
+      paint,
+      strokePaint,
+      size,
+      cx,
+      h,
+      startX: cx + size.width * shoulderW,
+      isLeft: false,
+      armW: armW,
+    );
 
     // === LEGS ===
     // Left leg
@@ -1465,8 +1774,11 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx - size.width * 0.03, h * 0.57)
       ..lineTo(cx - size.width * 0.04, h * 0.78) // knee
       ..quadraticBezierTo(
-          cx - size.width * 0.05, h * 0.79,
-          cx - size.width * 0.06, h * 0.78)
+        cx - size.width * 0.05,
+        h * 0.79,
+        cx - size.width * 0.06,
+        h * 0.78,
+      )
       ..lineTo(cx - size.width * 0.15, h * 0.57)
       ..close();
     drawShape(leftLegPath);
@@ -1477,8 +1789,11 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx + size.width * 0.03, h * 0.57)
       ..lineTo(cx + size.width * 0.04, h * 0.78) // knee
       ..quadraticBezierTo(
-          cx + size.width * 0.05, h * 0.79,
-          cx + size.width * 0.06, h * 0.78)
+        cx + size.width * 0.05,
+        h * 0.79,
+        cx + size.width * 0.06,
+        h * 0.78,
+      )
       ..lineTo(cx + size.width * 0.15, h * 0.57)
       ..close();
     drawShape(rightLegPath);
@@ -1505,17 +1820,28 @@ class _HumanSilhouettePainter extends CustomPainter {
     for (final foot in [-1, 1]) {
       final fCx = cx + foot * size.width * 0.06;
       final footPath = Path()
-        ..addOval(Rect.fromCenter(
-          center: Offset(fCx, h * 0.97),
-          width: size.width * 0.075,
-          height: size.height * 0.02,
-        ));
+        ..addOval(
+          Rect.fromCenter(
+            center: Offset(fCx, h * 0.97),
+            width: size.width * 0.075,
+            height: size.height * 0.02,
+          ),
+        );
       drawShape(footPath);
     }
   }
 
-  void _drawArm(Canvas canvas, Paint paint, Paint strokePaint, Size size, double cx, double h,
-      {required double startX, required bool isLeft, required double armW}) {
+  void _drawArm(
+    Canvas canvas,
+    Paint paint,
+    Paint strokePaint,
+    Size size,
+    double cx,
+    double h, {
+    required double startX,
+    required bool isLeft,
+    required double armW,
+  }) {
     final direction = isLeft ? -1 : 1;
     final elbowX = startX + direction * size.width * 0.06;
     final handX = startX + direction * size.width * 0.04;
@@ -1529,7 +1855,7 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(elbowX, h * 0.47)
       ..lineTo(startX, h * 0.22)
       ..close();
-      
+
     canvas.drawPath(path, paint);
     canvas.drawPath(path, strokePaint);
   }

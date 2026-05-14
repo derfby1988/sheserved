@@ -7,8 +7,12 @@ class UserCategory {
   final String? iconName;
   final int displayOrder;
   final bool isActive;
+
   /// กำหนดว่าหมวดหมู่นี้มีสิทธิ์อนุมัติคำร้องบริจาคหรือไม่
   final bool canApproveDonation;
+
+  /// กำหนดว่าหมวดหมู่นี้เป็นผู้ให้บริการปรึกษาหรือไม่ (ถ้านำทางไป Dashboard แทนห้องแชท)
+  final bool isConsultationProvider;
 
   const UserCategory({
     required this.id,
@@ -19,6 +23,7 @@ class UserCategory {
     this.displayOrder = 0,
     this.isActive = true,
     this.canApproveDonation = false,
+    this.isConsultationProvider = false,
   });
 
   /// ค่าคงที่สำหรับหมวดหมู่หลัก (เพื่อความปลอดภัยในการอ้างอิงโค้ดส่วนอื่น)
@@ -34,6 +39,7 @@ class UserCategory {
   static const UserCategory provider = UserCategory(
     id: providerId,
     name: 'ผู้ให้บริการ',
+    isConsultationProvider: true,
   );
 
   static const UserCategory localLeader = UserCategory(
@@ -56,6 +62,7 @@ class UserCategory {
       'display_order': displayOrder,
       'is_active': isActive,
       'can_approve_donation': canApproveDonation,
+      'is_consultation_provider': isConsultationProvider,
     };
   }
 
@@ -69,6 +76,7 @@ class UserCategory {
       displayOrder: json['display_order'] ?? 0,
       isActive: json['is_active'] ?? true,
       canApproveDonation: json['can_approve_donation'] ?? false,
+      isConsultationProvider: json['is_consultation_provider'] ?? false,
     );
   }
 
@@ -81,6 +89,7 @@ class UserCategory {
     int? displayOrder,
     bool? isActive,
     bool? canApproveDonation,
+    bool? isConsultationProvider,
   }) {
     return UserCategory(
       id: id ?? this.id,
@@ -91,6 +100,8 @@ class UserCategory {
       displayOrder: displayOrder ?? this.displayOrder,
       isActive: isActive ?? this.isActive,
       canApproveDonation: canApproveDonation ?? this.canApproveDonation,
+      isConsultationProvider:
+          isConsultationProvider ?? this.isConsultationProvider,
     );
   }
 
@@ -99,7 +110,11 @@ class UserCategory {
     if (value == consumerId || value == 'consumer') {
       return const UserCategory(id: consumerId, name: 'Consumer');
     } else if (value == providerId || value == 'provider') {
-      return const UserCategory(id: providerId, name: 'Provider');
+      return const UserCategory(
+        id: providerId,
+        name: 'Provider',
+        isConsultationProvider: true,
+      );
     } else if (value == localLeaderId || value == 'local_leader') {
       return const UserCategory(id: localLeaderId, name: 'Local Leader');
     }
@@ -117,12 +132,11 @@ class UserCategory {
   int get hashCode => id.hashCode;
 }
 
-
 /// สถานะการยืนยัน
 enum VerificationStatus {
-  pending,   // รอตรวจสอบ
-  approved,  // อนุมัติแล้ว
-  rejected,  // ถูกปฏิเสธ
+  pending, // รอตรวจสอบ
+  approved, // อนุมัติแล้ว
+  rejected, // ถูกปฏิเสธ
 }
 
 extension VerificationStatusExtension on VerificationStatus {
@@ -201,9 +215,12 @@ class Profession {
   });
 
   /// Built-in professions
-  static const String consumerProfessionId = '00000000-0000-0000-0000-000000000001';
-  static const String expertProfessionId = '00000000-0000-0000-0000-000000000002';
-  static const String clinicProfessionId = '00000000-0000-0000-0000-000000000003';
+  static const String consumerProfessionId =
+      '00000000-0000-0000-0000-000000000001';
+  static const String expertProfessionId =
+      '00000000-0000-0000-0000-000000000002';
+  static const String clinicProfessionId =
+      '00000000-0000-0000-0000-000000000003';
 
   /// ค่าเริ่มต้นสำหรับ Built-in professions
   static List<Profession> get defaultProfessions {
@@ -310,7 +327,6 @@ class Profession {
           : DateTime.now(),
     );
   }
-
 
   Profession copyWith({
     String? id,
@@ -425,7 +441,9 @@ class RegistrationApplication {
       phone: json['phone'],
       profileImageUrl: json['profile_image_url'],
       registrationData: json['registration_data'] ?? {},
-      status: VerificationStatusExtension.fromString(json['status'] ?? 'pending'),
+      status: VerificationStatusExtension.fromString(
+        json['status'] ?? 'pending',
+      ),
       reviewNote: json['review_note'],
       reviewedBy: json['reviewed_by'],
       reviewedAt: json['reviewed_at'] != null

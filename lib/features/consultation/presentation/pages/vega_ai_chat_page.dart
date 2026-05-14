@@ -24,35 +24,35 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
   void initState() {
     super.initState();
     if (AppConfig.vegaAiKillSwitch) {
-      _addBotMessage("⚠️ **[SYSTEM] ระบบ AI ปิดใช้งานชั่วคราว** เพื่อควบคุมค่าใช้จ่ายตามนโยบาย Free Tier");
+      _addBotMessage(
+        "⚠️ **[SYSTEM] ระบบ AI ปิดใช้งานชั่วคราว** เพื่อควบคุมค่าใช้จ่ายตามนโยบาย Free Tier",
+      );
       return;
     }
     // Initial greeting from Vega
-    _addBotMessage("สวัสดีค่ะ ฉันคือ **Vega AI** ผู้ช่วยวิเคราะห์อาการเบื้องต้นของคุณในวันนี้");
+    _addBotMessage(
+      "สวัสดีค่ะ ฉันคือ **Vega AI** ผู้ช่วยวิเคราะห์อาการเบื้องต้นของคุณในวันนี้",
+    );
     if (AppConfig.vegaAiMode == VegaAiMode.mock) {
-      _addBotMessage("💡 *[Dev Mode: กำลังใช้ข้อมูลจำลอง - ไม่มีการเรียกจริงไปยัง API]*");
+      _addBotMessage(
+        "💡 *[Dev Mode: กำลังใช้ข้อมูลจำลอง - ไม่มีการเรียกจริงไปยัง API]*",
+      );
     }
-    _addBotMessage("จากการระบุพื้นที่ที่คุณกังวล ฉันได้เตรียมข้อมูลคัดกรองเบื้องต้นไว้แล้ว คุณต้องการเริ่มปรึกษาเลยไหมคะ?");
+    _addBotMessage(
+      "จากการระบุพื้นที่ที่คุณกังวล ฉันได้เตรียมข้อมูลคัดกรองเบื้องต้นไว้แล้ว คุณต้องการเริ่มปรึกษาเลยไหมคะ?",
+    );
   }
 
   void _addBotMessage(String text) {
     setState(() {
-      _messages.add({
-        'isMe': false,
-        'text': text,
-        'time': DateTime.now(),
-      });
+      _messages.add({'isMe': false, 'text': text, 'time': DateTime.now()});
     });
     _scrollToBottom();
   }
 
   void _addUserMessage(String text) {
     setState(() {
-      _messages.add({
-        'isMe': true,
-        'text': text,
-        'time': DateTime.now(),
-      });
+      _messages.add({'isMe': true, 'text': text, 'time': DateTime.now()});
     });
     _scrollToBottom();
     _handleAIResponse(text);
@@ -60,12 +60,16 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
 
   Future<void> _handleAIResponse(String userText) async {
     if (AppConfig.vegaAiKillSwitch) {
-      _addBotMessage("ขออภัยค่ะ ระบบ AI ปิดให้บริการชั่วคราวตามนโยบายควบคุมค่าใช้จ่าย คุณสามารถกดปุ่มด้านล่างเพื่อปรึกษาแพทย์ได้ทันทีค่ะ");
+      _addBotMessage(
+        "ขออภัยค่ะ ระบบ AI ปิดให้บริการชั่วคราวตามนโยบายควบคุมค่าใช้จ่าย คุณสามารถกดปุ่มด้านล่างเพื่อปรึกษาแพทย์ได้ทันทีค่ะ",
+      );
       return;
     }
 
     if (_queryCount >= AppConfig.maxDailyVegaQueries) {
-      _addBotMessage("⚠️ คุณใช้งาน AI ครบตามโควตา Free Tier ของวันนี้แล้วค่ะ เพื่อป้องกันค่าใช้จ่ายส่วนเกิน กรุณากดปุ่มด้านล่างเพื่อพูดคุยกับคุณหมอต่อได้เลยนะคะ");
+      _addBotMessage(
+        "⚠️ คุณใช้งาน AI ครบตามโควตา Free Tier ของวันนี้แล้วค่ะ เพื่อป้องกันค่าใช้จ่ายส่วนเกิน กรุณากดปุ่มด้านล่างเพื่อพูดคุยกับคุณหมอต่อได้เลยนะคะ",
+      );
       return;
     }
 
@@ -73,13 +77,15 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
       _isTyping = true;
       _queryCount++;
     });
-    
+
     // Simulate API delay / Network Call
     await Future.delayed(const Duration(seconds: 2));
-    
+
     if (mounted) {
       setState(() => _isTyping = false);
-      _addBotMessage("ขอบคุณสำหรับข้อมูลค่ะ จากข้อมูลที่คุณระบุว่ามีอาการบริเวณ '${widget.request.symptoms.isNotEmpty ? widget.request.symptoms.first.displayLabel : 'ร่างกาย'}' ฉันขอแนะนำให้คุณประเมินระดับความเจ็บปวดเพิ่มเติมในขั้นตอนถัดไป เพื่อให้คุณหมอสามารถวินิจฉัยได้แม่นยำที่สุดค่ะ");
+      _addBotMessage(
+        "ขอบคุณสำหรับข้อมูลค่ะ จากข้อมูลที่คุณระบุว่ามีอาการบริเวณ '${widget.request.symptoms.isNotEmpty ? widget.request.symptoms.first.displayLabel : 'ร่างกาย'}' ฉันขอแนะนำให้คุณประเมินระดับความเจ็บปวดเพิ่มเติมในขั้นตอนถัดไป เพื่อให้คุณหมอสามารถวินิจฉัยได้แม่นยำที่สุดค่ะ",
+      );
     }
   }
 
@@ -106,7 +112,11 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
           children: [
             CircleAvatar(
               backgroundColor: AppColors.primary.withOpacity(0.1),
-              child: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 20),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: AppColors.primary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             const Column(
@@ -114,7 +124,11 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
               children: [
                 Text(
                   'Vega AI Consultation',
-                  style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Text(
                   'AI Assistance Powered by Eidy',
@@ -142,7 +156,9 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
-                    mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    mainAxisAlignment: isMe
+                        ? MainAxisAlignment.end
+                        : MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (!isMe)
@@ -151,12 +167,19 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                           child: CircleAvatar(
                             radius: 12,
                             backgroundColor: AppColors.primary.withOpacity(0.1),
-                            child: const Icon(Icons.auto_awesome, size: 12, color: AppColors.primary),
+                            child: const Icon(
+                              Icons.auto_awesome,
+                              size: 12,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
                       Flexible(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
                           decoration: BoxDecoration(
                             gradient: isMe ? AppColors.primaryGradient : null,
                             color: isMe ? null : Colors.white,
@@ -168,14 +191,19 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: isMe 
-                                  ? AppColors.primary.withOpacity(0.3) 
-                                  : Colors.black.withOpacity(0.06),
+                                color: isMe
+                                    ? AppColors.primary.withOpacity(0.3)
+                                    : Colors.black.withOpacity(0.06),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
                             ],
-                            border: isMe ? null : Border.all(color: Colors.grey.shade100, width: 1),
+                            border: isMe
+                                ? null
+                                : Border.all(
+                                    color: Colors.grey.shade100,
+                                    width: 1,
+                                  ),
                           ),
                           child: Text(
                             msg['text'],
@@ -183,7 +211,9 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                               color: isMe ? Colors.white : Colors.black87,
                               fontSize: 15,
                               height: 1.4,
-                              fontWeight: isMe ? FontWeight.w500 : FontWeight.normal,
+                              fontWeight: isMe
+                                  ? FontWeight.w500
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -199,18 +229,29 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
               padding: EdgeInsets.only(left: 44, bottom: 16),
               child: Row(
                 children: [
-                  Text("Vega กำลังพิมพ์...", style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic)),
+                  Text(
+                    "Vega กำลังพิมพ์...",
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
                 ],
               ),
             ),
-          
+
           // Action Buttons
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5)),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -5),
+                ),
               ],
             ),
             child: Column(
@@ -253,7 +294,11 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                           color: AppColors.primary,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.send, color: Colors.white, size: 20),
+                        child: const Icon(
+                          Icons.send,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ),
                   ],
@@ -264,15 +309,24 @@ class _VegaAiChatPageState extends State<VegaAiChatPage> {
                   child: ElevatedButton(
                     onPressed: () {
                       // Navigate to Doctor Chat (Chart Board)
-                      Navigator.pushReplacementNamed(context, '/chart-board', arguments: widget.request);
+                      Navigator.pushReplacementNamed(
+                        context,
+                        '/chart-board',
+                        arguments: widget.request,
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
                       foregroundColor: Colors.white,
                       minimumSize: const Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
                     ),
-                    child: const Text('เสร็จสิ้นและปรึกษาแพทย์ต่อ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'เสร็จสิ้นและปรึกษาแพทย์ต่อ',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ],

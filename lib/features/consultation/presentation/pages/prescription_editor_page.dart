@@ -110,13 +110,11 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
 
       final jsonValue = jsonEncode(_sectionOrder);
 
-      await Supabase.instance.client
-          .from('user_ui_preferences')
-          .upsert({
-            'user_id': userId,
-            'preference_key': 'prescription_layout',
-            'preference_value': jsonValue,
-          });
+      await Supabase.instance.client.from('user_ui_preferences').upsert({
+        'user_id': userId,
+        'preference_key': 'prescription_layout',
+        'preference_value': jsonValue,
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -155,13 +153,17 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
       final userId = AuthService.instance.currentUser?.id;
       if (userId == null) return;
 
-      final medicationsList = _medications.map((m) => {
-        'name': m.name,
-        'dose': m.dose,
-        'frequency': m.frequency,
-        'duration': m.duration,
-        'notes': m.notes,
-      }).toList();
+      final medicationsList = _medications
+          .map(
+            (m) => {
+              'name': m.name,
+              'dose': m.dose,
+              'frequency': m.frequency,
+              'duration': m.duration,
+              'notes': m.notes,
+            },
+          )
+          .toList();
 
       final data = {
         'consultation_id': widget.consultationId,
@@ -173,9 +175,9 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         'status': 'active',
       };
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กำลังบันทึกใบสั่งยา...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('กำลังบันทึกใบสั่งยา...')));
 
       final response = await Supabase.instance.client
           .from('prescriptions')
@@ -204,9 +206,9 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
     } catch (e) {
       debugPrint('Error saving prescription: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
       }
     }
   }

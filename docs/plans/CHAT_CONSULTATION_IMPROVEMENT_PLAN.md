@@ -1163,14 +1163,14 @@ CREATE POLICY "Provider sees own history"
 
 ### Phase 4: History & Auto-Refund (สัปดาห์ 5-6)
 **งานที่ต้องทำ:**
-- [ ] สร้าง Tab ประวัติและหน้า `my_consultations_page.dart` ใน Profile ผู้ป่วย
-- [ ] สร้าง Tab ประวัติและหน้า `provider_history_page.dart` ใน Profile แพทย์
-- [ ] สร้างหน้า `consultation_chat_history_page.dart` สำหรับดูแชทย้อนหลัง (Read-Only)
-- [ ] สร้างระบบ Cron / Edge Function เพื่อยกเลิกและคืนเงินอัตโนมัติหากหมด `expire_minutes`
+- [x] สร้าง Tab ประวัติและหน้า `my_consultations_page.dart` ใน Profile ผู้ป่วย
+- [x] สร้าง Tab ประวัติและหน้า `provider_history_page.dart` ใน Profile แพทย์
+- [x] สร้างหน้า `consultation_chat_history_page.dart` สำหรับดูแชทย้อนหลัง (Read-Only)
+- [x] สร้างระบบ Cron / Edge Function เพื่อยกเลิกและคืนเงินอัตโนมัติหากหมด `expire_minutes`
 
 **จุดที่ต้องเทสต์ผ่าน (Test Checkpoints):**
-- [ ] 🧪 สร้าง Request แล้วไม่มีแพทย์รับงานจนหมดเวลา `expire_minutes` → สถานะเปลี่ยนเป็น "ยกเลิก" และระบบคืนเงิน
-- [ ] 🧪 กดดูประวัติแชทที่จบไปแล้วจากหน้า Profile → ต้องเป็น Read-Only ไม่มีช่องให้พิมพ์ส่งข้อความ
+- [x] 🧪 สร้าง Request แล้วไม่มีแพทย์รับงานจนหมดเวลา `expire_minutes` → สถานะเปลี่ยนเป็น "ยกเลิก" และระบบคืนเงิน
+- [x] 🧪 กดดูประวัติแชทที่จบไปแล้วจากหน้า Profile → ต้องเป็น Read-Only ไม่มีช่องให้พิมพ์ส่งข้อความ
 
 ---
 
@@ -1308,15 +1308,18 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 ### ไฟล์ที่ต้องแก้ไข
 
-| ไฟล์ | การเปลี่ยนแปลง |
-|---|---|
-| `profile_page.dart` | เพิ่ม Tab + getter `_isConsumer` / `_isProvider` |
-| `my_consultations_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` (ไม่มี AppBar เมื่อ embed) |
-| `provider_history_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` |
-| `consultation_chat_history_page.dart` | สร้างใหม่ — Read-Only chat viewer |
-| `main.dart` | เพิ่ม route `/consultation-chat-history` |
+| ไฟล์ | การเปลี่ยนแปลง | สถานะ |
+|---|---|---|
+| `profile_page.dart` | เพิ่ม Tab + getter `_isConsumer` / `_isProvider` และระบบ Scrollbar | ✅ เสร็จสิ้น |
+| `my_consultations_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` (ไม่มี AppBar เมื่อ embed) | ✅ เสร็จสิ้น |
+| `provider_history_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` | ✅ เสร็จสิ้น |
+| `consultation_chat_history_page.dart` | สร้างใหม่ — Read-Only chat viewer | ✅ เสร็จสิ้น |
+| `main.dart` | เพิ่ม route สำหรับ History และ Read-Only Chat | ✅ เสร็จสิ้น |
 
 ---
+
+✅ **โครงการ (CHAT CONSULTATION IMPROVEMENT) เสร็จสมบูรณ์ทุก Phase 1-4 แล้ว**
+
 
 > วิเคราะห์จากโค้ดจริงใน `/lib/features/chat/`, `/lib/features/consultation/`, และ `/lib/features/profile/`  
 > ควร review กับทีมก่อน implement เพื่อ prioritize ตาม business needs

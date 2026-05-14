@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
+import '../../../../features/consultation/presentation/pages/my_consultations_page.dart';
+import '../../../../features/consultation/presentation/pages/provider_history_page.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -39,12 +41,12 @@ class _ProfilePageState extends State<ProfilePage> {
   late final DonationRepository _donationRepository;
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _dynamicValues = {};
-  
+
   UserModel? _user;
   prof.Profession? _profession;
   List<RegistrationFieldConfig> _fields = [];
   Map<String, String> _dynamicData = {};
-  
+
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isEditing = false;
@@ -53,7 +55,8 @@ class _ProfilePageState extends State<ProfilePage> {
   int _yieldWayRadius = 1000; // รัศมีการให้ทาง (เมตร)
   File? _tempProfileImage;
   bool _isUploadingAvatar = false;
-  int _selectedTabIndex = 0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
+  int _selectedTabIndex =
+      0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
   bool _isNavBarVisible = true; // ควบคุมการแสดงผล Navigation Bar ตอนเลื่อนจอ
 
   // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
@@ -66,7 +69,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoadingProfessions = false;
   bool _isSavingUnblurred = false; // สถานะการบันทึกสิทธิ์ดูวิดีโอ
   String? _selectedCategory; // หมวดหมู่ที่กำลังเลือกอยู่
-  
+
   String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
 
   @override
@@ -88,7 +91,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _repository = ProfileRepository(Supabase.instance.client);
     _donationRepository = DonationRepository(Supabase.instance.client);
-    
+
     // Auth re-verify as per login_navigation_guide
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!AuthService.instance.isLoggedIn) {
@@ -122,19 +125,25 @@ class _ProfilePageState extends State<ProfilePage> {
           _alertRadius = _user?.alertRadius ?? 500;
           _isYieldWayEnabled = _user?.isYieldWayEnabled ?? false;
           _yieldWayRadius = _user?.yieldWayRadius ?? 1000;
-          
-          // โหลดค่า unblurred_profession_ids จาก dynamicData (user_registration_data) 
+
+          // โหลดค่า unblurred_profession_ids จาก dynamicData (user_registration_data)
           // เพื่อความเข้ากันได้ 100% กับ Supabase Cloud โดยไม่ต้องแก้ Schema ตารางหลัก
           final unblurredRaw = _dynamicData['unblurred_profession_ids'];
           if (unblurredRaw != null && unblurredRaw.isNotEmpty) {
             try {
               final List<dynamic> decoded = json.decode(unblurredRaw);
-              _selectedUnblurredIds = Set<String>.from(decoded.map((e) => e.toString()));
+              _selectedUnblurredIds = Set<String>.from(
+                decoded.map((e) => e.toString()),
+              );
             } catch (e) {
-              _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+              _selectedUnblurredIds = Set<String>.from(
+                _user?.unblurredProfessionIds ?? [],
+              );
             }
           } else {
-            _selectedUnblurredIds = Set<String>.from(_user?.unblurredProfessionIds ?? []);
+            _selectedUnblurredIds = Set<String>.from(
+              _user?.unblurredProfessionIds ?? [],
+            );
           }
 
           // Load settings for approver
@@ -152,9 +161,9 @@ class _ProfilePageState extends State<ProfilePage> {
       debugPrint('Error loading profile: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('โหลดข้อมูลไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('โหลดข้อมูลไม่สำเร็จ: $e')));
       }
     }
   }
@@ -197,7 +206,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   void _initControllers() {
     if (_user == null) return;
-    
+
     // Core user info
     _controllers['first_name'] = TextEditingController(text: _user!.firstName);
     _controllers['last_name'] = TextEditingController(text: _user!.lastName);
@@ -206,7 +215,9 @@ class _ProfilePageState extends State<ProfilePage> {
     for (final field in _fields) {
       final value = _dynamicData[field.fieldId] ?? '';
       if (field.fieldType == FieldType.date) {
-        _dynamicValues[field.fieldId] = value.isNotEmpty ? DateTime.tryParse(value) : null;
+        _dynamicValues[field.fieldId] = value.isNotEmpty
+            ? DateTime.tryParse(value)
+            : null;
       } else if (field.fieldType == FieldType.image) {
         _dynamicValues[field.fieldId] = value; // URL
       } else {
@@ -215,8 +226,11 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  final ScrollController _tabScrollController = ScrollController();
+
   @override
   void dispose() {
+    _tabScrollController.dispose();
     for (var controller in _controllers.values) {
       controller.dispose();
     }
@@ -227,7 +241,8 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      extendBody: true, // สำคัญมาก เพื่อให้ Navigation Bar ลอยทับเนื้อหาได้สวยงาม
+      extendBody:
+          true, // สำคัญมาก เพื่อให้ Navigation Bar ลอยทับเนื้อหาได้สวยงาม
       drawer: const TlzDrawer(),
       bottomNavigationBar: TlzBottomNavigationBar(
         isVisible: _isNavBarVisible,
@@ -235,8 +250,8 @@ class _ProfilePageState extends State<ProfilePage> {
         onIndexChanged: (index) {
           if (index == 4) return;
           Navigator.pushReplacementNamed(
-            context, 
-            '/main-app', 
+            context,
+            '/main-app',
             arguments: {'index': index},
           );
         },
@@ -247,44 +262,59 @@ class _ProfilePageState extends State<ProfilePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _user == null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์ของคุณ'),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/login', arguments: '/profile');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('เข้าสู่ระบบ / สมัครสมาชิก'),
-                      ),
-                    ],
-                  ),
-                )
-              : SafeArea(
-                  top: false, 
-                  bottom: false, // เพื่อให้เนื้อหามุดลงไปใต้ Nav Bar ได้
-                  child: NotificationListener<UserScrollNotification>(
-                    onNotification: (notification) {
-                      if (notification.direction == ScrollDirection.reverse) {
-                        if (_isNavBarVisible) setState(() => _isNavBarVisible = false);
-                      } else if (notification.direction == ScrollDirection.forward) {
-                        if (!_isNavBarVisible) setState(() => _isNavBarVisible = true);
-                      }
-                      return false;
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์ของคุณ'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/login',
+                        arguments: '/profile',
+                      );
                     },
-                    child: _buildContent(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('เข้าสู่ระบบ / สมัครสมาชิก'),
                   ),
-                ),
+                ],
+              ),
+            )
+          : SafeArea(
+              top: false,
+              bottom: false, // เพื่อให้เนื้อหามุดลงไปใต้ Nav Bar ได้
+              child: NotificationListener<UserScrollNotification>(
+                onNotification: (notification) {
+                  if (notification.direction == ScrollDirection.reverse) {
+                    if (_isNavBarVisible)
+                      setState(() => _isNavBarVisible = false);
+                  } else if (notification.direction ==
+                      ScrollDirection.forward) {
+                    if (!_isNavBarVisible)
+                      setState(() => _isNavBarVisible = true);
+                  }
+                  return false;
+                },
+                child: _buildContent(),
+              ),
+            ),
     );
   }
 
   Widget _buildContent() {
+    final bool isConsumer = _user?.professionId == null || _user?.professionId == '00000000-0000-0000-0000-000000000001';
+    final bool isProvider = !isConsumer;
+    final int baseTabCount = _canApproveDonation ? 3 : 2;
+    final int historyTabIndex = baseTabCount;
+    final int totalTabCount = baseTabCount + 1;
+    // ถ้ามี Tab เยอะ ให้แบ่งความกว้างแบบเกินหน้าจอเพื่อให้เลื่อนได้
+    final double tabWidth = MediaQuery.of(context).size.width / (totalTabCount > 3 ? 3.2 : totalTabCount);
+
     return CustomScrollView(
       slivers: [
         SliverAppBar(
@@ -304,40 +334,47 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(50),
+            preferredSize: const Size.fromHeight(56), // เพิ่มความสูงเผื่อ Scrollbar
             child: Container(
               width: double.infinity,
+              padding: const EdgeInsets.only(bottom: 4), // เพิ่ม padding ล่างสำหรับ Scrollbar
               decoration: const BoxDecoration(
                 color: Colors.white,
                 border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
               ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                      SizedBox(
-                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 3 : 2),
-                        child: _buildTabItem(
-                          icon: Icons.person_outline,
-                          text: _profession?.name ?? 'โปรไฟล์',
-                          isActive: _selectedTabIndex == 0,
-                          activeColor: AppColors.primary,
-                          onTap: () => setState(() => _selectedTabIndex = 0),
-                        ),
+              child: Scrollbar(
+                controller: _tabScrollController,
+                thumbVisibility: true,
+                thickness: 4.0,
+                radius: const Radius.circular(8.0),
+                child: SingleChildScrollView(
+                  controller: _tabScrollController,
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                    SizedBox(
+                      width: tabWidth,
+                      child: _buildTabItem(
+                        icon: Icons.person_outline,
+                        text: _profession?.name ?? 'โปรไฟล์',
+                        isActive: _selectedTabIndex == 0,
+                        activeColor: AppColors.primary,
+                        onTap: () => setState(() => _selectedTabIndex = 0),
                       ),
-                      SizedBox(
-                        width: MediaQuery.of(context).size.width / (_canApproveDonation ? 3 : 2),
-                        child: _buildTabItem(
-                          icon: Icons.volunteer_activism_outlined,
-                          text: 'จิตอาสา',
-                          isActive: _selectedTabIndex == 1,
-                          activeColor: const Color(0xFFF5A623),
-                          onTap: () => setState(() => _selectedTabIndex = 1),
-                        ),
+                    ),
+                    SizedBox(
+                      width: tabWidth,
+                      child: _buildTabItem(
+                        icon: Icons.volunteer_activism_outlined,
+                        text: 'จิตอาสา',
+                        isActive: _selectedTabIndex == 1,
+                        activeColor: const Color(0xFFF5A623),
+                        onTap: () => setState(() => _selectedTabIndex = 1),
                       ),
+                    ),
                     if (_canApproveDonation)
                       SizedBox(
-                        width: MediaQuery.of(context).size.width / 3,
+                        width: tabWidth,
                         child: _buildTabItem(
                           icon: Icons.admin_panel_settings_outlined,
                           text: 'อนุมัติบริจาค',
@@ -346,12 +383,35 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = 2),
                         ),
                       ),
+                    if (isConsumer)
+                      SizedBox(
+                        width: tabWidth,
+                        child: _buildTabItem(
+                          icon: Icons.medical_services_outlined,
+                          text: 'ประวัติปรึกษา',
+                          isActive: _selectedTabIndex == historyTabIndex,
+                          activeColor: AppColors.primary,
+                          onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
+                        ),
+                      ),
+                    if (isProvider)
+                      SizedBox(
+                        width: tabWidth,
+                        child: _buildTabItem(
+                          icon: Icons.history_edu_outlined,
+                          text: 'ประวัติให้บริการ',
+                          isActive: _selectedTabIndex == historyTabIndex,
+                          activeColor: Colors.green,
+                          onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
           ),
         ),
+      ),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
@@ -365,7 +425,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 16),
                 Text(
                   'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
-                  style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ..._buildDynamicFields(),
@@ -381,6 +443,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 16),
                 const LeaderVerificationPage(),
                 const SizedBox(height: 24),
+              ] else if (_selectedTabIndex == historyTabIndex) ...[
+                SizedBox(
+                  height: MediaQuery.of(context).size.height - 250,
+                  child: isConsumer
+                      ? const MyConsultationsPage(isEmbedded: true)
+                      : const ProviderHistoryPage(isEmbedded: true),
+                ),
               ],
               if (_isEditing && _selectedTabIndex == 0) ...[
                 const SizedBox(height: 32),
@@ -398,7 +467,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   repository: _donationRepository,
                   userId: _user?.id,
                   showCreateButton: true,
-                  maxHeight: 550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
+                  maxHeight:
+                      550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
                   highlightRequestId: _highlightRequestId,
                 ),
               ],
@@ -423,7 +493,9 @@ class _ProfilePageState extends State<ProfilePage> {
         onTap: () {
           // TODO: สร้างและนำทางไปยัง BeneficiaryRegistrationPage
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('กำลังเปิดหน้าลงทะเบียนองค์กรมูลนิธิ...')),
+            const SnackBar(
+              content: Text('กำลังเปิดหน้าลงทะเบียนองค์กรมูลนิธิ...'),
+            ),
           );
         },
         borderRadius: BorderRadius.circular(12),
@@ -446,7 +518,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Text(
                       'ลงทะเบียนองค์กรมูลนิธิ/MOU',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.deepOrange),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.deepOrange,
+                      ),
                     ),
                     SizedBox(height: 4),
                     Text(
@@ -463,6 +539,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
+
 
   Widget _buildTabItem({
     required IconData icon,
@@ -486,11 +563,7 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isActive ? activeColor : Colors.grey,
-            ),
+            Icon(icon, size: 18, color: isActive ? activeColor : Colors.grey),
             const SizedBox(width: 8),
             Text(
               text,
@@ -519,26 +592,40 @@ class _ProfilePageState extends State<ProfilePage> {
                     width: 120, // radius 60
                     height: 120,
                     color: AppColors.primary.withOpacity(0.1),
-                    child: _isUploadingAvatar 
-                      ? const Center(child: CircularProgressIndicator(color: AppColors.primary)) 
-                      : _user?.profileImageUrl != null
-                            ? Image.network(
-                                _user!.profileImageUrl!,
-                                fit: BoxFit.cover,
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      color: AppColors.primary,
-                                      value: loadingProgress.expectedTotalBytes != null
-                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                          : null,
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (c, e, s) => const Icon(Icons.person, size: 60, color: AppColors.primary),
-                              )
-                            : const Icon(Icons.person, size: 60, color: AppColors.primary),
+                    child: _isUploadingAvatar
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : _user?.profileImageUrl != null
+                        ? Image.network(
+                            _user!.profileImageUrl!,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primary,
+                                  value:
+                                      loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                      : null,
+                                ),
+                              );
+                            },
+                            errorBuilder: (c, e, s) => const Icon(
+                              Icons.person,
+                              size: 60,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.person,
+                            size: 60,
+                            color: AppColors.primary,
+                          ),
                   ),
                 ),
               ),
@@ -554,7 +641,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
@@ -565,10 +656,7 @@ class _ProfilePageState extends State<ProfilePage> {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _user?.fullName ?? '',
-                style: AppTextStyles.heading2,
-              ),
+              Text(_user?.fullName ?? '', style: AppTextStyles.heading2),
               const SizedBox(width: 8),
               if (!_isEditing)
                 GestureDetector(
@@ -579,7 +667,11 @@ class _ProfilePageState extends State<ProfilePage> {
                       color: const Color(0xFFF5A623).withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.edit, color: Color(0xFFF5A623), size: 18),
+                    child: const Icon(
+                      Icons.edit,
+                      color: Color(0xFFF5A623),
+                      size: 18,
+                    ),
                   ),
                 )
               else
@@ -608,7 +700,9 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Text(
                 _profession?.category.name ?? _user?.userType.displayName ?? '',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
               if (_user?.verificationStatus == VerificationStatus.verified) ...[
                 const SizedBox(width: 8),
@@ -628,15 +722,9 @@ class _ProfilePageState extends State<ProfilePage> {
         _buildFieldRow('ชื่อผู้ใช้', _user?.username ?? '', isEditable: false),
         const SizedBox(height: 12),
         if (_isEditing) ...[
-          TlzTextField(
-            label: 'ชื่อ',
-            controller: _controllers['first_name'],
-          ),
+          TlzTextField(label: 'ชื่อ', controller: _controllers['first_name']),
           const SizedBox(height: 12),
-          TlzTextField(
-            label: 'นามสกุล',
-            controller: _controllers['last_name'],
-          ),
+          TlzTextField(label: 'นามสกุล', controller: _controllers['last_name']),
         ] else ...[
           _buildFieldRow('ชื่อ', _user?.firstName ?? ''),
           const SizedBox(height: 12),
@@ -664,17 +752,21 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildReadonlyDynamicField(RegistrationFieldConfig field) {
     String value = _dynamicData[field.fieldId] ?? '';
-    
+
     if (field.fieldType == FieldType.date && value.isNotEmpty) {
       final date = DateTime.tryParse(value);
       if (date != null) {
-        value = '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}';
+        value =
+            '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}';
       }
     } else if (field.fieldType == FieldType.image) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(field.label, style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+          Text(
+            field.label,
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+          ),
           const SizedBox(height: 8),
           if (value.isNotEmpty)
             ClipRRect(
@@ -720,10 +812,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    date != null 
-                      ? '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}'
-                      : field.hint ?? 'เลือกวันที่',
-                    style: TextStyle(color: date != null ? Colors.black : Colors.grey),
+                    date != null
+                        ? '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}'
+                        : field.hint ?? 'เลือกวันที่',
+                    style: TextStyle(
+                      color: date != null ? Colors.black : Colors.grey,
+                    ),
                   ),
                   const Icon(Icons.calendar_today, size: 20),
                 ],
@@ -735,39 +829,48 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     if (field.fieldType == FieldType.image) {
-       final currentUrl = _dynamicValues[field.fieldId] as String?;
-       return Column(
-         crossAxisAlignment: CrossAxisAlignment.start,
-         children: [
-           Text(field.label, style: AppTextStyles.bodyMedium),
-           const SizedBox(height: 8),
-           if (currentUrl != null && currentUrl.isNotEmpty)
-             Stack(
-               children: [
-                 ClipRRect(
-                   borderRadius: BorderRadius.circular(8),
-                   child: Image.network(currentUrl, height: 100, width: 100, fit: BoxFit.cover),
-                 ),
-                 Positioned(
-                   top: 0, right: 0,
-                   child: IconButton(
-                     icon: const Icon(Icons.cancel, color: Colors.red),
-                     onPressed: () => setState(() => _dynamicValues[field.fieldId] = null),
-                   ),
-                 )
-               ],
-             )
-           else
-             const Text('อัพโหลดรูปภาพ (เร็วๆ นี้)'),
-         ],
-       );
+      final currentUrl = _dynamicValues[field.fieldId] as String?;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(field.label, style: AppTextStyles.bodyMedium),
+          const SizedBox(height: 8),
+          if (currentUrl != null && currentUrl.isNotEmpty)
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    currentUrl,
+                    height: 100,
+                    width: 100,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: IconButton(
+                    icon: const Icon(Icons.cancel, color: Colors.red),
+                    onPressed: () =>
+                        setState(() => _dynamicValues[field.fieldId] = null),
+                  ),
+                ),
+              ],
+            )
+          else
+            const Text('อัพโหลดรูปภาพ (เร็วๆ นี้)'),
+        ],
+      );
     }
 
     return TlzTextField(
       label: field.label,
       controller: _controllers[field.fieldId],
       hint: field.hint,
-      keyboardType: field.fieldType == FieldType.phone ? TextInputType.phone : TextInputType.text,
+      keyboardType: field.fieldType == FieldType.phone
+          ? TextInputType.phone
+          : TextInputType.text,
       maxLines: field.fieldType == FieldType.multilineText ? 3 : 1,
     );
   }
@@ -783,12 +886,7 @@ class _ProfilePageState extends State<ProfilePage> {
             style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
           ),
         ),
-        Expanded(
-          child: Text(
-            value,
-            style: AppTextStyles.bodyMedium,
-          ),
-        ),
+        Expanded(child: Text(value, style: AppTextStyles.bodyMedium)),
       ],
     );
   }
@@ -825,11 +923,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Text(
                       'แจ้งเหตุฉุกเฉินใกล้ตัว (ไทยมุง)',
-                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       'รับแจ้งเตือนเมื่อมีเหตุการณ์เกิดขึ้นในรัศมี 500 เมตร',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey,
+                      ),
                     ),
                   ],
                 ),
@@ -870,11 +972,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Text(
                       'แจ้งเตือนช่วยเปิดทาง (Yield Way)',
-                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       'รับแจ้งเตือนเมื่อมีรถฉุกเฉินกำลังวิ่งมาบนเส้นทางของคุณ',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey,
+                      ),
                     ),
                   ],
                 ),
@@ -891,7 +997,9 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 16),
           _buildYieldWayRadiusSection(),
         ],
-        if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false) || _isYieldWayEnabled) ...[
+        if (_thaiMhungEnabled ||
+            (_profession?.isVolunteer ?? false) ||
+            _isYieldWayEnabled) ...[
           const SizedBox(height: 24),
           _buildUnblurredProfessionSection(),
         ],
@@ -901,9 +1009,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildRadiusSection() {
     final isProfessional = _profession?.isVolunteer ?? false;
-    final title = isProfessional ? 'รัศมีพื้นที่รับผิดชอบ' : 'พื้นที่ให้ทางแก่เจ้าหน้าที่';
-    final description = isProfessional 
-        ? 'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้' 
+    final title = isProfessional
+        ? 'รัศมีพื้นที่รับผิดชอบ'
+        : 'พื้นที่ให้ทางแก่เจ้าหน้าที่';
+    final description = isProfessional
+        ? 'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้'
         : 'รัศมีสำหรับการแจ้งเตือนเหตุ เพื่ออำนวยความสะดวก "เส้นทาง"แก่เจ้าหน้าที่';
 
     return Container(
@@ -921,7 +1031,9 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Text(
                 title,
-                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -930,9 +1042,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  _alertRadius >= 1000 
-                    ? '${(_alertRadius / 1000).toStringAsFixed(1)} กม.' 
-                    : '$_alertRadius ม.',
+                  _alertRadius >= 1000
+                      ? '${(_alertRadius / 1000).toStringAsFixed(1)} กม.'
+                      : '$_alertRadius ม.',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.bold,
@@ -953,15 +1065,22 @@ class _ProfilePageState extends State<ProfilePage> {
             max: 100000,
             divisions: 199,
             onChanged: (value) => setState(() => _alertRadius = value.round()),
-            onChangeEnd: (value) => _updateVolunteerSettings(radius: value.round()),
+            onChangeEnd: (value) =>
+                _updateVolunteerSettings(radius: value.round()),
             activeColor: AppColors.primary,
             inactiveColor: Colors.grey[200],
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('500 ม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
-              Text('100 กม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+              Text(
+                '500 ม.',
+                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              ),
+              Text(
+                '100 กม.',
+                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              ),
             ],
           ),
         ],
@@ -993,11 +1112,17 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.airport_shuttle, color: Color(0xFF007AFF), size: 18),
+                  const Icon(
+                    Icons.airport_shuttle,
+                    color: Color(0xFF007AFF),
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'รัศมีรับแจ้งเตือนให้ทาง',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -1009,8 +1134,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 child: Text(
                   _yieldWayRadius >= 1000
-                    ? '${(_yieldWayRadius / 1000).toStringAsFixed(1)} กม.'
-                    : '$_yieldWayRadius ม.',
+                      ? '${(_yieldWayRadius / 1000).toStringAsFixed(1)} กม.'
+                      : '$_yieldWayRadius ม.',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: const Color(0xFF007AFF),
                     fontWeight: FontWeight.bold,
@@ -1030,7 +1155,8 @@ class _ProfilePageState extends State<ProfilePage> {
             min: 500,
             max: 20000,
             divisions: 39,
-            onChanged: (value) => setState(() => _yieldWayRadius = value.round()),
+            onChanged: (value) =>
+                setState(() => _yieldWayRadius = value.round()),
             onChangeEnd: (value) => _updateYieldWayRadius(value.round()),
             activeColor: const Color(0xFF007AFF),
             inactiveColor: Colors.grey[200],
@@ -1038,8 +1164,14 @@ class _ProfilePageState extends State<ProfilePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('500 ม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
-              Text('20 กม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+              Text(
+                '500 ม.',
+                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              ),
+              Text(
+                '20 กม.',
+                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              ),
             ],
           ),
         ],
@@ -1068,7 +1200,9 @@ class _ProfilePageState extends State<ProfilePage> {
             if (json['category_data'] != null) {
               category = prof.UserCategory.fromJson(json['category_data']);
             } else {
-              category = prof.UserCategory.fromString(json['category'] ?? 'consumer');
+              category = prof.UserCategory.fromString(
+                json['category'] ?? 'consumer',
+              );
             }
 
             return prof.Profession(
@@ -1086,13 +1220,16 @@ class _ProfilePageState extends State<ProfilePage> {
 
           // เรียงลำดับเพิ่มเติม: หมวดหมู่ (displayOrder) -> อาชีพ (displayOrder)
           _allVolunteerProfessions.sort((a, b) {
-            final catCompare = a.category.displayOrder.compareTo(b.category.displayOrder);
+            final catCompare = a.category.displayOrder.compareTo(
+              b.category.displayOrder,
+            );
             if (catCompare != 0) return catCompare;
             return a.displayOrder.compareTo(b.displayOrder);
           });
 
           // ตั้งค่าเริ่มต้นเป็นกลุ่มแรกหากยังไม่ได้เลือก
-          if (_allVolunteerProfessions.isNotEmpty && _selectedCategory == null) {
+          if (_allVolunteerProfessions.isNotEmpty &&
+              _selectedCategory == null) {
             _selectedCategory = _allVolunteerProfessions.first.category.id;
           }
           _isLoadingProfessions = false;
@@ -1149,11 +1286,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Text(
                       'สิทธิ์ดูวิดีโอต้นฉบับ',
-                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       'เลือกอาชีพจิตอาสาที่อนุญาตให้เห็นภาพ/วิดีโอไม่ผ่านการเบลอ',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey,
+                      ),
                     ),
                   ],
                 ),
@@ -1186,7 +1327,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       selectedColor: AppColors.primary.withOpacity(0.1),
                       labelStyle: AppTextStyles.bodySmall.copyWith(
                         color: isSelected ? AppColors.primary : Colors.grey,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   );
@@ -1203,45 +1346,53 @@ class _ProfilePageState extends State<ProfilePage> {
               children: _allVolunteerProfessions
                   .where((p) => p.category.id == _selectedCategory)
                   .map((p) {
-                final isSelected = _selectedUnblurredIds.contains(p.id);
-                Color chipColor = AppColors.primary;
-                if (p.colorHex != null && p.colorHex!.isNotEmpty) {
-                  try {
-                    chipColor = Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')));
-                  } catch (_) {}
-                }
-                return FilterChip(
-                  label: Text(p.name),
-                  selected: isSelected,
-                  selectedColor: chipColor.withOpacity(0.2),
-                  checkmarkColor: chipColor,
-                  labelStyle: AppTextStyles.bodySmall.copyWith(
-                    color: isSelected ? chipColor : Colors.grey[700],
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  side: BorderSide(
-                    color: isSelected ? chipColor : Colors.grey[300]!,
-                    width: isSelected ? 1.5 : 1,
-                  ),
-                  onSelected: _isSavingUnblurred
-                      ? null
-                      : (val) {
-                          setState(() {
-                            if (val) {
-                              _selectedUnblurredIds.add(p.id);
-                            } else {
-                              _selectedUnblurredIds.remove(p.id);
-                            }
-                          });
-                          _saveUnblurredProfessions();
-                        },
-                );
-              }).toList(),
+                    final isSelected = _selectedUnblurredIds.contains(p.id);
+                    Color chipColor = AppColors.primary;
+                    if (p.colorHex != null && p.colorHex!.isNotEmpty) {
+                      try {
+                        chipColor = Color(
+                          int.parse(p.colorHex!.replaceFirst('#', '0xFF')),
+                        );
+                      } catch (_) {}
+                    }
+                    return FilterChip(
+                      label: Text(p.name),
+                      selected: isSelected,
+                      selectedColor: chipColor.withOpacity(0.2),
+                      checkmarkColor: chipColor,
+                      labelStyle: AppTextStyles.bodySmall.copyWith(
+                        color: isSelected ? chipColor : Colors.grey[700],
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                      side: BorderSide(
+                        color: isSelected ? chipColor : Colors.grey[300]!,
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                      onSelected: _isSavingUnblurred
+                          ? null
+                          : (val) {
+                              setState(() {
+                                if (val) {
+                                  _selectedUnblurredIds.add(p.id);
+                                } else {
+                                  _selectedUnblurredIds.remove(p.id);
+                                }
+                              });
+                              _saveUnblurredProfessions();
+                            },
+                    );
+                  })
+                  .toList(),
             ),
             const SizedBox(height: 8),
             Text(
               'หมายเหตุ: อาชีพที่ไม่ได้เลือกจะเห็นเพียงภาพเบลอ (Privacy Mode)',
-              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 11),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey[500],
+                fontSize: 11,
+              ),
             ),
           ],
         ],
@@ -1278,10 +1429,12 @@ class _ProfilePageState extends State<ProfilePage> {
       }, onConflict: 'user_id,field_id');
 
       // อัพเดต local session
-      AuthService.instance.login(_user!.copyWith(
-        unblurredProfessionIds: _selectedUnblurredIds.toList(),
-      ));
-      debugPrint('ProfilePage: ✅ Saved unblurred professions: $_selectedUnblurredIds');
+      AuthService.instance.login(
+        _user!.copyWith(unblurredProfessionIds: _selectedUnblurredIds.toList()),
+      );
+      debugPrint(
+        'ProfilePage: ✅ Saved unblurred professions: $_selectedUnblurredIds',
+      );
     } catch (e) {
       debugPrint('ProfilePage: ❌ Error saving unblurred professions: $e');
     } finally {
@@ -1293,7 +1446,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _updateVolunteerSettings({bool? enabled, int? radius}) async {
     if (_user == null) return;
-    
+
     bool newEnabled = enabled ?? _thaiMhungEnabled;
     final newRadius = radius ?? _alertRadius;
 
@@ -1301,14 +1454,16 @@ class _ProfilePageState extends State<ProfilePage> {
     if (enabled == true) {
       final locService = LocationTrackingService();
       final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
-      
+
       if (!isAlwaysGranted) {
         // Show our custom guidance dialog first
-        final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
+        final shouldGoToSettings = await BackgroundPermissionDialog.show(
+          context,
+        );
         if (!mounted) return;
         if (shouldGoToSettings) {
           await openAppSettings();
-          // After returning from settings, we don't force 'true' yet, 
+          // After returning from settings, we don't force 'true' yet,
           // let the user toggle again once they grant permission.
           return;
         } else {
@@ -1318,7 +1473,7 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       }
     }
-    
+
     setState(() {
       _thaiMhungEnabled = newEnabled;
       _alertRadius = newRadius;
@@ -1334,11 +1489,10 @@ class _ProfilePageState extends State<ProfilePage> {
         dynamicData: {},
         userType: _user!.userType,
       );
-      
-      AuthService.instance.login(_user!.copyWith(
-        isThaiMhungEnabled: newEnabled,
-        alertRadius: newRadius,
-      ));
+
+      AuthService.instance.login(
+        _user!.copyWith(isThaiMhungEnabled: newEnabled, alertRadius: newRadius),
+      );
 
       // Option 3: Start/Stop persistent tracking based on toggle
       final locService = LocationTrackingService();
@@ -1349,7 +1503,7 @@ class _ProfilePageState extends State<ProfilePage> {
         // Stop tracking
         locService.stopTracking();
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1363,9 +1517,9 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       debugPrint('Error updating volunteer settings: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
       }
     }
   }
@@ -1435,41 +1589,46 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _processAndUploadAvatar(ImageSource source) async {
     if (_user == null) return;
-    
+
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile == null) return;
-    
+
     setState(() => _isUploadingAvatar = true);
-    
+
     try {
       // 1. บีบอัดไฟล์ (Compress)
       final tempDir = await getTemporaryDirectory();
-      final targetPath = '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
-      
+      final targetPath =
+          '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
+
       final compressedFile = await FlutterImageCompress.compressAndGetFile(
         pickedFile.path,
         targetPath,
-        quality: 70,       // ลดคุณภาพลงเหลือ 70%
-        minWidth: 800,     // จำกัดความกว้างสูงสุด
-        minHeight: 800,    // จำกัดความสูงสูงสุด
+        quality: 70, // ลดคุณภาพลงเหลือ 70%
+        minWidth: 800, // จำกัดความกว้างสูงสุด
+        minHeight: 800, // จำกัดความสูงสูงสุด
       );
-      
+
       if (compressedFile == null) throw Exception('บีบอัดภาพไม่สำเร็จ');
 
       // 2. อัปโหลดลง Storage
       final userId = _user!.id;
-      final fileName = 'profiles/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final fileName =
+          'profiles/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final supabase = Supabase.instance.client;
-      
-      await supabase.storage.from('avatars').upload(fileName, File(compressedFile.path));
+
+      await supabase.storage
+          .from('avatars')
+          .upload(fileName, File(compressedFile.path));
       final imageUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
 
       // 3. บันทึกลงตารางจริง (users table)
-      await supabase.from('users').update({
-        'profile_image_url': imageUrl,
-      }).eq('id', userId);
-      
+      await supabase
+          .from('users')
+          .update({'profile_image_url': imageUrl})
+          .eq('id', userId);
+
       // อัปเดต State และ Local Session
       setState(() {
         _user = _user!.copyWith(profileImageUrl: imageUrl);
@@ -1479,14 +1638,20 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('อัปเดตภาพโปรไฟล์สำเร็จ'), backgroundColor: AppColors.success),
+          const SnackBar(
+            content: Text('อัปเดตภาพโปรไฟล์สำเร็จ'),
+            backgroundColor: AppColors.success,
+          ),
         );
       }
     } catch (e) {
       debugPrint('Avatar upload error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาดในการอัปโหลด: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการอัปโหลด: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     } finally {
@@ -1512,7 +1677,20 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   String _getThaiShortMonth(int month) {
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
     return months[month - 1];
   }
 
@@ -1549,20 +1727,22 @@ class _ProfilePageState extends State<ProfilePage> {
         dynamicData: dynamicData,
         userType: _user!.userType,
       );
-      
+
       // Update local session
-      AuthService.instance.login(_user!.copyWith(
-        firstName: coreData['first_name'],
-        lastName: coreData['last_name'],
-        isThaiMhungEnabled: _thaiMhungEnabled,
-        alertRadius: _alertRadius,
-        profileImageUrl: coreData['profile_image_url'],
-      ));
-      
+      AuthService.instance.login(
+        _user!.copyWith(
+          firstName: coreData['first_name'],
+          lastName: coreData['last_name'],
+          isThaiMhungEnabled: _thaiMhungEnabled,
+          alertRadius: _alertRadius,
+          profileImageUrl: coreData['profile_image_url'],
+        ),
+      );
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกข้อมูลสำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('บันทึกข้อมูลสำเร็จ')));
         setState(() {
           _isEditing = false;
           _isSaving = false;
@@ -1574,9 +1754,9 @@ class _ProfilePageState extends State<ProfilePage> {
       debugPrint('Save error: $e');
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
       }
     }
   }

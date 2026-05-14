@@ -12,6 +12,8 @@ class ConsultationRequestModel {
   final List<SymptomPoint> symptoms; // Normalized child list
   final bool useAI; // NEW: Flag for Vega AI Pre-consultation
 
+  final String? roomId;
+
   ConsultationRequestModel({
     required this.id,
     required this.userId,
@@ -25,6 +27,7 @@ class ConsultationRequestModel {
     required this.updatedAt,
     this.symptoms = const [],
     this.useAI = false,
+    this.roomId,
   });
 
   factory ConsultationRequestModel.fromJson(Map<String, dynamic> json) {
@@ -48,6 +51,7 @@ class ConsultationRequestModel {
               .toList() ??
           [],
       useAI: json['use_ai'] ?? false,
+      roomId: json['room_id'],
     );
   }
 
@@ -64,6 +68,7 @@ class ConsultationRequestModel {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'use_ai': useAI,
+      'room_id': roomId,
     };
   }
 
@@ -80,6 +85,7 @@ class ConsultationRequestModel {
     DateTime? updatedAt,
     List<SymptomPoint>? symptoms,
     bool? useAI,
+    String? roomId,
   }) {
     return ConsultationRequestModel(
       id: id ?? this.id,
@@ -94,6 +100,7 @@ class ConsultationRequestModel {
       updatedAt: updatedAt ?? this.updatedAt,
       symptoms: symptoms ?? this.symptoms,
       useAI: useAI ?? this.useAI,
+      roomId: roomId ?? this.roomId,
     );
   }
 }

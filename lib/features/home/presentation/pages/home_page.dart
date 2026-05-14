@@ -26,9 +26,15 @@ import 'package:permission_handler/permission_handler.dart';
 enum ConsultationPosition {
   center,
   // 4 มุม
-  topLeft, topRight, bottomLeft, bottomRight,
+  topLeft,
+  topRight,
+  bottomLeft,
+  bottomRight,
   // 4 กลางขอบ
-  topCenter, bottomCenter, leftCenter, rightCenter,
+  topCenter,
+  bottomCenter,
+  leftCenter,
+  rightCenter,
 }
 
 /// Preference key สำหรับบันทึกใน Supabase
@@ -45,7 +51,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _refreshTimer;
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
@@ -62,12 +69,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // === Snap-to-Corner State ===
   ConsultationPosition _consultPosition = ConsultationPosition.center;
-  bool _isConsultationMini = false; // เปลี่ยนจาก getter เป็นตัวแปรเพื่อควบคุมแยกต่างหาก
+  bool _isConsultationMini =
+      false; // เปลี่ยนจาก getter เป็นตัวแปรเพื่อควบคุมแยกต่างหาก
   Offset? _dragOffset; // ตำแหน่งชั่วคราวขณะลาก
   bool _isDraggingConsultation = false;
-  double _savedConsultationHeight = 0; // บันทึกความสูงก่อนย่อ เพื่อใช้เป็น Placeholder
+  double _savedConsultationHeight =
+      0; // บันทึกความสูงก่อนย่อ เพื่อใช้เป็น Placeholder
   double _spinTurns = 0.0; // บันทึกรอบการหมุนของ widget
-  
+
   List<HealthArticle> _recommendedArticles = [];
   List<HealthArticle> _interestingArticles = [];
   bool _isLoadingArticles = true;
@@ -83,16 +92,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _isLoadingMoreInteresting = false;
 
   double? _healthScore; // Null หมายถึง Guest หรือยังโหลดไม่เสร็จ
-  
+
   // === Emergency Alert State ===
   StreamSubscription? _emergencySub;
   final List<Map<String, dynamic>> _professionalAlerts = [];
   final List<Map<String, dynamic>> _thaiMhungAlerts = [];
   final List<Map<String, dynamic>> _donationAlerts = [];
-  final List<Map<String, dynamic>> _yieldWayAlerts = []; // ✅ เก็บสถานะแจ้งเตือนให้ทาง
-  Map<String, dynamic>? _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่ (สำหรับ Professional เท่านั้น)
-  List<DonationCategory> _emergencyCategories = []; // เก็บสิทธิอาสาสมัครจากตารางจริง
-  final DonationRepository _donationRepo = DonationRepository(Supabase.instance.client);
+  final List<Map<String, dynamic>> _yieldWayAlerts =
+      []; // ✅ เก็บสถานะแจ้งเตือนให้ทาง
+  Map<String, dynamic>?
+  _focusedAlert; // รายการที่กำลังโฟกัสบนแผนที่ (สำหรับ Professional เท่านั้น)
+  List<DonationCategory> _emergencyCategories =
+      []; // เก็บสิทธิอาสาสมัครจากตารางจริง
+  final DonationRepository _donationRepo = DonationRepository(
+    Supabase.instance.client,
+  );
   final List<String> _dismissedAlertIds = [];
   static const String _kDismissedAlertsKey = 'dismissed_emergency_alert_ids';
 
@@ -107,23 +121,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     WidgetsBinding.instance.addObserver(this);
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
-    
+
     // Listen for auth state changes to refresh data and re-load preferences
     AuthService.instance.addListener(_onAuthChanged);
-    
+
     // Clear alerts on auth change manually if needed or via _onAuthChanged
     _professionalAlerts.clear();
     _thaiMhungAlerts.clear();
-    
+
     // Initial load of health score if already logged in
     _loadHealthScore();
-    
+
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureHeaderSectionHeight();
       // ดักเคสที่ Layout ของ Card บางตัว (เช่น Pharmacy) ยังวาดไม่เสร็จใน Frame แรก
       Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && (_headerSectionHeight <= 0 || _consultationHeight <= 0 || _pharmacyHeight <= 0)) {
+        if (mounted &&
+            (_headerSectionHeight <= 0 ||
+                _consultationHeight <= 0 ||
+                _pharmacyHeight <= 0)) {
           _measureHeaderSectionHeight();
         }
       });
@@ -134,7 +151,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _loadHomeData();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
-    _listenForDonationStatus();  // Donation status notification
+    _listenForDonationStatus(); // Donation status notification
 
     // Start auto-refresh timer as a fail-safe (every 90 seconds)
     _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
@@ -191,9 +208,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('HomePage: App resumed, refreshing data and checking WebSocket...');
+      debugPrint(
+        'HomePage: App resumed, refreshing data and checking WebSocket...',
+      );
       _connectWebSocket(); // Ensure connection is alive
-      _loadHomeData();    // Full refresh including alerts
+      _loadHomeData(); // Full refresh including alerts
     }
   }
 
@@ -206,9 +225,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _listenForEmergencyAlerts() {
-    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) async {
+    _emergencySub = WebSocketService().emergencyNotificationStream.listen((
+      data,
+    ) async {
       if (!mounted) return;
-      
+
       final user = AuthService.instance.currentUser;
       if (user == null) {
         debugPrint('HomePage: WebSocket alert received but user is null');
@@ -219,11 +240,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       // 0. Self-Reporter Exclusion (ผู้แจ้งไม่ต้องเห็นการ์ดแจ้งเตือนตัวเอง)
       // นโยบายผู้แจ้งไม่ต้องได้รับหรือเห็นการ์ดแจ้งเตือนของตัวเอง (อิงตามที่ผู้แจ้งเหตุแจ้งไว้)
-      final reporterId = data['userId']?.toString() ?? 
-                         data['user_id']?.toString() ?? 
-                         data['senderId']?.toString() ?? 
-                         data['sender_id']?.toString();
-                         
+      final reporterId =
+          data['userId']?.toString() ??
+          data['user_id']?.toString() ??
+          data['senderId']?.toString() ??
+          data['sender_id']?.toString();
+
       if (reporterId != null && reporterId == user.id) {
         debugPrint('HomePage: Alert REJECTED - Self-reporter exclusion');
         return;
@@ -231,8 +253,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       // 1. Determine Channels
       bool isProfessional = false;
-      final categoryId = data['categoryId'] as String? ?? data['category_id'] as String?;
-      final isThaiMhungAlert = data['isThaiMhungEnabled'] == true || data['is_thai_mhung_enabled'] == true;
+      final categoryId =
+          data['categoryId'] as String? ?? data['category_id'] as String?;
+      final isThaiMhungAlert =
+          data['isThaiMhungEnabled'] == true ||
+          data['is_thai_mhung_enabled'] == true;
 
       if (_emergencyCategories.isEmpty) {
         _emergencyCategories = await _donationRepo.getEmergencyCategories();
@@ -240,13 +265,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       String categoryName = 'แจ้งเหตุ';
       if (categoryId != null) {
-        final category = _emergencyCategories.any((c) => c.id == categoryId) 
+        final category = _emergencyCategories.any((c) => c.id == categoryId)
             ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
             : null;
         if (category != null) {
           categoryName = category.name;
           final userProfessionId = user.professionId;
-          if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
+          if (userProfessionId != null &&
+              category.volunteerProfessionIds.contains(userProfessionId)) {
             isProfessional = true;
           }
         }
@@ -255,7 +281,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       bool isThaiMhungEnabled = isThaiMhungAlert && user.isThaiMhungEnabled;
 
       if (!isProfessional && !isThaiMhungEnabled) {
-        debugPrint('HomePage: Alert REJECTED - No relevant role (Pro or Thai Mhung)');
+        debugPrint(
+          'HomePage: Alert REJECTED - No relevant role (Pro or Thai Mhung)',
+        );
         return;
       }
 
@@ -265,14 +293,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       try {
         final lat = _parseDouble(data['latitude']);
         final lng = _parseDouble(data['longitude']);
-        
+
         if (lat != 0 && lng != 0) {
           Position? position = await Geolocator.getLastKnownPosition();
           if (position == null) {
-             position = await Geolocator.getCurrentPosition(
-               desiredAccuracy: LocationAccuracy.low,
-               timeLimit: const Duration(seconds: 3),
-             ).catchError((_) => position);
+            position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.low,
+              timeLimit: const Duration(seconds: 3),
+            ).catchError((_) => position);
           }
 
           if (position != null) {
@@ -315,23 +343,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (mounted) {
         setState(() {
           final alert = Map<String, dynamic>.from(data);
-          final videoId = alert['videoId']?.toString() ?? alert['video_id']?.toString() ?? '';
-          
+          final videoId =
+              alert['videoId']?.toString() ??
+              alert['video_id']?.toString() ??
+              '';
+
           if (_dismissedAlertIds.contains(videoId)) return;
 
-          alert['createdAt'] = data['created_at'] != null 
-              ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+          alert['createdAt'] = data['created_at'] != null
+              ? DateTime.tryParse(data['created_at'].toString()) ??
+                    DateTime.now()
               : DateTime.now();
-          
+
           alert['distance'] = distance;
           alert['isVolunteer'] = user.isVolunteer;
           alert['categoryName'] = categoryName;
-          
+
           if (routeToProfessional) {
             if (!_professionalAlerts.any((a) => a['videoId'] == videoId)) {
               _professionalAlerts.insert(0, alert);
-              _professionalAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
-              
+              _professionalAlerts.sort(
+                (a, b) => (b['createdAt'] as DateTime).compareTo(
+                  a['createdAt'] as DateTime,
+                ),
+              );
+
               // Professionals force UI changes (Stacked Cards)
               _isConsultationMini = true;
               _consultPosition = ConsultationPosition.leftCenter;
@@ -340,7 +376,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           } else if (routeToThaiMhung) {
             if (!_thaiMhungAlerts.any((a) => a['videoId'] == videoId)) {
               _thaiMhungAlerts.insert(0, alert);
-              _thaiMhungAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+              _thaiMhungAlerts.sort(
+                (a, b) => (b['createdAt'] as DateTime).compareTo(
+                  a['createdAt'] as DateTime,
+                ),
+              );
               // Thai Mhung logic does NOT move the Consultation Widget
             }
           }
@@ -361,26 +401,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (!mounted) return;
 
       // รับเฉพาะเมื่อ event นั้นเกี่ยวกับคำร้องของ user คนนี้
-      final requestOwnerId = data['userId']?.toString() ?? data['user_id']?.toString();
+      final requestOwnerId =
+          data['userId']?.toString() ?? data['user_id']?.toString();
       if (requestOwnerId != currentUser.id) return;
 
       debugPrint('HomePage: Donation status updated: $data');
 
       setState(() {
         final notification = {
-          'requestId': data['requestId']?.toString() ?? data['request_id']?.toString() ?? '',
+          'requestId':
+              data['requestId']?.toString() ??
+              data['request_id']?.toString() ??
+              '',
           'title': data['title']?.toString() ?? 'คำร้องบริจาค',
           'isActive': data['status']?.toString() == 'active',
           'updatedAt': DateTime.now(),
         };
         // หลีกเลี่ยง ถ้ามี request เดิมอยู่แล้ว
-        _donationAlerts.removeWhere((a) => a['requestId'] == notification['requestId']);
+        _donationAlerts.removeWhere(
+          (a) => a['requestId'] == notification['requestId'],
+        );
         _donationAlerts.insert(0, notification);
         // วางแอบเพื่อเคลียรหลังจาก 15 วินาที
         Future.delayed(const Duration(seconds: 15), () {
           if (mounted) {
             setState(() {
-              _donationAlerts.removeWhere((a) => a['requestId'] == notification['requestId']);
+              _donationAlerts.removeWhere(
+                (a) => a['requestId'] == notification['requestId'],
+              );
             });
           }
         });
@@ -396,7 +444,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         // ลบอันเก่าออก (ถ้ามี) แล้วเพิ่มอันใหม่ไปข้างหน้าสุด
         _yieldWayAlerts.removeWhere((a) => a['videoId'] == videoId);
         _yieldWayAlerts.insert(0, data);
-        
+
         // เคลียร์ทิ้งหลังผ่านไป 20 วินาที
         Future.delayed(const Duration(seconds: 20), () {
           if (mounted) {
@@ -416,23 +464,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     try {
       final videoRepo = ServiceLocator.instance.videoRepository;
       final activeVideos = await videoRepo.getEmergencyVideos();
-      
+
       final List<Map<String, dynamic>> newProfessional = [];
       final List<Map<String, dynamic>> newThaiMhung = [];
 
       if (_emergencyCategories.isEmpty) {
         _emergencyCategories = await _donationRepo.getEmergencyCategories();
       }
-      
+
       Position? position = await Geolocator.getLastKnownPosition();
-      
+
       // PROFESSION DEDUPLICATION FOR HOME PAGE
       // Fetch which incidents already have a responder from the same profession
       final userProfessionId = user.professionId;
       final activeVideoIds = activeVideos.map((v) => v.id).toList();
       Set<String> takenByMyProfession = {};
       if (userProfessionId != null && activeVideoIds.isNotEmpty) {
-        takenByMyProfession = await videoRepo.getTakenIncidentVideoIdsByProfession(activeVideoIds, userProfessionId);
+        takenByMyProfession = await videoRepo
+            .getTakenIncidentVideoIdsByProfession(
+              activeVideoIds,
+              userProfessionId,
+            );
       }
 
       for (var video in activeVideos) {
@@ -442,11 +494,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         bool isProfessional = false;
         final categoryId = video.categoryId;
         if (categoryId != null) {
-          final category = _emergencyCategories.any((c) => c.id == categoryId) 
+          final category = _emergencyCategories.any((c) => c.id == categoryId)
               ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
               : null;
           if (category != null) {
-            if (userProfessionId != null && category.volunteerProfessionIds.contains(userProfessionId)) {
+            if (userProfessionId != null &&
+                category.volunteerProfessionIds.contains(userProfessionId)) {
               isProfessional = true;
             }
           }
@@ -454,16 +507,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
         double distance = 0;
         bool hasLocation = false;
-        if (video.latitude != null && video.longitude != null && position != null) {
-          distance = Geolocator.distanceBetween(position.latitude, position.longitude, video.latitude!, video.longitude!);
+        if (video.latitude != null &&
+            video.longitude != null &&
+            position != null) {
+          distance = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            video.latitude!,
+            video.longitude!,
+          );
           hasLocation = true;
         }
 
         final alertData = {
           'videoId': video.id,
           'categoryId': video.categoryId,
-          'categoryName': _emergencyCategories.any((c) => c.id == video.categoryId) 
-              ? _emergencyCategories.firstWhere((c) => c.id == video.categoryId).name
+          'categoryName':
+              _emergencyCategories.any((c) => c.id == video.categoryId)
+              ? _emergencyCategories
+                    .firstWhere((c) => c.id == video.categoryId)
+                    .name
               : 'แจ้งเหตุฉุกเฉิน',
           'latitude': video.latitude,
           'longitude': video.longitude,
@@ -480,7 +543,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (isProfessional) {
           if (hasLocation && distance <= user.alertRadius) {
             // Check if alert is NOT manually dismissed AND NOT taken by someone of same profession
-            if (!_dismissedAlertIds.contains(video.id) && !takenByMyProfession.contains(video.id)) {
+            if (!_dismissedAlertIds.contains(video.id) &&
+                !takenByMyProfession.contains(video.id)) {
               newProfessional.add(alertData);
             }
           }
@@ -501,24 +565,40 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (mounted) {
         setState(() {
           final hadPro = _professionalAlerts.isNotEmpty;
-          
+
           // Update Professional
-          _professionalAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
+          _professionalAlerts.removeWhere(
+            (a) => _dismissedAlertIds.contains(a['videoId']),
+          );
           for (var alert in newProfessional) {
-            if (!_professionalAlerts.any((a) => a['videoId'] == alert['videoId'])) {
+            if (!_professionalAlerts.any(
+              (a) => a['videoId'] == alert['videoId'],
+            )) {
               _professionalAlerts.add(alert);
             }
           }
-          _professionalAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+          _professionalAlerts.sort(
+            (a, b) => (b['createdAt'] as DateTime).compareTo(
+              a['createdAt'] as DateTime,
+            ),
+          );
 
           // Update Thai Mhung
-          _thaiMhungAlerts.removeWhere((a) => _dismissedAlertIds.contains(a['videoId']));
+          _thaiMhungAlerts.removeWhere(
+            (a) => _dismissedAlertIds.contains(a['videoId']),
+          );
           for (var alert in newThaiMhung) {
-            if (!_thaiMhungAlerts.any((a) => a['videoId'] == alert['videoId'])) {
+            if (!_thaiMhungAlerts.any(
+              (a) => a['videoId'] == alert['videoId'],
+            )) {
               _thaiMhungAlerts.add(alert);
             }
           }
-          _thaiMhungAlerts.sort((a, b) => (b['createdAt'] as DateTime).compareTo(a['createdAt'] as DateTime));
+          _thaiMhungAlerts.sort(
+            (a, b) => (b['createdAt'] as DateTime).compareTo(
+              a['createdAt'] as DateTime,
+            ),
+          );
 
           if (_professionalAlerts.isNotEmpty) {
             _focusedAlert = _professionalAlerts.first;
@@ -543,7 +623,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   // === Snap-to-Corner Helpers ===
-  
+
   /// คำนวณพิกัดจริงของปุ่มเมื่ออยู่ในแต่ละตำแหน่ง
   Offset _getSnapOffset(ConsultationPosition pos, Size mapSize) {
     const double miniSize = 90.0;
@@ -560,7 +640,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       case ConsultationPosition.bottomLeft:
         return Offset(margin, mapSize.height - miniSize - margin);
       case ConsultationPosition.bottomRight:
-        return Offset(mapSize.width - miniSize - margin, mapSize.height - miniSize - margin);
+        return Offset(
+          mapSize.width - miniSize - margin,
+          mapSize.height - miniSize - margin,
+        );
       case ConsultationPosition.topCenter:
         return Offset(halfW, margin);
       case ConsultationPosition.bottomCenter:
@@ -579,14 +662,29 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final double halfH = mapSize.height / 2;
 
     final Map<ConsultationPosition, Offset> targets = {
-      ConsultationPosition.topLeft:      const Offset(miniSize / 2, miniSize / 2),
-      ConsultationPosition.topRight:     Offset(mapSize.width - miniSize / 2, miniSize / 2),
-      ConsultationPosition.bottomLeft:   Offset(miniSize / 2, mapSize.height - miniSize / 2),
-      ConsultationPosition.bottomRight:  Offset(mapSize.width - miniSize / 2, mapSize.height - miniSize / 2),
-      ConsultationPosition.topCenter:    Offset(halfW, miniSize / 2),
-      ConsultationPosition.bottomCenter: Offset(halfW, mapSize.height - miniSize / 2),
-      ConsultationPosition.leftCenter:   Offset(miniSize / 2, halfH),
-      ConsultationPosition.rightCenter:  Offset(mapSize.width - miniSize / 2, halfH),
+      ConsultationPosition.topLeft: const Offset(miniSize / 2, miniSize / 2),
+      ConsultationPosition.topRight: Offset(
+        mapSize.width - miniSize / 2,
+        miniSize / 2,
+      ),
+      ConsultationPosition.bottomLeft: Offset(
+        miniSize / 2,
+        mapSize.height - miniSize / 2,
+      ),
+      ConsultationPosition.bottomRight: Offset(
+        mapSize.width - miniSize / 2,
+        mapSize.height - miniSize / 2,
+      ),
+      ConsultationPosition.topCenter: Offset(halfW, miniSize / 2),
+      ConsultationPosition.bottomCenter: Offset(
+        halfW,
+        mapSize.height - miniSize / 2,
+      ),
+      ConsultationPosition.leftCenter: Offset(miniSize / 2, halfH),
+      ConsultationPosition.rightCenter: Offset(
+        mapSize.width - miniSize / 2,
+        halfH,
+      ),
     };
 
     double minDist = double.infinity;
@@ -604,42 +702,44 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// วัดและเก็บความสูงของ consultation widget ก่อนย่อ
   void _captureConsultationHeight() {
     if (_savedConsultationHeight > 0) return; // วัดแล้ว
-    final RenderBox? box = _consultationKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? box =
+        _consultationKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && box.hasSize) {
       _savedConsultationHeight = box.size.height;
-      debugPrint('HomePage: Captured consultationHeight = $_savedConsultationHeight');
+      debugPrint(
+        'HomePage: Captured consultationHeight = $_savedConsultationHeight',
+      );
     }
   }
 
   void _onConsultationLongPressStart(LongPressStartDetails details) {
     // บันทึกความสูงปัจจุบันก่อนย่อ
     _captureConsultationHeight();
-    
+
     // หาตำแหน่ง map area
-    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? mapBox =
+        _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
     if (mapBox == null || !mapBox.hasSize) return;
-    
+
     final mapTopLeft = mapBox.localToGlobal(Offset.zero);
     final localPos = details.globalPosition - mapTopLeft;
-    
+
     setState(() {
       _isConsultationMini = true;
       _isDraggingConsultation = true;
-      _dragOffset = Offset(
-        localPos.dx - 45,
-        localPos.dy - 45,
-      );
+      _dragOffset = Offset(localPos.dx - 45, localPos.dy - 45);
     });
   }
 
   void _onConsultationLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? mapBox =
+        _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
     if (mapBox == null || !mapBox.hasSize) return;
-    
+
     final mapTopLeft = mapBox.localToGlobal(Offset.zero);
     final localPos = details.globalPosition - mapTopLeft;
     const double miniSize = 90.0;
-    
+
     setState(() {
       _dragOffset = Offset(
         (localPos.dx - miniSize / 2).clamp(0, mapBox.size.width - miniSize),
@@ -649,30 +749,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _onConsultationLongPressEnd(LongPressEndDetails details) {
-    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? mapBox =
+        _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
     if (mapBox == null || !mapBox.hasSize) return;
-    
+
     final mapTopLeft = mapBox.localToGlobal(Offset.zero);
     final localPos = details.globalPosition - mapTopLeft;
-    
+
     final nearest = _findNearestCorner(localPos, mapBox.size);
     debugPrint('HomePage: Snap to → ${nearest.name}');
-    
+
     // 1) Snap ทันที (optimistic) – ไม่รอ DB
     setState(() {
       _isDraggingConsultation = false;
       _dragOffset = null;
       if (_consultPosition != nearest) {
         // ให้หมุน 1 รอบเมื่อมีการย้ายตำแหน่งเปลี่ยนไป
-        _spinTurns += 1.0; 
+        _spinTurns += 1.0;
       }
       _consultPosition = nearest;
     });
-    
+
     // 2) Save ลง DB ในพื้นหลัง + เขย่าเมื่อ confirm
     _saveAndShake(nearest);
   }
-  
+
   /// กดปุ่ม X หรือ double tap: คืนสู่ตำแหน่งกลาง
   void _resetConsultationToCenter() async {
     debugPrint('HomePage: Reset to center');
@@ -705,7 +806,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _saveAndShake(ConsultationPosition pos) async {
     final ok = await _saveConsultationPosition(pos);
     if (!mounted || !ok) return;
-    
+
     // เขย่า 3 จังหวะ: ขยาย → หด → ขยาย → คืน
     for (int i = 0; i < 3; i++) {
       if (!mounted) return;
@@ -726,20 +827,28 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// โหลดตำแหน่ง consultation จาก Supabase (เฉพาะ user mode)
   /// Flow: center ก่อน → วัดความสูง → delay → bounce ไปตำแหน่งที่บันทึกไว้
-  Future<void> _loadConsultationPosition({Duration introDelay = const Duration(milliseconds: 2000)}) async {
+  Future<void> _loadConsultationPosition({
+    Duration introDelay = const Duration(milliseconds: 2000),
+  }) async {
     // ✅ ใช้ ServiceLocator ตาม auth_data_guidelines
     final userId = ServiceLocator.instance.currentUser?.id;
-    debugPrint('HomePage: _loadConsultationPosition userId=$userId delay=${introDelay.inMilliseconds}ms');
-    
+    debugPrint(
+      'HomePage: _loadConsultationPosition userId=$userId delay=${introDelay.inMilliseconds}ms',
+    );
+
     // หากมีเหตุฉุกเฉิน (Professional) อยู่แล้ว ให้ข้ามการโหลดตำแหน่งบันทึก เพื่อไม่ให้ทับซ้อนระบบอัติโนมัติ
     if (_professionalAlerts.isNotEmpty) {
-      debugPrint('HomePage: Professional emergency active, skipping saved position load.');
+      debugPrint(
+        'HomePage: Professional emergency active, skipping saved position load.',
+      );
       return;
     }
-    
+
     if (userId == null) {
       // Guest mode → center เสมอ
-      if (mounted && (_consultPosition != ConsultationPosition.center || _isConsultationMini)) {
+      if (mounted &&
+          (_consultPosition != ConsultationPosition.center ||
+              _isConsultationMini)) {
         setState(() {
           _consultPosition = ConsultationPosition.center;
           _isConsultationMini = false;
@@ -750,7 +859,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     // เริ่มจาก center (full-size) ก่อนเสมอ ถ้าไม่ได้ระบุว่าเป็น Instant (ไม่มี delay)
     if (mounted && introDelay > Duration.zero) {
-      if (_consultPosition != ConsultationPosition.center || _isConsultationMini) {
+      if (_consultPosition != ConsultationPosition.center ||
+          _isConsultationMini) {
         setState(() {
           _consultPosition = ConsultationPosition.center;
           _isConsultationMini = false;
@@ -763,7 +873,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final repo = UserRepository(Supabase.instance.client);
       final saved = await repo.getUiPreference(userId, _kConsultPosKey);
       debugPrint('HomePage: DB returned preference_value=$saved');
-      
+
       if (!mounted) return;
       if (saved == null || saved == 'center') {
         debugPrint('HomePage: No saved position or center → stay center');
@@ -773,33 +883,37 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         });
         return;
       }
-      
+
       final pos = ConsultationPosition.values.firstWhere(
         (e) => e.name == saved,
         orElse: () => ConsultationPosition.center,
       );
-      
+
       if (pos == ConsultationPosition.center) {
         setState(() {
-           _isConsultationMini = false;
+          _isConsultationMini = false;
         });
         return;
       }
-      
+
       // วัดความสูง consultation widget ก่อนย่อ
       _captureConsultationHeight();
 
       // แสดง center สักพัก → แล้ว bounce ไปตำแหน่งที่บันทึกไว้
       if (introDelay > Duration.zero) {
-        debugPrint('HomePage: Will bounce to $pos after ${introDelay.inMilliseconds}ms ...');
+        debugPrint(
+          'HomePage: Will bounce to $pos after ${introDelay.inMilliseconds}ms ...',
+        );
         await Future.delayed(introDelay);
       }
-      
+
       if (!mounted) return;
 
       // เพิ่มความชัวร์: หากโหลดเหตุฉุกเฉินเสร็จแล้วพบว่ามีเหตุค้างอยู่ ให้ยกเลิกการโหลดตำแหน่งบันทึก
       if (_professionalAlerts.isNotEmpty) {
-        debugPrint('HomePage: Professional emergency detected during restoration, aborting.');
+        debugPrint(
+          'HomePage: Professional emergency detected during restoration, aborting.',
+        );
         return;
       }
 
@@ -811,18 +925,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           _consultPosition = ConsultationPosition.center;
         }
       });
-      
+
       // รอ 1 frame ให้ widget ปรากฏ จากนั้นจึงสั่งกลิ้ง
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await Future.delayed(const Duration(milliseconds: 50));
         if (!mounted) return;
         setState(() {
           _consultPosition = pos;
-          _spinTurns += (introDelay > Duration.zero ? 2.0 : 1.0); 
+          _spinTurns += (introDelay > Duration.zero ? 2.0 : 1.0);
         });
         debugPrint('HomePage: ✓ Restored to saved position → $pos');
       });
-
     } catch (e) {
       debugPrint('HomePage: ❌ _loadConsultationPosition error: $e');
     }
@@ -832,7 +945,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // การเรียกซ้ำที่นี่ทำให้เกิด Race Condition:
     // _dismissedAlertIds อาจถูก clear แล้ว reload ขณะที่ _loadActiveAlerts() กำลังทำงาน
   }
-
 
   /// โหลดรายการแจ้งเหตุที่ผู้ใช้กดปิดไปแล้ว (จะไม่แสดงซ้ำ)
   Future<void> _loadDismissedAlerts() async {
@@ -848,12 +960,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           _dismissedAlertIds.clear();
           // Split robustly handling spaces and empty items
           _dismissedAlertIds.addAll(
-            saved.split(',')
-                 .map((e) => e.trim())
-                 .where((e) => e.isNotEmpty)
+            saved.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty),
           );
         });
-        debugPrint('HomePage: ✓ Loaded ${_dismissedAlertIds.length} dismissed alerts: $_dismissedAlertIds');
+        debugPrint(
+          'HomePage: ✓ Loaded ${_dismissedAlertIds.length} dismissed alerts: $_dismissedAlertIds',
+        );
       } else {
         debugPrint('HomePage: No dismissed alerts found in DB for this user.');
         setState(() => _dismissedAlertIds.clear());
@@ -866,9 +978,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// บันทึกการปิดแจ้งเหตุลงฐานข้อมูล
   Future<void> _recordDismissedAlert(String videoId) async {
     if (videoId.isEmpty) return;
-    
+
     final userId = ServiceLocator.instance.currentUser?.id;
-    debugPrint('HomePage: _recordDismissedAlert videoId=$videoId userId=$userId');
+    debugPrint(
+      'HomePage: _recordDismissedAlert videoId=$videoId userId=$userId',
+    );
 
     setState(() {
       if (!_dismissedAlertIds.contains(videoId)) {
@@ -897,7 +1011,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// ✅ ใช้ ServiceLocator ตาม auth_data_guidelines
   Future<bool> _saveConsultationPosition(ConsultationPosition pos) async {
     final userId = ServiceLocator.instance.currentUser?.id;
-    debugPrint('HomePage: _saveConsultationPosition userId=$userId pos=${pos.name}');
+    debugPrint(
+      'HomePage: _saveConsultationPosition userId=$userId pos=${pos.name}',
+    );
     if (userId == null) {
       debugPrint('HomePage: Guest mode → skip save');
       return true; // Guest: ถือว่าสำเร็จ
@@ -917,12 +1033,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _onAuthChanged() {
     final userId = ServiceLocator.instance.currentUser?.id;
     debugPrint('HomePage: _onAuthChanged fired, userId=$userId');
-    
+
     // Reset connection on auth change
     if (userId != null) {
       _connectWebSocket();
     }
-    
+
     _loadConsultationPosition();
     _loadHealthScore();
     _loadHomeData();
@@ -971,7 +1087,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> _loadHomeData() async {
     debugPrint('HomePage: _loadHomeData called. Reloading articles...');
-    
+
     // Show loading indicator
     setState(() {
       _isLoadingArticles = true;
@@ -982,7 +1098,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       _hasMoreInteresting = true;
       _isLoadingMoreInteresting = false;
     });
-    
+
     try {
       // 1. Fetch Emergency Categories FIRST (Required for filtering)
       final emergencyCategories = await _donationRepo.getEmergencyCategories();
@@ -995,39 +1111,50 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final currentUser = AuthService.instance.currentUser;
 
       // Option 3: Auto-start persistent responder tracking if enabled
-      if (currentUser != null && (currentUser.isThaiMhungEnabled || currentUser.isProfessionalResponder)) {
-        debugPrint('HomePage: Checking background location permission for volunteer profile...');
+      if (currentUser != null &&
+          (currentUser.isThaiMhungEnabled ||
+              currentUser.isProfessionalResponder)) {
+        debugPrint(
+          'HomePage: Checking background location permission for volunteer profile...',
+        );
         final locService = LocationTrackingService();
-        final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
-        
+        final isAlwaysGranted = await locService
+            .isBackgroundPermissionGranted();
+
         if (!isAlwaysGranted) {
-           debugPrint('HomePage: Background permission not granted. Showing dialog...');
-           if (mounted) {
-             final shouldGoToSettings = await BackgroundPermissionDialog.show(context);
-             if (shouldGoToSettings) {
-               await openAppSettings();
-             }
-           }
+          debugPrint(
+            'HomePage: Background permission not granted. Showing dialog...',
+          );
+          if (mounted) {
+            final shouldGoToSettings = await BackgroundPermissionDialog.show(
+              context,
+            );
+            if (shouldGoToSettings) {
+              await openAppSettings();
+            }
+          }
         } else {
-           debugPrint('HomePage: Auto-starting tracking for volunteer profile...');
-           try {
-             await locService.startTracking(userId: currentUser.id);
-           } catch (e) {
-             debugPrint('HomePage: Error auto-starting tracking: $e');
-           }
+          debugPrint(
+            'HomePage: Auto-starting tracking for volunteer profile...',
+          );
+          try {
+            await locService.startTracking(userId: currentUser.id);
+          } catch (e) {
+            debugPrint('HomePage: Error auto-starting tracking: $e');
+          }
         }
       }
-      
+
       // Fetch recommended articles
       final recommended = await repository.getAllArticles(
-        category: 'แนะนำ', 
+        category: 'แนะนำ',
         pageSize: 5,
         userId: currentUserId,
       );
-      
+
       // Fetch interesting/popular articles
       final interesting = await repository.getAllArticles(
-        category: 'ยอดนิยม', 
+        category: 'ยอดนิยม',
         pageSize: 5,
         userId: currentUserId,
       );
@@ -1047,7 +1174,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
         // 2. โหลดรายการที่เคย Dismiss ไว้ก่อน เพื่อป้องการ race condition
         await _loadDismissedAlerts();
-        
+
         // 3. โหลดเหตุฉุกเฉินที่กำลังเกิดค้างอยู่
         await _loadActiveAlerts();
       }
@@ -1142,25 +1269,33 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
       );
-      Navigator.pushNamed(context, '/login'); 
+      Navigator.pushNamed(context, '/login');
       return;
     }
-    
+
     // Save previous state for revert
     final prevIsBookmarked = article.isBookmarked;
-    
+
     // Optimistic Update
     setState(() {
-      final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+      final recIndex = _recommendedArticles.indexWhere(
+        (a) => a.id == article.id,
+      );
       if (recIndex != -1) {
         final current = _recommendedArticles[recIndex];
-        _recommendedArticles[recIndex] = current.copyWith(isBookmarked: !current.isBookmarked);
+        _recommendedArticles[recIndex] = current.copyWith(
+          isBookmarked: !current.isBookmarked,
+        );
       }
-      
-      final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+
+      final intIndex = _interestingArticles.indexWhere(
+        (a) => a.id == article.id,
+      );
       if (intIndex != -1) {
         final current = _interestingArticles[intIndex];
-        _interestingArticles[intIndex] = current.copyWith(isBookmarked: !current.isBookmarked);
+        _interestingArticles[intIndex] = current.copyWith(
+          isBookmarked: !current.isBookmarked,
+        );
       }
     });
 
@@ -1176,41 +1311,59 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         // Update with real state from DB
         final isActive = result['isActive'] as bool;
         setState(() {
-          final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+          final recIndex = _recommendedArticles.indexWhere(
+            (a) => a.id == article.id,
+          );
           if (recIndex != -1) {
-            _recommendedArticles[recIndex] = _recommendedArticles[recIndex].copyWith(
-              isBookmarked: isActive,
-              bookmarkCount: result['newCount'] as int,
-            );
+            _recommendedArticles[recIndex] = _recommendedArticles[recIndex]
+                .copyWith(
+                  isBookmarked: isActive,
+                  bookmarkCount: result['newCount'] as int,
+                );
           }
-          final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+          final intIndex = _interestingArticles.indexWhere(
+            (a) => a.id == article.id,
+          );
           if (intIndex != -1) {
-            _interestingArticles[intIndex] = _interestingArticles[intIndex].copyWith(
-              isBookmarked: isActive,
-              bookmarkCount: result['newCount'] as int,
-            );
+            _interestingArticles[intIndex] = _interestingArticles[intIndex]
+                .copyWith(
+                  isBookmarked: isActive,
+                  bookmarkCount: result['newCount'] as int,
+                );
           }
         });
-        
-        ScaffoldMessenger.of(context).clearSnackBars(); // Clear existing to prevent stacking
+
+        ScaffoldMessenger.of(
+          context,
+        ).clearSnackBars(); // Clear existing to prevent stacking
         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(
-            content: Text(isActive ? 'บันทึกบทความแล้ว' : 'ยกเลิกการบันทึกแล้ว'),
+          SnackBar(
+            content: Text(
+              isActive ? 'บันทึกบทความแล้ว' : 'ยกเลิกการบันทึกแล้ว',
+            ),
             duration: const Duration(seconds: 1),
-            backgroundColor: isActive ? const Color(0xFFF1AE27) : Colors.grey[800],
+            backgroundColor: isActive
+                ? const Color(0xFFF1AE27)
+                : Colors.grey[800],
             behavior: SnackBarBehavior.floating,
           ),
         );
       } else if (mounted && result['success'] == false) {
         // Revert on failure
         setState(() {
-          final recIndex = _recommendedArticles.indexWhere((a) => a.id == article.id);
+          final recIndex = _recommendedArticles.indexWhere(
+            (a) => a.id == article.id,
+          );
           if (recIndex != -1) {
-            _recommendedArticles[recIndex] = _recommendedArticles[recIndex].copyWith(isBookmarked: prevIsBookmarked);
+            _recommendedArticles[recIndex] = _recommendedArticles[recIndex]
+                .copyWith(isBookmarked: prevIsBookmarked);
           }
-          final intIndex = _interestingArticles.indexWhere((a) => a.id == article.id);
+          final intIndex = _interestingArticles.indexWhere(
+            (a) => a.id == article.id,
+          );
           if (intIndex != -1) {
-            _interestingArticles[intIndex] = _interestingArticles[intIndex].copyWith(isBookmarked: prevIsBookmarked);
+            _interestingArticles[intIndex] = _interestingArticles[intIndex]
+                .copyWith(isBookmarked: prevIsBookmarked);
           }
         });
       }
@@ -1222,9 +1375,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _measureHeaderSectionHeight() {
     if (!mounted) return;
-    final RenderBox? headerBox = _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
-    final RenderBox? consultBox = _consultationKey.currentContext?.findRenderObject() as RenderBox?;
-    final RenderBox? pharmacyBox = _pharmacyKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? headerBox =
+        _headerSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? consultBox =
+        _consultationKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? pharmacyBox =
+        _pharmacyKey.currentContext?.findRenderObject() as RenderBox?;
 
     if (headerBox != null && headerBox.hasSize) {
       _headerSectionHeight = headerBox.size.height;
@@ -1240,11 +1396,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // บน iOS: แผนที่เริ่มที่ใต้ header เต็มๆ (Top Offset = headerHeight)
     // บน Android: แผนที่เริ่มที่กึ่งกลาง header (Top Offset = headerHeight / 2)
     // เป้าหมายคือให้จุดสิ้นสุด (Bottom) อยู่ที่กึ่งกลาง Pharmacy Card เหมือนกัน
-    if (_headerSectionHeight > 0 && _consultationHeight > 0 && _pharmacyHeight > 0) {
-      final double mapStartOffset = Platform.isIOS ? _headerSectionHeight : (_headerSectionHeight / 2);
-      final double targetBottomPoint = _headerSectionHeight + 16 + _consultationHeight + 24 + (_pharmacyHeight / 2);
+    if (_headerSectionHeight > 0 &&
+        _consultationHeight > 0 &&
+        _pharmacyHeight > 0) {
+      final double mapStartOffset = Platform.isIOS
+          ? _headerSectionHeight
+          : (_headerSectionHeight / 2);
+      final double targetBottomPoint =
+          _headerSectionHeight +
+          16 +
+          _consultationHeight +
+          24 +
+          (_pharmacyHeight / 2);
       final double calculatedHeight = targetBottomPoint - mapStartOffset;
-      
+
       if (calculatedHeight > 0 && calculatedHeight != _mapHeight) {
         setState(() {
           _mapHeight = calculatedHeight;
@@ -1255,9 +1420,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _onScroll() {
     if (!mounted) return;
-    
+
     // วัดความสูงใหม่ถ้ายังไม่ได้ค่าครบถ้วน
-    if (_headerSectionHeight <= 0 || _consultationHeight <= 0 || _pharmacyHeight <= 0) {
+    if (_headerSectionHeight <= 0 ||
+        _consultationHeight <= 0 ||
+        _pharmacyHeight <= 0) {
       _measureHeaderSectionHeight();
       if (_headerSectionHeight <= 0) return;
     }
@@ -1280,13 +1447,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         builder: (context) => GestureDetector(
           behavior: HitTestBehavior.translucent,
           onHorizontalDragStart: _onHorizontalDragStart,
-          onHorizontalDragUpdate: (details) => _onHorizontalDragUpdate(details, context),
-          onHorizontalDragEnd: (details) => _onHorizontalDragEnd(details, context),
+          onHorizontalDragUpdate: (details) =>
+              _onHorizontalDragUpdate(details, context),
+          onHorizontalDragEnd: (details) =>
+              _onHorizontalDragEnd(details, context),
           child: Container(
-            // นำสีพื้นหลังทึบออกเพื่อไม่ให้ไปทับซ้อนช่วงล่างของจอ 
+            // นำสีพื้นหลังทึบออกเพื่อไม่ให้ไปทับซ้อนช่วงล่างของจอ
             // (ข้างใน Stack มี Positioned top มารับ overscroll อยู่แล้ว)
             child: SafeArea(
-              bottom: false, // ปิดกันขอบล่าง เพื่อให้อ่านเนื้อหาทะลุลงไปหลัง Navigation Bar ได้
+              bottom:
+                  false, // ปิดกันขอบล่าง เพื่อให้อ่านเนื้อหาทะลุลงไปหลัง Navigation Bar ได้
               child: Stack(
                 children: [
                   // พื้นหลังสี primary กันช่องว่างเมื่อ overscroll
@@ -1303,7 +1473,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       controller: _scrollController,
                       child: Column(
                         children: [
-                          const SizedBox(height: 70), 
+                          const SizedBox(height: 70),
                           Stack(
                             clipBehavior: Clip.hardEdge,
                             children: [
@@ -1311,7 +1481,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 children: [
                                   // iOS: เลื่อนแผนที่ลงมาเริ่มที่ใต้ header เต็มๆ เพื่อไม่ให้ platform view ทับ header gradient
                                   // Android: เริ่มที่กึ่งกลาง header เพื่อให้เห็นแผนที่ลอดผ่านส่วนโปร่งใสของ header
-                                  SizedBox(height: Platform.isIOS ? _headerSectionHeight : _headerSectionHeight / 2),
+                                  SizedBox(
+                                    height: Platform.isIOS
+                                        ? _headerSectionHeight
+                                        : _headerSectionHeight / 2,
+                                  ),
                                   SizedBox(
                                     key: _mapAreaKey,
                                     height: _mapHeight,
@@ -1319,47 +1493,53 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                       child: Stack(
                                         clipBehavior: Clip.hardEdge,
                                         children: [
-                                        // แผนที่ (platform view) — ไม่ใช้ ShaderMask เพราะ iOS platform view bypass มัน
-                                        Positioned.fill(
-                                          child: HomeMapBackground(
-                                            focusedAlert: _focusedAlert,
-                                            onTap: () {
-                                              if (_focusedAlert != null) {
-                                                setState(() {
-                                                  _focusedAlert = null;
-                                                  _loadConsultationPosition(introDelay: Duration.zero);
-                                                });
-                                              }
-                                            },
+                                          // แผนที่ (platform view) — ไม่ใช้ ShaderMask เพราะ iOS platform view bypass มัน
+                                          Positioned.fill(
+                                            child: HomeMapBackground(
+                                              focusedAlert: _focusedAlert,
+                                              onTap: () {
+                                                if (_focusedAlert != null) {
+                                                  setState(() {
+                                                    _focusedAlert = null;
+                                                    _loadConsultationPosition(
+                                                      introDelay: Duration.zero,
+                                                    );
+                                                  });
+                                                }
+                                              },
+                                            ),
                                           ),
-                                        ),
-                                        // Gradient overlay วางทับด้านบนแผนที่ — ใช้แทน ShaderMask
-                                        // ทาสีเขียวจางลงจากบนลงล่างเพื่อให้ blend กับ header ได้เนียน
-                                        Positioned(
-                                          top: 0,
-                                          left: 0,
-                                          right: 0,
-                                          height: _mapHeight * 0.20,
-                                          child: IgnorePointer(
-                                            child: Container(
-                                              decoration: const BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    Color(0xFF6DD5B1), // เขียวมินต์ทึบ (ต่อเนื่องจาก header)
-                                                    Color(0xB36DD5B1), // 70%
-                                                    Color(0x666DD5B1), // 40%
-                                                    Color(0x006DD5B1), // โปร่งใส 100%
-                                                  ],
-                                                  stops: [0.0, 0.3, 0.6, 1.0],
+                                          // Gradient overlay วางทับด้านบนแผนที่ — ใช้แทน ShaderMask
+                                          // ทาสีเขียวจางลงจากบนลงล่างเพื่อให้ blend กับ header ได้เนียน
+                                          Positioned(
+                                            top: 0,
+                                            left: 0,
+                                            right: 0,
+                                            height: _mapHeight * 0.20,
+                                            child: IgnorePointer(
+                                              child: Container(
+                                                decoration: const BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    begin: Alignment.topCenter,
+                                                    end: Alignment.bottomCenter,
+                                                    colors: [
+                                                      Color(
+                                                        0xFF6DD5B1,
+                                                      ), // เขียวมินต์ทึบ (ต่อเนื่องจาก header)
+                                                      Color(0xB36DD5B1), // 70%
+                                                      Color(0x666DD5B1), // 40%
+                                                      Color(
+                                                        0x006DD5B1,
+                                                      ), // โปร่งใส 100%
+                                                    ],
+                                                    stops: [0.0, 0.3, 0.6, 1.0],
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   Container(
@@ -1367,46 +1547,66 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                     color: const Color(0xFFEDF5DA),
                                     child: Column(
                                       children: [
-                                        const SizedBox(height: 110), // เพิ่มพื้นที่เว้นว่างเผื่อ Card แจ้งเตือนที่ลอยอยู่
+                                        const SizedBox(
+                                          height: 110,
+                                        ), // เพิ่มพื้นที่เว้นว่างเผื่อ Card แจ้งเตือนที่ลอยอยู่
                                         // Article Sections with separate loading state
                                         _isLoadingArticles
-                                          ? _buildSectionSkeleton()
-                                          : RecommendedArticleSection(
-                                              articles: _recommendedArticles,
-                                              hasMore: _hasMoreRecommended,
-                                              isLoadingMore: _isLoadingMoreRecommended,
-                                              onLoadMore: _loadMoreRecommended,
-                                              onMoreTap: () => Navigator.pushNamed(context, '/articles', arguments: 'แนะนำ'),
-                                              onItemTap: (article) async {
-                                                await Navigator.pushNamed(
-                                                  context, 
-                                                  '/health/article',
-                                                  arguments: article,
-                                                );
-                                                await _loadHomeData();
-                                              },
-                                              onBookmarkTap: _onToggleBookmark,
-                                            ),
+                                            ? _buildSectionSkeleton()
+                                            : RecommendedArticleSection(
+                                                articles: _recommendedArticles,
+                                                hasMore: _hasMoreRecommended,
+                                                isLoadingMore:
+                                                    _isLoadingMoreRecommended,
+                                                onLoadMore:
+                                                    _loadMoreRecommended,
+                                                onMoreTap: () =>
+                                                    Navigator.pushNamed(
+                                                      context,
+                                                      '/articles',
+                                                      arguments: 'แนะนำ',
+                                                    ),
+                                                onItemTap: (article) async {
+                                                  await Navigator.pushNamed(
+                                                    context,
+                                                    '/health/article',
+                                                    arguments: article,
+                                                  );
+                                                  await _loadHomeData();
+                                                },
+                                                onBookmarkTap:
+                                                    _onToggleBookmark,
+                                              ),
                                         const SizedBox(height: 24),
                                         _isLoadingArticles
-                                          ? _buildSectionSkeleton()
-                                          : HomeInterestingSection(
-                                              articles: _interestingArticles,
-                                              hasMore: _hasMoreInteresting,
-                                              isLoadingMore: _isLoadingMoreInteresting,
-                                              onLoadMore: _loadMoreInteresting,
-                                              onMoreTap: () => Navigator.pushNamed(context, '/articles', arguments: 'น่าสนใจ'),
-                                              onItemTap: (article) async {
-                                                await Navigator.pushNamed(
-                                                  context, 
-                                                  '/health/article',
-                                                  arguments: article,
-                                                );
-                                                await _loadHomeData();
-                                              },
-                                              onBookmarkTap: _onToggleBookmark,
-                                            ),
-                                        const SizedBox(height: 120), // เพิ่มพื้นที่เว้นว่างเผื่อให้ Navigation Bar ลอยอยู่ด้านบนโดยไม่บังเนื้อหาสุดท้าย
+                                            ? _buildSectionSkeleton()
+                                            : HomeInterestingSection(
+                                                articles: _interestingArticles,
+                                                hasMore: _hasMoreInteresting,
+                                                isLoadingMore:
+                                                    _isLoadingMoreInteresting,
+                                                onLoadMore:
+                                                    _loadMoreInteresting,
+                                                onMoreTap: () =>
+                                                    Navigator.pushNamed(
+                                                      context,
+                                                      '/articles',
+                                                      arguments: 'น่าสนใจ',
+                                                    ),
+                                                onItemTap: (article) async {
+                                                  await Navigator.pushNamed(
+                                                    context,
+                                                    '/health/article',
+                                                    arguments: article,
+                                                  );
+                                                  await _loadHomeData();
+                                                },
+                                                onBookmarkTap:
+                                                    _onToggleBookmark,
+                                              ),
+                                        const SizedBox(
+                                          height: 120,
+                                        ), // เพิ่มพื้นที่เว้นว่างเผื่อให้ Navigation Bar ลอยอยู่ด้านบนโดยไม่บังเนื้อหาสุดท้าย
                                       ],
                                     ),
                                   ),
@@ -1421,25 +1621,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   children: [
                                     HomeHeaderSection(
                                       sectionKey: _headerSectionKey,
-                                      isLoading: ServiceLocator.instance.currentUser != null && _healthScore == null,
-                                      headerText: ServiceLocator.instance.currentUser != null 
-                                        ? (_healthScore != null 
-                                            ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%' 
-                                            : 'คะแนนสุขภาพ --%')
-                                        : 'ตรวจสุขภาพ',
+                                      isLoading:
+                                          ServiceLocator.instance.currentUser !=
+                                              null &&
+                                          _healthScore == null,
+                                      headerText:
+                                          ServiceLocator.instance.currentUser !=
+                                              null
+                                          ? (_healthScore != null
+                                                ? 'คะแนนสุขภาพ ${_healthScore!.toInt()}%'
+                                                : 'คะแนนสุขภาพ --%')
+                                          : 'ตรวจสุขภาพ',
                                       alerts: _thaiMhungAlerts,
                                       donationAlerts: _donationAlerts,
                                       yieldWayAlerts: _yieldWayAlerts,
                                       onAlertDismissed: (videoId) {
                                         _recordDismissedAlert(videoId);
                                         setState(() {
-                                          _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                          _thaiMhungAlerts.removeWhere(
+                                            (a) => a['videoId'] == videoId,
+                                          );
                                         });
                                       },
                                       onAlertTapped: (videoId) {
                                         // 1. นำการ์ดออกทันที (Optimistic UI)
                                         setState(() {
-                                          _thaiMhungAlerts.removeWhere((a) => a['videoId'] == videoId);
+                                          _thaiMhungAlerts.removeWhere(
+                                            (a) => a['videoId'] == videoId,
+                                          );
                                           _dismissedAlertIds.add(videoId);
                                         });
                                         // 2. บันทึก dismiss ลง DB (non-blocking)
@@ -1448,59 +1657,89 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
+                                            builder: (context) =>
+                                                EmergencyLivePage(
+                                                  videoId: videoId,
+                                                  autoOpenChat: true,
+                                                ),
                                           ),
                                         ).then((_) {
-                                          _loadDismissedAlerts().then((_) => _loadActiveAlerts());
+                                          _loadDismissedAlerts().then(
+                                            (_) => _loadActiveAlerts(),
+                                          );
                                         });
                                       },
                                       onHealthTap: () async {
-                                        if (ServiceLocator.instance.currentUser != null) {
-                                          await Navigator.pushNamed(context, '/health');
+                                        if (ServiceLocator
+                                                .instance
+                                                .currentUser !=
+                                            null) {
+                                          await Navigator.pushNamed(
+                                            context,
+                                            '/health',
+                                          );
                                           _loadHealthScore();
                                         } else {
                                           await Navigator.pushNamed(
-                                            context, 
+                                            context,
                                             '/login',
                                             arguments: '/health',
                                           );
                                           _loadHealthScore();
                                         }
                                       },
-                                       onProfileTap: () {
-                                         if (ServiceLocator.instance.currentUser != null) {
-                                           Navigator.pushNamed(context, '/profile');
-                                         } else {
-                                           Navigator.pushNamed(
-                                             context,
-                                             '/login',
-                                             arguments: '/profile',
-                                           );
-                                         }
-                                       },
+                                      onProfileTap: () {
+                                        if (ServiceLocator
+                                                .instance
+                                                .currentUser !=
+                                            null) {
+                                          Navigator.pushNamed(
+                                            context,
+                                            '/profile',
+                                          );
+                                        } else {
+                                          Navigator.pushNamed(
+                                            context,
+                                            '/login',
+                                            arguments: '/profile',
+                                          );
+                                        }
+                                      },
                                     ),
                                     const SizedBox(height: 16),
                                     // เมื่ออยู่ในโหมด center: แสดงปุ่มปกติ
                                     // เมื่ออยู่มุม: แสดง Placeholder เพื่อรักษาขนาดแผนที่
-                                    if (_isConsultationMini) 
+                                    if (_isConsultationMini)
                                       SizedBox(
                                         key: _consultationKey,
-                                        height: _savedConsultationHeight > 0 ? _savedConsultationHeight : 280,
-                                        child: const SizedBox(height: 90), // Placeholder internal
+                                        height: _savedConsultationHeight > 0
+                                            ? _savedConsultationHeight
+                                            : 280,
+                                        child: const SizedBox(
+                                          height: 90,
+                                        ), // Placeholder internal
                                       )
                                     else
                                       GestureDetector(
-                                        onLongPressStart: _onConsultationLongPressStart,
-                                        onLongPressMoveUpdate: _onConsultationLongPressMoveUpdate,
-                                        onLongPressEnd: _onConsultationLongPressEnd,
+                                        onLongPressStart:
+                                            _onConsultationLongPressStart,
+                                        onLongPressMoveUpdate:
+                                            _onConsultationLongPressMoveUpdate,
+                                        onLongPressEnd:
+                                            _onConsultationLongPressEnd,
                                         child: HomeConsultationWidget(
                                           key: _consultationKey,
+                                          onTap: () =>
+                                              ConsultationGuard.startConsultation(
+                                                context,
+                                              ),
                                         ),
                                       ),
                                     const SizedBox(height: 24),
                                     HomePharmacyCard(
                                       key: _pharmacyKey,
-                                      onSearchTap: () => _showSnackBar(context, 'ค้นหาร้านยา'),
+                                      onSearchTap: () =>
+                                          _showSnackBar(context, 'ค้นหาร้านยา'),
                                     ),
                                     const SizedBox(height: 24),
                                   ],
@@ -1509,13 +1748,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               // Floating Stacked Alerts - Layered above Pharmacy but below Consultation
                               if (_professionalAlerts.isNotEmpty)
                                 Positioned(
-                                  top: (_headerSectionHeight / 2) + _mapHeight - 110,
+                                  top:
+                                      (_headerSectionHeight / 2) +
+                                      _mapHeight -
+                                      110,
                                   left: 16,
                                   right: 16,
                                   child: _buildStackedAlerts(),
                                 ),
                               // Topmost Layer - Floating Mini Consultation (อยู่เหนือ Header/Pharmacy/Alerts)
-                              if (_isConsultationMini || _isDraggingConsultation)
+                              if (_isConsultationMini ||
+                                  _isDraggingConsultation)
                                 _buildFloatingConsultation(),
                             ],
                           ),
@@ -1523,7 +1766,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       ),
                     ),
                   ),
-                  
+
                   Positioned(
                     top: 0,
                     left: 0,
@@ -1547,10 +1790,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     const double miniSize = 90.0;
 
     // คำนวณขนาด map area จริงจาก RenderBox
-    final RenderBox? mapBox = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? mapBox =
+        _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
     final mapWidth = mapBox?.size.width ?? MediaQuery.of(context).size.width;
     final mapSize = Size(mapWidth, _mapHeight);
-    
+
     // Map อยู่ห่างจากขอบ Inner Stack ลงมา = headerHeight / 2
     final double mapTopOffset = _headerSectionHeight / 2;
 
@@ -1571,7 +1815,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       curve: Curves.easeOutBack,
       left: snapOffset.dx,
       top: snapOffset.dy + mapTopOffset,
-      child: AnimatedRotation( // เพิ่ม AnimatedRotation ครอบชั้นใน
+      child: AnimatedRotation(
+        // เพิ่ม AnimatedRotation ครอบชั้นใน
         turns: _spinTurns,
         duration: const Duration(milliseconds: 1000),
         curve: Curves.easeOutBack,
@@ -1618,11 +1863,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.close,
-                    size: 14,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.close, size: 14, color: Colors.white),
                 ),
               ),
             ),
@@ -1636,10 +1877,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 1),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 1)),
     );
   }
 
@@ -1658,8 +1896,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details, BuildContext context) {
-    if (_isDraggingFromLeft && _dragStartX != null && details.globalPosition.dx > _dragStartX! + 50) {
+  void _onHorizontalDragUpdate(
+    DragUpdateDetails details,
+    BuildContext context,
+  ) {
+    if (_isDraggingFromLeft &&
+        _dragStartX != null &&
+        details.globalPosition.dx > _dragStartX! + 50) {
       Scaffold.of(context).openDrawer();
       setState(() {
         _isDraggingFromLeft = false;
@@ -1707,10 +1950,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: TlzAppTopBar.onPrimary(
         notificationCount: 1,
         searchHintText: 'ค้นหายา ร้านยา หมอ...',
-        onQRTap: () => _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),
-        onNotificationTap: () => _showSnackBar(context, 'การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้'),
-        onCartTap: () => _showSnackBar(context, 'ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้'),
-        onResultTap: (item) => _showSnackBar(context, 'เลือก: ${item['title']}'),
+        onQRTap: () =>
+            _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),
+        onNotificationTap: () =>
+            _showSnackBar(context, 'การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้'),
+        onCartTap: () =>
+            _showSnackBar(context, 'ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้'),
+        onResultTap: (item) =>
+            _showSnackBar(context, 'เลือก: ${item['title']}'),
       ),
     );
   }
@@ -1763,9 +2010,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // Removed _buildActiveAlertsOverlay as it is now integrated into the map Stack
 
-  Widget _buildEmergencyAlertCard(Map<String, dynamic> alert, {int index = 0, int total = 1}) {
+  Widget _buildEmergencyAlertCard(
+    Map<String, dynamic> alert, {
+    int index = 0,
+    int total = 1,
+  }) {
     final videoId = alert['videoId']?.toString() ?? '';
-    
+
     return Dismissible(
       key: Key('alert_$videoId'),
       direction: DismissDirection.horizontal,
@@ -1789,7 +2040,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
+              builder: (context) =>
+                  EmergencyLivePage(videoId: videoId, autoOpenChat: true),
             ),
           ).then((_) {
             _loadDismissedAlerts().then((_) => _loadActiveAlerts());
@@ -1822,14 +2074,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EmergencyLivePage(videoId: videoId, autoOpenChat: true),
+                      builder: (context) => EmergencyLivePage(
+                        videoId: videoId,
+                        autoOpenChat: true,
+                      ),
                     ),
                   ).then((_) {
                     _loadDismissedAlerts().then((_) => _loadActiveAlerts());
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -1875,7 +2133,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 _professionalAlerts.removeAt(index);
                                 if (_professionalAlerts.isEmpty) {
                                   _focusedAlert = null;
-                                  _loadConsultationPosition(introDelay: Duration.zero);
+                                  _loadConsultationPosition(
+                                    introDelay: Duration.zero,
+                                  );
                                 } else {
                                   _focusedAlert = _professionalAlerts.first;
                                 }
@@ -1883,7 +2143,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               Navigator.pushNamed(context, '/admin/donations');
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
@@ -1891,14 +2154,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               ),
                               child: const Text(
                                 'ดูเหตุอื่น',
-                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(width: 4),
                           // "Emergency" status label
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
@@ -1906,14 +2176,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             ),
                             child: const Text(
                               'วิเคราะห์เหตุนี้',
-                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           if (total > 1) ...[
                             const SizedBox(width: 4),
                             // ตัวเลขหน้า นับถอยหลัง (Top Right)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.white30,
                                 borderRadius: BorderRadius.circular(6),
@@ -1935,7 +2212,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         padding: const EdgeInsets.only(left: 24),
                         child: Text(
                           alert['address'] ?? '',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1996,15 +2276,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           // But our _professionalAlerts[0] is LATEST.
           // So children = [ _professionalAlerts[2], _professionalAlerts[1], _professionalAlerts[0] ]
           // i=0 is bottom-most in Stack => index = displayCount - 1
-          final visualRank = displayCount - 1 - i; 
-          final alertIndex = visualRank; 
+          final visualRank = displayCount - 1 - i;
+          final alertIndex = visualRank;
           final alert = _professionalAlerts[alertIndex];
-          
+
           return Positioned(
             top: i * 8.0,
             left: i * 4.0,
             right: i * 4.0,
-            child: _buildEmergencyAlertCard(alert, index: alertIndex, total: total),
+            child: _buildEmergencyAlertCard(
+              alert,
+              index: alertIndex,
+              total: total,
+            ),
           );
         }),
       ),

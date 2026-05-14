@@ -155,6 +155,19 @@ class ConsultationRepository {
         .asyncMap((_) => getRequestsForProfession(packageIds));
   }
 
+  /// Get consultation history for a specific provider
+  Future<List<ConsultationRequestModel>> getProviderHistory(String providerId) async {
+    final response = await _client
+        .from('consultation_requests')
+        .select('*, symptoms:consultation_symptoms(*)')
+        .eq('provider_id', providerId)
+        .order('created_at', ascending: false);
+
+    return (response as List)
+        .map((e) => ConsultationRequestModel.fromJson(e))
+        .toList();
+  }
+
   /// ดึง packageId ทั้งหมดที่ตรงกับ professionId
   Future<List<String>> getPackageIdsForProfession(String professionId) async {
     try {

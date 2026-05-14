@@ -50,6 +50,9 @@ import 'features/profile/presentation/pages/profile_page.dart';
 import 'features/video/presentation/pages/emergency_live_page.dart';
 import 'features/video/presentation/pages/rescue_page.dart';
 import 'features/admin/presentation/pages/video_admin_page.dart';
+import 'features/consultation/presentation/pages/my_consultations_page.dart';
+import 'features/consultation/presentation/pages/provider_history_page.dart';
+import 'features/consultation/presentation/pages/consultation_chat_history_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -155,6 +158,8 @@ class SheservedApp extends StatelessWidget {
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),
+        '/my-consultations': (context) => const MyConsultationsPage(),
+        '/provider-history': (context) => const ProviderHistoryPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/main-app') {
@@ -169,6 +174,13 @@ class SheservedApp extends StatelessWidget {
           final roomId = settings.arguments as String;
           return MaterialPageRoute(
             builder: (context) => ChatRoomPage(roomId: roomId),
+          );
+        }
+
+        if (settings.name == '/consultation-history-chat') {
+          final consultationId = settings.arguments as String;
+          return MaterialPageRoute(
+            builder: (context) => ConsultationChatHistoryPage(consultationId: consultationId),
           );
         }
 

@@ -7,13 +7,13 @@ import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_package.dart';
 import '../../../../services/service_locator.dart';
 
-
 class PackageHealthCarePage extends StatefulWidget {
   const PackageHealthCarePage({super.key});
 
   @override
   State<PackageHealthCarePage> createState() => _PackageHealthCarePageState();
 }
+
 class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   // List of packages loaded from DB
   List<Map<String, dynamic>> _packages = [];
@@ -34,7 +34,9 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
           .order('price'); // เรียงจากราคาถูกที่สุดไปแพงที่สุด
 
       final List<ConsultationPackage> livePks = (response as List)
-          .map((e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)),
+          )
           .toList();
 
       if (mounted) {
@@ -43,19 +45,21 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
             // สร้างรายการรายละเอียดจาก description และ expertGroups
             List<String> details = [];
             if (p.description.isNotEmpty) {
-               // แยกตามบรรทัดหรือจุดไข่ปลา
-               details.addAll(p.description.split('\n').where((s) => s.trim().isNotEmpty));
+              // แยกตามบรรทัดหรือจุดไข่ปลา
+              details.addAll(
+                p.description.split('\n').where((s) => s.trim().isNotEmpty),
+              );
             }
-            
+
             // เพิ่มข้อมูลกลุ่มผู้เชี่ยวชาญถ้าไม่มีใน description
             for (var group in p.expertGroups) {
               if (group.isRequired) {
                 details.add(group.name);
               }
             }
-            
+
             if (p.includesAI) {
-                details.add('ระบบวิเคราะห์อาการด้วย Vega AI');
+              details.add('ระบบวิเคราะห์อาการด้วย Vega AI');
             }
 
             // ถ้าไม่มีรายละเอียดยังคงใส่ mock รายละเอียดไว้บ้างให้สวยงาม
@@ -72,29 +76,31 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
               'details': details,
             };
           }).toList();
-          
+
           if (_packages.isNotEmpty) {
-             _selectedIndex = 0;
-             
-             // ลูกเล่น: สั่งหมุนวงล้อโชว์ หลังจากหน้าจอพร้อมแล้ว
-             Future.delayed(const Duration(milliseconds: 500), () async {
-               if (mounted && _scrollController.hasClients) {
-                 // วาร์ปไปที่ตำแหน่งไกลออกไป 2 ช่วง เพื่อให้เห็นการหมุนที่ยาวขึ้น
-                 final spinOffset = _packages.length * 2;
-                 _scrollController.jumpToItem(spinOffset);
-                 
-                 // หน่วงเสี้ยววินาทีก่อนเริ่มหมุนกลับอย่างนุ่มนวล
-                 await Future.delayed(const Duration(milliseconds: 50));
-                 
-                 if (mounted && _scrollController.hasClients) {
-                   _scrollController.animateToItem(
-                     0, 
-                     duration: const Duration(milliseconds: 2200), // เพิ่มเวลาหมุนให้นุ่มนวลขึ้น
-                     curve: Curves.easeOutQuart
-                   );
-                 }
-               }
-             });
+            _selectedIndex = 0;
+
+            // ลูกเล่น: สั่งหมุนวงล้อโชว์ หลังจากหน้าจอพร้อมแล้ว
+            Future.delayed(const Duration(milliseconds: 500), () async {
+              if (mounted && _scrollController.hasClients) {
+                // วาร์ปไปที่ตำแหน่งไกลออกไป 2 ช่วง เพื่อให้เห็นการหมุนที่ยาวขึ้น
+                final spinOffset = _packages.length * 2;
+                _scrollController.jumpToItem(spinOffset);
+
+                // หน่วงเสี้ยววินาทีก่อนเริ่มหมุนกลับอย่างนุ่มนวล
+                await Future.delayed(const Duration(milliseconds: 50));
+
+                if (mounted && _scrollController.hasClients) {
+                  _scrollController.animateToItem(
+                    0,
+                    duration: const Duration(
+                      milliseconds: 2200,
+                    ), // เพิ่มเวลาหมุนให้นุ่มนวลขึ้น
+                    curve: Curves.easeOutQuart,
+                  );
+                }
+              }
+            });
           }
         });
       }
@@ -103,9 +109,9 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
       // Fallback to static mock if DB fails
       if (mounted) {
         setState(() {
-           _packages = _getMockPackages();
-           _selectedIndex = 3;
-           _scrollController.jumpToItem(_selectedIndex);
+          _packages = _getMockPackages();
+          _selectedIndex = 3;
+          _scrollController.jumpToItem(_selectedIndex);
         });
       }
     }
@@ -118,28 +124,31 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         'short': 'อาจารย์หมอ + AI',
         'price': 3290.0,
         'useAI': true,
-        'details': ['ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 20 นาที', 'ระบบวิเคราะห์อาการด้วย AI ระดับสูง']
+        'details': [
+          'ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 20 นาที',
+          'ระบบวิเคราะห์อาการด้วย AI ระดับสูง',
+        ],
       },
       {
         'name': 'แพ็คเกจ สำหรับปรึกษาผู้เชี่ยวชาญระดับอาจารย์แพทย์',
         'short': 'อาจารย์หมอ',
         'price': 2990.0,
         'useAI': false,
-        'details': ['ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 15 นาที']
+        'details': ['ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 15 นาที'],
       },
       {
         'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์เฉพาะทาง',
         'short': 'หมอเฉพาะทาง',
         'price': 799.0,
         'useAI': false,
-        'details': ['ปรึกษาแพทย์เฉพาะทางผ่านวิดีโอคอล 15 นาที']
+        'details': ['ปรึกษาแพทย์เฉพาะทางผ่านวิดีโอคอล 15 นาที'],
       },
       {
         'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์ทั่วไป/เภสัช',
         'short': 'หมอ/เภสัช',
         'price': 299.0,
         'useAI': false,
-        'details': ['ปรึกษาแพทย์หรือเภสัชกรผ่านแชท/เสียง']
+        'details': ['ปรึกษาแพทย์หรือเภสัชกรผ่านแชท/เสียง'],
       },
     ];
   }
@@ -147,16 +156,18 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   @override
   void initState() {
     super.initState();
-    _scrollController = FixedExtentScrollController(initialItem: _selectedIndex);
+    _scrollController = FixedExtentScrollController(
+      initialItem: _selectedIndex,
+    );
     _scrollController.addListener(_onWheelScroll);
-    
+
     // Safety check: ensure user is logged in
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (ServiceLocator.instance.currentUser == null) {
         Navigator.pushReplacementNamed(
-          context, 
-          '/login', 
-          arguments: '/package-healthcare'
+          context,
+          '/login',
+          arguments: '/package-healthcare',
         );
         return;
       }
@@ -179,13 +190,19 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
     _scrollController.dispose();
     super.dispose();
   }
+
   Future<void> _loadGender() async {
     try {
       final user = ServiceLocator.instance.currentUser;
       if (user != null) {
-        final profile = await ServiceLocator.instance.userRepository.getConsumerProfile(user.id);
-        if (profile != null && profile.healthInfo != null && profile.healthInfo!.isNotEmpty) {
-          final gender = profile.healthInfo!['gender']?.toString().toLowerCase() ?? 'unknown';
+        final profile = await ServiceLocator.instance.userRepository
+            .getConsumerProfile(user.id);
+        if (profile != null &&
+            profile.healthInfo != null &&
+            profile.healthInfo!.isNotEmpty) {
+          final gender =
+              profile.healthInfo!['gender']?.toString().toLowerCase() ??
+              'unknown';
           if (mounted) {
             setState(() {
               _gender = gender;
@@ -197,9 +214,9 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
           // No health info, redirect to Health Data Entry
           if (mounted) {
             Navigator.pushReplacementNamed(
-              context, 
+              context,
               '/health-data-entry',
-              arguments: { 'redirect': '/package-healthcare' }
+              arguments: {'redirect': '/package-healthcare'},
             );
             return;
           }
@@ -214,14 +231,18 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   }
 
   Color get _themeColor {
-    if (_gender == 'female' || _gender == 'หญิง' || _gender == 'f') return Colors.pinkAccent;
-    if (_gender == 'male' || _gender == 'ชาย' || _gender == 'm') return Colors.blueAccent;
+    if (_gender == 'female' || _gender == 'หญิง' || _gender == 'f')
+      return Colors.pinkAccent;
+    if (_gender == 'male' || _gender == 'ชาย' || _gender == 'm')
+      return Colors.blueAccent;
     return AppColors.primary; // default green
   }
-  
+
   String get _genderText {
-    if (_gender == 'female' || _gender == 'หญิง' || _gender == 'f') return 'สำหรับคุณผู้หญิง';
-    if (_gender == 'male' || _gender == 'ชาย' || _gender == 'm') return 'สำหรับคุณผู้ชาย';
+    if (_gender == 'female' || _gender == 'หญิง' || _gender == 'f')
+      return 'สำหรับคุณผู้หญิง';
+    if (_gender == 'male' || _gender == 'ชาย' || _gender == 'm')
+      return 'สำหรับคุณผู้ชาย';
     return 'สำหรับปรึกษาผู้เชี่ยวชาญ';
   }
 
@@ -251,7 +272,10 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.chat_bubble_outline, color: Colors.orangeAccent),
+            icon: const Icon(
+              Icons.chat_bubble_outline,
+              color: Colors.orangeAccent,
+            ),
             onPressed: () {},
           ),
           IconButton(
@@ -266,7 +290,10 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 8,
+                ),
                 child: Column(
                   children: [
                     Text(
@@ -281,10 +308,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                     const SizedBox(height: 8),
                     Text(
                       _genderText,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
+                      style: const TextStyle(fontSize: 16, color: Colors.grey),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -296,7 +320,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                     final width = constraints.maxWidth;
                     final height = constraints.maxHeight;
                     final wheelRadius = width * 0.75;
-                    final centerX = -width * 0.35; // Center off-screen to the left
+                    final centerX =
+                        -width * 0.35; // Center off-screen to the left
                     final centerY = height * 0.5;
                     final slices = 10; // 10% of circle each (10 cake slices)
                     final spacingAngle = (math.pi * 2) / slices;
@@ -330,9 +355,9 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                           top: centerY - wheelRadius,
                           child: Transform.rotate(
                             // SYNC: Use the same spacingAngle as labels for perfect rotation
-                            angle: -_scrollOffset * spacingAngle, 
+                            angle: -_scrollOffset * spacingAngle,
                             child: _WheelVisual(
-                              radius: wheelRadius, 
+                              radius: wheelRadius,
                               color: _themeColor,
                               slices: slices,
                             ),
@@ -352,7 +377,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
 
                         // 3. CURVED RULER PICKER (Price & Unit)
                         ...() {
-                          final priceRadius = width * 1.05; // Positioned along the outer arc
+                          final priceRadius =
+                              width * 1.05; // Positioned along the outer arc
                           final deltaAngle = 0.18; // Angle between price items
 
                           return [
@@ -365,7 +391,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                                 angle: -deltaAngle,
                                 opacity: 0.2,
                                 fontSize: 24,
-                                text: _packages[_selectedIndex - 1]['price'].toStringAsFixed(0),
+                                text: _packages[_selectedIndex - 1]['price']
+                                    .toStringAsFixed(0),
                               ),
 
                             // Main Selected Price
@@ -377,7 +404,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                               opacity: 1.0,
                               fontSize: 56,
                               isMain: true,
-                              text: (selectedPackage['price'] as double).toStringAsFixed(0),
+                              text: (selectedPackage['price'] as double)
+                                  .toStringAsFixed(0),
                             ),
 
                             // Ghost Price (Below)
@@ -389,7 +417,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                                 angle: deltaAngle,
                                 opacity: 0.2,
                                 fontSize: 24,
-                                text: _packages[_selectedIndex + 1]['price'].toStringAsFixed(0),
+                                text: _packages[_selectedIndex + 1]['price']
+                                    .toStringAsFixed(0),
                               ),
 
                             // Unit "บาท"
@@ -405,69 +434,114 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                             ),
 
                             // Package details (Aligned along bottom curve)
-                            ... (selectedPackage['details'] as List<String>).asMap().entries.map((entry) {
-                                final i = entry.key;
-                                final detail = entry.value;
-                                final detailAngle = 0.4 + (i * 0.07);
-                                final detailRadius = priceRadius - 40;
-                                
-                                final x = centerX + detailRadius * math.cos(detailAngle);
-                                final y = centerY + detailRadius * math.sin(detailAngle);
+                            ...(selectedPackage['details'] as List<String>)
+                                .asMap()
+                                .entries
+                                .map((entry) {
+                                  final i = entry.key;
+                                  final detail = entry.value;
+                                  final detailAngle = 0.4 + (i * 0.07);
+                                  final detailRadius = priceRadius - 40;
 
-                                 final isPressed = _pressedDetailIndex == i;
-                                
-                                return Positioned(
-                                  left: x - 120, // Wider for truncation budget
-                                  top: y - (isPressed ? 40 : 10), // Adjust top if expanded
-                                  child: Transform.rotate(
-                                    angle: detailAngle,
-                                    child: GestureDetector(
-                                      onLongPressStart: (_) => setState(() => _pressedDetailIndex = i),
-                                      onLongPressEnd: (_) => setState(() => _pressedDetailIndex = null),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 200),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: isPressed ? Colors.white.withOpacity(0.9) : Colors.transparent,
-                                          borderRadius: BorderRadius.circular(12),
-                                          boxShadow: isPressed ? [
-                                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
-                                          ] : null,
+                                  final x =
+                                      centerX +
+                                      detailRadius * math.cos(detailAngle);
+                                  final y =
+                                      centerY +
+                                      detailRadius * math.sin(detailAngle);
+
+                                  final isPressed = _pressedDetailIndex == i;
+
+                                  return Positioned(
+                                    left:
+                                        x - 120, // Wider for truncation budget
+                                    top:
+                                        y -
+                                        (isPressed
+                                            ? 40
+                                            : 10), // Adjust top if expanded
+                                    child: Transform.rotate(
+                                      angle: detailAngle,
+                                      child: GestureDetector(
+                                        onLongPressStart: (_) => setState(
+                                          () => _pressedDetailIndex = i,
                                         ),
-                                        constraints: BoxConstraints(
-                                          maxWidth: isPressed ? 220 : 180, // Allow more width if expanded
+                                        onLongPressEnd: (_) => setState(
+                                          () => _pressedDetailIndex = null,
                                         ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          mainAxisAlignment: MainAxisAlignment.end,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                detail,
-                                                style: TextStyle(
-                                                  fontSize: isPressed ? 14 : 12, 
-                                                  color: isPressed ? Colors.black : Colors.grey, 
-                                                  fontWeight: isPressed ? FontWeight.w700 : FontWeight.w600,
-                                                  height: 1.2,
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isPressed
+                                                ? Colors.white.withOpacity(0.9)
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            boxShadow: isPressed
+                                                ? [
+                                                    BoxShadow(
+                                                      color: Colors.black
+                                                          .withOpacity(0.1),
+                                                      blurRadius: 10,
+                                                      spreadRadius: 2,
+                                                    ),
+                                                  ]
+                                                : null,
+                                          ),
+                                          constraints: BoxConstraints(
+                                            maxWidth: isPressed
+                                                ? 220
+                                                : 180, // Allow more width if expanded
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.end,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  detail,
+                                                  style: TextStyle(
+                                                    fontSize: isPressed
+                                                        ? 14
+                                                        : 12,
+                                                    color: isPressed
+                                                        ? Colors.black
+                                                        : Colors.grey,
+                                                    fontWeight: isPressed
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w600,
+                                                    height: 1.2,
+                                                  ),
+                                                  maxLines: isPressed
+                                                      ? 10
+                                                      : 1, // Multi-line when floating
+                                                  overflow: isPressed
+                                                      ? TextOverflow.visible
+                                                      : TextOverflow.ellipsis,
+                                                  textAlign: TextAlign.right,
                                                 ),
-                                                maxLines: isPressed ? 10 : 1, // Multi-line when floating
-                                                overflow: isPressed ? TextOverflow.visible : TextOverflow.ellipsis,
-                                                textAlign: TextAlign.right,
                                               ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Icon(
-                                              Icons.check_circle_outline, 
-                                              size: isPressed ? 16 : 14, 
-                                              color: _themeColor
-                                            ),
-                                          ],
+                                              const SizedBox(width: 8),
+                                              Icon(
+                                                Icons.check_circle_outline,
+                                                size: isPressed ? 16 : 14,
+                                                color: _themeColor,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                );
-                            }),
+                                  );
+                                }),
                           ];
                         }(),
 
@@ -482,10 +556,12 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                               if (notification is ScrollEndNotification) {
                                 // Final snap synchronization
                                 if (_scrollController.hasClients) {
-                                  final snappedIndex = _scrollController.selectedItem;
+                                  final snappedIndex =
+                                      _scrollController.selectedItem;
                                   setState(() {
                                     _scrollOffset = snappedIndex.toDouble();
-                                    _selectedIndex = snappedIndex % _packages.length;
+                                    _selectedIndex =
+                                        snappedIndex % _packages.length;
                                   });
                                 }
                               }
@@ -502,7 +578,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                                 });
                               },
                               childDelegate: ListWheelChildBuilderDelegate(
-                                builder: (context, index) => const SizedBox(height: 80),
+                                builder: (context, index) =>
+                                    const SizedBox(height: 80),
                               ),
                             ),
                           ),
@@ -528,7 +605,11 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                       createdAt: DateTime.now(),
                       updatedAt: DateTime.now(),
                     );
-                    Navigator.pushNamed(context, '/analyze-body', arguments: request);
+                    Navigator.pushNamed(
+                      context,
+                      '/analyze-body',
+                      arguments: request,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
@@ -538,7 +619,10 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  child: const Text('Next', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Next',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -558,10 +642,10 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   }) {
     // 10 cake slices (fixed 10 slots)
     final slices = 10;
-    final spacingAngle = (math.pi * 2) / slices; 
+    final spacingAngle = (math.pi * 2) / slices;
     final currentOffset = _scrollOffset % slices;
-    
-    // Relative angle: item's slot center. 
+
+    // Relative angle: item's slot center.
     // If spokes are at 0, 36, 72, ... we put label at midpoint (+ spacingAngle/2)
     double angle = (index - currentOffset) * spacingAngle;
 
@@ -577,14 +661,14 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
 
     final isSelected = index % _packages.length == _selectedIndex;
 
-    // AUTO-FIT FONT SIZE: 
+    // AUTO-FIT FONT SIZE:
     // We have a width budget of about 80% of the slice arc width
-    final arcWidthAvailable = radius * (spacingAngle * 0.82); 
+    final arcWidthAvailable = radius * (spacingAngle * 0.82);
     final text = name;
-    
+
     // Base font size is larger for better visibility
     double fontSize = isSelected ? 26 : 18;
-    final estimatedWidth = text.length * fontSize * 0.72; 
+    final estimatedWidth = text.length * fontSize * 0.72;
     if (estimatedWidth > arcWidthAvailable) {
       fontSize = arcWidthAvailable / (text.length * 0.72);
     }
@@ -594,7 +678,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
 
     return Positioned(
       left: x - 100, // Perfectly center 200-width box at x
-      top: y - 25,  // Perfectly center 50-height box at y
+      top: y - 25, // Perfectly center 50-height box at y
       child: Transform.rotate(
         angle: angle, // Rotate block to match circle tangent
         child: Opacity(
@@ -612,10 +696,15 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                   fontSize: fontSize,
                   fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                   letterSpacing: 1.0,
-                  shadows: isSelected ? [
-                    Shadow(color: _themeColor.withOpacity(0.3), blurRadius: 8),
-                    const Shadow(color: Colors.white, blurRadius: 2),
-                  ] : null,
+                  shadows: isSelected
+                      ? [
+                          Shadow(
+                            color: _themeColor.withOpacity(0.3),
+                            blurRadius: 8,
+                          ),
+                          const Shadow(color: Colors.white, blurRadius: 2),
+                        ]
+                      : null,
                 ),
               ),
             ),
@@ -652,7 +741,9 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
               fontSize: fontSize,
               fontWeight: isMain ? FontWeight.w900 : FontWeight.bold,
               color: isUnit ? Colors.grey : _themeColor,
-              fontFeatures: isMain ? const [FontFeature.tabularFigures()] : null,
+              fontFeatures: isMain
+                  ? const [FontFeature.tabularFigures()]
+                  : null,
               height: 1.0,
             ),
           ),
@@ -668,13 +759,17 @@ class _CurvedTextPainter extends CustomPainter {
   final double radius;
   final TextStyle style;
 
-  _CurvedTextPainter({required this.text, required this.radius, required this.style});
+  _CurvedTextPainter({
+    required this.text,
+    required this.radius,
+    required this.style,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     final chars = text.split('');
-    
+
     // We want the text centered around the tangent point
     // Rough estimate of total angle the text takes
     double totalAngle = (text.length * (style.fontSize ?? 14) * 0.8) / radius;
@@ -692,7 +787,10 @@ class _CurvedTextPainter extends CustomPainter {
       // Move to position, minus the radius since we are painting at the rim
       canvas.translate(size.width / 2 + (x - radius), size.height / 2 + y);
       canvas.rotate(currentAngle + math.pi / 2); // Rotate char to face center
-      textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
+      textPainter.paint(
+        canvas,
+        Offset(-textPainter.width / 2, -textPainter.height / 2),
+      );
       canvas.restore();
 
       // Move to next char angle - use exact width to match measurement logic
@@ -711,8 +809,8 @@ class _WheelVisual extends StatelessWidget {
   final int slices;
 
   const _WheelVisual({
-    required this.radius, 
-    required this.color, 
+    required this.radius,
+    required this.color,
     required this.slices,
   });
 
@@ -722,10 +820,7 @@ class _WheelVisual extends StatelessWidget {
       width: radius * 2,
       height: radius * 2,
       child: CustomPaint(
-        painter: _WheelPainter(
-          color: color, 
-          slices: slices,
-        ),
+        painter: _WheelPainter(color: color, slices: slices),
       ),
     );
   }
@@ -734,11 +829,8 @@ class _WheelVisual extends StatelessWidget {
 class _WheelPainter extends CustomPainter {
   final Color color;
   final int slices;
-  
-  _WheelPainter({
-    required this.color, 
-    required this.slices,
-  });
+
+  _WheelPainter({required this.color, required this.slices});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -770,10 +862,7 @@ class _WheelPainter extends CustomPainter {
     // --- 2. SEMI-TRANSPARENT GLASS BODY ---
     final bodyPaint = Paint()
       ..shader = RadialGradient(
-        colors: [
-          Colors.white.withOpacity(0.05),
-          color.withOpacity(0.1),
-        ],
+        colors: [Colors.white.withOpacity(0.05), color.withOpacity(0.1)],
       ).createShader(Rect.fromCircle(center: center, radius: outerRadius))
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, outerRadius, bodyPaint);
@@ -785,12 +874,12 @@ class _WheelPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final sliceAngle = (math.pi * 2) / slices;
-    
+
     // We put spokes at the edge of each of the 10 slices
     // Spokes are at: base - sliceAngle/2, base + sliceAngle/2
     for (var i = 0; i < slices; i++) {
       final angle = (i * sliceAngle) + (sliceAngle / 2);
-      
+
       final start = Offset(
         center.dx + (innerRadius - 60) * math.cos(angle),
         center.dy + (innerRadius - 60) * math.sin(angle),
@@ -799,15 +888,19 @@ class _WheelPainter extends CustomPainter {
         center.dx + outerRadius * math.cos(angle),
         center.dy + outerRadius * math.sin(angle),
       );
-      
+
       canvas.drawLine(start, end, spokePaint);
       canvas.drawCircle(end, 2.5, Paint()..color = color.withOpacity(0.25));
     }
 
     // --- 4. CENTER HUB (Glass Jewel Look) ---
     // Hub Base
-    canvas.drawCircle(center, 70, Paint()..color = Colors.white.withOpacity(0.3));
-    
+    canvas.drawCircle(
+      center,
+      70,
+      Paint()..color = Colors.white.withOpacity(0.3),
+    );
+
     // Hub Inner Shadow (Depth)
     final hubShadowPaint = Paint()
       ..shader = RadialGradient(
@@ -822,7 +915,7 @@ class _WheelPainter extends CustomPainter {
         colors: [color.withOpacity(0.4), Colors.transparent],
       ).createShader(Rect.fromCircle(center: center, radius: 40));
     canvas.drawCircle(center, 40, glowPaint);
-    
+
     // Specular highlight (Glass shine)
     final highlightPaint = Paint()
       ..color = Colors.white.withOpacity(0.5)

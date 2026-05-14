@@ -48,7 +48,8 @@ class ConsultationEntry {
         : '$firstName $lastName'.trim();
 
     final bodyAreaMap = map['body_area'] as Map<String, dynamic>? ?? {};
-    String bodyArea = bodyAreaMap['area'] as String? ??
+    String bodyArea =
+        bodyAreaMap['area'] as String? ??
         bodyAreaMap['label'] as String? ??
         (bodyAreaMap.keys.isNotEmpty ? bodyAreaMap.keys.join(', ') : 'ไม่ระบุ');
 
@@ -73,7 +74,9 @@ class ConsultationEntry {
       price: parseDouble(map['price']),
       bodyArea: bodyArea,
       status: map['status'] as String? ?? 'pending',
-      requestedAt: DateTime.tryParse(map['created_at']?.toString() ?? '') ?? DateTime.now(),
+      requestedAt:
+          DateTime.tryParse(map['created_at']?.toString() ?? '') ??
+          DateTime.now(),
       roomId: roomId,
       providerId: map['provider_id'] as String?,
     );
@@ -96,8 +99,7 @@ class _HealthProgramRequestDashboardState
     with SingleTickerProviderStateMixin {
   ConsultationRepository get _repo =>
       ServiceLocator.instance.consultationRepository;
-  UserRepository get _userRepo =>
-      UserRepository(Supabase.instance.client);
+  UserRepository get _userRepo => UserRepository(Supabase.instance.client);
 
   final _currentUser = AuthService.instance.currentUser;
 
@@ -137,16 +139,21 @@ class _HealthProgramRequestDashboardState
 
     try {
       debugPrint('Dashboard: Initializing for user ${user.id}');
-      
+
       // ตรวจว่าเป็น provider หรือเปล่า (มี professionId และไม่ใช่ consumer)
-      _isProvider = user.professionId != null &&
+      _isProvider =
+          user.professionId != null &&
           user.professionId != '00000000-0000-0000-0000-000000000001';
 
       // โหลดข้อมูลพื้นฐานขนานกันพร้อม timeout
       await Future.wait([
-        _userRepo.getAvailabilityStatus(user.id).then((s) => _availabilityStatus = s),
+        _userRepo
+            .getAvailabilityStatus(user.id)
+            .then((s) => _availabilityStatus = s),
         if (_isProvider && user.professionId != null)
-          _repo.getPackageIdsForProfession(user.professionId!).then((ids) => _myPackageIds = ids),
+          _repo
+              .getPackageIdsForProfession(user.professionId!)
+              .then((ids) => _myPackageIds = ids),
       ]).timeout(const Duration(seconds: 15));
 
       // โหลดข้อมูลและ subscribe
@@ -187,10 +194,12 @@ class _HealthProgramRequestDashboardState
       var raw = (_isProvider && _myPackageIds.isNotEmpty)
           ? await _repo.getRequestsForProfession(_myPackageIds)
           : await _repo.getAllRequestsWithUserInfo();
-          
+
       // Fallback: หากกรองแล้วไม่เจออะไรเลย ให้ลองโหลดทั้งหมดมาดู (เผื่อกรณี mapping package ตกหล่น)
       if (raw.isEmpty && _isProvider) {
-        debugPrint('Dashboard: Filtered list empty, falling back to all requests');
+        debugPrint(
+          'Dashboard: Filtered list empty, falling back to all requests',
+        );
         raw = await _repo.getAllRequestsWithUserInfo();
       }
 
@@ -210,10 +219,10 @@ class _HealthProgramRequestDashboardState
 
   void _applyFilter() {
     _filtered = _all.where((e) {
-      final matchStatus =
-          _filterStatus == 'all' || e.status == _filterStatus;
+      final matchStatus = _filterStatus == 'all' || e.status == _filterStatus;
       final q = _searchQuery.toLowerCase();
-      final matchSearch = q.isEmpty ||
+      final matchSearch =
+          q.isEmpty ||
           e.patientName.toLowerCase().contains(q) ||
           e.packageName.toLowerCase().contains(q) ||
           e.bodyArea.toLowerCase().contains(q);
@@ -235,8 +244,10 @@ class _HealthProgramRequestDashboardState
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('รับงานนี้?',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'รับงานนี้?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -272,8 +283,10 @@ class _HealthProgramRequestDashboardState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('ยกเลิก',
-                style: TextStyle(color: Colors.grey.shade600)),
+            child: Text(
+              'ยกเลิก',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -281,7 +294,8 @@ class _HealthProgramRequestDashboardState
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('รับงาน'),
           ),
@@ -294,7 +308,9 @@ class _HealthProgramRequestDashboardState
     try {
       // 1. Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
       if (entry.packageId == null || user.professionId == null) {
-        throw Exception('ข้อมูลแพ็คเกจหรือวิชาชีพไม่สมบูรณ์ ไม่สามารถรับงานได้');
+        throw Exception(
+          'ข้อมูลแพ็คเกจหรือวิชาชีพไม่สมบูรณ์ ไม่สามารถรับงานได้',
+        );
       }
 
       await _repo.assignProviderToGroup(
@@ -339,14 +355,18 @@ class _HealthProgramRequestDashboardState
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(newStatus == 'online'
-              ? '✅ เปลี่ยนเป็นพร้อมรับงานแล้ว'
-              : '🔴 เปลี่ยนเป็นไม่ว่างแล้ว'),
-          backgroundColor:
-              newStatus == 'online' ? AppColors.success : AppColors.warning,
+          content: Text(
+            newStatus == 'online'
+                ? '✅ เปลี่ยนเป็นพร้อมรับงานแล้ว'
+                : '🔴 เปลี่ยนเป็นไม่ว่างแล้ว',
+          ),
+          backgroundColor: newStatus == 'online'
+              ? AppColors.success
+              : AppColors.warning,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -376,7 +396,11 @@ class _HealthProgramRequestDashboardState
         searchHintText: 'ค้นหาคำร้องขอ...',
         notificationCount: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -408,13 +432,20 @@ class _HealthProgramRequestDashboardState
           ),
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-                16, _isProvider ? 95 : 85, 16, _isProvider ? 60 : 55),
+              16,
+              _isProvider ? 95 : 85,
+              16,
+              _isProvider ? 60 : 55,
+            ),
             child: Column(
               children: [
                 if (_isProvider) ...[
                   Text(
                     'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
-                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 11),
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 11,
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -423,14 +454,26 @@ class _HealthProgramRequestDashboardState
                   children: [
                     _statChip('ทั้งหมด', _total, Icons.list_alt, Colors.white),
                     const SizedBox(width: 8),
-                    _statChip('รอดำเนินการ', _pending,
-                        Icons.pending_outlined, AppColors.warning),
+                    _statChip(
+                      'รอดำเนินการ',
+                      _pending,
+                      Icons.pending_outlined,
+                      AppColors.warning,
+                    ),
                     const SizedBox(width: 8),
-                    _statChip('กำลังดำเนินการ', _inProgress,
-                        Icons.forum_outlined, AppColors.info),
+                    _statChip(
+                      'กำลังดำเนินการ',
+                      _inProgress,
+                      Icons.forum_outlined,
+                      AppColors.info,
+                    ),
                     const SizedBox(width: 8),
-                    _statChip('เสร็จสิ้น', _completed,
-                        Icons.check_circle_outline, AppColors.success),
+                    _statChip(
+                      'เสร็จสิ้น',
+                      _completed,
+                      Icons.check_circle_outline,
+                      AppColors.success,
+                    ),
                   ],
                 ),
                 if (_isProvider) ...[
@@ -444,7 +487,6 @@ class _HealthProgramRequestDashboardState
       ),
     );
   }
-
 
   Widget _statChip(String label, int count, IconData icon, Color accent) {
     return Expanded(
@@ -463,19 +505,26 @@ class _HealthProgramRequestDashboardState
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text('$count',
-                  style: TextStyle(
-                      color: accent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16)),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: accent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(label,
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.8), fontSize: 9),
-                  textAlign: TextAlign.center,
-                  maxLines: 1),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.8),
+                  fontSize: 9,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+              ),
             ),
           ],
         ),
@@ -484,15 +533,15 @@ class _HealthProgramRequestDashboardState
   }
 
   Widget _buildLoading() => const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(height: 16),
-            Text('กำลังโหลดรายการ...', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      );
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        CircularProgressIndicator(color: AppColors.primary),
+        SizedBox(height: 16),
+        Text('กำลังโหลดรายการ...', style: TextStyle(color: Colors.grey)),
+      ],
+    ),
+  );
 
   Widget _buildBody() {
     return Column(
@@ -529,9 +578,10 @@ class _HealthProgramRequestDashboardState
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2))
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
               ],
             ),
             child: TextField(
@@ -543,8 +593,11 @@ class _HealthProgramRequestDashboardState
               decoration: InputDecoration(
                 hintText: 'ค้นหาผู้ป่วย แพ็คเกจ บริเวณอาการ...',
                 hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-                prefixIcon: const Icon(Icons.search,
-                    color: AppColors.primary, size: 20),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -569,7 +622,9 @@ class _HealthProgramRequestDashboardState
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: active ? AppColors.primary : Colors.white,
                       borderRadius: BorderRadius.circular(20),
@@ -581,9 +636,10 @@ class _HealthProgramRequestDashboardState
                       boxShadow: active
                           ? [
                               BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.3),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2))
+                                color: AppColors.primary.withOpacity(0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
                             ]
                           : [],
                     ),
@@ -616,25 +672,32 @@ class _HealthProgramRequestDashboardState
       duration: Duration(milliseconds: 300 + index * 60),
       curve: Curves.easeOut,
       builder: (ctx, v, child) => Opacity(
-          opacity: v,
-          child: Transform.translate(
-              offset: Offset(0, 20 * (1 - v)), child: child)),
+        opacity: v,
+        child: Transform.translate(
+          offset: Offset(0, 20 * (1 - v)),
+          child: child,
+        ),
+      ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: isMyJob
-              ? Border.all(color: AppColors.primary.withOpacity(0.5), width: 1.5)
+              ? Border.all(
+                  color: AppColors.primary.withOpacity(0.5),
+                  width: 1.5,
+                )
               : null,
           boxShadow: [
             BoxShadow(
-                color: isMyJob
-                    ? AppColors.primary.withOpacity(0.12)
-                    : Colors.black.withOpacity(0.07),
-                blurRadius: 12,
-                spreadRadius: isMyJob ? 2 : 0,
-                offset: const Offset(0, 4))
+              color: isMyJob
+                  ? AppColors.primary.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.07),
+              blurRadius: 12,
+              spreadRadius: isMyJob ? 2 : 0,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
         child: Column(
@@ -650,16 +713,21 @@ class _HealthProgramRequestDashboardState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(e.patientName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: AppColors.textPrimary)),
+                        Text(
+                          e.patientName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                         const SizedBox(height: 2),
                         Text(
                           DateFormat('d MMM yyyy  HH:mm').format(e.requestedAt),
                           style: TextStyle(
-                              fontSize: 11, color: Colors.grey.shade500),
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
@@ -672,16 +740,21 @@ class _HealthProgramRequestDashboardState
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text('งานของคุณ',
-                              style: TextStyle(
-                                  fontSize: 9,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w700)),
+                          child: const Text(
+                            'งานของคุณ',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -700,14 +773,26 @@ class _HealthProgramRequestDashboardState
               ),
               child: Column(
                 children: [
-                  _infoRow(Icons.spa_outlined, 'แพ็คเกจ',
-                      e.packageName, AppColors.primary),
+                  _infoRow(
+                    Icons.spa_outlined,
+                    'แพ็คเกจ',
+                    e.packageName,
+                    AppColors.primary,
+                  ),
                   const SizedBox(height: 8),
-                  _infoRow(Icons.location_on_outlined, 'บริเวณที่พบอาการ',
-                      e.bodyArea, AppColors.warning),
+                  _infoRow(
+                    Icons.location_on_outlined,
+                    'บริเวณที่พบอาการ',
+                    e.bodyArea,
+                    AppColors.warning,
+                  ),
                   const SizedBox(height: 8),
-                  _infoRow(Icons.payments_outlined, 'ราคา',
-                      '${e.price.toInt()} บาท', AppColors.info),
+                  _infoRow(
+                    Icons.payments_outlined,
+                    'ราคา',
+                    '${e.price.toInt()} บาท',
+                    AppColors.info,
+                  ),
                 ],
               ),
             ),
@@ -723,8 +808,11 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  Widget _buildActionRow(ConsultationEntry e,
-      {required bool isMyJob, required bool isBusy}) {
+  Widget _buildActionRow(
+    ConsultationEntry e, {
+    required bool isMyJob,
+    required bool isBusy,
+  }) {
     // --- admin / all-view mode ---
     if (!_isProvider) {
       return Row(
@@ -769,7 +857,9 @@ class _HealthProgramRequestDashboardState
       // ยังไม่มีใครรับ + ตัวเองว่างอยู่
       final canJoin = _availabilityStatus != 'busy';
       return _actionBtn(
-        icon: canJoin ? Icons.volunteer_activism_rounded : Icons.do_not_disturb_rounded,
+        icon: canJoin
+            ? Icons.volunteer_activism_rounded
+            : Icons.do_not_disturb_rounded,
         label: canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่',
         textColor: Colors.white,
         bgColor: canJoin ? AppColors.primary : Colors.grey.shade400,
@@ -788,14 +878,20 @@ class _HealthProgramRequestDashboardState
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline_rounded,
-                size: 15, color: AppColors.warning),
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 15,
+              color: AppColors.warning,
+            ),
             const SizedBox(width: 6),
-            Text('มีผู้ให้บริการรับงานแล้ว',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.warning)),
+            Text(
+              'มีผู้ให้บริการรับงานแล้ว',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.warning,
+              ),
+            ),
           ],
         ),
       );
@@ -813,11 +909,14 @@ class _HealthProgramRequestDashboardState
         children: [
           Icon(Icons.check_circle_outline, size: 15, color: AppColors.success),
           const SizedBox(width: 6),
-          Text('เสร็จสิ้นแล้ว',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.success)),
+          Text(
+            'เสร็จสิ้นแล้ว',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.success,
+            ),
+          ),
         ],
       ),
     );
@@ -837,9 +936,10 @@ class _HealthProgramRequestDashboardState
       child: Text(
         e.patientName.isNotEmpty ? e.patientName[0].toUpperCase() : 'P',
         style: const TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.bold,
-            fontSize: 18),
+          color: AppColors.primary,
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+        ),
       ),
     );
   }
@@ -858,13 +958,19 @@ class _HealthProgramRequestDashboardState
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 5),
-          Text(cfg['label'] as String,
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          Text(
+            cfg['label'] as String,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
@@ -883,15 +989,18 @@ class _HealthProgramRequestDashboardState
           child: Icon(icon, size: 14, color: color),
         ),
         const SizedBox(width: 10),
-        Text('$label: ',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        Text(
+          '$label: ',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        ),
         Expanded(
           child: Text(
             value,
             style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -917,9 +1026,10 @@ class _HealthProgramRequestDashboardState
           boxShadow: bgColor == AppColors.primary
               ? [
                   BoxShadow(
-                      color: AppColors.primary.withOpacity(0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3))
+                    color: AppColors.primary.withOpacity(0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
                 ]
               : [],
         ),
@@ -928,11 +1038,14 @@ class _HealthProgramRequestDashboardState
           children: [
             Icon(icon, size: 16, color: textColor),
             const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: textColor)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
           ],
         ),
       ),
@@ -944,7 +1057,11 @@ class _HealthProgramRequestDashboardState
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.assignment_outlined, size: 64, color: Colors.grey.shade300),
+          Icon(
+            Icons.assignment_outlined,
+            size: 64,
+            color: Colors.grey.shade300,
+          ),
           const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty
@@ -953,8 +1070,10 @@ class _HealthProgramRequestDashboardState
             style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          Text('รูดหน้าลงเพื่อโหลดข้อมูลใหม่',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+          Text(
+            'รูดหน้าลงเพื่อโหลดข้อมูลใหม่',
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -965,7 +1084,8 @@ class _HealthProgramRequestDashboardState
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
@@ -974,16 +1094,19 @@ class _HealthProgramRequestDashboardState
           children: [
             Center(
               child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
-            Text('อัปเดตสถานะ: ${entry.patientName}',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 15)),
+            Text(
+              'อัปเดตสถานะ: ${entry.patientName}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
             const SizedBox(height: 12),
             ...['pending', 'in_progress', 'completed'].map((s) {
               final cfg = _statusConfig(s);
@@ -991,10 +1114,13 @@ class _HealthProgramRequestDashboardState
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Container(
-                    width: 10,
-                    height: 10,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle)),
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 title: Text(cfg['label'] as String),
                 trailing: entry.status == s
                     ? const Icon(Icons.check, color: AppColors.primary)
@@ -1018,9 +1144,10 @@ class _HealthProgramRequestDashboardState
       PageRouteBuilder(
         pageBuilder: (ctx, anim, _) => ExpertChatRoomPage(entry: entry),
         transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-              .animate(
-                  CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
           child: child,
         ),
         transitionDuration: const Duration(milliseconds: 350),
@@ -1073,11 +1200,14 @@ class _AvailabilityBanner extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            isBusy ? '🔴 สถานะ: ไม่ว่าง (กำลังให้บริการ)' : '🟢 สถานะ: พร้อมรับงาน',
+            isBusy
+                ? '🔴 สถานะ: ไม่ว่าง (กำลังให้บริการ)'
+                : '🟢 สถานะ: พร้อมรับงาน',
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600),
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1089,8 +1219,10 @@ class _AvailabilityBanner extends StatelessWidget {
 class _AvailabilityToggleButton extends StatelessWidget {
   final String status;
   final VoidCallback onToggle;
-  const _AvailabilityToggleButton(
-      {required this.status, required this.onToggle});
+  const _AvailabilityToggleButton({
+    required this.status,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1122,9 +1254,10 @@ class _AvailabilityToggleButton extends StatelessWidget {
             Text(
               isBusy ? 'ไม่ว่าง' : 'ว่าง',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600),
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -1180,12 +1313,14 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         final myId = _currentUser?.id;
         setState(() {
           _messages = chatMessages
-              .map((m) => _LocalMsg(
-                    content: m.content,
-                    isMe: m.senderId == myId,
-                    sentAt: m.createdAt,
-                    type: m.type,
-                  ))
+              .map(
+                (m) => _LocalMsg(
+                  content: m.content,
+                  isMe: m.senderId == myId,
+                  sentAt: m.createdAt,
+                  type: m.type,
+                ),
+              )
               .toList();
           _isLoading = false;
         });
@@ -1203,12 +1338,14 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         final myId = _currentUser?.id;
         setState(() {
           _messages = newMessages
-              .map((m) => _LocalMsg(
-                    content: m.content,
-                    isMe: m.senderId == myId,
-                    sentAt: m.createdAt,
-                    type: m.type,
-                  ))
+              .map(
+                (m) => _LocalMsg(
+                  content: m.content,
+                  isMe: m.senderId == myId,
+                  sentAt: m.createdAt,
+                  type: m.type,
+                ),
+              )
               .toList();
         });
         _scrollToBottom();
@@ -1234,22 +1371,31 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
 
       if (existing == null) {
         // Room doesn't exist yet — create it with provider
-        await supabase.from('chat_rooms').insert({
-          'id': roomId,
-          'participant_ids': [providerId],
-          'last_message': null,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 5));
+        await supabase
+            .from('chat_rooms')
+            .insert({
+              'id': roomId,
+              'participant_ids': [providerId],
+              'last_message': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .timeout(const Duration(seconds: 5));
         debugPrint('ExpertChat: Created room $roomId');
       } else {
         // Room exists — add provider to participants if not already in
-        final participants = List<String>.from(existing['participant_ids'] ?? []);
+        final participants = List<String>.from(
+          existing['participant_ids'] ?? [],
+        );
         if (!participants.contains(providerId)) {
           participants.add(providerId);
-          await supabase.from('chat_rooms').update({
-            'participant_ids': participants,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', roomId).timeout(const Duration(seconds: 5));
+          await supabase
+              .from('chat_rooms')
+              .update({
+                'participant_ids': participants,
+                'updated_at': DateTime.now().toIso8601String(),
+              })
+              .eq('id', roomId)
+              .timeout(const Duration(seconds: 5));
           debugPrint('ExpertChat: Added provider $providerId to room $roomId');
         }
       }
@@ -1275,8 +1421,14 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     if (text.isEmpty || _isSending) return;
     setState(() {
       _isSending = true;
-      _messages.add(_LocalMsg(
-          content: text, isMe: true, sentAt: DateTime.now(), type: 'text'));
+      _messages.add(
+        _LocalMsg(
+          content: text,
+          isMe: true,
+          sentAt: DateTime.now(),
+          type: 'text',
+        ),
+      );
     });
     _msgController.clear();
     _scrollToBottom();
@@ -1305,15 +1457,20 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('เสร็จสิ้นการให้บริการ?',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'เสร็จสิ้นการให้บริการ?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: const Text(
-            'สถานะของคุณจะกลับเป็น "พร้อมรับงาน" และคำร้องจะถูกปิด'),
+          'สถานะของคุณจะกลับเป็น "พร้อมรับงาน" และคำร้องจะถูกปิด',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:
-                Text('ยกเลิก', style: TextStyle(color: Colors.grey.shade600)),
+            child: Text(
+              'ยกเลิก',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -1321,7 +1478,8 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
               backgroundColor: AppColors.success,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('เสร็จสิ้น'),
           ),
@@ -1362,8 +1520,11 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         backgroundColor: AppColors.primary,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
@@ -1376,9 +1537,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                     ? widget.entry.patientName[0].toUpperCase()
                     : 'P',
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13),
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -1386,15 +1548,21 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.entry.patientName,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14)),
-                  Text(widget.entry.packageName,
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 11)),
+                  Text(
+                    widget.entry.patientName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    widget.entry.packageName,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1404,14 +1572,22 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           // ปุ่มเสร็จงาน
           TextButton.icon(
             onPressed: _finishJob,
-            icon: const Icon(Icons.done_all_rounded,
-                color: Colors.white, size: 18),
-            label: const Text('เสร็จงาน',
-                style: TextStyle(color: Colors.white, fontSize: 12)),
+            icon: const Icon(
+              Icons.done_all_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            label: const Text(
+              'เสร็จงาน',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
           ),
           IconButton(
-            icon: const Icon(Icons.info_outline_rounded,
-                color: Colors.white, size: 22),
+            icon: const Icon(
+              Icons.info_outline_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
             onPressed: _showPatientSheet,
           ),
         ],
@@ -1425,15 +1601,16 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary))
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
                 : _messages.isEmpty
-                    ? _buildEmptyChat()
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                        itemCount: _messages.length,
-                        itemBuilder: (ctx, i) => _buildBubble(_messages[i]),
-                      ),
+                ? _buildEmptyChat()
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    itemCount: _messages.length,
+                    itemBuilder: (ctx, i) => _buildBubble(_messages[i]),
+                  ),
           ),
 
           _buildInput(),
@@ -1451,35 +1628,44 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Row(
         children: [
-          const Icon(Icons.medical_services_outlined,
-              color: AppColors.primary, size: 18),
+          const Icon(
+            Icons.medical_services_outlined,
+            color: AppColors.primary,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: RichText(
               text: TextSpan(
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                  children: [
-                    TextSpan(
-                        text: widget.entry.patientName,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const TextSpan(text: ' · '),
-                    TextSpan(
-                        text: widget.entry.packageName,
-                        style: const TextStyle(color: AppColors.primary)),
-                    const TextSpan(text: ' · '),
-                    TextSpan(
-                        text: widget.entry.bodyArea,
-                        style: const TextStyle(
-                            color: AppColors.warning,
-                            fontWeight: FontWeight.w500)),
-                  ]),
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                children: [
+                  TextSpan(
+                    text: widget.entry.patientName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const TextSpan(text: ' · '),
+                  TextSpan(
+                    text: widget.entry.packageName,
+                    style: const TextStyle(color: AppColors.primary),
+                  ),
+                  const TextSpan(text: ' · '),
+                  TextSpan(
+                    text: widget.entry.bodyArea,
+                    style: const TextStyle(
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1494,7 +1680,8 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
           constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.72),
+            maxWidth: MediaQuery.of(context).size.width * 0.72,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: msg.isMe ? AppColors.primary : Colors.white,
@@ -1506,14 +1693,16 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
             ),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.07),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2))
+                color: Colors.black.withOpacity(0.07),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
             ],
           ),
           child: Column(
-            crossAxisAlignment:
-                msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            crossAxisAlignment: msg.isMe
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
             children: [
               if (!msg.isMe)
                 Padding(
@@ -1521,26 +1710,29 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                   child: Text(
                     widget.entry.patientName,
                     style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
               Text(
                 msg.content,
                 style: TextStyle(
-                    color: msg.isMe ? Colors.white : Colors.black87,
-                    fontSize: 14,
-                    height: 1.4),
+                  color: msg.isMe ? Colors.white : Colors.black87,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 3),
               Text(
                 DateFormat('HH:mm').format(msg.sentAt),
                 style: TextStyle(
-                    fontSize: 9,
-                    color: msg.isMe
-                        ? Colors.white.withOpacity(0.6)
-                        : Colors.grey.shade400),
+                  fontSize: 9,
+                  color: msg.isMe
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade400,
+                ),
               ),
             ],
           ),
@@ -1561,18 +1753,26 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
               color: AppColors.primary.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.chat_bubble_outline,
-                color: AppColors.primary, size: 36),
+            child: const Icon(
+              Icons.chat_bubble_outline,
+              color: AppColors.primary,
+              size: 36,
+            ),
           ),
           const SizedBox(height: 16),
-          const Text('เริ่มต้นการสนทนากับผู้ป่วย',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppColors.primary)),
+          const Text(
+            'เริ่มต้นการสนทนากับผู้ป่วย',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: AppColors.primary,
+            ),
+          ),
           const SizedBox(height: 6),
-          Text('พิมพ์คำแนะนำได้เลยด้านล่างครับ',
-              style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          Text(
+            'พิมพ์คำแนะนำได้เลยด้านล่างครับ',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -1586,9 +1786,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 10,
-              offset: const Offset(0, -3))
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, -3),
+          ),
         ],
       ),
       child: Row(
@@ -1630,9 +1831,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                 boxShadow: hasText
                     ? [
                         BoxShadow(
-                            color: AppColors.primary.withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3))
+                          color: AppColors.primary.withOpacity(0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
                       ]
                     : [],
               ),
@@ -1640,10 +1842,15 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
                   ? const Padding(
                       padding: EdgeInsets.all(13),
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
-                  : const Icon(Icons.send_rounded,
-                      color: Colors.white, size: 20),
+                  : const Icon(
+                      Icons.send_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
             ),
           ),
         ],
@@ -1656,37 +1863,54 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2)))),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
-            const Text('ข้อมูลผู้ป่วย',
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text(
+              'ข้อมูลผู้ป่วย',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
             const SizedBox(height: 16),
-            _infoTile(Icons.person_outline, 'ชื่อ-นามสกุล',
-                widget.entry.patientName),
-            _infoTile(Icons.spa_outlined, 'แพ็คเกจที่เลือก',
-                widget.entry.packageName),
-            _infoTile(Icons.location_on_outlined, 'บริเวณที่พบอาการ',
-                widget.entry.bodyArea),
-            _infoTile(Icons.payments_outlined, 'ค่าใช้จ่าย',
-                '${widget.entry.price.toInt()} บาท'),
             _infoTile(
-                Icons.calendar_today_outlined,
-                'วันที่ร้องขอ',
-                DateFormat('d MMMM yyyy  HH:mm')
-                    .format(widget.entry.requestedAt)),
+              Icons.person_outline,
+              'ชื่อ-นามสกุล',
+              widget.entry.patientName,
+            ),
+            _infoTile(
+              Icons.spa_outlined,
+              'แพ็คเกจที่เลือก',
+              widget.entry.packageName,
+            ),
+            _infoTile(
+              Icons.location_on_outlined,
+              'บริเวณที่พบอาการ',
+              widget.entry.bodyArea,
+            ),
+            _infoTile(
+              Icons.payments_outlined,
+              'ค่าใช้จ่าย',
+              '${widget.entry.price.toInt()} บาท',
+            ),
+            _infoTile(
+              Icons.calendar_today_outlined,
+              'วันที่ร้องขอ',
+              DateFormat('d MMMM yyyy  HH:mm').format(widget.entry.requestedAt),
+            ),
           ],
         ),
       ),
@@ -1712,12 +1936,17 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade500)),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),

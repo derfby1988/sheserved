@@ -128,13 +128,11 @@ class _ConsultationNoteEditorPageState
 
       final jsonValue = jsonEncode(_fieldOrder);
 
-      await Supabase.instance.client
-          .from('user_ui_preferences')
-          .upsert({
-            'user_id': userId,
-            'preference_key': 'consultation_note_layout',
-            'preference_value': jsonValue,
-          });
+      await Supabase.instance.client.from('user_ui_preferences').upsert({
+        'user_id': userId,
+        'preference_key': 'consultation_note_layout',
+        'preference_value': jsonValue,
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -173,9 +171,9 @@ class _ConsultationNoteEditorPageState
         'is_visible_to_patient': true,
       };
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กำลังบันทึกข้อมูล...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('กำลังบันทึกข้อมูล...')));
 
       final response = await Supabase.instance.client
           .from('consultation_notes')
@@ -204,9 +202,9 @@ class _ConsultationNoteEditorPageState
     } catch (e) {
       debugPrint('Error saving note: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
       }
     }
   }

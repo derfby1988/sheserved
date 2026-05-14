@@ -57,11 +57,7 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: Container(
           color: AppColors.primary,
-          child: SafeArea(
-            child: TlzAppTopBar.onPrimary(
-              showQRButton: false,
-            ),
-          ),
+          child: SafeArea(child: TlzAppTopBar.onPrimary(showQRButton: false)),
         ),
       ),
       body: _isLoading
@@ -78,7 +74,9 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.arrow_back_ios_new, size: 24),
-                          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false),
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil('/home', (route) => false),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           color: AppColors.primary,
@@ -99,7 +97,10 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
                   child: RefreshIndicator(
                     onRefresh: _loadCategories,
                     child: ReorderableListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       itemCount: _categories.length,
                       onReorder: _onReorder,
                       itemBuilder: (context, index) {
@@ -125,16 +126,19 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
   }
 
   Widget _buildCategoryCard(UserCategory category) {
-    final bool isSystem = category.id == UserCategory.consumerId || 
-                         category.id == UserCategory.providerId ||
-                         category.id == UserCategory.localLeaderId;
+    final bool isSystem =
+        category.id == UserCategory.consumerId ||
+        category.id == UserCategory.providerId ||
+        category.id == UserCategory.localLeaderId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: isSystem ? AppColors.primary.withOpacity(0.3) : AppColors.border,
+          color: isSystem
+              ? AppColors.primary.withOpacity(0.3)
+              : AppColors.border,
           width: 1,
         ),
       ),
@@ -157,7 +161,9 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
           alignment: Alignment.centerLeft,
           child: Text(
             category.name,
-            style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+            style: AppTextStyles.bodyLarge.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         subtitle: Column(
@@ -167,27 +173,38 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
               children: [
                 Flexible(
                   child: Text(
-                    'ID: ${category.id}', 
+                    'ID: ${category.id}',
                     style: AppTextStyles.caption,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    'ลำดับ: ${category.displayOrder}', 
-                    style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold)
+                    'ลำดับ: ${category.displayOrder}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
             if (category.description != null)
-              Text(category.description!, style: AppTextStyles.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(
+                category.description!,
+                style: AppTextStyles.caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
           ],
         ),
         trailing: Row(
@@ -200,7 +217,11 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
             ),
             if (!isSystem)
               IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.error),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: AppColors.error,
+                ),
                 onPressed: () => _confirmDelete(category),
                 tooltip: 'ลบ',
               ),
@@ -212,21 +233,34 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
 
   IconData _getIconData(String? iconName) {
     if (iconName == null) return Icons.category;
-    
+
     switch (iconName) {
-      case 'category': return Icons.category;
-      case 'person': return Icons.person;
-      case 'business': return Icons.business;
-      case 'volunteer_activism': return Icons.volunteer_activism;
-      case 'group': return Icons.group;
-      case 'home': return Icons.home;
-      case 'school': return Icons.school;
-      case 'favorite': return Icons.favorite;
-      case 'star': return Icons.star;
-      case 'pets': return Icons.pets;
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'medical_services': return Icons.medical_services;
-      default: return Icons.category;
+      case 'category':
+        return Icons.category;
+      case 'person':
+        return Icons.person;
+      case 'business':
+        return Icons.business;
+      case 'volunteer_activism':
+        return Icons.volunteer_activism;
+      case 'group':
+        return Icons.group;
+      case 'home':
+        return Icons.home;
+      case 'school':
+        return Icons.school;
+      case 'favorite':
+        return Icons.favorite;
+      case 'star':
+        return Icons.star;
+      case 'pets':
+        return Icons.pets;
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'medical_services':
+        return Icons.medical_services;
+      default:
+        return Icons.category;
     }
   }
 
@@ -237,7 +271,7 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
     setState(() {
       final category = _categories.removeAt(oldIndex);
       _categories.insert(newIndex, category);
-      
+
       // Update local display orders
       for (int i = 0; i < _categories.length; i++) {
         _categories[i] = _categories[i].copyWith(displayOrder: i);
@@ -249,13 +283,19 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
       await repository.reorderUserCategories(_categories);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกลำดับใหม่แล้ว'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('บันทึกลำดับใหม่แล้ว'),
+            duration: Duration(seconds: 1),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาดในการจัดลำดับ: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการจัดลำดับ: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
       _loadCategories(); // Revert on error
@@ -279,22 +319,36 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('ยืนยันการลบ'),
-        content: Text('คุณต้องการลบหมวดหมู่ "${category.name}" ใช่หรือไม่?\n(การลบอาจส่งผลต่อการคัดกรองอาชีพที่ใช้หมวดหมู่นี้)'),
+        content: Text(
+          'คุณต้องการลบหมวดหมู่ "${category.name}" ใช่หรือไม่?\n(การลบอาจส่งผลต่อการคัดกรองอาชีพที่ใช้หมวดหมู่นี้)',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก'),
+          ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
               try {
-                final repository = ProfessionRepository(Supabase.instance.client);
+                final repository = ProfessionRepository(
+                  Supabase.instance.client,
+                );
                 await repository.deleteUserCategory(category.id);
                 _loadCategories();
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ลบหมวดหมู่เรียบร้อยแล้ว')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('ลบหมวดหมู่เรียบร้อยแล้ว')),
+                  );
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: AppColors.error));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('เกิดข้อผิดพลาด: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
                 }
               }
             },
@@ -312,10 +366,15 @@ class UserCategoryEditorDialog extends StatefulWidget {
   final UserCategory? category;
   final VoidCallback onSave;
 
-  const UserCategoryEditorDialog({super.key, this.category, required this.onSave});
+  const UserCategoryEditorDialog({
+    super.key,
+    this.category,
+    required this.onSave,
+  });
 
   @override
-  State<UserCategoryEditorDialog> createState() => _UserCategoryEditorDialogState();
+  State<UserCategoryEditorDialog> createState() =>
+      _UserCategoryEditorDialogState();
 }
 
 class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
@@ -324,6 +383,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
   late TextEditingController _descriptionController;
   String _selectedIcon = 'category';
   bool _canApproveDonation = false;
+  bool _isConsultationProvider = false;
   bool _isSaving = false;
   bool get isEditing => widget.category != null;
 
@@ -347,9 +407,12 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
     super.initState();
     _idController = TextEditingController(text: widget.category?.id ?? '');
     _nameController = TextEditingController(text: widget.category?.name ?? '');
-    _descriptionController = TextEditingController(text: widget.category?.description ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.category?.description ?? '',
+    );
     _selectedIcon = widget.category?.iconName ?? 'category';
     _canApproveDonation = widget.category?.canApproveDonation ?? false;
+    _isConsultationProvider = widget.category?.isConsultationProvider ?? false;
   }
 
   @override
@@ -398,7 +461,10 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
                 ),
               ),
               child: SwitchListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 title: const Text(
                   'อนุมัติบริจาคได้',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
@@ -412,10 +478,47 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
                 onChanged: (val) => setState(() => _canApproveDonation = val),
               ),
             ),
+            const SizedBox(height: 16),
+            // --- Toggle: ผู้ให้บริการสุขภาพ ---
+            Container(
+              decoration: BoxDecoration(
+                color: _isConsultationProvider
+                    ? AppColors.primary.withOpacity(0.05)
+                    : AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _isConsultationProvider
+                      ? AppColors.primary
+                      : AppColors.border,
+                ),
+              ),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                title: const Text(
+                  'นำทางไป Dashboard ให้คำปรึกษา',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'หมวดหมู่นี้จะเข้าสู่หน้ากระดานรับงาน (Dashboard) เมื่อกดปุ่ม "โปรแกรมการรักษา/ปรึกษา" แทนการเข้าห้องแชทโดยตรง',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _isConsultationProvider,
+                activeColor: AppColors.primary,
+                onChanged: (val) =>
+                    setState(() => _isConsultationProvider = val),
+              ),
+            ),
             const SizedBox(height: 24),
             Row(
               children: [
-                const Icon(Icons.palette_outlined, size: 20, color: AppColors.textSecondary),
+                const Icon(
+                  Icons.palette_outlined,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'เลือกไอคอนหมวดหมู่',
@@ -441,24 +544,29 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
                 itemBuilder: (context, index) {
                   final iconData = _availableIcons[index];
                   final bool isSelected = _selectedIcon == iconData['name'];
-                  
+
                   return InkWell(
-                    onTap: () => setState(() => _selectedIcon = iconData['name']),
+                    onTap: () =>
+                        setState(() => _selectedIcon = iconData['name']),
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isSelected 
-                            ? AppColors.primary.withOpacity(0.1) 
+                        color: isSelected
+                            ? AppColors.primary.withOpacity(0.1)
                             : AppColors.background,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.border,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.border,
                           width: isSelected ? 2 : 1,
                         ),
                       ),
                       child: Icon(
                         iconData['icon'] as IconData,
-                        color: isSelected ? AppColors.primary : AppColors.textHint,
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.textHint,
                       ),
                     ),
                   );
@@ -469,11 +577,26 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('ยกเลิก'),
+        ),
         ElevatedButton(
           onPressed: _isSaving ? null : _save,
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-          child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('บันทึก'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: _isSaving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('บันทึก'),
         ),
       ],
     );
@@ -481,7 +604,9 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
 
   Future<void> _save() async {
     if (_idController.text.isEmpty || _nameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบถ้วน')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบถ้วน')),
+      );
       return;
     }
 
@@ -495,6 +620,7 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
         'icon_name': _selectedIcon,
         'is_active': true,
         'can_approve_donation': _canApproveDonation,
+        'is_consultation_provider': _isConsultationProvider,
       };
 
       if (isEditing) {
@@ -511,7 +637,12 @@ class _UserCategoryEditorDialogState extends State<UserCategoryEditorDialog> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: AppColors.error));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
