@@ -279,6 +279,7 @@ class PaymentService {
       debugPrint('[PaymentService] ⚠️ Escrow transition failed (non-critical): $e');
     }
   }
+}
 
 // ===========================================================
 // RESULT TYPES

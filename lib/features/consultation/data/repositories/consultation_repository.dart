@@ -323,6 +323,24 @@ class ConsultationRepository {
     }
   }
 
+  /// Provider สละสิทธิ์: คืนโควต้าให้แพทย์อื่น
+  Future<void> abandonProviderFromGroup({
+    required String consultationId,
+    required String providerId,
+  }) async {
+    final response = await _client.rpc(
+      'abandon_provider_from_group',
+      params: {
+        'p_consultation_id': consultationId,
+        'p_provider_id': providerId,
+      },
+    );
+
+    if (response is Map && response['success'] == false) {
+      throw Exception(response['message'] ?? 'สละสิทธิ์ไม่สำเร็จ');
+    }
+  }
+
   /// Update status of a consultation request
   Future<void> updateStatus(String requestId, String status) async {
     await _client

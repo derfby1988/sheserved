@@ -231,6 +231,19 @@ class ChatRepository {
         });
   }
 
+  Stream<ChatRoom?> streamRoom(String roomId) {
+    return _supabase
+        .from('chat_rooms')
+        .stream(primaryKey: ['id'])
+        .eq('id', roomId)
+        .map((data) {
+          if (data.isEmpty) return null;
+          final room = ChatRoom.fromJson(data.first);
+          _roomBox.put(room.id, room);
+          return room;
+        });
+  }
+
   // =====================================================
   // REAL-TIME SIGNALING (Typing, Presence)
   // =====================================================

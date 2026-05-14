@@ -22,13 +22,22 @@ class ChatRoomAdapter extends TypeAdapter<ChatRoom> {
       lastMessage: fields[2] as String?,
       updatedAt: fields[3] as DateTime,
       metadata: (fields[4] as Map?)?.cast<dynamic, dynamic>(),
+      roomType: fields[5] as String?,
+      consultationId: fields[6] as String?,
+      packageId: fields[7] as String?,
+      title: fields[8] as String?,
+      isActive: fields[9] as bool,
+      expiresAt: fields[10] as DateTime?,
+      sessionMinutes: fields[11] as int?,
+      startedAt: fields[12] as DateTime?,
+      endedAt: fields[13] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatRoom obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -38,7 +47,25 @@ class ChatRoomAdapter extends TypeAdapter<ChatRoom> {
       ..writeByte(3)
       ..write(obj.updatedAt)
       ..writeByte(4)
-      ..write(obj.metadata);
+      ..write(obj.metadata)
+      ..writeByte(5)
+      ..write(obj.roomType)
+      ..writeByte(6)
+      ..write(obj.consultationId)
+      ..writeByte(7)
+      ..write(obj.packageId)
+      ..writeByte(8)
+      ..write(obj.title)
+      ..writeByte(9)
+      ..write(obj.isActive)
+      ..writeByte(10)
+      ..write(obj.expiresAt)
+      ..writeByte(11)
+      ..write(obj.sessionMinutes)
+      ..writeByte(12)
+      ..write(obj.startedAt)
+      ..writeByte(13)
+      ..write(obj.endedAt);
   }
 
   @override
@@ -128,13 +155,15 @@ class ChatParticipantAdapter extends TypeAdapter<ChatParticipant> {
       firstName: fields[1] as String,
       lastName: fields[2] as String,
       profileImageUrl: fields[3] as String?,
+      lastSeenAt: fields[4] as DateTime?,
+      availabilityStatus: fields[5] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatParticipant obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -142,7 +171,11 @@ class ChatParticipantAdapter extends TypeAdapter<ChatParticipant> {
       ..writeByte(2)
       ..write(obj.lastName)
       ..writeByte(3)
-      ..write(obj.profileImageUrl);
+      ..write(obj.profileImageUrl)
+      ..writeByte(4)
+      ..write(obj.lastSeenAt)
+      ..writeByte(5)
+      ..write(obj.availabilityStatus);
   }
 
   @override

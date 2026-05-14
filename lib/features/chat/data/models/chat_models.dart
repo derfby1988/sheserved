@@ -14,6 +14,24 @@ class ChatRoom {
   final DateTime updatedAt;
   @HiveField(4)
   final Map<dynamic, dynamic>? metadata;
+  @HiveField(5)
+  final String? roomType;
+  @HiveField(6)
+  final String? consultationId;
+  @HiveField(7)
+  final String? packageId;
+  @HiveField(8)
+  final String? title;
+  @HiveField(9)
+  final bool isActive;
+  @HiveField(10)
+  final DateTime? expiresAt;
+  @HiveField(11)
+  final int? sessionMinutes;
+  @HiveField(12)
+  final DateTime? startedAt;
+  @HiveField(13)
+  final DateTime? endedAt;
 
   ChatRoom({
     required this.id,
@@ -21,6 +39,15 @@ class ChatRoom {
     this.lastMessage,
     required this.updatedAt,
     this.metadata,
+    this.roomType,
+    this.consultationId,
+    this.packageId,
+    this.title,
+    this.isActive = true,
+    this.expiresAt,
+    this.sessionMinutes,
+    this.startedAt,
+    this.endedAt,
   });
 
   factory ChatRoom.fromJson(Map<String, dynamic> json) {
@@ -30,6 +57,15 @@ class ChatRoom {
       lastMessage: json['last_message'],
       updatedAt: DateTime.parse(json['updated_at']),
       metadata: json['metadata'],
+      roomType: json['room_type'] ?? json['roomType'],
+      consultationId: json['consultation_id'] ?? json['consultationId'],
+      packageId: json['package_id'] ?? json['packageId'],
+      title: json['title'],
+      isActive: json['is_active'] ?? json['isActive'] ?? true,
+      expiresAt: (json['expires_at'] ?? json['expiresAt']) != null ? DateTime.parse(json['expires_at'] ?? json['expiresAt']) : null,
+      sessionMinutes: json['session_minutes'] ?? json['sessionMinutes'],
+      startedAt: (json['started_at'] ?? json['startedAt']) != null ? DateTime.parse(json['started_at'] ?? json['startedAt']) : null,
+      endedAt: (json['ended_at'] ?? json['endedAt']) != null ? DateTime.parse(json['ended_at'] ?? json['endedAt']) : null,
     );
   }
 
@@ -40,6 +76,15 @@ class ChatRoom {
       'last_message': lastMessage,
       'updated_at': updatedAt.toIso8601String(),
       'metadata': metadata,
+      'room_type': roomType,
+      'consultation_id': consultationId,
+      'package_id': packageId,
+      'title': title,
+      'is_active': isActive,
+      'expires_at': expiresAt?.toIso8601String(),
+      'session_minutes': sessionMinutes,
+      'started_at': startedAt?.toIso8601String(),
+      'ended_at': endedAt?.toIso8601String(),
     };
   }
 }

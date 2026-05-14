@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -46,11 +49,31 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   // Pain level options
   final List<Map<String, dynamic>> painLevels = [
-    {'label': 'ไม่มี', 'color': const Color(0xFF4CAF50), 'icon': Icons.sentiment_very_satisfied},
-    {'label': 'เล็กน้อย', 'color': const Color(0xFF8BC34A), 'icon': Icons.sentiment_satisfied},
-    {'label': 'ปานกลาง', 'color': const Color(0xFFFFC107), 'icon': Icons.sentiment_neutral},
-    {'label': 'มาก', 'color': const Color(0xFFFF9800), 'icon': Icons.sentiment_dissatisfied},
-    {'label': 'มากที่สุด', 'color': const Color(0xFFF44336), 'icon': Icons.sentiment_very_dissatisfied},
+    {
+      'label': 'ไม่มี',
+      'color': const Color(0xFF4CAF50),
+      'icon': Icons.sentiment_very_satisfied,
+    },
+    {
+      'label': 'เล็กน้อย',
+      'color': const Color(0xFF8BC34A),
+      'icon': Icons.sentiment_satisfied,
+    },
+    {
+      'label': 'ปานกลาง',
+      'color': const Color(0xFFFFC107),
+      'icon': Icons.sentiment_neutral,
+    },
+    {
+      'label': 'มาก',
+      'color': const Color(0xFFFF9800),
+      'icon': Icons.sentiment_dissatisfied,
+    },
+    {
+      'label': 'มากที่สุด',
+      'color': const Color(0xFFF44336),
+      'icon': Icons.sentiment_very_dissatisfied,
+    },
   ];
   String? _selectedPain;
 
@@ -58,15 +81,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
     _slideController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 500));
-    _fadeAnimation =
-        CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
     _slideAnimation = Tween<Offset>(
-            begin: const Offset(0, 0.3), end: Offset.zero)
-        .animate(
-            CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _initChat();
   }
@@ -112,9 +141,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         });
 
         // Subscribe to realtime updates
-        _messagesSub = _chatRepository
-            .streamMessages(roomId)
-            .listen((updatedMessages) {
+        _messagesSub = _chatRepository.streamMessages(roomId).listen((
+          updatedMessages,
+        ) {
           if (mounted) {
             setState(() => _messages = updatedMessages);
             _scrollToBottom();
@@ -136,7 +165,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   /// Ensure the consultation chat room exists in chat_rooms table
-  Future<void> _ensureConsultationRoom(String roomId, String currentUserId) async {
+  Future<void> _ensureConsultationRoom(
+    String roomId,
+    String currentUserId,
+  ) async {
     try {
       final supabase = Supabase.instance.client;
       // Check if room already exists
@@ -149,12 +181,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       if (existing == null) {
         // Create room with the patient's ID as participant
-        await supabase.from('chat_rooms').insert({
-          'id': roomId,
-          'participant_ids': [currentUserId],
-          'last_message': null,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 5));
+        await supabase
+            .from('chat_rooms')
+            .insert({
+              'id': roomId,
+              'participant_ids': [currentUserId],
+              'last_message': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .timeout(const Duration(seconds: 5));
         debugPrint('ChartBoardPage: Created consultation room: $roomId');
       } else {
         debugPrint('ChartBoardPage: Room already exists: $roomId');
@@ -212,23 +247,150 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (mounted) setState(() => _isSending = false);
   }
 
+  Future<File> _processImagePDPA(File originalFile) async {
+    // 1. Detect faces using Google ML Kit
+    final inputImage = InputImage.fromFile(originalFile);
+    final options = FaceDetectorOptions(
+      enableContours: false,
+      enableClassification: false,
+      performanceMode: FaceDetectorMode.fast,
+    );
+    final faceDetector = FaceDetector(options: options);
+    final faces = await faceDetector.processImage(inputImage);
+    faceDetector.close();
+
+    // 2. Load image for Canvas
+    final data = await originalFile.readAsBytes();
+    final ui.Image image = await decodeImageFromList(data);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    canvas.drawImage(image, Offset.zero, Paint());
+
+    // 3. Blur faces
+    final censorPaint = Paint()
+      ..color = Colors.grey.shade400.withOpacity(0.95)
+      ..style = PaintingStyle.fill;
+
+    // Optional: Add some slight blur to the edges of the censor oval
+    final maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    censorPaint.maskFilter = maskFilter;
+
+    for (Face face in faces) {
+      final rect = face.boundingBox;
+      // Expand the rect slightly to cover the whole head/hair
+      final expandedRect = Rect.fromLTRB(
+        rect.left - (rect.width * 0.1),
+        rect.top - (rect.height * 0.2),
+        rect.right + (rect.width * 0.1),
+        rect.bottom + (rect.height * 0.1),
+      );
+      canvas.drawOval(expandedRect, censorPaint);
+    }
+
+    // 4. Draw Watermark
+    final now = DateTime.now();
+    final thaiMonths = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
+    final thaiDays = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+    final dayName = thaiDays[now.weekday % 7];
+    final day = now.day.toString().padLeft(2, '0');
+    final month = thaiMonths[now.month - 1];
+    final year = ((now.year + 543) % 100).toString();
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final text = ' $dayName.$day.$month$year $timeStr ';
+
+    final fontSize = image.width * 0.04;
+    final textStyle = ui.TextStyle(
+      color: Colors.white.withOpacity(0.9),
+      fontSize: fontSize,
+      background: Paint()..color = Colors.black54,
+    );
+    final paragraphStyle = ui.ParagraphStyle(textAlign: TextAlign.right);
+    final paragraphBuilder = ui.ParagraphBuilder(paragraphStyle)
+      ..pushStyle(textStyle)
+      ..addText(' [Sheserved Private] $text ');
+    final paragraph = paragraphBuilder.build()
+      ..layout(ui.ParagraphConstraints(width: image.width.toDouble()));
+
+    canvas.drawParagraph(paragraph, Offset(0, image.height - (fontSize * 1.5)));
+
+    // 5. Export from Canvas
+    final picture = recorder.endRecording();
+    final watermarkedImage = await picture.toImage(image.width, image.height);
+    final byteData = await watermarkedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    // 6. Compress Image to reduce size
+    final tempDir = await getTemporaryDirectory();
+    final targetPath =
+        '${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    final compressedBytes = await FlutterImageCompress.compressWithList(
+      byteData!.buffer.asUint8List(),
+      minWidth: 1080,
+      minHeight: 1080,
+      quality: 60,
+      format: CompressFormat.jpeg,
+    );
+
+    final finalFile = File(targetPath);
+    await finalFile.writeAsBytes(compressedBytes);
+
+    return finalFile;
+  }
+
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
-    final image =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final image = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
 
     if (image != null && mounted) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('กำลังอัปโหลดรูปภาพ...'),
-          duration: Duration(seconds: 2),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('กำลังเบลอใบหน้าและอัปโหลด...'),
+            ],
+          ),
         ),
       );
 
-      final file = File(image.path);
+      File file = File(image.path);
+      try {
+        file = await _processImagePDPA(file);
+      } catch (e) {
+        debugPrint('PDPA process error: $e');
+      }
+
       final roomId = _consultationRoomId ?? 'consultation_demo';
       final url = await _chatRepository.uploadFile(file, 'chat/$roomId');
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close dialog
 
       if (url != null) {
         final message = ChatMessage(
@@ -239,6 +401,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           createdAt: DateTime.now(),
           type: 'image',
           attachmentUrl: url,
+          attachmentType: 'image/png',
           status: MessageStatus.sent,
         );
         await _chatRepository.sendMessage(message);
@@ -306,211 +469,238 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        title: const Text(
-          'ระบุอาการ',
-          style: TextStyle(
-            color: Color(0xFF2D5A1B),
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.primary, size: 20),
-          onPressed: () => Navigator.pop(context),
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
+          stops: [0.0, 0.5, 1.0],
         ),
       ),
-      body: Column(
-        children: [
-          // === TOP SECTION: Pain Level Selector ===
-          Expanded(
-            flex: 5,
-            child: Container(
-              color: const Color(0xFFF5F7FA),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A8B2C).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.medical_services_outlined,
-                              color: Color(0xFF4A8B2C), size: 20),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'คุณรู้สึกเจ็บปวดระดับใด?',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF2D5A1B),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Pain Level Buttons
-                    Expanded(
-                      child: GridView.count(
-                        crossAxisCount: 3,
-                        childAspectRatio: 1.5,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.zero,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          title: const Text(
+            'ระบุอาการ',
+            style: TextStyle(
+              color: Color(0xFF2D5A1B),
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Column(
+          children: [
+            // === TOP SECTION: Pain Level Selector ===
+            Expanded(
+              flex: 5,
+              child: Container(
+                color: Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
                         children: [
-                          ...painLevels.map((level) {
-                            final isSelected = _selectedPain == level['label'];
-                            final color = level['color'] as Color;
-                            return GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedPain = level['label']),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                curve: Curves.easeOut,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? color.withOpacity(0.15)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color:
-                                        isSelected ? color : Colors.grey.shade200,
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                  boxShadow: isSelected
-                                      ? [
-                                          BoxShadow(
-                                            color: color.withOpacity(0.3),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 3),
-                                          )
-                                        ]
-                                      : [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.04),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 2),
-                                          )
-                                        ],
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      level['icon'] as IconData,
-                                      color: isSelected ? color : Colors.grey,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      level['label'] as String,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSelected ? color : Colors.grey.shade600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A8B2C).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.medical_services_outlined,
+                              color: Color(0xFF4A8B2C),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'คุณรู้สึกเจ็บปวดระดับใด?',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D5A1B),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 16),
 
-                    // Selected state indicator
-                    if (_selectedPain != null)
-                      AnimatedOpacity(
-                        opacity: _selectedPain != null ? 1 : 0,
-                        duration: const Duration(milliseconds: 300),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A8B2C).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.check_circle,
-                                  color: Color(0xFF4A8B2C), size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                'เลือกแล้ว: ความเจ็บปวดระดับ "$_selectedPain"',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF4A8B2C),
-                                  fontWeight: FontWeight.w500,
+                      // Pain Level Buttons
+                      Expanded(
+                        child: GridView.count(
+                          crossAxisCount: 3,
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: EdgeInsets.zero,
+                          children: [
+                            ...painLevels.map((level) {
+                              final isSelected =
+                                  _selectedPain == level['label'];
+                              final color = level['color'] as Color;
+                              return GestureDetector(
+                                onTap: () => setState(
+                                  () => _selectedPain = level['label'],
                                 ),
-                              ),
-                            ],
-                          ),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeOut,
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? color.withOpacity(0.15)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? color
+                                          : Colors.grey.shade200,
+                                      width: isSelected ? 2 : 1,
+                                    ),
+                                    boxShadow: isSelected
+                                        ? [
+                                            BoxShadow(
+                                              color: color.withOpacity(0.3),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 3),
+                                            ),
+                                          ]
+                                        : [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.04,
+                                              ),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        level['icon'] as IconData,
+                                        color: isSelected ? color : Colors.grey,
+                                        size: 22,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        level['label'] as String,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: isSelected
+                                              ? color
+                                              : Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
                         ),
                       ),
-                  ],
+
+                      // Selected state indicator
+                      if (_selectedPain != null)
+                        AnimatedOpacity(
+                          opacity: _selectedPain != null ? 1 : 0,
+                          duration: const Duration(milliseconds: 300),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A8B2C).withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF4A8B2C),
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'เลือกแล้ว: ความเจ็บปวดระดับ "$_selectedPain"',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF4A8B2C),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // === BOTTOM SECTION: Chat Panel ===
-          Expanded(
-            flex: 6,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF4A8B2C),
-                    Color(0xFF2D6A1F),
-                    Color(0xFF1A4D10),
+            // === BOTTOM SECTION: Chat Panel ===
+            Expanded(
+              flex: 6,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    topRight: Radius.circular(32),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-                child: Column(
-                  children: [
-                    // Chat Header
-                    _buildChatHeader(),
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    topRight: Radius.circular(32),
+                  ),
+                  child: Column(
+                    children: [
+                      // Chat Header
+                      _buildChatHeader(),
 
-                    // Messages List
-                    Expanded(child: _buildMessagesList()),
+                      // Messages List
+                      Expanded(child: _buildMessagesList()),
 
-                    // Input Area
-                    _buildChatInput(),
-                  ],
+                      // Input Area
+                      _buildChatInput(),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -519,10 +709,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
-        border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
-        ),
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
       ),
       child: Row(
         children: [
@@ -536,16 +724,24 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   left: 0,
                   child: CircleAvatar(
                     radius: 14,
-                    backgroundColor: Colors.white.withOpacity(0.9),
-                    child: const Icon(Icons.person, size: 14, color: Color(0xFF4A8B2C)),
+                    backgroundColor: Colors.grey.shade100,
+                    child: const Icon(
+                      Icons.person,
+                      size: 14,
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
                 Positioned(
                   left: 18,
                   child: CircleAvatar(
                     radius: 14,
-                    backgroundColor: Colors.greenAccent.withOpacity(0.9),
-                    child: const Icon(Icons.medical_services, size: 12, color: Color(0xFF2D6A1F)),
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: const Icon(
+                      Icons.medical_services,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
               ],
@@ -559,17 +755,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 const Text(
                   'แชทกลุ่มปรึกษาผู้เชี่ยวชาญ',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF1A4D10),
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
                 ),
                 Text(
                   'Expert Group · ปลอดภัยและเป็นส่วนตัว',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
                 ),
               ],
             ),
@@ -578,21 +771,27 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: Colors.greenAccent.withOpacity(0.2),
+              color: Colors.green.shade50,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.greenAccent.withOpacity(0.4)),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 6, height: 6,
+                  width: 6,
+                  height: 6,
                   decoration: const BoxDecoration(
-                    color: Colors.greenAccent, shape: BoxShape.circle),
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 const Text(
                   'ออนไลน์',
-                  style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -609,15 +808,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             CircularProgressIndicator(
-              valueColor:
-                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.8)),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               strokeWidth: 2,
             ),
             const SizedBox(height: 12),
             Text(
               'กำลังเชื่อมต่อห้องแชท...',
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.7), fontSize: 13),
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
             ),
           ],
         ),
@@ -652,16 +849,20 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Row(
-          mainAxisAlignment:
-              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: isMe
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isMe) ...[
               CircleAvatar(
                 radius: 14,
-                backgroundColor: Colors.white.withOpacity(0.9),
-                child: const Icon(Icons.medical_services,
-                    size: 12, color: Color(0xFF4A8B2C)),
+                backgroundColor: Colors.white,
+                child: const Icon(
+                  Icons.medical_services,
+                  size: 12,
+                  color: AppColors.primary,
+                ),
               ),
               const SizedBox(width: 6),
             ],
@@ -671,9 +872,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
-                color: isMe
-                    ? Colors.white
-                    : Colors.white.withOpacity(0.15),
+                color: isMe ? AppColors.primary : Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
@@ -682,15 +881,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 6,
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
               child: Column(
-                crossAxisAlignment:
-                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
                   if (message.type == 'image' && message.attachmentUrl != null)
                     ClipRRect(
@@ -704,19 +904,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                           height: 120,
                           color: Colors.grey.shade200,
                           child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2)),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         ),
                       ),
                     )
                   else if (message.type == 'voice' &&
                       message.attachmentUrl != null)
-                    _MiniVoicePlayer(
-                        url: message.attachmentUrl!, isMe: isMe)
+                    _MiniVoicePlayer(url: message.attachmentUrl!, isMe: isMe)
                   else
                     Text(
                       message.content,
                       style: TextStyle(
-                        color: isMe ? Colors.black87 : Colors.white,
+                        color: isMe ? Colors.white : Colors.black87,
                         fontSize: 14,
                         height: 1.4,
                       ),
@@ -727,8 +927,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     style: TextStyle(
                       fontSize: 9,
                       color: isMe
-                          ? Colors.grey.shade500
-                          : Colors.white.withOpacity(0.55),
+                          ? Colors.white.withOpacity(0.7)
+                          : Colors.grey.shade500,
                     ),
                   ),
                 ],
@@ -758,15 +958,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: isReady 
-                    ? const Color(0xFF4A8B2C).withOpacity(0.3) 
+                color: isReady
+                    ? const Color(0xFF4A8B2C).withOpacity(0.3)
                     : Colors.black.withOpacity(0.05),
                 blurRadius: 15,
                 offset: const Offset(0, 8),
               ),
             ],
             border: Border.all(
-              color: isReady 
+              color: isReady
                   ? const Color(0xFF4A8B2C).withOpacity(0.5)
                   : Colors.grey.shade200,
             ),
@@ -778,7 +978,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: isReady ? Colors.white.withOpacity(0.2) : Colors.grey.shade100,
+                  color: isReady
+                      ? Colors.white.withOpacity(0.2)
+                      : Colors.grey.shade100,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -802,15 +1004,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       ),
                     ),
                     Text(
-                      isReady 
-                          ? 'ยืนยันและส่งคำรักษา' 
+                      isReady
+                          ? 'ยืนยันและส่งคำรักษา'
                           : 'กรุณาเลือกระดับความเจ็บปวดก่อน',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isReady 
-                            ? Colors.white.withOpacity(0.9) 
+                        color: isReady
+                            ? Colors.white.withOpacity(0.9)
                             : Colors.orange.shade800,
-                        fontWeight: isReady ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isReady
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -818,7 +1022,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
               Icon(
                 Icons.arrow_forward_ios_rounded,
-                color: isReady ? Colors.white.withOpacity(0.5) : Colors.grey.shade300,
+                color: isReady
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey.shade300,
                 size: 18,
               ),
             ],
@@ -833,10 +1039,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.1)),
-        ),
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade100)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -854,26 +1058,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               height: 44,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(22),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  )
-                ],
               ),
               child: TextField(
                 controller: _msgController,
                 style: const TextStyle(color: Colors.black87, fontSize: 14),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'ถามผู้เชี่ยวชาญ...',
-                  hintStyle:
-                      TextStyle(color: Colors.grey, fontSize: 14),
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 14,
+                  ),
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _sendMessage(),
@@ -907,17 +1106,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       decoration: BoxDecoration(
                         color: _isRecording
                             ? Colors.redAccent
-                            : Colors.white,
+                            : Colors.grey.shade100,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: (_isRecording ? Colors.redAccent : Colors.black)
-                                .withOpacity(0.2),
+                            color:
+                                (_isRecording ? Colors.redAccent : Colors.black)
+                                    .withOpacity(0.2),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
-                          )
+                          ),
                         ],
                       ),
+
                       child: Icon(
                         _isRecording ? Icons.stop_rounded : Icons.mic,
                         color: _isRecording
@@ -971,16 +1172,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-                color: bgColor.withOpacity(0.4),
-                blurRadius: 8,
-                offset: const Offset(0, 2))
+              color: bgColor.withOpacity(0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: isLoading
             ? const Padding(
                 padding: EdgeInsets.all(12),
                 child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2),
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
               )
             : Icon(icon, color: color, size: 20),
       ),
@@ -1002,9 +1206,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      ),
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
 
     try {
@@ -1014,7 +1217,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       // 1. Prepare final data
-      final finalSymptomsChart = Map<String, dynamic>.from(widget.request.symptomsChart);
+      final finalSymptomsChart = Map<String, dynamic>.from(
+        widget.request.symptomsChart,
+      );
       finalSymptomsChart['pain_level'] = _selectedPain;
 
       // 2. Save to Repository
@@ -1033,7 +1238,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('ส่งคำปรึกษาสำเร็จ! กรุณารอผู้เชี่ยวชาญเข้าห้องแชทครับ'),
+            content: Text(
+              'ส่งคำปรึกษาสำเร็จ! กรุณารอผู้เชี่ยวชาญเข้าห้องแชทครับ',
+            ),
             backgroundColor: Color(0xFF4A8B2C),
           ),
         );
@@ -1081,8 +1288,7 @@ class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
     _audioPlayer = AudioPlayer();
 
     _audioPlayer.onPlayerStateChanged.listen((state) {
-      if (mounted)
-        setState(() => _isPlaying = state == PlayerState.playing);
+      if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
     });
     _audioPlayer.onDurationChanged.listen((d) {
       if (mounted) setState(() => _duration = d);
@@ -1091,10 +1297,11 @@ class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
       if (mounted) setState(() => _position = p);
     });
     _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() {
-        _isPlaying = false;
-        _position = Duration.zero;
-      });
+      if (mounted)
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
     });
   }
 
@@ -1128,7 +1335,9 @@ class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: (widget.isMe ? Colors.black : Colors.white).withOpacity(0.15),
+              color: (widget.isMe ? Colors.black : Colors.white).withOpacity(
+                0.15,
+              ),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -1157,9 +1366,7 @@ class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
             const SizedBox(height: 3),
             Text(
               _fmt(_isPlaying ? _position : _duration),
-              style: TextStyle(
-                  fontSize: 9,
-                  color: iconColor.withOpacity(0.7)),
+              style: TextStyle(fontSize: 9, color: iconColor.withOpacity(0.7)),
             ),
           ],
         ),

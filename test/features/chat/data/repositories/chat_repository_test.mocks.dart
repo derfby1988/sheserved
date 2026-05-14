@@ -742,6 +742,81 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get emergencyChatStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#emergencyChatStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get videoProgressStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#videoProgressStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get videoStatusStream => (super.noSuchMethod(
+        Invocation.getter(#videoStatusStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get videoInteractionStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#videoInteractionStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get emergencyNotificationStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#emergencyNotificationStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get rescueIncomingStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#rescueIncomingStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get viewerCountStream => (super.noSuchMethod(
+        Invocation.getter(#viewerCountStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get donationStatusStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#donationStatusStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get thaiMhungPhotoStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#thaiMhungPhotoStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get yieldWayAlertStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#yieldWayAlertStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get thumbnailUpdateStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#thumbnailUpdateStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   void setEnabled(bool? enabled) => super.noSuchMethod(
         Invocation.method(
           #setEnabled,
@@ -925,6 +1000,119 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       );
 
   @override
+  void sendEmergencyAlert({
+    required String? userId,
+    required String? categoryId,
+    String? videoId,
+    String? type,
+    String? text,
+    bool? isThaiMhungEnabled = false,
+    String? incidentId,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendEmergencyAlert,
+          [],
+          {
+            #userId: userId,
+            #categoryId: categoryId,
+            #videoId: videoId,
+            #type: type,
+            #text: text,
+            #isThaiMhungEnabled: isThaiMhungEnabled,
+            #incidentId: incidentId,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void sendRescueStatusUpdate({
+    required String? videoId,
+    required String? volunteerId,
+    required String? status,
+    String? victimId,
+    String? responseId,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendRescueStatusUpdate,
+          [],
+          {
+            #videoId: videoId,
+            #volunteerId: volunteerId,
+            #status: status,
+            #victimId: victimId,
+            #responseId: responseId,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void joinEmergencyChat(
+    String? videoId,
+    String? userId,
+    String? role,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #joinEmergencyChat,
+          [
+            videoId,
+            userId,
+            role,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void leaveEmergencyChat(String? videoId) => super.noSuchMethod(
+        Invocation.method(
+          #leaveEmergencyChat,
+          [videoId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void archiveEmergencyChat(String? videoId) => super.noSuchMethod(
+        Invocation.method(
+          #archiveEmergencyChat,
+          [videoId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void sendEmergencyChatMessage({
+    required String? videoId,
+    required String? userId,
+    required String? role,
+    required String? userName,
+    required String? content,
+    String? profileImageUrl,
+    String? professionName,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendEmergencyChatMessage,
+          [],
+          {
+            #videoId: videoId,
+            #userId: userId,
+            #role: role,
+            #userName: userName,
+            #content: content,
+            #profileImageUrl: profileImageUrl,
+            #professionName: professionName,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
   void disconnect() => super.noSuchMethod(
         Invocation.method(
           #disconnect,
@@ -934,10 +1122,115 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       );
 
   @override
+  void joinVideoRoom(String? videoId) => super.noSuchMethod(
+        Invocation.method(
+          #joinVideoRoom,
+          [videoId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void leaveVideoRoom(String? videoId) => super.noSuchMethod(
+        Invocation.method(
+          #leaveVideoRoom,
+          [videoId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void sendVideoInteraction(
+    String? videoId,
+    String? userId,
+    String? type, {
+    int? value = 0,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendVideoInteraction,
+          [
+            videoId,
+            userId,
+            type,
+          ],
+          {#value: value},
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void sendVolunteerRoute({
+    required String? videoId,
+    required String? responseId,
+    required String? encodedPolyline,
+    required double? fromLat,
+    required double? fromLng,
+    required double? toLat,
+    required double? toLng,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendVolunteerRoute,
+          [],
+          {
+            #videoId: videoId,
+            #responseId: responseId,
+            #encodedPolyline: encodedPolyline,
+            #fromLat: fromLat,
+            #fromLng: fromLng,
+            #toLat: toLat,
+            #toLng: toLng,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void requestYieldWayNotification({
+    required String? videoId,
+    required String? responseId,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #requestYieldWayNotification,
+          [],
+          {
+            #videoId: videoId,
+            #responseId: responseId,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
   void dispose() => super.noSuchMethod(
         Invocation.method(
           #dispose,
           [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void updateRescueStatus({
+    required String? videoId,
+    required String? volunteerId,
+    required String? status,
+    required String? responseId,
+    String? victimId,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #updateRescueStatus,
+          [],
+          {
+            #videoId: videoId,
+            #volunteerId: volunteerId,
+            #status: status,
+            #responseId: responseId,
+            #victimId: victimId,
+          },
         ),
         returnValueForMissingStub: null,
       );

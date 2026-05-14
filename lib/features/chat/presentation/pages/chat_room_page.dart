@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +14,10 @@ import '../../../../core/constants/app_colors.dart';
 import '../../data/models/chat_models.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../features/consultation/presentation/pages/consultation_note_editor_page.dart';
+import '../../../../features/consultation/presentation/pages/prescription_editor_page.dart';
+import '../widgets/expert_group_status_banner.dart';
+import '../widgets/session_timer_widget.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final String roomId;
@@ -26,10 +33,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   final _webSocketService = ServiceLocator.instance.websocketService;
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+
   StreamSubscription? _callInviteSub;
   StreamSubscription? _callAcceptSub;
-  
+
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
   List<ChatParticipant> _otherParticipants = [];
@@ -40,22 +47,35 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   bool _isRecording = false;
   String? _recordingPath;
 
+  StreamSubscription<ChatRoom?>? _roomSub;
+  ChatRoom? _currentRoom;
+  bool get _isProvider =>
+      AuthService.instance.currentUser?.professionId != null;
+
   @override
   void initState() {
     super.initState();
     _loadInitialData();
     _listenForCalls();
+
+    _roomSub = _chatRepository.streamRoom(widget.roomId).listen((room) {
+      if (mounted && room != null) {
+        setState(() => _currentRoom = room);
+      }
+    });
   }
 
   Future<void> _loadInitialData() async {
     // 1. Load messages
     final msgs = await _chatRepository.getMessages(widget.roomId);
-    
+
     // 2. Fetch other participants info
     final rooms = await _chatRepository.getChatRooms(_currentUser?.id ?? '');
     final room = rooms.firstWhere((r) => r.id == widget.roomId);
-    final otherIds = room.participantIds.where((id) => id != _currentUser?.id).toList();
-    
+    final otherIds = room.participantIds
+        .where((id) => id != _currentUser?.id)
+        .toList();
+
     final infos = <ChatParticipant>[];
     for (var id in otherIds) {
       final info = await _chatRepository.getParticipantInfo(id);
@@ -84,22 +104,156 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     }
   }
 
+  Future<File> _processImagePDPA(File originalFile) async {
+    // 1. Detect faces using Google ML Kit
+    final inputImage = InputImage.fromFile(originalFile);
+    final options = FaceDetectorOptions(
+      enableContours: false,
+      enableClassification: false,
+      performanceMode: FaceDetectorMode.fast,
+    );
+    final faceDetector = FaceDetector(options: options);
+    final faces = await faceDetector.processImage(inputImage);
+    faceDetector.close();
+
+    // 2. Load image for Canvas
+    final data = await originalFile.readAsBytes();
+    final ui.Image image = await decodeImageFromList(data);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    canvas.drawImage(image, Offset.zero, Paint());
+
+    // 3. Blur faces
+    final censorPaint = Paint()
+      ..color = Colors.grey.shade400.withOpacity(0.95)
+      ..style = PaintingStyle.fill;
+
+    // Optional: Add some slight blur to the edges of the censor oval
+    final maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    censorPaint.maskFilter = maskFilter;
+
+    for (Face face in faces) {
+      final rect = face.boundingBox;
+      // Expand the rect slightly to cover the whole head/hair
+      final expandedRect = Rect.fromLTRB(
+        rect.left - (rect.width * 0.1),
+        rect.top - (rect.height * 0.2),
+        rect.right + (rect.width * 0.1),
+        rect.bottom + (rect.height * 0.1),
+      );
+      canvas.drawOval(expandedRect, censorPaint);
+    }
+
+    // 4. Draw Watermark
+    final now = DateTime.now();
+    final thaiMonths = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
+    final thaiDays = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+    final dayName = thaiDays[now.weekday % 7];
+    final day = now.day.toString().padLeft(2, '0');
+    final month = thaiMonths[now.month - 1];
+    final year = ((now.year + 543) % 100).toString();
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final text = ' $dayName.$day.$month$year $timeStr ';
+
+    final fontSize = image.width * 0.04;
+    final textStyle = ui.TextStyle(
+      color: Colors.white.withOpacity(0.9),
+      fontSize: fontSize,
+      background: Paint()..color = Colors.black54,
+    );
+    final paragraphStyle = ui.ParagraphStyle(textAlign: TextAlign.right);
+    final paragraphBuilder = ui.ParagraphBuilder(paragraphStyle)
+      ..pushStyle(textStyle)
+      ..addText(' [Sheserved Private] $text ');
+    final paragraph = paragraphBuilder.build()
+      ..layout(ui.ParagraphConstraints(width: image.width.toDouble()));
+
+    canvas.drawParagraph(paragraph, Offset(0, image.height - (fontSize * 1.5)));
+
+    // 5. Export from Canvas
+    final picture = recorder.endRecording();
+    final watermarkedImage = await picture.toImage(image.width, image.height);
+    final byteData = await watermarkedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    // 6. Compress Image to reduce size
+    final tempDir = await getTemporaryDirectory();
+    final targetPath =
+        '${tempDir.path}/processed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    final compressedBytes = await FlutterImageCompress.compressWithList(
+      byteData!.buffer.asUint8List(),
+      minWidth: 1080,
+      minHeight: 1080,
+      quality: 60,
+      format: CompressFormat.jpeg,
+    );
+
+    final finalFile = File(targetPath);
+    await finalFile.writeAsBytes(compressedBytes);
+
+    return finalFile;
+  }
+
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-    
+    // บังคับถ่ายรูปจากกล้องตามข้อกำหนด PDPA (Camera Only)
+    final image = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
+
     final user = _currentUser;
     if (image != null && user != null) {
-      final file = File(image.path);
-      
-      // Show loading indicator
+      File file = File(image.path);
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กำลังอัปโหลดรูปภาพ...')),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('กำลังเบลอใบหน้าและอัปโหลด...'),
+            ],
+          ),
+        ),
       );
 
-      final url = await _chatRepository.uploadFile(file, 'chat/${widget.roomId}');
-      
+      try {
+        file = await _processImagePDPA(file);
+      } catch (e) {
+        debugPrint('PDPA process error: $e');
+      }
+
+      final url = await _chatRepository.uploadFile(
+        file,
+        'chat/${widget.roomId}',
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close dialog
+
       if (url != null) {
         final newMessage = ChatMessage(
           id: const Uuid().v4(),
@@ -115,35 +269,43 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
         final success = await _chatRepository.sendMessage(newMessage);
         if (!success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ส่งรูปภาพไม่สำเร็จ')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('ส่งรูปภาพไม่สำเร็จ')));
         }
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('อัปโหลดรูปภาพไม่สำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('อัปโหลดรูปภาพไม่สำเร็จ')));
       }
     }
   }
 
   void _listenForCalls() {
     _callInviteSub = _webSocketService.callInviteStream.listen((data) {
-      if (data['roomId'] == widget.roomId && data['callerId'] != _currentUser?.id) {
+      if (data['roomId'] == widget.roomId &&
+          data['callerId'] != _currentUser?.id) {
         _showIncomingCallDialog(data);
       }
     });
 
     _callAcceptSub = _webSocketService.callAcceptStream.listen((data) {
-      final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
-      if (data['roomId'] == widget.roomId && data['calleeId'] == otherParticipant?.id) {
+      final otherParticipant = _otherParticipants.isNotEmpty
+          ? _otherParticipants.first
+          : null;
+      if (data['roomId'] == widget.roomId &&
+          data['calleeId'] == otherParticipant?.id) {
         // Navigate to LiveVdoPage as caller
         if (!mounted) return;
-        Navigator.pushNamed(context, '/live-vdo', arguments: {
-          'roomId': widget.roomId,
-          'isCaller': true,
-          'otherParticipantName': otherParticipant?.firstName ?? 'Expert',
-        });
+        Navigator.pushNamed(
+          context,
+          '/live-vdo',
+          arguments: {
+            'roomId': widget.roomId,
+            'isCaller': true,
+            'otherParticipantName': otherParticipant?.firstName ?? 'Expert',
+          },
+        );
       }
     });
   }
@@ -152,11 +314,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     try {
       if (await _audioRecorder.hasPermission()) {
         final directory = await getApplicationDocumentsDirectory();
-        _recordingPath = '${directory.path}/record_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        
+        _recordingPath =
+            '${directory.path}/record_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
         const config = RecordConfig();
         await _audioRecorder.start(config, path: _recordingPath!);
-        
+
         setState(() => _isRecording = true);
       }
     } catch (e) {
@@ -172,15 +335,18 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       final user = _currentUser;
       if (path != null && user != null) {
         final file = File(path);
-        
+
         // Upload to Supabase
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('กำลังส่งข้อความเสียง...')),
         );
 
-        final url = await _chatRepository.uploadFile(file, 'chat/${widget.roomId}');
-        
+        final url = await _chatRepository.uploadFile(
+          file,
+          'chat/${widget.roomId}',
+        );
+
         if (url != null) {
           final newMessage = ChatMessage(
             id: const Uuid().v4(),
@@ -202,6 +368,98 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     }
   }
 
+  void _showMedicalToolsBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'เครื่องมือแพทย์',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_document, color: Colors.blue),
+                title: const Text('บันทึกการตรวจ (Consultation Note)'),
+                subtitle: const Text('สรุปอาการ แผนการรักษา และนัดหมาย'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openConsultationNoteEditor();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.medication, color: Colors.green),
+                title: const Text('ออกใบสั่งยา (Prescription)'),
+                subtitle: const Text('สั่งจ่ายยาให้คนไข้'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openPrescriptionEditor();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.quickreply, color: Colors.orange),
+                title: const Text('ข้อความตอบกลับด่วน (Quick Reply)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // TODO: Show quick replies
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openConsultationNoteEditor() {
+    final patientId =
+        _currentRoom?.participantIds.firstWhere(
+          (id) => id != _currentUser?.id,
+          orElse: () => '',
+        ) ??
+        '';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConsultationNoteEditorPage(
+          consultationId: widget
+              .roomId, // Assuming roomId represents consultation request context for now
+          patientId: patientId,
+        ),
+      ),
+    );
+  }
+
+  void _openPrescriptionEditor() {
+    final patientId =
+        _currentRoom?.participantIds.firstWhere(
+          (id) => id != _currentUser?.id,
+          orElse: () => '',
+        ) ??
+        '';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PrescriptionEditorPage(
+          consultationId: widget
+              .roomId, // Assuming roomId represents consultation request context for now
+          patientId: patientId,
+        ),
+      ),
+    );
+  }
+
   void _showIncomingCallDialog(Map<String, dynamic> data) {
     showDialog(
       context: context,
@@ -221,11 +479,15 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             onPressed: () {
               _webSocketService.acceptCall(widget.roomId, _currentUser!.id);
               Navigator.pop(context);
-              Navigator.pushNamed(context, '/live-vdo', arguments: {
-                'roomId': widget.roomId,
-                'isCaller': false,
-                'otherParticipantName': data['callerName'],
-              });
+              Navigator.pushNamed(
+                context,
+                '/live-vdo',
+                arguments: {
+                  'roomId': widget.roomId,
+                  'isCaller': false,
+                  'otherParticipantName': data['callerName'],
+                },
+              );
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             child: const Text('รับสาย'),
@@ -236,13 +498,17 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   void _startVideoCall() {
-    final otherParticipant = _otherParticipants.isNotEmpty ? _otherParticipants.first : null;
+    final otherParticipant = _otherParticipants.isNotEmpty
+        ? _otherParticipants.first
+        : null;
     final user = _currentUser;
     if (user == null || otherParticipant == null) return;
-    
+
     // We get profile details from AuthService directly
     final currentProfile = AuthService.instance.currentUser;
-    final fullName = currentProfile != null ? '${currentProfile.firstName} ${currentProfile.lastName}' : 'User';
+    final fullName = currentProfile != null
+        ? '${currentProfile.firstName} ${currentProfile.lastName}'
+        : 'User';
     final profileImageUrl = currentProfile?.profileImageUrl ?? '';
 
     _webSocketService.sendCallInvite(
@@ -252,9 +518,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       profileImageUrl,
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('กำลังเรียกสาย...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('กำลังเรียกสาย...')));
   }
 
   void _scrollToBottom() {
@@ -287,9 +553,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
     final success = await _chatRepository.sendMessage(newMessage);
     if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ส่งข้อความไม่สำเร็จ')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ส่งข้อความไม่สำเร็จ')));
     }
   }
 
@@ -305,14 +571,20 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 CircleAvatar(
                   radius: 18,
                   backgroundColor: Colors.white24,
-                  backgroundImage: (_otherParticipants.isNotEmpty && _otherParticipants.first.profileImageUrl != null)
+                  backgroundImage:
+                      (_otherParticipants.isNotEmpty &&
+                          _otherParticipants.first.profileImageUrl != null)
                       ? NetworkImage(_otherParticipants.first.profileImageUrl!)
                       : null,
-                  child: (_otherParticipants.isEmpty || _otherParticipants.first.profileImageUrl == null)
+                  child:
+                      (_otherParticipants.isEmpty ||
+                          _otherParticipants.first.profileImageUrl == null)
                       ? const Icon(Icons.group, color: Colors.white, size: 20)
                       : null,
                 ),
-                if (_otherParticipants.length == 1 && (_otherParticipants.first.isOnline || _otherParticipants.first.isBusy))
+                if (_otherParticipants.length == 1 &&
+                    (_otherParticipants.first.isOnline ||
+                        _otherParticipants.first.isBusy))
                   Positioned(
                     right: 0,
                     bottom: 0,
@@ -320,9 +592,14 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: _otherParticipants.first.isBusy ? Colors.orange : Colors.greenAccent,
+                        color: _otherParticipants.first.isBusy
+                            ? Colors.orange
+                            : Colors.greenAccent,
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.primary, width: 1.5),
+                        border: Border.all(
+                          color: AppColors.primary,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
@@ -334,28 +611,40 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _otherParticipants.length > 1 
-                      ? 'แชทกลุ่ม (${_otherParticipants.length + 1})'
-                      : _otherParticipants.isNotEmpty 
-                        ? _otherParticipants.first.fullName 
+                    _otherParticipants.length > 1
+                        ? 'แชทกลุ่ม (${_otherParticipants.length + 1})'
+                        : _otherParticipants.isNotEmpty
+                        ? _otherParticipants.first.fullName
                         : 'Expert Chat',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    _isOtherTyping 
-                      ? 'ใครบางคนกำลังพิมพ์...' 
-                      : _otherParticipants.length > 1 
+                    _isOtherTyping
+                        ? 'ใครบางคนกำลังพิมพ์...'
+                        : _otherParticipants.length > 1
                         ? _otherParticipants.map((p) => p.firstName).join(', ')
                         : _otherParticipants.isNotEmpty
-                          ? (_otherParticipants.first.isOnline 
-                              ? 'พร้อมให้บริการ' 
-                              : (_otherParticipants.first.isBusy ? 'ไม่ว่าง' : 'ออฟไลน์'))
-                          : 'กำลังโหลด...',
+                        ? (_otherParticipants.first.isOnline
+                              ? 'พร้อมให้บริการ'
+                              : (_otherParticipants.first.isBusy
+                                    ? 'ไม่ว่าง'
+                                    : 'ออฟไลน์'))
+                        : 'กำลังโหลด...',
                     style: TextStyle(
                       fontSize: 11,
-                      color: _isOtherTyping ? Colors.white : (_otherParticipants.isNotEmpty && _otherParticipants.first.isOnline ? Colors.greenAccent : Colors.white70),
-                      fontStyle: _isOtherTyping ? FontStyle.italic : FontStyle.normal,
+                      color: _isOtherTyping
+                          ? Colors.white
+                          : (_otherParticipants.isNotEmpty &&
+                                    _otherParticipants.first.isOnline
+                                ? Colors.greenAccent
+                                : Colors.white70),
+                      fontStyle: _isOtherTyping
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -365,6 +654,24 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           ],
         ),
         actions: [
+          if (_currentRoom?.roomType == 'consultation' &&
+              _currentRoom?.startedAt != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: SessionTimerWidget(
+                  startedAt: _currentRoom!.startedAt!,
+                  sessionMinutes: _currentRoom!.sessionMinutes ?? 15,
+                  onExpire: () {
+                    // Lock room if expired
+                    if (_currentRoom!.isActive) {
+                      // Call RPC to end session or just setState if we have a local flag
+                      // (The server cron will actually do it, but we lock UI immediately)
+                    }
+                  },
+                ),
+              ),
+            ),
           IconButton(
             onPressed: _startVideoCall,
             icon: const Icon(Icons.videocam),
@@ -377,6 +684,39 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       ),
       body: Column(
         children: [
+          if (_currentRoom != null)
+            ExpertGroupStatusBanner(
+              room: _currentRoom!,
+              isProvider: _isProvider,
+              onAbandon: () async {
+                if (_currentRoom?.consultationId == null ||
+                    _currentUser == null)
+                  return;
+                try {
+                  await ServiceLocator.instance.consultationRepository
+                      .abandonProviderFromGroup(
+                        consultationId: _currentRoom!.consultationId!,
+                        providerId: _currentUser!.id,
+                      );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('สละสิทธิ์สำเร็จ โควต้าถูกคืนแล้ว'),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
           Expanded(
             child: Stack(
               children: [
@@ -395,14 +735,17 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 20,
+                      ),
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
                         final msg = _messages[index];
                         final user = _currentUser;
                         final isMe = msg.senderId == user?.id;
                         return _MessageBubble(
-                          message: msg, 
+                          message: msg,
                           isMe: isMe,
                           otherParticipants: _otherParticipants,
                         );
@@ -413,11 +756,15 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 // Typing Indicator Stream
                 if (_currentUser != null)
                   StreamBuilder<bool>(
-                    stream: _chatRepository.streamAnyTyping(widget.roomId, _currentUser.id),
+                    stream: _chatRepository.streamAnyTyping(
+                      widget.roomId,
+                      _currentUser.id,
+                    ),
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data != _isOtherTyping) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) setState(() => _isOtherTyping = snapshot.data!);
+                          if (mounted)
+                            setState(() => _isOtherTyping = snapshot.data!);
                         });
                       }
                       return const SizedBox.shrink();
@@ -426,7 +773,18 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
               ],
             ),
           ),
-          _buildInputArea(),
+          if (_currentRoom?.isActive == false)
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.grey.shade200,
+              alignment: Alignment.center,
+              child: const Text(
+                'การให้คำปรึกษาสิ้นสุดลงแล้ว',
+                style: TextStyle(color: Colors.black54),
+              ),
+            )
+          else
+            _buildInputArea(),
         ],
       ),
     );
@@ -452,6 +810,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
               onPressed: _pickAndSendImage,
               icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
             ),
+            if (_isProvider)
+              IconButton(
+                onPressed: _showMedicalToolsBottomSheet,
+                icon: Icon(Icons.medical_information, color: AppColors.primary),
+              ),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -471,10 +834,18 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                   onChanged: (text) {
                     final user = _currentUser;
                     if (user == null) return;
-                    _chatRepository.sendTypingStatus(widget.roomId, user.id, true);
+                    _chatRepository.sendTypingStatus(
+                      widget.roomId,
+                      user.id,
+                      true,
+                    );
                     _typingTimer?.cancel();
                     _typingTimer = Timer(const Duration(seconds: 2), () {
-                      _chatRepository.sendTypingStatus(widget.roomId, user.id, false);
+                      _chatRepository.sendTypingStatus(
+                        widget.roomId,
+                        user.id,
+                        false,
+                      );
                     });
                   },
                   onSubmitted: (_) => _sendMessage(),
@@ -511,7 +882,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                     _sendMessage();
                     final user = _currentUser;
                     if (user != null) {
-                      _chatRepository.sendTypingStatus(widget.roomId, user.id, false);
+                      _chatRepository.sendTypingStatus(
+                        widget.roomId,
+                        user.id,
+                        false,
+                      );
                     }
                   },
                   icon: const Icon(Icons.send, color: Colors.white, size: 20),
@@ -522,8 +897,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       ),
     );
   }
+
   @override
   void dispose() {
+    _roomSub?.cancel();
     _typingTimer?.cancel();
     _callInviteSub?.cancel();
     _callAcceptSub?.cancel();
@@ -543,7 +920,7 @@ class _MessageBubble extends StatelessWidget {
   final List<ChatParticipant> otherParticipants;
 
   const _MessageBubble({
-    required this.message, 
+    required this.message,
     required this.isMe,
     required this.otherParticipants,
   });
@@ -555,7 +932,9 @@ class _MessageBubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
         decoration: BoxDecoration(
           gradient: isMe ? AppColors.primaryGradient : null,
           color: isMe ? null : Colors.white,
@@ -567,23 +946,48 @@ class _MessageBubble extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: isMe 
-                ? AppColors.primary.withOpacity(0.25) 
-                : Colors.black.withOpacity(0.05),
+              color: isMe
+                  ? AppColors.primary.withOpacity(0.25)
+                  : Colors.black.withOpacity(0.05),
               offset: const Offset(0, 4),
               blurRadius: 10,
             ),
           ],
-          border: isMe ? null : Border.all(color: Colors.grey.shade100, width: 1),
+          border: isMe
+              ? null
+              : Border.all(color: Colors.grey.shade100, width: 1),
         ),
         child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             if (message.type == 'image' && message.attachmentUrl != null)
               _buildImageContent(context),
             if (message.type == 'voice' && message.attachmentUrl != null)
               _VoiceMessageBubble(url: message.attachmentUrl!, isMe: isMe),
-            if (message.type == 'text' || (message.content.isNotEmpty && message.content != '[รูปภาพ]' && message.content != '[ข้อความเสียง]'))
+            if (message.type == 'note')
+              _buildMedicalCard(
+                context,
+                icon: Icons.edit_document,
+                title: 'บันทึกการตรวจ',
+                color: Colors.blue,
+                isMe: isMe,
+              ),
+            if (message.type == 'prescription')
+              _buildMedicalCard(
+                context,
+                icon: Icons.medication,
+                title: 'ใบสั่งยา',
+                color: Colors.green,
+                isMe: isMe,
+              ),
+            if (message.type == 'text' ||
+                (message.type != 'note' &&
+                    message.type != 'prescription' &&
+                    message.content.isNotEmpty &&
+                    message.content != '[รูปภาพ]' &&
+                    message.content != '[ข้อความเสียง]'))
               Text(
                 message.content,
                 style: TextStyle(
@@ -598,7 +1002,9 @@ class _MessageBubble extends StatelessWidget {
                 Text(
                   '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                    color: (isMe ? Colors.white : Colors.black54).withOpacity(0.6),
+                    color: (isMe ? Colors.white : Colors.black54).withOpacity(
+                      0.6,
+                    ),
                     fontSize: 10,
                   ),
                 ),
@@ -607,7 +1013,9 @@ class _MessageBubble extends StatelessWidget {
                   Icon(
                     message.readBy.isNotEmpty ? Icons.done_all : Icons.done,
                     size: 12,
-                    color: message.readBy.isNotEmpty ? Colors.blueAccent : Colors.white70,
+                    color: message.readBy.isNotEmpty
+                        ? Colors.blueAccent
+                        : Colors.white70,
                   ),
                 ],
               ],
@@ -617,7 +1025,11 @@ class _MessageBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4.0),
                 child: Text(
                   'อ่านโดย: ${_getReaderNames()}',
-                  style: const TextStyle(fontSize: 9, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: Colors.blueAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
           ],
@@ -630,10 +1042,86 @@ class _MessageBubble extends StatelessWidget {
     if (message.readBy.isEmpty) return '';
     final names = <String>[];
     for (var userId in message.readBy.keys) {
-      final p = otherParticipants.firstWhere((p) => p.id == userId, orElse: () => ChatParticipant(id: userId, firstName: 'User', lastName: ''));
+      final p = otherParticipants.firstWhere(
+        (p) => p.id == userId,
+        orElse: () =>
+            ChatParticipant(id: userId, firstName: 'User', lastName: ''),
+      );
       names.add(p.firstName);
     }
     return names.join(', ');
+  }
+
+  Widget _buildMedicalCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required Color color,
+    required bool isMe,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        // TODO: Open read-only viewer for note/prescription
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เปิดดู $title (ระบบดูข้อมูลกำลังพัฒนา)')),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.white.withOpacity(0.2) : color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isMe
+                ? Colors.white.withOpacity(0.5)
+                : color.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isMe ? Colors.white : color,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: isMe ? AppColors.primary : Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isMe ? Colors.white : color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  'แตะเพื่อดูรายละเอียด',
+                  style: TextStyle(
+                    color: isMe
+                        ? Colors.white.withOpacity(0.8)
+                        : Colors.black54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            Icon(Icons.chevron_right, color: isMe ? Colors.white : color),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildImageContent(BuildContext context) {
@@ -722,7 +1210,7 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
   @override
   Widget build(BuildContext context) {
     final color = widget.isMe ? Colors.white : AppColors.primary;
-    
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -740,9 +1228,9 @@ class _VoiceMessageBubbleState extends State<_VoiceMessageBubble> {
             SizedBox(
               width: 120,
               child: LinearProgressIndicator(
-                value: _duration.inMilliseconds > 0 
-                  ? _position.inMilliseconds / _duration.inMilliseconds 
-                  : 0.0,
+                value: _duration.inMilliseconds > 0
+                    ? _position.inMilliseconds / _duration.inMilliseconds
+                    : 0.0,
                 backgroundColor: color.withOpacity(0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
