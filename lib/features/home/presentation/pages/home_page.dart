@@ -8,6 +8,7 @@ import '../../../health/data/models/health_article_models.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../consultation/presentation/logic/consultation_guard.dart';
+import '../../../consultation/data/repositories/consultation_repository.dart';
 import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
@@ -21,6 +22,7 @@ import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../../consultation/presentation/pages/health_program_request_dashboard.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -115,6 +117,11 @@ class _HomePageState extends State<HomePage>
   StreamSubscription? _yieldWaySub;
   bool _isInit = false;
 
+  // === Consultation Request Notifications (Phase 5) ===
+  StreamSubscription? _consultationAlertSub;
+  final List<Map<String, dynamic>> _consultationAlerts = [];
+  final Set<String> _dismissedConsultationIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +159,7 @@ class _HomePageState extends State<HomePage>
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForDonationStatus(); // Donation status notification
+    _subscribeConsultationAlerts(); // ✅ Phase 5: Head sector consultation alerts
 
     // Start auto-refresh timer as a fail-safe (every 90 seconds)
     _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
@@ -171,6 +179,7 @@ class _HomePageState extends State<HomePage>
     _emergencySub?.cancel();
     _donationStatusSub?.cancel();
     _yieldWaySub?.cancel();
+    _consultationAlertSub?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -454,6 +463,92 @@ class _HomePageState extends State<HomePage>
           }
         });
       });
+    });
+  }
+
+  // ──── Consultation Alert Subscription (Phase 5) ────
+
+  /// Subscribe Supabase Realtime เพื่อรับคำขอปรึกษาที่รอ provider รับงาน
+  /// แสดงเฉพาะกรณีผู้ใช้เป็น consultation provider และมี professionId
+  void _subscribeConsultationAlerts() {
+    final user = AuthService.instance.currentUser;
+    if (user == null || user.professionId == null) return;
+
+    // ตรวจว่าเป็น consumer ทั่วไปหรือไม่ (00...0001 = consumer)
+    const consumerProfessionId = '00000000-0000-0000-0000-000000000001';
+    if (user.professionId == consumerProfessionId) return;
+
+    final repo = ConsultationRepository(Supabase.instance.client);
+
+    _consultationAlertSub?.cancel();
+
+    // โหลด packageIds ก่อนแล้วค่อย subscribe stream
+    repo.getPackageIdsForProfession(user.professionId!).then((packageIds) {
+      if (!mounted) return;
+
+      final stream = packageIds.isNotEmpty
+          ? repo.watchRequestsForProfession(packageIds)
+          : repo.watchAllRequestsWithUserInfo();
+
+      _consultationAlertSub = stream.listen((rawList) {
+        if (!mounted) return;
+        // กรองเฉพาะ pending ที่ยังไม่ถูก dismiss
+        final pendingAlerts = rawList.where((m) {
+          final id = m['id']?.toString() ?? '';
+          final status = m['status']?.toString() ?? '';
+          return status == 'pending' && !_dismissedConsultationIds.contains(id);
+        }).map((m) {
+          // map ให้ตรงกับ key ที่ HomeHeaderSection ใช้
+          final userMap = m['users'] as Map<String, dynamic>? ?? {};
+          final firstName = userMap['first_name']?.toString() ?? '';
+          final lastName = userMap['last_name']?.toString() ?? '';
+          final name = '$firstName $lastName'.trim();
+          return {
+            'id': m['id'],
+            'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
+            'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
+            'requestedAt': DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
+            'status': m['status'],
+          };
+        }).toList();
+
+        setState(() {
+          _consultationAlerts
+            ..clear()
+            ..addAll(pendingAlerts);
+        });
+      });
+    }).catchError((e) {
+      debugPrint('HomePage: _subscribeConsultationAlerts error: $e');
+    });
+  }
+
+  /// ผู้ใช้ปัดทิ้งการแจ้งเตือนปรึกษา → บันทึก dismiss ใน local Set
+  void _onConsultationAlertDismissed(String consultationId) {
+    setState(() {
+      _dismissedConsultationIds.add(consultationId);
+      _consultationAlerts.removeWhere((a) => a['id'] == consultationId);
+    });
+    debugPrint('HomePage: Consultation alert dismissed: $consultationId');
+  }
+
+  /// ผู้ใช้กดดูการแจ้งเตือน → นำทางไป Dashboard พร้อม auto-focus
+  void _onConsultationAlertTapped(String consultationId) {
+    // ลบออกจาก head sector ทันที (optimistic)
+    setState(() {
+      _dismissedConsultationIds.add(consultationId);
+      _consultationAlerts.removeWhere((a) => a['id'] == consultationId);
+    });
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HealthProgramRequestDashboard(
+          initialFocusId: consultationId,
+        ),
+      ),
+    ).then((_) {
+      // หลังกลับจาก Dashboard อาจมีสถานะเปลี่ยน — re-subscribe
+      _subscribeConsultationAlerts();
     });
   }
 
@@ -1037,6 +1132,14 @@ class _HomePageState extends State<HomePage>
     // Reset connection on auth change
     if (userId != null) {
       _connectWebSocket();
+      _subscribeConsultationAlerts(); // ✅ re-subscribe เมื่อ login
+    } else {
+      // Logout — clear consultation alerts
+      _consultationAlertSub?.cancel();
+      setState(() {
+        _consultationAlerts.clear();
+        _dismissedConsultationIds.clear();
+      });
     }
 
     _loadConsultationPosition();
@@ -1635,6 +1738,9 @@ class _HomePageState extends State<HomePage>
                                       alerts: _thaiMhungAlerts,
                                       donationAlerts: _donationAlerts,
                                       yieldWayAlerts: _yieldWayAlerts,
+                                      consultationAlerts: _consultationAlerts,
+                                      onConsultationAlertDismissed: _onConsultationAlertDismissed,
+                                      onConsultationAlertTapped: _onConsultationAlertTapped,
                                       onAlertDismissed: (videoId) {
                                         _recordDismissedAlert(videoId);
                                         setState(() {

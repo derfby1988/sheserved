@@ -1320,6 +1320,26 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 ✅ **โครงการ (CHAT CONSULTATION IMPROVEMENT) เสร็จสมบูรณ์ทุก Phase 1-4 แล้ว**
 
+---
 
-> วิเคราะห์จากโค้ดจริงใน `/lib/features/chat/`, `/lib/features/consultation/`, และ `/lib/features/profile/`  
-> ควร review กับทีมก่อน implement เพื่อ prioritize ตาม business needs
+## 🔔 Phase 5: Head Sector Notification Integration (✅ เสร็จสมบูรณ์)
+
+**หลักการ:** นำการแจ้งเตือนคำร้องขอคำปรึกษาใหม่ (New Consultation Requests) ไปแสดงผลใน `HomeHeaderSection` (มุมขวาบนของหน้า Home) เพื่อใช้พื้นที่ร่วมกับการแจ้งเตือนระบบอื่นๆ เช่น แจ้งเหตุฉุกเฉิน (Alerts), ระบบให้ทาง (Yield Way), และแจ้งเตือนทานยา
+
+### 1. พฤติกรรมการแสดงผลและการโต้ตอบ (UX/UI Behaviors) - ✅ Implement แล้ว
+- **การแจ้งเตือนแบบ Real-time:** แสดงรายการคำขอปรึกษาที่มีสถานะ `pending` ที่ตรงกับสายอาชีพ (Profession/Expert Group) ของผู้ให้บริการใน `HomeHeaderSection` ทันทีเมื่อมีคำร้องเข้ามาใหม่ (ผ่าน Supabase Stream)
+- **การปัดเพื่อปฏิเสธ (Swipe to Dismiss):** ผู้ให้บริการปัดขวา/ซ้ายที่รายการแจ้งเตือน จะเป็นการนำรายการนั้นออกจาก UI ทันที (บันทึกลง Local State เพื่อไม่ให้แสดงผลซ้ำ)
+- **แตะเพื่อนำทาง (Tap to Navigate):** กดที่การแจ้งเตือน นำทางผู้ใช้ไปยังหน้า `HealthProgramRequestDashboard` และระบบทำการ **Auto-focus** ไปยังการ์ดคำขออันนั้น พร้อม Animation Border สีเขียว
+- **การหดกลับอัตโนมัติ (Auto-Resolve):** กรณีที่มีผู้เชี่ยวชาญคนอื่นกดรับงานในคำขอนั้นจนครบโควต้า (Status เปลี่ยนจาก `pending` เป็น `in_progress`) หรือระบบยกเลิก/หมดอายุ แจ้งเตือนใน Head Sector จะถูกลบออกอัตโนมัติ
+
+### 2. ไฟล์ที่ได้รับการแก้ไขใน Phase 5
+
+| ไฟล์ | การเปลี่ยนแปลง | สถานะ |
+|---|---|---|
+| `health_program_request_dashboard.dart` | เพิ่ม `initialFocusId`, `ScrollController`, ฟังก์ชัน Auto-scroll `_scrollToFocus()`, และ Highlight Animation ให้กับการ์ดเป้าหมาย | ✅ เสร็จสิ้น |
+| `home_header_section.dart` | เพิ่ม Notification item ใหม่สำหรับ consultation (`consultationAlerts`), รองรับ Swipe to dismiss, และจัดเรียงแจ้งเตือนล่าสุดขึ้นบน | ✅ เสร็จสิ้น |
+| `home_page.dart` | เพิ่ม State `_consultationAlerts`, ฟังก์ชัน Subscribe Supabase `_subscribeConsultationAlerts()` สำหรับ Provider, Handle การ Dismiss/Tap และส่งข้อมูลให้ Header | ✅ เสร็จสิ้น |
+
+---
+
+✅ **โครงการ CHAT CONSULTATION IMPROVEMENT เสร็จสมบูรณ์ทุก Phase (1-5) แล้ว**

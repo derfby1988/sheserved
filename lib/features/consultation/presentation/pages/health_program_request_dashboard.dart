@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -9,85 +8,15 @@ import '../../../../features/auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../chat/data/models/chat_models.dart';
 import '../../data/repositories/consultation_repository.dart';
+import '../../data/models/consultation_entry.dart';
 import '../../../../shared/widgets/widgets.dart';
+import 'expert_chat_room_page.dart';
+import '../widgets/dashboard/availability_toggle_button.dart';
+import '../widgets/dashboard/availability_banner.dart';
 
-// ─── Model: Rich consultation entry with patient info ─────────────────────────
-class ConsultationEntry {
-  final String id;
-  final String patientName;
-  final String? patientAvatar;
-  final String packageName;
-  final String? packageId;
-  final double price;
-  final String bodyArea;
-  final String status;
-  final DateTime requestedAt;
-  final String roomId;
-  final String? providerId; // ผู้ให้บริการที่รับงานแล้ว
-
-  ConsultationEntry({
-    required this.id,
-    required this.patientName,
-    this.patientAvatar,
-    required this.packageName,
-    this.packageId,
-    required this.price,
-    required this.bodyArea,
-    required this.status,
-    required this.requestedAt,
-    required this.roomId,
-    this.providerId,
-  });
-
-  factory ConsultationEntry.fromMap(Map<String, dynamic> map) {
-    final user = map['users'] as Map<String, dynamic>? ?? {};
-    final firstName = user['first_name'] as String? ?? '';
-    final lastName = user['last_name'] as String? ?? '';
-    final patientName = '$firstName $lastName'.trim().isEmpty
-        ? 'ผู้ป่วยไม่ระบุชื่อ'
-        : '$firstName $lastName'.trim();
-
-    final bodyAreaMap = map['body_area'] as Map<String, dynamic>? ?? {};
-    String bodyArea =
-        bodyAreaMap['area'] as String? ??
-        bodyAreaMap['label'] as String? ??
-        (bodyAreaMap.keys.isNotEmpty ? bodyAreaMap.keys.join(', ') : 'ไม่ระบุ');
-
-    final consultationId = map['id'] as String? ?? 'unknown';
-    // ✅ roomId ต้องสร้างจาก consultation_id เสมอ เพื่อให้เป็นแบบ 1:1
-    // และเมื่อทำ migration SQL เสร็จ จะเริ่มใช้ map['room_id'] แทนบรรทัดนี้ได้
-    final roomId = map['room_id'] as String? ?? 'consult_$consultationId';
-
-    double parseDouble(dynamic value) {
-      if (value == null) return 0.0;
-      if (value is num) return value.toDouble();
-      if (value is String) return double.tryParse(value) ?? 0.0;
-      return 0.0;
-    }
-
-    return ConsultationEntry(
-      id: map['id'] as String? ?? '',
-      patientName: patientName,
-      patientAvatar: user['profile_image_url'] as String?,
-      packageName: map['package_name'] as String? ?? 'ไม่ระบุแพ็คเกจ',
-      packageId: map['package_id'] as String?,
-      price: parseDouble(map['price']),
-      bodyArea: bodyArea,
-      status: map['status'] as String? ?? 'pending',
-      requestedAt:
-          DateTime.tryParse(map['created_at']?.toString() ?? '') ??
-          DateTime.now(),
-      roomId: roomId,
-      providerId: map['provider_id'] as String?,
-    );
-  }
-
-  bool get isAssigned => providerId != null && providerId!.isNotEmpty;
-}
-
-// ─── Dashboard Page ────────────────────────────────────────────────────────────
 class HealthProgramRequestDashboard extends StatefulWidget {
-  const HealthProgramRequestDashboard({super.key});
+  final String? initialFocusId;
+  const HealthProgramRequestDashboard({super.key, this.initialFocusId});
 
   @override
   State<HealthProgramRequestDashboard> createState() =>
@@ -113,6 +42,8 @@ class _HealthProgramRequestDashboardState
   String _availabilityStatus = 'online'; // สถานะตัวเอง
 
   StreamSubscription? _subscription;
+  String? _highlightedId;
+  final Map<String, GlobalKey> _cardKeys = {};
 
   static const _tabs = [
     {'value': 'all', 'label': 'ทั้งหมด'},
@@ -306,19 +237,30 @@ class _HealthProgramRequestDashboardState
     if (confirm != true) return;
 
     try {
-      // 1. Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
-      if (entry.packageId == null || user.professionId == null) {
-        throw Exception(
-          'ข้อมูลแพ็คเกจหรือวิชาชีพไม่สมบูรณ์ ไม่สามารถรับงานได้',
+      // 1. พยายาม Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
+      if (entry.packageId != null && user.professionId != null) {
+        try {
+          await _repo.assignProviderToGroup(
+            consultationId: entry.id,
+            providerId: user.id,
+            packageId: entry.packageId!,
+            professionId: user.professionId!,
+          );
+        } catch (_) {
+          // Fallback: ใช้ระบบเดิม (direct assign) ถ้า expert group ไม่ตรง
+          debugPrint('Expert group match failed, using direct assign fallback');
+          await _repo.assignProvider(
+            requestId: entry.id,
+            providerId: user.id,
+          );
+        }
+      } else {
+        // ไม่มี packageId หรือ professionId → ใช้ระบบ assign ตรง
+        await _repo.assignProvider(
+          requestId: entry.id,
+          providerId: user.id,
         );
       }
-
-      await _repo.assignProviderToGroup(
-        consultationId: entry.id,
-        providerId: user.id,
-        packageId: entry.packageId!,
-        professionId: user.professionId!,
-      );
 
       // 1.5 อัปเดตสถานะ request ให้เป็น in_progress
       await _repo.updateStatus(entry.id, 'in_progress');
@@ -387,11 +329,12 @@ class _HealthProgramRequestDashboardState
   // ─── Sliver App Bar ────
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
-      expandedHeight: _isProvider ? 270 : 240,
+      expandedHeight: _isProvider ? 280 : 230,
       pinned: true,
       stretch: true,
       backgroundColor: AppColors.primary,
       automaticallyImplyLeading: false,
+      // ── Standard Top Bar — ไม่มี actions พิเศษอีกต่อไป ──
       title: TlzAppTopBar.onPrimary(
         searchHintText: 'ค้นหาคำร้องขอ...',
         notificationCount: 0,
@@ -406,20 +349,6 @@ class _HealthProgramRequestDashboardState
           constraints: const BoxConstraints(),
         ),
       ),
-      actions: [
-        if (_isProvider)
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: _AvailabilityToggleButton(
-              status: _availabilityStatus,
-              onToggle: _toggleAvailability,
-            ),
-          ),
-        IconButton(
-          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-          onPressed: _loadData,
-        ),
-      ],
       flexibleSpace: FlexibleSpaceBar(
         titlePadding: EdgeInsets.zero,
         background: Container(
@@ -433,23 +362,62 @@ class _HealthProgramRequestDashboardState
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               16,
-              _isProvider ? 95 : 85,
+              _isProvider ? 135 : 125,
               16,
-              _isProvider ? 60 : 55,
+              16,
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                // ── Provider info row: ข้อความ + ปุ่มสถานะ + ปุ่ม Refresh ──
                 if (_isProvider) ...[
-                  Text(
-                    'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
-                      fontSize: 11,
-                    ),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.filter_list_rounded,
+                        color: Colors.white70,
+                        size: 13,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      // ปุ่มสถานะ (ว่าง/ไม่ว่าง)
+                      AvailabilityToggleButton(
+                        status: _availabilityStatus,
+                        onToggle: _toggleAvailability,
+                      ),
+                      const SizedBox(width: 6),
+                      // ปุ่ม Refresh
+                      GestureDetector(
+                        onTap: _loadData,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.refresh_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                 ],
-                // Stat chips
+                // ── Stat chips ──
                 Row(
                   children: [
                     _statChip('ทั้งหมด', _total, Icons.list_alt, Colors.white),
@@ -477,8 +445,49 @@ class _HealthProgramRequestDashboardState
                   ],
                 ),
                 if (_isProvider) ...[
-                  const SizedBox(height: 10),
-                  _AvailabilityBanner(status: _availabilityStatus),
+                  const SizedBox(height: 8),
+                  AvailabilityBanner(status: _availabilityStatus),
+                ],
+                // ── Refresh สำหรับ non-provider ──
+                if (!_isProvider) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: _loadData,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.refresh_rounded,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'รีเฟรช',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -567,7 +576,7 @@ class _HealthProgramRequestDashboardState
   Widget _buildSearchFilter() {
     return Container(
       color: AppColors.background,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
       child: Column(
         children: [
           // Search bar
@@ -1167,806 +1176,3 @@ class _HealthProgramRequestDashboardState
   }
 }
 
-// ─── Availability Banner ──────────────────────────────────────────────────────
-class _AvailabilityBanner extends StatelessWidget {
-  final String status;
-  const _AvailabilityBanner({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final isBusy = status == 'busy';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isBusy
-            ? AppColors.warning.withOpacity(0.2)
-            : AppColors.success.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isBusy
-              ? AppColors.warning.withOpacity(0.5)
-              : AppColors.success.withOpacity(0.5),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isBusy ? AppColors.warning : AppColors.success,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            isBusy
-                ? '🔴 สถานะ: ไม่ว่าง (กำลังให้บริการ)'
-                : '🟢 สถานะ: พร้อมรับงาน',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Availability Toggle Button ───────────────────────────────────────────────
-class _AvailabilityToggleButton extends StatelessWidget {
-  final String status;
-  final VoidCallback onToggle;
-  const _AvailabilityToggleButton({
-    required this.status,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isBusy = status == 'busy';
-    return GestureDetector(
-      onTap: onToggle,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isBusy
-              ? AppColors.warning.withOpacity(0.25)
-              : AppColors.success.withOpacity(0.25),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isBusy
-                ? AppColors.warning.withOpacity(0.6)
-                : Colors.white.withOpacity(0.4),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isBusy ? Icons.do_not_disturb_rounded : Icons.circle,
-              size: 10,
-              color: isBusy ? AppColors.warning : AppColors.success,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              isBusy ? 'ไม่ว่าง' : 'ว่าง',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Expert Chat Room Page ─────────────────────────────────────────────────────
-class ExpertChatRoomPage extends StatefulWidget {
-  final ConsultationEntry entry;
-  const ExpertChatRoomPage({super.key, required this.entry});
-
-  @override
-  State<ExpertChatRoomPage> createState() => _ExpertChatRoomPageState();
-}
-
-class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
-  final _chatRepo = ServiceLocator.instance.chatRepository;
-  final _currentUser = ServiceLocator.instance.currentUser;
-
-  final TextEditingController _msgController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-
-  List<_LocalMsg> _messages = [];
-  bool _isLoading = true;
-  bool _isSending = false;
-  StreamSubscription? _messagesSub;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadMessages();
-    _subscribeToMessages();
-  }
-
-  @override
-  void dispose() {
-    _messagesSub?.cancel();
-    _msgController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadMessages() async {
-    setState(() => _isLoading = true);
-    try {
-      // Ensure room exists and provider is in participants
-      await _ensureProviderInRoom();
-
-      final chatMessages = await _chatRepo.getMessages(widget.entry.roomId);
-      if (mounted) {
-        final myId = _currentUser?.id;
-        setState(() {
-          _messages = chatMessages
-              .map(
-                (m) => _LocalMsg(
-                  content: m.content,
-                  isMe: m.senderId == myId,
-                  sentAt: m.createdAt,
-                  type: m.type,
-                ),
-              )
-              .toList();
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _subscribeToMessages() {
-    final roomId = widget.entry.roomId;
-    _messagesSub = _chatRepo.streamMessages(roomId).listen((newMessages) {
-      if (mounted) {
-        final myId = _currentUser?.id;
-        setState(() {
-          _messages = newMessages
-              .map(
-                (m) => _LocalMsg(
-                  content: m.content,
-                  isMe: m.senderId == myId,
-                  sentAt: m.createdAt,
-                  type: m.type,
-                ),
-              )
-              .toList();
-        });
-        _scrollToBottom();
-      }
-    });
-  }
-
-  /// Ensure chat room exists and provider is listed as a participant
-  Future<void> _ensureProviderInRoom() async {
-    final providerId = _currentUser?.id;
-    if (providerId == null) return;
-
-    try {
-      final supabase = Supabase.instance.client;
-      final roomId = widget.entry.roomId;
-
-      final existing = await supabase
-          .from('chat_rooms')
-          .select('id, participant_ids')
-          .eq('id', roomId)
-          .maybeSingle()
-          .timeout(const Duration(seconds: 5));
-
-      if (existing == null) {
-        // Room doesn't exist yet — create it with provider
-        await supabase
-            .from('chat_rooms')
-            .insert({
-              'id': roomId,
-              'participant_ids': [providerId],
-              'last_message': null,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .timeout(const Duration(seconds: 5));
-        debugPrint('ExpertChat: Created room $roomId');
-      } else {
-        // Room exists — add provider to participants if not already in
-        final participants = List<String>.from(
-          existing['participant_ids'] ?? [],
-        );
-        if (!participants.contains(providerId)) {
-          participants.add(providerId);
-          await supabase
-              .from('chat_rooms')
-              .update({
-                'participant_ids': participants,
-                'updated_at': DateTime.now().toIso8601String(),
-              })
-              .eq('id', roomId)
-              .timeout(const Duration(seconds: 5));
-          debugPrint('ExpertChat: Added provider $providerId to room $roomId');
-        }
-      }
-    } catch (e) {
-      debugPrint('ExpertChat: Could not ensure room (non-blocking): $e');
-    }
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _msgController.text.trim();
-    if (text.isEmpty || _isSending) return;
-    setState(() {
-      _isSending = true;
-      _messages.add(
-        _LocalMsg(
-          content: text,
-          isMe: true,
-          sentAt: DateTime.now(),
-          type: 'text',
-        ),
-      );
-    });
-    _msgController.clear();
-    _scrollToBottom();
-
-    try {
-      final message = ChatMessage(
-        id: const Uuid().v4(),
-        roomId: widget.entry.roomId,
-        senderId: _currentUser?.id ?? 'expert',
-        content: text,
-        createdAt: DateTime.now(),
-        type: 'text',
-        status: MessageStatus.sent,
-      );
-      await _chatRepo.sendMessage(message);
-    } catch (e) {
-      debugPrint('ExpertChat: send error $e');
-    }
-
-    if (mounted) setState(() => _isSending = false);
-  }
-
-  // Provider เสร็จงาน → คืนสถานะ online + เปลี่ยน request เป็น completed
-  Future<void> _finishJob() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'เสร็จสิ้นการให้บริการ?',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'สถานะของคุณจะกลับเป็น "พร้อมรับงาน" และคำร้องจะถูกปิด',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'ยกเลิก',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.success,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('เสร็จสิ้น'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    final authUser = AuthService.instance.currentUser;
-    if (authUser == null) return;
-
-    final userRepo = UserRepository(Supabase.instance.client);
-    final consultRepo = ServiceLocator.instance.consultationRepository;
-
-    // อัปเดต request → completed
-    await consultRepo.updateStatus(widget.entry.id, 'completed');
-    // คืนสถานะ provider → online
-    await userRepo.setAvailabilityStatus(authUser.id, 'online');
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ เสร็จสิ้น! สถานะของคุณกลับเป็นพร้อมรับงานแล้ว'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      Navigator.pop(context);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: Text(
-                widget.entry.patientName.isNotEmpty
-                    ? widget.entry.patientName[0].toUpperCase()
-                    : 'P',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.entry.patientName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  Text(
-                    widget.entry.packageName,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // ปุ่มเสร็จงาน
-          TextButton.icon(
-            onPressed: _finishJob,
-            icon: const Icon(
-              Icons.done_all_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-            label: const Text(
-              'เสร็จงาน',
-              style: TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.info_outline_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
-            onPressed: _showPatientSheet,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Patient info banner
-          _buildBanner(),
-
-          // Messages
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  )
-                : _messages.isEmpty
-                ? _buildEmptyChat()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                    itemCount: _messages.length,
-                    itemBuilder: (ctx, i) => _buildBubble(_messages[i]),
-                  ),
-          ),
-
-          _buildInput(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBanner() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.medical_services_outlined,
-            color: AppColors.primary,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(fontSize: 12, color: Colors.black87),
-                children: [
-                  TextSpan(
-                    text: widget.entry.patientName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const TextSpan(text: ' · '),
-                  TextSpan(
-                    text: widget.entry.packageName,
-                    style: const TextStyle(color: AppColors.primary),
-                  ),
-                  const TextSpan(text: ' · '),
-                  TextSpan(
-                    text: widget.entry.bodyArea,
-                    style: const TextStyle(
-                      color: AppColors.warning,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBubble(_LocalMsg msg) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Align(
-        alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.72,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: msg.isMe ? AppColors.primary : Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(msg.isMe ? 16 : 4),
-              bottomRight: Radius.circular(msg.isMe ? 4 : 16),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.07),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: msg.isMe
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              if (!msg.isMe)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    widget.entry.patientName,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              Text(
-                msg.content,
-                style: TextStyle(
-                  color: msg.isMe ? Colors.white : Colors.black87,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                DateFormat('HH:mm').format(msg.sentAt),
-                style: TextStyle(
-                  fontSize: 9,
-                  color: msg.isMe
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.grey.shade400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyChat() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.chat_bubble_outline,
-              color: AppColors.primary,
-              size: 36,
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'เริ่มต้นการสนทนากับผู้ป่วย',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'พิมพ์คำแนะนำได้เลยด้านล่างครับ',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInput() {
-    final hasText = _msgController.text.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F7F5),
-                borderRadius: BorderRadius.circular(23),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: TextField(
-                controller: _msgController,
-                style: const TextStyle(color: Colors.black87, fontSize: 14),
-                decoration: const InputDecoration(
-                  hintText: 'ให้คำแนะนำด้านสุขภาพ...',
-                  hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 13),
-                ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          GestureDetector(
-            onTap: _sendMessage,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: hasText ? AppColors.primary : Colors.grey.shade300,
-                shape: BoxShape.circle,
-                boxShadow: hasText
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : [],
-              ),
-              child: _isSending
-                  ? const Padding(
-                      padding: EdgeInsets.all(13),
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showPatientSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'ข้อมูลผู้ป่วย',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            const SizedBox(height: 16),
-            _infoTile(
-              Icons.person_outline,
-              'ชื่อ-นามสกุล',
-              widget.entry.patientName,
-            ),
-            _infoTile(
-              Icons.spa_outlined,
-              'แพ็คเกจที่เลือก',
-              widget.entry.packageName,
-            ),
-            _infoTile(
-              Icons.location_on_outlined,
-              'บริเวณที่พบอาการ',
-              widget.entry.bodyArea,
-            ),
-            _infoTile(
-              Icons.payments_outlined,
-              'ค่าใช้จ่าย',
-              '${widget.entry.price.toInt()} บาท',
-            ),
-            _infoTile(
-              Icons.calendar_today_outlined,
-              'วันที่ร้องขอ',
-              DateFormat('d MMMM yyyy  HH:mm').format(widget.entry.requestedAt),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _infoTile(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: AppColors.primary, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Local message model ──────────────────────────────────────────────────────
-class _LocalMsg {
-  final String content;
-  final bool isMe;
-  final DateTime sentAt;
-  final String type;
-
-  _LocalMsg({
-    required this.content,
-    required this.isMe,
-    required this.sentAt,
-    required this.type,
-  });
-}

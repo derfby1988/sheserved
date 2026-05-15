@@ -6,6 +6,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_package.dart';
 import '../../../../services/service_locator.dart';
+import '../../../admin/data/repositories/profession_repository.dart';
 
 class PackageHealthCarePage extends StatefulWidget {
   const PackageHealthCarePage({super.key});
@@ -163,7 +164,8 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
 
     // Safety check: ensure user is logged in
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (ServiceLocator.instance.currentUser == null) {
+      final user = ServiceLocator.instance.currentUser;
+      if (user == null) {
         Navigator.pushReplacementNamed(
           context,
           '/login',
@@ -171,6 +173,27 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         );
         return;
       }
+      
+      // ✅ เพิ่มการตรวจสอบว่า user เป็น provider หรือไม่
+      // ถ้าย้อนกลับมาหลังจาก login (redirected) จะได้ไม่หลุดไปหน้าสุขภาพ
+      try {
+        final localUser = await ServiceLocator.instance.userRepository.getUserById(user.id);
+        if (localUser != null && localUser.professionId != null) {
+          final professionRepo = ServiceLocator.instance.professionRepository;
+          final profession = await professionRepo.getProfessionById(localUser.professionId!);
+          
+          if (profession != null && profession.category.isConsultationProvider) {
+            if (mounted) {
+              // เป็นผู้ให้บริการ -> เด้งไป Dashboard ทันที แทนที่จะโชว์หน้า Package หรือกรอกข้อมูลสุขภาพ
+              Navigator.pushReplacementNamed(context, '/health-program-requests');
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('PackageHealthCarePage Provider Check Error: $e');
+      }
+
       await _loadLivePackages(); // Load real packages first
       _loadGender();
     });

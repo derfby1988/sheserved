@@ -18,6 +18,12 @@ class HomeHeaderSection extends StatelessWidget {
   final List<Map<String, dynamic>> donationAlerts;
   /// ✅ [Yield Way] รายการแจ้งเตือนให้ทาง (route-based)
   final List<Map<String, dynamic>> yieldWayAlerts;
+  /// ✅ [Consultation] คำขอปรึกษาใหม่ที่รอ provider รับงาน
+  final List<Map<String, dynamic>> consultationAlerts;
+  /// callback เมื่อปัดทิ้งการแจ้งเตือนปรึกษา (dismiss/ปฏิเสธ)
+  final Function(String consultationId)? onConsultationAlertDismissed;
+  /// callback เมื่อกดดูการแจ้งเตือนปรึกษา → นำทางไป Dashboard
+  final Function(String consultationId)? onConsultationAlertTapped;
 
   const HomeHeaderSection({
     super.key,
@@ -31,6 +37,9 @@ class HomeHeaderSection extends StatelessWidget {
     this.onAlertTapped,
     this.donationAlerts = const [],
     this.yieldWayAlerts = const [],
+    this.consultationAlerts = const [],
+    this.onConsultationAlertDismissed,
+    this.onConsultationAlertTapped,
   });
 
   @override
@@ -58,8 +67,8 @@ class HomeHeaderSection extends StatelessWidget {
                   maxWidth: MediaQuery.of(context).size.width * 0.25,
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center, // จัดกึ่งกลางสัมพันธ์กันเองระหว่างข้อความและรูปโปรไฟล์
-                  mainAxisSize: MainAxisSize.min, // ให้หดตัวตามขนาดเนื้อหาภายใน
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // กดเพื่อไปหน้า Health
                     GestureDetector(
@@ -92,7 +101,7 @@ class HomeHeaderSection extends StatelessWidget {
                             ),
                     ),
                     const SizedBox(height: 12),
-                    // Profile Picture Button - กดเพื่อไปหน้า Login
+                    // Profile Picture Button
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
@@ -116,7 +125,8 @@ class HomeHeaderSection extends StatelessWidget {
                                   )
                                 : null,
                           ),
-                          child: (AuthService.instance.currentUser?.profileImageUrl == null || AuthService.instance.currentUser!.profileImageUrl!.isEmpty)
+                          child: (AuthService.instance.currentUser?.profileImageUrl == null ||
+                                  AuthService.instance.currentUser!.profileImageUrl!.isEmpty)
                               ? const Icon(
                                   Icons.person,
                                   color: AppColors.primary,
@@ -131,209 +141,300 @@ class HomeHeaderSection extends StatelessWidget {
               ),
             ),
           ),
-          
-          // Right Side: Medicine Reminder & Popular Badge
+
+          // Right Side: Notification Panel
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.65, // ปรับเป็น 65%
+              maxWidth: MediaQuery.of(context).size.width * 0.65,
               maxHeight: 96,
             ),
-            child: isLoading 
-              ? _buildShimmerNotifications()
-              : _ScrollableNotificationContent(
-              child: Builder(
-                builder: (context) {
-                  // สร้าง list รวมระหว่างรายการยา (จำลอง) และเหตุฉุกเฉิน
-                  final List<Map<String, dynamic>> combinedItems = [];
-                  
-                  // เพิ่ม donation alerts (สถานะคำร้องบริจาค) ก่อนเลย
-                  for (var d in donationAlerts) {
-                    combinedItems.add({
-                      'time': d['updatedAt'] as DateTime? ?? DateTime.now(),
-                      'type': 'donation_update',
-                      'data': d,
-                    });
-                  }
+            child: isLoading
+                ? _buildShimmerNotifications()
+                : _ScrollableNotificationContent(
+                    child: Builder(
+                      builder: (context) {
+                        // รวม notification ทุกประเภทเข้า list เดียว
+                        final List<Map<String, dynamic>> combinedItems = [];
 
-                  for (var alert in alerts) {
-                    combinedItems.add({
-                      'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
-                      'type': 'alert',
-                      'data': alert,
-                    });
-                  }
-
-                  // ✅ เพิ่ม Yield Way alerts
-                  for (var y in yieldWayAlerts) {
-                    combinedItems.add({
-                      'time': DateTime.now(), // แจ้งเตือนปัจจุบัน
-                      'type': 'yield_way',
-                      'data': y,
-                    });
-                  }
-
-                  // เรียงลำดับ alert ล่าสุดขึ้นบนสุด (Newest First)
-                  combinedItems.sort((a, b) =>
-                      (b['time'] as DateTime).compareTo(a['time'] as DateTime));
-
-                  // Medicine reminder แสดงท้ายสุดเสมอ (ไม่นำมา sort ปน)
-                  combinedItems.add({
-                    'time': DateTime(2000), // เวลาเก่ามากเพื่อให้อยู่ล่างสุด
-                    'type': 'medicine',
-                  });
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: combinedItems.map((item) {
-                       if (item['type'] == 'donation_update') {
-                        final d = item['data'] as Map<String, dynamic>;
-                        final title = (d['title']?.toString() ?? 'คำร้องบริจาค');
-                        final isActive = d['isActive'] == true;
-                        final textColor = isActive ? const Color(0xFF2EA04B) : const Color(0xFFF5A623);
-                        final icon = isActive ? Icons.favorite : Icons.access_time_rounded;
-                        final statusText = isActive
-                            ? '’$title’ ได้รับการอนุมัติแล้ว!'
-                            : '’$title’ รออนุมัติเพิ่มเติม';
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Icon(icon, color: textColor, size: 9),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  statusText,
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: textColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  textAlign: TextAlign.right,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      } else if (item['type'] == 'yield_way') {
-                        final y = item['data'] as Map<String, dynamic>;
-                        final categoryName = y['categoryName'] ?? 'เหตุฉุกเฉิน';
-                        final videoId = y['videoId']?.toString() ?? '';
-                        return GestureDetector(
-                          onTap: () => onAlertTapped?.call(videoId),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                const Icon(Icons.airport_shuttle, color: Color(0xFFFF3B30), size: 10),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    'รถฉุกเฉินกำลังมา: $categoryName',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: const Color(0xFFFF3B30),
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.right,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      } else if (item['type'] == 'alert') {
-                        final alert = item['data'];
-                        final videoId = alert['videoId']?.toString() ?? '';
-                        final categoryName = alert['categoryName'] ?? 'แจ้งเหตุ';
-                        final isVolunteer = alert['isVolunteer'] == true;
-                        
-                        // สร้างข้อความระยะทาง
-                        final distanceVal = alert['distance'] as double? ?? 0.0;
-                        String distanceText = '';
-                        if (distanceVal > 0) {
-                          if (distanceVal < 1000) {
-                            distanceText = ' ${distanceVal.toStringAsFixed(0)} ม.';
-                          } else {
-                            distanceText = ' ${(distanceVal / 1000).toStringAsFixed(1)} กม.';
-                          }
+                        // 1. Donation alerts
+                        for (var d in donationAlerts) {
+                          combinedItems.add({
+                            'time': d['updatedAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'donation_update',
+                            'data': d,
+                          });
                         }
-                        
-                        // ข้อความสำหรับ จิตอาสา vs บุคคลทั่วไป
-                        final text = (isVolunteer ? 'ขอจิตอาสาช่วย$categoryName' : 'เกิด$categoryName') + distanceText;
-                        final textColor = isVolunteer ? const Color(0xFFF5A623) : const Color(0xFFFF3B30);
-                        final icon = isVolunteer ? Icons.volunteer_activism : Icons.emergency;
 
-                        return Dismissible(
-                          key: Key(videoId),
-                          direction: DismissDirection.horizontal,
-                          onDismissed: (dir) {
-                            if (dir == DismissDirection.endToStart) { // ปัดซ้าย
-                              onAlertDismissed?.call(videoId);
-                            } else { // ปัดขวา
-                              onAlertTapped?.call(videoId);
-                            }
-                          },
-                          background: Container(
-                            alignment: Alignment.centerLeft,
-                            padding: const EdgeInsets.only(left: 10),
-                            child: const Icon(Icons.arrow_forward, color: Colors.white70, size: 20),
-                          ),
-                          secondaryBackground: Container(
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 10),
-                            child: const Icon(Icons.close, color: Colors.white70, size: 20),
-                          ),
-                          child: GestureDetector(
-                            onTap: () => onAlertTapped?.call(videoId),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Icon(icon, color: textColor, size: 9),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      text,
-                                      style: AppTextStyles.caption.copyWith(
-                                        color: textColor,
-                                        fontWeight: FontWeight.w500,
+                        // 2. Emergency / Thai Mhung alerts
+                        for (var alert in alerts) {
+                          combinedItems.add({
+                            'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'alert',
+                            'data': alert,
+                          });
+                        }
+
+                        // 3. Yield Way alerts
+                        for (var y in yieldWayAlerts) {
+                          combinedItems.add({
+                            'time': DateTime.now(),
+                            'type': 'yield_way',
+                            'data': y,
+                          });
+                        }
+
+                        // 4. ✅ Consultation alerts (เฉพาะผู้ให้บริการ)
+                        for (var c in consultationAlerts) {
+                          combinedItems.add({
+                            'time': c['requestedAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'consultation',
+                            'data': c,
+                          });
+                        }
+
+                        // เรียงลำดับใหม่ล่าสุดขึ้นก่อน
+                        combinedItems.sort((a, b) =>
+                            (b['time'] as DateTime).compareTo(a['time'] as DateTime));
+
+                        // Medicine reminder อยู่ล่างสุดเสมอ
+                        combinedItems.add({
+                          'time': DateTime(2000),
+                          'type': 'medicine',
+                        });
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: combinedItems.map((item) {
+                            // ── Donation Update ──────────────────────────────
+                            if (item['type'] == 'donation_update') {
+                              final d = item['data'] as Map<String, dynamic>;
+                              final title = (d['title']?.toString() ?? 'คำร้องบริจาค');
+                              final isActive = d['isActive'] == true;
+                              final textColor = isActive ? const Color(0xFF2EA04B) : const Color(0xFFF5A623);
+                              final icon = isActive ? Icons.favorite : Icons.access_time_rounded;
+                              final statusText = isActive
+                                  ? '\u2018$title\u2019 ได้รับการอนุมัติแล้ว!'
+                                  : '\u2018$title\u2019 รออนุมัติเพิ่มเติม';
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Icon(icon, color: textColor, size: 9),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        statusText,
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: textColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      textAlign: TextAlign.right,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                            // ── Yield Way ────────────────────────────────────
+                            } else if (item['type'] == 'yield_way') {
+                              final y = item['data'] as Map<String, dynamic>;
+                              final categoryName = y['categoryName'] ?? 'เหตุฉุกเฉิน';
+                              final videoId = y['videoId']?.toString() ?? '';
+                              return GestureDetector(
+                                onTap: () => onAlertTapped?.call(videoId),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      const Icon(Icons.airport_shuttle, color: Color(0xFFFF3B30), size: 10),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          'รถฉุกเฉินกำลังมา: $categoryName',
+                                          style: AppTextStyles.caption.copyWith(
+                                            color: const Color(0xFFFF3B30),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.right,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+
+                            // ── Consultation Alert (NEW - Phase 5) ───────────
+                            } else if (item['type'] == 'consultation') {
+                              final c = item['data'] as Map<String, dynamic>;
+                              final consultId = c['id']?.toString() ?? '';
+                              final packageName = c['packageName']?.toString() ?? 'คำร้องขอปรึกษา';
+                              final patientName = c['patientName']?.toString() ?? 'ผู้ป่วย';
+                              return Dismissible(
+                                key: Key('consult_alert_$consultId'),
+                                direction: DismissDirection.horizontal,
+                                onDismissed: (_) =>
+                                    onConsultationAlertDismissed?.call(consultId),
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                ),
+                                secondaryBackground: Container(
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.only(left: 10),
+                                  child: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                ),
+                                child: GestureDetector(
+                                  onTap: () => onConsultationAlertTapped?.call(consultId),
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF1A6B1A).withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFF4CAF50).withOpacity(0.55),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        const Icon(
+                                          Icons.medical_services_rounded,
+                                          color: Color(0xFF4CAF50),
+                                          size: 10,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Flexible(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'คำขอปรึกษาใหม่',
+                                                style: AppTextStyles.caption.copyWith(
+                                                  color: const Color(0xFF4CAF50),
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 9,
+                                                ),
+                                                maxLines: 1,
+                                              ),
+                                              Text(
+                                                '$patientName \u2022 $packageName',
+                                                style: AppTextStyles.caption.copyWith(
+                                                  color: Colors.white.withOpacity(0.8),
+                                                  fontSize: 8.5,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
+                                ),
+                              );
+
+                            // ── Emergency / Thai Mhung Alert ─────────────────
+                            } else if (item['type'] == 'alert') {
+                              final alert = item['data'];
+                              final videoId = alert['videoId']?.toString() ?? '';
+                              final categoryName = alert['categoryName'] ?? 'แจ้งเหตุ';
+                              final isVolunteer = alert['isVolunteer'] == true;
+
+                              final distanceVal = alert['distance'] as double? ?? 0.0;
+                              String distanceText = '';
+                              if (distanceVal > 0) {
+                                if (distanceVal < 1000) {
+                                  distanceText = ' ${distanceVal.toStringAsFixed(0)} ม.';
+                                } else {
+                                  distanceText = ' ${(distanceVal / 1000).toStringAsFixed(1)} กม.';
+                                }
+                              }
+
+                              final text = (isVolunteer ? 'ขอจิตอาสาช่วย$categoryName' : 'เกิด$categoryName') + distanceText;
+                              final textColor = isVolunteer ? const Color(0xFFF5A623) : const Color(0xFFFF3B30);
+                              final icon = isVolunteer ? Icons.volunteer_activism : Icons.emergency;
+
+                              return Dismissible(
+                                key: Key(videoId),
+                                direction: DismissDirection.horizontal,
+                                onDismissed: (dir) {
+                                  if (dir == DismissDirection.endToStart) {
+                                    onAlertDismissed?.call(videoId);
+                                  } else {
+                                    onAlertTapped?.call(videoId);
+                                  }
+                                },
+                                background: Container(
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.only(left: 10),
+                                  child: const Icon(Icons.arrow_forward, color: Colors.white70, size: 20),
+                                ),
+                                secondaryBackground: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: const Icon(Icons.close, color: Colors.white70, size: 20),
+                                ),
+                                child: GestureDetector(
+                                  onTap: () => onAlertTapped?.call(videoId),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        Icon(icon, color: textColor, size: 9),
+                                        const SizedBox(width: 4),
+                                        Flexible(
+                                          child: Text(
+                                            text,
+                                            style: AppTextStyles.caption.copyWith(
+                                              color: textColor,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            textAlign: TextAlign.right,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+
+                            // ── Medicine Reminder ─────────────────────────────
+                            } else {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
+                                  textAlign: TextAlign.right,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textOnPrimary,
+                                  ),
+                                ),
+                              );
+                            }
+                          }).toList(),
                         );
-                      } else {
-                        // Medicine Reminder
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(
-                            'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
-                            textAlign: TextAlign.right,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textOnPrimary,
-                            ),
-                          ),
-                        );
-                      }
-                    }).toList(),
-                  );
-                }
-              ),
-            ),
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -402,10 +503,8 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
 
   void _checkScrollability() {
     if (_scrollController.hasClients) {
-      // ตรวจสอบว่ามีเนื้อหาให้เลื่อนลงต่อได้หรือไม่
       final isScrollable = _scrollController.position.maxScrollExtent > 0;
       final isAtBottom = _scrollController.offset >= _scrollController.position.maxScrollExtent - 5;
-      
       final shouldShow = isScrollable && !isAtBottom;
       if (_showIndicator != shouldShow) {
         setState(() {
@@ -434,17 +533,16 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
           },
           child: Scrollbar(
             controller: _scrollController,
-            thumbVisibility: true, // ตรวจสอบให้แน่ใจว่าเห็น Scrollbar เสมอถ้าเลื่อนได้
+            thumbVisibility: true,
             thickness: 4,
             radius: const Radius.circular(4),
             child: SingleChildScrollView(
               controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(), // บังคับให้ Scroll ได้เสมอเพื่อเลื่อนดูข้อความ
+              physics: const AlwaysScrollableScrollPhysics(),
               child: widget.child,
             ),
           ),
         ),
-        // ไอคอนชี้ลง เมื่อไม่สามารถเลื่อนได้แล้ว ไอคอนจะจางหายไป (AnimatedOpacity)
         Positioned(
           bottom: 0,
           right: 16,
@@ -455,13 +553,13 @@ class _ScrollableNotificationContentState extends State<_ScrollableNotificationC
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.2), // วงกลมดำโปร่งแสงเป็นพื้นหลัง
+                  color: Colors.black.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.keyboard_arrow_down,
                   color: Colors.white,
-                  size: 16, // ปรับขนาดไอคอนเล็กลงนิดหน่อยเพื่อให้เข้ากับวงกลมรอบขอบ
+                  size: 16,
                 ),
               ),
             ),

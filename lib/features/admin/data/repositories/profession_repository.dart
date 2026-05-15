@@ -153,7 +153,7 @@ class ProfessionRepository {
     try {
       final response = await _client
           .from('professions')
-          .select()
+          .select('*, category_data:user_categories!professions_category_fkey(*)')
           .eq('id', id)
           .single();
       return Profession.fromJson(response);
