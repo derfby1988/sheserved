@@ -6,10 +6,12 @@ class ConsultationEntry {
   final String? packageId;
   final double price;
   final String bodyArea;
+  final Map<String, dynamic> symptomsChart;
   final String status;
   final DateTime requestedAt;
   final String roomId;
   final String? providerId; // ผู้ให้บริการที่รับงานแล้ว
+  final String patientId; // ไอดีผู้ป่วย (User ID)
 
   ConsultationEntry({
     required this.id,
@@ -19,10 +21,12 @@ class ConsultationEntry {
     this.packageId,
     required this.price,
     required this.bodyArea,
+    this.symptomsChart = const {},
     required this.status,
     required this.requestedAt,
     required this.roomId,
     this.providerId,
+    required this.patientId,
   });
 
   factory ConsultationEntry.fromMap(Map<String, dynamic> map) {
@@ -37,7 +41,10 @@ class ConsultationEntry {
     String bodyArea =
         bodyAreaMap['area'] as String? ??
         bodyAreaMap['label'] as String? ??
-        (bodyAreaMap.keys.isNotEmpty ? bodyAreaMap.keys.join(', ') : 'ไม่ระบุ');
+        bodyAreaMap['part'] as String? ??
+        (bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').isNotEmpty 
+            ? bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').join(', ') 
+            : bodyAreaMap['gender']?.toString() ?? 'ไม่ระบุ');
 
     final consultationId = map['id'] as String? ?? 'unknown';
     // ✅ roomId ต้องสร้างจาก consultation_id เสมอ เพื่อให้เป็นแบบ 1:1
@@ -59,12 +66,14 @@ class ConsultationEntry {
       packageId: map['package_id'] as String?,
       price: parseDouble(map['price']),
       bodyArea: bodyArea,
+      symptomsChart: map['symptoms_chart'] as Map<String, dynamic>? ?? {},
       status: map['status'] as String? ?? 'pending',
       requestedAt:
           DateTime.tryParse(map['created_at']?.toString() ?? '') ??
           DateTime.now(),
       roomId: roomId,
       providerId: map['provider_id'] as String?,
+      patientId: map['user_id'] as String? ?? user['id'] as String? ?? '',
     );
   }
 

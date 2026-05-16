@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -771,8 +772,6 @@ class _HealthProgramRequestDashboardState
                 ],
               ),
             ),
-
-            // Info section
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 14),
               padding: const EdgeInsets.all(12),
@@ -805,8 +804,6 @@ class _HealthProgramRequestDashboardState
                 ],
               ),
             ),
-
-            // Action buttons
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
               child: _buildActionRow(e, isMyJob: isMyJob, isBusy: isBusy),
@@ -822,146 +819,149 @@ class _HealthProgramRequestDashboardState
     required bool isMyJob,
     required bool isBusy,
   }) {
-    // --- admin / all-view mode ---
+    String label;
+    IconData icon;
+    VoidCallback? onTap;
+    Color btnColor = const Color(0xFF6ED1A6);
+
     if (!_isProvider) {
-      return Row(
-        children: [
-          Expanded(
-            child: _actionBtn(
-              icon: Icons.edit_note_rounded,
-              label: 'อัปเดตสถานะ',
-              textColor: Colors.grey.shade700,
-              bgColor: Colors.grey.shade100,
-              onTap: () => _showStatusSheet(e),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 2,
-            child: _actionBtn(
-              icon: Icons.chat_rounded,
-              label: 'เข้าห้องแชทผู้ป่วย',
-              textColor: Colors.white,
-              bgColor: AppColors.primary,
-              onTap: () => _openChat(e),
-            ),
-          ),
-        ],
-      );
-    }
-
-    // --- provider mode ---
-    if (isMyJob) {
-      // งานของตัวเอง → เข้าแชทได้เลย
-      return _actionBtn(
-        icon: Icons.chat_rounded,
-        label: 'เข้าห้องแชทผู้ป่วย',
-        textColor: Colors.white,
-        bgColor: AppColors.primary,
-        onTap: () => _openChat(e),
-      );
-    }
-
-    if (e.status == 'pending' && !isBusy) {
-      // ยังไม่มีใครรับ + ตัวเองว่างอยู่
+      label = 'เข้าห้องแชทผู้ป่วย';
+      icon = Icons.chat_bubble_outline;
+      onTap = () => _openChat(e);
+    } else if (isMyJob) {
+      label = 'เข้าห้องแชทผู้ป่วย';
+      icon = Icons.chat_bubble_outline;
+      onTap = () => _openChat(e);
+    } else if (e.status == 'pending' && !isBusy) {
       final canJoin = _availabilityStatus != 'busy';
-      return _actionBtn(
-        icon: canJoin
-            ? Icons.volunteer_activism_rounded
-            : Icons.do_not_disturb_rounded,
-        label: canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่',
-        textColor: Colors.white,
-        bgColor: canJoin ? AppColors.primary : Colors.grey.shade400,
-        onTap: canJoin ? () => _joinRequest(e) : null,
-      );
-    }
-
-    if (isBusy || e.status == 'in_progress') {
+      label = canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่';
+      icon = canJoin ? Icons.pan_tool_alt_outlined : Icons.do_not_disturb_rounded;
+      onTap = canJoin ? () => _joinRequest(e) : null;
+      if (!canJoin) btnColor = Colors.grey.shade400;
+    } else {
       return Container(
-        height: 42,
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.warning.withOpacity(0.1),
+          color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.warning.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.lock_outline_rounded,
-              size: 15,
-              color: AppColors.warning,
-            ),
-            const SizedBox(width: 6),
+            Icon(Icons.lock_outline_rounded, size: 16, color: Colors.grey.shade400),
+            const SizedBox(width: 8),
             Text(
-              'มีผู้ให้บริการรับงานแล้ว',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.warning,
-              ),
+              isBusy ? 'มีผู้เชี่ยวชาญท่านอื่นรับแล้ว' : 'ไม่สามารถดำเนินการได้',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
             ),
           ],
         ),
       );
     }
 
-    // completed
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: AppColors.success.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.check_circle_outline, size: 15, color: AppColors.success),
-          const SizedBox(width: 6),
-          Text(
-            'เสร็จสิ้นแล้ว',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.success,
-            ),
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: btnColor,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey.shade200,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _avatar(ConsultationEntry e) {
-    if (e.patientAvatar != null && e.patientAvatar!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: NetworkImage(e.patientAvatar!),
-        backgroundColor: AppColors.primary.withOpacity(0.1),
-      );
-    }
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: AppColors.primary.withOpacity(0.15),
-      child: Text(
-        e.patientName.isNotEmpty ? e.patientName[0].toUpperCase() : 'P',
-        style: const TextStyle(
-          color: AppColors.primary,
-          fontWeight: FontWeight.bold,
-          fontSize: 18,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  Widget _avatar(ConsultationEntry e) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primary.withOpacity(0.1),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: e.patientAvatar != null && e.patientAvatar!.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: e.patientAvatar!,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey),
+              )
+            : Center(
+                child: Text(
+                  e.patientName.isNotEmpty ? e.patientName[0].toUpperCase() : 'P',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
   Widget _statusBadge(String status) {
-    final cfg = _statusConfig(status);
-    final color = cfg['color'] as Color;
+    Color color;
+    String label;
+    switch (status) {
+      case 'pending':
+        color = const Color(0xFFF2A93B);
+        label = 'รอดำเนินการ';
+        break;
+      case 'in_progress':
+        color = const Color(0xFF6ED1A6);
+        label = 'กำลังดำเนินการ';
+        break;
+      case 'completed':
+        color = const Color(0xFF4A8B2C);
+        label = 'เสร็จสิ้น';
+        break;
+      default:
+        color = Colors.grey;
+        label = status;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -971,13 +971,13 @@ class _HealthProgramRequestDashboardState
             height: 6,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: 6),
           Text(
-            cfg['label'] as String,
+            label,
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
               color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],
@@ -997,17 +997,17 @@ class _HealthProgramRequestDashboardState
           ),
           child: Icon(icon, size: 14, color: color),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 12),
         Text(
           '$label: ',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
         ),
         Expanded(
           child: Text(
             value,
             style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
             ),
             maxLines: 1,
@@ -1015,49 +1015,6 @@ class _HealthProgramRequestDashboardState
           ),
         ),
       ],
-    );
-  }
-
-  Widget _actionBtn({
-    required IconData icon,
-    required String label,
-    required Color textColor,
-    required Color bgColor,
-    VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 42,
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: bgColor == AppColors.primary
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : [],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 16, color: textColor),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1148,30 +1105,21 @@ class _HealthProgramRequestDashboardState
   }
 
   void _openChat(ConsultationEntry entry) {
-    Navigator.push(
+    Navigator.pushNamed(
       context,
-      PageRouteBuilder(
-        pageBuilder: (ctx, anim, _) => ExpertChatRoomPage(entry: entry),
-        transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: child,
-        ),
-        transitionDuration: const Duration(milliseconds: 350),
-      ),
+      '/chart-board',
+      arguments: entry,
     );
   }
 
   Map<String, dynamic> _statusConfig(String status) {
     switch (status) {
       case 'in_progress':
-        return {'label': 'กำลังดำเนินการ', 'color': AppColors.info};
+        return {'label': 'กำลังดำเนินการ', 'color': const Color(0xFF6ED1A6)};
       case 'completed':
-        return {'label': 'เสร็จสิ้น', 'color': AppColors.success};
+        return {'label': 'เสร็จสิ้น', 'color': const Color(0xFF4A8B2C)};
       default:
-        return {'label': 'รอดำเนินการ', 'color': AppColors.warning};
+        return {'label': 'รอดำเนินการ', 'color': const Color(0xFFF2A93B)};
     }
   }
 }

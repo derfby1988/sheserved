@@ -38,6 +38,7 @@ import 'features/consultation/presentation/pages/chart_board_page.dart';
 import 'features/consultation/presentation/pages/vega_ai_chat_page.dart';
 import 'features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import 'features/consultation/data/models/consultation_request_model.dart';
+import 'features/consultation/data/models/consultation_entry.dart';
 import 'features/donation/presentation/pages/donation_dashboard_page.dart';
 import 'features/donation/presentation/pages/donation_admin_page.dart';
 import 'services/service_locator.dart';
@@ -210,10 +211,16 @@ class SheservedApp extends StatelessWidget {
         }
 
         if (settings.name == '/chart-board') {
-          final request = settings.arguments as ConsultationRequestModel;
-          return MaterialPageRoute(
-            builder: (context) => ChartBoardPage(request: request),
-          );
+          final args = settings.arguments;
+          if (args is ConsultationRequestModel) {
+            return MaterialPageRoute(
+              builder: (context) => ChartBoardPage(request: args),
+            );
+          } else if (args is ConsultationEntry) {
+            return MaterialPageRoute(
+              builder: (context) => ChartBoardPage(entry: args),
+            );
+          }
         }
 
         // Handle routes with arguments

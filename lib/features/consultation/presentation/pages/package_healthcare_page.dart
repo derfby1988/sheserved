@@ -63,9 +63,12 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
               details.add('ระบบวิเคราะห์อาการด้วย Vega AI');
             }
 
+            // Always add Medical Tools for consultation packages
+            details.add('เครื่องมือแพทย์ (ใบสั่งยา/สรุปผล)');
+
             // ถ้าไม่มีรายละเอียดยังคงใส่ mock รายละเอียดไว้บ้างให้สวยงาม
-            if (details.isEmpty) {
-              details = ['ปรึกษาผ่านวิดีโอคอล', 'สรุปผลการวินิจฉัย'];
+            if (details.length <= 1) { // 1 because we just added Medical Tools
+              details.insert(0, 'ปรึกษาผ่านวิดีโอคอล');
             }
 
             return {
@@ -128,6 +131,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         'details': [
           'ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 20 นาที',
           'ระบบวิเคราะห์อาการด้วย AI ระดับสูง',
+          'เครื่องมือแพทย์ (ใบสั่งยา/สรุปผล)',
         ],
       },
       {
@@ -135,21 +139,30 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         'short': 'อาจารย์หมอ',
         'price': 2990.0,
         'useAI': false,
-        'details': ['ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 15 นาที'],
+        'details': [
+          'ปรึกษาอาจารย์แพทย์ผ่านวิดีโอคอล 15 นาที',
+          'เครื่องมือแพทย์ (ใบสั่งยา/สรุปผล)',
+        ],
       },
       {
         'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์เฉพาะทาง',
         'short': 'หมอเฉพาะทาง',
         'price': 799.0,
         'useAI': false,
-        'details': ['ปรึกษาแพทย์เฉพาะทางผ่านวิดีโอคอล 15 นาที'],
+        'details': [
+          'ปรึกษาแพทย์เฉพาะทางผ่านวิดีโอคอล 15 นาที',
+          'เครื่องมือแพทย์ (ใบสั่งยา/สรุปผล)',
+        ],
       },
       {
         'name': 'แพ็คเกจ สำหรับปรึกษาแพทย์ทั่วไป/เภสัช',
         'short': 'หมอ/เภสัช',
         'price': 299.0,
         'useAI': false,
-        'details': ['ปรึกษาแพทย์หรือเภสัชกรผ่านแชท/เสียง'],
+        'details': [
+          'ปรึกษาแพทย์หรือเภสัชกรผ่านแชท/เสียง',
+          'เครื่องมือแพทย์ (ใบสั่งยา/สรุปผล)',
+        ],
       },
     ];
   }

@@ -13,13 +13,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
+import '../../data/models/consultation_entry.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
+import '../../data/models/consultation_package.dart';
+import '../widgets/package_wheel_selector.dart';
+import 'prescription_editor_page.dart';
+import 'consultation_note_editor_page.dart';
 
 class ChartBoardPage extends StatefulWidget {
-  final ConsultationRequestModel request;
+  final ConsultationRequestModel? request;
+  final ConsultationEntry? entry; // For active consultations
 
-  const ChartBoardPage({super.key, required this.request});
+  const ChartBoardPage({super.key, this.request, this.entry});
 
   @override
   State<ChartBoardPage> createState() => _ChartBoardPageState();
@@ -28,7 +35,7 @@ class ChartBoardPage extends StatefulWidget {
 class _ChartBoardPageState extends State<ChartBoardPage>
     with TickerProviderStateMixin {
   final _chatRepository = ServiceLocator.instance.chatRepository;
-  final _currentUser = ServiceLocator.instance.currentUser;
+  final _currentUser = AuthService.instance.currentUser;
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final _audioRecorder = AudioRecorder();
@@ -39,7 +46,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isChatLoading = true;
   bool _isRecording = false;
   bool _isSending = false;
+  bool _isConsultationActive = false; // Locked until paid (for patient)
+  bool _isHeaderExpanded = true;
+  bool _isProvider = false;
+
   StreamSubscription? _messagesSub;
+  List<ConsultationPackage> _availablePackages = [];
+  ConsultationPackage? _selectedPackage;
+  bool _isLoadingPackages = false;
+
+  // --- Session Timer Features ---
+  Timer? _sessionTimer;
+  int _remainingSeconds = 900; // Mock 15 mins
+  bool _isTimerRunning = false;
+
+  // --- Expert Status ---
+  final List<Map<String, dynamic>> _expertStatuses = [
+    {'role': 'doctor', 'name': 'แพทย์', 'status': 'joined', 'providerName': 'นพ.สมชาย ใจดี'},
+    {'role': 'pharmacist', 'name': 'เภสัชกร', 'status': 'waiting', 'providerName': null},
+  ];
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -80,6 +105,20 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   @override
   void initState() {
     super.initState();
+    // Robust provider check (matches Dashboard logic)
+    final professionId = _currentUser?.professionId;
+    _isProvider = professionId != null && 
+                  professionId != '00000000-0000-0000-0000-000000000001';
+    
+    // Auto-detect initial state
+    if (widget.entry != null) {
+      _isConsultationActive = true;
+      _isHeaderExpanded = false;
+      _selectedPain = widget.entry!.symptomsChart['pain_level']?.toString();
+    } else if (widget.request?.symptomsChart['pain_level'] != null) {
+      _selectedPain = widget.request!.symptomsChart['pain_level']?.toString();
+    }
+
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -98,6 +137,90 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _initChat();
+    _loadPackages();
+
+    if (_isProvider) {
+      _startTimer();
+    }
+  }
+
+  void _startTimer() {
+    if (_isTimerRunning) return;
+    _isTimerRunning = true;
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds > 0) {
+        if (mounted) {
+          setState(() {
+            _remainingSeconds--;
+          });
+        }
+      } else {
+        _sessionTimer?.cancel();
+        _isTimerRunning = false;
+        _onSessionExpired();
+      }
+    });
+  }
+
+  void _onSessionExpired() {
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('หมดเวลาการปรึกษา'),
+          content: const Text('การปรึกษาในเซสชั่นนี้สิ้นสุดลงแล้ว'),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('รับทราบ'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  String _formatTimer(int totalSeconds) {
+    int minutes = totalSeconds ~/ 60;
+    int seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _loadPackages() async {
+    if (_isProvider) return;
+    setState(() => _isLoadingPackages = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('consultation_packages')
+          .select()
+          .eq('is_active', true)
+          .order('price');
+
+      final pks = (response as List)
+          .map((e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _availablePackages = pks;
+          _isLoadingPackages = false;
+          
+          // Set initial package from request
+          if (widget.request?.packageId != null) {
+            _selectedPackage = pks.firstWhere(
+              (p) => p.id == widget.request!.packageId,
+              orElse: () => pks.first,
+            );
+          } else if (pks.isNotEmpty) {
+            _selectedPackage = pks.first;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading packages: $e');
+      if (mounted) setState(() => _isLoadingPackages = false);
+    }
   }
 
   Future<void> _initChat() async {
@@ -105,8 +228,20 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     try {
       final currentUserId = _currentUser?.id;
+
+      // Fallback: Check DB if local provider status is false (ensures Dr. Dave sees tools)
+      if (!_isProvider && currentUserId != null) {
+        final userData = await Supabase.instance.client
+            .from('users')
+            .select('profession_id')
+            .eq('id', currentUserId)
+            .maybeSingle();
+        if (userData != null && userData['profession_id'] != null && userData['profession_id'] != '00000000-0000-0000-0000-000000000001') {
+          if (mounted) setState(() => _isProvider = true);
+        }
+      }
+
       if (currentUserId == null) {
-        // No user logged in — show chat in offline demo mode
         setState(() {
           _messages = [];
           _isChatLoading = false;
@@ -116,11 +251,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      // ✅ ใช้ ID ของ Consultation Request เป็นพื้นฐานในการสร้างห้องแชท (แบบ 1:1)
-      final consultationId = widget.request.id.isNotEmpty
-          ? widget.request.id
-          : const Uuid().v4();
-      final roomId = 'consult_$consultationId';
+      // Determine Room ID
+      String roomId;
+      if (widget.entry != null) {
+        roomId = widget.entry!.roomId;
+      } else {
+        final consultationId = widget.request!.id.isNotEmpty
+            ? widget.request!.id
+            : const Uuid().v4();
+        roomId = 'consult_$consultationId';
+      }
 
       // Ensure the chat room record exists in the DB
       await _ensureConsultationRoom(roomId, currentUserId);
@@ -242,6 +382,32 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     } catch (e) {
       debugPrint('Send error: $e');
       // Keep message shown even if send fails (offline mode)
+    }
+
+    if (mounted) setState(() => _isSending = false);
+  }
+
+  Future<void> _sendSpecialMessage(String type, String content) async {
+    if (_isSending) return;
+    setState(() => _isSending = true);
+
+    final roomId = _consultationRoomId ?? 'consultation_demo';
+    final message = ChatMessage(
+      id: const Uuid().v4(),
+      roomId: roomId,
+      senderId: _currentUser?.id ?? 'demo_user',
+      content: content,
+      createdAt: DateTime.now(),
+      type: type,
+      status: MessageStatus.sent,
+    );
+
+    try {
+      await _chatRepository.sendMessage(message);
+      if (mounted) setState(() => _messages = [..._messages, message]);
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('Special send error: $e');
     }
 
     if (mounted) setState(() => _isSending = false);
@@ -481,320 +647,106 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
+          backgroundColor: Colors.white,
           elevation: 0,
-          centerTitle: true,
-          title: const Text(
-            'ระบุอาการ',
-            style: TextStyle(
-              color: Color(0xFF2D5A1B),
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
+          titleSpacing: 0,
           leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: AppColors.primary,
-              size: 20,
-            ),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
             onPressed: () => Navigator.pop(context),
           ),
-        ),
-        body: Column(
-          children: [
-            // === TOP SECTION: Pain Level Selector ===
-            Expanded(
-              flex: 5,
-              child: Container(
-                color: Colors.transparent,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4A8B2C).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.medical_services_outlined,
-                              color: Color(0xFF4A8B2C),
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            'คุณรู้สึกเจ็บปวดระดับใด?',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2D5A1B),
-                            ),
-                          ),
-                        ],
+          title: Row(
+            children: [
+              _buildTimerBadge(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.entry?.patientName ?? "ปรึกษาผู้เชี่ยวชาญ",
+                      style: const TextStyle(
+                        color: Color(0xFF1A4D10),
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(height: 16),
-
-                      // Pain Level Buttons
-                      Expanded(
-                        child: GridView.count(
-                          crossAxisCount: 3,
-                          childAspectRatio: 1.5,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: EdgeInsets.zero,
-                          children: [
-                            ...painLevels.map((level) {
-                              final isSelected =
-                                  _selectedPain == level['label'];
-                              final color = level['color'] as Color;
-                              return GestureDetector(
-                                onTap: () => setState(
-                                  () => _selectedPain = level['label'],
-                                ),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeOut,
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? color.withOpacity(0.15)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? color
-                                          : Colors.grey.shade200,
-                                      width: isSelected ? 2 : 1,
-                                    ),
-                                    boxShadow: isSelected
-                                        ? [
-                                            BoxShadow(
-                                              color: color.withOpacity(0.3),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 3),
-                                            ),
-                                          ]
-                                        : [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.04,
-                                              ),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        level['icon'] as IconData,
-                                        color: isSelected ? color : Colors.grey,
-                                        size: 22,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        level['label'] as String,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                          color: isSelected
-                                              ? color
-                                              : Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-
-                      // Selected state indicator
-                      if (_selectedPain != null)
-                        AnimatedOpacity(
-                          opacity: _selectedPain != null ? 1 : 0,
-                          duration: const Duration(milliseconds: 300),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4A8B2C).withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.check_circle,
-                                  color: Color(0xFF4A8B2C),
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'เลือกแล้ว: ความเจ็บปวดระดับ "$_selectedPain"',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF4A8B2C),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // === BOTTOM SECTION: Chat Panel ===
-            Expanded(
-              flex: 6,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(32),
-                    topRight: Radius.circular(32),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _isProvider ? "Patient Consultation" : "Expert Group",
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
                     ),
                   ],
                 ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(32),
-                    topRight: Radius.circular(32),
-                  ),
-                  child: Column(
-                    children: [
-                      // Chat Header
-                      _buildChatHeader(),
-
-                      // Messages List
-                      Expanded(child: _buildMessagesList()),
-
-                      // Input Area
-                      _buildChatInput(),
-                    ],
+              ),
+            ],
+          ),
+          actions: [
+            _buildActionButtons(),
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildExpertStatusBanner(),
+            _buildBodyMapSummary(),
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF9FBF8),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(30),
+                    topRight: Radius.circular(30),
                   ),
                 ),
+                child: _buildMessagesList(),
               ),
             ),
+            _buildChatInput(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildChatHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+  Widget _buildFinishButton() {
+    return ElevatedButton.icon(
+      onPressed: _showFinishDialog,
+      icon: const Icon(Icons.check_circle_outline, size: 14),
+      label: const Text('เสร็จงาน', style: TextStyle(fontSize: 11)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
-      child: Row(
-        children: [
-          // Avatar stack
-          SizedBox(
-            width: 48,
-            height: 32,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  child: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: Colors.grey.shade100,
-                    child: const Icon(
-                      Icons.person,
-                      size: 14,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 18,
-                  child: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(
-                      Icons.medical_services,
-                      size: 12,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+    );
+  }
+
+  void _showFinishDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ยืนยันการจบงาน'),
+        content: const Text('คุณได้ให้คำแนะนำครบถ้วนแล้วใช่หรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ยกเลิก'),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'แชทกลุ่มปรึกษาผู้เชี่ยวชาญ',
-                  style: TextStyle(
-                    color: Color(0xFF1A4D10),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  'Expert Group · ปลอดภัยและเป็นส่วนตัว',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          // Online indicator
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text(
-                  'ออนไลน์',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              // Logic to finish job
+              final consultationId = widget.entry?.id;
+              if (consultationId != null) {
+                final repo = ServiceLocator.instance.consultationRepository;
+                await repo.updateStatus(consultationId, 'completed');
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('ยืนยัน'),
           ),
         ],
       ),
@@ -831,7 +783,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           itemCount: _messages.length + 1, // +1 for payment card at bottom
           itemBuilder: (context, index) {
             if (index == _messages.length) {
-              return _buildPaymentCard();
+              // Only show payment card if not a provider and consultation not active
+              if (!_isProvider && !_isConsultationActive) {
+                return _buildPaymentCard();
+              }
+              // Show Review Card if completed and is patient
+              if (!_isProvider && (widget.entry?.status == 'completed')) {
+                return _buildReviewCard();
+              }
+              return const SizedBox(height: 20);
             }
             if (_messages.isEmpty) return const SizedBox.shrink();
             final msg = _messages[index];
@@ -912,6 +872,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   else if (message.type == 'voice' &&
                       message.attachmentUrl != null)
                     _MiniVoicePlayer(url: message.attachmentUrl!, isMe: isMe)
+                  else if (message.type == 'prescription')
+                    _buildPrescriptionCard(message)
+                  else if (message.type == 'summary')
+                    _buildSummaryCard(message)
                   else
                     Text(
                       message.content,
@@ -996,7 +960,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${widget.request.price.toInt()} บาท',
+                      '${widget.request?.price.toInt() ?? 0} บาท',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -1042,93 +1006,188 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         color: Colors.white,
         border: Border(top: BorderSide(color: Colors.grey.shade100)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          // Image button
-          _buildInputIconButton(
-            icon: Icons.image_outlined,
-            onTap: _pickAndSendImage,
-          ),
-          const SizedBox(width: 8),
-
-          // Text input
-          Expanded(
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: TextField(
-                controller: _msgController,
-                style: const TextStyle(color: Colors.black87, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'ถามผู้เชี่ยวชาญ...',
-                  hintStyle: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 14,
+          // Main Input Row
+          Opacity(
+            opacity: (_isConsultationActive || _isProvider) ? 1.0 : 0.3,
+            child: AbsorbPointer(
+              absorbing: !(_isConsultationActive || _isProvider),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Image button
+                  _buildInputIconButton(
+                    icon: Icons.image_outlined,
+                    onTap: _pickAndSendImage,
                   ),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Send / Mic button
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            transitionBuilder: (child, anim) =>
-                ScaleTransition(scale: anim, child: child),
-            child: hasText
-                ? _buildActionButton(
-                    key: const ValueKey('send'),
-                    icon: Icons.send_rounded,
-                    color: Colors.white,
-                    bgColor: const Color(0xFF4A8B2C),
-                    onTap: _sendMessage,
-                    isLoading: _isSending,
-                  )
-                : GestureDetector(
-                    key: const ValueKey('mic'),
-                    onLongPressStart: (_) => _startRecording(),
-                    onLongPressEnd: (_) => _stopRecording(),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      height: 44,
-                      width: 44,
-                      decoration: BoxDecoration(
-                        color: _isRecording
-                            ? Colors.redAccent
-                            : Colors.grey.shade100,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                (_isRecording ? Colors.redAccent : Colors.black)
-                                    .withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
+                  // Expert Tools (Prescription/Summary)
+                  if (_isProvider) ...[
+                    _buildInputIconButton(
+                      icon: Icons.medication_outlined,
+                      tooltip: 'ใบสั่งยา',
+                      onTap: () {
+                        final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+                        final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => PrescriptionEditorPage(
+                              consultationId: consultationId,
+                              patientId: patientId,
+                            ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    _buildInputIconButton(
+                      icon: Icons.assignment_outlined,
+                      tooltip: 'สรุปผล',
+                      onTap: () {
+                        final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+                        final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (ctx) => ConsultationNoteEditorPage(
+                              consultationId: consultationId,
+                              patientId: patientId,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    _buildInputIconButton(
+                      icon: Icons.bolt,
+                      tooltip: 'ข้อความด่วน',
+                      onTap: _showQuickReplies,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
 
-                      child: Icon(
-                        _isRecording ? Icons.stop_rounded : Icons.mic,
-                        color: _isRecording
-                            ? Colors.white
-                            : const Color(0xFF4A8B2C),
-                        size: 20,
+                  // Text input
+                  Expanded(
+                    child: Container(
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: const Color(0xFF4A8B2C).withOpacity(0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _msgController,
+                        style:
+                            const TextStyle(color: Colors.black87, fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'ถามผู้เชี่ยวชาญ...',
+                          hintStyle: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: (_) => _sendMessage(),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+
+                  // Send / Mic button
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (child, anim) =>
+                        ScaleTransition(scale: anim, child: child),
+                    child: hasText
+                        ? _buildActionButton(
+                            key: const ValueKey('send'),
+                            icon: Icons.send_rounded,
+                            color: Colors.white,
+                            bgColor: const Color(0xFF4A8B2C),
+                            onTap: _sendMessage,
+                            isLoading: _isSending,
+                          )
+                        : GestureDetector(
+                            key: const ValueKey('mic'),
+                            onLongPressStart: (_) => _startRecording(),
+                            onLongPressEnd: (_) => _stopRecording(),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              height: 44,
+                              width: 44,
+                              decoration: BoxDecoration(
+                                color: _isRecording
+                                    ? Colors.redAccent
+                                    : const Color(0xFF4A8B2C),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_isRecording
+                                            ? Colors.redAccent
+                                            : const Color(0xFF4A8B2C))
+                                        .withOpacity(0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                _isRecording ? Icons.stop_rounded : Icons.mic,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
           ),
+
+          // Lock Overlay for patients before payment
+          if (!_isConsultationActive && !_isProvider)
+            Positioned.fill(
+              child: Container(
+                color: Colors.white.withOpacity(0.1),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_outline, size: 14, color: Colors.orange.shade800),
+                        const SizedBox(width: 6),
+                        Text(
+                          'กดยืนยันเพื่อเริ่มต้นการแชท',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1137,18 +1196,22 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget _buildInputIconButton({
     required IconData icon,
     required VoidCallback onTap,
+    String? tooltip,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        height: 40,
-        width: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
+      child: Tooltip(
+        message: tooltip ?? '',
+        child: Container(
+          height: 38,
+          width: 38,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Icon(icon, color: Colors.grey.shade700, size: 20),
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }
@@ -1218,7 +1281,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // 1. Prepare final data
       final finalSymptomsChart = Map<String, dynamic>.from(
-        widget.request.symptomsChart,
+        widget.request?.symptomsChart ?? {},
       );
       finalSymptomsChart['pain_level'] = _selectedPain;
 
@@ -1226,12 +1289,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       final repo = ServiceLocator.instance.consultationRepository;
       await repo.createRequest(
         userId: currentUserId,
-        packageId: widget.request.packageId,
-        packageName: widget.request.packageName,
-        price: widget.request.price,
-        bodyArea: widget.request.bodyArea,
+        packageId: widget.request?.packageId ?? '',
+        packageName: widget.request?.packageName ?? '',
+        price: widget.request?.price ?? 0,
+        bodyArea: widget.request?.bodyArea ?? {},
         symptomsChart: finalSymptomsChart,
-        symptoms: widget.request.symptoms,
+        symptoms: widget.request?.symptoms ?? [],
       );
 
       if (mounted) {
@@ -1244,10 +1307,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             backgroundColor: Color(0xFF4A8B2C),
           ),
         );
-        // STAY in the current page instead of redirecting to home
+        
+        // Transition to Chat Mode
         setState(() {
-          // You might want to update a UI flag here to show "Waiting for Expert"
+          _isConsultationActive = true;
+          _isHeaderExpanded = false;
         });
+        
+        // Re-init chat to ensure room is fully synced
+        _initChat();
       }
     } catch (e) {
       if (mounted) {
@@ -1260,6 +1328,612 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         );
       }
     }
+  }
+
+  Widget _buildPrescriptionCard(ChatMessage message) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.medication, color: Colors.blue, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ใบสั่งยา',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    Text(
+                      'Prescription',
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1),
+          ),
+          Text(
+            message.content,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _viewPrescriptionDetails(message.attachmentUrl),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              child: const Text(
+                'ดูรายละเอียดใบสั่งยา',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(ChatMessage message) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.assignment, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'สรุปผลการตรวจ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    Text(
+                      'Consultation Note',
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1),
+          ),
+          Text(
+            message.content,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _viewSummaryDetails(message.attachmentUrl),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              child: const Text(
+                'ดูรายละเอียดการตรวจ',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _viewPrescriptionDetails(String? prescriptionId) {
+    if (prescriptionId == null) return;
+    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => PrescriptionEditorPage(
+          consultationId: consultationId,
+          patientId: patientId,
+        ),
+      ),
+    );
+  }
+
+  void _viewSummaryDetails(String? noteId) {
+    if (noteId == null) return;
+    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ConsultationNoteEditorPage(
+          consultationId: consultationId,
+          patientId: patientId,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimerBadge() {
+    final bool isLowTime = _remainingSeconds < 300; // Less than 5 mins
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isLowTime ? Colors.red.shade50 : AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLowTime ? Colors.red.withOpacity(0.3) : AppColors.primary.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            size: 14,
+            color: isLowTime ? Colors.red : AppColors.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _formatTimer(_remainingSeconds),
+            style: TextStyle(
+              color: isLowTime ? Colors.red : AppColors.primary,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isProvider)
+          TextButton.icon(
+            onPressed: _showFinishDialog,
+            icon: const Icon(Icons.done_all, color: AppColors.primary, size: 18),
+            label: const Text('จบงาน', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
+          ),
+        IconButton(
+          icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
+          onPressed: _startVideoCall,
+        ),
+        IconButton(
+          icon: const Icon(Icons.info_outline, color: Colors.grey),
+          onPressed: _showConsultationDetails,
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  void _showQuickReplies() {
+    final List<String> templates = [
+      'สวัสดีครับ หมอรับเคสแล้วครับ',
+      'กรุณาส่งรูปภาพบริเวณที่มีอาการครับ',
+      'พบอาการมานานเท่าไรแล้วครับ?',
+      'มีประวัติแพ้ยาอะไรไหมครับ?',
+      'ขอบคุณสำหรับข้อมูลครับ หมอกำลังพิจารณาการรักษา',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('ข้อความตอบกลับด่วน', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 16),
+            ...templates.map((txt) => ListTile(
+              leading: const Icon(Icons.flash_on, color: Colors.amber),
+              title: Text(txt),
+              onTap: () {
+                Navigator.pop(ctx);
+                _sendSpecialMessage('text', txt);
+              },
+            )),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _startVideoCall() {
+    final roomId = widget.entry?.roomId ?? 'consult_${widget.request?.id}';
+    Navigator.pushNamed(
+      context,
+      '/live-vdo',
+      arguments: {
+        'roomId': roomId,
+        'isCaller': true,
+        'otherParticipantName': widget.entry?.patientName ?? 'Patient',
+      },
+    );
+  }
+
+  void _showConsultationDetails() {
+    // Show a bottom sheet with patient details and symptoms
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _buildDetailsSheet(),
+    );
+  }
+
+  Widget _buildDetailsSheet() {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'รายละเอียดการปรึกษา',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          _buildDetailRow('ผู้ป่วย', widget.entry?.patientName ?? 'ไม่ระบุ'),
+          _buildDetailRow('แพ็คเกจ', widget.entry?.packageName ?? widget.request?.packageName ?? 'ไม่ระบุ'),
+          _buildDetailRow('อาการเบื้องต้น', widget.entry?.bodyArea ?? widget.request?.bodyArea['label'] ?? 'ไม่ระบุ'),
+          const Divider(height: 32),
+          const Text(
+            'จุดที่พบอาการ (Body Map)',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _buildSymptomsList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSymptomsList() {
+    // In production, fetch this from the consultation entry/request
+    return ListView.builder(
+      itemCount: 1, // Mock
+      itemBuilder: (ctx, i) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on, color: Colors.orange),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                widget.entry?.bodyArea ?? "ระบุบริเวณร่างกาย",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpertStatusBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.groups_outlined, size: 16, color: Colors.grey),
+              const SizedBox(width: 8),
+              Text(
+                'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: _expertStatuses.map((expert) {
+              final isJoined = expert['status'] == 'joined';
+              return Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isJoined ? AppColors.primary.withOpacity(0.08) : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isJoined ? AppColors.primary.withOpacity(0.2) : Colors.grey.shade200,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isJoined ? Icons.check_circle : Icons.hourglass_empty,
+                      size: 14,
+                      color: isJoined ? AppColors.primary : Colors.grey,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      expert['name'],
+                      style: TextStyle(
+                        color: isJoined ? AppColors.primary : Colors.grey.shade600,
+                        fontSize: 12,
+                        fontWeight: isJoined ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBodyMapSummary() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange.shade50, Colors.white],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.analytics_outlined, color: Colors.orange, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'สรุปอาการจาก Body Map',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.entry?.bodyArea ?? widget.request?.bodyArea['label'] ?? "กำลังประมวลผลข้อมูลอาการ...",
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Colors.orange),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Text(
+            '⭐ ให้คะแนนการปรึกษา',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'ความพึงพอใจของคุณช่วยพัฒนาบริการของเรา',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              5,
+              (i) => Icon(Icons.star_border_rounded,
+                  color: Colors.amber.shade400, size: 32),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {},
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                ),
+              ),
+              child: const Text('ส่งคะแนน'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1373,4 +2047,5 @@ class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
       ],
     );
   }
+
 }
