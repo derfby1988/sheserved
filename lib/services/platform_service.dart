@@ -14,15 +14,25 @@ class PlatformService {
   /// ตรวจสอบว่าเป็น Android หรือไม่
   static bool get isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  // สวิตช์หลักสำหรับเปิด/ปิดแผนที่บน Web
+  static bool _isWebMapEnabled = false; 
+
   // สถานะเปิด/ปิดแผนที่แยกตามหน้าจอ (สำหรับ Web)
-  // ในโปรดักชัน ควรโหลดค่าเหล่านี้จาก Supabase (Table: app_settings)
   static Map<String, bool> _webMapSettings = {
     'home': true,
     'rescue': false,
     'emergency': true,
   };
 
-  /// อัปเดตการตั้งค่าแผนที่ (ใช้โดย Admin)
+  /// อัปเดตสถานะเปิด/ปิดแผนที่บน Web ทั้งหมด
+  static void setWebMapEnabled(bool value) {
+    _isWebMapEnabled = value;
+  }
+
+  /// ตรวจสอบสถานะ Master Switch ของ Web Map
+  static bool get isWebMapEnabled => _isWebMapEnabled;
+
+  /// อัปเดตการตั้งค่าแผนที่รายหน้าจอ (ใช้โดย Admin)
   static void updateWebMapSetting(String pageName, bool value) {
     _webMapSettings[pageName] = value;
   }
@@ -31,6 +41,9 @@ class PlatformService {
   /// สามารถระบุ [pageName] เพื่อเช็คแยกรายหน้าจอได้ (เช่น 'home', 'rescue', 'emergency')
   static bool shouldShowLiveMap({String? pageName}) {
     if (kIsWeb) {
+      // ถ้า Master Switch ปิดอยู่ ให้ปิดทุกหน้า
+      if (!_isWebMapEnabled) return false;
+
       if (pageName != null && _webMapSettings.containsKey(pageName)) {
         return _webMapSettings[pageName]!;
       }

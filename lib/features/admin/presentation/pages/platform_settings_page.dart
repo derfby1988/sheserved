@@ -29,6 +29,7 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
   @override
   void initState() {
     super.initState();
+    _webLiveMap = PlatformService.isWebMapEnabled;
     _loadMetrics();
   }
 
@@ -48,8 +49,11 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       drawer: const TlzDrawer(),
-      body: CustomScrollView(
-        slivers: [
+      body: SafeArea(
+        top: false, // ให้ AppBar ทะลุขึ้นไปถึง Status Bar ได้เพื่อความสวยงาม
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
           _buildAppBar(),
           SliverToBoxAdapter(
             child: Padding(
@@ -66,7 +70,10 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
                     icon: Icons.language,
                     color: Colors.blue,
                     isEnabled: _webLiveMap,
-                    onChanged: (v) => setState(() => _webLiveMap = v),
+                    onChanged: (v) {
+                      setState(() => _webLiveMap = v);
+                      PlatformService.setWebMapEnabled(v);
+                    },
                     description: 'แนะนำให้ปิดบน Web เพื่อลดค่าใช้จ่าย Google Maps JS API และเพิ่มความเร็วในการโหลดหน้าแรก',
                     child: _webLiveMap ? Column(
                       children: [
@@ -120,8 +127,9 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSubToggle({required String title, required bool value, required ValueChanged<bool> onChanged}) {
     return Padding(
@@ -249,12 +257,26 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
       pinned: true,
       elevation: 0,
       backgroundColor: const Color(0xFF1a1a2e),
-      leading: const TlzHamburgerMenu(),
+      centerTitle: true,
+      leading: const Padding(
+        padding: EdgeInsets.all(8.0),
+        child: TlzHamburgerMenu(),
+      ),
+      title: const Text(
+        'Platform Settings', 
+        style: TextStyle(
+          color: Colors.white, 
+          fontWeight: FontWeight.bold, 
+          fontSize: 18,
+          letterSpacing: 0.5,
+        )
+      ),
       flexibleSpace: FlexibleSpaceBar(
-        title: const Text('Platform Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [Color(0xFF1a1a2e), Color(0xFF16213e)],
             ),
           ),

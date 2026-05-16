@@ -431,25 +431,21 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
           AnimatedOpacity(
             opacity: _isMapLoaded ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 600),
-            child: ClipRect(
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
-                child: gm.GoogleMap(
-                  initialCameraPosition: gm.CameraPosition(
-                    target: widget.initialLocation,
-                    zoom: widget.initialZoom,
-                  ),
-                  onMapCreated: _onMapCreated,
-                  markers: _markers,
-                  polylines: _polylines,
-                  myLocationEnabled: !_locationPermissionDenied,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  compassEnabled: false,
-                  mapToolbarEnabled: false,
-                  onTap: (_) => widget.onTap?.call(),
-                ),
+            child: gm.GoogleMap(
+              key: const ValueKey('home_google_map'),
+              initialCameraPosition: gm.CameraPosition(
+                target: widget.initialLocation,
+                zoom: widget.initialZoom,
               ),
+              onMapCreated: _onMapCreated,
+              markers: _markers,
+              polylines: _polylines,
+              myLocationEnabled: !_locationPermissionDenied,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+              onTap: (_) => widget.onTap?.call(),
             ),
           ),
 
