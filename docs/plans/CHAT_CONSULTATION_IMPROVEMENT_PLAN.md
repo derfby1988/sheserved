@@ -21,6 +21,7 @@
 | วิเคราะห์อาการ (Body Map) | `analyze_body_area_page.dart` | ✅ มีแล้ว |
 | Vega AI Pre-consultation | `vega_ai_chat_page.dart` | ✅ มีแล้ว |
 | Dashboard แพทย์ | `health_program_request_dashboard.dart` | ✅ มีแล้ว |
+| Unified Consultation Room | `chart_board_page.dart` | 🔄 รวมหน้า (Merging) |
 
 ### ปัญหาที่พบ
 
@@ -249,14 +250,11 @@ CREATE TABLE IF NOT EXISTS doctor_quick_replies (
 [Home Page]
   → [Banner "ปรึกษาแพทย์"]
   → [เลือกแพ็คเกจ — Wheel UI]        ✅ มีแล้ว
-  → [วิเคราะห์อาการ Body Map]         ✅ มีแล้ว
-  → [Vega AI Pre-screening]           ✅ มีแล้ว
-  → [หน้าสรุปอาการ + ยืนยัน]         ← NEW
-  → [ชำระเงิน]                        ← NEW
-  → [Waiting Room — ⏳ รอผู้เชี่ยวชาญเข้าร่วม] ← NEW
-      (หากหมดเวลา expire_minutes → ❌ ยกเลิกและคืนเงินอัตโนมัติ)
-  → [ห้องแชท + Session Timer]         ← IMPROVE
-      (ผู้ป่วยสามารถคลิกรูปโปรไฟล์แพทย์เพื่อดูประวัติและรีวิวได้)
+  → [ChartBoard (Unified Room)]      ← MERGED
+      - [สรุปอาการ Body Map + เลือก Pain Level]
+      - [ชำระเงิน / ยืนยันคำขอ]
+      - [Waiting Room — ⏳ รอผู้เชี่ยวชาญเข้าร่วม]
+      - [ห้องแชท + Session Timer]
   → [สรุปผลการปรึกษา (Medical Note)]  ← NEW
   → [ให้คะแนน & รีวิว]               ← NEW
   → [Follow-up Reminder]              ← NEW
@@ -267,12 +265,12 @@ CREATE TABLE IF NOT EXISTS doctor_quick_replies (
 ```
 [Dashboard — คิวรอรับงาน]   ✅ มีแล้ว
   → [กด "รับงาน" (RPC)]
-  → [ดูข้อมูลผู้ป่วย + Body Map Summary]
-  → [เข้าห้องแชทอัตโนมัติ]
-  → [หากฉุกเฉิน → กด "สละสิทธิ์" เพื่อคืนโควต้าให้แพทย์อื่น] ← NEW
-  → [แชท + Quick Reply Templates]     ← NEW
-  → [เขียน Medical Note]              ← NEW
-  → [ออก Prescription (ใบสั่งยา)]     ← NEW
+  → [เข้าสู่ ChartBoard (Unified Room)] ← NEW
+      - [ดูข้อมูลผู้ป่วย + Body Map Summary]
+      - [แชท + Session Timer]
+      - [Quick Reply Templates]
+      - [ออก Prescription / เขียน Medical Note]
+  → [หากฉุกเฉิน → กด "สละสิทธิ์" เพื่อคืนโควต้าให้แพทย์อื่น]
   → [หมดเวลา / กด "จบ Session" → ล็อกห้องแชท]
   → [ส่ง Summary ให้ผู้ป่วยอัตโนมัติ]  ← NEW
 ```
@@ -1342,4 +1340,33 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 ---
 
-✅ **โครงการ CHAT CONSULTATION IMPROVEMENT เสร็จสมบูรณ์ทุก Phase (1-5) แล้ว**
+## 🏗️ Phase 6: Unified Consultation Room (ChartBoard) Integration (🔄 กำลังดำเนินการ)
+
+**หลักการ:** รวม (Merge) ฟีเจอร์ทั้งหมดของการปรึกษามาไว้ใน `ChartBoardPage` เพียงหน้าเดียว เพื่อความเป็นมืออาชีพและลดความซับซ้อนของ Navigation โดยครอบคลุมตั้งแต่ Pre-consultation จนถึงการจบงาน
+
+### 1. เป้าหมายการรวมหน้า (Merging Goals)
+- **Single Source of Truth:** ใช้ `ChartBoardPage` เป็นหน้าหลักแทน `ExpertChatRoomPage` สำหรับเคสปรึกษาแพทย์
+- **Seamless Context:** แสดง Body Map, รายการอาการ, และระดับความเจ็บปวด (Pain Level) ร่วมกับหน้าแชท
+- **Professional Tools:** ผสานเครื่องมือออกใบสั่งยา (Prescription) และสรุปผล (Summary) ไว้ใน Input Bar ของแพทย์
+
+### 2. สถานะความสมบูรณ์และขั้นตอนที่ยังไม่สมบูรณ์ (Pending Steps)
+
+| ฟีเจอร์ | สถานะใน ChartBoard | สิ่งที่ต้องทำต่อ (Suggestions) |
+|---|---|---|
+| **Session Timer** | 🟡 มี UI แล้ว | เชื่อมต่อ `started_at` จาก DB และคำนวณเวลาที่เหลือจริง แทนการ Mock 15 นาที |
+| **Expert Status Banner** | 🟡 มี UI แล้ว | ดึงสถานะจาก `consultation_room_experts` แบบ Real-time แทนข้อมูล Mock |
+| **Body Map Summary** | ✅ สมบูรณ์ | แสดงผลจากข้อมูลใน `consultation_requests.body_area` |
+| **Medical Tools** | ✅ สมบูรณ์ | เชื่อมต่อกับ `PrescriptionEditor` และ `ConsultationNoteEditor` แล้ว |
+| **PDPA Privacy** | ✅ สมบูรณ์ | ระบบ Camera Only + Face Blur + Watermark ใช้งานได้แล้ว |
+| **Video Call** | 🟡 มีปุ่มแล้ว | เชื่อมต่อกับระบบ `live_vdo_page.dart` ให้ทำงานร่วมกับ Session |
+| **Rating & Review** | 🟡 มี UI แล้ว | บันทึกคะแนนลงในตาราง `consultation_reviews` หลังจบงาน |
+
+### 3. ข้อเสนอแนะการปรับปรุง (Next Steps)
+1. **Dynamic Expert Status:** เขียน Stream/Provider เพื่อคอยฟังสถานะการเข้าร่วมของผู้เชี่ยวชาญคนอื่นๆ ในห้อง เพื่อให้ผู้ป่วยเห็นความเคลื่อนไหว (เช่น "เภสัชกรกำลังเข้าร่วม...")
+2. **Session Persistence:** ตรวจสอบสถานะการชำระเงินและการกดรับงานให้แม่นยำขึ้นใน `initState` เพื่อป้องกันการเข้าถึงห้องแชทโดยไม่ได้รับอนุญาต
+3. **Video Integration:** ทำให้ Video Call แสดงผลแบบ Picture-in-Picture หรือ Overlay ภายใน `ChartBoardPage` เพื่อให้ยังคงพิมพ์แชทหรือดูสรุปอาการได้ขณะคุย VDO
+4. **Auto-Close Logic:** เมื่อเวลาหมดหรือแพทย์กด "จบงาน" ให้ทำการล็อกห้องแชทใน DB จริงๆ (ไม่ใช่แค่ UI Lock) เพื่อป้องกันการส่งข้อความย้อนหลัง
+
+---
+
+✅ **โครงการ CHAT CONSULTATION IMPROVEMENT — Phase 1-5 เสร็จสมบูรณ์ และกำลังพัฒนา Phase 6 (Unified Room)**
