@@ -25,6 +25,7 @@ class HomeMapBackground extends StatefulWidget {
   final double initialZoom;
   final Map<String, dynamic>? focusedAlert;
   final VoidCallback? onTap;
+  final Function(gm.GoogleMapController)? onMapCreated;
 
   const HomeMapBackground({
     super.key,
@@ -32,6 +33,7 @@ class HomeMapBackground extends StatefulWidget {
     this.initialZoom = 14.0,
     this.focusedAlert,
     this.onTap,
+    this.onMapCreated,
   });
 
   @override
@@ -407,6 +409,9 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         _animateCameraTo(_userLatLng!, zoom: 14.5);
       }
     });
+
+    // เรียก callback ภายนอก (เช่น เพื่อเก็บสถิติการใช้งาน)
+    widget.onMapCreated?.call(controller);
   }
 
   // ─── Build ─────────────────────────────────────────────────

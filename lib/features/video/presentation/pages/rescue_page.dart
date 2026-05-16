@@ -11,6 +11,7 @@ import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import 'widgets/responder_compass_widget.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import 'package:sheserved/services/platform_service.dart';
 
 /// หน้าสำหรับจิตอาสา (Rescue Page) - Phase 3 Production-Ready
 class RescuePage extends StatefulWidget {
@@ -494,7 +495,10 @@ class _RescuePageState extends State<RescuePage> {
                   target: LatLng(13.736717, 100.523186),
                   zoom: 12,
                 ),
-                onMapCreated: (controller) => _mapController = controller,
+                onMapCreated: (controller) {
+                  PlatformService.logMapLoad(pageName: 'rescue');
+                  _mapController = controller;
+                },
                 markers: _markers,
                 polylines: _polylines,
                 myLocationEnabled: true,

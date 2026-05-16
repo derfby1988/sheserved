@@ -8,6 +8,8 @@ class ConsultationPackage {
   bool isActive;
   List<ExpertGroup> expertGroups;
   int displayOrder;
+  int sessionMinutes;
+  int expireMinutes;
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -21,6 +23,8 @@ class ConsultationPackage {
     this.isActive = true,
     this.expertGroups = const [],
     this.displayOrder = 0,
+    this.sessionMinutes = 15,
+    this.expireMinutes = 120,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -57,6 +61,8 @@ class ConsultationPackage {
       isActive: json['is_active'] as bool? ?? true,
       expertGroups: groups,
       displayOrder: parseInt(json['display_order']),
+      sessionMinutes: parseInt(json['session_minutes']) != 0 ? parseInt(json['session_minutes']) : 15,
+      expireMinutes: parseInt(json['expire_minutes']) != 0 ? parseInt(json['expire_minutes']) : 120,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : DateTime.now(),
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : DateTime.now(),
     );
@@ -72,6 +78,8 @@ class ConsultationPackage {
     'is_active': isActive,
     'expert_groups': expertGroups.map((g) => g.toJson()).toList(),
     'display_order': displayOrder,
+    'session_minutes': sessionMinutes,
+    'expire_minutes': expireMinutes,
     'updated_at': updatedAt.toIso8601String(),
   };
 }

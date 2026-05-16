@@ -633,6 +633,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/admin/watermark'),
                               isSubItem: true,
                             ),
+                            _buildMenuItem(
+                              context,
+                              title: 'ตั้งค่าแพลตฟอร์ม (Map Web)',
+                              icon: Icons.settings_applications_outlined,
+                              onTap: () => _navigateTo(context, '/admin/platform-settings'),
+                              isSubItem: true,
+                            ),
                           ],
                             const SizedBox(height: 32),
                           ],

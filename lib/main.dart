@@ -54,6 +54,7 @@ import 'features/admin/presentation/pages/video_admin_page.dart';
 import 'features/consultation/presentation/pages/my_consultations_page.dart';
 import 'features/consultation/presentation/pages/provider_history_page.dart';
 import 'features/consultation/presentation/pages/consultation_chat_history_page.dart';
+import 'features/admin/presentation/pages/platform_settings_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -155,6 +156,7 @@ class SheservedApp extends StatelessWidget {
         '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
         '/admin/video-control': (context) => const VideoAdminPage(),
         '/admin/watermark': (context) => const WatermarkManagementPage(),
+        '/admin/platform-settings': (context) => const PlatformSettingsPage(),
         
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),

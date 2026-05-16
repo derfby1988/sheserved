@@ -16,13 +16,14 @@ import 'package:sheserved/features/video/presentation/pages/emergency_live_page.
 import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products_page.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import '../widgets/background_permission_dialog.dart';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../consultation/presentation/pages/health_program_request_dashboard.dart';
+import '../../../../services/platform_service.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -1502,7 +1503,7 @@ class _HomePageState extends State<HomePage>
     if (_headerSectionHeight > 0 &&
         _consultationHeight > 0 &&
         _pharmacyHeight > 0) {
-      final double mapStartOffset = Platform.isIOS
+      final double mapStartOffset = (defaultTargetPlatform == TargetPlatform.iOS)
           ? _headerSectionHeight
           : (_headerSectionHeight / 2);
       final double targetBottomPoint =
@@ -1585,7 +1586,7 @@ class _HomePageState extends State<HomePage>
                                   // iOS: เลื่อนแผนที่ลงมาเริ่มที่ใต้ header เต็มๆ เพื่อไม่ให้ platform view ทับ header gradient
                                   // Android: เริ่มที่กึ่งกลาง header เพื่อให้เห็นแผนที่ลอดผ่านส่วนโปร่งใสของ header
                                   SizedBox(
-                                    height: Platform.isIOS
+                                    height: (defaultTargetPlatform == TargetPlatform.iOS)
                                         ? _headerSectionHeight
                                         : _headerSectionHeight / 2,
                                   ),
@@ -1596,21 +1597,31 @@ class _HomePageState extends State<HomePage>
                                       child: Stack(
                                         clipBehavior: Clip.hardEdge,
                                         children: [
-                                          // แผนที่ (platform view) — ไม่ใช้ ShaderMask เพราะ iOS platform view bypass มัน
+                                          // แผนที่ (platform view หรือ static image)
                                           Positioned.fill(
-                                            child: HomeMapBackground(
-                                              focusedAlert: _focusedAlert,
-                                              onTap: () {
-                                                if (_focusedAlert != null) {
-                                                  setState(() {
-                                                    _focusedAlert = null;
-                                                    _loadConsultationPosition(
-                                                      introDelay: Duration.zero,
-                                                    );
-                                                  });
-                                                }
-                                              },
-                                            ),
+                                            child: PlatformService.shouldShowLiveMap(pageName: 'home') 
+                                              ? HomeMapBackground(
+                                                  focusedAlert: _focusedAlert,
+                                                  onMapCreated: (controller) {
+                                                    PlatformService.logMapLoad(pageName: 'home');
+                                                  },
+                                                  onTap: () {
+                                                    if (_focusedAlert != null) {
+                                                      setState(() {
+                                                        _focusedAlert = null;
+                                                        _loadConsultationPosition(
+                                                          introDelay: Duration.zero,
+                                                        );
+                                                      });
+                                                    }
+                                                  },
+                                                )
+                                              : Image.network(
+                                                  PlatformService.mapFallbackImageUrl,
+                                                  fit: BoxFit.cover,
+                                                  color: Colors.black.withOpacity(0.1),
+                                                  colorBlendMode: BlendMode.darken,
+                                                ),
                                           ),
                                           // Gradient overlay วางทับด้านบนแผนที่ — ใช้แทน ShaderMask
                                           // ทาสีเขียวจางลงจากบนลงล่างเพื่อให้ blend กับ header ได้เนียน

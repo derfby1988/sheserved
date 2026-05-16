@@ -59,12 +59,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Timer? _sessionTimer;
   int _remainingSeconds = 900; // Mock 15 mins
   bool _isTimerRunning = false;
+  bool _hasReviewed = false;
 
   // --- Expert Status ---
-  final List<Map<String, dynamic>> _expertStatuses = [
-    {'role': 'doctor', 'name': 'แพทย์', 'status': 'joined', 'providerName': 'นพ.สมชาย ใจดี'},
-    {'role': 'pharmacist', 'name': 'เภสัชกร', 'status': 'waiting', 'providerName': null},
-  ];
+  List<Map<String, dynamic>> _expertStatuses = [];
+  StreamSubscription? _expertStatusSub;
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -139,9 +138,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _initChat();
     _loadPackages();
 
-    if (_isProvider) {
-      _startTimer();
-    }
+    _initChat();
+    _loadPackages();
   }
 
   void _startTimer() {
@@ -162,7 +160,22 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     });
   }
 
-  void _onSessionExpired() {
+  Future<void> _onSessionExpired() async {
+    // 1. Update DB to lock the room
+    if (_consultationRoomId != null) {
+      try {
+        await Supabase.instance.client
+            .from('chat_rooms')
+            .update({
+              'is_active': false,
+              'ended_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', _consultationRoomId!);
+      } catch (e) {
+        debugPrint('Error closing session in DB: $e');
+      }
+    }
+
     if (mounted) {
       showDialog(
         context: context,
@@ -172,12 +185,116 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           content: const Text('การปรึกษาในเซสชั่นนี้สิ้นสุดลงแล้ว'),
           actions: [
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (!_isProvider && !_hasReviewed) {
+                  _showRatingDialog();
+                } else {
+                  Navigator.pop(context);
+                }
+              },
               child: const Text('รับทราบ'),
             ),
           ],
         ),
       );
+    }
+  }
+
+  void _showRatingDialog() {
+    int localRating = 5;
+    final TextEditingController commentCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('ให้คะแนนการปรึกษา'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('คุณพอใจกับการให้บริการครั้งนี้เพียงใด?'),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) {
+                  final starIndex = index + 1;
+                  return IconButton(
+                    icon: Icon(
+                      starIndex <= localRating ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                      size: 32,
+                    ),
+                    onPressed: () {
+                      setDialogState(() => localRating = starIndex);
+                    },
+                  );
+                }),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: commentCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'เขียนข้อความแนะนำ (ถ้ามี)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ภายหลัง'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await _submitReview(localRating, commentCtrl.text);
+                if (mounted) {
+                  Navigator.pop(ctx); // Close dialog
+                  Navigator.pop(context); // Exit room
+                }
+              },
+              child: const Text('ส่งคะแนน'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submitReview(int rating, String comment) async {
+    final consultationId = widget.entry?.id ?? widget.request?.id;
+    final currentUserId = _currentUser?.id;
+    if (consultationId == null || currentUserId == null) return;
+
+    try {
+      // Find the provider (first one for now)
+      final providerData = _expertStatuses.firstWhere(
+        (e) => e['providerId'] != null,
+        orElse: () => {},
+      );
+      final providerId = providerData['providerId'];
+
+      if (providerId == null) return;
+
+      await Supabase.instance.client.from('consultation_reviews').insert({
+        'consultation_id': consultationId,
+        'patient_id': currentUserId,
+        'provider_id': providerId,
+        'rating': rating,
+        'comment': comment,
+      });
+
+      if (mounted) {
+        setState(() => _hasReviewed = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ขอบคุณสำหรับการให้คะแนน')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error submitting review: $e');
     }
   }
 
@@ -228,67 +345,115 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     try {
       final currentUserId = _currentUser?.id;
-
-      // Fallback: Check DB if local provider status is false (ensures Dr. Dave sees tools)
-      if (!_isProvider && currentUserId != null) {
-        final userData = await Supabase.instance.client
-            .from('users')
-            .select('profession_id')
-            .eq('id', currentUserId)
-            .maybeSingle();
-        if (userData != null && userData['profession_id'] != null && userData['profession_id'] != '00000000-0000-0000-0000-000000000001') {
-          if (mounted) setState(() => _isProvider = true);
-        }
-      }
+      final supabase = Supabase.instance.client;
 
       if (currentUserId == null) {
-        setState(() {
-          _messages = [];
-          _isChatLoading = false;
-        });
-        _fadeController.forward();
-        _slideController.forward();
+        setState(() => _isChatLoading = false);
         return;
       }
 
-      // Determine Room ID
-      String roomId;
+      // 1. Determine Room ID & Consultation ID
+      String? consultationId;
       if (widget.entry != null) {
-        roomId = widget.entry!.roomId;
-      } else {
-        final consultationId = widget.request!.id.isNotEmpty
-            ? widget.request!.id
-            : const Uuid().v4();
-        roomId = 'consult_$consultationId';
+        consultationId = widget.entry!.id;
+      } else if (widget.request != null) {
+        consultationId = widget.request!.id;
       }
 
-      // Ensure the chat room record exists in the DB
-      await _ensureConsultationRoom(roomId, currentUserId);
-
-      // Load messages (with fallback to empty if room doesn't exist yet)
-      List<ChatMessage> messages = [];
-      try {
-        messages = await _chatRepository.getMessages(roomId);
-      } catch (_) {
-        messages = [];
+      if (consultationId == null || consultationId.isEmpty) {
+        setState(() {
+          _isChatLoading = false;
+          _isConsultationActive = false;
+        });
+        return;
       }
+
+      final roomId = 'consult_$consultationId';
+      setState(() => _consultationRoomId = roomId);
+
+      // 2. Fetch Consultation & Room Details
+      final results = await Future.wait([
+        supabase.from('consultation_requests').select().eq('id', consultationId).maybeSingle(),
+        supabase.from('chat_rooms').select().eq('id', roomId).maybeSingle(),
+      ]);
+
+      final consultData = results[0];
+      final roomData = results[1];
+
+      if (consultData != null) {
+        final status = consultData['status'] as String?;
+        final paymentStatus = consultData['payment_status'] as String? ?? 'pending';
+        
+        if (mounted) {
+          setState(() {
+            // Patient needs to pay first, Providers can always see if they are assigned
+            _isConsultationActive = (paymentStatus == 'paid') || _isProvider;
+            
+            if (consultData['package_id'] != null && _selectedPackage == null) {
+              // Try to find in loaded packages later
+            }
+          });
+        }
+      }
+
+      if (roomData != null) {
+        final startedAtStr = roomData['started_at'] as String?;
+        final sessionMins = (roomData['session_minutes'] as int?) ?? 15;
+        final isActive = roomData['is_active'] as bool? ?? true;
+
+        if (startedAtStr != null && isActive) {
+          final startedAt = DateTime.parse(startedAtStr);
+          final now = DateTime.now();
+          final elapsedSeconds = now.difference(startedAt).inSeconds;
+          final totalSeconds = sessionMins * 60;
+          
+          if (mounted) {
+            setState(() {
+              _remainingSeconds = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
+              if (_remainingSeconds > 0) {
+                _startTimer();
+              }
+            });
+          }
+        }
+      }
+
+      // 3. Subscribe to Expert Statuses (Priority 2)
+      _fetchExpertStatuses(consultationId);
+      _expertStatusSub = supabase
+          .from('consultation_room_experts')
+          .stream(primaryKey: ['id'])
+          .eq('consultation_id', consultationId)
+          .listen((data) {
+            if (mounted) {
+              setState(() {
+                _expertStatuses = data.map((e) => {
+                  'role': e['expert_group_role'],
+                  'name': e['expert_group_name'],
+                  'status': e['status'],
+                  'providerId': e['provider_id'],
+                  'isRequired': e['is_required'] as bool? ?? false,
+                }).toList();
+              });
+            }
+          });
+
+      // 4. Load Messages
+      final messages = await _chatRepository.getMessages(roomId);
 
       if (mounted) {
         setState(() {
-          _consultationRoomId = roomId;
           _messages = messages;
           _isChatLoading = false;
         });
 
-        // Subscribe to realtime updates
-        _messagesSub = _chatRepository.streamMessages(roomId).listen((
-          updatedMessages,
-        ) {
+        // Subscribe to messages
+        _messagesSub = _chatRepository.streamMessages(roomId).listen((updatedMessages) {
           if (mounted) {
             setState(() => _messages = updatedMessages);
             _scrollToBottom();
           }
-        }, onError: (_) {});
+        });
 
         _fadeController.forward();
         _slideController.forward();
@@ -296,11 +461,30 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     } catch (e) {
       debugPrint('ChartBoardPage: Init error: $e');
+      if (mounted) setState(() => _isChatLoading = false);
+    }
+  }
+
+  Future<void> _fetchExpertStatuses(String consultationId) async {
+    try {
+      final data = await Supabase.instance.client
+          .from('consultation_room_experts')
+          .select()
+          .eq('consultation_id', consultationId);
+      
       if (mounted) {
-        setState(() => _isChatLoading = false);
-        _fadeController.forward();
-        _slideController.forward();
+        setState(() {
+          _expertStatuses = (data as List).map((e) => {
+            'role': e['expert_group_role'],
+            'name': e['expert_group_name'],
+            'status': e['status'],
+            'providerId': e['provider_id'],
+            'isRequired': e['is_required'] as bool? ?? false,
+          }).toList();
+        });
       }
+    } catch (e) {
+      debugPrint('Error fetching expert statuses: $e');
     }
   }
 
@@ -351,6 +535,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     });
   }
+
+
 
   Future<void> _sendMessage() async {
     final text = _msgController.text.trim();
@@ -1539,29 +1725,42 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildTimerBadge() {
-    final bool isLowTime = _remainingSeconds < 300; // Less than 5 mins
+    final bool isLowTime = _remainingSeconds < 300 && _isTimerRunning;
+    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isLowTime ? Colors.red.shade50 : AppColors.primary.withOpacity(0.1),
+        color: isWaiting 
+            ? Colors.orange.shade50 
+            : (isLowTime ? Colors.red.shade50 : AppColors.primary.withOpacity(0.1)),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isLowTime ? Colors.red.withOpacity(0.3) : AppColors.primary.withOpacity(0.3),
+          color: isWaiting 
+              ? Colors.orange.withOpacity(0.3)
+              : (isLowTime ? Colors.red.withOpacity(0.3) : AppColors.primary.withOpacity(0.3)),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.timer_outlined,
-            size: 14,
-            color: isLowTime ? Colors.red : AppColors.primary,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            _formatTimer(_remainingSeconds),
-            style: TextStyle(
+          if (isWaiting)
+            const SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.orange)),
+            )
+          else
+            Icon(
+              Icons.timer_outlined,
+              size: 14,
               color: isLowTime ? Colors.red : AppColors.primary,
+            ),
+          const SizedBox(width: 6),
+          Text(
+            isWaiting ? 'รอเริ่ม...' : _formatTimer(_remainingSeconds),
+            style: TextStyle(
+              color: isWaiting ? Colors.orange.shade800 : (isLowTime ? Colors.red : AppColors.primary),
               fontSize: 13,
               fontWeight: FontWeight.bold,
               fontFeatures: const [FontFeature.tabularFigures()],
@@ -1750,6 +1949,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildExpertStatusBanner() {
+    final hasWaitingRequired = _expertStatuses.any((e) => (e['isRequired'] == true) && (e['status'] == 'waiting'));
+    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1762,49 +1963,68 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         children: [
           Row(
             children: [
-              const Icon(Icons.groups_outlined, size: 16, color: Colors.grey),
+              Icon(
+                hasWaitingRequired ? Icons.info_outline : Icons.groups_outlined, 
+                size: 16, 
+                color: hasWaitingRequired ? Colors.orange : Colors.grey
+              ),
               const SizedBox(width: 8),
               Text(
-                'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500),
+                hasWaitingRequired 
+                    ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา' 
+                    : 'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
+                style: TextStyle(
+                  color: hasWaitingRequired ? Colors.orange.shade800 : Colors.grey.shade600, 
+                  fontSize: 12, 
+                  fontWeight: FontWeight.w500
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: _expertStatuses.map((expert) {
-              final isJoined = expert['status'] == 'joined';
-              return Container(
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isJoined ? AppColors.primary.withOpacity(0.08) : Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isJoined ? AppColors.primary.withOpacity(0.2) : Colors.grey.shade200,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _expertStatuses.map((expert) {
+                final isJoined = expert['status'] == 'joined';
+                final isRequired = expert['isRequired'] == true;
+                
+                return Container(
+                  margin: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isJoined 
+                        ? AppColors.primary.withOpacity(0.08) 
+                        : (isRequired ? Colors.orange.shade50 : Colors.grey.shade50),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isJoined 
+                          ? AppColors.primary.withOpacity(0.2) 
+                          : (isRequired ? Colors.orange.withOpacity(0.2) : Colors.grey.shade200),
+                    ),
                   ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isJoined ? Icons.check_circle : Icons.hourglass_empty,
-                      size: 14,
-                      color: isJoined ? AppColors.primary : Colors.grey,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      expert['name'],
-                      style: TextStyle(
-                        color: isJoined ? AppColors.primary : Colors.grey.shade600,
-                        fontSize: 12,
-                        fontWeight: isJoined ? FontWeight.bold : FontWeight.normal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty),
+                        size: 14,
+                        color: isJoined ? AppColors.primary : (isRequired ? Colors.orange : Colors.grey),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+                      const SizedBox(width: 6),
+                      Text(
+                        expert['name'] + (isRequired ? ' *' : ''),
+                        style: TextStyle(
+                          color: isJoined ? AppColors.primary : (isRequired ? Colors.orange.shade700 : Colors.grey.shade600),
+                          fontSize: 12,
+                          fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ],
       ),

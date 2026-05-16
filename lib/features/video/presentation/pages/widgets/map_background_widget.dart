@@ -1,7 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../models/video_models.dart';
+import 'package:sheserved/services/platform_service.dart';
 
 class MapBackgroundWidget extends StatelessWidget {
   final String? currentVideoId;
@@ -33,7 +35,35 @@ class MapBackgroundWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool showLiveMap = PlatformService.shouldShowLiveMap(pageName: 'emergency');
+    
+    if (!showLiveMap && kIsWeb) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            PlatformService.mapFallbackImageUrl,
+            fit: BoxFit.cover,
+          ),
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
+            child: Container(
+              color: Colors.black.withOpacity(0.4),
+              child: Center(
+                child: Text(
+                  PlatformService.mapDisabledMessage,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     Set<Marker> mapMarkers = {};
+    // ... rest of marker logic ...
 
     // 1. Incident Marker
     if (currentVideoId != null && routePoints.isNotEmpty) {
@@ -114,15 +144,20 @@ class MapBackgroundWidget extends StatelessWidget {
             top: isUiVisible ? (topPadding ?? MediaQuery.of(context).size.height * 0.2) : 40.0,
             bottom: isUiVisible ? (bottomPadding ?? 100.0) : 40.0,
           ),
-          onMapCreated: onMapCreated,
+          onMapCreated: (controller) {
+            PlatformService.logMapLoad(pageName: 'emergency');
+            onMapCreated(controller);
+          },
           initialCameraPosition: CameraPosition(
             target: routePoints.isNotEmpty
                 ? routePoints.last
                 : (userLocation ?? const LatLng(13.7367, 100.5604)),
             zoom: 15.0,
           ),
+          // แสดงแผนที่จริงเฉพาะเมื่อเงื่อนไข PlatformService อนุญาต (Web: check per page)
+          // หากเป็น Web และตั้งค่าปิดไว้ จะแสดง Placeholder แทน (จัดการใน Layer บน)
+          myLocationEnabled: PlatformService.shouldShowLiveMap(pageName: 'emergency') && !kIsWeb ? true : false,
           zoomControlsEnabled: false,
-          myLocationEnabled: true,
           myLocationButtonEnabled: false,
           trafficEnabled: true,
           compassEnabled: false,

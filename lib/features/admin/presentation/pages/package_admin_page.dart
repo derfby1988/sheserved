@@ -757,6 +757,8 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   late bool _includesAI;
   late bool _isActive;
   late List<ExpertGroup> _expertGroups;
+  late TextEditingController _sessionMinsCtrl;
+  late TextEditingController _expireMinsCtrl;
 
   @override
   void initState() {
@@ -769,12 +771,15 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     _includesAI = pkg?.includesAI ?? false;
     _isActive = pkg?.isActive ?? true;
     _expertGroups = List.from(pkg?.expertGroups ?? []);
+    _sessionMinsCtrl = TextEditingController(text: pkg != null ? pkg.sessionMinutes.toString() : '15');
+    _expireMinsCtrl = TextEditingController(text: pkg != null ? pkg.expireMinutes.toString() : '120');
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose(); _shortNameCtrl.dispose();
     _descCtrl.dispose(); _priceCtrl.dispose();
+    _sessionMinsCtrl.dispose(); _expireMinsCtrl.dispose();
     super.dispose();
   }
 
@@ -942,6 +947,39 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // ── Time Configuration ───────────────────────────────────
+                  _sectionHeader('การตั้งค่าเวลา (นาที)', Icons.timer_outlined),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _inputField(
+                          _sessionMinsCtrl, 
+                          'เวลาปรึกษา', 
+                          'เช่น 15', 
+                          icon: Icons.hourglass_top_outlined,
+                          isNumber: true,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _inputField(
+                          _expireMinsCtrl, 
+                          'เวลาหมดอายุคำขอ', 
+                          'เช่น 120', 
+                          icon: Icons.history_toggle_off_outlined,
+                          isNumber: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '* เวลาปรึกษาจะเริ่มนับเมื่อทีมผู้เชี่ยวชาญเข้าร่วมครบ\n* คำขอจะถูกยกเลิกอัตโนมัติหากไม่มีแพทย์รับงานภายในเวลาที่กำหนด',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500, height: 1.5),
                   ),
                   const SizedBox(height: 24),
 
@@ -1128,14 +1166,21 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     );
   }
 
-  Widget _inputField(TextEditingController ctrl, String label, String hint, {int maxLines = 1}) {
+  Widget _inputField(TextEditingController ctrl, String label, String hint, {int maxLines = 1, IconData? icon, bool isNumber = false}) {
     return TextFormField(
       controller: ctrl,
       maxLines: maxLines,
+      keyboardType: isNumber ? TextInputType.number : (maxLines > 1 ? TextInputType.multiline : TextInputType.text),
+      inputFormatters: isNumber ? [FilteringTextInputFormatter.digitsOnly] : null,
       decoration: InputDecoration(
-        labelText: label, hintText: hint,
+        labelText: label,
+        hintText: hint,
+        hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+        prefixIcon: icon != null ? Icon(icon, size: 18) : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        filled: true, fillColor: Colors.white,
+        filled: true,
+        fillColor: Colors.white,
+        floatingLabelBehavior: FloatingLabelBehavior.always,
       ),
     );
   }
@@ -1330,6 +1375,8 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
       isActive: _isActive,
       expertGroups: _expertGroups,
       displayOrder: widget.existing?.displayOrder ?? 999,
+      sessionMinutes: int.tryParse(_sessionMinsCtrl.text) ?? 15,
+      expireMinutes: int.tryParse(_expireMinsCtrl.text) ?? 120,
       createdAt: widget.existing?.createdAt ?? now,
       updatedAt: now,
     );
