@@ -1,0 +1,95 @@
+import 'dart:io';
+import 'package:health/health.dart';
+import 'health_data_source.dart';
+
+class AppleHealthSource implements HealthDataSource {
+  final Health _health = Health();
+  
+  // ชนิดข้อมูลที่ต้องการอ่าน (ตัวอย่าง: ก้าวเดิน, หัวใจ)
+  final types = [
+    HealthDataType.STEPS,
+    HealthDataType.HEART_RATE,
+    HealthDataType.SLEEP_SESSION,
+  ];
+
+  @override
+  String get sourceName => 'Apple Health';
+
+  @override
+  Future<bool> isAvailable() async {
+    return Platform.isIOS;
+  }
+
+  @override
+  Future<bool> requestPermissions() async {
+    try {
+      // สำหรับแพ็กเกจ Health v10+ ต้อง config platform และ call request
+      bool granted = await _health.requestAuthorization(types);
+      return granted;
+    } catch (e) {
+      print('Apple Health request error: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> hasPermissions() async {
+    try {
+      bool? hasPerm = await _health.hasPermissions(types);
+      return hasPerm ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> revokeAccess() async {
+    // ใน iOS HealthKit ไม่สามารถ revoke สิทธิ์จากโค้ดได้โดยตรง 
+    // ผู้ใช้ต้องไปปิดสิทธิ์ในแอป Settings -> Health -> Data Access
+    // เราทำได้แค่ล้าง state ในแอป
+  }
+
+  @override
+  Future<int> fetchTodaySteps() async {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    
+    try {
+      int? steps = await _health.getTotalStepsInInterval(midnight, now);
+      return steps ?? 0;
+    } catch (e) {
+      print('Fetch steps error: $e');
+      return 0;
+    }
+  }
+
+  @override
+  Future<int?> fetchLatestHeartRate() async {
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
+    
+    try {
+      List<HealthDataPoint> healthData = await _health.getHealthDataFromTypes(
+        types: [HealthDataType.HEART_RATE],
+        startTime: yesterday,
+        endTime: now,
+      );
+
+      if (healthData.isNotEmpty) {
+        // เรียงจากใหม่ไปเก่า และดึงตัวแรก
+        healthData.sort((a, b) => b.dateTo.compareTo(a.dateTo));
+        return (healthData.first.value as NumericHealthValue).numericValue.toInt();
+      }
+      return null;
+    } catch (e) {
+      print('Fetch HR error: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> fetchLastSleepDuration() async {
+    // โค้ดดึงข้อมูล Sleep (อาจจะซับซ้อนกว่าเพราะต้องรวม session)
+    return null;
+  }
+}
