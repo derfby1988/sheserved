@@ -25,13 +25,17 @@ class HealthState {
   HealthState copyWith({
     HealthConnectionState? connectionState,
     String? errorMessage,
+    bool clearError = false,
     HealthDataSource? activeSource,
     int? todaySteps,
     int? latestHeartRate,
   }) {
+    // ล้าง error อัตโนมัติเมื่อสถานะเปลี่ยนเป็นสถานะที่ไม่ใช่ error
+    bool shouldClearError = clearError || (connectionState != null && connectionState != HealthConnectionState.error);
+
     return HealthState(
       connectionState: connectionState ?? this.connectionState,
-      errorMessage: errorMessage, // null ถ้าไม่ได้ส่งเข้ามาทับ
+      errorMessage: shouldClearError ? null : (errorMessage ?? this.errorMessage),
       activeSource: activeSource ?? this.activeSource,
       todaySteps: todaySteps ?? this.todaySteps,
       latestHeartRate: latestHeartRate ?? this.latestHeartRate,
@@ -66,7 +70,7 @@ class HealthNotifier extends StateNotifier<HealthState> {
     final source = state.activeSource;
     if (source == null) return;
 
-    state = state.copyWith(connectionState: HealthConnectionState.checking);
+    state = state.copyWith(connectionState: HealthConnectionState.checking, clearError: true);
     
     try {
       final isAvail = await source.isAvailable();
@@ -80,10 +84,10 @@ class HealthNotifier extends StateNotifier<HealthState> {
 
       final hasPerm = await source.hasPermissions();
       if (hasPerm) {
-        state = state.copyWith(connectionState: HealthConnectionState.connected);
+        state = state.copyWith(connectionState: HealthConnectionState.connected, clearError: true);
         await fetchLiveHealthData();
       } else {
-        state = state.copyWith(connectionState: HealthConnectionState.disconnected);
+        state = state.copyWith(connectionState: HealthConnectionState.disconnected, clearError: true);
       }
     } catch (e) {
       state = state.copyWith(
@@ -97,12 +101,12 @@ class HealthNotifier extends StateNotifier<HealthState> {
     final source = state.activeSource;
     if (source == null) return;
 
-    state = state.copyWith(connectionState: HealthConnectionState.checking);
+    state = state.copyWith(connectionState: HealthConnectionState.checking, clearError: true);
     
     try {
       final granted = await source.requestPermissions();
       if (granted) {
-        state = state.copyWith(connectionState: HealthConnectionState.connected);
+        state = state.copyWith(connectionState: HealthConnectionState.connected, clearError: true);
         await fetchLiveHealthData();
       } else {
         state = state.copyWith(
@@ -125,6 +129,7 @@ class HealthNotifier extends StateNotifier<HealthState> {
     }
     state = state.copyWith(
       connectionState: HealthConnectionState.disconnected,
+      clearError: true,
       todaySteps: 0,
       latestHeartRate: null,
     );

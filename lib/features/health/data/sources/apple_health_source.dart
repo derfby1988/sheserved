@@ -9,7 +9,7 @@ class AppleHealthSource implements HealthDataSource {
   final types = [
     HealthDataType.STEPS,
     HealthDataType.HEART_RATE,
-    HealthDataType.SLEEP_SESSION,
+    HealthDataType.SLEEP_ASLEEP,
   ];
 
   @override

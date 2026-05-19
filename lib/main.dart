@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
@@ -109,7 +110,11 @@ void main() async {
   // Initialize Thai Date Service
   await ThaiDateService().initializeLocale('th_TH');
 
-  runApp(const SheservedApp());
+  runApp(
+    const ProviderScope(
+      child: SheservedApp(),
+    ),
+  );
 }
 
 class SheservedApp extends StatelessWidget {

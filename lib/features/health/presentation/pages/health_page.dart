@@ -12,17 +12,19 @@ import '../../data/models/health_data_change_log.dart';
 import '../../data/models/health_data_change_log.dart';
 import '../../data/repositories/health_repository.dart';
 import '../widgets/health_history_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/health_provider.dart';
 
 /// Health Page - Health Dashboard
 /// แสดงข้อมูลสุขภาพ อุปกรณ์ที่เชื่อมต่อ และคะแนนสุขภาพ
-class HealthPage extends StatefulWidget {
+class HealthPage extends ConsumerStatefulWidget {
   const HealthPage({super.key});
 
   @override
-  State<HealthPage> createState() => _HealthPageState();
+  ConsumerState<HealthPage> createState() => _HealthPageState();
 }
 
-class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateMixin {
+class _HealthPageState extends ConsumerState<HealthPage> with SingleTickerProviderStateMixin {
   int _selectedTabIndex = 0;
   ConsumerProfile? _profile;
   bool _isLoadingProfile = false;
@@ -196,6 +198,24 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<HealthState>(healthProvider, (previous, next) {
+      if (next.errorMessage != null && next.errorMessage!.isNotEmpty && previous?.errorMessage != next.errorMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.errorMessage!),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } else if (next.connectionState == HealthConnectionState.connected && previous?.connectionState != HealthConnectionState.connected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('เชื่อมต่ออุปกรณ์สุขภาพสำเร็จ'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.white, // พื้นหลังสีขาว
       drawer: const TlzDrawer(),
@@ -684,6 +704,8 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
 
   /// Connected Devices Section
   Widget _buildConnectedDevicesSection(BuildContext context) {
+    final healthState = ref.watch(healthProvider);
+
     return Column(
       children: [
         // Section Header
@@ -700,7 +722,9 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
                 ),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () {
+                  _showAddDeviceBottomSheet(context);
+                },
                 child: Text(
                   'เพิ่ม',
                   style: AppTextStyles.bodyMedium.copyWith(
@@ -722,17 +746,28 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                _buildDeviceItem(Icons.monitor_weight, 'เครื่องชั่ง'),
+                _buildDeviceItem(Icons.monitor_weight, 'เครื่องชั่ง', onTap: () {}),
                 const SizedBox(width: 80),
-                _buildDeviceItem(Icons.watch, 'นาฬิกา'),
+                _buildDeviceItem(
+                  Icons.watch, 
+                  'นาฬิกา', 
+                  connectionState: healthState.connectionState,
+                  onTap: () {
+                    if (healthState.connectionState == HealthConnectionState.connected) {
+                      _showDeviceDetailsBottomSheet(context, healthState);
+                    } else {
+                      _showAddDeviceBottomSheet(context);
+                    }
+                  },
+                ),
                 const SizedBox(width: 80),
-                _buildDeviceItem(Icons.directions_run, 'ลู่วิ่ง'),
+                _buildDeviceItem(Icons.directions_run, 'ลู่วิ่ง', onTap: () {}),
                 const SizedBox(width: 80),
-                _buildDeviceItem(Icons.ice_skating, 'รองเท้า', isEmpty: true),
+                _buildDeviceItem(Icons.ice_skating, 'รองเท้า', isEmpty: true, onTap: () {}),
                 const SizedBox(width: 80),
-                _buildDeviceItem(Icons.favorite, 'สายรัดหน้าอก', isEmpty: true),
+                _buildDeviceItem(Icons.favorite, 'สายรัดหน้าอก', isEmpty: true, onTap: () {}),
                 const SizedBox(width: 80),
-                _buildDeviceItem(Icons.bluetooth, 'อุปกรณ์อื่นๆ', isEmpty: true),
+                _buildDeviceItem(Icons.bluetooth, 'อุปกรณ์อื่นๆ', isEmpty: true, onTap: () {}),
               ],
             ),
           ),
@@ -742,45 +777,199 @@ class _HealthPageState extends State<HealthPage> with SingleTickerProviderStateM
   }
 
   /// Device Item Widget
-  Widget _buildDeviceItem(IconData icon, String label, {bool isEmpty = false}) {
-    return Column(
-      children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: isEmpty ? Colors.white : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: isEmpty 
-              ? Border.all(color: AppColors.divider, width: 1)
-              : null,
-            boxShadow: isEmpty ? null : [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08), 
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+  Widget _buildDeviceItem(IconData icon, String label, {bool isEmpty = false, HealthConnectionState? connectionState, VoidCallback? onTap}) {
+    Color iconColor = isEmpty ? AppColors.textHint : const Color(0xFF5B9A8B);
+    Widget iconWidget = Icon(
+      icon,
+      color: iconColor,
+      size: 28,
+    );
+    
+    if (connectionState != null) {
+      if (connectionState == HealthConnectionState.checking) {
+        iconWidget = const SizedBox(
+          width: 24, 
+          height: 24, 
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF5B9A8B))
+        );
+      } else if (connectionState == HealthConnectionState.connected) {
+        iconColor = const Color(0xFF5B9A8B);
+        iconWidget = Icon(icon, color: iconColor, size: 28);
+      } else if (connectionState == HealthConnectionState.error) {
+        iconColor = Colors.red;
+        iconWidget = Icon(icon, color: iconColor, size: 28);
+      } else if (connectionState == HealthConnectionState.disconnected) {
+        iconColor = Colors.grey;
+        iconWidget = Icon(icon, color: iconColor, size: 28);
+      }
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: isEmpty || connectionState == HealthConnectionState.disconnected || connectionState == HealthConnectionState.initial
+                ? Border.all(color: AppColors.divider, width: 1)
+                : null,
+              boxShadow: (isEmpty || connectionState == HealthConnectionState.disconnected || connectionState == HealthConnectionState.initial) ? null : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08), 
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: iconColor.withOpacity(0.1),
+                  blurRadius: 4,
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: Center(child: iconWidget),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddDeviceBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
+        final sourceName = isIOS ? 'Apple Health' : 'Health Connect';
+        final iconData = isIOS ? Icons.apple : Icons.health_and_safety;
+
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'เพิ่มอุปกรณ์สุขภาพ',
+                style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold),
               ),
-              BoxShadow(
-                color: const Color(0xFF5B9A8B).withOpacity(0.1),
-                blurRadius: 4,
-                spreadRadius: -2,
+              const SizedBox(height: 24),
+              ListTile(
+                leading: Icon(iconData, size: 32, color: AppColors.primary),
+                title: Text('เชื่อมต่อกับ $sourceName'),
+                subtitle: const Text('ซิงค์ข้อมูลก้าวเดินและการนอนหลับ'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  ref.read(healthProvider.notifier).requestAccess();
+                },
               ),
+              const SizedBox(height: 16),
             ],
           ),
-          child: Icon(
-            icon,
-            color: isEmpty ? AppColors.textHint : const Color(0xFF5B9A8B),
-            size: 28,
+        );
+      },
+    );
+  }
+
+  void _showDeviceDetailsBottomSheet(BuildContext context, HealthState healthState) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final sourceName = healthState.activeSource?.sourceName ?? 'Unknown Source';
+
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.watch, size: 40, color: Color(0xFF5B9A8B)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'นาฬิกาสุขภาพ',
+                          style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Linked via $sourceName',
+                          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Column(
+                    children: [
+                      Text(
+                        '${healthState.todaySteps}',
+                        style: AppTextStyles.heading2.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                      ),
+                      Text('ก้าวเดินวันนี้', style: AppTextStyles.caption),
+                    ],
+                  ),
+                  Container(width: 1, height: 40, color: AppColors.divider),
+                  Column(
+                    children: [
+                      Text(
+                        healthState.latestHeartRate != null ? '${healthState.latestHeartRate}' : '--',
+                        style: AppTextStyles.heading2.copyWith(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                      ),
+                      Text('อัตราการเต้นหัวใจ (BPM)', style: AppTextStyles.caption),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade50,
+                  foregroundColor: Colors.red,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  ref.read(healthProvider.notifier).disconnect();
+                },
+                child: const Text('ยกเลิกการเชื่อมต่อ', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'คุณสามารถจัดการสิทธิ์การเข้าถึงข้อมูลได้ในการตั้งค่าของระบบ',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.caption.copyWith(color: AppColors.textHint, fontSize: 10),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 

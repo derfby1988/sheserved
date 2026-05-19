@@ -24,7 +24,7 @@ class HealthConnectSource implements HealthDataSource {
   Future<bool> requestPermissions() async {
     try {
       // ติดตั้งและคอนฟิกเพื่อใช้ Health Connect API โดยเฉพาะ
-      Health().configure(useHealthConnectIfAvailable: true);
+      Health().configure();
       
       bool granted = await _health.requestAuthorization(types);
       return granted;
