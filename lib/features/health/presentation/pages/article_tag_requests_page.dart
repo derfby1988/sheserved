@@ -30,7 +30,7 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
 
       final repo = ServiceLocator.instance.healthArticleRepository;
       final requests = await repo.getPendingTagRequests(userId);
-      
+
       if (mounted) {
         setState(() {
           _requests = requests;
@@ -40,9 +40,9 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
       }
     }
   }
@@ -59,9 +59,9 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('อนุมัติไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('อนุมัติไม่สำเร็จ: $e')));
       }
     }
   }
@@ -91,16 +91,16 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
         final repo = ServiceLocator.instance.healthArticleRepository;
         final success = await repo.deleteArticleProduct(requestId);
         if (success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ลบคำขอเรียบร้อยแล้ว')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('ลบคำขอเรียบร้อยแล้ว')));
           _loadRequests();
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('ลบไม่สำเร็จ: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('ลบไม่สำเร็จ: $e')));
         }
       }
     }
@@ -113,7 +113,10 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
       appBar: AppBar(
         title: const Text(
           'จัดการการขอระบุแท็กสินค้า',
-          style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
@@ -122,17 +125,17 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _requests.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadRequests,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _requests.length,
-                    itemBuilder: (context, index) {
-                      return _buildRequestCard(_requests[index]);
-                    },
-                  ),
-                ),
+          ? _buildEmptyState()
+          : RefreshIndicator(
+              onRefresh: _loadRequests,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _requests.length,
+                itemBuilder: (context, index) {
+                  return _buildRequestCard(_requests[index]);
+                },
+              ),
+            ),
     );
   }
 
@@ -176,7 +179,9 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
               children: [
                 CircleAvatar(
                   radius: 20,
-                  backgroundImage: userImage != null ? CachedNetworkImageProvider(userImage) : null,
+                  backgroundImage: userImage != null
+                      ? CachedNetworkImageProvider(userImage)
+                      : null,
                   child: userImage == null ? const Icon(Icons.person) : null,
                 ),
                 const SizedBox(width: 12),
@@ -248,7 +253,10 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const Text('ปฏิเสธ/ลบ', style: TextStyle(fontFamily: 'SukhumvitSet')),
+                    child: const Text(
+                      'ปฏิเสธ/ลบ',
+                      style: TextStyle(fontFamily: 'SukhumvitSet'),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -262,7 +270,10 @@ class _ArticleTagRequestsPageState extends State<ArticleTagRequestsPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const Text('อนุมัติแท็ก', style: TextStyle(fontFamily: 'SukhumvitSet')),
+                    child: const Text(
+                      'อนุมัติแท็ก',
+                      style: TextStyle(fontFamily: 'SukhumvitSet'),
+                    ),
                   ),
                 ),
               ],

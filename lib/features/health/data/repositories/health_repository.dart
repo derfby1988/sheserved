@@ -29,7 +29,10 @@ class HealthRepository {
   }
 
   /// อัพเดทข้อมูลสุขภาพ
-  Future<HealthInfo?> updateHealthInfo(String userId, HealthInfo healthInfo) async {
+  Future<HealthInfo?> updateHealthInfo(
+    String userId,
+    HealthInfo healthInfo,
+  ) async {
     try {
       // Calculate health score
       final score = HealthInfo.calculateHealthScore(
@@ -104,7 +107,10 @@ class HealthRepository {
   }
 
   /// ดึงประวัติการเปลี่ยนแปลงข้อมูลสุขภาพ (Real Data)
-  Future<List<HealthDataChangeLog>> getHealthHistoryLog(String userId, String fieldType) async {
+  Future<List<HealthDataChangeLog>> getHealthHistoryLog(
+    String userId,
+    String fieldType,
+  ) async {
     try {
       final response = await _client
           .from('health_data_logs')
@@ -112,8 +118,10 @@ class HealthRepository {
           .eq('user_id', userId)
           .eq('field_type', fieldType)
           .order('created_at', ascending: false);
-      
-      return (response as List).map((e) => HealthDataChangeLog.fromJson(e)).toList();
+
+      return (response as List)
+          .map((e) => HealthDataChangeLog.fromJson(e))
+          .toList();
     } catch (e) {
       // If table doesn't exist yet or error occurs, return empty list
       return [];
@@ -144,7 +152,10 @@ class HealthRepository {
   }
 
   /// ดึงประวัติการวัดสุขภาพ (Mock data)
-  Future<List<Map<String, dynamic>>> getHealthHistory(String userId, {int limit = 30}) async {
+  Future<List<Map<String, dynamic>>> getHealthHistory(
+    String userId, {
+    int limit = 30,
+  }) async {
     // TODO: Implement actual health history from database
     final now = DateTime.now();
     return List.generate(limit, (index) {
@@ -200,7 +211,9 @@ class HealthRepository {
           .eq('user_id', userId)
           .single();
 
-      final currentInfo = Map<String, dynamic>.from(response['health_info'] ?? {});
+      final currentInfo = Map<String, dynamic>.from(
+        response['health_info'] ?? {},
+      );
       final oldWeight = (currentInfo['weight'] as num?)?.toDouble();
 
       // ถ้าน้ำหนักเท่าเดิม ไม่ต้องอัปเดต
@@ -241,6 +254,134 @@ class HealthRepository {
       print('updateWeightFromDevice error: $e');
     }
   }
+
+  /// ดึงข้อมูลเมตริกล่าสุดของวันนี้จากฐานข้อมูลจริง เพื่อใช้คำนวณคะแนนสุขภาพแบบ Dynamic
+  Future<Map<String, dynamic>> getLatestDailyMetrics(String userId) async {
+    try {
+      final now = DateTime.now();
+      final startOfYesterday = now
+          .subtract(const Duration(hours: 24))
+          .toIso8601String();
+
+      final response = await _client
+          .from('device_health_metrics')
+          .select()
+          .eq('user_id', userId)
+          .gte('measured_at', startOfYesterday)
+          .order('measured_at', ascending: false);
+
+      final List<dynamic> list = response as List<dynamic>;
+
+      // หาค่าตามประเภทข้อมูล
+      int todaySteps = 0;
+      double todayCalories = 0.0;
+      int? latestHeartRate;
+      double? latestHRV;
+      int? lastSleepDuration;
+
+      for (var row in list) {
+        final type = row['metric_type']?.toString();
+        final val = (row['value'] as num?)?.toDouble() ?? 0.0;
+        final measuredAtStr = row['measured_at']?.toString() ?? '';
+        final measuredAt = DateTime.tryParse(measuredAtStr) ?? now;
+
+        // สำหรับก้าวเดินและแคลอรี่ ให้นับเฉพาะของวันนี้ (ตั้งแต่ 00:00)
+        final isToday =
+            measuredAt.year == now.year &&
+            measuredAt.month == now.month &&
+            measuredAt.day == now.day;
+
+        if (type == 'steps' && isToday) {
+          todaySteps += val.toInt();
+        } else if ((type == 'active_calories' || type == 'calories') &&
+            isToday) {
+          todayCalories += val;
+        } else if (type == 'heart_rate' && latestHeartRate == null) {
+          latestHeartRate = val.toInt();
+        } else if ((type == 'hrv_sdnn' || type == 'hrv') && latestHRV == null) {
+          latestHRV = val;
+        } else if ((type == 'sleep_asleep' || type == 'sleep') &&
+            lastSleepDuration == null) {
+          lastSleepDuration = val.toInt();
+        }
+      }
+
+      // ถ้าไม่มีข้อมูลของวันนี้ใน 24 ชม. ลองดึงค่าล่าสุดแบบไม่จำกัดเวลา (สำหรับเป็น fallback)
+      if (todaySteps == 0) {
+        final stepRes = await _client
+            .from('device_health_metrics')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('metric_type', 'steps')
+            .order('measured_at', ascending: false)
+            .limit(1);
+        if (stepRes.isNotEmpty) {
+          todaySteps = (stepRes[0]['value'] as num).toInt();
+        }
+      }
+
+      if (todayCalories == 0.0) {
+        final calRes = await _client
+            .from('device_health_metrics')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('metric_type', 'active_calories')
+            .order('measured_at', ascending: false)
+            .limit(1);
+        if (calRes.isNotEmpty) {
+          todayCalories = (calRes[0]['value'] as num).toDouble();
+        }
+      }
+
+      if (latestHeartRate == null) {
+        final hrRes = await _client
+            .from('device_health_metrics')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('metric_type', 'heart_rate')
+            .order('measured_at', ascending: false)
+            .limit(1);
+        if (hrRes.isNotEmpty) {
+          latestHeartRate = (hrRes[0]['value'] as num).toInt();
+        }
+      }
+
+      if (latestHRV == null) {
+        final hrvRes = await _client
+            .from('device_health_metrics')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('metric_type', 'hrv_sdnn')
+            .order('measured_at', ascending: false)
+            .limit(1);
+        if (hrvRes.isNotEmpty) {
+          latestHRV = (hrvRes[0]['value'] as num).toDouble();
+        }
+      }
+
+      if (lastSleepDuration == null) {
+        final sleepRes = await _client
+            .from('device_health_metrics')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('metric_type', 'sleep_asleep')
+            .order('measured_at', ascending: false)
+            .limit(1);
+        if (sleepRes.isNotEmpty) {
+          lastSleepDuration = (sleepRes[0]['value'] as num).toInt();
+        }
+      }
+
+      return {
+        'todaySteps': todaySteps,
+        'todayActiveCalories': todayCalories,
+        'latestHeartRate': latestHeartRate,
+        'latestHRV': latestHRV,
+        'lastSleepDuration': lastSleepDuration,
+      };
+    } catch (e) {
+      print('getLatestDailyMetrics error: $e');
+      return {};
+    }
+  }
 }
-
-

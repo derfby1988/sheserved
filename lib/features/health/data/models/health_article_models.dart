@@ -65,8 +65,12 @@ class HealthArticle {
       editCount: parseInt(json['edit_count']),
       category: json['category'],
       imageUrl: json['image_url'],
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : DateTime.now(),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
+          : DateTime.now(),
       isBookmarked: json['is_bookmarked'] == true,
       isLiked: json['is_liked'] == true,
     );
@@ -144,7 +148,8 @@ class HealthArticleProduct {
   final String? taggedById;
   final bool isApproved;
   final DateTime createdAt;
-  final String? taggerUserCategory; // Tagging user category (provider, consumer, other)
+  final String?
+  taggerUserCategory; // Tagging user category (provider, consumer, other)
 
   HealthArticleProduct({
     required this.id,
@@ -232,7 +237,9 @@ class HealthArticleComment {
       commentNumber: parseInt(json['comment_number']),
       viewCount: parseInt(json['view_count']),
       likeCount: parseInt(json['like_count']),
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
       isLiked: json['is_liked'] == true,
       isBookmarked: json['is_bookmarked'] == true,
       editCount: parseInt(json['edit_count']),

@@ -30,9 +30,9 @@ class HealthInfo {
     required String gender,
   }) {
     if (age == null) return null;
-    
+
     int score = 100;
-    
+
     // BMI Score (optimal: 18.5-24.9)
     if (bmi < 18.5) {
       // Underweight
@@ -44,12 +44,12 @@ class HealthInfo {
       // Obese
       score -= ((bmi - 24.9) * 5).round();
     }
-    
+
     // Age factor (slight reduction for older ages)
     if (age > 40) {
       score -= ((age - 40) * 0.2).round();
     }
-    
+
     // Ensure score is within bounds
     return score.clamp(0, 100);
   }
@@ -74,7 +74,7 @@ class HealthInfo {
   factory HealthInfo.fromJson(Map<String, dynamic> json) {
     final height = (json['height'] as num?)?.toDouble() ?? 165.0;
     final weight = (json['weight'] as num?)?.toDouble() ?? 65.0;
-    final bmi = json['bmi'] != null 
+    final bmi = json['bmi'] != null
         ? (json['bmi'] as num).toDouble()
         : calculateBMI(height, weight);
 
@@ -150,8 +150,8 @@ class ConnectedDevice {
       name: json['name'],
       type: DeviceTypeExtension.fromString(json['type']),
       isConnected: json['is_connected'] ?? false,
-      lastSyncAt: json['last_sync_at'] != null 
-          ? DateTime.parse(json['last_sync_at']) 
+      lastSyncAt: json['last_sync_at'] != null
+          ? DateTime.parse(json['last_sync_at'])
           : null,
     );
   }

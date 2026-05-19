@@ -33,21 +33,21 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
 
   String _formatValue(String? value) {
     if (value == null || value.trim() == "" || value == "-") return "-";
-    
+
     // For numeric fields, format to 1 decimal place if it's a number
     if (['weight', 'height', 'bmi'].contains(widget.fieldType)) {
       // Handle cases like "70.5 kg" or just "70.5"
       final parts = value.split(' ');
       final String numericPart = parts.first;
       final String? unitPart = parts.length > 1 ? parts.last : null;
-      
+
       final double? numericValue = double.tryParse(numericPart);
       if (numericValue != null) {
         final formatted = numericValue.toStringAsFixed(1);
         return unitPart != null ? '$formatted $unitPart' : formatted;
       }
     }
-    
+
     return value;
   }
 
@@ -59,11 +59,13 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
 
     final int totalPages = (allLogs.length / _pageSize).ceil();
     final int startIndex = _currentPage * _pageSize;
-    final int endIndex = (startIndex + _pageSize < allLogs.length) 
-        ? startIndex + _pageSize 
+    final int endIndex = (startIndex + _pageSize < allLogs.length)
+        ? startIndex + _pageSize
         : allLogs.length;
-    
-    final pagedLogs = allLogs.isEmpty ? <HealthDataChangeLog>[] : allLogs.sublist(startIndex, endIndex);
+
+    final pagedLogs = allLogs.isEmpty
+        ? <HealthDataChangeLog>[]
+        : allLogs.sublist(startIndex, endIndex);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -104,16 +106,19 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Trend Graph
                 if (allLogs.isNotEmpty) ...[
                   _buildTrendGraph(allLogs),
                   const SizedBox(height: 16),
                 ],
-                
+
                 // Header Row
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF679E83).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -136,7 +141,9 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                           padding: const EdgeInsets.all(32.0),
                           child: Text(
                             'ไม่พบประวัติการเปลี่ยนแปลง',
-                            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textHint,
+                            ),
                           ),
                         )
                       : Scrollbar(
@@ -149,18 +156,36 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: pagedLogs.length,
-                            separatorBuilder: (context, index) => const Divider(height: 1),
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final log = pagedLogs[index];
-                              final sequenceNum = allLogs.length - (startIndex + index);
+                              final sequenceNum =
+                                  allLogs.length - (startIndex + index);
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 8,
+                                ),
                                 child: Row(
                                   children: [
-                                    _buildDataCell('$sequenceNum', flex: 1, isBold: true),
-                                    _buildDataCell(_formatDate(log.timestamp), flex: 2),
-                                    _buildDataCell('${_formatValue(log.oldValue)} -> ${_formatValue(log.newValue)}', flex: 3),
-                                    _buildDataCell(log.editorName ?? 'Unknown', flex: 2),
+                                    _buildDataCell(
+                                      '$sequenceNum',
+                                      flex: 1,
+                                      isBold: true,
+                                    ),
+                                    _buildDataCell(
+                                      _formatDate(log.timestamp),
+                                      flex: 2,
+                                    ),
+                                    _buildDataCell(
+                                      '${_formatValue(log.oldValue)} -> ${_formatValue(log.newValue)}',
+                                      flex: 3,
+                                    ),
+                                    _buildDataCell(
+                                      log.editorName ?? 'Unknown',
+                                      flex: 2,
+                                    ),
                                   ],
                                 ),
                               );
@@ -168,12 +193,12 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                           ),
                         ),
                 ),
-                
+
                 if (totalPages > 1) ...[
                   const SizedBox(height: 16),
                   _buildPaginationControls(totalPages),
                 ],
-                
+
                 const SizedBox(height: 24),
 
                 // Action Buttons
@@ -189,7 +214,10 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                             Navigator.pushNamed(context, '/health-data-entry');
                           },
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF679E83), width: 1.5),
+                            side: const BorderSide(
+                              color: Color(0xFF679E83),
+                              width: 1.5,
+                            ),
                             backgroundColor: const Color(0xFFE8F3F1),
                             foregroundColor: const Color(0xFF679E83),
                             shape: RoundedRectangleBorder(
@@ -262,26 +290,36 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
       children: [
         _buildPageButton(
           icon: Icons.first_page,
-          onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
+          onPressed: _currentPage > 0
+              ? () => setState(() => _currentPage = 0)
+              : null,
         ),
         _buildPageButton(
           icon: Icons.chevron_left,
-          onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+          onPressed: _currentPage > 0
+              ? () => setState(() => _currentPage--)
+              : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
             'หน้า ${_currentPage + 1} / $totalPages',
-            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.bold),
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         _buildPageButton(
           icon: Icons.chevron_right,
-          onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage++) : null,
+          onPressed: _currentPage < totalPages - 1
+              ? () => setState(() => _currentPage++)
+              : null,
         ),
         _buildPageButton(
           icon: Icons.last_page,
-          onPressed: _currentPage < totalPages - 1 ? () => setState(() => _currentPage = totalPages - 1) : null,
+          onPressed: _currentPage < totalPages - 1
+              ? () => setState(() => _currentPage = totalPages - 1)
+              : null,
         ),
       ],
     );
@@ -302,7 +340,7 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
   Widget _buildTrendGraph(List<HealthDataChangeLog> logs) {
     // Show only last 10 entries for the graph, and reverse to show oldest to newest (left to right)
     final graphLogs = logs.take(10).toList().reversed.toList();
-    
+
     // Parse numeric values from "X kg" or "X.Y"
     final List<double> values = graphLogs.map((log) {
       final String numericPart = log.newValue.split(' ').first;
@@ -314,7 +352,7 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
     // Find min/max for scaling
     double maxVal = values.reduce((a, b) => a > b ? a : b);
     double minVal = values.reduce((a, b) => a < b ? a : b);
-    
+
     // Ensure there's a range to avoid division by zero
     if (maxVal == minVal) {
       maxVal += 1;
@@ -330,8 +368,9 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: values.map((val) {
           // Calculate relative height (0.3 to 1.0 of the box)
-          final double hPercent = 0.3 + (0.7 * (val - minVal) / (maxVal - minVal));
-          
+          final double hPercent =
+              0.3 + (0.7 * (val - minVal) / (maxVal - minVal));
+
           return Flexible(
             child: Container(
               width: 12,
@@ -399,8 +438,18 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
 
   String _thaiMonth(int month) {
     const months = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
     ];
     return months[month - 1];
   }

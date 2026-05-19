@@ -29,7 +29,7 @@ class _GenderSwitchState extends State<GenderSwitch> {
           ),
         ),
         const SizedBox(height: 16),
-        
+
         // Capsule Toggle
         Container(
           width: 200,
@@ -52,8 +52,8 @@ class _GenderSwitchState extends State<GenderSwitch> {
               AnimatedAlign(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
-                alignment: widget.selectedGender == 'female' 
-                    ? Alignment.centerLeft 
+                alignment: widget.selectedGender == 'female'
+                    ? Alignment.centerLeft
                     : Alignment.centerRight,
                 child: Container(
                   width: 100, // Half of parent width
@@ -73,7 +73,7 @@ class _GenderSwitchState extends State<GenderSwitch> {
                   ),
                 ),
               ),
-              
+
               // Icons Row (Foreground)
               Row(
                 children: [
@@ -89,23 +89,23 @@ class _GenderSwitchState extends State<GenderSwitch> {
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
-                            color: widget.selectedGender == 'female' 
-                                ? Colors.black 
+                            color: widget.selectedGender == 'female'
+                                ? Colors.black
                                 : Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                           child: Icon(
                             Icons.female,
                             size: 32,
-                            color: widget.selectedGender == 'female' 
-                                ? Colors.black 
+                            color: widget.selectedGender == 'female'
+                                ? Colors.black
                                 : Colors.white,
                           ),
                         ),
                       ),
                     ),
                   ),
-                  
+
                   // Male Option
                   Expanded(
                     child: GestureDetector(
@@ -118,16 +118,16 @@ class _GenderSwitchState extends State<GenderSwitch> {
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
-                            color: widget.selectedGender == 'male' 
-                                ? Colors.black 
+                            color: widget.selectedGender == 'male'
+                                ? Colors.black
                                 : Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                           child: Icon(
                             Icons.male,
                             size: 32,
-                            color: widget.selectedGender == 'male' 
-                                ? Colors.black 
+                            color: widget.selectedGender == 'male'
+                                ? Colors.black
                                 : Colors.white,
                           ),
                         ),

@@ -30,12 +30,10 @@ class _AgePickerState extends State<AgePicker> {
     super.initState();
     _currentAge = widget.initialAge;
     // index 0 is "-", ages start from index 1 (minAge)
-    final initialItem = widget.initialAge == null 
-        ? 0 
+    final initialItem = widget.initialAge == null
+        ? 0
         : widget.initialAge! - widget.minAge + 1;
-    _controller = FixedExtentScrollController(
-      initialItem: initialItem,
-    );
+    _controller = FixedExtentScrollController(initialItem: initialItem);
   }
 
   @override
@@ -59,7 +57,7 @@ class _AgePickerState extends State<AgePicker> {
           ),
         ),
         const SizedBox(width: 16),
-        
+
         // Wheel Picker Container
         SizedBox(
           width: 100, // Fixed width for the picker
@@ -96,7 +94,7 @@ class _AgePickerState extends State<AgePicker> {
                     ),
                   ),
                 ),
-                
+
                 // Wheel Picker
                 ListWheelScrollView.useDelegate(
                   controller: _controller,
@@ -106,7 +104,9 @@ class _AgePickerState extends State<AgePicker> {
                   physics: const FixedExtentScrollPhysics(),
                   onSelectedItemChanged: (index) {
                     HapticFeedback.selectionClick();
-                    final newAge = index == 0 ? null : widget.minAge + index - 1;
+                    final newAge = index == 0
+                        ? null
+                        : widget.minAge + index - 1;
                     setState(() {
                       _currentAge = newAge;
                     });
@@ -119,15 +119,17 @@ class _AgePickerState extends State<AgePicker> {
                       final isHyphen = index == 0;
                       final age = isHyphen ? null : widget.minAge + index - 1;
                       final isSelected = age == _currentAge;
-                      
+
                       return Center(
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
                             fontSize: isSelected ? 28 : 18,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w400,
-                            color: isSelected 
-                                ? Colors.white 
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.w400,
+                            color: isSelected
+                                ? Colors.white
                                 : Colors.white.withOpacity(0.5),
                           ),
                           child: Text(isHyphen ? '-' : '$age'),
@@ -136,7 +138,7 @@ class _AgePickerState extends State<AgePicker> {
                     },
                   ),
                 ),
-                
+
                 // Top Gradient Fade
                 Positioned(
                   top: 0,
@@ -159,7 +161,7 @@ class _AgePickerState extends State<AgePicker> {
                     ),
                   ),
                 ),
-                
+
                 // Bottom Gradient Fade
                 Positioned(
                   bottom: 0,

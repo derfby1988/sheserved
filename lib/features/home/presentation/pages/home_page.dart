@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 // Updated Alert System UI and logic - v2
 import '../../../../core/constants/app_colors.dart';
+import '../../../health/presentation/providers/health_provider.dart';
 import '../widgets/widgets.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
+import '../../../health/data/repositories/health_repository.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../consultation/presentation/logic/consultation_guard.dart';
@@ -45,16 +48,16 @@ const _kConsultPosKey = 'home_consultation_position';
 
 /// Home Page - Medical App Design
 /// Main dashboard for health/medical services
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   final bool isActive;
 
   const HomePage({super.key, this.isActive = true});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
+class _HomePageState extends ConsumerState<HomePage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _refreshTimer;
   double? _dragStartX;
@@ -138,7 +141,11 @@ class _HomePageState extends State<HomePage>
     _thaiMhungAlerts.clear();
 
     // Initial load of health score if already logged in
-    _loadHealthScore();
+    final initialHealthState = ref.read(healthProvider);
+    _healthScore = initialHealthState.healthScore > 0
+        ? initialHealthState.healthScore.toDouble()
+        : null;
+    ref.read(healthProvider.notifier).loadMetricsFromDatabase();
 
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -484,44 +491,53 @@ class _HomePageState extends State<HomePage>
     _consultationAlertSub?.cancel();
 
     // โหลด packageIds ก่อนแล้วค่อย subscribe stream
-    repo.getPackageIdsForProfession(user.professionId!).then((packageIds) {
-      if (!mounted) return;
+    repo
+        .getPackageIdsForProfession(user.professionId!)
+        .then((packageIds) {
+          if (!mounted) return;
 
-      final stream = packageIds.isNotEmpty
-          ? repo.watchRequestsForProfession(packageIds)
-          : repo.watchAllRequestsWithUserInfo();
+          final stream = packageIds.isNotEmpty
+              ? repo.watchRequestsForProfession(packageIds)
+              : repo.watchAllRequestsWithUserInfo();
 
-      _consultationAlertSub = stream.listen((rawList) {
-        if (!mounted) return;
-        // กรองเฉพาะ pending ที่ยังไม่ถูก dismiss
-        final pendingAlerts = rawList.where((m) {
-          final id = m['id']?.toString() ?? '';
-          final status = m['status']?.toString() ?? '';
-          return status == 'pending' && !_dismissedConsultationIds.contains(id);
-        }).map((m) {
-          // map ให้ตรงกับ key ที่ HomeHeaderSection ใช้
-          final userMap = m['users'] as Map<String, dynamic>? ?? {};
-          final firstName = userMap['first_name']?.toString() ?? '';
-          final lastName = userMap['last_name']?.toString() ?? '';
-          final name = '$firstName $lastName'.trim();
-          return {
-            'id': m['id'],
-            'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
-            'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
-            'requestedAt': DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
-            'status': m['status'],
-          };
-        }).toList();
+          _consultationAlertSub = stream.listen((rawList) {
+            if (!mounted) return;
+            // กรองเฉพาะ pending ที่ยังไม่ถูก dismiss
+            final pendingAlerts = rawList
+                .where((m) {
+                  final id = m['id']?.toString() ?? '';
+                  final status = m['status']?.toString() ?? '';
+                  return status == 'pending' &&
+                      !_dismissedConsultationIds.contains(id);
+                })
+                .map((m) {
+                  // map ให้ตรงกับ key ที่ HomeHeaderSection ใช้
+                  final userMap = m['users'] as Map<String, dynamic>? ?? {};
+                  final firstName = userMap['first_name']?.toString() ?? '';
+                  final lastName = userMap['last_name']?.toString() ?? '';
+                  final name = '$firstName $lastName'.trim();
+                  return {
+                    'id': m['id'],
+                    'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
+                    'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
+                    'requestedAt':
+                        DateTime.tryParse(m['created_at']?.toString() ?? '') ??
+                        DateTime.now(),
+                    'status': m['status'],
+                  };
+                })
+                .toList();
 
-        setState(() {
-          _consultationAlerts
-            ..clear()
-            ..addAll(pendingAlerts);
+            setState(() {
+              _consultationAlerts
+                ..clear()
+                ..addAll(pendingAlerts);
+            });
+          });
+        })
+        .catchError((e) {
+          debugPrint('HomePage: _subscribeConsultationAlerts error: $e');
         });
-      });
-    }).catchError((e) {
-      debugPrint('HomePage: _subscribeConsultationAlerts error: $e');
-    });
   }
 
   /// ผู้ใช้ปัดทิ้งการแจ้งเตือนปรึกษา → บันทึก dismiss ใน local Set
@@ -543,9 +559,8 @@ class _HomePageState extends State<HomePage>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => HealthProgramRequestDashboard(
-          initialFocusId: consultationId,
-        ),
+        builder: (_) =>
+            HealthProgramRequestDashboard(initialFocusId: consultationId),
       ),
     ).then((_) {
       // หลังกลับจาก Dashboard อาจมีสถานะเปลี่ยน — re-subscribe
@@ -1145,10 +1160,11 @@ class _HomePageState extends State<HomePage>
 
     _loadConsultationPosition();
     _loadHealthScore();
+    ref.read(healthProvider.notifier).loadMetricsFromDatabase();
     _loadHomeData();
   }
 
-  /// โหลดคะแนนสุขภาพของผู้ใช้
+  /// โหลดคะแนนสุขภาพของผู้ใช้ (คำนวณแบบ Dynamic 4 มิติจากข้อมูลจริงที่อัปเดตล่าสุด)
   Future<void> _loadHealthScore() async {
     final currentUser = ServiceLocator.instance.currentUser;
     if (currentUser == null) {
@@ -1157,33 +1173,129 @@ class _HomePageState extends State<HomePage>
     }
 
     try {
-      final repo = ServiceLocator.get<UserRepository>();
-      final profile = await repo.getConsumerProfile(currentUser.id);
+      final userRepo = ServiceLocator.get<UserRepository>();
+      final profile = await userRepo.getConsumerProfile(currentUser.id);
+      if (profile == null) {
+        if (mounted) setState(() => _healthScore = 0);
+        return;
+      }
+
+      final healthInfo = profile.healthInfo;
+      if (healthInfo == null) {
+        if (mounted) setState(() => _healthScore = 0);
+        return;
+      }
+
+      double parseDouble(dynamic value) {
+        if (value == null) return 0.0;
+        if (value is num) return value.toDouble();
+        if (value is String) return double.tryParse(value) ?? 0.0;
+        return 0.0;
+      }
+
+      final bmi = healthInfo['bmi'] != null
+          ? parseDouble(healthInfo['bmi'])
+          : 21.4;
+
+      // 1. Body Composition (30 points max)
+      double bodyScore = 30.0;
+      if (bmi < 18.5) {
+        bodyScore -= (18.5 - bmi) * 3;
+      } else if (bmi >= 23 && bmi < 30) {
+        bodyScore -= (bmi - 22.9) * 2;
+      } else if (bmi >= 30) {
+        bodyScore -= (bmi - 22.9) * 4;
+      }
+      bodyScore = bodyScore.clamp(0.0, 30.0);
+
+      // ดึงข้อมูลสุขภาพจริงจากตาราง device_health_metrics
+      final healthRepo = ServiceLocator.get<HealthRepository>();
+      final dbMetrics = await healthRepo.getLatestDailyMetrics(currentUser.id);
+
+      final steps =
+          (dbMetrics['todaySteps'] != null &&
+              (dbMetrics['todaySteps'] as int) > 0)
+          ? (dbMetrics['todaySteps'] as int)
+          : 8000;
+      final calories =
+          (dbMetrics['todayActiveCalories'] != null &&
+              (dbMetrics['todayActiveCalories'] as double) > 0)
+          ? (dbMetrics['todayActiveCalories'] as double)
+          : 300.0;
+
+      // 2. Activity (30 points max)
+      double stepsScore = (steps / 8000.0) * 15.0;
+      stepsScore = stepsScore.clamp(0.0, 15.0);
+
+      double calScore = (calories / 300.0) * 15.0;
+      calScore = calScore.clamp(0.0, 15.0);
+
+      final double activityScore = stepsScore + calScore;
+
+      // 3. Cardio (20 points max)
+      final heartRate =
+          (dbMetrics['latestHeartRate'] != null &&
+              (dbMetrics['latestHeartRate'] as int) > 0)
+          ? (dbMetrics['latestHeartRate'] as int)
+          : 72;
+      final hrv =
+          (dbMetrics['latestHRV'] != null &&
+              (dbMetrics['latestHRV'] as double) > 0)
+          ? (dbMetrics['latestHRV'] as double)
+          : 40.0;
+
+      double hrScore = 10.0;
+      if (heartRate < 60) {
+        hrScore -= (60 - heartRate) * 0.5;
+      } else if (heartRate > 80) {
+        hrScore -= (heartRate - 80) * 0.5;
+      }
+      hrScore = hrScore.clamp(0.0, 10.0);
+
+      double hrvScore = (hrv / 40.0) * 10.0;
+      hrvScore = hrvScore.clamp(0.0, 10.0);
+
+      final double cardioScore = hrScore + hrvScore;
+
+      // 4. Sleep (20 points max)
+      final sleepMins =
+          (dbMetrics['lastSleepDuration'] != null &&
+              (dbMetrics['lastSleepDuration'] as int) > 0)
+          ? (dbMetrics['lastSleepDuration'] as int)
+          : 420;
+      double sleepScore = (sleepMins / 420.0) * 20.0;
+      sleepScore = sleepScore.clamp(0.0, 20.0);
+
+      final double totalCalculated =
+          bodyScore + activityScore + cardioScore + sleepScore;
+      final int calculatedScore = totalCalculated.round().clamp(0, 100);
+
+      // อัปเดต UI
       if (mounted) {
-        if (profile != null) {
-          final score = profile.healthInfo?['health_score'];
-          setState(() {
-            if (score != null) {
-              if (score is num) {
-                _healthScore = score.toDouble();
-              } else if (score is String) {
-                _healthScore = double.tryParse(score) ?? 0;
-              } else {
-                _healthScore = 0;
-              }
-            } else {
-              _healthScore = 0;
-            }
-          });
-        } else {
-          // หากไม่มีโปรไฟล์ ให้ตั้งค่าเป็น 0 เพื่อหยุดการโหลด
-          setState(() => _healthScore = 0);
-        }
+        setState(() {
+          _healthScore = calculatedScore.toDouble();
+        });
+      }
+
+      // เซฟค่าคะแนนสุขภาพกลับเข้าฐานข้อมูล Supabase เพื่อให้ widget/ตารางอื่นใช้ร่วมกันได้
+      if ((healthInfo['health_score'] as num?)?.toInt() != calculatedScore) {
+        final updatedInfo = {...healthInfo, 'health_score': calculatedScore};
+        await Supabase.instance.client
+            .from('consumer_profiles')
+            .update({
+              'health_info': updatedInfo,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('user_id', currentUser.id);
+        debugPrint(
+          'HomePage: Updated user dynamic health score in DB to $calculatedScore%',
+        );
       }
     } catch (e) {
-      debugPrint('HomePage: Error loading health score: $e');
+      debugPrint(
+        'HomePage: Error loading/calculating dynamic health score: $e',
+      );
       if (mounted) {
-        // หากเกิดข้อผิดพลาด ให้หยุดการโหลดโดยตั้งค่าเป็น 0
         setState(() => _healthScore = 0);
       }
     }
@@ -1503,7 +1615,8 @@ class _HomePageState extends State<HomePage>
     if (_headerSectionHeight > 0 &&
         _consultationHeight > 0 &&
         _pharmacyHeight > 0) {
-      final double mapStartOffset = (defaultTargetPlatform == TargetPlatform.iOS)
+      final double mapStartOffset =
+          (defaultTargetPlatform == TargetPlatform.iOS)
           ? _headerSectionHeight
           : (_headerSectionHeight / 2);
       final double targetBottomPoint =
@@ -1545,6 +1658,14 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<HealthState>(healthProvider, (previous, next) {
+      if (mounted) {
+        setState(() {
+          _healthScore = next.healthScore.toDouble();
+        });
+      }
+    });
+
     return Container(
       color: AppColors.primary,
       child: Builder(
@@ -1586,7 +1707,9 @@ class _HomePageState extends State<HomePage>
                                   // iOS: เลื่อนแผนที่ลงมาเริ่มที่ใต้ header เต็มๆ เพื่อไม่ให้ platform view ทับ header gradient
                                   // Android: เริ่มที่กึ่งกลาง header เพื่อให้เห็นแผนที่ลอดผ่านส่วนโปร่งใสของ header
                                   SizedBox(
-                                    height: (defaultTargetPlatform == TargetPlatform.iOS)
+                                    height:
+                                        (defaultTargetPlatform ==
+                                            TargetPlatform.iOS)
                                         ? _headerSectionHeight
                                         : _headerSectionHeight / 2,
                                   ),
@@ -1599,29 +1722,39 @@ class _HomePageState extends State<HomePage>
                                         children: [
                                           // แผนที่ (platform view หรือ static image)
                                           Positioned.fill(
-                                            child: PlatformService.shouldShowLiveMap(pageName: 'home') 
-                                              ? HomeMapBackground(
-                                                  focusedAlert: _focusedAlert,
-                                                  onMapCreated: (controller) {
-                                                    PlatformService.logMapLoad(pageName: 'home');
-                                                  },
-                                                  onTap: () {
-                                                    if (_focusedAlert != null) {
-                                                      setState(() {
-                                                        _focusedAlert = null;
-                                                        _loadConsultationPosition(
-                                                          introDelay: Duration.zero,
-                                                        );
-                                                      });
-                                                    }
-                                                  },
+                                            child:
+                                                PlatformService.shouldShowLiveMap(
+                                                  pageName: 'home',
                                                 )
-                                              : Image.network(
-                                                  PlatformService.mapFallbackImageUrl,
-                                                  fit: BoxFit.cover,
-                                                  color: Colors.black.withOpacity(0.1),
-                                                  colorBlendMode: BlendMode.darken,
-                                                ),
+                                                ? HomeMapBackground(
+                                                    focusedAlert: _focusedAlert,
+                                                    onMapCreated: (controller) {
+                                                      PlatformService.logMapLoad(
+                                                        pageName: 'home',
+                                                      );
+                                                    },
+                                                    onTap: () {
+                                                      if (_focusedAlert !=
+                                                          null) {
+                                                        setState(() {
+                                                          _focusedAlert = null;
+                                                          _loadConsultationPosition(
+                                                            introDelay:
+                                                                Duration.zero,
+                                                          );
+                                                        });
+                                                      }
+                                                    },
+                                                  )
+                                                : Image.network(
+                                                    PlatformService
+                                                        .mapFallbackImageUrl,
+                                                    fit: BoxFit.cover,
+                                                    color: Colors.black
+                                                        .withOpacity(0.1),
+                                                    colorBlendMode:
+                                                        BlendMode.darken,
+                                                  ),
                                           ),
                                           // Gradient overlay วางทับด้านบนแผนที่ — ใช้แทน ShaderMask
                                           // ทาสีเขียวจางลงจากบนลงล่างเพื่อให้ blend กับ header ได้เนียน
@@ -1750,8 +1883,10 @@ class _HomePageState extends State<HomePage>
                                       donationAlerts: _donationAlerts,
                                       yieldWayAlerts: _yieldWayAlerts,
                                       consultationAlerts: _consultationAlerts,
-                                      onConsultationAlertDismissed: _onConsultationAlertDismissed,
-                                      onConsultationAlertTapped: _onConsultationAlertTapped,
+                                      onConsultationAlertDismissed:
+                                          _onConsultationAlertDismissed,
+                                      onConsultationAlertTapped:
+                                          _onConsultationAlertTapped,
                                       onAlertDismissed: (videoId) {
                                         _recordDismissedAlert(videoId);
                                         setState(() {
@@ -1796,6 +1931,9 @@ class _HomePageState extends State<HomePage>
                                             '/health',
                                           );
                                           _loadHealthScore();
+                                          ref
+                                              .read(healthProvider.notifier)
+                                              .loadMetricsFromDatabase();
                                         } else {
                                           await Navigator.pushNamed(
                                             context,
@@ -1803,6 +1941,9 @@ class _HomePageState extends State<HomePage>
                                             arguments: '/health',
                                           );
                                           _loadHealthScore();
+                                          ref
+                                              .read(healthProvider.notifier)
+                                              .loadMetricsFromDatabase();
                                         }
                                       },
                                       onProfileTap: () {

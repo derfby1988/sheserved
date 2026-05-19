@@ -165,7 +165,8 @@ class AppleHealthSource implements HealthDataSource {
       );
       if (data.isEmpty) return null;
       data.sort((a, b) => b.dateTo.compareTo(a.dateTo));
-      final val = (data.first.value as NumericHealthValue).numericValue.toDouble();
+      final val = (data.first.value as NumericHealthValue).numericValue
+          .toDouble();
       // HealthKit เก็บ SpO2 เป็นสัดส่วน 0.0–1.0 → แปลงเป็น %
       return val <= 1.0 ? val * 100 : val;
     } catch (e) {
@@ -229,16 +230,20 @@ class AppleHealthSource implements HealthDataSource {
     try {
       final steps = await _health.getTotalStepsInInterval(from, to);
       if (steps != null && steps > 0) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'steps',
-          value: steps,
-          unit: 'count',
-          measuredAt: from,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'steps',
+            value: steps,
+            unit: 'count',
+            measuredAt: from,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync steps error: $e'); }
+    } catch (e) {
+      print('Sync steps error: $e');
+    }
 
     // --- 2. อัตราการเต้นหัวใจ (Heart Rate) - ทุก reading ---
     try {
@@ -248,16 +253,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in hrData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'heart_rate',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'bpm',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'heart_rate',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'bpm',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync heart_rate error: $e'); }
+    } catch (e) {
+      print('Sync heart_rate error: $e');
+    }
 
     // --- 3. ระยะทาง (Distance Walking/Running) ---
     try {
@@ -267,16 +276,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in distData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'distance',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'meters',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'distance',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'meters',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync distance error: $e'); }
+    } catch (e) {
+      print('Sync distance error: $e');
+    }
 
     // --- 4. แคลอรี่ที่เผาผลาญ (Active Energy Burned) ---
     try {
@@ -286,38 +299,52 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in calData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'active_calories',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'kcal',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'active_calories',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'kcal',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync active_calories error: $e'); }
+    } catch (e) {
+      print('Sync active_calories error: $e');
+    }
 
     // --- 5. การนอนหลับ (Sleep - Asleep / In Bed / Awake) ---
     try {
       final sleepData = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.SLEEP_ASLEEP, HealthDataType.SLEEP_IN_BED, HealthDataType.SLEEP_AWAKE],
+        types: [
+          HealthDataType.SLEEP_ASLEEP,
+          HealthDataType.SLEEP_IN_BED,
+          HealthDataType.SLEEP_AWAKE,
+        ],
         startTime: from,
         endTime: to,
       );
       for (var d in sleepData) {
-        final type = d.type == HealthDataType.SLEEP_ASLEEP ? 'sleep_asleep'
-            : d.type == HealthDataType.SLEEP_IN_BED ? 'sleep_in_bed'
+        final type = d.type == HealthDataType.SLEEP_ASLEEP
+            ? 'sleep_asleep'
+            : d.type == HealthDataType.SLEEP_IN_BED
+            ? 'sleep_in_bed'
             : 'sleep_awake';
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: type,
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'minutes',
-          measuredAt: d.dateFrom,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: type,
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'minutes',
+            measuredAt: d.dateFrom,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync sleep error: $e'); }
+    } catch (e) {
+      print('Sync sleep error: $e');
+    }
 
     // --- 6. ออกซิเจนในเลือด (SpO2) ---
     try {
@@ -327,16 +354,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in spo2Data) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'blood_oxygen',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: '%',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'blood_oxygen',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: '%',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync SpO2 error: $e'); }
+    } catch (e) {
+      print('Sync SpO2 error: $e');
+    }
 
     // --- 7. ความแปรปรวนของอัตราการเต้นหัวใจ (HRV) ---
     try {
@@ -346,16 +377,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in hrvData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'hrv_sdnn',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'ms',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'hrv_sdnn',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'ms',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync HRV error: $e'); }
+    } catch (e) {
+      print('Sync HRV error: $e');
+    }
 
     // --- 8. ระยะเวลาออกกำลังกาย (Exercise Time) ---
     try {
@@ -365,16 +400,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in exData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'exercise_time',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'minutes',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'exercise_time',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'minutes',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync exercise_time error: $e'); }
+    } catch (e) {
+      print('Sync exercise_time error: $e');
+    }
 
     // --- 9. น้ำหนัก (Weight) - ถ้ามีตาชั่งเชื่อมต่อ ---
     try {
@@ -384,16 +423,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in weightData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'weight',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'kg',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'weight',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'kg',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync weight error: $e'); }
+    } catch (e) {
+      print('Sync weight error: $e');
+    }
 
     // --- 10. มวลไขมัน (Body Fat) ---
     try {
@@ -403,16 +446,20 @@ class AppleHealthSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in bfData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'body_fat_percentage',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: '%',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'body_fat_percentage',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: '%',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync body_fat error: $e'); }
+    } catch (e) {
+      print('Sync body_fat error: $e');
+    }
 
     return metrics;
   }

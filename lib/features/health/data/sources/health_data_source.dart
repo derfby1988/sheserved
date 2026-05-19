@@ -14,12 +14,12 @@ abstract class HealthDataSource {
 
   Future<int> fetchTodaySteps();
   Future<int?> fetchLatestHeartRate();
-  Future<int?> fetchLastSleepDuration();       // นาที
-  Future<double?> fetchTodayActiveCalories();  // kcal
-  Future<double?> fetchTodayDistance();        // เมตร
-  Future<double?> fetchLatestBloodOxygen();    // % (0-100)
-  Future<double?> fetchLatestHRV();            // ms
-  Future<int?> fetchTodayExerciseTime();       // นาที
+  Future<int?> fetchLastSleepDuration(); // นาที
+  Future<double?> fetchTodayActiveCalories(); // kcal
+  Future<double?> fetchTodayDistance(); // เมตร
+  Future<double?> fetchLatestBloodOxygen(); // % (0-100)
+  Future<double?> fetchLatestHRV(); // ms
+  Future<int?> fetchTodayExerciseTime(); // นาที
 
   // ---- Full Sync Method (บันทึกลง Supabase) ----
   Future<List<DeviceHealthMetric>> fetchAllMetrics({

@@ -41,7 +41,9 @@ class DeviceHealthMetric {
       unit: json['unit'],
       measuredAt: DateTime.parse(json['measured_at']),
       sourceName: json['source_name'],
-      syncedAt: json['synced_at'] != null ? DateTime.parse(json['synced_at']) : null,
+      syncedAt: json['synced_at'] != null
+          ? DateTime.parse(json['synced_at'])
+          : null,
     );
   }
 }

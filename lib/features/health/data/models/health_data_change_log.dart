@@ -1,6 +1,7 @@
 class HealthDataChangeLog {
   final String id;
-  final int? sequence; // Can be calculated on client side or via DB window function
+  final int?
+  sequence; // Can be calculated on client side or via DB window function
   final DateTime timestamp;
   final String field;
   final String? oldValue;

@@ -988,10 +988,17 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                           // AREA 4: Horizontal Product Pills
                           Builder(
                             builder: (context) {
-                              final isAuthor = AuthService.instance.userId == _article?.authorId;
-                              final visibleProducts = _products.where((p) => p.isApproved || isAuthor).toList();
-                              
-                              if (visibleProducts.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
+                              final isAuthor =
+                                  AuthService.instance.userId ==
+                                  _article?.authorId;
+                              final visibleProducts = _products
+                                  .where((p) => p.isApproved || isAuthor)
+                                  .toList();
+
+                              if (visibleProducts.isEmpty)
+                                return const SliverToBoxAdapter(
+                                  child: SizedBox.shrink(),
+                                );
 
                               return SliverPersistentHeader(
                                 pinned: true,
@@ -1444,7 +1451,10 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                   decoration: BoxDecoration(
                                     color: Colors.white70,
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
                                     boxShadow: [
                                       BoxShadow(
                                         color: Colors.black12,
@@ -1455,13 +1465,19 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                   ),
                                   child: _article!.authorImage != null
                                       ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(26),
+                                          borderRadius: BorderRadius.circular(
+                                            26,
+                                          ),
                                           child: Image.network(
                                             _article!.authorImage!,
                                             fit: BoxFit.cover,
                                           ),
                                         )
-                                      : const Icon(Icons.person, color: Colors.grey, size: 30),
+                                      : const Icon(
+                                          Icons.person,
+                                          color: Colors.grey,
+                                          size: 30,
+                                        ),
                                 ),
                               ),
                             ],
@@ -1486,43 +1502,47 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                   _article!.content,
                                   contentStyle,
                                 ),
-                                  if (AuthService.instance.currentUser?.id == _article!.authorId)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: TextButton.icon(
-                                        onPressed: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                const ArticleTagRequestsPage(),
-                                          ),
-                                        ).then((_) => _fetchProducts()),
-                                        icon: const Icon(
-                                          Icons.notifications_active_outlined,
-                                          size: 16,
+                                if (AuthService.instance.currentUser?.id ==
+                                    _article!.authorId)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: TextButton.icon(
+                                      onPressed: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const ArticleTagRequestsPage(),
+                                        ),
+                                      ).then((_) => _fetchProducts()),
+                                      icon: const Icon(
+                                        Icons.notifications_active_outlined,
+                                        size: 16,
+                                        color: Colors.redAccent,
+                                      ),
+                                      label: const Text(
+                                        'คำขอแท็กสินค้าใหม่',
+                                        style: TextStyle(
+                                          fontSize: 13,
                                           color: Colors.redAccent,
-                                        ),
-                                        label: const Text(
-                                          'คำขอแท็กสินค้าใหม่',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.redAccent,
-                                            fontFamily: 'SukhumvitSet',
-                                            fontWeight: FontWeight.w900, // Maximum boldness
-                                          ),
-                                        ),
-                                        style: TextButton.styleFrom(
-                                          padding: EdgeInsets.zero,
-                                          minimumSize: Size.zero,
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          alignment: Alignment.centerLeft,
+                                          fontFamily: 'SukhumvitSet',
+                                          fontWeight: FontWeight
+                                              .w900, // Maximum boldness
                                         ),
                                       ),
+                                      style: TextButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        minimumSize: Size.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        alignment: Alignment.centerLeft,
+                                      ),
                                     ),
-                                  const SizedBox(height: 12),
+                                  ),
+                                const SizedBox(height: 12),
                                 GestureDetector(
-                                  onTap: () =>
-                                      setState(() => _isContentExpanded = false),
+                                  onTap: () => setState(
+                                    () => _isContentExpanded = false,
+                                  ),
                                   child: const Text(
                                     'ย่อเนื้อหา',
                                     style: TextStyle(
@@ -1576,7 +1596,11 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.reply, size: 16, color: Color(0xFFF1AE27)),
+                                Icon(
+                                  Icons.reply,
+                                  size: 16,
+                                  color: Color(0xFFF1AE27),
+                                ),
                                 SizedBox(width: 4),
                                 Text(
                                   'ตอบกลับ',
@@ -1765,7 +1789,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                 }
                 setModalState(() => isSearching = true);
                 try {
-                  final pharmacyRepo = ServiceLocator.instance.pharmacyRepository;
+                  final pharmacyRepo =
+                      ServiceLocator.instance.pharmacyRepository;
                   final results = await pharmacyRepo.getMedications(
                     searchQuery: query,
                     pageSize: 10,
@@ -1782,38 +1807,52 @@ class _HealthArticlePageState extends State<HealthArticlePage>
               Future<void> submitRequest(MedicationModel medication) async {
                 setModalState(() => isSubmitting = true);
                 try {
-                  final success = await ServiceLocator.instance.healthArticleRepository.requestArticleProduct(
-                    articleId: _article!.id,
-                    userId: AuthService.instance.userId!,
-                    name: medication.tradeName,
-                    url: null, // Don't use medication.id as it's not a valid URL format
-                    imageUrl: medication.imageUrl,
-                  );
-                  
+                  final success = await ServiceLocator
+                      .instance
+                      .healthArticleRepository
+                      .requestArticleProduct(
+                        articleId: _article!.id,
+                        userId: AuthService.instance.userId!,
+                        name: medication.tradeName,
+                        url:
+                            null, // Don't use medication.id as it's not a valid URL format
+                        imageUrl: medication.imageUrl,
+                      );
+
                   if (!mounted) return;
-                  
+
                   if (success) {
                     _fetchProducts(); // Refresh the list
                     Navigator.of(context).pop();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('ส่งคำขอระบุแท็กแล้ว รอเจ้าของบทความอนุมัติ')),
+                      const SnackBar(
+                        content: Text(
+                          'ส่งคำขอระบุแท็กแล้ว รอเจ้าของบทความอนุมัติ',
+                        ),
+                      ),
                     );
                   } else {
                     setModalState(() => isSubmitting = false);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('บันทึกคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')),
+                      const SnackBar(
+                        content: Text(
+                          'บันทึกคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+                        ),
+                      ),
                     );
                   }
                 } catch (e) {
                   setModalState(() => isSubmitting = false);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
                 }
               }
 
               return Dialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
                 backgroundColor: Colors.white,
                 child: Container(
                   padding: const EdgeInsets.all(20),
@@ -1842,7 +1881,11 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                       const SizedBox(height: 8),
                       const Text(
                         'ค้นหายาหรือผลิตภัณฑ์ที่ต้องการระบุในบทความนี้',
-                        style: TextStyle(fontSize: 13, color: Colors.grey, fontFamily: 'SukhumvitSet'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                          fontFamily: 'SukhumvitSet',
+                        ),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -1877,111 +1920,160 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                       Expanded(
                         child: isSearching
                             ? const Center(child: CircularProgressIndicator())
-                              : searchQuery.isEmpty
-                                ? Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'ยายอดนิยม',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          fontFamily: 'SukhumvitSet',
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: popularTags.map((tag) {
-                                          return InkWell(
-                                            onTap: () {
-                                              setModalState(() {
-                                                searchController.text = tag;
-                                                searchQuery = tag;
-                                              });
-                                              performSearch(tag);
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[100],
-                                                borderRadius: BorderRadius.circular(20),
-                                                border: Border.all(color: Colors.grey[300]!),
-                                              ),
-                                              child: Text(
-                                                tag,
-                                                style: const TextStyle(fontSize: 12, fontFamily: 'SukhumvitSet'),
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                      const Spacer(),
-                                      Center(
-                                        child: Column(
-                                          children: [
-                                            Icon(Icons.search, size: 48, color: Colors.grey[200]),
-                                            const SizedBox(height: 8),
-                                            const Text(
-                                              'พิมพ์เพื่อค้นหาสินค้าที่ต้องการ',
-                                              style: TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'SukhumvitSet'),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                    ],
-                                  )
-                                : searchResults.isEmpty
-                                    ? Center(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.search_off, size: 48, color: Colors.grey[300]),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'ไม่พบสินค้าชื่อ "$searchQuery"',
-                                              style: const TextStyle(color: Colors.grey, fontFamily: 'SukhumvitSet'),
-                                            ),
-                                          ],
-                                        ),
-                                      )
-                                : ListView.builder(
-                                    itemCount: searchResults.length,
-                                    itemBuilder: (context, idx) {
-                                      final med = searchResults[idx];
-                                      return ListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        leading: Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[200],
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: med.imageUrl != null
-                                              ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  child: Image.network(med.imageUrl!, fit: BoxFit.cover),
-                                                )
-                                              : const Icon(Icons.medication),
-                                        ),
-                                        title: Text(
-                                          med.tradeName,
-                                          style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'SukhumvitSet'),
-                                        ),
-                                        subtitle: Text(med.genericName ?? '', style: const TextStyle(fontSize: 12, fontFamily: 'SukhumvitSet')),
-                                        trailing: isSubmitting
-                                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                                          : TextButton(
-                                            onPressed: () => submitRequest(med),
-                                            child: const Text('ระบุแท็ก', style: TextStyle(fontFamily: 'SukhumvitSet')),
-                                          ),
-                                      );
-                                    },
+                            : searchQuery.isEmpty
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'ยายอดนิยม',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      fontFamily: 'SukhumvitSet',
+                                      color: Colors.black87,
+                                    ),
                                   ),
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: popularTags.map((tag) {
+                                      return InkWell(
+                                        onTap: () {
+                                          setModalState(() {
+                                            searchController.text = tag;
+                                            searchQuery = tag;
+                                          });
+                                          performSearch(tag);
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[100],
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.grey[300]!,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            tag,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontFamily: 'SukhumvitSet',
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  const Spacer(),
+                                  Center(
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.search,
+                                          size: 48,
+                                          color: Colors.grey[200],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          'พิมพ์เพื่อค้นหาสินค้าที่ต้องการ',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 13,
+                                            fontFamily: 'SukhumvitSet',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                ],
+                              )
+                            : searchResults.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off,
+                                      size: 48,
+                                      color: Colors.grey[300],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'ไม่พบสินค้าชื่อ "$searchQuery"',
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontFamily: 'SukhumvitSet',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: searchResults.length,
+                                itemBuilder: (context, idx) {
+                                  final med = searchResults[idx];
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: med.imageUrl != null
+                                          ? ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Image.network(
+                                                med.imageUrl!,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            )
+                                          : const Icon(Icons.medication),
+                                    ),
+                                    title: Text(
+                                      med.tradeName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily: 'SukhumvitSet',
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      med.genericName ?? '',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontFamily: 'SukhumvitSet',
+                                      ),
+                                    ),
+                                    trailing: isSubmitting
+                                        ? const SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : TextButton(
+                                            onPressed: () => submitRequest(med),
+                                            child: const Text(
+                                              'ระบุแท็ก',
+                                              style: TextStyle(
+                                                fontFamily: 'SukhumvitSet',
+                                              ),
+                                            ),
+                                          ),
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   ),
@@ -3878,14 +3970,10 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF1E3A8A,
-                            ).withOpacity(0.05),
+                            color: const Color(0xFF1E3A8A).withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: const Color(
-                                0xFF1E3A8A,
-                              ).withOpacity(0.2),
+                              color: const Color(0xFF1E3A8A).withOpacity(0.2),
                             ),
                           ),
                           child: Wrap(
@@ -4239,7 +4327,7 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
                 itemCount: products.isEmpty ? 3 : products.length,
                 itemBuilder: (context, index) {
                   String label = 'รายการ ${index + 1}';
-                  
+
                   // Color defaults (Red/Others)
                   Color baseColor = const Color(0xFFFDE4D3);
                   Color textColor = const Color(0xFFD3856E);
@@ -4247,7 +4335,7 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
                   if (index < products.length) {
                     final p = products[index];
                     label = p.name;
-                    
+
                     if (!p.isApproved) {
                       // Pending -> Grey/Text
                       baseColor = Colors.grey[200]!;
@@ -4268,8 +4356,16 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
                     }
                   } else {
                     // Fallback placeholders
-                    final colors = [const Color(0xFFCDE4F5), const Color(0xFFFEF3D3), const Color(0xFFFDE4D3)];
-                    final textColors = [const Color(0xFF5D9CDB), const Color(0xFFF1AE27), const Color(0xFFD3856E)];
+                    final colors = [
+                      const Color(0xFFCDE4F5),
+                      const Color(0xFFFEF3D3),
+                      const Color(0xFFFDE4D3),
+                    ];
+                    final textColors = [
+                      const Color(0xFF5D9CDB),
+                      const Color(0xFFF1AE27),
+                      const Color(0xFFD3856E),
+                    ];
                     baseColor = colors[index % colors.length];
                     textColor = textColors[index % textColors.length];
                   }
@@ -4279,15 +4375,17 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => PharmacyProductsPage(
-                            initialSearchQuery: label,
-                          ),
+                          builder: (context) =>
+                              PharmacyProductsPage(initialSearchQuery: label),
                         ),
                       );
                     },
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       constraints: const BoxConstraints(maxWidth: 180),
                       decoration: BoxDecoration(
                         color: baseColor.withOpacity(0.95),
@@ -4297,10 +4395,15 @@ class _ProductSectionDelegate extends SliverPersistentHeaderDelegate {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (index < products.length && products[index].taggedById == authorId)
+                          if (index < products.length &&
+                              products[index].taggedById == authorId)
                             const Padding(
                               padding: EdgeInsets.only(right: 6),
-                              child: Icon(Icons.verified, size: 14, color: Color(0xFF5D9CDB)),
+                              child: Icon(
+                                Icons.verified,
+                                size: 14,
+                                color: Color(0xFF5D9CDB),
+                              ),
                             ),
                           Flexible(
                             child: Text(

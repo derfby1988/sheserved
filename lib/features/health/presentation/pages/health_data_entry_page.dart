@@ -26,14 +26,14 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   String _gender = 'female';
   int? _age; // Nullable age, defaults to null (displayed as "-")
   double _height = 165.0; // cm
-  double _weight = 60.0;  // kg
+  double _weight = 60.0; // kg
   DateTime? _originalBirthday; // Keep track of the DB birthday
-  
+
   // UI State
   bool _isMetric = true; // true = Metric (cm/kg), false = Imperial (in/lb)
   bool _isLoading = true;
   bool _isSaving = false;
-  
+
   // Controllers & Keys
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -44,7 +44,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     super.initState();
     _loadExistingData();
   }
-  
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -58,7 +58,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     if (user == null) {
       if (mounted) {
         Navigator.pushReplacementNamed(
-          context, 
+          context,
           '/login',
           arguments: '/health-data-entry',
         );
@@ -70,34 +70,36 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       // Simulate network delay for shimmer effect demo
       await Future.delayed(const Duration(milliseconds: 1500));
 
-
       final healthRepo = ServiceLocator.instance.healthRepository;
       // Fetch profile which includes birthday and health_info
       final profile = await healthRepo.getConsumerProfileWithHealth(user.id);
 
       if (mounted) {
         setState(() {
-            if (profile != null) {
-              _originalBirthday = profile.birthday;
-              
-              // Priority: Calculated from Birthday > Existing Health Info > Default
-              
-              // 1. Try to calculate age from birthday
-              if (profile.birthday != null) {
-                _age = _calculateAge(profile.birthday!);
-              } 
-              // 2. Fallback to existing health info if available and birthday is missing
-              else if (profile.healthInfo != null && profile.healthInfo!['age'] != null) {
-                _age = profile.healthInfo!['age'];
-              }
+          if (profile != null) {
+            _originalBirthday = profile.birthday;
 
-              // Load other health info if available
-              if (profile.healthInfo != null) {
-                _gender = profile.healthInfo!['gender'] ?? 'female';
-                _height = (profile.healthInfo!['height'] as num?)?.toDouble() ?? 160.0;
-                _weight = (profile.healthInfo!['weight'] as num?)?.toDouble() ?? 50.0;
-              }
+            // Priority: Calculated from Birthday > Existing Health Info > Default
+
+            // 1. Try to calculate age from birthday
+            if (profile.birthday != null) {
+              _age = _calculateAge(profile.birthday!);
             }
+            // 2. Fallback to existing health info if available and birthday is missing
+            else if (profile.healthInfo != null &&
+                profile.healthInfo!['age'] != null) {
+              _age = profile.healthInfo!['age'];
+            }
+
+            // Load other health info if available
+            if (profile.healthInfo != null) {
+              _gender = profile.healthInfo!['gender'] ?? 'female';
+              _height =
+                  (profile.healthInfo!['height'] as num?)?.toDouble() ?? 160.0;
+              _weight =
+                  (profile.healthInfo!['weight'] as num?)?.toDouble() ?? 50.0;
+            }
+          }
           _isLoading = false;
         });
       }
@@ -113,7 +115,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   int _calculateAge(DateTime birthDate) {
     final today = DateTime.now();
     int age = today.year - birthDate.year;
-    if (today.month < birthDate.month || 
+    if (today.month < birthDate.month ||
         (today.month == birthDate.month && today.day < birthDate.day)) {
       age--;
     }
@@ -153,7 +155,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       }
     });
   }
-  
+
   void _toggleUnit() {
     setState(() {
       _isMetric = !_isMetric;
@@ -165,13 +167,13 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     final heightM = _height / 100;
     return _weight / (heightM * heightM);
   }
-  
+
   // Helper getters for display values
   double get _displayHeight {
     if (_isMetric) return _height;
     return _height / 2.54; // cm to inches
   }
-  
+
   double get _displayWeight {
     if (_isMetric) return _weight;
     return _weight / 0.453592; // kg to lbs
@@ -231,7 +233,9 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
             ),
             backgroundColor: Colors.yellow[800],
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -243,9 +247,11 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       // to avoid UI conflict with the loading overlay on web
       final userRepository = ServiceLocator.instance.userRepository;
       final healthRepository = ServiceLocator.instance.healthRepository;
-      
+
       DateTime? birthdayToSave = _originalBirthday;
-      int calculatedAgeFromOriginal = _originalBirthday != null ? _calculateAge(_originalBirthday!) : -1;
+      int calculatedAgeFromOriginal = _originalBirthday != null
+          ? _calculateAge(_originalBirthday!)
+          : -1;
 
       // Only sync if age is selected and different from current record
       if (_age != null && _age != calculatedAgeFromOriginal) {
@@ -273,8 +279,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
       );
 
       // Check if profile exists
-      ConsumerProfile? profile = await userRepository.getConsumerProfile(user.id);
-      
+      ConsumerProfile? profile = await userRepository.getConsumerProfile(
+        user.id,
+      );
+
       if (profile != null) {
         // --- DATA LOGGING START ---
         // Compare and log changes
@@ -336,7 +344,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           'health_info': healthInfo.toJson(),
           'birthday': birthdayToSave?.toIso8601String(),
         });
-        
+
         // Ensure health score is recalculated in metadata (handled by repo usually)
         await healthRepository.updateHealthInfo(user.id, healthInfo);
       } else {
@@ -346,18 +354,34 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           birthday: birthdayToSave,
           healthInfo: healthInfo.toJson(),
         );
-        
+
         // Log initial values for new profile? Optional, usually we just show current.
         // If we want history from day 1, we could log here too.
         // Let's log initial values as "New Record"
         healthRepository.logHealthChange(
-            userId: user.id, fieldType: 'weight', newValue: '$_weight กก.', editorName: 'ฉัน');
+          userId: user.id,
+          fieldType: 'weight',
+          newValue: '$_weight กก.',
+          editorName: 'ฉัน',
+        );
         healthRepository.logHealthChange(
-            userId: user.id, fieldType: 'height', newValue: '$_height ซม.', editorName: 'ฉัน');
+          userId: user.id,
+          fieldType: 'height',
+          newValue: '$_height ซม.',
+          editorName: 'ฉัน',
+        );
         healthRepository.logHealthChange(
-            userId: user.id, fieldType: 'age', newValue: '$_age ปี', editorName: 'ฉัน');
+          userId: user.id,
+          fieldType: 'age',
+          newValue: '$_age ปี',
+          editorName: 'ฉัน',
+        );
         healthRepository.logHealthChange(
-            userId: user.id, fieldType: 'bmi', newValue: _calculatedBMI.toStringAsFixed(1), editorName: 'ฉัน');
+          userId: user.id,
+          fieldType: 'bmi',
+          newValue: _calculatedBMI.toStringAsFixed(1),
+          editorName: 'ฉัน',
+        );
       }
 
       if (mounted) {
@@ -372,21 +396,23 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
             ),
             backgroundColor: const Color(0xFF5B9A8B),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
         final args = ModalRoute.of(context)?.settings.arguments;
         String nextRoute = '/health';
-        
+
         if (args is String && args.isNotEmpty) {
           nextRoute = args;
         } else if (args is Map<String, dynamic>) {
-          nextRoute = (args['redirect'] ?? args['route'] ?? '/health') as String;
+          nextRoute =
+              (args['redirect'] ?? args['route'] ?? '/health') as String;
         }
 
-        Navigator.pushReplacementNamed(context, nextRoute); 
+        Navigator.pushReplacementNamed(context, nextRoute);
       }
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -410,8 +436,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
     // Generate a default date based on the age selected (e.g., Today's date Y years ago)
     final now = DateTime.now();
     final effectiveAge = _age ?? 25;
-    DateTime initialDate = _originalBirthday ?? DateTime(now.year - effectiveAge, now.month, now.day);
-    
+    DateTime initialDate =
+        _originalBirthday ??
+        DateTime(now.year - effectiveAge, now.month, now.day);
+
     // Ensure initialDate is reasonable if selected age changed
     if (_calculateAge(initialDate) != effectiveAge) {
       initialDate = DateTime(now.year - effectiveAge, now.month, now.day);
@@ -426,21 +454,31 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: const Row(
                 children: [
                   Icon(Icons.cake, color: Color(0xFF5B9A8B)),
                   SizedBox(width: 10),
-                  Text('ยืนยันวันเกิดของคุณ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    'ยืนยันวันเกิดของคุณ',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('อายุที่คุณเลือก ไม่ตรงกับวันเกิดที่เคยบันทึกไว้ หรืออาจยังไม่เคยกรอก'),
+                  const Text(
+                    'อายุที่คุณเลือก ไม่ตรงกับวันเกิดที่เคยบันทึกไว้ หรืออาจยังไม่เคยกรอก',
+                  ),
                   const SizedBox(height: 16),
-                  const Text('กรุณาเลือกวันเกิดที่ถูกต้อง เพื่อให้เราคำนวณคะแนนสุขภาพได้แม่นยำที่สุด:', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const Text(
+                    'กรุณาเลือกวันเกิดที่ถูกต้อง เพื่อให้เราคำนวณคะแนนสุขภาพได้แม่นยำที่สุด:',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -479,16 +517,26 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                const Icon(Icons.calendar_today, size: 20, color: Color(0xFF5B9A8B)),
+                                const Icon(
+                                  Icons.calendar_today,
+                                  size: 20,
+                                  color: Color(0xFF5B9A8B),
+                                ),
                               ],
                             ),
                           ),
                         ),
-                        const VerticalDivider(width: 20, color: Color(0xFF5B9A8B)),
+                        const VerticalDivider(
+                          width: 20,
+                          color: Color(0xFF5B9A8B),
+                        ),
                         // Year part
                         InkWell(
                           onTap: () async {
-                            final int? selectedYear = await _showThaiYearPicker(context, selectedDate.year);
+                            final int? selectedYear = await _showThaiYearPicker(
+                              context,
+                              selectedDate.year,
+                            );
                             if (selectedYear != null) {
                               setDialogState(() {
                                 selectedDate = DateTime(
@@ -516,45 +564,66 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text('อายุที่คำนวณได้: ${_calculateAge(selectedDate)} ปี', 
-                      style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF5B9A8B))),
+                  Text(
+                    'อายุที่คำนวณได้: ${_calculateAge(selectedDate)} ปี',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF5B9A8B),
+                    ),
+                  ),
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(null),
-                  child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+                  child: const Text(
+                    'ยกเลิก',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(selectedDate),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5B9A8B),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: const Text('ยืนยันและบันทึก', style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    'ยืนยันและบันทึก',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ],
             );
-          }
+          },
         );
       },
     );
   }
 
-  Future<int?> _showThaiYearPicker(BuildContext context, int initialYear) async {
+  Future<int?> _showThaiYearPicker(
+    BuildContext context,
+    int initialYear,
+  ) async {
     final int currentYearBE = DateTime.now().year + 543;
     final int startYearBE = initialYear + 543;
     final int selectedIndex = currentYearBE - startYearBE;
-    
+
     // Calculate initial scroll offset (roughly 3 items per row, row height ~50)
     final double initialOffset = (selectedIndex ~/ 3) * 50.0;
-    final ScrollController scrollController = ScrollController(initialScrollOffset: initialOffset);
+    final ScrollController scrollController = ScrollController(
+      initialScrollOffset: initialOffset,
+    );
 
     return showDialog<int>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('เลือกปี พ.ศ.', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text(
+            'เลือกปี พ.ศ.',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: SizedBox(
             width: double.maxFinite,
             height: 300,
@@ -578,14 +647,18 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFF5B9A8B) : null,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF5B9A8B).withOpacity(0.3)),
+                        border: Border.all(
+                          color: const Color(0xFF5B9A8B).withOpacity(0.3),
+                        ),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         '$yearBE',
                         style: TextStyle(
                           color: isSelected ? Colors.white : Colors.black,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -619,7 +692,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
               children: [
                 // 1. Top Navigation Bar (Fixed)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8.0,
+                  ),
                   child: TlzAppTopBar.onLight(
                     leading: BackButton(
                       color: const Color(0xFF5A7E28),
@@ -631,7 +707,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                     onCartTap: () {},
                   ),
                 ),
-                
+
                 // 2. Page Header & Unit Toggle
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -650,11 +726,16 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                         onPressed: _toggleUnit,
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF5A7E28),
-                          backgroundColor: const Color(0xFF5A7E28).withOpacity(0.1),
+                          backgroundColor: const Color(
+                            0xFF5A7E28,
+                          ).withOpacity(0.1),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                         ),
                         child: Text(
                           _isMetric ? 'Metric' : 'Imperial',
@@ -678,7 +759,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                             children: [
                               const SizedBox(height: 10),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
@@ -717,7 +801,9 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                                 unit: _isMetric ? 'เซนติเมตร' : 'นิ้ว',
                                 minValue: _isMetric ? 100 : 39,
                                 maxValue: _isMetric ? 250 : 98,
-                                initialValue: double.parse(_displayHeight.toStringAsFixed(1)),
+                                initialValue: double.parse(
+                                  _displayHeight.toStringAsFixed(1),
+                                ),
                                 step: _isMetric ? 1 : 0.5,
                                 onChanged: _onHeightChanged,
                               ),
@@ -728,7 +814,9 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                                 unit: _isMetric ? 'กิโลกรัม' : 'ปอนด์',
                                 minValue: _isMetric ? 30 : 66,
                                 maxValue: _isMetric ? 200 : 440,
-                                initialValue: double.parse(_displayWeight.toStringAsFixed(1)),
+                                initialValue: double.parse(
+                                  _displayWeight.toStringAsFixed(1),
+                                ),
                                 step: _isMetric ? 1 : 1,
                                 onChanged: _onWeightChanged,
                               ),
@@ -739,7 +827,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                           ),
                         ),
                 ),
-                
+
                 // Next Button
                 Container(
                   padding: const EdgeInsets.all(24.0),
@@ -869,26 +957,61 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(width: 80, height: 80, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 24),
-                Container(width: 80, height: 80, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 36),
             // Age Placeholder
             Container(width: 100, height: 40, color: Colors.white),
             const SizedBox(height: 16),
-            Container(width: double.infinity, height: 120, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
             const SizedBox(height: 36),
             // Ruler Placeholder 1
             Container(width: 100, height: 24, color: Colors.white),
             const SizedBox(height: 8),
-            Container(width: double.infinity, height: 130, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            Container(
+              width: double.infinity,
+              height: 130,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
             const SizedBox(height: 36),
             // Ruler Placeholder 2
             Container(width: 100, height: 24, color: Colors.white),
             const SizedBox(height: 8),
-            Container(width: double.infinity, height: 130, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            Container(
+              width: double.infinity,
+              height: 130,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ],
         ),
       ),
@@ -903,16 +1026,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            _bmiColor.withOpacity(0.1),
-            _bmiColor.withOpacity(0.05),
-          ],
+          colors: [_bmiColor.withOpacity(0.1), _bmiColor.withOpacity(0.05)],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _bmiColor.withOpacity(0.3),
-          width: 1,
-        ),
+        border: Border.all(color: _bmiColor.withOpacity(0.3), width: 1),
       ),
       child: Column(
         children: [
@@ -924,10 +1041,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                 children: [
                   Text(
                     'ค่า BMI ของคุณ',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -941,7 +1055,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: _bmiColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(16),
@@ -968,7 +1085,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   Widget _buildBMIScaleIndicator() {
     final bmi = _calculatedBMI.clamp(15.0, 40.0);
     final position = ((bmi - 15) / 25).clamp(0.0, 1.0);
-    
+
     return Column(
       children: [
         Stack(
@@ -1019,7 +1136,10 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('15', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
-            Text('18.5', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+            Text(
+              '18.5',
+              style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+            ),
             Text('23', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
             Text('25', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
             Text('30', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
@@ -1031,8 +1151,20 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
   }
 
   String _getThaiShortMonth(int month) {
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
     return months[month - 1];
   }
 }
-

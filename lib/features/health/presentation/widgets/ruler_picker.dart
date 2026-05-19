@@ -25,7 +25,8 @@ class RulerPicker extends StatefulWidget {
   State<RulerPicker> createState() => _RulerPickerState();
 }
 
-class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStateMixin {
+class _RulerPickerState extends State<RulerPicker>
+    with SingleTickerProviderStateMixin {
   late ScrollController _scrollController;
   late AnimationController _glowController;
   final double _itemWidth = 12.0;
@@ -39,7 +40,7 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
     final initialOffset = (widget.initialValue - widget.minValue) * _itemWidth;
     _scrollController = ScrollController(initialScrollOffset: initialOffset);
     _scrollController.addListener(_onScroll);
-    
+
     _glowController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -48,24 +49,25 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    
+
     final offset = _scrollController.offset;
     final value = widget.minValue + (offset / _itemWidth);
     final clampedValue = value.clamp(widget.minValue, widget.maxValue);
-    
+
     // Calculate the stepped value
-    final steppedValue = (clampedValue / widget.step).roundToDouble() * widget.step;
-    
+    final steppedValue =
+        (clampedValue / widget.step).roundToDouble() * widget.step;
+
     // Only update and notify if the stepped value has actually changed
     if ((steppedValue - _currentValue).abs() >= widget.step / 2) {
       // Small threshold to avoid floating point issues
       setState(() {
         _currentValue = steppedValue;
       });
-      
+
       // Notify parent
       widget.onChanged(double.parse(steppedValue.toStringAsFixed(1)));
-      
+
       // Haptic feedback (optional check for efficiency)
       HapticFeedback.selectionClick();
     }
@@ -85,7 +87,7 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
           ),
         ),
         const SizedBox(height: 8),
-        
+
         // Value with Animation
         TweenAnimationBuilder<double>(
           duration: const Duration(milliseconds: 100),
@@ -99,17 +101,14 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: _isDragging 
+                      color: _isDragging
                           ? const Color(0xFF679E83)
                           : const Color(0xFF679E83),
                     ),
                   ),
                   TextSpan(
                     text: widget.unit,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -148,7 +147,7 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 // Ruler ScrollView
                 GestureDetector(
                   onPanStart: (_) => setState(() => _isDragging = true),
@@ -167,12 +166,14 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                       padding: EdgeInsets.symmetric(
                         horizontal: MediaQuery.of(context).size.width / 2,
                       ),
-                      itemCount: (widget.maxValue - widget.minValue).toInt() + 1,
+                      itemCount:
+                          (widget.maxValue - widget.minValue).toInt() + 1,
                       itemBuilder: (context, index) {
                         final value = widget.minValue + index;
                         final isMajor = value % 5 == 0;
                         final isSuperMajor = value % 10 == 0;
-                        final isCurrentValue = (value - _currentValue).abs() < 0.5;
+                        final isCurrentValue =
+                            (value - _currentValue).abs() < 0.5;
 
                         return SizedBox(
                           width: _itemWidth,
@@ -183,18 +184,22 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 width: isCurrentValue ? 3 : (isMajor ? 2 : 1),
-                                height: isCurrentValue 
-                                    ? 45 
+                                height: isCurrentValue
+                                    ? 45
                                     : (isSuperMajor ? 35 : (isMajor ? 22 : 14)),
                                 decoration: BoxDecoration(
                                   color: isCurrentValue
                                       ? Colors.white
-                                      : Colors.white.withOpacity(isMajor ? 0.8 : 0.5),
+                                      : Colors.white.withOpacity(
+                                          isMajor ? 0.8 : 0.5,
+                                        ),
                                   borderRadius: BorderRadius.circular(2),
                                   boxShadow: isCurrentValue
                                       ? [
                                           BoxShadow(
-                                            color: Colors.white.withOpacity(0.5),
+                                            color: Colors.white.withOpacity(
+                                              0.5,
+                                            ),
                                             blurRadius: 4,
                                           ),
                                         ]
@@ -211,8 +216,8 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                                         ? Colors.white
                                         : Colors.white.withOpacity(0.8),
                                     fontSize: isCurrentValue ? 14 : 12,
-                                    fontWeight: isCurrentValue 
-                                        ? FontWeight.bold 
+                                    fontWeight: isCurrentValue
+                                        ? FontWeight.bold
                                         : FontWeight.w500,
                                   ),
                                 )
@@ -248,15 +253,13 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
                           ],
                         ),
                         child: CustomPaint(
-                          painter: TrianglePainter(
-                            color: Colors.white,
-                          ),
+                          painter: TrianglePainter(color: Colors.white),
                         ),
                       );
                     },
                   ),
                 ),
-                
+
                 // Side Gradient Overlays
                 Positioned(
                   left: 0,
@@ -305,14 +308,14 @@ class _RulerPickerState extends State<RulerPicker> with SingleTickerProviderStat
   void _snapToNearestValue() {
     final targetValue = _currentValue.round().toDouble();
     final targetOffset = (targetValue - widget.minValue) * _itemWidth;
-    
+
     _scrollController.animateTo(
       targetOffset,
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
   }
-  
+
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);

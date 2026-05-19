@@ -225,16 +225,20 @@ class HealthConnectSource implements HealthDataSource {
     try {
       final steps = await _health.getTotalStepsInInterval(from, to);
       if (steps != null && steps > 0) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'steps',
-          value: steps,
-          unit: 'count',
-          measuredAt: from,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'steps',
+            value: steps,
+            unit: 'count',
+            measuredAt: from,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync steps error: $e'); }
+    } catch (e) {
+      print('Sync steps error: $e');
+    }
 
     // --- 2. อัตราการเต้นหัวใจ (Heart Rate) ---
     try {
@@ -244,16 +248,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in hrData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'heart_rate',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'bpm',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'heart_rate',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'bpm',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync heart_rate error: $e'); }
+    } catch (e) {
+      print('Sync heart_rate error: $e');
+    }
 
     // --- 3. ระยะทาง (Distance Delta) ---
     try {
@@ -263,16 +271,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in distData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'distance',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'meters',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'distance',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'meters',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync distance error: $e'); }
+    } catch (e) {
+      print('Sync distance error: $e');
+    }
 
     // --- 4. แคลอรี่ (Active Energy Burned) ---
     try {
@@ -282,16 +294,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in calData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'active_calories',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'kcal',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'active_calories',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'kcal',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync active_calories error: $e'); }
+    } catch (e) {
+      print('Sync active_calories error: $e');
+    }
 
     // --- 5. การนอนหลับ (Sleep Session) ---
     try {
@@ -301,16 +317,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in sleepData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'sleep_session',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'minutes',
-          measuredAt: d.dateFrom,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'sleep_session',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'minutes',
+            measuredAt: d.dateFrom,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync sleep error: $e'); }
+    } catch (e) {
+      print('Sync sleep error: $e');
+    }
 
     // --- 6. ออกซิเจนในเลือด (SpO2) ---
     try {
@@ -320,16 +340,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in spo2Data) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'blood_oxygen',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: '%',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'blood_oxygen',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: '%',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync SpO2 error: $e'); }
+    } catch (e) {
+      print('Sync SpO2 error: $e');
+    }
 
     // --- 7. HRV ---
     try {
@@ -339,16 +363,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in hrvData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'hrv_rmssd',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'ms',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'hrv_rmssd',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'ms',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync HRV error: $e'); }
+    } catch (e) {
+      print('Sync HRV error: $e');
+    }
 
     // --- 8. ระยะเวลาออกกำลังกาย ---
     try {
@@ -358,16 +386,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in exData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'exercise_time',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'minutes',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'exercise_time',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'minutes',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync exercise_time error: $e'); }
+    } catch (e) {
+      print('Sync exercise_time error: $e');
+    }
 
     // --- 9. น้ำหนัก (Weight) ---
     try {
@@ -377,16 +409,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in weightData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'weight',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: 'kg',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'weight',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: 'kg',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync weight error: $e'); }
+    } catch (e) {
+      print('Sync weight error: $e');
+    }
 
     // --- 10. มวลไขมัน (Body Fat) ---
     try {
@@ -396,16 +432,20 @@ class HealthConnectSource implements HealthDataSource {
         endTime: to,
       );
       for (var d in bfData) {
-        metrics.add(DeviceHealthMetric(
-          userId: userId,
-          metricType: 'body_fat_percentage',
-          value: (d.value as NumericHealthValue).numericValue,
-          unit: '%',
-          measuredAt: d.dateTo,
-          sourceName: sourceName,
-        ));
+        metrics.add(
+          DeviceHealthMetric(
+            userId: userId,
+            metricType: 'body_fat_percentage',
+            value: (d.value as NumericHealthValue).numericValue,
+            unit: '%',
+            measuredAt: d.dateTo,
+            sourceName: sourceName,
+          ),
+        );
       }
-    } catch (e) { print('Sync body_fat error: $e'); }
+    } catch (e) {
+      print('Sync body_fat error: $e');
+    }
 
     return metrics;
   }
