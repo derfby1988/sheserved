@@ -886,92 +886,286 @@ class _HealthPageState extends ConsumerState<HealthPage> with SingleTickerProvid
   void _showDeviceDetailsBottomSheet(BuildContext context, HealthState healthState) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        final sourceName = healthState.activeSource?.sourceName ?? 'Unknown Source';
+        return Consumer(
+          builder: (context, ref, child) {
+            final s = ref.watch(healthProvider);
+            final sourceName = s.activeSource?.sourceName ?? 'Unknown Source';
 
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+            // Helper functions
+            String intStr(int? v) => v != null ? '$v' : '--';
+            String dblStr(double? v, {int decimals = 1}) => v != null ? v.toStringAsFixed(decimals) : '--';
+            String sleepStr(int? min) => min != null ? '${min ~/ 60}h ${min % 60}m' : '--';
+            String distStr(double? m) => m != null ? '${(m / 1000).toStringAsFixed(2)} km' : '--';
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.watch, size: 40, color: Color(0xFF5B9A8B)),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'นาฬิกาสุขภาพ',
-                          style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold),
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF5B9A8B).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        Text(
-                          'Linked via $sourceName',
-                          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                        child: const Icon(Icons.watch, size: 30, color: Color(0xFF5B9A8B)),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'นาฬิกาสุขภาพ',
+                              style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                const Icon(Icons.link, size: 14, color: Color(0xFF5B9A8B)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Linked via $sourceName',
+                                  style: AppTextStyles.caption.copyWith(color: const Color(0xFF5B9A8B), fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                      if (s.isSyncing)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF5B9A8B)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Container(height: 1, color: AppColors.divider),
+                  const SizedBox(height: 20),
+
+                  // Metrics Grid: Row 1
+                  _buildMetricRow([
+                    _MetricCell(
+                      value: intStr(s.todaySteps),
+                      label: 'ก้าวเดิน',
+                      unit: 'steps',
+                      color: AppColors.primary,
+                      icon: Icons.directions_walk,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Column(
-                    children: [
-                      Text(
-                        '${healthState.todaySteps}',
-                        style: AppTextStyles.heading2.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                    _MetricCell(
+                      value: intStr(s.latestHeartRate),
+                      label: 'ชีพจร',
+                      unit: 'BPM',
+                      color: Colors.redAccent,
+                      icon: Icons.favorite,
+                    ),
+                    _MetricCell(
+                      value: sleepStr(s.lastSleepDuration),
+                      label: 'การนอน',
+                      unit: '',
+                      color: Colors.indigoAccent,
+                      icon: Icons.bedtime,
+                    ),
+                    _MetricCell(
+                      value: dblStr(s.todayActiveCalories, decimals: 0),
+                      label: 'แคลอรี่',
+                      unit: 'kcal',
+                      color: Colors.deepOrangeAccent,
+                      icon: Icons.local_fire_department,
+                    ),
+                  ]),
+
+                  const SizedBox(height: 20),
+
+                  // Metrics Grid: Row 2
+                  _buildMetricRow([
+                    _MetricCell(
+                      value: distStr(s.todayDistance),
+                      label: 'ระยะทาง',
+                      unit: '',
+                      color: Colors.teal,
+                      icon: Icons.map_outlined,
+                    ),
+                    _MetricCell(
+                      value: dblStr(s.latestBloodOxygen),
+                      label: 'ออกซิเจน',
+                      unit: '%',
+                      color: Colors.blue,
+                      icon: Icons.air,
+                    ),
+                    _MetricCell(
+                      value: dblStr(s.latestHRV),
+                      label: 'HRV',
+                      unit: 'ms',
+                      color: Colors.purple,
+                      icon: Icons.graphic_eq,
+                    ),
+                    _MetricCell(
+                      value: intStr(s.todayExerciseTime),
+                      label: 'ออกกำลัง',
+                      unit: 'นาที',
+                      color: Colors.green,
+                      icon: Icons.fitness_center,
+                    ),
+                  ]),
+
+                  const SizedBox(height: 16),
+
+                  // Last sync time
+                  if (s.lastSyncedAt != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.sync, size: 12, color: Color(0xFF9E9E9E)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'ซิงค์ล่าสุด: ${_formatSyncTime(s.lastSyncedAt!)}',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textHint,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text('ก้าวเดินวันนี้', style: AppTextStyles.caption),
+                    ),
+
+                  const SizedBox(height: 20),
+
+                  // Buttons Section
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: s.isSyncing ? Colors.grey.shade200 : Colors.grey.shade100,
+                            foregroundColor: s.isSyncing ? AppColors.textHint : AppColors.textPrimary,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: s.isSyncing
+                              ? null
+                              : () {
+                                  ref.read(healthProvider.notifier).forceSync();
+                                },
+                          child: s.isSyncing
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF5B9A8B)),
+                                )
+                              : const Text('ซิงค์ข้อมูลเดี๋ยวนี้', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade50,
+                            foregroundColor: Colors.red,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: s.isSyncing
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  ref.read(healthProvider.notifier).disconnect();
+                                },
+                          child: const Text('ยกเลิกการเชื่อมต่อ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                     ],
                   ),
-                  Container(width: 1, height: 40, color: AppColors.divider),
-                  Column(
-                    children: [
-                      Text(
-                        healthState.latestHeartRate != null ? '${healthState.latestHeartRate}' : '--',
-                        style: AppTextStyles.heading2.copyWith(color: Colors.redAccent, fontWeight: FontWeight.bold),
-                      ),
-                      Text('อัตราการเต้นหัวใจ (BPM)', style: AppTextStyles.caption),
-                    ],
+                  const SizedBox(height: 12),
+                  Text(
+                    'จัดการสิทธิ์เพิ่มเติมได้ที่ การตั้งค่า > สุขภาพ > การเข้าถึงข้อมูล',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textHint, fontSize: 10),
                   ),
+                  const SizedBox(height: 12),
                 ],
               ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade50,
-                  foregroundColor: Colors.red,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ref.read(healthProvider.notifier).disconnect();
-                },
-                child: const Text('ยกเลิกการเชื่อมต่อ', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'คุณสามารถจัดการสิทธิ์การเข้าถึงข้อมูลได้ในการตั้งค่าของระบบ',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.caption.copyWith(color: AppColors.textHint, fontSize: 10),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
+
+  Widget _buildMetricRow(List<_MetricCell> cells) {
+    return Row(
+      children: cells.map((cell) {
+        final isLast = cells.indexOf(cell) == cells.length - 1;
+        return Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Icon(cell.icon, size: 20, color: cell.color),
+                    const SizedBox(height: 6),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        cell.value,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: cell.value == '--' ? AppColors.textHint : cell.color,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    if (cell.unit.isNotEmpty)
+                      Text(
+                        cell.unit,
+                        style: AppTextStyles.caption.copyWith(fontSize: 9, color: AppColors.textHint),
+                      ),
+                    Text(
+                      cell.label,
+                      style: AppTextStyles.caption.copyWith(fontSize: 10, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isLast)
+                Container(width: 1, height: 48, color: AppColors.divider),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _formatSyncTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'เมื่อสักครู่';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} นาทีที่แล้ว';
+    if (diff.inHours < 24) return '${diff.inHours} ชั่วโมงที่แล้ว';
+    return '${diff.inDays} วันที่แล้ว';
+  }
+
 
   /// Health Score Section
   Widget _buildHealthScoreSection(BuildContext context) {
@@ -1336,3 +1530,20 @@ class _CurvedTopBackgroundPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+class _MetricCell {
+  final String value;
+  final String label;
+  final String unit;
+  final Color color;
+  final IconData icon;
+
+  const _MetricCell({
+    required this.value,
+    required this.label,
+    required this.unit,
+    required this.color,
+    required this.icon,
+  });
+}
+

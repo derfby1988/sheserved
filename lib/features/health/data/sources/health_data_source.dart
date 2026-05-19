@@ -1,27 +1,30 @@
+import '../models/device_health_metric.dart';
+
+/// Abstract interface สำหรับ Health Data Source ทุกประเภท
 abstract class HealthDataSource {
-  /// ชื่อของแหล่งข้อมูล เช่น 'Apple Health', 'Health Connect', 'Garmin'
+  /// ชื่อของแหล่งข้อมูล
   String get sourceName;
 
-  /// ตรวจสอบว่าอุปกรณ์รองรับ API นี้หรือไม่
   Future<bool> isAvailable();
-
-  /// ร้องขอสิทธิ์การเข้าถึงข้อมูลจาก OS หรือเชื่อมต่อ OAuth
   Future<bool> requestPermissions();
-
-  /// ตรวจสอบว่าแอปได้รับสิทธิ์หรือยัง
   Future<bool> hasPermissions();
-
-  /// ยกเลิกการเข้าถึงข้อมูล (ถ้าทำได้)
   Future<void> revokeAccess();
 
-  /// --- Data Fetching Methods ---
-  
-  /// ดึงข้อมูลก้าวเดินของวันนี้
+  // ---- Quick Summary Methods (แสดงใน UI) ----
+
   Future<int> fetchTodaySteps();
-
-  /// ดึงข้อมูลอัตราการเต้นของหัวใจล่าสุด
   Future<int?> fetchLatestHeartRate();
+  Future<int?> fetchLastSleepDuration();       // นาที
+  Future<double?> fetchTodayActiveCalories();  // kcal
+  Future<double?> fetchTodayDistance();        // เมตร
+  Future<double?> fetchLatestBloodOxygen();    // % (0-100)
+  Future<double?> fetchLatestHRV();            // ms
+  Future<int?> fetchTodayExerciseTime();       // นาที
 
-  /// ดึงข้อมูลระยะเวลาการนอนหลับล่าสุด (นาที)
-  Future<int?> fetchLastSleepDuration();
+  // ---- Full Sync Method (บันทึกลง Supabase) ----
+  Future<List<DeviceHealthMetric>> fetchAllMetrics({
+    required String userId,
+    required DateTime from,
+    required DateTime to,
+  });
 }

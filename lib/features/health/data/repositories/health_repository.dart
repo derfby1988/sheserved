@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/health_info.dart';
 import '../models/health_data_change_log.dart';
+import '../models/device_health_metric.dart';
 import '../../../auth/data/models/user_model.dart';
 
 /// Health Repository - จัดการข้อมูลสุขภาพใน Database
@@ -171,4 +172,75 @@ class HealthRepository {
       return null;
     }
   }
+
+  /// บันทึกข้อมูลสุขภาพรายวันลงตารางใหม่
+  Future<void> syncDeviceMetrics(List<DeviceHealthMetric> metrics) async {
+    if (metrics.isEmpty) return;
+
+    try {
+      final data = metrics.map((m) => m.toJson()).toList();
+      await _client.from('device_health_metrics').insert(data);
+    } catch (e) {
+      print('Error syncing device metrics: $e');
+    }
+  }
+
+  /// อัปเดตน้ำหนักใน consumer_profiles เมื่อได้ค่าใหม่จากตาชั่งอัจฉริยะ
+  /// พร้อมคำนวณ BMI ใหม่และบันทึก Log
+  Future<void> updateWeightFromDevice({
+    required String userId,
+    required double weight,
+    required String sourceName,
+  }) async {
+    try {
+      // 1. ดึงข้อมูล health_info ปัจจุบัน
+      final response = await _client
+          .from('consumer_profiles')
+          .select('health_info')
+          .eq('user_id', userId)
+          .single();
+
+      final currentInfo = Map<String, dynamic>.from(response['health_info'] ?? {});
+      final oldWeight = (currentInfo['weight'] as num?)?.toDouble();
+
+      // ถ้าน้ำหนักเท่าเดิม ไม่ต้องอัปเดต
+      if (oldWeight != null && (oldWeight - weight).abs() < 0.1) return;
+
+      // 2. คำนวณ BMI ใหม่จากส่วนสูงที่มีอยู่
+      final height = (currentInfo['height'] as num?)?.toDouble();
+      double? newBmi;
+      if (height != null && height > 0) {
+        final heightM = height / 100.0;
+        newBmi = weight / (heightM * heightM);
+      }
+
+      // 3. อัปเดตค่าใน health_info
+      final updatedInfo = {
+        ...currentInfo,
+        'weight': weight,
+        if (newBmi != null) 'bmi': double.parse(newBmi.toStringAsFixed(1)),
+      };
+
+      await _client
+          .from('consumer_profiles')
+          .update({
+            'health_info': updatedInfo,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', userId);
+
+      // 4. บันทึก Log การเปลี่ยนแปลงน้ำหนัก
+      await logHealthChange(
+        userId: userId,
+        fieldType: 'weight',
+        oldValue: oldWeight?.toString(),
+        newValue: weight.toString(),
+        editorName: '$sourceName (Auto Sync)',
+      );
+    } catch (e) {
+      print('updateWeightFromDevice error: $e');
+    }
+  }
 }
+
+
