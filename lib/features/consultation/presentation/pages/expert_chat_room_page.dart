@@ -262,8 +262,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         elevation: 0,
@@ -364,6 +366,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           _buildInput(),
         ],
       ),
+    ),
     );
   }
 

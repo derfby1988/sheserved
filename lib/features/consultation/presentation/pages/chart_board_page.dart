@@ -138,9 +138,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     _initChat();
     _loadPackages();
-
-    _initChat();
-    _loadPackages();
   }
 
   void _startTimer() {
@@ -819,22 +816,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _scrollController.dispose();
     _audioRecorder.dispose();
     _messagesSub?.cancel();
+    _expertStatusSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
-          stops: [0.0, 0.5, 1.0],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
+            stops: [0.0, 0.5, 1.0],
+          ),
         ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
@@ -863,7 +863,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      _isProvider ? "Patient Consultation" : "Expert Group",
+                      _isProvider ? "ห้องปรึกษา (มุมมองแพทย์)" : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม",
                       style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
                     ),
                   ],
@@ -895,6 +895,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -1206,53 +1207,24 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Image button
-                  _buildInputIconButton(
-                    icon: Icons.image_outlined,
-                    onTap: _pickAndSendImage,
-                  ),
-                  // Expert Tools (Prescription/Summary)
                   if (_isProvider) ...[
                     _buildInputIconButton(
-                      icon: Icons.medication_outlined,
-                      tooltip: 'ใบสั่งยา',
-                      onTap: () {
-                        final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
-                        final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (ctx) => PrescriptionEditorPage(
-                              consultationId: consultationId,
-                              patientId: patientId,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    _buildInputIconButton(
-                      icon: Icons.assignment_outlined,
-                      tooltip: 'สรุปผล',
-                      onTap: () {
-                        final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
-                        final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (ctx) => ConsultationNoteEditorPage(
-                              consultationId: consultationId,
-                              patientId: patientId,
-                            ),
-                          ),
-                        );
-                      },
+                      icon: Icons.attach_file,
+                      tooltip: 'เครื่องมือแพทย์',
+                      onTap: _showAttachmentMenu,
                     ),
                     const SizedBox(width: 4),
                     _buildInputIconButton(
                       icon: Icons.bolt,
                       tooltip: 'ข้อความด่วน',
                       onTap: _showQuickReplies,
+                    ),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    _buildInputIconButton(
+                      icon: Icons.image_outlined,
+                      tooltip: 'ส่งรูปภาพ',
+                      onTap: _pickAndSendImage,
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -1798,36 +1770,166 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  void _showQuickReplies() {
-    final List<String> templates = [
-      'สวัสดีครับ หมอรับเคสแล้วครับ',
-      'กรุณาส่งรูปภาพบริเวณที่มีอาการครับ',
-      'พบอาการมานานเท่าไรแล้วครับ?',
-      'มีประวัติแพ้ยาอะไรไหมครับ?',
-      'ขอบคุณสำหรับข้อมูลครับ หมอกำลังพิจารณาการรักษา',
-    ];
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          child: Wrap(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+                child: Text(
+                  'เครื่องมือเพิ่มเติม',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  child: const Icon(Icons.image_outlined, color: AppColors.primary),
+                ),
+                title: const Text('ส่งรูปภาพ'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndSendImage();
+                },
+              ),
+              if (_isProvider) ...[
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: const Icon(Icons.medication_outlined, color: AppColors.primary),
+                  ),
+                  title: const Text('ออกใบสั่งยา'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+                    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => PrescriptionEditorPage(
+                          consultationId: consultationId,
+                          patientId: patientId,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: const Icon(Icons.assignment_outlined, color: AppColors.primary),
+                  ),
+                  title: const Text('สรุปผลการรักษา'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
+                    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => ConsultationNoteEditorPage(
+                          consultationId: consultationId,
+                          patientId: patientId,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showQuickReplies() async {
+    final providerId = _currentUser?.id;
+    if (providerId == null) return;
+
+    List<String> templates = [];
+
+    // Show loading indicator if needed (optional)
+    
+    try {
+      final data = await Supabase.instance.client
+          .from('doctor_quick_replies')
+          .select()
+          .eq('provider_id', providerId)
+          .order('sort_order');
+          
+      templates = (data as List).map((e) => e['content'] as String).toList();
+    } catch (e) {
+      debugPrint('Error fetching quick replies: $e');
+      // Fallback if table doesn't exist or fails
+    }
+
+    if (templates.isEmpty) {
+      templates = [
+        'สวัสดีครับ หมอรับเคสแล้วครับ',
+        'กรุณาส่งรูปภาพบริเวณที่มีอาการครับ',
+        'พบอาการมานานเท่าไรแล้วครับ?',
+        'มีประวัติแพ้ยาอะไรไหมครับ?',
+        'ขอบคุณสำหรับข้อมูลครับ หมอกำลังพิจารณาการรักษา',
+      ];
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('ข้อความตอบกลับด่วน', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 16),
-            ...templates.map((txt) => ListTile(
-              leading: const Icon(Icons.flash_on, color: Colors.amber),
-              title: Text(txt),
-              onTap: () {
-                Navigator.pop(ctx);
-                _sendSpecialMessage('text', txt);
-              },
-            )),
-            const SizedBox(height: 20),
-          ],
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('ข้อความตอบกลับด่วน', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 16),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: templates.map((txt) => ListTile(
+                          leading: const Icon(Icons.flash_on, color: Colors.amber),
+                          title: Text(txt),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _sendSpecialMessage('text', txt);
+                          },
+                        )).toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
