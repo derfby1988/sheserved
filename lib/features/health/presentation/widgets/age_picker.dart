@@ -18,10 +18,10 @@ class AgePicker extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<AgePicker> createState() => _AgePickerState();
+  State<AgePicker> createState() => AgePickerState();
 }
 
-class _AgePickerState extends State<AgePicker> {
+class AgePickerState extends State<AgePicker> {
   late FixedExtentScrollController _controller;
   int? _currentAge;
 
@@ -34,6 +34,20 @@ class _AgePickerState extends State<AgePicker> {
         ? 0
         : widget.initialAge! - widget.minAge + 1;
     _controller = FixedExtentScrollController(initialItem: initialItem);
+  }
+
+  /// Programmatically scroll the wheel to a specific age and update state.
+  void scrollToAge(int age) {
+    if (age < widget.minAge || age > widget.maxAge) return;
+    final targetItem = age - widget.minAge + 1; // +1 for the "-" item at index 0
+    _controller.animateToItem(
+      targetItem,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+    );
+    setState(() {
+      _currentAge = age;
+    });
   }
 
   @override

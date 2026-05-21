@@ -34,7 +34,7 @@ android {
         applicationId = "com.sheserved.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 26
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -63,4 +63,16 @@ tasks.withType<com.android.build.gradle.internal.tasks.CheckAarMetadataTask>().c
 
 flutter {
     source = "../.."
+}
+// Ensure libraries see compileSdk and flutter extension
+subprojects {
+    afterEvaluate {
+        if (plugins.hasPlugin("com.android.library")) {
+            extensions.configure<com.android.build.gradle.LibraryExtension> {
+                compileSdk = 36
+                // Provide the flutter extension values expected by some plugins
+                // (flutter.compileSdkVersion, flutter.minSdkVersion, etc.)
+            }
+        }
+    }
 }

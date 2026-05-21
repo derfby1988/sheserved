@@ -261,6 +261,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
           return;
         }
         birthdayToSave = confirmedDate;
+        _age = _calculateAge(confirmedDate);
       }
 
       // NOW set saving state for actual DB operation
