@@ -330,7 +330,7 @@ class _HealthProgramRequestDashboardState
   // ─── Sliver App Bar ────
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
-      expandedHeight: _isProvider ? 280 : 230,
+      expandedHeight: _isProvider ? 300 : 250,
       pinned: true,
       stretch: true,
       backgroundColor: AppColors.primary,

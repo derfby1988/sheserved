@@ -1359,8 +1359,10 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 | **Medical Tools** | ✅ สมบูรณ์ | เชื่อมต่อกับ `PrescriptionEditor` และ `ConsultationNoteEditor` แล้ว |
 | **PDPA Privacy** | ✅ สมบูรณ์ | ระบบ Camera Only + Face Blur + Watermark อัตโนมัติ |
 | **Video Call** | ✅ สมบูรณ์ | เชื่อมต่อกับระบบ `live_vdo_page.dart` โดยใช้ Room ID ของเซสชั่น |
-| **Rating & Review** | ✅ สมบูรณ์ | ระบบให้คะแนนและบันทึกลงตาราง `consultation_reviews` หลังจบงาน |
+| **Rating & Review** | ✅ สมบูรณ์ | ระบบให้คะแนนและบันทึกลงตาราง `consultation_reviews` หลังจบงานเรียบร้อย |
 | **Auto-Close Logic** | ✅ สมบูรณ์ | ล็อกห้องแชทใน DB (is_active: false) ทันทีเมื่อหมดเวลา |
+| **Provider Room Join** | ✅ สมบูรณ์ | `_ensureConsultationRoom()` อัปเดตและ append providerId เข้า `participant_ids` เมื่อแพทย์เข้าร่วมแชทเรียบร้อย |
+| **Provider Availability Reset** | ✅ สมบูรณ์ | `_showFinishDialog()` คืน status เป็น `online` หลังแพทย์จบงานเรียบร้อย |
 
 ### 3. สิ่งที่ดำเนินการสำเร็จในเซสชั่นนี้
 1. **Dynamic Expert Status:** ใช้ Stream สังเกตการณ์สถานะการเข้าร่วมของผู้เชี่ยวชาญทุกคนในห้อง
@@ -1370,7 +1372,182 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 ---
 
-✅ **โครงการ CHAT CONSULTATION IMPROVEMENT (Phase 1-6) เสร็จสมบูรณ์ พร้อมใช้งานระดับ Production**
+## 🛠️ Phase 6.1: ChartBoardPage Bug Fixes & Completion (🔄 กำลังดำเนินการ)
+
+> **ที่มา:** ตรวจสอบเปรียบเทียบโค้ดระหว่าง `expert_chat_room_page.dart` (ต้นแบบ) กับ `chart_board_page.dart` (ปลายทาง) พบ 3 Bug หลัก และ 4 จุดปรับปรุง เรียงตามลำดับความสำคัญ
+
+### ลำดับการแก้ไข (Priority Order)
 
 ---
-*Last Updated: 2026-05-16*
+
+#### 🔴 Fix #1 — Provider Availability Reset หลังจบงาน (Critical)
+**ไฟล์:** `chart_board_page.dart` → `_showFinishDialog()`  
+**ปัญหา:** เมื่อแพทย์กดปุ่ม "จบงาน" ระบบอัปเดตสถานะ consultation เป็น `completed` เท่านั้น **แต่ไม่ได้คืนสถานะ availability ของแพทย์** กลับเป็น `online` ทำให้แพทย์ค้างอยู่ใน `busy` state และรับงานใหม่ไม่ได้
+
+**ผลกระทบ:** แพทย์ต้องออกจากระบบแล้วเข้าใหม่ หรือเปลี่ยนสถานะเองทุกครั้ง
+
+**แนวทางแก้ไข:**
+```dart
+// _showFinishDialog() → onPressed ของปุ่ม "ยืนยัน"
+final authUser = AuthService.instance.currentUser;
+final consultationId = widget.entry?.id;
+if (consultationId != null && authUser != null) {
+  final repo = ServiceLocator.instance.consultationRepository;
+  final userRepo = UserRepository(Supabase.instance.client);
+  
+  await repo.updateStatus(consultationId, 'completed');
+  await userRepo.setAvailabilityStatus(authUser.id, 'online'); // ← เพิ่ม
+  
+  if (mounted) Navigator.pop(context);
+}
+```
+**สถานะ:** - [x] เสร็จสิ้น (Fix #1 Completed)
+
+---
+
+#### 🔴 Fix #2 — ปุ่มส่งคะแนนใน ReviewCard ไม่ทำงาน (Critical)
+**ไฟล์:** `chart_board_page.dart` → `_buildReviewCard()`  
+**ปัญหา:** ปุ่ม "ส่งคะแนน" มี `onPressed: () {}` ว่างเปล่า ผู้ป่วยกดแล้วไม่มีผลใดๆ ทำให้ Review flow ที่วางแผนไว้ไม่ทำงานจริง
+
+**แนวทางแก้ไข:** ผูก `onPressed` ให้เรียก `_showRatingDialog()` ซึ่งมีอยู่แล้วในไฟล์
+
+```dart
+// _buildReviewCard() → ElevatedButton
+onPressed: _hasReviewed ? null : _showRatingDialog, // ← แก้จาก () {}
+child: Text(_hasReviewed ? 'ให้คะแนนแล้ว ✓' : 'ส่งคะแนน'),
+```
+**สถานะ:** - [x] เสร็จสิ้น (Fix #2 Completed)
+
+---
+
+#### 🟡 Fix #3 — Provider ไม่ถูก append เข้า participant_ids เมื่อ Room มีอยู่แล้ว (High)
+**ไฟล์:** `chart_board_page.dart` → `_ensureConsultationRoom()`  
+**ปัญหา:** ใน `expert_chat_room_page.dart` เดิม มี logic ตรวจสอบว่า providerId อยู่ใน `participant_ids` หรือยัง ถ้าไม่มีจะ append เพิ่ม แต่ใน `ChartBoardPage` ทำเฉพาะกรณี room ยังไม่มี ทำให้แพทย์ที่เข้าห้องอาจไม่ได้อยู่ใน participant list และ Realtime subscription ที่กรองด้วย participant_ids อาจไม่ทำงาน
+
+**แนวทางแก้ไข:** เพิ่ม logic ใน `_ensureConsultationRoom()` หลังจาก check ว่า room มีแล้ว:
+```dart
+// กรณี room มีอยู่แล้ว — ตรวจสอบและ append providerId
+} else if (_isProvider) {
+  final existing = await supabase
+      .from('chat_rooms')
+      .select('participant_ids')
+      .eq('id', roomId)
+      .maybeSingle();
+  
+  final participants = List<String>.from(existing?['participant_ids'] ?? []);
+  if (!participants.contains(currentUserId)) {
+    participants.add(currentUserId);
+    await supabase.from('chat_rooms').update({
+      'participant_ids': participants,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', roomId);
+  }
+}
+```
+**สถานะ:** - [x] เสร็จสิ้น (Fix #3 Completed)
+
+---
+
+#### 🟡 Fix #4 — Memory Leak: `_expertStatusSub` ไม่ถูก cancel ใน dispose() (Medium)
+**ไฟล์:** `chart_board_page.dart` → `dispose()`  
+**ปัญหา:** `_expertStatusSub` เปิด Stream subscription ไว้ใน `_initChat()` แต่ใน `dispose()` (บรรทัด 812-820) ไม่มีการ cancel ทำให้เกิด memory leak และ error `setState() called after dispose()`
+
+**แนวทางแก้ไข:**
+```dart
+@override
+void dispose() {
+  _fadeController.dispose();
+  _slideController.dispose();
+  _msgController.dispose();
+  _scrollController.dispose();
+  _audioRecorder.dispose();
+  _messagesSub?.cancel();
+  _expertStatusSub?.cancel(); // ← เพิ่ม
+  super.dispose();
+}
+```
+**สถานะ:** - [ ] ยังไม่แก้ไข
+
+---
+
+#### 🟢 Fix #5 — `_initChat()` ถูกเรียก 2 ครั้งใน `initState()` (Low)
+**ไฟล์:** `chart_board_page.dart` → `initState()` (บรรทัด 138-142)  
+**ปัญหา:** `_initChat()` และ `_loadPackages()` ถูกเรียกซ้ำ 2 รอบ ทำให้มีการ query DB ซ้ำโดยไม่จำเป็น และอาจเกิด race condition ใน setState
+
+**แนวทางแก้ไข:** ลบบรรทัดที่ซ้ำออก:
+```dart
+// initState() — คงไว้เพียงรอบเดียว
+_initChat();      // ← คงไว้บรรทัด 138
+_loadPackages();  // ← คงไว้บรรทัด 139
+// ลบบรรทัด 141-142 ออก (ซ้ำกัน)
+```
+**สถานะ:** - [ ] ยังไม่แก้ไข
+
+---
+
+#### 🟢 Fix #6 — AppBar subtitle ข้อความ Role สลับกัน (Low)
+**ไฟล์:** `chart_board_page.dart` → `build()` (บรรทัด 863)  
+**ปัญหา:** `_isProvider ? "Patient Consultation" : "Expert Group"` — เมื่อเป็นแพทย์แสดง "Patient Consultation" แต่เมื่อเป็นผู้ป่วยกลับแสดง "Expert Group" ซึ่งสลับกัน
+
+**แนวทางแก้ไข:**
+```dart
+// บรรทัด 863 — แก้ข้อความให้ถูก role
+_isProvider ? "ห้องปรึกษา (มุมมองแพทย์)" : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม",
+```
+**สถานะ:** - [ ] ยังไม่แก้ไข
+
+---
+
+#### 🔵 Fix #7 — Quick Replies เป็น Hardcode ไม่ดึงจาก DB (Enhancement)
+**ไฟล์:** `chart_board_page.dart` → `_showQuickReplies()`  
+**ปัญหา:** รายการ Quick Reply ถูก hardcode ไว้ใน code แทนที่จะดึงจากตาราง `doctor_quick_replies` ตามที่ Schema กำหนดไว้ใน Phase 3 ทำให้แพทย์แต่ละคนใช้ template เดียวกันไม่สามารถปรับแต่งได้
+
+**แนวทางแก้ไข:**
+```dart
+// _showQuickReplies() — ดึงจาก DB แทน
+Future<void> _showQuickReplies() async {
+  final providerId = _currentUser?.id;
+  if (providerId == null) return;
+  
+  final data = await Supabase.instance.client
+      .from('doctor_quick_replies')
+      .select()
+      .eq('provider_id', providerId)
+      .order('sort_order');
+  
+  final templates = (data as List).map((e) => e['content'] as String).toList();
+  // ถ้าไม่มี custom templates ให้ใช้ default
+  if (templates.isEmpty) {
+    templates.addAll([
+      'สวัสดีครับ หมอรับเคสแล้วครับ',
+      'กรุณาส่งรูปภาพบริเวณที่มีอาการครับ',
+      'พบอาการมานานเท่าไรแล้วครับ?',
+      'มีประวัติแพ้ยาอะไรไหมครับ?',
+    ]);
+  }
+  // แสดง BottomSheet เหมือนเดิม...
+}
+```
+**สถานะ:** - [ ] ยังไม่แก้ไข  
+**หมายเหตุ:** ต้องสร้างตาราง `doctor_quick_replies` ใน DB ก่อน (Schema อยู่ใน Phase 3 ของแผนนี้)
+
+---
+
+### สรุปลำดับงาน Phase 6.1
+
+| ลำดับ | Fix | ความสำคัญ | เวลาโดยประมาณ | สถานะ |
+|---|---|---|---|---|
+| 1 | Provider Availability Reset | 🔴 Critical | 10 นาที | ✅ เสร็จสิ้น |
+| 2 | Review Card onPressed | 🔴 Critical | 5 นาที | ✅ เสร็จสิ้น |
+| 3 | Provider Room Participant Append | 🟡 High | 15 นาที | ✅ เสร็จสิ้น |
+| 4 | Memory Leak expertStatusSub | 🟡 Medium | 5 นาที | ✅ เสร็จสิ้น |
+| 5 | initChat() Double Call | 🟢 Low | 2 นาที | ✅ เสร็จสิ้น |
+| 6 | AppBar Subtitle Text | 🟢 Low | 2 นาที | ✅ เสร็จสิ้น |
+| 7 | Quick Replies from DB | 🔵 Enhancement | 30 นาที | ⬜ รอดำเนินการ |
+
+---
+
+⚠️ **โครงการ CHAT CONSULTATION IMPROVEMENT (Phase 1-5) เสร็จสมบูรณ์ — Phase 6 มี 7 รายการที่ต้องแก้ไขเพิ่มเติม (Phase 6.1)**
+
+---
+*Last Updated: 2026-05-20*

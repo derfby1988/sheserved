@@ -41,6 +41,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   final _audioRecorder = AudioRecorder();
 
   String? _consultationRoomId;
+  String? _activeConsultationId;
 
   List<ChatMessage> _messages = [];
   bool _isChatLoading = true;
@@ -353,11 +354,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       // 1. Determine Room ID & Consultation ID
-      String? consultationId;
-      if (widget.entry != null) {
-        consultationId = widget.entry!.id;
-      } else if (widget.request != null) {
-        consultationId = widget.request!.id;
+      String? consultationId = _activeConsultationId;
+      if (consultationId == null) {
+        if (widget.entry != null) {
+          consultationId = widget.entry!.id;
+        } else if (widget.request != null) {
+          consultationId = widget.request!.id;
+        }
       }
 
       if (consultationId == null || consultationId.isEmpty) {
@@ -842,7 +845,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
           title: Row(
             children: [
-              _buildTimerBadge(),
+              Flexible(child: FittedBox(child: _buildTimerBadge())),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -1473,7 +1476,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // 2. Save to Repository
       final repo = ServiceLocator.instance.consultationRepository;
-      await repo.createRequest(
+      final newRequest = await repo.createRequest(
         userId: currentUserId,
         packageId: widget.request?.packageId ?? '',
         packageName: widget.request?.packageName ?? '',
@@ -1496,6 +1499,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         
         // Transition to Chat Mode
         setState(() {
+          _activeConsultationId = newRequest.id;
           _isConsultationActive = true;
           _isHeaderExpanded = false;
         });

@@ -37,14 +37,31 @@ class ConsultationEntry {
         ? 'ผู้ป่วยไม่ระบุชื่อ'
         : '$firstName $lastName'.trim();
 
-    final bodyAreaMap = map['body_area'] as Map<String, dynamic>? ?? {};
-    String bodyArea =
-        bodyAreaMap['area'] as String? ??
-        bodyAreaMap['label'] as String? ??
-        bodyAreaMap['part'] as String? ??
-        (bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').isNotEmpty 
-            ? bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').join(', ') 
-            : bodyAreaMap['gender']?.toString() ?? 'ไม่ระบุ');
+    final symptomsList = (map['symptoms'] as List?)
+        ?.map((e) => e['display_label'] as String?)
+        .where((e) => e != null)
+        .cast<String>()
+        .toList() ?? [];
+
+    final symptomsChart = map['symptoms_chart'] as Map<String, dynamic>? ?? {};
+
+    String bodyArea = 'ไม่ระบุ';
+    if (symptomsList.isNotEmpty) {
+      bodyArea = symptomsList.join(', ');
+    } else if (symptomsChart.isNotEmpty && symptomsChart.containsKey('parts')) {
+      final parts = symptomsChart['parts'] as List?;
+      if (parts != null && parts.isNotEmpty) {
+        bodyArea = parts.map((p) => p['label']?.toString() ?? '').where((s) => s.isNotEmpty).join(', ');
+      }
+    } else {
+      final bodyAreaMap = map['body_area'] as Map<String, dynamic>? ?? {};
+      bodyArea = bodyAreaMap['area'] as String? ??
+          bodyAreaMap['label'] as String? ??
+          bodyAreaMap['part'] as String? ??
+          (bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').isNotEmpty 
+              ? bodyAreaMap.keys.where((k) => k != 'gender' && k != 'age' && k != 'lang').join(', ') 
+              : 'ไม่ระบุ');
+    }
 
     final consultationId = map['id'] as String? ?? 'unknown';
     // ✅ roomId ต้องสร้างจาก consultation_id เสมอ เพื่อให้เป็นแบบ 1:1

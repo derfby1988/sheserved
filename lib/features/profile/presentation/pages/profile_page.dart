@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/rendering.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
+import 'package:sheserved/features/consultation/presentation/pages/manage_quick_replies_page.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
@@ -394,7 +395,17 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
                         ),
                       ),
-                    if (isProvider)
+                    if (isProvider) ...[
+                      SizedBox(
+                        width: tabWidth,
+                        child: _buildTabItem(
+                          icon: Icons.edit_note,
+                          text: 'จัดการ Quick Replies',
+                          isActive: false,
+                          activeColor: Colors.purple,
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ManageQuickRepliesPage())),
+                        ),
+                      ),
                       SizedBox(
                         width: tabWidth,
                         child: _buildTabItem(
@@ -405,6 +416,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
