@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/chat_models.dart';
@@ -29,6 +30,8 @@ class ChatRoomPage extends StatefulWidget {
 
 class _ChatRoomPageState extends State<ChatRoomPage> {
   final _chatRepository = ServiceLocator.instance.chatRepository;
+  final _healthPermissionRepository =
+      ServiceLocator.instance.healthDataPermissionRepository;
   final _currentUser = ServiceLocator.instance.currentUser;
   final _webSocketService = ServiceLocator.instance.websocketService;
   final TextEditingController _msgController = TextEditingController();
@@ -36,12 +39,14 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   StreamSubscription? _callInviteSub;
   StreamSubscription? _callAcceptSub;
+  RealtimeChannel? _healthPermissionChannel;
 
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
   List<ChatParticipant> _otherParticipants = [];
   bool _isOtherTyping = false;
   Timer? _typingTimer;
+  Timer? _healthPermissionPollTimer;
 
   final _audioRecorder = AudioRecorder();
   bool _isRecording = false;
@@ -49,13 +54,30 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   StreamSubscription<ChatRoom?>? _roomSub;
   ChatRoom? _currentRoom;
-  bool get _isProvider =>
-      AuthService.instance.currentUser?.professionId != null;
+  bool get _isProvider {
+    final pid = AuthService.instance.currentUser?.professionId;
+    return pid != null && pid != '00000000-0000-0000-0000-000000000001';
+  }
+
+  Map<String, dynamic>? _healthPermissionRequest;
+  String? _lastShownHealthPermissionRequestId;
+  bool _isHealthPermissionDialogOpen = false;
+
+  String? get _consultationId {
+    final roomId = widget.roomId;
+    if (roomId.startsWith('consult_')) {
+      return roomId.substring('consult_'.length);
+    }
+    return roomId.isEmpty ? null : roomId;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadInitialData();
+    _loadLatestHealthPermission();
+    _subscribeHealthPermissionUpdates();
+    _startHealthPermissionPolling();
     _listenForCalls();
 
     _roomSub = _chatRepository.streamRoom(widget.roomId).listen((room) {
@@ -92,6 +114,214 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       _scrollToBottom();
       _markMessagesAsRead(msgs);
     }
+  }
+
+  Future<void> _loadLatestHealthPermission() async {
+    if (_isProvider) return;
+    final consultationId = _consultationId;
+    final patientId = _currentUser?.id;
+    if (consultationId == null || patientId == null) return;
+
+    final existing = await _healthPermissionRepository.getPendingForPatient(
+      consultationId: consultationId,
+      patientId: patientId,
+    );
+
+    if (!mounted) return;
+    setState(() => _healthPermissionRequest = existing);
+    if (existing != null) {
+      debugPrint('[HealthPerm][ChatRoom] Loaded pending request: $existing');
+      _maybeShowHealthPermissionDialog(existing);
+    }
+  }
+
+  void _startHealthPermissionPolling() {
+    if (_isProvider) return;
+    _healthPermissionPollTimer?.cancel();
+    _healthPermissionPollTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) {
+        if (!mounted || _isProvider) return;
+        _loadLatestHealthPermission();
+      },
+    );
+  }
+
+  void _subscribeHealthPermissionUpdates() {
+    if (_isProvider) return;
+    final currentUserId = _currentUser?.id;
+    if (currentUserId == null) return;
+
+    _healthPermissionChannel?.unsubscribe();
+    _healthPermissionChannel = Supabase.instance.client
+        .channel('health_perm_chat_$currentUserId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'health_data_permission_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'patient_id',
+            value: currentUserId,
+          ),
+          callback: (payload) {
+            final newRecord = payload.newRecord;
+            debugPrint('[HealthPerm][ChatRoom] INSERT: $newRecord');
+            if (mounted && newRecord != null) {
+              setState(() {
+                _healthPermissionRequest = newRecord;
+              });
+              _maybeShowHealthPermissionDialog(newRecord);
+            }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'health_data_permission_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'patient_id',
+            value: currentUserId,
+          ),
+          callback: (payload) {
+            final updated = payload.newRecord;
+            debugPrint('[HealthPerm][ChatRoom] UPDATE: $updated');
+            if (mounted && updated != null) {
+              setState(() {
+                _healthPermissionRequest = updated;
+              });
+              _maybeShowHealthPermissionDialog(updated);
+            }
+          },
+        )
+        .subscribe();
+
+    debugPrint('[HealthPerm][ChatRoom] Subscribed for patient=$currentUserId');
+  }
+
+  void _maybeShowHealthPermissionDialog(Map<String, dynamic> request) {
+    if (_isProvider) return;
+    final requestId = request['id']?.toString();
+    final status = request['status']?.toString();
+    if (requestId == null || status != 'pending') return;
+    if (_isHealthPermissionDialogOpen ||
+        requestId == _lastShownHealthPermissionRequestId) {
+      return;
+    }
+
+    _lastShownHealthPermissionRequestId = requestId;
+    _isHealthPermissionDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _isProvider) {
+        _isHealthPermissionDialogOpen = false;
+        return;
+      }
+      try {
+        await _showHealthPermissionDialog(request);
+      } finally {
+        _isHealthPermissionDialogOpen = false;
+      }
+    });
+  }
+
+  Future<void> _showHealthPermissionDialog(Map<String, dynamic> request) async {
+    final defaultFields = {
+      'general': true,
+      'history': true,
+      'labs': true,
+      'medications': true,
+    };
+    final grantedFromRequest = request['granted_fields'] as Map<String, dynamic>?;
+    Map<String, bool> fields = grantedFromRequest != null
+        ? grantedFromRequest.map((key, value) => MapEntry(key, value == true))
+        : Map<String, bool>.from(defaultFields);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Wrap(
+                children: [
+                  const ListTile(
+                    title: Text('อนุญาตดูข้อมูลสุขภาพ'),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ข้อมูลทั่วไป'),
+                    value: fields['general']!,
+                    onChanged: (v) => setState(() => fields['general'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ประวัติการรักษา'),
+                    value: fields['history']!,
+                    onChanged: (v) => setState(() => fields['history'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ผลแลบ'),
+                    value: fields['labs']!,
+                    onChanged: (v) => setState(() => fields['labs'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ยาที่กำหนด'),
+                    value: fields['medications']!,
+                    onChanged: (v) => setState(() => fields['medications'] = v),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final granted = fields.map((k, v) => MapEntry(k, v));
+                              await _healthPermissionRepository.respondPermission(
+                                requestId: request['id'] as String,
+                                granted: true,
+                                grantedFields: granted,
+                              );
+                              if (mounted) {
+                                setState(() {
+                                  _healthPermissionRequest = null;
+                                });
+                              }
+                              Navigator.pop(context);
+                            },
+                            child: const Text('ยอมให้'),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            await _healthPermissionRepository.respondPermission(
+                              requestId: request['id'] as String,
+                              granted: false,
+                              grantedFields: fields,
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _healthPermissionRequest = null;
+                              });
+                            }
+                            Navigator.pop(context);
+                          },
+                          child: const Text('ปฏิเสธ'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _markMessagesAsRead(List<ChatMessage> messages) {
@@ -717,6 +947,32 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 }
               },
             ),
+          if (_healthPermissionRequest != null &&
+              _healthPermissionRequest!['status'] == 'pending' &&
+              !_isProvider)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'แพทย์ ${_healthPermissionRequest!['doctor_name'] ?? 'Doctor'} ขอสิทธิ์ดูข้อมูลสุขภาพ',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        _showHealthPermissionDialog(_healthPermissionRequest!),
+                    child: const Text('ข้อมูลที่อนุญาต'),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: Stack(
               children: [
@@ -902,8 +1158,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   void dispose() {
     _roomSub?.cancel();
     _typingTimer?.cancel();
+    _healthPermissionPollTimer?.cancel();
     _callInviteSub?.cancel();
     _callAcceptSub?.cancel();
+    _healthPermissionChannel?.unsubscribe();
     if (_currentUser != null) {
       _chatRepository.sendTypingStatus(widget.roomId, _currentUser.id, false);
     }

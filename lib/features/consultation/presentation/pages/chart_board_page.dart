@@ -35,6 +35,8 @@ class ChartBoardPage extends StatefulWidget {
 class _ChartBoardPageState extends State<ChartBoardPage>
     with TickerProviderStateMixin {
   final _chatRepository = ServiceLocator.instance.chatRepository;
+  final _healthPermissionRepository =
+      ServiceLocator.instance.healthDataPermissionRepository;
   final _currentUser = AuthService.instance.currentUser;
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -52,6 +54,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isProvider = false;
 
   StreamSubscription? _messagesSub;
+  Timer? _healthPermissionPollTimer;
   List<ConsultationPackage> _availablePackages = [];
   ConsultationPackage? _selectedPackage;
   bool _isLoadingPackages = false;
@@ -138,6 +141,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     _initChat();
     _loadPackages();
+    _subscribeHealthPermissionUpdates();
+    _startHealthPermissionPolling();
   }
 
   void _startTimer() {
@@ -369,7 +374,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       final roomId = 'consult_$consultationId';
-      setState(() => _consultationRoomId = roomId);
+      setState(() {
+        _consultationRoomId = roomId;
+        _activeConsultationId = consultationId;
+      });
+
+      await _loadLatestHealthPermission();
+      _subscribeHealthPermissionUpdates();
 
       // 2. Fetch Consultation & Room Details
       final results = await Future.wait([
@@ -817,6 +828,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _audioRecorder.dispose();
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
+    _healthPermissionPollTimer?.cancel();
+    _healthPermissionChannel?.unsubscribe();
     super.dispose();
   }
 
@@ -877,26 +890,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
         body: Column(
           children: [
-            // Health Data Permission Banner (shows when pending request)
-            if (_healthPermissionRequest != null && _healthPermissionRequest!['status'] == 'pending')
-              Container(
-                width: double.infinity,
-                color: Colors.orange.shade50,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'แพทย์ ${_healthPermissionRequest!['doctor_name'] ?? 'Doctor'} ขอสิทธิ์ดูข้อมูลสุขภาพ',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                    ),
-                    TextButton(
-                      onPressed: () => _showHealthPermissionDialog(_healthPermissionRequest!),
-                      child: const Text('ข้อมูลที่อนุญาต'),
-                    ),
-                  ],
-                ),
-              ),
+            // Health Data Permission Status Banner — Doctor side only
+            if (_isProvider && _healthPermissionRequest != null)
+              _buildHealthPermissionStatusBanner(_healthPermissionRequest!),
             _buildExpertStatusBanner(),
             _buildBodyMapSummary(),
             Expanded(
@@ -1208,45 +1204,328 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  Widget _buildHealthPermissionStatusBanner(Map<String, dynamic> req) {
+    final status = req['status']?.toString() ?? 'pending';
+    Color bgColor;
+    Color textColor;
+    IconData icon;
+    String label;
+
+    switch (status) {
+      case 'granted':
+        bgColor = const Color(0xFFE8F5E9);
+        textColor = const Color(0xFF2E7D32);
+        icon = Icons.check_circle_outline;
+        label = 'ผู้ป่วยอนุมัติการเข้าถึงข้อมูลสุขภาพแล้ว';
+        break;
+      case 'denied':
+        bgColor = const Color(0xFFFFEBEE);
+        textColor = Colors.redAccent;
+        icon = Icons.cancel_outlined;
+        label = 'ผู้ป่วยปฏิเสธคำขอดูข้อมูลสุขภาพ';
+        break;
+      default:
+        bgColor = Colors.orange.shade50;
+        textColor = Colors.orange.shade800;
+        icon = Icons.hourglass_top_rounded;
+        label = 'รอผู้ป่วยตอบรับคำขอดูข้อมูลสุขภาพ...';
+    }
+
+    return Container(
+      width: double.infinity,
+      color: bgColor,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: textColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // State variable to hold current health permission request
   Map<String, dynamic>? _healthPermissionRequest;
+
+  String? _lastShownHealthPermissionRequestId;
+  bool _isHealthPermissionDialogOpen = false;
+
+  void _startHealthPermissionPolling() {
+    if (!_isProvider) return;
+    _healthPermissionPollTimer?.cancel();
+    _healthPermissionPollTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) async {
+        if (!mounted || !_isProvider) return;
+        final consultationId = _activeConsultationId;
+        final doctorId = _currentUser?.id;
+        if (consultationId == null || doctorId == null) return;
+
+        final latest = await _healthPermissionRepository.getLatestRequest(
+          consultationId: consultationId,
+          doctorId: doctorId,
+        );
+        if (!mounted || latest == null) return;
+
+        final prevStatus = _healthPermissionRequest?['status'];
+        final newStatus = latest['status'];
+        if (prevStatus == newStatus) return;
+
+        setState(() => _healthPermissionRequest = latest);
+
+        if (newStatus == 'granted' && prevStatus == 'pending') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ ผู้ป่วยอนุมัติการเข้าถึงข้อมูลสุขภาพแล้ว'),
+              backgroundColor: Color(0xFF4A8B2C),
+            ),
+          );
+        } else if (newStatus == 'denied' && prevStatus == 'pending') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ ผู้ป่วยปฏิเสธคำขอดูข้อมูลสุขภาพ'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  // Real-time channel for health permission updates
+  RealtimeChannel? _healthPermissionChannel;
+
+  Future<void> _loadLatestHealthPermission() async {
+    final consultationId = _activeConsultationId;
+    if (consultationId == null) return;
+
+    Map<String, dynamic>? existing;
+    if (_isProvider) {
+      final providerId = _currentUser?.id;
+      if (providerId == null) return;
+      existing = await _healthPermissionRepository.getLatestRequest(
+        consultationId: consultationId,
+        doctorId: providerId,
+      );
+    } else {
+      final patientId = widget.entry?.patientId ?? widget.request?.userId;
+      if (patientId == null) return;
+      existing = await _healthPermissionRepository.getPendingForPatient(
+        consultationId: consultationId,
+        patientId: patientId,
+      );
+    }
+
+    if (mounted) {
+      setState(() => _healthPermissionRequest = existing);
+    }
+
+    if (!mounted || _isProvider || existing == null) return;
+
+    final requestId = existing['id']?.toString();
+    final status = existing['status']?.toString();
+    if (status == 'pending' &&
+        requestId != null &&
+        requestId != _lastShownHealthPermissionRequestId) {
+      _lastShownHealthPermissionRequestId = requestId;
+      final pendingRequest = Map<String, dynamic>.from(existing);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isProvider) {
+          _showHealthPermissionDialog(pendingRequest);
+        }
+      });
+    }
+  }
 
   // Request health data permission from patient (provider action)
   void _requestHealthDataPermission() async {
     final providerId = _currentUser?.id;
-    if (providerId == null) return;
-    // Determine patient ID based on consultation context
     final patientId = widget.entry?.patientId ?? widget.request?.userId;
-    if (patientId == null) return;
+    final consultationId = _activeConsultationId;
+    if (providerId == null || patientId == null || consultationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ไม่พบข้อมูลคำปรึกษาหรือผู้ใช้งาน'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
 
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      final response = await Supabase.instance.client.from('health_data_permission_requests').insert({
-        'doctor_id': providerId,
-        'doctor_name': _currentUser?.fullName ?? 'Doctor',
-        'patient_id': patientId,
-        'status': 'pending',
-        'requested_at': DateTime.now().toIso8601String(),
-        'granted_fields': {},
-      }).single();
+      setState(() {
+        _healthPermissionRequest = {
+          'consultation_id': consultationId,
+          'doctor_id': providerId,
+          'doctor_name': _currentUser?.fullName ?? 'Doctor',
+          'patient_id': patientId,
+          'status': 'pending',
+          'granted_fields': const {
+            'general': true,
+            'history': true,
+            'labs': true,
+            'medications': true,
+          },
+        };
+      });
+
+      final response = await _healthPermissionRepository.requestPermission(
+        consultationId: consultationId,
+        doctorId: providerId,
+        patientId: patientId,
+        doctorName: _currentUser?.fullName ?? 'Doctor',
+        requestedFields: const {
+          'general': true,
+          'history': true,
+          'labs': true,
+          'medications': true,
+        },
+      );
       if (mounted) {
         setState(() {
           _healthPermissionRequest = response;
         });
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('ส่งคำขอสิทธิ์ดูข้อมูลสุขภาพแล้ว รอผู้ป่วยอนุมัติ'),
+            backgroundColor: Color(0xFF4A8B2C),
+          ),
+        );
       }
     } catch (e) {
-      debugPrint('Error creating health permission request: $e');
+      debugPrint('[HealthPerm] Error creating request: $e');
+      if (mounted) {
+        await _loadLatestHealthPermission();
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('ส่งคำขอไม่สำเร็จ: กรุณาลองใหม่อีกครั้ง'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
+  // Subscribe to real-time health permission updates (for patient side)
+  void _subscribeHealthPermissionUpdates() {
+    final currentUserId = _currentUser?.id;
+    if (currentUserId == null) return;
+
+    _healthPermissionChannel?.unsubscribe();
+    _healthPermissionChannel = null;
+
+    // Patient listens for incoming requests addressed to them
+    _healthPermissionChannel = Supabase.instance.client
+        .channel('health_perm_$currentUserId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'health_data_permission_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'patient_id',
+            value: currentUserId,
+          ),
+          callback: (payload) {
+            debugPrint('[HealthPerm] Realtime INSERT received: ${payload.newRecord}');
+            final newRecord = payload.newRecord;
+            if (mounted && newRecord != null) {
+              setState(() {
+                _healthPermissionRequest = newRecord;
+              });
+              _maybeShowHealthPermissionDialog(newRecord);
+            }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'health_data_permission_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'doctor_id',
+            value: currentUserId,
+          ),
+          callback: (payload) {
+            debugPrint('[HealthPerm] Realtime UPDATE received: ${payload.newRecord}');
+            final updated = payload.newRecord;
+            if (mounted && updated != null) {
+              setState(() {
+                _healthPermissionRequest = updated;
+              });
+              _maybeShowHealthPermissionDialog(updated);
+              // Notify doctor that patient responded
+              final status = updated['status'];
+              if (_isProvider && status == 'granted') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ ผู้ป่วยอนุมัติการเข้าถึงข้อมูลสุขภาพแล้ว'),
+                    backgroundColor: Color(0xFF4A8B2C),
+                  ),
+                );
+              } else if (_isProvider && status == 'denied') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('❌ ผู้ป่วยปฏิเสธคำขอดูข้อมูลสุขภาพ'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            }
+          },
+        )
+        .subscribe();
+    debugPrint('[HealthPerm] Subscribed to realtime channel for user=$currentUserId');
+  }
+
+  void _maybeShowHealthPermissionDialog(Map<String, dynamic> request) {
+    if (_isProvider) return;
+    final requestId = request['id']?.toString();
+    final status = request['status']?.toString();
+    if (requestId == null || status != 'pending') return;
+    if (_isHealthPermissionDialogOpen ||
+        requestId == _lastShownHealthPermissionRequestId) {
+      return;
+    }
+
+    _lastShownHealthPermissionRequestId = requestId;
+    _isHealthPermissionDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _isProvider) {
+        _isHealthPermissionDialogOpen = false;
+        return;
+      }
+      try {
+        await _showHealthPermissionDialog(request);
+      } finally {
+        _isHealthPermissionDialogOpen = false;
+      }
+    });
+  }
+
   // Show permission dialog for patient to grant/deny fields
-  void _showHealthPermissionDialog(Map<String, dynamic> request) async {
-    // Default granted fields (all true)
-    Map<String, bool> fields = {
+  Future<void> _showHealthPermissionDialog(Map<String, dynamic> request) async {
+    final defaultFields = {
       'general': true,
-      'device_scores': true,
+      'history': true,
       'labs': true,
       'medications': true,
     };
+    final grantedFromRequest = request['granted_fields'] as Map<String, dynamic>?;
+    Map<String, bool> fields = grantedFromRequest != null
+        ? grantedFromRequest.map((key, value) => MapEntry(key, value == true))
+        : Map<String, bool>.from(defaultFields);
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1266,9 +1545,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     onChanged: (v) => setState(() => fields['general'] = v),
                   ),
                   SwitchListTile(
-                    title: const Text('คะแนนจากอุปกรณ์'),
-                    value: fields['device_scores']!,
-                    onChanged: (v) => setState(() => fields['device_scores'] = v),
+                    title: const Text('ประวัติการรักษา'),
+                    value: fields['history']!,
+                    onChanged: (v) => setState(() => fields['history'] = v),
                   ),
                   SwitchListTile(
                     title: const Text('ผลแลบ'),
@@ -1282,23 +1561,45 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        // Update request with granted fields and set status to granted
-                        final granted = fields.map((k, v) => MapEntry(k, v));
-                        await Supabase.instance.client.from('health_data_permission_requests').update({
-                          'status': 'granted',
-                          'granted_fields': granted,
-                          'granted_at': DateTime.now().toIso8601String(),
-                        }).eq('id', request['id']);
-                        if (mounted) {
-                          setState(() {
-                            _healthPermissionRequest = null;
-                          });
-                        }
-                        Navigator.pop(context);
-                      },
-                      child: const Text('ข้อมูลที่อนุญาต'),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final granted = fields.map((k, v) => MapEntry(k, v));
+                              await _healthPermissionRepository.respondPermission(
+                                requestId: request['id'] as String,
+                                granted: true,
+                                grantedFields: granted,
+                              );
+                              if (mounted) {
+                                setState(() {
+                                  _healthPermissionRequest = null;
+                                });
+                              }
+                              Navigator.pop(context);
+                            },
+                            child: const Text('ยอมให้'),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            await _healthPermissionRepository.respondPermission(
+                              requestId: request['id'] as String,
+                              granted: false,
+                              grantedFields: fields,
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _healthPermissionRequest = null;
+                              });
+                            }
+                            Navigator.pop(context);
+                          },
+                          child: const Text('ปฏิเสธ'),
+                        ),
+                      ],
                     ),
                   ),
                 ],

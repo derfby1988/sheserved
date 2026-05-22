@@ -14,6 +14,7 @@ import '../features/chat/data/models/chat_models.dart';
 import '../features/pharmacy/data/repositories/pharmacy_repository.dart';
 import '../features/pharmacy/data/services/fda_api_service.dart';
 import '../features/consultation/data/repositories/consultation_repository.dart';
+import '../features/consultation/data/repositories/health_data_permission_repository.dart';
 import '../features/admin/data/repositories/body_region_repository.dart';
 import '../features/admin/data/repositories/profession_repository.dart';
 import '../features/admin/data/repositories/registration_repository.dart';
@@ -41,6 +42,7 @@ class ServiceLocator {
   HealthArticleRepository? _healthArticleRepository;
   ChatRepository? _chatRepository;
   ConsultationRepository? _consultationRepository;
+  HealthDataPermissionRepository? _healthPermissionRepository;
   BodyRegionRepository? _bodyRegionRepository;
   ProfessionRepository? _professionRepository;
   RegistrationRepository? _registrationRepository;
@@ -175,6 +177,7 @@ class ServiceLocator {
       );
       
       _consultationRepository = ConsultationRepository(supabaseClient);
+      _healthPermissionRepository = HealthDataPermissionRepository(supabaseClient);
       _bodyRegionRepository = BodyRegionRepository(supabaseClient);
       _professionRepository = ProfessionRepository(supabaseClient);
       _registrationRepository = RegistrationRepository(supabaseClient);
@@ -230,6 +233,14 @@ class ServiceLocator {
       _consultationRepository = ConsultationRepository(Supabase.instance.client);
     }
     return _consultationRepository!;
+  }
+
+  HealthDataPermissionRepository get healthDataPermissionRepository {
+    if (_healthPermissionRepository == null) {
+      _healthPermissionRepository =
+          HealthDataPermissionRepository(Supabase.instance.client);
+    }
+    return _healthPermissionRepository!;
   }
 
   BodyRegionRepository get bodyRegionRepository {
