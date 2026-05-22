@@ -1587,4 +1587,78 @@ Future<void> _showQuickReplies() async {
 3. ใช้ `Expanded` หุ้ม `TextField` เพื่อให้ช่องกรอกข้อความกินพื้นที่ที่เหลือทั้งหมดอย่างเต็มประสิทธิภาพ
 
 ---
+
+## 📋 Phase 6.3: Health Data Permission Workflow
+
+### 🎯 Goal
+Enable doctors/expert users to request access to a patient’s health data and allow patients to grant or deny each data category individually, with **default allow** for a smooth experience.
+
+### 🖼️ UI Mockup
+![Health Data Permission Dialog](file:///Users/dave_macmini/.gemini/antigravity/brain/db70442c-bd2b-4838-b2c6-c99fc4c4409f/health_data_permission_dialog_1779343614147.png)
+
+**Doctor side (ChartBoardPage)**
+- A new icon button `Icons.lock_open` labeled **"ขอสิทธิ์ดูข้อมูลสุขภาพ"** appears next to the attachment menu button.
+- Tapping it sends a permission request to the patient via a real‑time Supabase subscription.
+
+**Patient side (ChartBoardPage)**
+- A notification banner appears at the top of the chat: *"แพทย์ {doctorName} ขอสิทธิ์ดูข้อมูลสุขภาพ"* with a **"ดูรายละเอียด"** button.
+- When the patient taps the button, a modal bottom‑sheet dialog (as shown in the mockup) opens, listing the following data categories with toggle switches (all **ON** by default):
+  - ข้อมูลสุขภาพทั่วไป
+  - ประวัติการรักษา
+  - ผลการตรวจ
+  - การใช้ยา
+- The patient can turn any switch **OFF** to deny that specific category, then press **"ยอมให้"** (primary) or **"ปฏิเสธ"** (secondary).
+- The dialog respects dark‑mode styling with teal accents and glass‑morphism effects.
+
+### 📡 Data Flow
+1. **Doctor** presses the request button → calls `HealthDataPermissionRepository.requestPermission(consultationId, doctorId)` which creates a row in `health_data_permission_requests` (status `pending`).
+2. **Patient** receives a Supabase real‑time subscription on that table → shows the banner.
+3. Patient’s response updates the row (`granted`, `denied`, and a JSON column `granted_fields`).
+4. The chat screen reads the permission row:
+   - If `granted`, the doctor can request the actual health data via RPC `fetch_patient_health_data(consultationId, fields)`. The RPC checks the `granted_fields` column before returning any data.
+   - If `denied` or no row, the data request returns empty.
+
+### 🗄️ Database Schema (Supabase)
+```sql
+CREATE TABLE health_data_permission_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consultation_id UUID REFERENCES consultation_requests(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  patient_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending / granted / denied
+  granted_fields JSONB DEFAULT '{"general":true,"history":true,"labs":true,"medications":true}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Row‑Level Security
+CREATE POLICY "Doctor can request" ON health_data_permission_requests
+  FOR INSERT USING (auth.uid() = doctor_id);
+CREATE POLICY "Patient can respond" ON health_data_permission_requests
+  FOR UPDATE USING (auth.uid() = patient_id);
+```
+
+### ⚙️ Implementation Steps
+1. **Add button** in `chart_board_page.dart` for doctors.
+2. **Create repository** `HealthDataPermissionRepository` with methods `requestPermission`, `respondPermission`, `streamPermission`.
+3. **Subscribe** in patient’s `ChartBoardPage` to `health_data_permission_requests` filtered by `consultationId` and `patientId`.
+4. **Build dialog** UI (reuse the mockup design) with `SwitchListTile` for each category.
+5. **Handle defaults** – when the dialog opens all switches are `true`. If the patient never interacts, the request auto‑grants after a configurable timeout (e.g., 30 seconds).
+6. **Secure RPC** that fetches health data, checking `granted_fields` before returning.
+7. **Update documentation** in this plan and add unit‑tests for the repository.
+
+### 🎨 Visual Guidelines
+- Use the app’s primary teal (`#009688`) for active switches and primary buttons.
+- Dark theme background: `Color(0xFF212121)` with glass‑morphism overlay (`rgba(255,255,255,0.12)`).
+- Rounded corners (12 dp) and subtle elevation (4 dp) for the dialog.
+- Typography: Google Font **'Kanit'** (Thai‑friendly) at 14 sp for titles, 12 sp for switches, 16 sp for the primary action.
+
+### ✅ Acceptance Criteria
+- Doctor sees request button and can send permission request.
+- Patient receives real‑time banner, can open dialog, toggle categories, and confirm/deny.
+- Permission row updates correctly and is persisted.
+- Doctor can retrieve only the data categories the patient approved.
+- All UI follows the visual guidelines above and works on both Android and iOS.
+
+*Last Updated: 2026-05-21*
 *Last Updated: 2026-05-21*

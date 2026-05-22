@@ -308,7 +308,7 @@ class RequestItemCardWidget extends StatelessWidget {
         children: [
           Expanded(
             child: TlzButton(type: TlzButtonType.outline, isFullWidth: true, 
-              text: 'ดูรายละเอียด',
+              text: 'ข้อมูลที่อนุญาต',
               onPressed: () {},
               textColor: AppColors.primary,
             ),

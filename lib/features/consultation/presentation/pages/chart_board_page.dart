@@ -877,6 +877,26 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
         body: Column(
           children: [
+            // Health Data Permission Banner (shows when pending request)
+            if (_healthPermissionRequest != null && _healthPermissionRequest!['status'] == 'pending')
+              Container(
+                width: double.infinity,
+                color: Colors.orange.shade50,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'แพทย์ ${_healthPermissionRequest!['doctor_name'] ?? 'Doctor'} ขอสิทธิ์ดูข้อมูลสุขภาพ',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    TextButton(
+                      onPressed: () => _showHealthPermissionDialog(_healthPermissionRequest!),
+                      child: const Text('ข้อมูลที่อนุญาต'),
+                    ),
+                  ],
+                ),
+              ),
             _buildExpertStatusBanner(),
             _buildBodyMapSummary(),
             Expanded(
@@ -1188,19 +1208,114 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  // State variable to hold current health permission request
+  Map<String, dynamic>? _healthPermissionRequest;
+
+  // Request health data permission from patient (provider action)
+  void _requestHealthDataPermission() async {
+    final providerId = _currentUser?.id;
+    if (providerId == null) return;
+    // Determine patient ID based on consultation context
+    final patientId = widget.entry?.patientId ?? widget.request?.userId;
+    if (patientId == null) return;
+
+    try {
+      final response = await Supabase.instance.client.from('health_data_permission_requests').insert({
+        'doctor_id': providerId,
+        'doctor_name': _currentUser?.fullName ?? 'Doctor',
+        'patient_id': patientId,
+        'status': 'pending',
+        'requested_at': DateTime.now().toIso8601String(),
+        'granted_fields': {},
+      }).single();
+      if (mounted) {
+        setState(() {
+          _healthPermissionRequest = response;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error creating health permission request: $e');
+    }
+  }
+
+  // Show permission dialog for patient to grant/deny fields
+  void _showHealthPermissionDialog(Map<String, dynamic> request) async {
+    // Default granted fields (all true)
+    Map<String, bool> fields = {
+      'general': true,
+      'device_scores': true,
+      'labs': true,
+      'medications': true,
+    };
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Wrap(
+                children: [
+                  const ListTile(
+                    title: Text('อนุญาตดูข้อมูลสุขภาพ'),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ข้อมูลทั่วไป'),
+                    value: fields['general']!,
+                    onChanged: (v) => setState(() => fields['general'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('คะแนนจากอุปกรณ์'),
+                    value: fields['device_scores']!,
+                    onChanged: (v) => setState(() => fields['device_scores'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ผลแลบ'),
+                    value: fields['labs']!,
+                    onChanged: (v) => setState(() => fields['labs'] = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ยาที่กำหนด'),
+                    value: fields['medications']!,
+                    onChanged: (v) => setState(() => fields['medications'] = v),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        // Update request with granted fields and set status to granted
+                        final granted = fields.map((k, v) => MapEntry(k, v));
+                        await Supabase.instance.client.from('health_data_permission_requests').update({
+                          'status': 'granted',
+                          'granted_fields': granted,
+                          'granted_at': DateTime.now().toIso8601String(),
+                        }).eq('id', request['id']);
+                        if (mounted) {
+                          setState(() {
+                            _healthPermissionRequest = null;
+                          });
+                        }
+                        Navigator.pop(context);
+                      },
+                      child: const Text('ข้อมูลที่อนุญาต'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildChatInput() {
-    final hasText = _msgController.text.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade100)),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Main Input Row
-          Opacity(
+    final hasText = _msgController.text.trim().isNotEmpty;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Opacity(
             opacity: (_isConsultationActive || _isProvider) ? 1.0 : 0.3,
             child: AbsorbPointer(
               absorbing: !(_isConsultationActive || _isProvider),
@@ -1214,12 +1329,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       onTap: _showAttachmentMenu,
                     ),
                     const SizedBox(width: 4),
-                    _buildInputIconButton(
-                      icon: Icons.bolt,
-                      tooltip: 'ข้อความด่วน',
-                      onTap: _showQuickReplies,
-                    ),
-                    const SizedBox(width: 8),
+                    // Removed lock_open button from chat input row for providers. The request button will be placed within the attachment menu.
+
                   ] else ...[
                     _buildInputIconButton(
                       icon: Icons.image_outlined,
@@ -1350,8 +1461,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
             ),
         ],
-      ),
-    );
+      );
   }
 
   Widget _buildInputIconButton({
@@ -1570,7 +1680,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 padding: const EdgeInsets.symmetric(vertical: 10),
               ),
               child: const Text(
-                'ดูรายละเอียดใบสั่งยา',
+                'ข้อมูลที่อนุญาต',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1658,7 +1768,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 padding: const EdgeInsets.symmetric(vertical: 10),
               ),
               child: const Text(
-                'ดูรายละเอียดการตรวจ',
+                'ข้อมูลที่อนุญาต',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1826,27 +1936,20 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     );
                   },
                 ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(Icons.assignment_outlined, color: AppColors.primary),
-                  ),
-                  title: const Text('สรุปผลการรักษา'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
-                    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (ctx) => ConsultationNoteEditorPage(
-                          consultationId: consultationId,
-                          patientId: patientId,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    // Health Data Permission Request (added to attachment menu)
+    ListTile(
+      leading: CircleAvatar(
+        backgroundColor: AppColors.primary.withOpacity(0.1),
+        child: const Icon(Icons.lock_open, color: AppColors.primary),
+      ),
+      title: const Text('ขอสิทธิ์ดูข้อมูลสุขภาพ'),
+      onTap: () {
+        Navigator.pop(ctx);
+        _requestHealthDataPermission();
+      },
+    ),
+    // Existing items continue below
+
               ],
               const SizedBox(height: 20),
             ],
@@ -1855,6 +1958,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       ),
     );
   }
+
+
+
 
   Future<void> _showQuickReplies() async {
     final providerId = _currentUser?.id;
