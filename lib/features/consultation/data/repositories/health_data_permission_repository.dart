@@ -149,4 +149,149 @@ class HealthDataPermissionRepository {
       return null;
     }
   }
+
+  /// Fetch the patient's health data respecting granted fields.
+  /// Throws if the latest request is not granted or patient info is missing.
+  Future<Map<String, dynamic>> fetchGrantedHealthData({
+    required String consultationId,
+    required String doctorId,
+    Map<String, dynamic>? existingRequest,
+  }) async {
+    Map<String, dynamic>? request = existingRequest != null
+        ? Map<String, dynamic>.from(existingRequest)
+        : await getLatestRequest(
+            consultationId: consultationId,
+            doctorId: doctorId,
+          );
+
+    if (request == null) {
+      throw Exception('ไม่พบคำขอสิทธิ์ข้อมูลสุขภาพล่าสุด');
+    }
+    if (request['status'] != 'granted') {
+      throw Exception('ยังไม่ได้รับการอนุญาตให้เข้าถึงข้อมูลสุขภาพ');
+    }
+
+    final patientId = request['patient_id'] as String?;
+    if (patientId == null) {
+      throw Exception('ไม่พบรหัสผู้ป่วยในคำขอสิทธิ์ข้อมูลสุขภาพ');
+    }
+
+    final grantedFields = Map<String, bool>.from(
+      (request['granted_fields'] as Map?)?.map(
+            (key, value) => MapEntry(key.toString(), value == true),
+          ) ??
+          const {
+            'general': true,
+            'history': true,
+            'labs': true,
+            'medications': true,
+          },
+    );
+
+    final result = <String, dynamic>{
+      'request': request,
+      'patientId': patientId,
+      'grantedFields': grantedFields,
+    };
+
+    if (grantedFields['general'] == true) {
+      result['general'] = await _fetchGeneralHealthInfo(patientId);
+    }
+    if (grantedFields['history'] == true) {
+      result['history'] = await _fetchConsultationNotes(
+        consultationId: consultationId,
+        patientId: patientId,
+      );
+    }
+    if (grantedFields['labs'] == true) {
+      result['labs'] = await _fetchDeviceMetrics(patientId);
+    }
+    if (grantedFields['medications'] == true) {
+      result['medications'] = await _fetchPrescriptions(
+        consultationId: consultationId,
+        patientId: patientId,
+      );
+    }
+
+    return result;
+  }
+
+  Future<Map<String, dynamic>> _fetchGeneralHealthInfo(String patientId) async {
+    final profile = await _client
+        .from('consumer_profiles')
+        .select('health_info, birthday, emergency_contact, emergency_phone')
+        .eq('user_id', patientId)
+        .maybeSingle();
+
+    final user = await _client
+        .from('users')
+        .select('first_name, last_name, profile_image_url')
+        .eq('id', patientId)
+        .maybeSingle();
+
+    return {
+      'profile': user,
+      'health_info': profile?['health_info'],
+      'birthday': profile?['birthday'],
+      'emergency_contact': profile?['emergency_contact'],
+      'emergency_phone': profile?['emergency_phone'],
+    }..removeWhere((key, value) => value == null);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchConsultationNotes({
+    required String consultationId,
+    required String patientId,
+  }) async {
+    final rows = await _client
+        .from('consultation_notes')
+        .select(
+            'id, consultation_id, provider_id, chief_complaint, diagnosis, treatment_plan, recommendations, created_at, follow_up_date')
+        .eq('patient_id', patientId)
+        .eq('consultation_id', consultationId)
+        .order('created_at', ascending: false)
+        .limit(5);
+
+    return rows is List
+        ? rows.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> _fetchDeviceMetrics(String patientId) async {
+    final rows = await _client
+        .from('device_health_metrics')
+        .select('metric_type, value, unit, measured_at, source_name')
+        .eq('user_id', patientId)
+        .order('measured_at', ascending: false)
+        .limit(40);
+
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    if (rows is List) {
+      for (final item in rows) {
+        final map = Map<String, dynamic>.from(item as Map);
+        final type = (map['metric_type'] as String?) ?? 'unknown';
+        grouped.putIfAbsent(type, () => []);
+        if (grouped[type]!.length < 5) {
+          grouped[type]!.add(map);
+        }
+      }
+    }
+    return {'metrics': grouped};
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPrescriptions({
+    required String consultationId,
+    required String patientId,
+  }) async {
+    final rows = await _client
+        .from('prescriptions')
+        .select('id, medications, notes, status, issued_at')
+        .eq('patient_id', patientId)
+        .eq('consultation_id', consultationId)
+        .order('issued_at', ascending: false)
+        .limit(5);
+
+    return rows is List
+        ? rows.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        : <Map<String, dynamic>>[];
+  }
 }

@@ -11,6 +11,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -1249,6 +1250,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
             ),
           ),
+          if (status == 'granted')
+            TextButton.icon(
+              onPressed: _openGrantedHealthDataSheet,
+              style: TextButton.styleFrom(foregroundColor: textColor),
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: const Text('ดูข้อมูลที่อนุญาต'),
+            ),
         ],
       ),
     );
@@ -1259,6 +1267,493 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   String? _lastShownHealthPermissionRequestId;
   bool _isHealthPermissionDialogOpen = false;
+
+  void _openGrantedHealthDataSheet() {
+    if (!_isProvider) return;
+    final consultationId = _activeConsultationId;
+    final doctorId = _currentUser?.id;
+    if (consultationId == null || doctorId == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return FutureBuilder<Map<String, dynamic>>(
+          future: _healthPermissionRepository.fetchGrantedHealthData(
+            consultationId: consultationId,
+            doctorId: doctorId,
+            existingRequest: _healthPermissionRequest,
+          ),
+          builder: (context, snapshot) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.85,
+              minChildSize: 0.6,
+              builder: (_, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        height: 4,
+                        width: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'ข้อมูลสุขภาพของผู้ป่วย',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: snapshot.connectionState != ConnectionState.done
+                            ? const Center(child: CircularProgressIndicator())
+                            : snapshot.hasError
+                                ? _buildHealthDataError(
+                                    snapshot.error.toString(),
+                                    scrollController,
+                                  )
+                                : ListView(
+                                    controller: scrollController,
+                                    padding:
+                                        const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                                    children: _buildGrantedHealthSections(
+                                      snapshot.data ?? const {},
+                                    ),
+                                  ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildHealthDataError(String message, ScrollController controller) {
+    return ListView(
+      controller: controller,
+      padding: const EdgeInsets.all(24),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.red.shade100),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'ไม่สามารถโหลดข้อมูลสุขภาพได้',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildGrantedHealthSections(Map<String, dynamic> data) {
+    final sections = <Widget>[];
+    final granted = data['grantedFields'] as Map<String, dynamic>? ?? {};
+
+    final general = data['general'] as Map<String, dynamic>?;
+    if (granted['general'] == true && general != null && general.isNotEmpty) {
+      sections.add(
+        _buildGrantedSectionCard(
+          icon: Icons.favorite_outline,
+          title: 'ข้อมูลสุขภาพทั่วไป',
+          children: _buildGeneralSectionContent(general),
+        ),
+      );
+    }
+
+    final history = (data['history'] as List?)?.cast<Map<String, dynamic>>();
+    if (granted['history'] == true && history != null && history.isNotEmpty) {
+      sections.add(
+        _buildGrantedSectionCard(
+          icon: Icons.event_note,
+          title: 'ประวัติการรักษาในคำปรึกษานี้',
+          children: history.map(_buildHistoryTile).toList(),
+        ),
+      );
+    }
+
+    final labs = (data['labs'] as Map<String, dynamic>?)?['metrics']
+        as Map<String, dynamic>?;
+    if (granted['labs'] == true && labs != null && labs.isNotEmpty) {
+      sections.add(
+        _buildGrantedSectionCard(
+          icon: Icons.analytics_outlined,
+          title: 'ข้อมูลจากอุปกรณ์สุขภาพ',
+          children:
+              labs.entries.map((entry) => _buildMetricGroup(entry.key, entry.value)).toList(),
+        ),
+      );
+    }
+
+    final meds = (data['medications'] as List?)?.cast<Map<String, dynamic>>();
+    if (granted['medications'] == true && meds != null && meds.isNotEmpty) {
+      sections.add(
+        _buildGrantedSectionCard(
+          icon: Icons.medication_liquid,
+          title: 'รายการยาที่สั่งในคำปรึกษานี้',
+          children: meds.map(_buildMedicationTile).toList(),
+        ),
+      );
+    }
+
+    if (sections.isEmpty) {
+      sections.add(
+        Container(
+          margin: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Text(
+            'ไม่มีข้อมูลสุขภาพที่สามารถแสดงได้',
+            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    }
+
+    return sections;
+  }
+
+  Widget _buildGrantedSectionCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildGeneralSectionContent(Map<String, dynamic> general) {
+    final profile = general['profile'] as Map<String, dynamic>?;
+    final healthInfo = general['health_info'] as Map<String, dynamic>?;
+    final chips = <Widget>[];
+
+    void addChip(String label, dynamic value, {IconData icon = Icons.info}) {
+      if (value == null) return;
+      chips.add(_buildHealthDataChip(label, value.toString(), icon: icon));
+    }
+
+    addChip(
+      'ส่วนสูง',
+      healthInfo?['height'] != null ? '${healthInfo!['height']} ซม.' : null,
+      icon: Icons.height,
+    );
+    addChip(
+      'น้ำหนัก',
+      healthInfo?['weight'] != null ? '${healthInfo!['weight']} กก.' : null,
+      icon: Icons.monitor_weight,
+    );
+    addChip('BMI', healthInfo?['bmi'], icon: Icons.scale);
+    addChip('คะแนนสุขภาพ', healthInfo?['health_score'], icon: Icons.favorite);
+
+    final emergencyContact = general['emergency_contact'];
+    final emergencyPhone = general['emergency_phone'];
+
+    return [
+      if (profile != null)
+        Text(
+          '${profile['first_name'] ?? ''} ${profile['last_name'] ?? ''}'.trim(),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+      if (chips.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: chips,
+        ),
+      ],
+      if (emergencyContact != null || emergencyPhone != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'ผู้ติดต่อฉุกเฉิน',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+              ),
+              if (emergencyContact != null) Text('ชื่อ: $emergencyContact'),
+              if (emergencyPhone != null) Text('โทร: $emergencyPhone'),
+            ],
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Widget _buildHealthDataChip(String label, String value,
+      {IconData icon = Icons.info_outline}) {
+    return Chip(
+      avatar: Icon(icon, size: 16, color: AppColors.primary),
+      label: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: Colors.grey.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      side: BorderSide(color: Colors.grey.shade300),
+    );
+  }
+
+  Widget _buildHistoryTile(Map<String, dynamic> note) {
+    final createdAt = note['created_at'];
+    final created = createdAt != null
+        ? DateFormat('dd MMM yyyy HH:mm')
+            .format(DateTime.parse(createdAt).toLocal())
+        : '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'บันทึกเมื่อ $created',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+          if (note['chief_complaint'] != null) ...[
+            const SizedBox(height: 6),
+            Text('อาการสำคัญ: ${note['chief_complaint']}'),
+          ],
+          if (note['diagnosis'] != null) ...[
+            const SizedBox(height: 4),
+            Text('การวินิจฉัย: ${note['diagnosis']}'),
+          ],
+          if (note['treatment_plan'] != null) ...[
+            const SizedBox(height: 4),
+            Text('แผนการรักษา: ${note['treatment_plan']}'),
+          ],
+          if (note['recommendations'] != null) ...[
+            const SizedBox(height: 4),
+            Text('คำแนะนำ: ${note['recommendations']}'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static const _metricNameTh = <String, String>{
+    'active_calories': 'แคลอรีที่เผาผลาญ',
+    'heart_rate': 'อัตราการเต้นของหัวใจ',
+    'hrv_sdnn': 'ความแปรปรวนอัตราหัวใจ (HRV)',
+    'steps': 'จำนวนก้าว',
+    'sleep_duration': 'ระยะเวลาการนอน',
+    'blood_oxygen': 'ความอิ่มตัวออกซิเจนในเลือด (SpO₂)',
+    'blood_pressure_systolic': 'ความดันโลหิตตัวบน',
+    'blood_pressure_diastolic': 'ความดันโลหิตตัวล่าง',
+    'body_temperature': 'อุณหภูมิร่างกาย',
+    'weight': 'น้ำหนัก',
+    'bmi': 'ดัชนีมวลกาย (BMI)',
+    'respiratory_rate': 'อัตราการหายใจ',
+    'distance': 'ระยะทาง',
+    'floors_climbed': 'จำนวนชั้นที่ขึ้น',
+    'exercise_minutes': 'นาทีออกกำลังกาย',
+    'resting_heart_rate': 'อัตราหัวใจขณะพัก',
+    'vo2_max': 'VO₂ Max',
+    'glucose': 'ระดับน้ำตาลในเลือด',
+  };
+
+  String _formatMetricValue(dynamic raw) {
+    if (raw == null) return '-';
+    if (raw is num) {
+      if (raw == raw.truncate()) return raw.truncate().toString();
+      return raw.toStringAsFixed(2);
+    }
+    final parsed = double.tryParse(raw.toString());
+    if (parsed == null) return raw.toString();
+    if (parsed == parsed.truncate()) return parsed.truncate().toString();
+    return parsed.toStringAsFixed(2);
+  }
+
+  Widget _buildMetricGroup(String metricType, dynamic entries) {
+    final list = (entries as List?)?.cast<Map<String, dynamic>>() ?? [];
+    if (list.isEmpty) return const SizedBox.shrink();
+    final displayName =
+        _metricNameTh[metricType] ?? metricType.replaceAll('_', ' ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            displayName,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          ...list.take(3).map((item) {
+            final measured = item['measured_at'] != null
+                ? DateFormat('dd MMM HH:mm')
+                    .format(DateTime.parse(item['measured_at']).toLocal())
+                : '';
+            final unit = item['unit'] ?? '';
+            final value = _formatMetricValue(item['value']);
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$value $unit',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    measured,
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMedicationTile(Map<String, dynamic> prescription) {
+    final created = prescription['issued_at'] != null
+        ? DateFormat('dd MMM yyyy HH:mm')
+            .format(DateTime.parse(prescription['issued_at']).toLocal())
+        : '';
+    final meds = (prescription['medications'] as List?) ?? [];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ออกเมื่อ $created',
+            style: TextStyle(color: Colors.green.shade900, fontSize: 12),
+          ),
+          const SizedBox(height: 6),
+          ...meds.take(4).map((item) {
+            final med = item as Map<String, dynamic>;
+            final name = med['name'] ?? '-';
+            final dose = med['dose'] ?? '';
+            final freq = med['frequency'] ?? '';
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text('$name  $dose  $freq'),
+            );
+          }),
+          if (prescription['notes'] != null) ...[
+            const Divider(),
+            Text('คำแนะนำ: ${prescription['notes']}'),
+          ],
+        ],
+      ),
+    );
+  }
 
   void _startHealthPermissionPolling() {
     if (!_isProvider) return;
