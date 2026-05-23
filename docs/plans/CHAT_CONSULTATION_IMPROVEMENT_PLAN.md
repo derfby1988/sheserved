@@ -670,6 +670,83 @@ class RoomExpertStatus {
 }
 ```
 
+#### รูปโปรไฟล์และไอคอนผู้เชี่ยวชาญ
+
+**การแสดงรูปโปรไฟล์:**
+
+| สถานะ | แสดงผล |
+|---|---|
+| `joined` + มี `providerAvatarUrl` | `CircleAvatar(radius: 12, backgroundImage: NetworkImage(...))` |
+| `joined` + ไม่มี avatar | `Icon(Icons.check_circle, color: primary)` |
+| `waiting` | `Icon(categoryIcon หรือ Icons.hourglass_empty, color: grey)` |
+| `waiting` + `isRequired=true` | `Icon(Icons.priority_high, color: orange)` |
+
+**Priority การเลือกแสดง Avatar vs Icon:**
+```dart
+if (isJoined && avatarUrl != null && avatarUrl.isNotEmpty)
+  // แสดงรูปโปรไฟล์จริง
+  CircleAvatar(radius: 12, backgroundImage: NetworkImage(avatarUrl))
+else if (categoryIcon != null)
+  // แสดงไอคอนตามกลุ่มวิชาชีพ
+  Icon(categoryIcon, size: 20, color: isJoined ? primary : grey)
+else
+  // fallback icon
+  Icon(isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty))
+```
+
+**การดึงข้อมูลผู้เชี่ยวชาญ (3 ระดับ Fallback):**
+
+```dart
+// Level 1: ดึงจาก consultation_room_experts (ตารางที่ถูกต้องตามแผน)
+await supabase.from('consultation_room_experts')
+  .select().eq('consultation_id', consultationId);
+
+// Level 2: fallback ไป chat_room_members + users (backward compatibility)
+await supabase.from('chat_room_members')
+  .select('user_id, role, joined_at, users!inner(first_name, last_name, profile_image_url)')
+  .eq('room_id', roomId).eq('role', 'doctor');
+
+// Level 3: fallback สุดท้าย — query users โดยใช้ provider_id จาก consultation_requests
+// ⚠️ สำคัญ: ตาราง users มี columns: first_name, last_name, profile_image_url, profession_id
+// ❌ ไม่มี: profession_role, user_type, payment_status
+if (_consultationData?['provider_id'] != null) {
+  final providerId = _consultationData!['provider_id'] as String;
+  final user = await supabase.from('users')
+    .select('first_name, last_name, profile_image_url, profession_id')
+    .eq('id', providerId)
+    .maybeSingle();
+
+  if (user != null) {
+    final firstName = user['first_name'] as String? ?? '';
+    final lastName = user['last_name'] as String? ?? '';
+    final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+    mapped = [{
+      'role': 'expert',  // hardcode — DB ไม่มี role column
+      'name': name,
+      'status': 'joined',
+      'providerId': providerId,
+      'isRequired': true,
+      'joinedAt': _consultationData!['updated_at'],
+      'providerAvatarUrl': user['profile_image_url'],
+      'expertGroupIcon': null,
+    }];
+  }
+}
+```
+
+> **⚠️ Warning: คอลัมน์ที่ไม่มีอยู่จริงใน `users` table**
+> - `profession_role` → ไม่มี ❌
+> - `user_type` → ไม่มี ❌  
+> - `payment_status` (ใน `consultation_requests`) → ไม่มี ❌
+> 
+> ใช้ `profession_id` แทน `profession_role` และ hardcode `role: 'expert'`
+
+**ไฟล์ที่เกี่ยวข้อง:**
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `chart_board_page.dart` | `_buildExpertStatusBanner()` widget `_fetchExpertStatuses()` 3-level fallback |
+
 #### ตัวอย่าง UI States
 
 **State 1: รอทุกกลุ่ม (เพิ่งสร้าง consultation)**

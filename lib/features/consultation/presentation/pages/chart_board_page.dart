@@ -485,6 +485,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       // 3. Subscribe to Expert Statuses (Priority 2)
+      debugPrint('[ChartBoard] _initChat about to call _fetchExpertStatuses with consultationId=$consultationId');
       _fetchExpertStatuses(consultationId);
       _expertStatusSub = supabase
           .from('consultation_room_experts')
@@ -568,8 +569,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
       }).toList();
 
-      // Fallback: if consultation_room_experts empty (old consultation or no package),
-      // query chat_room_members + users to find doctors who actually joined
+      // Fallback 1: query chat_room_members + users
       if (mapped.isEmpty) {
         debugPrint('[ChartBoard] consultation_room_experts empty — falling back to chat_room_members');
         final roomId = 'consult_$consultationId';
@@ -602,6 +602,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         }).toList();
 
         mapped = fallback;
+      }
+
+      // Fallback 2: if still empty, use provider_id from consultation_data directly
+      if (mapped.isEmpty && _consultationData?['provider_id'] != null) {
+        debugPrint('[ChartBoard] chat_room_members also empty — falling back to provider_id from consultation_data');
+        final providerId = _consultationData!['provider_id'] as String;
+        final user = await Supabase.instance.client
+            .from('users')
+            .select('first_name, last_name, profile_image_url, profession_id')
+            .eq('id', providerId)
+            .maybeSingle();
+
+        debugPrint('[ChartBoard] provider query result: $user');
+
+        if (user != null) {
+          final firstName = user['first_name'] as String? ?? '';
+          final lastName = user['last_name'] as String? ?? '';
+          final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+          mapped = [{
+            'role': 'expert',
+            'name': name,
+            'status': 'joined',
+            'providerId': providerId,
+            'isRequired': true,
+            'joinedAt': _consultationData!['updated_at'],
+            'providerAvatarUrl': user['profile_image_url'],
+            'expertGroupIcon': null,
+          }];
+        }
       }
 
       if (mounted) {
