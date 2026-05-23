@@ -17,6 +17,7 @@ class ConsultationRepository {
     Map<String, dynamic> bodyArea = const {},
     Map<String, dynamic> symptomsChart = const {},
     List<SymptomPoint> symptoms = const [],
+    String? status,
   }) async {
     final now = DateTime.now();
     final data = {
@@ -26,7 +27,7 @@ class ConsultationRepository {
       'price': price,
       'body_area': bodyArea,
       'symptoms_chart': symptomsChart,
-      'status': 'pending',
+      'status': status ?? 'pending',
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
     };

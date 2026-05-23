@@ -865,6 +865,140 @@ $$ LANGUAGE plpgsql;
 
 ---
 
+## ✅ บันทึกการแก้ไข: Pain Level UI + ช่องกรอกข้อความถูกล็อก
+
+### ปัญหา
+- ผู้ป่วยเข้าห้องแชทแล้วไม่มี UI เลือกระดับความเจ็บปวด (`_buildPainLevelSelector`)
+- หลังเลือกระดับความเจ็บปวดและกด "ยืนยัน" ช่องกรอกข้อความยังคงถูกล็อกอยู่
+- ปุ่ม "ยืนยันและส่งคำรักษา" ไม่แสดง
+
+### Root Cause
+
+**ปัญหาหลัก:** ใช้ `_isConsultationActive` flag เป็นตัวควบคุมการแสดง/ซ่อน UI แต่ flag นี้ถูกอัปเดตจากหลายจุด (`initState`, `_initChat`, `_submitConsultationRequest`) → เกิด race condition → UI ไม่สอดคล้องกับ state จริง
+
+**ปัญหารอง:** พยายามใช้คอลัมน์ `payment_status` ใน `consultation_requests` แต่ **คอลัมน์นี้ไม่มีอยู่จริงใน DB schema** → เกิด `PostgrestException: Could not find the 'payment_status' column`
+
+### วิธีแก้ไขที่ถูกต้อง
+
+**หลักการ:** ใช้คอลัมน์ `status` ที่มีอยู่แล้วใน `consultation_requests` เป็นตัวควบคุม UI state ทั้งหมด:
+
+| `status` | ความหมาย | Pain Selector | Payment Card | Chat Input |
+|---|---|---|---|---|
+| `pending` | ยังไม่ยืนยัน | ✅ แสดง | ✅ แสดง | 🔒 ล็อก |
+| `in_progress` | ยืนยันแล้ว/กำลังดำเนินการ | ❌ ซ่อน | ❌ ซ่อน | 🔓 ปลดล็อก |
+| `completed` | เสร็จสิ้น | ❌ ซ่อน | ❌ ซ่อน | 🔒 ล็อก |
+
+**การ implement ที่ถูกต้องใน `chart_board_page.dart`:**
+
+```dart
+// ✅ ถูกต้อง: อ่าน status จาก _consultationData โดยตรง
+// อย่าใช้ _isConsultationActive เป็น condition หลัก
+
+// 1. Pain selector — แสดงเมื่อยังไม่ยืนยัน
+if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+  _buildPainLevelSelector(),
+
+// 2. Payment card — แสดงเมื่อยังไม่ยืนยัน
+if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+  _buildPaymentCard(),
+
+// 3. Chat input lock — ใช้ status แทน _isConsultationActive
+Widget _buildChatInput() {
+  final status = _consultationData?['status'] as String? ?? 'pending';
+  final isChatActive = _isProvider || status == 'in_progress';
+  return Stack(
+    children: [
+      Opacity(
+        opacity: isChatActive ? 1.0 : 0.3,
+        child: AbsorbPointer(
+          absorbing: !isChatActive,
+          child: Row(...),
+        ),
+      ),
+      // Lock overlay
+      if (!_isProvider && status == 'pending')
+        Positioned.fill(child: ...),
+    ],
+  );
+}
+```
+
+**การ submit ที่ถูกต้อง:**
+
+```dart
+// ✅ ถูกต้อง: อัปเดต status เป็น 'in_progress' พร้อมกับบันทึก pain_level
+if (widget.entry != null) {
+  // Update existing consultation
+  await repo.updateRequest(consultationId, {
+    'symptoms_chart': finalSymptomsChart,
+    'status': 'in_progress',
+  });
+} else if (widget.request != null) {
+  // Create new consultation (mark as active immediately)
+  final newRequest = await repo.createRequest(
+    userId: currentUserId,
+    packageId: widget.request!.packageId ?? '',
+    packageName: widget.request!.packageName ?? '',
+    price: widget.request!.price ?? 0,
+    bodyArea: widget.request!.bodyArea ?? {},
+    symptomsChart: finalSymptomsChart,
+    symptoms: widget.request!.symptoms ?? [],
+    status: 'in_progress',  // ← สำคัญ!
+  );
+}
+
+// อัปเดต local state ทันที ก่อน _initChat จะ re-fetch
+setState(() {
+  _isConsultationActive = true;
+  if (_consultationData != null) {
+    _consultationData!['status'] = 'in_progress';
+  } else {
+    _consultationData = <String, dynamic>{
+      'id': consultationId,
+      'status': 'in_progress',
+    };
+  }
+});
+```
+
+**Repository update (`consultation_repository.dart`):**
+
+```dart
+Future<ConsultationRequestModel> createRequest({
+  required String userId,
+  // ...other params
+  String? status,  // ← เพิ่ม parameter
+}) async {
+  final data = {
+    // ...other fields
+    'status': status ?? 'pending',
+  };
+  // ...insert logic
+}
+```
+
+### สิ่งที่ห้ามทำ
+
+```dart
+// ❌ ห้ามใช้ _isConsultationActive เป็น condition หลัก
+if (!_isProvider && !_isConsultationActive)  // ผิด!
+
+// ❌ ห้ามอ้างอิง payment_status (ไม่มีใน DB)
+_consultationData?['payment_status']  // ผิด!
+
+// ❌ ห้าม set _isConsultationActive = true ใน initState
+// ให้ _initChat อ่านจาก DB แล้วคำนวณเอง
+```
+
+### ไฟล์ที่เกี่ยวข้อง
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `chart_board_page.dart` | เปลี่ยน condition ทั้งหมดจาก `_isConsultationActive` / `payment_status` เป็น `status` |
+| `consultation_repository.dart` | เพิ่ม `status` parameter ใน `createRequest()` |
+
+---
+
 ## 📚 หน้าประวัติการปรึกษา (Consultation History)
 
 ### หน้า 1: ผู้ป่วย — ประวัติการปรึกษาของฉัน

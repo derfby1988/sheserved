@@ -71,6 +71,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // --- Expert Status ---
   List<Map<String, dynamic>> _expertStatuses = [];
   StreamSubscription? _expertStatusSub;
+  Map<String, dynamic>? _consultationData;
+
+  // --- Room Status ---
+  StreamSubscription? _roomSub;
+  DateTime? _roomStartedAt;
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -117,8 +122,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   professionId != '00000000-0000-0000-0000-000000000001';
     
     // Auto-detect initial state
+    // NOTE: Don't set _isConsultationActive here — let _initChat determine
+    // from real payment_status to avoid hiding the pain selector prematurely.
     if (widget.entry != null) {
-      _isConsultationActive = true;
       _isHeaderExpanded = false;
       _selectedPain = widget.entry!.symptomsChart['pain_level']?.toString();
     } else if (widget.request?.symptomsChart['pain_level'] != null) {
@@ -149,6 +155,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   void _startTimer() {
+    debugPrint('[ChartBoard] _startTimer called, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
     if (_isTimerRunning) return;
     _isTimerRunning = true;
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -395,13 +402,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       final roomData = results[1];
 
       if (consultData != null) {
-        final status = consultData['status'] as String?;
-        final paymentStatus = consultData['payment_status'] as String? ?? 'pending';
+        if (mounted) {
+          setState(() => _consultationData = consultData as Map<String, dynamic>);
+        }
+        final status = consultData['status'] as String? ?? 'pending';
         
         if (mounted) {
           setState(() {
-            // Patient needs to pay first, Providers can always see if they are assigned
-            _isConsultationActive = (paymentStatus == 'paid') || _isProvider;
+            // Patient needs to confirm first, Providers can always see if they are assigned
+            _isConsultationActive = (status == 'in_progress') || _isProvider;
             
             if (consultData['package_id'] != null && _selectedPackage == null) {
               // Try to find in loaded packages later
@@ -415,12 +424,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final sessionMins = (roomData['session_minutes'] as int?) ?? 15;
         final isActive = roomData['is_active'] as bool? ?? true;
 
+        if (startedAtStr != null) {
+          _roomStartedAt = DateTime.parse(startedAtStr);
+        }
+
         if (startedAtStr != null && isActive) {
           final startedAt = DateTime.parse(startedAtStr);
           final now = DateTime.now();
           final elapsedSeconds = now.difference(startedAt).inSeconds;
           final totalSeconds = sessionMins * 60;
-          
+
           if (mounted) {
             setState(() {
               _remainingSeconds = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
@@ -430,6 +443,45 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             });
           }
         }
+
+        // Subscribe to room updates so timer reacts when started_at / is_active changes
+        _roomSub = supabase
+            .from('chat_rooms')
+            .stream(primaryKey: ['id'])
+            .eq('id', roomId)
+            .listen((roomList) {
+              if (roomList.isEmpty) return;
+              final updatedRoom = roomList.first;
+              final newStartedAt = updatedRoom['started_at'] as String?;
+              final newIsActive = updatedRoom['is_active'] as bool? ?? true;
+              final newSessionMins = (updatedRoom['session_minutes'] as int?) ?? 15;
+
+              if (newStartedAt != null) {
+                _roomStartedAt = DateTime.parse(newStartedAt);
+              }
+
+              if (newStartedAt != null && newIsActive) {
+                final startedAt = DateTime.parse(newStartedAt);
+                final now = DateTime.now();
+                final elapsed = now.difference(startedAt).inSeconds;
+                final total = newSessionMins * 60;
+                final remaining = (total - elapsed).clamp(0, total);
+
+                if (mounted) {
+                  setState(() {
+                    _remainingSeconds = remaining;
+                    if (remaining > 0 && !_isTimerRunning) {
+                      _startTimer();
+                    }
+                  });
+                }
+              } else if (!newIsActive && _isTimerRunning) {
+                _sessionTimer?.cancel();
+                if (mounted) {
+                  setState(() => _isTimerRunning = false);
+                }
+              }
+            });
       }
 
       // 3. Subscribe to Expert Statuses (Priority 2)
@@ -447,8 +499,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   'status': e['status'],
                   'providerId': e['provider_id'],
                   'isRequired': e['is_required'] as bool? ?? false,
+                  'joinedAt': e['joined_at'],
+                  'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
+                  'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
                 }).toList();
               });
+            }
+            // Start timer as soon as ANY expert joins (per improvement plan)
+            final anyJoined = data.any(
+              (e) => e['status'] == 'joined' || e['joined_at'] != null,
+            );
+            final shouldStart = anyJoined || _roomStartedAt != null;
+            debugPrint('[ChartBoard] stream data.length=${data.length}, anyJoined=$anyJoined, _roomStartedAt=$_roomStartedAt, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
+            if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
+              debugPrint('[ChartBoard] >>> Starting timer from stream');
+              _startTimer();
             }
           });
 
@@ -481,24 +546,83 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   Future<void> _fetchExpertStatuses(String consultationId) async {
     try {
+      debugPrint('[ChartBoard] _fetchExpertStatuses START for consultationId=$consultationId');
       final data = await Supabase.instance.client
           .from('consultation_room_experts')
           .select()
           .eq('consultation_id', consultationId);
-      
+
+      debugPrint('[ChartBoard] _fetchExpertStatuses rows=${(data as List).length}');
+      for (final row in data) {
+        debugPrint('[ChartBoard] expert raw row: $row');
+      }
+
+      List<Map<String, dynamic>> mapped = (data as List).map((e) => {
+        'role': e['expert_group_role'],
+        'name': e['expert_group_name'],
+        'status': e['status'],
+        'providerId': e['provider_id'],
+        'isRequired': e['is_required'] as bool? ?? false,
+        'joinedAt': e['joined_at'],
+        'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
+        'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+      }).toList();
+
+      // Fallback: if consultation_room_experts empty (old consultation or no package),
+      // query chat_room_members + users to find doctors who actually joined
+      if (mapped.isEmpty) {
+        debugPrint('[ChartBoard] consultation_room_experts empty — falling back to chat_room_members');
+        final roomId = 'consult_$consultationId';
+        final members = await Supabase.instance.client
+            .from('chat_room_members')
+            .select('user_id, role, joined_at, users!inner(first_name, last_name, profile_image_url)')
+            .eq('room_id', roomId)
+            .eq('role', 'doctor');
+
+        debugPrint('[ChartBoard] fallback chat_room_members rows=${(members as List).length}');
+        for (final row in members) {
+          debugPrint('[ChartBoard] fallback raw row: $row');
+        }
+
+        final fallback = (members as List).map((e) {
+          final user = e['users'] as Map<String, dynamic>? ?? {};
+          final firstName = user['first_name'] as String? ?? '';
+          final lastName = user['last_name'] as String? ?? '';
+          final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+          return {
+            'role': e['role'] ?? 'doctor',
+            'name': name,
+            'status': 'joined',
+            'providerId': e['user_id'],
+            'isRequired': false,
+            'joinedAt': e['joined_at'],
+            'providerAvatarUrl': user['profile_image_url'],
+            'expertGroupIcon': null,
+          };
+        }).toList();
+
+        mapped = fallback;
+      }
+
       if (mounted) {
         setState(() {
-          _expertStatuses = (data as List).map((e) => {
-            'role': e['expert_group_role'],
-            'name': e['expert_group_name'],
-            'status': e['status'],
-            'providerId': e['provider_id'],
-            'isRequired': e['is_required'] as bool? ?? false,
-          }).toList();
+          _expertStatuses = mapped;
         });
       }
-    } catch (e) {
+      debugPrint('[ChartBoard] _fetchExpertStatuses mapped _expertStatuses.length=${_expertStatuses.length}');
+
+      // If experts already joined before page opened, start timer immediately
+      final anyJoined = mapped.any(
+        (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+      );
+      final shouldStart = anyJoined || _roomStartedAt != null;
+      debugPrint('[ChartBoard] initial fetch anyJoined=$anyJoined, _roomStartedAt=$_roomStartedAt, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
+      if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
+        _startTimer();
+      }
+    } catch (e, st) {
       debugPrint('Error fetching expert statuses: $e');
+      debugPrint('$st');
     }
   }
 
@@ -831,6 +955,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _audioRecorder.dispose();
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
+    _roomSub?.cancel();
     _healthPermissionPollTimer?.cancel();
     _healthPermissionChannel?.unsubscribe();
     super.dispose();
@@ -898,6 +1023,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               _buildHealthPermissionStatusBanner(_healthPermissionRequest!),
             _buildExpertStatusBanner(),
             _buildBodyMapSummary(),
+            // Pain level selector for patients before payment/activation
+            if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+              _buildPainLevelSelector(),
             Expanded(
               child: Container(
                 decoration: const BoxDecoration(
@@ -910,6 +1038,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 child: _buildMessagesList(),
               ),
             ),
+            // Payment card for patients before payment/activation
+            if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+              _buildPaymentCard(),
             _buildChatInput(),
           ],
         ),
@@ -989,19 +1120,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         child: ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          itemCount: _messages.length + 1, // +1 for payment card at bottom
+          itemCount: _messages.length,
           itemBuilder: (context, index) {
-            if (index == _messages.length) {
-              // Only show payment card if not a provider and consultation not active
-              if (!_isProvider && !_isConsultationActive) {
-                return _buildPaymentCard();
-              }
-              // Show Review Card if completed and is patient
-              if (!_isProvider && (widget.entry?.status == 'completed')) {
-                return _buildReviewCard();
-              }
-              return const SizedBox(height: 20);
-            }
             if (_messages.isEmpty) return const SizedBox.shrink();
             final msg = _messages[index];
             final isMe = msg.senderId == (_currentUser?.id ?? 'demo_user');
@@ -1113,13 +1233,111 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  Widget _buildPainLevelSelector() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.healing, color: Colors.orange.shade600, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'ระดับความเจ็บปวดของคุณ',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: painLevels.map((level) {
+              final isSelected = _selectedPain == level['label'].toString();
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedPain = level['label'].toString();
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? (level['color'] as Color).withOpacity(0.15)
+                            : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? (level['color'] as Color)
+                              : Colors.grey.shade200,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            level['icon'] as IconData,
+                            color: isSelected
+                                ? (level['color'] as Color)
+                                : Colors.grey.shade400,
+                            size: 24,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            level['label'] as String,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? (level['color'] as Color)
+                                  : Colors.grey.shade500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPaymentCard() {
     final bool isReady = _selectedPain != null;
     final color = isReady ? const Color(0xFF4A8B2C) : Colors.white;
     final textColor = isReady ? Colors.white : Colors.black;
 
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 16),
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       child: InkWell(
         onTap: isReady ? _submitConsultationRequest : null,
         borderRadius: BorderRadius.circular(20),
@@ -1169,7 +1387,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${widget.request?.price.toInt() ?? 0} บาท',
+                      '${(widget.entry?.price ?? widget.request?.price ?? 0).toInt()} บาท',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -2719,13 +2937,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   Widget _buildChatInput() {
     final hasText = _msgController.text.trim().isNotEmpty;
+    final status = _consultationData?['status'] as String? ?? 'pending';
+    final isChatActive = _isProvider || status == 'in_progress';
+    debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive _consultationData=$_consultationData');
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Opacity(
-            opacity: (_isConsultationActive || _isProvider) ? 1.0 : 0.3,
+            opacity: isChatActive ? 1.0 : 0.3,
             child: AbsorbPointer(
-              absorbing: !(_isConsultationActive || _isProvider),
+              absorbing: !isChatActive,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -2833,7 +3054,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
 
           // Lock Overlay for patients before payment
-          if (!_isConsultationActive && !_isProvider)
+          if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
             Positioned.fill(
               child: Container(
                 color: Colors.white.withOpacity(0.1),
@@ -2959,21 +3180,37 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // 1. Prepare final data
       final finalSymptomsChart = Map<String, dynamic>.from(
-        widget.request?.symptomsChart ?? {},
+        widget.entry?.symptomsChart ?? widget.request?.symptomsChart ?? {},
       );
       finalSymptomsChart['pain_level'] = _selectedPain;
 
       // 2. Save to Repository
       final repo = ServiceLocator.instance.consultationRepository;
-      final newRequest = await repo.createRequest(
-        userId: currentUserId,
-        packageId: widget.request?.packageId ?? '',
-        packageName: widget.request?.packageName ?? '',
-        price: widget.request?.price ?? 0,
-        bodyArea: widget.request?.bodyArea ?? {},
-        symptomsChart: finalSymptomsChart,
-        symptoms: widget.request?.symptoms ?? [],
-      );
+      String consultationId;
+
+      if (widget.entry != null) {
+        // Update existing consultation + mark as active/confirmed
+        consultationId = widget.entry!.id;
+        await repo.updateRequest(consultationId, {
+          'symptoms_chart': finalSymptomsChart,
+          'status': 'in_progress',
+        });
+      } else if (widget.request != null) {
+        // Create new consultation request (mark as active immediately)
+        final newRequest = await repo.createRequest(
+          userId: currentUserId,
+          packageId: widget.request!.packageId ?? '',
+          packageName: widget.request!.packageName ?? '',
+          price: widget.request!.price ?? 0,
+          bodyArea: widget.request!.bodyArea ?? {},
+          symptomsChart: finalSymptomsChart,
+          symptoms: widget.request!.symptoms ?? [],
+          status: 'in_progress',
+        );
+        consultationId = newRequest.id;
+      } else {
+        throw Exception('ไม่พบข้อมูลคำปรึกษา กรุณาลองใหม่อีกครั้ง');
+      }
 
       if (mounted) {
         Navigator.pop(context); // Close loading
@@ -2988,9 +3225,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         
         // Transition to Chat Mode
         setState(() {
-          _activeConsultationId = newRequest.id;
+          _activeConsultationId = consultationId;
           _isConsultationActive = true;
           _isHeaderExpanded = false;
+          // Update local _consultationData immediately so UI unlocks without
+          // waiting for _initChat async re-fetch (avoids stale-data flicker).
+          if (_consultationData != null) {
+            _consultationData!['status'] = 'in_progress';
+          } else {
+            _consultationData = <String, dynamic>{
+              'id': consultationId,
+              'status': 'in_progress',
+            };
+          }
         });
         
         // Re-init chat to ensure room is fully synced
@@ -3217,21 +3464,37 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  bool _hasAnyExpertJoined() {
+    // Primary: check consultation_room_experts
+    final fromExperts = _expertStatuses.any(
+      (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+    );
+    // Fallback: room has been started (started_at is set)
+    return fromExperts || _roomStartedAt != null;
+  }
+
   Widget _buildTimerBadge() {
     final bool isLowTime = _remainingSeconds < 300 && _isTimerRunning;
-    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0;
-    
+    final bool hasExpertJoined = _hasAnyExpertJoined();
+    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0 && !hasExpertJoined;
+    final bool isStarting = !_isTimerRunning && _remainingSeconds > 0 && hasExpertJoined;
+
+    // Color theme per state
+    final Color badgeColor = isWaiting
+        ? Colors.orange
+        : (isLowTime ? Colors.red : AppColors.primary);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isWaiting 
-            ? Colors.orange.shade50 
-            : (isLowTime ? Colors.red.shade50 : AppColors.primary.withOpacity(0.1)),
+        color: isWaiting
+            ? Colors.orange.shade50
+            : (isLowTime ? Colors.red.shade50 : badgeColor.withOpacity(0.1)),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isWaiting 
+          color: isWaiting
               ? Colors.orange.withOpacity(0.3)
-              : (isLowTime ? Colors.red.withOpacity(0.3) : AppColors.primary.withOpacity(0.3)),
+              : (isLowTime ? Colors.red.withOpacity(0.3) : badgeColor.withOpacity(0.3)),
         ),
       ),
       child: Row(
@@ -3243,6 +3506,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               height: 10,
               child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.orange)),
             )
+          else if (isStarting)
+            Icon(
+              Icons.play_circle_outline,
+              size: 14,
+              color: badgeColor,
+            )
           else
             Icon(
               Icons.timer_outlined,
@@ -3251,9 +3520,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             ),
           const SizedBox(width: 6),
           Text(
-            isWaiting ? 'รอเริ่ม...' : _formatTimer(_remainingSeconds),
+            isWaiting
+                ? 'รอผู้เชี่ยวชาญเข้าร่วม'
+                : (isStarting ? 'เริ่มให้คำปรึกษา' : _formatTimer(_remainingSeconds)),
             style: TextStyle(
-              color: isWaiting ? Colors.orange.shade800 : (isLowTime ? Colors.red : AppColors.primary),
+              color: isWaiting ? Colors.orange.shade800 : (isLowTime ? Colors.red : badgeColor),
               fontSize: 13,
               fontWeight: FontWeight.bold,
               fontFeatures: const [FontFeature.tabularFigures()],
@@ -3567,9 +3838,60 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  IconData? _parseExpertGroupIcon(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) {
+      return IconData(raw, fontFamily: 'MaterialIcons');
+    }
+    if (raw is String) {
+      if (raw.contains('http')) return null; // image url, not an icon
+      // Map common icon names
+      const iconMap = <String, IconData>{
+        'medical_services': Icons.medical_services,
+        'psychology': Icons.psychology,
+        'local_hospital': Icons.local_hospital,
+        'healing': Icons.healing,
+        'favorite': Icons.favorite,
+        'health_and_safety': Icons.health_and_safety,
+        'spa': Icons.spa,
+        'vaccines': Icons.vaccines,
+        'personal_injury': Icons.personal_injury,
+        'sports': Icons.sports,
+        'child_care': Icons.child_care,
+        'elderly': Icons.elderly,
+        'pregnant_woman': Icons.pregnant_woman,
+        'restaurant': Icons.restaurant,
+        'science': Icons.science,
+        'biotech': Icons.biotech,
+        'fitness_center': Icons.fitness_center,
+        'sanitizer': Icons.sanitizer,
+        'masks': Icons.masks,
+        'coronavirus': Icons.coronavirus,
+        'medication': Icons.medication,
+        'medication_liquid': Icons.medication_liquid,
+        'monitor_heart': Icons.monitor_heart,
+        'emergency': Icons.emergency,
+        'psychology_alt': Icons.psychology_alt,
+        'sentiment_satisfied': Icons.sentiment_satisfied,
+        'sentiment_dissatisfied': Icons.sentiment_dissatisfied,
+        'groups': Icons.groups,
+        'person': Icons.person,
+        'person_outline': Icons.person_outline,
+        'face': Icons.face,
+        'account_circle': Icons.account_circle,
+      };
+      return iconMap[raw.toString().trim().toLowerCase()] ?? Icons.person_outline;
+    }
+    return null;
+  }
+
   Widget _buildExpertStatusBanner() {
+    debugPrint('[ChartBoard] _buildExpertStatusBanner: _expertStatuses.length=${_expertStatuses.length}');
+    for (final e in _expertStatuses) {
+      debugPrint('[ChartBoard]   expert name=${e['name']} status=${e['status']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
+    }
     final hasWaitingRequired = _expertStatuses.any((e) => (e['isRequired'] == true) && (e['status'] == 'waiting'));
-    
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -3583,53 +3905,77 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           Row(
             children: [
               Icon(
-                hasWaitingRequired ? Icons.info_outline : Icons.groups_outlined, 
-                size: 16, 
+                hasWaitingRequired ? Icons.info_outline : Icons.groups_outlined,
+                size: 16,
                 color: hasWaitingRequired ? Colors.orange : Colors.grey
               ),
               const SizedBox(width: 8),
               Text(
-                hasWaitingRequired 
-                    ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา' 
+                hasWaitingRequired
+                    ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา'
                     : 'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
                 style: TextStyle(
-                  color: hasWaitingRequired ? Colors.orange.shade800 : Colors.grey.shade600, 
-                  fontSize: 12, 
+                  color: hasWaitingRequired ? Colors.orange.shade800 : Colors.grey.shade600,
+                  fontSize: 12,
                   fontWeight: FontWeight.w500
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _expertStatuses.map((expert) {
+          if (_expertStatuses.isEmpty)
+            Text(
+              'ยังไม่มีข้อมูลผู้เชี่ยวชาญสำหรับเซสชั่นนี้ (debug: empty)',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _expertStatuses.map((expert) {
                 final isJoined = expert['status'] == 'joined';
                 final isRequired = expert['isRequired'] == true;
-                
+                final avatarUrl = expert['providerAvatarUrl']?.toString();
+                final iconRaw = expert['expertGroupIcon'];
+                final categoryIcon = _parseExpertGroupIcon(iconRaw);
+
                 return Container(
                   margin: const EdgeInsets.only(right: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isJoined 
-                        ? AppColors.primary.withOpacity(0.08) 
+                    color: isJoined
+                        ? AppColors.primary.withOpacity(0.08)
                         : (isRequired ? Colors.orange.shade50 : Colors.grey.shade50),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isJoined 
-                          ? AppColors.primary.withOpacity(0.2) 
+                      color: isJoined
+                          ? AppColors.primary.withOpacity(0.2)
                           : (isRequired ? Colors.orange.withOpacity(0.2) : Colors.grey.shade200),
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty),
-                        size: 14,
-                        color: isJoined ? AppColors.primary : (isRequired ? Colors.orange : Colors.grey),
-                      ),
+                      // Avatar or Icon
+                      if (isJoined && avatarUrl != null && avatarUrl.isNotEmpty)
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundImage: NetworkImage(avatarUrl),
+                          backgroundColor: Colors.grey.shade200,
+                          onBackgroundImageError: (_, __) {},
+                        )
+                      else if (categoryIcon != null)
+                        Icon(
+                          categoryIcon,
+                          size: 20,
+                          color: isJoined ? AppColors.primary : Colors.grey.shade400,
+                        )
+                      else
+                        Icon(
+                          isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty),
+                          size: 16,
+                          color: isJoined ? AppColors.primary : (isRequired ? Colors.orange : Colors.grey),
+                        ),
                       const SizedBox(width: 6),
                       Text(
                         expert['name'] + (isRequired ? ' *' : ''),
@@ -3643,8 +3989,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   ),
                 );
               }).toList(),
+              ),
             ),
-          ),
         ],
       ),
     );
