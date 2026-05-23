@@ -19,6 +19,7 @@ class AppColors {
   static const Color accent = Color(0xFFFFB74D); // Light orange-yellow สำหรับ notification และ hamburger menu
   static const Color accentLight = Color(0xFFFFE082);
   static const Color accentDark = Color(0xFFFFA000);
+  static const Color alertGold = Color(0xFFFFB300);
   
   // Cart Icon Color
   static const Color cartIcon = Color(0xFF9E9E9E); // Light grey-purple สำหรับ cart icon

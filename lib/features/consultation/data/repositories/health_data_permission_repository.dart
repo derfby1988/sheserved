@@ -235,7 +235,36 @@ class HealthDataPermissionRepository {
       'birthday': profile?['birthday'],
       'emergency_contact': profile?['emergency_contact'],
       'emergency_phone': profile?['emergency_phone'],
+      'weight_history': await _fetchWeightHistory(patientId),
     }..removeWhere((key, value) => value == null);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchWeightHistory(String patientId) async {
+    try {
+      final rows = await _client
+          .from('health_data_logs')
+          .select('new_value, created_at')
+          .eq('user_id', patientId)
+          .eq('field_type', 'weight')
+          .order('created_at', ascending: false)
+          .limit(10);
+
+      if (rows is! List) return <Map<String, dynamic>>[];
+
+      return rows.map((e) {
+        final map = Map<String, dynamic>.from(e as Map);
+        final rawValue = map['new_value']?.toString() ?? '';
+        final numeric = rawValue.split(' ').first;
+        return <String, dynamic>{
+          'value': numeric,
+          'unit': 'กก.',
+          'measured_at': map['created_at'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('[HealthDataPermissionRepository] _fetchWeightHistory error: $e');
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchConsultationNotes({

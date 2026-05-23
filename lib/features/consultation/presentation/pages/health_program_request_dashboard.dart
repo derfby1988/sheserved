@@ -832,6 +832,7 @@ class _HealthProgramRequestDashboardState
       label = 'เข้าห้องแชทผู้ป่วย';
       icon = Icons.chat_bubble_outline;
       onTap = () => _openChat(e);
+      btnColor = AppColors.alertGold;
     } else if (e.status == 'pending' && !isBusy) {
       final canJoin = _availabilityStatus != 'busy';
       label = canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่';
@@ -865,7 +866,7 @@ class _HealthProgramRequestDashboardState
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: btnColor,
-          foregroundColor: Colors.white,
+          foregroundColor: btnColor == AppColors.alertGold ? Colors.black87 : Colors.white,
           disabledBackgroundColor: Colors.grey.shade200,
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 12),

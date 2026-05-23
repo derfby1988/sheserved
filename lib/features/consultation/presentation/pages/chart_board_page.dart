@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -1380,6 +1382,47 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  Widget _buildMetricPointLabels(
+    List<Map<String, dynamic>> points,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    if (points.isEmpty) return const SizedBox.shrink();
+
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final chartWidth = constraints.maxWidth;
+          const topPadding = 18.0;
+          const bottomPadding = 18.0;
+          final chartHeight = math.max(1.0, constraints.maxHeight - topPadding - bottomPadding);
+          final usableRange = (maxY - minY).abs();
+          final step = points.length == 1 ? 0.0 : chartWidth / (points.length - 1);
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < points.length; i++)
+                Positioned(
+                  left: points.length == 1 ? chartWidth / 2 - 18 : (step * i) - 20,
+                  top: topPadding +
+                      ((maxY - (points[i]['value'] as double)) / (usableRange == 0 ? 1 : usableRange)) *
+                          chartHeight -
+                      28,
+                  child: _buildPointValueBubble(
+                    _formatMetricValue(points[i]['value']),
+                    _formatMetricDate(points[i]['measuredAt']),
+                    color,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   List<Widget> _buildGrantedHealthSections(Map<String, dynamic> data) {
     final sections = <Widget>[];
     final granted = data['grantedFields'] as Map<String, dynamic>? ?? {};
@@ -1504,6 +1547,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   List<Widget> _buildGeneralSectionContent(Map<String, dynamic> general) {
     final profile = general['profile'] as Map<String, dynamic>?;
     final healthInfo = general['health_info'] as Map<String, dynamic>?;
+    final weightHistory = (general['weight_history'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        const <Map<String, dynamic>>[];
     final chips = <Widget>[];
 
     void addChip(String label, dynamic value, {IconData icon = Icons.info}) {
@@ -1515,11 +1561,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       'ส่วนสูง',
       healthInfo?['height'] != null ? '${healthInfo!['height']} ซม.' : null,
       icon: Icons.height,
-    );
-    addChip(
-      'น้ำหนัก',
-      healthInfo?['weight'] != null ? '${healthInfo!['weight']} กก.' : null,
-      icon: Icons.monitor_weight,
     );
     addChip('BMI', healthInfo?['bmi'], icon: Icons.scale);
     addChip('คะแนนสุขภาพ', healthInfo?['health_score'], icon: Icons.favorite);
@@ -1540,6 +1581,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           runSpacing: 8,
           children: chips,
         ),
+      ],
+      if (weightHistory.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _buildWeightHistoryCard(weightHistory),
       ],
       if (emergencyContact != null || emergencyPhone != null) ...[
         const SizedBox(height: 12),
@@ -1563,6 +1608,269 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
       ],
     ];
+  }
+
+  Widget _buildWeightHistoryCard(List<Map<String, dynamic>> weightHistory) {
+    final points = List<Map<String, dynamic>>.from(weightHistory)
+      ..sort((a, b) {
+        final aDate = DateTime.tryParse(a['measured_at']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = DateTime.tryParse(b['measured_at']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return aDate.compareTo(bDate);
+      });
+
+    final chartPoints = points
+        .map(
+          (item) => <String, dynamic>{
+            'value': double.tryParse(item['value']?.toString() ?? '') ?? 0.0,
+            'measuredAt':
+                DateTime.tryParse(item['measured_at']?.toString() ?? '') ??
+                DateTime.now(),
+          },
+        )
+        .toList();
+
+    if (chartPoints.isEmpty) return const SizedBox.shrink();
+
+    final values = chartPoints.map((e) => e['value'] as double).toList();
+    final latest = chartPoints.last;
+    var maxVal = values.reduce(math.max);
+    var minVal = values.reduce(math.min);
+    if (maxVal == minVal) {
+      maxVal += 1;
+      minVal -= 1;
+    }
+
+    final range = (maxVal - minVal).abs();
+    final padding = range < 0.001 ? 1.0 : range * 0.22;
+    final minY = minVal - padding;
+    final maxY = maxVal + padding;
+    const chartColor = Color(0xFF5B9A8B);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: chartColor.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: chartColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.monitor_weight_outlined,
+                  size: 18,
+                  color: chartColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'กราฟน้ำหนัก',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'แนวโน้ม 10 รายการล่าสุด',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${_formatMetricValue(latest['value'])} กก.',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: chartColor,
+                    ),
+                  ),
+                  Text(
+                    DateFormat('dd MMM HH:mm')
+                        .format((latest['measuredAt'] as DateTime).toLocal()),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 210,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: LineChart(
+                    _buildWeightHistoryChartData(chartPoints, chartColor, minY, maxY),
+                  ),
+                ),
+                Positioned.fill(
+                  child: _buildWeightPointLabels(chartPoints, chartColor, minY, maxY),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeightPointLabels(
+    List<Map<String, dynamic>> points,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    if (points.isEmpty) return const SizedBox.shrink();
+
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final chartWidth = constraints.maxWidth;
+          const topPadding = 18.0;
+          const bottomPadding = 18.0;
+          final chartHeight = math.max(1.0, constraints.maxHeight - topPadding - bottomPadding);
+          final usableRange = (maxY - minY).abs();
+          final step = points.length == 1 ? 0.0 : chartWidth / (points.length - 1);
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < points.length; i++)
+                Positioned(
+                  left: points.length == 1 ? chartWidth / 2 - 20 : (step * i) - 20,
+                  top: topPadding +
+                      ((maxY - (points[i]['value'] as double)) / (usableRange == 0 ? 1 : usableRange)) *
+                          chartHeight -
+                      28,
+                  child: _buildPointValueBubble(
+                    '${_formatMetricValue(points[i]['value'])} กก.',
+                    DateFormat('dd MMM HH:mm').format(
+                      (points[i]['measuredAt'] as DateTime).toLocal(),
+                    ),
+                    color,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  LineChartData _buildWeightHistoryChartData(
+    List<Map<String, dynamic>> chartPoints,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    final spots = chartPoints.length == 1
+        ? [FlSpot(0, chartPoints.first['value'] as double), FlSpot(1, chartPoints.first['value'] as double)]
+        : [
+            for (var i = 0; i < chartPoints.length; i++)
+              FlSpot(i.toDouble(), chartPoints[i]['value'] as double),
+          ];
+    final range = (maxY - minY).abs();
+
+    return LineChartData(
+      minX: 0,
+      maxX: (spots.length - 1).toDouble(),
+      minY: minY,
+      maxY: maxY,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: range < 0.001 ? 1 : range / 3,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: color.withOpacity(0.08),
+          strokeWidth: 1,
+        ),
+      ),
+      titlesData: const FlTitlesData(show: false),
+      borderData: FlBorderData(show: false),
+      lineTouchData: LineTouchData(
+        enabled: true,
+        handleBuiltInTouches: true,
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipColor: (_) => color.withOpacity(0.95),
+          tooltipRoundedRadius: 14.0,
+          tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          fitInsideHorizontally: true,
+          fitInsideVertically: true,
+          getTooltipItems: (touchedSpots) {
+            return touchedSpots.map((spot) {
+              final index = spot.spotIndex.clamp(0, chartPoints.length - 1) as int;
+              final point = chartPoints[index];
+              final value = _formatMetricValue(point['value']);
+              final dateText = DateFormat('dd MMM HH:mm').format(
+                (point['measuredAt'] as DateTime).toLocal(),
+              );
+              return LineTooltipItem(
+                '$value กก.\n$dateText',
+                const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              );
+            }).toList();
+          },
+        ),
+      ),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          curveSmoothness: 0.28,
+          color: color,
+          barWidth: 3.2,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+              radius: 3.5,
+              color: Colors.white,
+              strokeColor: color,
+              strokeWidth: 2,
+            ),
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [color.withOpacity(0.28), color.withOpacity(0.03)],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildHealthDataChip(String label, String value,
@@ -1663,53 +1971,356 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return parsed.toStringAsFixed(2);
   }
 
+  String _formatMetricDate(dynamic raw) {
+    if (raw == null) return '-';
+    final parsed = raw is DateTime
+        ? raw
+        : DateTime.tryParse(raw.toString())?.toLocal();
+    if (parsed == null) return raw.toString();
+    return DateFormat('dd MMM HH:mm').format(parsed);
+  }
+
+  Color _metricChartColor(String metricType) {
+    switch (metricType) {
+      case 'heart_rate':
+        return const Color(0xFFE57373);
+      case 'hrv_sdnn':
+      case 'hrv':
+        return const Color(0xFF8E6CFF);
+      case 'steps':
+        return const Color(0xFF4DB6AC);
+      case 'active_calories':
+      case 'calories':
+        return const Color(0xFFFF8A65);
+      case 'sleep_asleep':
+      case 'sleep':
+        return const Color(0xFF5C6BC0);
+      case 'blood_oxygen':
+      case 'spo2':
+        return const Color(0xFF42A5F5);
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  List<FlSpot> _buildSpots(List<double> values) {
+    if (values.isEmpty) return const [];
+    if (values.length == 1) {
+      return [FlSpot(0, values.first), FlSpot(1, values.first)];
+    }
+    return [
+      for (var i = 0; i < values.length; i++) FlSpot(i.toDouble(), values[i]),
+    ];
+  }
+
+  LineChartData _buildMetricLineChartData(
+    List<double> values,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    final spots = _buildSpots(values);
+    final range = (maxY - minY).abs();
+
+    return LineChartData(
+      minX: 0,
+      maxX: (spots.length - 1).toDouble(),
+      minY: minY,
+      maxY: maxY,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: range < 0.001 ? 1 : range / 3,
+        getDrawingHorizontalLine: (value) => FlLine(
+          color: color.withOpacity(0.08),
+          strokeWidth: 1,
+        ),
+      ),
+      titlesData: const FlTitlesData(show: false),
+      borderData: FlBorderData(show: false),
+      lineTouchData: LineTouchData(enabled: false),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          curveSmoothness: 0.32,
+          color: color,
+          barWidth: 3.5,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+              radius: 3.5,
+              color: Colors.white,
+              strokeColor: color,
+              strokeWidth: 2,
+            ),
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                color.withOpacity(0.30),
+                color.withOpacity(0.03),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildMetricGroup(String metricType, dynamic entries) {
     final list = (entries as List?)?.cast<Map<String, dynamic>>() ?? [];
     if (list.isEmpty) return const SizedBox.shrink();
+    final sortedList = List<Map<String, dynamic>>.from(list)
+      ..sort((a, b) {
+        final aTime = DateTime.tryParse(a['measured_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = DateTime.tryParse(b['measured_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return aTime.compareTo(bTime);
+      });
     final displayName =
         _metricNameTh[metricType] ?? metricType.replaceAll('_', ' ');
+    final metricColor = _metricChartColor(metricType);
+    final chartPoints = sortedList
+        .map(
+          (item) => <String, dynamic>{
+            'value': double.tryParse(item['value']?.toString() ?? '') ?? 0.0,
+            'measuredAt': item['measured_at'],
+          },
+        )
+        .toList();
+
+    if (chartPoints.isEmpty) return const SizedBox.shrink();
+
+    final chartValues = chartPoints.map((e) => e['value'] as double).toList();
+
+    final latest = sortedList.last;
+    final latestValue = _formatMetricValue(latest['value']);
+    final latestUnit = (latest['unit'] ?? '').toString().trim();
+    final latestTime = _formatMetricDate(latest['measured_at']);
+    final minValue = chartValues.reduce(math.min);
+    final maxValue = chartValues.reduce(math.max);
+    final avgValue = chartValues.reduce((a, b) => a + b) / chartValues.length;
+    final range = (maxValue - minValue).abs();
+    final padding = range < 0.001 ? 1.0 : range * 0.22;
+    final minY = minValue - padding;
+    final maxY = maxValue + padding;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade50,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: metricColor.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            displayName,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          ...list.take(3).map((item) {
-            final measured = item['measured_at'] != null
-                ? DateFormat('dd MMM HH:mm')
-                    .format(DateTime.parse(item['measured_at']).toLocal())
-                : '';
-            final unit = item['unit'] ?? '';
-            final value = _formatMetricValue(item['value']);
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: metricColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.show_chart_rounded, size: 18, color: metricColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'แนวโน้ม 10 รายการล่าสุด',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Expanded(
-                    child: Text(
-                      '$value $unit',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
+                  Text(
+                    '$latestValue${latestUnit.isNotEmpty ? ' $latestUnit' : ''}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: metricColor,
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Text(
-                    measured,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    latestTime,
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                   ),
                 ],
               ),
-            );
-          }),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: 180,
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  metricColor.withOpacity(0.06),
+                  Colors.white,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: LineChart(
+                    _buildMetricLineChartData(
+                      chartValues,
+                      metricColor,
+                      minY,
+                      maxY,
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: _buildMetricPointLabels(
+                    chartPoints,
+                    metricColor,
+                    minY,
+                    maxY,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMiniStatChip(
+                  label: 'ต่ำสุด',
+                  value: _formatMetricValue(minValue),
+                  color: metricColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMiniStatChip(
+                  label: 'เฉลี่ย',
+                  value: _formatMetricValue(avgValue),
+                  color: metricColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMiniStatChip(
+                  label: 'สูงสุด',
+                  value: _formatMetricValue(maxValue),
+                  color: metricColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPointValueBubble(String value, String dateText, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            dateText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 8,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniStatChip({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );

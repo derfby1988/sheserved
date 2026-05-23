@@ -330,7 +330,8 @@ class RequestItemCardWidget extends StatelessWidget {
       );
     }
 
-    if (isMyJob && e.status == 'in_progress') {
+    final bool hasWorkOngoing = isMyJob && (e.status == 'pending' || e.status == 'in_progress');
+    if (hasWorkOngoing && e.status == 'in_progress') {
       return Row(
         children: [
           Expanded(
@@ -338,6 +339,8 @@ class RequestItemCardWidget extends StatelessWidget {
               text: 'เข้าห้องแชทเพื่อให้คำปรึกษา',
               icon: Icons.chat_rounded,
               onPressed: () => onOpenChat(e),
+              backgroundColor: AppColors.alertGold,
+              textColor: Colors.black87,
             ),
           ),
         ],

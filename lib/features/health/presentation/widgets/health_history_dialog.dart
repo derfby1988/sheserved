@@ -1,5 +1,8 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../data/models/health_data_change_log.dart';
@@ -49,6 +52,10 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
     }
 
     return value;
+  }
+
+  String _formatWeightDate(DateTime date) {
+    return DateFormat('dd MMM HH:mm').format(date.toLocal());
   }
 
   @override
@@ -108,7 +115,7 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
                 const SizedBox(height: 16),
 
                 // Trend Graph
-                if (allLogs.isNotEmpty) ...[
+                if (allLogs.isNotEmpty && widget.fieldType == 'weight') ...[
                   _buildTrendGraph(allLogs),
                   const SizedBox(height: 16),
                 ],
@@ -338,65 +345,280 @@ class _HealthHistoryDialogState extends State<HealthHistoryDialog> {
   }
 
   Widget _buildTrendGraph(List<HealthDataChangeLog> logs) {
-    // Show only last 10 entries for the graph, and reverse to show oldest to newest (left to right)
+    if (widget.fieldType != 'weight') return const SizedBox.shrink();
+
     final graphLogs = logs.take(10).toList().reversed.toList();
+    final points = graphLogs
+        .map(
+          (log) => {
+            'value': double.tryParse(log.newValue.split(' ').first) ?? 0.0,
+            'timestamp': log.timestamp,
+          },
+        )
+        .toList();
 
-    // Parse numeric values from "X kg" or "X.Y"
-    final List<double> values = graphLogs.map((log) {
-      final String numericPart = log.newValue.split(' ').first;
-      return double.tryParse(numericPart) ?? 0.0;
-    }).toList();
+    if (points.isEmpty) return const SizedBox.shrink();
 
-    if (values.isEmpty) return const SizedBox.shrink();
-
-    // Find min/max for scaling
-    double maxVal = values.reduce((a, b) => a > b ? a : b);
-    double minVal = values.reduce((a, b) => a < b ? a : b);
-
-    // Ensure there's a range to avoid division by zero
+    final values = points.map((e) => e['value'] as double).toList();
+    var maxVal = values.reduce(math.max);
+    var minVal = values.reduce(math.min);
     if (maxVal == minVal) {
       maxVal += 1;
       minVal -= 1;
     }
 
-    return Container(
-      height: 100,
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: values.map((val) {
-          // Calculate relative height (0.3 to 1.0 of the box)
-          final double hPercent =
-              0.3 + (0.7 * (val - minVal) / (maxVal - minVal));
+    final range = (maxVal - minVal).abs();
+    final padding = range < 0.001 ? 1.0 : range * 0.22;
+    final minY = minVal - padding;
+    final maxY = maxVal + padding;
+    const chartColor = Color(0xFF5B9A8B);
 
-          return Flexible(
-            child: Container(
-              width: 12,
-              height: 100 * hPercent,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFF90E7A6), // Mint Green top
-                    Color(0xFFB4E1F4), // Light Blue bottom
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: chartColor.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: chartColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.monitor_weight_outlined,
+                  size: 18,
+                  color: chartColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'กราฟน้ำหนัก',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'แนวโน้ม 10 รายการล่าสุด',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF90E7A6).withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 190,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: LineChart(
+                    _buildWeightChartData(
+                      values,
+                      points,
+                      chartColor,
+                      minY,
+                      maxY,
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: _buildWeightPointLabels(points, chartColor, minY, maxY),
+                ),
+              ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  LineChartData _buildWeightChartData(
+    List<double> values,
+    List<Map<String, dynamic>> points,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    final spots = values.length == 1
+        ? [FlSpot(0, values.first), FlSpot(1, values.first)]
+        : [for (var i = 0; i < values.length; i++) FlSpot(i.toDouble(), values[i])];
+    final range = (maxY - minY).abs();
+
+    return LineChartData(
+      minX: 0,
+      maxX: (spots.length - 1).toDouble(),
+      minY: minY,
+      maxY: maxY,
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: range < 0.001 ? 1 : range / 3,
+        getDrawingHorizontalLine: (_) => FlLine(
+          color: color.withOpacity(0.08),
+          strokeWidth: 1,
+        ),
+      ),
+      titlesData: const FlTitlesData(show: false),
+      borderData: FlBorderData(show: false),
+      lineTouchData: LineTouchData(
+        enabled: true,
+        handleBuiltInTouches: true,
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipColor: (_) => color.withOpacity(0.95),
+          tooltipRoundedRadius: 14.0,
+          tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          fitInsideHorizontally: true,
+          fitInsideVertically: true,
+          getTooltipItems: (touchedSpots) {
+            return touchedSpots.map((spot) {
+              final index = spot.spotIndex.clamp(0, points.length - 1) as int;
+              final point = points[index];
+              final value = _formatValue('${point['value']}');
+              final dateText = _formatWeightDate(point['timestamp'] as DateTime);
+              return LineTooltipItem(
+                '$value กก.\n$dateText',
+                const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              );
+            }).toList();
+          },
+        ),
+      ),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          curveSmoothness: 0.3,
+          color: color,
+          barWidth: 3.5,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+              radius: 3.5,
+              color: Colors.white,
+              strokeColor: color,
+              strokeWidth: 2,
+            ),
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [color.withOpacity(0.28), color.withOpacity(0.03)],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeightPointLabels(
+    List<Map<String, dynamic>> points,
+    Color color,
+    double minY,
+    double maxY,
+  ) {
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (points.isEmpty) return const SizedBox.shrink();
+          final width = constraints.maxWidth;
+          final height = math.max(1.0, constraints.maxHeight - 18 - 18);
+          final step = points.length == 1 ? 0.0 : width / (points.length - 1);
+          final usableRange = (maxY - minY).abs();
+
+          return Stack(
+            children: [
+              for (var i = 0; i < points.length; i++)
+                Positioned(
+                  left: points.length == 1 ? width / 2 - 34 : (step * i) - 34,
+                  top: 12 +
+                      ((maxY - (points[i]['value'] as double)) /
+                              (usableRange == 0 ? 1 : usableRange)) *
+                          height -
+                      36,
+                  child: _buildWeightPointBubble(
+                    value: _formatValue('${points[i]['value']}'),
+                    dateText: _formatWeightDate(points[i]['timestamp'] as DateTime),
+                    color: color,
+                  ),
+                ),
+            ],
           );
-        }).toList(),
+        },
+      ),
+    );
+  }
+
+  Widget _buildWeightPointBubble({
+    required String value,
+    required String dateText,
+    required Color color,
+  }) {
+    return Container(
+      width: 78,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$value กก.',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            dateText,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 8,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
