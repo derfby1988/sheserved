@@ -591,6 +591,143 @@ class ExpertGroup {
 
 ---
 
+### 🎨 UI: การ์ดคำปรึกษาบน Dashboard (Updated)
+
+**การ์ดคำปรึกษาแบบใหม่สำหรับ Provider:**
+
+```
+┌─────────────────────────────────────────┐
+│ 👤 อภิเศก ปัญญาคง          [ตรงกับคุณ]│
+│    23 พ.ค. 2026 21:37                  │
+│ ┌─────────────────────────────────────┐ │
+│ │ 🌿 แพ็คเกจ: แพ็คเกจทั่วไป          │ │
+│ │ 📍 บริเวณ: กรุงเทพ...               │ │
+│ │ 💳 ราคา: 495 บาท                   │ │
+│ └─────────────────────────────────────┘ │
+│ [🩺 แพทย์]  ← chip จาก professions      │
+│ [ดูรายละเอียด] [รับงานนี้]            │
+└─────────────────────────────────────────┘
+```
+
+**องค์ประกอบของการ์ด:**
+
+| ส่วน | รายละเอียด | แหล่งที่มา |
+|---|---|---|
+| **Badge มุมขวาบน** | `ตรงกับคุณ` (เขียว) / `ไม่ตรงอาชีพ` (เทา) / `งานของคุณ` (น้ำเงิน) | ตรวจ `_myPackageIds.contains(packageId)` |
+| **Chip อาชีพ** | ไอคอน + ชื่อ + สี จาก `professions` table | `_professions` ที่โหลดจาก `ProfessionRepository` |
+| **ปุ่มการกระทำ** | งานตรง → `[ดูรายละเอียด] [รับงานนี้]` / งานตัวเอง → `[เข้าห้องแชท]` | เงื่อนไข `_isMatching` |
+
+**การโหลดข้อมูล professions:**
+
+```dart
+// ใน _init() โหลด professions พร้อมกับข้อมูลอื่น
+await Future.wait([
+  _userRepo.getAvailabilityStatus(user.id),
+  if (_isProvider && user.professionId != null)
+    _repo.getPackageIdsForProfession(user.professionId!),
+  // โหลด professions สำหรับแสดง chip บนการ์ด
+  ServiceLocator.instance.professionRepository
+      .getAllProfessions()
+      .then((profs) => _professions = profs),
+]);
+```
+
+**การแสดง chip อาชีพ:**
+
+```dart
+Widget _buildProfessionChipRow(ConsultationEntry e) {
+  final prof = _findProfessionForPackage(e.packageId);
+  final isMatching = e.packageId != null && _myPackageIds.contains(e.packageId);
+
+  if (isMatching && prof != null) {
+    return Chip(
+      avatar: Icon(_parseIconName(prof.iconName), 
+                  color: _hexToColor(prof.colorHex)),
+      label: Text(prof.name),
+      backgroundColor: _hexToColor(prof.colorHex).withOpacity(0.1),
+    );
+  } else if (!isMatching) {
+    return Chip(
+      avatar: Icon(Icons.block, color: Colors.grey),
+      label: Text('ไม่ตรงอาชีพคุณ'),
+      backgroundColor: Colors.grey.shade100,
+    );
+  }
+}
+```
+
+**การ์ดสถิติ (กดได้เพื่อกรอง):**
+
+```dart
+_statChip(
+  'รอดำเนินการ', _pending, Icons.pending_outlined, AppColors.warning,
+  onTap: () {
+    setState(() => _filterStatus = 'pending');
+    _applyFilter();
+  },
+  isActive: _filterStatus == 'pending',
+);
+```
+
+**ปุ่มการกระทำแบบคู่ (สำหรับงานที่ตรง + pending):**
+
+```dart
+if (isMatching) {
+  return Row(
+    children: [
+      Expanded(
+        flex: 2,
+        child: OutlinedButton(  // ดูรายละเอียด
+          onPressed: () => _openChat(e),
+          child: Text('ดูรายละเอียด'),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 3,
+        child: ElevatedButton(  // รับงาน
+          onPressed: canJoin ? () => _joinRequest(e) : null,
+          child: Text('รับงานนี้'),
+        ),
+      ),
+    ],
+  );
+}
+```
+
+**⚠️ Edge Case: งานตรงแต่ถูกบล็อก (สำคัญ!)**
+
+Badge `ตรงกับคุณ` อาจแสดงแม้ปุ่มถูกบล็อก เพราะ badge ดูจาก `packageId` แต่ปุ่มดูจาก `status`:
+
+| เงื่อนไข | Badge | ปุ่ม | ข้อความ |
+|---|---|---|---|
+| `pending` + ตรง + ไม่มีคนรับ | `ตรงกับคุณ` | ✅ `[ดูรายละเอียด] [รับงานนี้]` | — |
+| `in_progress` + ตรง + ไม่ใช่งานตัวเอง | `ตรงกับคุณ` | ❌ บล็อก | `ดำเนินการโดยผู้เชี่ยวชาญท่านอื่น` |
+| `pending` + ตรง + มีคนรับแล้ว (`isBusy`) | `ตรงกับคุณ` | ❌ บล็อก | `มีผู้เชี่ยวชาญท่านอื่นรับแล้ว` |
+| `pending` + ไม่ตรงอาชีพ | `ไม่ตรงอาชีพ` | ❌ บล็อก | `ไม่ตรงกับอาชีพของคุณ` |
+
+**การจัดการข้อความบล็อก (else branch):**
+
+```dart
+String lockMessage;
+IconData lockIcon = Icons.lock_outline_rounded;
+
+if (e.status == 'in_progress') {
+  lockMessage = 'ดำเนินการโดยผู้เชี่ยวชาญท่านอื่น';
+  lockIcon = Icons.person_off_outlined;
+} else if (isBusy) {
+  lockMessage = 'มีผู้เชี่ยวชาญท่านอื่นรับแล้ว';
+} else if (e.packageId != null && !_myPackageIds.contains(e.packageId)) {
+  lockMessage = 'ไม่ตรงกับอาชีพของคุณ';
+} else {
+  lockMessage = 'ไม่สามารถดำเนินการได้';
+}
+```
+
+**หลักการ:** Badge แสดง "โอกาส" (แพ็คเกจตรงอาชีพ) แต่ปุ่มแสดง "สิทธิ์" (status + availability) — ทั้งสองอย่างอิสระจากกัน ต้องไม่สรุปว่า badge เขียว = กดรับได้เสมอ
+
+---
+
 ### 🔒 Access Control: จำกัดสิทธิ์เข้าห้องแชทตาม ExpertGroup
 
 #### กฎหลัก
@@ -855,6 +992,12 @@ if (_consultationData?['provider_id'] != null) {
 | | `_findProfessionByNameOrRole()` — หา profession ตรงกับ expert name/role |
 | | `_hexToColor()` — แปลง hex color → Flutter Color |
 | | `WidgetsBindingObserver` + `Timer.periodic` — auto-refresh ทุก 30s |
+| `health_program_request_dashboard.dart` | `_buildProfessionChipRow()` — แสดง chip อาชีพจาก professions |
+| | `_findProfessionForPackage()` — หา profession ตรงกับ package |
+| | `_parseIconName()` + `_hexToColor()` — แปลง icon/s.color จาก professions |
+| | `_statChip()` — รองรับ `onTap` + `isActive` (กดกรองได้) |
+| | `_buildActionRow()` — แสดง 2 ปุ่ม `[ดูรายละเอียด] [รับงานนี้]` |
+| | Badge `ตรงกับคุณ` / `ไม่ตรงอาชีพ` บนการ์ด |
 | `profession.dart` | Model `Profession` มี `iconName` + `colorHex` |
 | `profession_repository.dart` | `getAllProfessions()` — ดึง professions ทั้งหมด |
 
@@ -1470,7 +1613,11 @@ CREATE POLICY "Provider sees own history"
 
 ### Phase 2: Live UI & Session Management (สัปดาห์ 1-2)
 **งานที่ต้องทำ:**
-- [ ] สร้าง `ExpertGroupStatusBanner` Widget และใช้ Realtime Subscription คอยอัปเดต
+- [x] สร้าง `ExpertGroupStatusBanner` Widget (`_buildExpertStatusBanner`) และใช้ Realtime Subscription คอยอัปเดต
+- [x] เพิ่ม Chip อาชีพจาก `professions` table บนการ์ด Dashboard
+- [x] เพิ่ม Badge `ตรงกับคุณ` / `ไม่ตรงอาชีพ` บนการ์ด Dashboard
+- [x] ทำให้การ์ดสถิติกดได้เพื่อกรองรายการ
+- [x] แสดงปุ่มคู่ `[ดูรายละเอียด] [รับงานนี้]` บนการ์ด
 - [ ] สร้าง Session Timer Widget แสดงเวลาใน AppBar 
 - [ ] อัปเดต Logic การล็อกห้องแชทเมื่อเวลาหมด (`session_minutes` = 0)
 - [ ] เพิ่มปุ่ม "สละสิทธิ์" ให้แพทย์และจัดการคืนโควต้า

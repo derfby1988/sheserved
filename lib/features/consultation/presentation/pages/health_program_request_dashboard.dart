@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../chat/data/models/chat_models.dart';
 import '../../data/repositories/consultation_repository.dart';
 import '../../data/models/consultation_entry.dart';
+import '../../../admin/models/profession.dart';
 import '../../../../shared/widgets/widgets.dart';
 import 'expert_chat_room_page.dart';
 import '../widgets/dashboard/availability_toggle_button.dart';
@@ -39,6 +40,7 @@ class _HealthProgramRequestDashboardState
   String _searchQuery = '';
   String _filterStatus = 'all';
   List<String> _myPackageIds = []; // package IDs ที่ตรงกับอาชีพ provider
+  List<Profession> _professions = []; // อาชีพทั้งหมดจาก admin settings
   bool _isProvider = false;
   String _availabilityStatus = 'online'; // สถานะตัวเอง
 
@@ -86,6 +88,10 @@ class _HealthProgramRequestDashboardState
           _repo
               .getPackageIdsForProfession(user.professionId!)
               .then((ids) => _myPackageIds = ids),
+        // โหลด professions สำหรับแสดง chip บนการ์ด
+        ServiceLocator.instance.professionRepository
+            .getAllProfessions()
+            .then((profs) => _professions = profs),
       ]).timeout(const Duration(seconds: 15));
 
       // โหลดข้อมูลและ subscribe
@@ -418,16 +424,31 @@ class _HealthProgramRequestDashboardState
                   ),
                   const SizedBox(height: 10),
                 ],
-                // ── Stat chips ──
+                // ── Stat chips (กดได้เพื่อกรองรายการ) ──
                 Row(
                   children: [
-                    _statChip('ทั้งหมด', _total, Icons.list_alt, Colors.white),
+                    _statChip(
+                      'ทั้งหมด',
+                      _total,
+                      Icons.list_alt,
+                      Colors.white,
+                      onTap: () {
+                        setState(() => _filterStatus = 'all');
+                        _applyFilter();
+                      },
+                      isActive: _filterStatus == 'all',
+                    ),
                     const SizedBox(width: 8),
                     _statChip(
                       'รอดำเนินการ',
                       _pending,
                       Icons.pending_outlined,
                       AppColors.warning,
+                      onTap: () {
+                        setState(() => _filterStatus = 'pending');
+                        _applyFilter();
+                      },
+                      isActive: _filterStatus == 'pending',
                     ),
                     const SizedBox(width: 8),
                     _statChip(
@@ -435,6 +456,11 @@ class _HealthProgramRequestDashboardState
                       _inProgress,
                       Icons.forum_outlined,
                       AppColors.info,
+                      onTap: () {
+                        setState(() => _filterStatus = 'in_progress');
+                        _applyFilter();
+                      },
+                      isActive: _filterStatus == 'in_progress',
                     ),
                     const SizedBox(width: 8),
                     _statChip(
@@ -442,6 +468,11 @@ class _HealthProgramRequestDashboardState
                       _completed,
                       Icons.check_circle_outline,
                       AppColors.success,
+                      onTap: () {
+                        setState(() => _filterStatus = 'completed');
+                        _applyFilter();
+                      },
+                      isActive: _filterStatus == 'completed',
                     ),
                   ],
                 ),
@@ -498,45 +529,53 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  Widget _statChip(String label, int count, IconData icon, Color accent) {
+  Widget _statChip(String label, int count, IconData icon, Color accent, {VoidCallback? onTap, bool isActive = false}) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.25)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: accent, size: 16),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  color: accent,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white.withOpacity(0.35) : Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive ? Colors.white.withOpacity(0.6) : Colors.white.withOpacity(0.25),
+              width: isActive ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: accent, size: 16),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    color: accent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
               ),
-            ),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 9,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 9,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -746,6 +785,49 @@ class _HealthProgramRequestDashboardState
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       _statusBadge(e.status),
+                      // Badge: ตรงกับอาชีพ provider หรือไม่
+                      if (_isProvider && e.packageId != null && _myPackageIds.contains(e.packageId)) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.success.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.verified, size: 10, color: AppColors.success),
+                              const SizedBox(width: 3),
+                              Text(
+                                'ตรงกับคุณ',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (_isProvider && !isMyJob && e.status == 'pending') ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'ไม่ตรงอาชีพ',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ),
+                      ],
                       if (isMyJob) ...[
                         const SizedBox(height: 4),
                         Container(
@@ -804,8 +886,10 @@ class _HealthProgramRequestDashboardState
                 ],
               ),
             ),
+            // Chip อาชีพที่ต้องการ
+            _buildProfessionChipRow(e),
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: _buildActionRow(e, isMyJob: isMyJob, isBusy: isBusy),
             ),
           ],
@@ -819,6 +903,84 @@ class _HealthProgramRequestDashboardState
     required bool isMyJob,
     required bool isBusy,
   }) {
+    // สำหรับ provider ที่ยังไม่ได้รับงาน และงานตรงกับอาชีพ → แสดง 2 ปุ่ม: รับงาน + ดูรายละเอียด
+    final bool isMatching = _isProvider &&
+        e.packageId != null &&
+        _myPackageIds.contains(e.packageId) &&
+        !isMyJob &&
+        e.status == 'pending' &&
+        !isBusy;
+
+    if (isMatching) {
+      final canJoin = _availabilityStatus != 'busy';
+      return Row(
+        children: [
+          // ปุ่ม ดูรายละเอียด
+          Expanded(
+            flex: 2,
+            child: OutlinedButton(
+              onPressed: () => _openChat(e),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.visibility_outlined, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'ดูรายละเอียด',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // ปุ่ม รับงาน
+          Expanded(
+            flex: 3,
+            child: ElevatedButton(
+              onPressed: canJoin ? () => _joinRequest(e) : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6ED1A6),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    canJoin ? Icons.pan_tool_alt_outlined : Icons.do_not_disturb_rounded,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    canJoin ? 'รับงานนี้' : 'คุณไม่ว่าง',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // กรณีอื่นๆ (single button เหมือนเดิม)
     String label;
     IconData icon;
     VoidCallback? onTap;
@@ -840,6 +1002,22 @@ class _HealthProgramRequestDashboardState
       onTap = canJoin ? () => _joinRequest(e) : null;
       if (!canJoin) btnColor = Colors.grey.shade400;
     } else {
+      // กำหนดข้อความตามสาเหตุที่ถูกบล็อก
+      String lockMessage;
+      IconData lockIcon = Icons.lock_outline_rounded;
+      if (isMyJob) {
+        lockMessage = 'เข้าห้องแชท'; // ไม่ควรถึงตรงนี้เพราะ isMyJob ถูกจัดการข้างต้น
+      } else if (e.status == 'in_progress') {
+        lockMessage = 'ดำเนินการโดยผู้เชี่ยวชาญท่านอื่น';
+        lockIcon = Icons.person_off_outlined;
+      } else if (isBusy) {
+        lockMessage = 'มีผู้เชี่ยวชาญท่านอื่นรับแล้ว';
+      } else if (e.packageId != null && !_myPackageIds.contains(e.packageId)) {
+        lockMessage = 'ไม่ตรงกับอาชีพของคุณ';
+      } else {
+        lockMessage = 'ไม่สามารถดำเนินการได้';
+      }
+
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -849,10 +1027,10 @@ class _HealthProgramRequestDashboardState
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline_rounded, size: 16, color: Colors.grey.shade400),
+            Icon(lockIcon, size: 16, color: Colors.grey.shade400),
             const SizedBox(width: 8),
             Text(
-              isBusy ? 'มีผู้เชี่ยวชาญท่านอื่นรับแล้ว' : 'ไม่สามารถดำเนินการได้',
+              lockMessage,
               style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
             ),
           ],
@@ -890,6 +1068,107 @@ class _HealthProgramRequestDashboardState
         ),
       ),
     );
+  }
+
+  /// หา profession ที่ตรงกับแพ็คเกจ (จาก _professions ที่โหลดมา)
+  Profession? _findProfessionForPackage(String? packageId) {
+    if (packageId == null || _professions.isEmpty) return null;
+    // หา profession ตาม professionId ของ provider (ถ้า packageId อยู่ใน _myPackageIds)
+    final user = _currentUser;
+    if (user?.professionId != null && _myPackageIds.contains(packageId)) {
+      return _professions.firstWhere(
+        (p) => p.id == user!.professionId,
+        orElse: () => _professions.first,
+      );
+    }
+    return null;
+  }
+
+  /// แสดง chip อาชีพที่ต้องการบนการ์ด
+  Widget _buildProfessionChipRow(ConsultationEntry e) {
+    final prof = _findProfessionForPackage(e.packageId);
+    final isMatching = e.packageId != null && _myPackageIds.contains(e.packageId);
+
+    if (!_isProvider) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          if (isMatching && prof != null) ...[
+            Chip(
+              avatar: Icon(
+                _parseIconName(prof.iconName),
+                size: 16,
+                color: _hexToColor(prof.colorHex) ?? AppColors.primary,
+              ),
+              label: Text(
+                prof.name,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _hexToColor(prof.colorHex) ?? AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              backgroundColor: (_hexToColor(prof.colorHex) ?? AppColors.primary).withOpacity(0.1),
+              side: BorderSide(
+                color: (_hexToColor(prof.colorHex) ?? AppColors.primary).withOpacity(0.3),
+              ),
+              padding: EdgeInsets.zero,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ] else if (!isMatching && e.status == 'pending') ...[
+            Chip(
+              avatar: const Icon(Icons.block, size: 14, color: Colors.grey),
+              label: Text(
+                'ไม่ตรงอาชีพคุณ',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+              backgroundColor: Colors.grey.shade100,
+              side: BorderSide(color: Colors.grey.shade300),
+              padding: EdgeInsets.zero,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// แปลง icon name string → IconData
+  IconData _parseIconName(String? iconName) {
+    switch (iconName?.toLowerCase()) {
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'medication':
+      case 'medication_liquid':
+        return Icons.medication;
+      case 'psychology':
+        return Icons.psychology;
+      case 'vaccines':
+        return Icons.vaccines;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'health_and_safety':
+        return Icons.health_and_safety;
+      case 'science':
+        return Icons.science;
+      default:
+        return Icons.work_outline;
+    }
+  }
+
+  /// แปลง hex color string → Flutter Color
+  Color? _hexToColor(String? hex) {
+    if (hex == null || hex.isEmpty) return null;
+    try {
+      final clean = hex.replaceAll('#', '');
+      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
+      if (clean.length == 8) return Color(int.parse(clean, radix: 16));
+    } catch (_) {}
+    return null;
   }
 
   Widget _avatar(ConsultationEntry e) {
