@@ -90,6 +90,7 @@ class ExpertGroup {
   String role; // e.g. 'doctor', 'professor', 'pharmacist'
   int maxExperts; // -1 = unlimited
   bool isRequired;
+  String? icon; // Material icon name, e.g. 'medical_services'
 
   ExpertGroup({
     required this.id,
@@ -97,6 +98,7 @@ class ExpertGroup {
     required this.role,
     this.maxExperts = -1,
     this.isRequired = false,
+    this.icon,
   });
 
   factory ExpertGroup.fromJson(Map<String, dynamic> json) {
@@ -114,6 +116,7 @@ class ExpertGroup {
       role: json['role'] as String? ?? '',
       maxExperts: parseInt(json['maxExperts'] ?? json['max_experts'] ?? -1),
       isRequired: json['isRequired'] == true || json['is_required'] == true,
+      icon: json['icon'] as String? ?? json['group_icon'] as String?,
     );
   }
 
@@ -123,5 +126,6 @@ class ExpertGroup {
     'role': role,
     'maxExperts': maxExperts,
     'isRequired': isRequired,
+    'icon': icon,
   };
 }

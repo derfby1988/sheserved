@@ -331,8 +331,59 @@ CREATE TABLE IF NOT EXISTS doctor_quick_replies (
 ### Session Timer Widget (กฎการนับเวลาและการล็อก)
 
 **กฎการทำงาน:**
-1. **เริ่มนับเวลา:** เมื่อแพทย์/ผู้เชี่ยวชาญกดรับงาน "ครบ" ตามที่แพ็คเกจระบุ (Required Experts == Joined)
+1. **เริ่มนับเวลา:** เมื่อแพทย์/ผู้เชี่ยวชาญกดรับงาน **"ครบ"** ตามที่แพ็คเกจระบุ (Required Experts == Joined)
+   - ❌ **ไม่ใช่** แพทย์เข้ามาแค่คนเดียวก็เริ่มนับ
+   - ✅ **ต้อง** ผู้เชี่ยวชาญที่ `isRequired=true` **ทุกคน** ต้องมี `status='joined'`
 2. **การล็อกห้อง:** เมื่อเวลาหมด (`session_minutes` เป็น 0) ระบบจะ **"ล็อกห้องแชทอัตโนมัติ"** ทันที ไม่ให้พิมพ์ต่อทั้งสองฝ่าย (บังคับจบ session) หรือล็อกเมื่อแพทย์กด "จบ Session" เอง
+
+**การตรวจสอบก่อนเริ่มนับเวลา (ยึดเป็นหลัก):**
+
+```dart
+bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
+  final requiredExperts = expertStatuses.where((e) => e['isRequired'] == true).toList();
+  final allRequiredJoined = requiredExperts.isNotEmpty &&
+      requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+  final anyJoined = expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+
+  // ✅ ถูกต้อง: รอ expert ครบก่อน ไม่ใช้ _roomStartedAt เป็นเงื่อนไข
+  final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
+  return shouldStart;
+}
+```
+
+> **⚠️ สำคัญ: ห้ามใช้ `_roomStartedAt != null` เป็นเงื่อนไขเริ่มนับเวลา**
+> 
+> ❌ **ผิด:** `shouldStart = allRequiredJoined || _roomStartedAt != null`
+> 
+> ✅ **ถูก:** `shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined)`
+> 
+> `_roomStartedAt` เป็น timestamp ที่บันทึกว่าห้องเคยเริ่มไปแล้ว แต่ไม่ใช่เงื่อนไขที่จะให้ timer เริ่มทั้งทีโดยไม่สน expert ครบหรือไม่ หากใช้ `_roomStartedAt` เป็นเงื่อนไข จะทำให้ timer เริ่มนับทันทีที่เปิดห้อง แม้ยังไม่มี expert เข้าร่วมครบ
+>
+> **Bug ที่พบและแก้ไขเพิ่มเติม:**
+>
+> | # | ที่ตั้ง | ปัญหา | การแก้ไข |
+> |---|---|---|---|
+> | 1 | Initial room data loading | เริ่ม timer เมื่อ `started_at != null` | ลบ `_startTimer()` ออก ให้เหลือแค่ set `_remainingSeconds` |
+> | 2 | Room subscription stream | เริ่ม timer เมื่อ `started_at` เปลี่ยน | ลบ `_startTimer()` ออก ให้เหลือแค่ set `_remainingSeconds` |
+> | 3 | Expert status stream | ใช้ `data` (raw DB) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
+> | 4 | `_fetchExpertStatuses()` | ใช้ `mapped` (raw) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
+>
+> **เหตุผล:** `data` / `mapped` จาก `consultation_room_experts` มีเฉพาะ expert ที่เข้าร่วมแล้ว ไม่มี waiting groups จากแพ็คเกจ → ตรวจสอบ `isRequired` ไม่ครบ → timer เริ่มก่อน expert ครบ
+>
+> **Flow ที่ถูกต้อง (ยึดเป็นหลัก):**
+>
+> ```
+> consultation_room_experts (DB) → map → _mergeWithPackageGroups → _expertStatuses
+>                                               ↓
+>                                         ตรวจ isRequired จาก _expertStatuses
+>                                               ↓
+>                                       ครบ → _startTimer()
+>                                     ไม่ครบ → รอต่อ
+> ```
+>
+> `consultation_room_experts` มีเฉพาะ expert ที่เข้าร่วมแล้ว (`joined`)
+> `_mergeWithPackageGroups` รวม joined experts + waiting groups จากแพ็คเกจ → `_expertStatuses`
+> ตรวจ `isRequired` จาก `_expertStatuses` จึงครบถ้วน (มีทั้ง joined + waiting)
 
 ```
 ╔═══════════════════════════════╗
@@ -672,23 +723,77 @@ class RoomExpertStatus {
 
 #### รูปโปรไฟล์และไอคอนผู้เชี่ยวชาญ
 
+**แหล่งที่มาของไอคอนและสี:**
+
+ไอคอนและสีของแต่ละกลุ่มผู้เชี่ยวชาญ **ไม่ใช่ hardcode** อีกต่อไป แต่ดึงมาจาก **`professions` table** (หน้าจัดการอาชีพ) โดยตรง:
+
+| แหล่งที่มา | ตัวอย่าง |
+|---|---|
+| `professions.icon_name` | `medical_services`, `medication`, `psychology` |
+| `professions.color_hex` | `#2196F3`, `#FF9800`, `#4CAF50` |
+| Fallback (ไม่พบ profession) | `_iconNameFromRole()` + `_getDefaultIconForRole()` |
+
+**กลไกการโหลด (Auto-Refresh):**
+
+```dart
+// 1. โหลด professions ทั้งหมดตอนเปิดหน้า
+Future<void> _loadProfessions() async {
+  final professions = await ServiceLocator.instance.professionRepository
+      .getAllProfessions();
+  setState(() => _professions = professions);
+}
+
+// 2. รีเฟรชทุก 30 วินาที
+_professionsRefreshTimer = Timer.periodic(
+  const Duration(seconds: 30), (_) => _loadProfessions());
+
+// 3. รีโหลดเมื่อกลับมาหน้าแอป (background → foreground)
+@override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (state == AppLifecycleState.resumed) _loadProfessions();
+}
+```
+
+**การค้นหา Profession ที่ตรงกับ Expert:**
+
+```dart
+Profession? _findProfessionByNameOrRole(String? name, String? role) {
+  final searchTerms = {name?.toLowerCase(), role?.toLowerCase()};
+  for (final prof in _professions) {
+    if (searchTerms.any((term) =>
+      prof.name.toLowerCase().contains(term) ||
+      (prof.nameEn?.toLowerCase().contains(term) ?? false))) {
+      return prof;
+    }
+  }
+  return null;
+}
+```
+
 **การแสดงรูปโปรไฟล์:**
 
 | สถานะ | แสดงผล |
 |---|---|
 | `joined` + มี `providerAvatarUrl` | `CircleAvatar(radius: 12, backgroundImage: NetworkImage(...))` |
-| `joined` + ไม่มี avatar | `Icon(Icons.check_circle, color: primary)` |
-| `waiting` | `Icon(categoryIcon หรือ Icons.hourglass_empty, color: grey)` |
-| `waiting` + `isRequired=true` | `Icon(Icons.priority_high, color: orange)` |
+| `joined` + ไม่มี avatar | ไอคอนจาก `profession.iconName` + สีจาก `profession.colorHex` |
+| `waiting` | ไอคอนจาก `profession.iconName` + สีเทา (แต่พื้นหลังต่างกันตาม `isRequired`) |
 
-**Priority การเลือกแสดง Avatar vs Icon:**
+**Priority การเลือกแสดง Avatar vs Icon (Updated):**
+
 ```dart
+// หา profession จาก admin settings
+final prof = _findProfessionByNameOrRole(expert['name'], expert['role']);
+final categoryIcon = _parseExpertGroupIcon(prof?.iconName ?? expert['expertGroupIcon'])
+    ?? _getDefaultIconForRole(expert['role']);
+final profColor = _hexToColor(prof?.colorHex); // null ถ้าไม่มีสี
+
 if (isJoined && avatarUrl != null && avatarUrl.isNotEmpty)
   // แสดงรูปโปรไฟล์จริง
   CircleAvatar(radius: 12, backgroundImage: NetworkImage(avatarUrl))
 else if (categoryIcon != null)
-  // แสดงไอคอนตามกลุ่มวิชาชีพ
-  Icon(categoryIcon, size: 20, color: isJoined ? primary : grey)
+  // แสดงไอคอนจาก profession.iconName + สีจาก profession.colorHex
+  Icon(categoryIcon, size: 20,
+    color: isJoined ? (profColor ?? AppColors.primary) : (isRequired ? Colors.grey.shade600 : Colors.grey.shade400))
 else
   // fallback icon
   Icon(isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty))
@@ -746,6 +851,12 @@ if (_consultationData?['provider_id'] != null) {
 | ไฟล์ | การเปลี่ยนแปลง |
 |---|---|
 | `chart_board_page.dart` | `_buildExpertStatusBanner()` widget `_fetchExpertStatuses()` 3-level fallback |
+| | `_loadProfessions()` — โหลด professions จาก `professions` table |
+| | `_findProfessionByNameOrRole()` — หา profession ตรงกับ expert name/role |
+| | `_hexToColor()` — แปลง hex color → Flutter Color |
+| | `WidgetsBindingObserver` + `Timer.periodic` — auto-refresh ทุก 30s |
+| `profession.dart` | Model `Profession` มี `iconName` + `colorHex` |
+| `profession_repository.dart` | `getAllProfessions()` — ดึง professions ทั้งหมด |
 
 #### ตัวอย่าง UI States
 
@@ -776,6 +887,18 @@ if (_consultationData?['provider_id'] != null) {
 │     เภสัช   ✅ ภก.สมหญิง    (14:35)  │
 └────────────────────────────────────────┘
 ```
+
+**🎨 สีของสถานะ Waiting (Updated):**
+
+ทั้ง `waiting + required` และ `waiting (ไม่ required)` ใช้ **สีเทาทั้งคู่** แต่แตกต่างเฉดกัน:
+
+| สถานะ | พื้นหลัง | ขอบ | ไอคอน | ตัวอักษร | ตัวหนา |
+|---|---|---|---|---|---|
+| `waiting + required` | `grey.shade100` | `grey.shade300` | `grey.shade600` | `grey.shade700` | **bold** |
+| `waiting (ไม่ required)` | `grey.shade50` | `grey.shade200` | `grey.shade400` | `grey.shade600` | normal |
+
+- `required=true` → เฉดเทาเข้มขึ้น + ตัวหนา → บ่งบอกว่าเป็นกลุ่มจำเป็น
+- `required=false` → เทาอ่อน + ตัวปกติ → กลุ่มเสริม มีหรือไม่มีก็ได้
 
 ---
 

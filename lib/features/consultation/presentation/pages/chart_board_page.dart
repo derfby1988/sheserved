@@ -22,6 +22,7 @@ import '../../data/models/consultation_entry.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
 import '../../data/models/consultation_package.dart';
 import '../widgets/package_wheel_selector.dart';
+import '../../../../features/admin/models/profession.dart';
 import 'prescription_editor_page.dart';
 import 'consultation_note_editor_page.dart';
 
@@ -36,7 +37,7 @@ class ChartBoardPage extends StatefulWidget {
 }
 
 class _ChartBoardPageState extends State<ChartBoardPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final _chatRepository = ServiceLocator.instance.chatRepository;
   final _healthPermissionRepository =
       ServiceLocator.instance.healthDataPermissionRepository;
@@ -71,6 +72,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // --- Expert Status ---
   List<Map<String, dynamic>> _expertStatuses = [];
   StreamSubscription? _expertStatusSub;
+
+  // --- Professions (for accurate icons/colors from admin settings) ---
+  List<Profession> _professions = [];
+  Timer? _professionsRefreshTimer;
   Map<String, dynamic>? _consultationData;
 
   // --- Room Status ---
@@ -150,6 +155,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     _initChat();
     _loadPackages();
+    _loadProfessions();
+    // Refresh professions every 30s to pick up admin icon/color changes
+    _professionsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadProfessions());
+    WidgetsBinding.instance.addObserver(this);
     _subscribeHealthPermissionUpdates();
     _startHealthPermissionPolling();
   }
@@ -318,7 +327,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Future<void> _loadPackages() async {
-    if (_isProvider) return;
+    // Load packages for ALL users (including providers) so expert group banner works
     setState(() => _isLoadingPackages = true);
     try {
       final response = await Supabase.instance.client
@@ -336,21 +345,61 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           _availablePackages = pks;
           _isLoadingPackages = false;
           
-          // Set initial package from request
-          if (widget.request?.packageId != null) {
+          // Set initial package from request or consultation data
+          String? targetPackageId = widget.request?.packageId ?? _consultationData?['package_id'];
+          if (targetPackageId != null) {
             _selectedPackage = pks.firstWhere(
-              (p) => p.id == widget.request!.packageId,
-              orElse: () => pks.first,
+              (p) => p.id == targetPackageId,
+              orElse: () => pks.isNotEmpty ? pks.first : null as ConsultationPackage,
             );
           } else if (pks.isNotEmpty) {
             _selectedPackage = pks.first;
           }
         });
+
+        // If expert statuses already loaded, re-merge with package groups to show waiting icons
+        if (_expertStatuses.isNotEmpty && _selectedPackage != null) {
+          final joined = _expertStatuses.where((e) => e['status'] == 'joined').toList();
+          final merged = _mergeWithPackageGroups(joined);
+          setState(() => _expertStatuses = merged);
+        }
       }
     } catch (e) {
       debugPrint('Error loading packages: $e');
       if (mounted) setState(() => _isLoadingPackages = false);
     }
+  }
+
+  Future<void> _loadProfessions() async {
+    try {
+      final professions = await ServiceLocator.instance.professionRepository.getAllProfessions();
+      if (mounted) {
+        setState(() => _professions = professions);
+      }
+      debugPrint('[ChartBoard] _loadProfessions: loaded ${professions.length} professions');
+    } catch (e) {
+      debugPrint('[ChartBoard] Error loading professions: $e');
+    }
+  }
+
+  /// Find profession by name or role for accurate icon/color from admin settings
+  Profession? _findProfessionByNameOrRole(String? name, String? role) {
+    if (_professions.isEmpty) return null;
+    final searchTerms = <String>{
+      (name ?? '').toLowerCase().trim(),
+      (role ?? '').toLowerCase().trim(),
+    };
+    searchTerms.remove('');
+    if (searchTerms.isEmpty) return null;
+
+    for (final prof in _professions) {
+      final profName = prof.name.toLowerCase().trim();
+      final profNameEn = (prof.nameEn ?? '').toLowerCase().trim();
+      if (searchTerms.any((term) => profName.contains(term) || term.contains(profName) || profNameEn.contains(term) || term.contains(profNameEn))) {
+        return prof;
+      }
+    }
+    return null;
   }
 
   Future<void> _initChat() async {
@@ -437,9 +486,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           if (mounted) {
             setState(() {
               _remainingSeconds = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
-              if (_remainingSeconds > 0) {
-                _startTimer();
-              }
+              // ❌ ไม่เริ่ม timer ตรงนี้ — ต้องรอ _fetchExpertStatuses หรือ stream ตรวจสอบ expert ครบก่อน
             });
           }
         }
@@ -470,9 +517,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 if (mounted) {
                   setState(() {
                     _remainingSeconds = remaining;
-                    if (remaining > 0 && !_isTimerRunning) {
-                      _startTimer();
-                    }
+                    // ❌ ไม่เริ่ม timer แค่เพราะ room มี started_at — ต้องรอ expert ครบก่อน
+                    // Timer จะเริ่มจาก expert status stream เมื่อ _hasAllRequiredExpertsJoined() == true
                   });
                 }
               } else if (!newIsActive && _isTimerRunning) {
@@ -493,27 +539,33 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .eq('consultation_id', consultationId)
           .listen((data) {
             if (mounted) {
+              final joined = data.map((e) => {
+                'role': e['expert_group_role'],
+                'name': e['expert_group_name'],
+                'status': e['status'],
+                'providerId': e['provider_id'],
+                'isRequired': e['is_required'] as bool? ?? false,
+                'joinedAt': e['joined_at'],
+                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
+                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+              }).toList();
+              // Merge with package groups to show waiting groups too
+              final merged = _mergeWithPackageGroups(joined);
               setState(() {
-                _expertStatuses = data.map((e) => {
-                  'role': e['expert_group_role'],
-                  'name': e['expert_group_name'],
-                  'status': e['status'],
-                  'providerId': e['provider_id'],
-                  'isRequired': e['is_required'] as bool? ?? false,
-                  'joinedAt': e['joined_at'],
-                  'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
-                  'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-                }).toList();
+                _expertStatuses = merged;
               });
             }
-            // Start timer as soon as ANY expert joins (per improvement plan)
-            final anyJoined = data.any(
-              (e) => e['status'] == 'joined' || e['joined_at'] != null,
-            );
-            final shouldStart = anyJoined || _roomStartedAt != null;
-            debugPrint('[ChartBoard] stream data.length=${data.length}, anyJoined=$anyJoined, _roomStartedAt=$_roomStartedAt, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
+            // Start timer only when ALL required experts have joined (per improvement plan)
+            // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ data (raw DB)
+            final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
+            final allRequiredJoined = requiredExperts.isNotEmpty &&
+                requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+            // Fallback: if no required experts defined yet, start when ANY expert joins
+            final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+            final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
+            debugPrint('[ChartBoard] stream _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
             if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
-              debugPrint('[ChartBoard] >>> Starting timer from stream');
+              debugPrint('[ChartBoard] >>> Starting timer from stream (all required joined)');
               _startTimer();
             }
           });
@@ -633,20 +685,27 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         }
       }
 
+      // Merge with package expert groups to show waiting groups with grey icons
+      final merged = _mergeWithPackageGroups(mapped);
+      debugPrint('[ChartBoard] _fetchExpertStatuses merged length=${merged.length} (joined=${mapped.length}, waiting=${merged.length - mapped.length})');
+
       if (mounted) {
         setState(() {
-          _expertStatuses = mapped;
+          _expertStatuses = merged;
         });
       }
-      debugPrint('[ChartBoard] _fetchExpertStatuses mapped _expertStatuses.length=${_expertStatuses.length}');
 
-      // If experts already joined before page opened, start timer immediately
-      final anyJoined = mapped.any(
-        (e) => e['status'] == 'joined' || e['joinedAt'] != null,
-      );
-      final shouldStart = anyJoined || _roomStartedAt != null;
-      debugPrint('[ChartBoard] initial fetch anyJoined=$anyJoined, _roomStartedAt=$_roomStartedAt, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
+      // Start timer only when ALL required experts have joined (per improvement plan)
+      // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ mapped (raw joined)
+      final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
+      final allRequiredJoined = requiredExperts.isNotEmpty &&
+          requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+      // Fallback: if no required experts defined yet, start when ANY expert joins
+      final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+      final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
+      debugPrint('[ChartBoard] initial fetch _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
       if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
+        debugPrint('[ChartBoard] >>> Starting timer from initial fetch (all required joined)');
         _startTimer();
       }
     } catch (e, st) {
@@ -976,7 +1035,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadProfessions();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _professionsRefreshTimer?.cancel();
     _fadeController.dispose();
     _slideController.dispose();
     _msgController.dispose();
@@ -3493,20 +3561,24 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  bool _hasAnyExpertJoined() {
-    // Primary: check consultation_room_experts
-    final fromExperts = _expertStatuses.any(
+  bool _hasAllRequiredExpertsJoined() {
+    // Check if ALL required experts have joined (per improvement plan)
+    final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
+    if (requiredExperts.isNotEmpty) {
+      return requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+    }
+    // Fallback: if no required experts defined, check if ANY expert joined
+    final anyJoined = _expertStatuses.any(
       (e) => e['status'] == 'joined' || e['joinedAt'] != null,
     );
-    // Fallback: room has been started (started_at is set)
-    return fromExperts || _roomStartedAt != null;
+    return anyJoined;
   }
 
   Widget _buildTimerBadge() {
     final bool isLowTime = _remainingSeconds < 300 && _isTimerRunning;
-    final bool hasExpertJoined = _hasAnyExpertJoined();
-    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0 && !hasExpertJoined;
-    final bool isStarting = !_isTimerRunning && _remainingSeconds > 0 && hasExpertJoined;
+    final bool allRequiredJoined = _hasAllRequiredExpertsJoined();
+    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0 && !allRequiredJoined;
+    final bool isStarting = !_isTimerRunning && _remainingSeconds > 0 && allRequiredJoined;
 
     // Color theme per state
     final Color badgeColor = isWaiting
@@ -3914,6 +3986,119 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return null;
   }
 
+  /// Map expert role to default Material icon (fallback when package doesn't specify icon)
+  IconData? _getDefaultIconForRole(String? role) {
+    final normalized = role?.toLowerCase().trim() ?? '';
+    const roleIconMap = <String, IconData>{
+      'doctor': Icons.medical_services,
+      'physician': Icons.medical_services,
+      'แพทย์': Icons.medical_services,
+      'หมอ': Icons.medical_services,
+      'อาจารย์แพทย์': Icons.medical_services,
+      'pharmacist': Icons.medication,
+      'pharmacy': Icons.local_pharmacy,
+      'เภสัชกร': Icons.medication,
+      'nurse': Icons.local_hospital,
+      'พยาบาล': Icons.local_hospital,
+      'psychologist': Icons.psychology,
+      'psychiatrist': Icons.psychology_alt,
+      'จิตแพทย์': Icons.psychology,
+      'นักจิตวิทยา': Icons.psychology,
+      'dentist': Icons.health_and_safety,
+      'ทันตแพทย์': Icons.health_and_safety,
+      'nutritionist': Icons.restaurant,
+      'นักโภชนาการ': Icons.restaurant,
+      'physical_therapist': Icons.fitness_center,
+      'นักกายภาพ': Icons.fitness_center,
+      'expert': Icons.person_outline,
+      'specialist': Icons.person_outline,
+      'ผู้เชี่ยวชาญ': Icons.person_outline,
+    };
+    return roleIconMap[normalized];
+  }
+
+  /// Merge joined experts with package expert groups to show waiting groups too
+  List<Map<String, dynamic>> _mergeWithPackageGroups(
+    List<Map<String, dynamic>> joinedExperts,
+  ) {
+    final package = _selectedPackage;
+    debugPrint('[ChartBoard] _mergeWithPackageGroups: joined=${joinedExperts.length}, package=${package?.name}, expertGroups=${package?.expertGroups.length}');
+    if (package == null || package.expertGroups.isEmpty) {
+      debugPrint('[ChartBoard] _mergeWithPackageGroups: SKIP (no package or no groups)');
+      return joinedExperts;
+    }
+
+    final merged = <Map<String, dynamic>>[...joinedExperts];
+    final joinedRoles = joinedExperts.map((e) => (e['role'] as String? ?? '').toLowerCase()).toSet();
+
+    for (final group in package.expertGroups) {
+      // Check if any expert of this role has already joined
+      final alreadyJoined = joinedRoles.contains(group.role.toLowerCase());
+      if (!alreadyJoined) {
+        // Prefer profession icon from admin settings, fallback to package icon or role mapping
+        final prof = _findProfessionByNameOrRole(group.name, group.role);
+        final iconName = prof?.iconName ?? group.icon ?? _iconNameFromRole(group.role);
+        merged.add({
+          'role': group.role,
+          'name': group.name,
+          'status': 'waiting',
+          'providerId': null,
+          'isRequired': group.isRequired,
+          'joinedAt': null,
+          'providerAvatarUrl': null,
+          'expertGroupIcon': iconName,
+          'professionColorHex': prof?.colorHex,
+        });
+      }
+    }
+
+    debugPrint('[ChartBoard] _mergeWithPackageGroups: merged=${merged.length} (added ${merged.length - joinedExperts.length} waiting groups)');
+    return merged;
+  }
+
+  /// Convert hex color string (e.g. '#FF0000' or 'FF0000') to Flutter Color
+  Color? _hexToColor(String? hex) {
+    if (hex == null || hex.isEmpty) return null;
+    try {
+      final clean = hex.replaceAll('#', '');
+      if (clean.length == 6) {
+        return Color(int.parse('FF$clean', radix: 16));
+      } else if (clean.length == 8) {
+        return Color(int.parse(clean, radix: 16));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Convert role to a known icon name string for _parseExpertGroupIcon
+  String? _iconNameFromRole(String? role) {
+    final normalized = role?.toLowerCase().trim() ?? '';
+    const map = <String, String>{
+      'doctor': 'medical_services',
+      'physician': 'medical_services',
+      'แพทย์': 'medical_services',
+      'หมอ': 'medical_services',
+      'อาจารย์แพทย์': 'medical_services',
+      'pharmacist': 'medication',
+      'pharmacy': 'local_pharmacy',
+      'เภสัชกร': 'medication',
+      'เภสัช': 'medication',
+      'nurse': 'local_hospital',
+      'พยาบาล': 'local_hospital',
+      'psychologist': 'psychology',
+      'psychiatrist': 'psychology_alt',
+      'จิตแพทย์': 'psychology',
+      'นักจิตวิทยา': 'psychology',
+      'dentist': 'health_and_safety',
+      'ทันตแพทย์': 'health_and_safety',
+      'nutritionist': 'restaurant',
+      'นักโภชนาการ': 'restaurant',
+      'physical_therapist': 'fitness_center',
+      'นักกายภาพ': 'fitness_center',
+    };
+    return map[normalized];
+  }
+
   Widget _buildExpertStatusBanner() {
     debugPrint('[ChartBoard] _buildExpertStatusBanner: _expertStatuses.length=${_expertStatuses.length}');
     for (final e in _expertStatuses) {
@@ -3966,20 +4151,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 final isRequired = expert['isRequired'] == true;
                 final avatarUrl = expert['providerAvatarUrl']?.toString();
                 final iconRaw = expert['expertGroupIcon'];
-                final categoryIcon = _parseExpertGroupIcon(iconRaw);
+                // Prefer profession from admin settings for accurate icon/color
+                final prof = _findProfessionByNameOrRole(expert['name']?.toString(), expert['role']?.toString());
+                final categoryIcon = _parseExpertGroupIcon(prof?.iconName ?? iconRaw) ?? _getDefaultIconForRole(expert['role']);
+                final profColor = _hexToColor(prof?.colorHex);
 
                 return Container(
                   margin: const EdgeInsets.only(right: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isJoined
-                        ? AppColors.primary.withOpacity(0.08)
-                        : (isRequired ? Colors.orange.shade50 : Colors.grey.shade50),
+                        ? (profColor?.withOpacity(0.08) ?? AppColors.primary.withOpacity(0.08))
+                        : (isRequired ? Colors.grey.shade100 : Colors.grey.shade50),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isJoined
-                          ? AppColors.primary.withOpacity(0.2)
-                          : (isRequired ? Colors.orange.withOpacity(0.2) : Colors.grey.shade200),
+                          ? (profColor?.withOpacity(0.3) ?? AppColors.primary.withOpacity(0.2))
+                          : (isRequired ? Colors.grey.shade300 : Colors.grey.shade200),
                     ),
                   ),
                   child: Row(
@@ -3997,19 +4185,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                         Icon(
                           categoryIcon,
                           size: 20,
-                          color: isJoined ? AppColors.primary : Colors.grey.shade400,
+                          color: isJoined
+                              ? (profColor ?? AppColors.primary)
+                              : (isRequired ? Colors.grey.shade600 : Colors.grey.shade400),
                         )
                       else
                         Icon(
                           isJoined ? Icons.check_circle : (isRequired ? Icons.priority_high : Icons.hourglass_empty),
                           size: 16,
-                          color: isJoined ? AppColors.primary : (isRequired ? Colors.orange : Colors.grey),
+                          color: isJoined ? (profColor ?? AppColors.primary) : (isRequired ? Colors.grey.shade600 : Colors.grey),
                         ),
                       const SizedBox(width: 6),
                       Text(
                         expert['name'] + (isRequired ? ' *' : ''),
                         style: TextStyle(
-                          color: isJoined ? AppColors.primary : (isRequired ? Colors.orange.shade700 : Colors.grey.shade600),
+                          color: isJoined
+                              ? (profColor ?? AppColors.primary)
+                              : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
                           fontSize: 12,
                           fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
                         ),
