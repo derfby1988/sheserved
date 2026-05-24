@@ -2145,7 +2145,7 @@ CREATE POLICY "Patient can respond" ON health_data_permission_requests
 
 ---
 
-## ⚠️ Phase 6.4: Dashboard Pagination, Lazy Loading & UX Refinements (✅ เสร็จสิ้น — Last Updated: 2026-05-24)
+## ⚠️ Phase 6.4: Dashboard Pagination, Lazy Loading & UX Refinements (✅ เสร็จสิ้น — Last Updated: 2026-05-24 14:45)
 
 ### 🚨 ปัญหาที่พบ
 
@@ -2257,8 +2257,11 @@ void _onScroll() {
 | | ✅ **Default tab = `pending`** — เปิด Dashboard มาที่แถบ "รอดำเนินการ" |
 | | ✅ **Pin My Jobs** — แถบ `in_progress` เรียงงานของตัวเอง (`provider_id == myId`) ขึ้นด้านบน |
 | `chart_board_page.dart` | ✅ **เพิ่ม** `readOnly` parameter — โหมดดูอย่างเดียว ป้องกันการดำเนินการ |
+| | ✅ **เพิ่ม** `_hasSubmitted` flag + `PopScope` — หลังส่งคำรักษา back ไปหน้า profile/ประวัติปรึกษา |
 | `main.dart` | ✅ **แก้** route `/chart-board` รองรับ `Map<String, dynamic>` arguments (`entry`, `readOnly`) |
 | | ✅ **เพิ่ม** `navigatorObservers: [dashboardRouteObserver]` สำหรับ `RouteAware` |
+| `presence_service.dart` | ✅ **`await` → `unawaited()`** ใน `start()` — ไม่บล็อก login flow |
+| `package_healthcare_page.dart` | ✅ **แยก** `_isPackagesLoading` จาก `_isLoading` — provider redirect ทันที ไม่รอ packages |
 
 ### 🎨 UX Refinements ที่เพิ่มเติม
 
@@ -2299,6 +2302,58 @@ void _onScroll() {
 | Route Observer | กลับจากหน้าอื่น | Auto |
 | Pull-to-Refresh | User swipe ลง | Manual |
 | ปุ่ม Refresh | User กด icon | Manual |
+
+#### 5️⃣ Back Button Navigation After Submit (Chart Board)
+**ปัญหา:** หลังผู้ป่วยกด "ยืนยันและส่งคำรักษา" ใน `ChartBoardPage` หากกดปุ่มย้อนกลับ (ระบบหรือ AppBar) จะกลับไปหน้า `analyze-body` ซึ่งไม่สมเหตุสมผล — ควรไปหน้า **ประวัติปรึกษา** ในโปรไฟล์แทน
+
+**แก้ไข:**
+- เพิ่ม `_hasSubmitted` flag (bool) ใน `_ChartBoardPageState`
+- ตอน `_submitConsultationRequest()` สำเร็จ → `_hasSubmitted = true`
+- Wrap `build()` ด้วย `PopScope(canPop: !_hasSubmitted)` + `onPopInvokedWithResult`
+- แก้ AppBar leading back button → ถ้า `_hasSubmitted` ให้ `pushNamedAndRemoveUntil('/profile', ...)` พร้อม `arguments: {'tabIndex': 2}`
+
+**ผลลัพธ์:**
+| สถานะ | กด Back → |
+|---|---|
+| ยังไม่กด "ยืนยัน" (chat ล็อกอยู่) | กลับไปหน้า `analyze-body` ปกติ |
+| กด "ยืนยัน" แล้ว | ไปหน้า `/profile` แถบ "ประวัติปรึกษา" |
+
+#### 6️⃣ Fix Login Flow Hang (Spinner ค้างหลังกดเข้าสู่ระบบ)
+**ปัญหา:** หลัง user กดปุ่มเข้าสู่ระบบจากหน้า Login ที่ redirect มาจาก `HomeConsultationWidget` → ปุ่ม/หน้า "ค้าง" ที่ `CircularProgressIndicator` เนื่องจาก async operation บล็อก thread
+
+**จุดที่ 1: `PresenceService.start()` บล็อก `AuthService.login()`**
+- `AuthService.login()` → `await PresenceService.instance.start(user.id)`
+- `PresenceService.start()` → `await repo.setAvailabilityStatus(...)` + `await _sendHeartbeat()`
+- 2 DB writes ติดกัน ไม่มี timeout → ถ้าเน็ตช้า/สัญญาณหลุด → Future ไม่ complete → `_isLoading` ค้าง → ปุ่ม Login หมุนตลอด
+
+**แก้ไข:**
+- เปลี่ยน `await` → `unawaited()` สำหรับ `setAvailabilityStatus()` และ `_sendHeartbeat()`
+- Presence updates เป็น fire-and-forget → ไม่บล็อก caller
+- Timer heartbeat ยังทำงานปกติใน background
+
+**จุดที่ 2: `PackageHealthCarePage` บล็อก UI ด้วย `_isLoading`**
+- `_isLoading = true` ตั้งแต่ initState → build แสดง full-page `CircularProgressIndicator`
+- Provider check (เร็ว) + `_loadLivePackages()` (ช้า) อยู่ใน post-frame callback เดียวกัน → provider ที่ควร redirect ทันที อาจช้าไปด้วย
+- Consumer ต้องรอ packages โหลดก่อนถึงเห็น UI
+
+**แก้ไข:**
+- แยก `_isLoading` (auth/profession check เร็ว) ออกจาก `_isPackagesLoading` (package load)
+- หลัง provider check → `setState(() => _isLoading = false)` ทันที → provider redirect ไม่เห็น spinner
+- `_loadLivePackages()` ทำงานใน background พร้อม `_isPackagesLoading` flag
+- build: empty packages + loading → แสดง spinner แต่เฉพาะช่วงโหลด packages (สั้นกว่าเดิมมาก)
+
+**ผลลัพธ์:**
+| กลุ่มผู้ใช้ | ก่อนแก้ | หลังแก้ |
+|---|---|---|
+| Provider | อาจค้างที่ spinner ถ้า DB ช้า | Redirect ไป Dashboard ทันที ไม่เห็น spinner |
+| Consumer ไม่มี health info | อาจค้างที่ spinner | Redirect ไป `/health-data-entry` เร็วขึ้น |
+| Consumer มี health info | ค้างรอ packages + auth + presence | รอเฉพาะ packages (สั้นลง) |
+
+**ไฟล์ที่แก้:**
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `presence_service.dart` | `await` → `unawaited()` สำหรับ `setAvailabilityStatus()` และ `_sendHeartbeat()` |
+| `package_healthcare_page.dart` | แยก `_isPackagesLoading` จาก `_isLoading`, provider check จบก่อน load packages |
 
 ### ⏰ ควรทำเมื่อไหร่
 

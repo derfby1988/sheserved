@@ -29,10 +29,10 @@ class PresenceService {
     _currentUserId = userId;
     _isRunning = true;
 
-    // อัปเดตทันทีเมื่อ start (await เพื่อให้แน่ใจว่าสถานะใน DB เปลี่ยนก่อนทำขั้นตอนอื่น)
+    // อัปเดตทันทีเมื่อ start (ไม่ block — fire-and-forget เพื่อไม่ให้ login ค้าง)
     final repo = UserRepository(Supabase.instance.client);
-    await repo.setAvailabilityStatus(userId, 'online');
-    await _sendHeartbeat();
+    unawaited(repo.setAvailabilityStatus(userId, 'online'));
+    unawaited(_sendHeartbeat());
 
     // ตั้ง timer ส่งทุก 60 วินาที
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {

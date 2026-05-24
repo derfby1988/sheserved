@@ -20,6 +20,7 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   List<Map<String, dynamic>> _packages = [];
   int _selectedIndex = 0;
   bool _isLoading = true;
+  bool _isPackagesLoading = false;
   String _gender = 'unknown';
   late FixedExtentScrollController _scrollController;
   double _scrollOffset = 0.0; // To track fractional scroll
@@ -207,7 +208,12 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         debugPrint('PackageHealthCarePage Provider Check Error: $e');
       }
 
+      setState(() => _isLoading = false);
+
+      setState(() => _isPackagesLoading = true);
       await _loadLivePackages(); // Load real packages first
+      if (mounted) setState(() => _isPackagesLoading = false);
+
       _loadGender();
     });
   }
@@ -289,6 +295,11 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
     }
 
     if (_packages.isEmpty) {
+      if (_isPackagesLoading) {
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
       return Scaffold(
         appBar: AppBar(title: const Text('ไม่พบแพ็คเกจ')),
         body: const Center(child: Text('ขณะนี้ยังไม่มีแพ็คเกจที่เปิดใช้งาน')),
