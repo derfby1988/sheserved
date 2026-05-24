@@ -25,9 +25,15 @@ class HealthProgramRequestDashboard extends StatefulWidget {
       _HealthProgramRequestDashboardState();
 }
 
+final RouteObserver<ModalRoute<void>> dashboardRouteObserver =
+    RouteObserver<ModalRoute<void>>();
+
 class _HealthProgramRequestDashboardState
     extends State<HealthProgramRequestDashboard>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        RouteAware {
   ConsultationRepository get _repo =>
       ServiceLocator.instance.consultationRepository;
   UserRepository get _userRepo => UserRepository(Supabase.instance.client);
@@ -69,11 +75,20 @@ class _HealthProgramRequestDashboardState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    dashboardRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
   void dispose() {
+    dashboardRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -202,6 +217,33 @@ class _HealthProgramRequestDashboardState
       await _loadTab(_activeTab, refresh: true);
     });
   }
+
+  // ── App Lifecycle Observer ─────────────────────────────────────────────────
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[Dashboard] App resumed → refreshing data');
+      _loadCounts();
+      _loadTab(_activeTab, refresh: true);
+    }
+  }
+
+  // ── Route Observer (กลับมาจากหน้าอื่น เช่น ห้องแชท) ───────────────────────
+  @override
+  void didPopNext() {
+    debugPrint('[Dashboard] Returned from another page → refreshing data');
+    _loadCounts();
+    _loadTab(_activeTab, refresh: true);
+  }
+
+  @override
+  void didPushNext() {}
+
+  @override
+  void didPush() {}
+
+  @override
+  void didPop() {}
 
   /// กรอง search ภายใน tab ปัจจุบัน (client-side)
   /// สำหรับแถบ 'in_progress' เรียงงานของตัวเอง (isMyJob) ขึ้นก่อน
@@ -981,11 +1023,11 @@ class _HealthProgramRequestDashboardState
       final canJoin = _availabilityStatus != 'busy';
       return Row(
         children: [
-          // ปุ่ม ดูรายละเอียด
+          // ปุ่ม ดูรายละเอียด (เปิดในโหมดดูอย่างเดียว ไม่สามารถดำเนินการได้)
           Expanded(
             flex: 2,
             child: OutlinedButton(
-              onPressed: () => _openChat(e),
+              onPressed: () => _openChat(e, readOnly: true),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
@@ -1451,11 +1493,14 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  void _openChat(ConsultationEntry entry) {
+  void _openChat(ConsultationEntry entry, {bool readOnly = false}) {
     Navigator.pushNamed(
       context,
       '/chart-board',
-      arguments: entry,
+      arguments: {
+        'entry': entry,
+        'readOnly': readOnly,
+      },
     );
   }
 

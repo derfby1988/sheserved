@@ -29,8 +29,14 @@ import 'consultation_note_editor_page.dart';
 class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
   final ConsultationEntry? entry; // For active consultations
+  final bool readOnly; // true = ดูอย่างเดียว ไม่สามารถดำเนินการได้
 
-  const ChartBoardPage({super.key, this.request, this.entry});
+  const ChartBoardPage({
+    super.key,
+    this.request,
+    this.entry,
+    this.readOnly = false,
+  });
 
   @override
   State<ChartBoardPage> createState() => _ChartBoardPageState();
@@ -56,6 +62,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isConsultationActive = false; // Locked until paid (for patient)
   bool _isHeaderExpanded = true;
   bool _isProvider = false;
+  bool _hasSubmitted = false; // true = ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
 
   StreamSubscription? _messagesSub;
   Timer? _healthPermissionPollTimer;
@@ -1060,27 +1067,53 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
-            stops: [0.0, 0.5, 1.0],
+    return PopScope(
+      canPop: !_hasSubmitted,
+      onPopInvokedWithResult: (didPop, result) {
+        if (_hasSubmitted && !didPop) {
+          // ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
+          // แทนที่จะ pop กลับไปหน้า analyze-body
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/profile',
+            (route) => route.isFirst,
+            arguments: {'tabIndex': 2}, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
+          );
+        }
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFE8F5DA), Color(0xFFF5FAF0), Color(0xFFFFFFFF)],
+              stops: [0.0, 0.5, 1.0],
+            ),
           ),
-        ),
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          titleSpacing: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            titleSpacing: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
+              onPressed: () {
+                if (_hasSubmitted) {
+                  // หลังส่งคำรักษาแล้ว → ไปหน้า profile/history แทน analyze-body
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/profile',
+                    (route) => route.isFirst,
+                    arguments: {'tabIndex': 2},
+                  );
+                } else {
+                  Navigator.pop(context);
+                }
+              },
+            ),
           title: Row(
             children: [
               Flexible(child: FittedBox(child: _buildTimerBadge())),
@@ -1101,8 +1134,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      _isProvider ? "ห้องปรึกษา (มุมมองแพทย์)" : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม",
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
+                      widget.readOnly
+                          ? 'ห้องปรึกษา (โหมดดูอย่างเดียว)'
+                          : (_isProvider
+                              ? "ห้องปรึกษา (มุมมองแพทย์)"
+                              : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม"),
+                      style: TextStyle(
+                        color: widget.readOnly
+                            ? Colors.grey.shade600
+                            : Colors.grey.shade500,
+                        fontSize: 10,
+                        fontWeight: widget.readOnly ? FontWeight.bold : FontWeight.normal,
+                      ),
                     ),
                   ],
                 ),
@@ -1115,8 +1158,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
         body: Column(
           children: [
-            // Health Data Permission Status Banner — Doctor side only
-            if (_isProvider && _healthPermissionRequest != null)
+            // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว)
+            if (_isProvider && !widget.readOnly && _healthPermissionRequest != null)
               _buildHealthPermissionStatusBanner(_healthPermissionRequest!),
             _buildExpertStatusBanner(),
             _buildBodyMapSummary(),
@@ -1142,6 +1185,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ],
         ),
       ),
+    ),
     ),
     );
   }
@@ -3185,6 +3229,43 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ),
               ),
             ),
+
+          // ── Read-Only Overlay (โหมดดูอย่างเดียว) ──
+          if (widget.readOnly)
+            Positioned.fill(
+              child: Container(
+                color: Colors.grey.shade100.withOpacity(0.85),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.visibility_outlined,
+                            size: 18, color: Colors.grey.shade600),
+                        const SizedBox(width: 8),
+                        Text(
+                          'โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       );
   }
@@ -3325,6 +3406,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           _activeConsultationId = consultationId;
           _isConsultationActive = true;
           _isHeaderExpanded = false;
+          _hasSubmitted = true; // ป้องกันกลับไปหน้า analyze-body → back ไป profile/history
           // Update local _consultationData immediately so UI unlocks without
           // waiting for _initChat async re-fetch (avoids stale-data flicker).
           if (_consultationData != null) {
@@ -3640,16 +3722,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_isProvider)
+        // ในโหมดดูอย่างเดียว ซ่อนปุ่มจบงานและวิดีโอคอล
+        if (_isProvider && !widget.readOnly)
           TextButton.icon(
             onPressed: _showFinishDialog,
             icon: const Icon(Icons.done_all, color: AppColors.primary, size: 18),
             label: const Text('จบงาน', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
           ),
-        IconButton(
-          icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
-          onPressed: _startVideoCall,
-        ),
+        if (!widget.readOnly)
+          IconButton(
+            icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
+            onPressed: _startVideoCall,
+          ),
         IconButton(
           icon: const Icon(Icons.info_outline, color: Colors.grey),
           onPressed: _showConsultationDetails,

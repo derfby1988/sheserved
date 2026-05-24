@@ -16,6 +16,8 @@ import 'features/auth/presentation/pages/register_page.dart';
 import 'features/auth/presentation/pages/register_wizard_page.dart';
 import 'features/health/presentation/pages/health_page.dart';
 import 'features/health/presentation/pages/health_data_entry_page.dart';
+import 'features/consultation/presentation/pages/health_program_request_dashboard.dart'
+    show dashboardRouteObserver;
 import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
@@ -126,6 +128,7 @@ class SheservedApp extends StatelessWidget {
       title: 'Sheserved',
       debugShowCheckedModeBanner: false,
       scrollBehavior: AppScrollBehavior(),
+      navigatorObservers: [dashboardRouteObserver],
       theme: AppTheme.lightTheme,
       localizationsDelegates: [
         GlobalMaterialLocalizations.delegate,
@@ -219,13 +222,27 @@ class SheservedApp extends StatelessWidget {
 
         if (settings.name == '/chart-board') {
           final args = settings.arguments;
-          if (args is ConsultationRequestModel) {
-            return MaterialPageRoute(
-              builder: (context) => ChartBoardPage(request: args),
-            );
+          bool readOnly = false;
+          ConsultationEntry? entry;
+          ConsultationRequestModel? request;
+
+          if (args is Map<String, dynamic>) {
+            entry = args['entry'] as ConsultationEntry?;
+            request = args['request'] as ConsultationRequestModel?;
+            readOnly = args['readOnly'] as bool? ?? false;
+          } else if (args is ConsultationRequestModel) {
+            request = args;
           } else if (args is ConsultationEntry) {
+            entry = args;
+          }
+
+          if (request != null || entry != null) {
             return MaterialPageRoute(
-              builder: (context) => ChartBoardPage(entry: args),
+              builder: (context) => ChartBoardPage(
+                request: request,
+                entry: entry,
+                readOnly: readOnly,
+              ),
             );
           }
         }

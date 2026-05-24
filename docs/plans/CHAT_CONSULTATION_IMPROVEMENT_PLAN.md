@@ -2142,11 +2142,10 @@ CREATE POLICY "Patient can respond" ON health_data_permission_requests
 - All UI follows the visual guidelines above and works on both Android and iOS.
 
 *Last Updated: 2026-05-21*
-*Last Updated: 2026-05-21*
 
 ---
 
-## ⚠️ Phase 6.4: Dashboard Per-Tab Pagination & Lazy Loading (✅ เสร็จสิ้น — โหลดทีละ 15 การ์ดต่อแถบ)
+## ⚠️ Phase 6.4: Dashboard Pagination, Lazy Loading & UX Refinements (✅ เสร็จสิ้น — Last Updated: 2026-05-24)
 
 ### 🚨 ปัญหาที่พบ
 
@@ -2255,6 +2254,51 @@ void _onScroll() {
 | | ✅ แก้ `_statChip()` onTap → `_switchTab()` |
 | | ✅ แก้ `_buildBody()` → แสดง `_entriesByTab[_activeTab]` + loading indicator |
 | | ✅ แก้ `RefreshIndicator` → `_loadTab(tab, refresh: true)` + `_loadCounts()` |
+| | ✅ **Default tab = `pending`** — เปิด Dashboard มาที่แถบ "รอดำเนินการ" |
+| | ✅ **Pin My Jobs** — แถบ `in_progress` เรียงงานของตัวเอง (`provider_id == myId`) ขึ้นด้านบน |
+| `chart_board_page.dart` | ✅ **เพิ่ม** `readOnly` parameter — โหมดดูอย่างเดียว ป้องกันการดำเนินการ |
+| `main.dart` | ✅ **แก้** route `/chart-board` รองรับ `Map<String, dynamic>` arguments (`entry`, `readOnly`) |
+| | ✅ **เพิ่ม** `navigatorObservers: [dashboardRouteObserver]` สำหรับ `RouteAware` |
+
+### 🎨 UX Refinements ที่เพิ่มเติม
+
+#### 1️⃣ Default Tab: "รอดำเนินการ"
+- เปลี่ยน `_activeTab` เริ่มต้นจาก `'all'` → `'pending'`
+- Provider เข้ามาจะเห็นงานที่รอดำเนินการทันที ไม่ต้องสลับ tab
+
+#### 2️⃣ Pin My Jobs ในแถบ "กำลังดำเนินการ"
+- `_getFilteredEntries()` ตรวจสอบ `_activeTab == 'in_progress'`
+- งานที่ `provider_id == _currentUser.id` (`isMyJob`) → ขึ้นด้านบนสุด
+- ภายในกลุ่มเดียวกัน → เรียงตาม `requestedAt` (ใหม่ → เก่า)
+
+#### 3️⃣ Read-Only Preview Mode (ปุ่ม "ดูรายละเอียด")
+- กด "ดูรายละเอียด" → เปิด `ChartBoardPage(readOnly: true)`
+- Overlay สีเทาบังช่อง input พร้อมข้อความ "โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม"
+- ซ่อนปุ่ม "จบงาน" และ "วิดีโอคอล" ใน action bar
+- แสดง subtitle "ห้องปรึกษา (โหมดดูอย่างเดียว)" ใน AppBar
+- ซ่อน Health Data Permission Banner (provider ไม่ควรขอข้อมูลขณะ preview)
+- ผู้ใช้ยังดูข้อความแชท, ดูสถานะผู้เชี่ยวชาญ, และดูรายละเอียดผู้ป่วยได้ตามปกติ
+
+#### 4️⃣ Auto-Refresh: App Lifecycle + Route Observer
+เดิม Dashboard มีเฉพาะ Real-time Stream (`_subscribeToChanges`) ที่รีเฟรชอัตโนมัติ เพิ่มอีก 2 กลไก:
+
+**App Lifecycle Observer (`WidgetsBindingObserver`)**
+- จับ `AppLifecycleState.resumed` (แอปกลับมาจาก background)
+- ทำงาน: `_loadCounts()` + `_loadTab(_activeTab, refresh: true)`
+- ตัวอย่างสถานการณ์: User กด Home → เปิด Facebook → กลับมาแอปเรา → ข้อมูลรีเฟรชทันที
+
+**Route Observer (`RouteAware`)**
+- จับ `didPopNext()` (navigate กลับมาหน้า dashboard จากหน้าอื่น)
+- ทำงาน: `_loadCounts()` + `_loadTab(_activeTab, refresh: true)`
+- ตัวอย่างสถานการณ์: กด "รับงาน" → เข้าห้องแชท → กด Back → Dashboard รีเฟรชทันที
+
+| กลไกรีเฟรช | ทำงานตอนไหน | ประเภท |
+|---|---|---|
+| Real-time Stream | DB เปลี่ยน | Auto (always on) |
+| App Lifecycle Observer | กลับจาก background | Auto |
+| Route Observer | กลับจากหน้าอื่น | Auto |
+| Pull-to-Refresh | User swipe ลง | Manual |
+| ปุ่ม Refresh | User กด icon | Manual |
 
 ### ⏰ ควรทำเมื่อไหร่
 
