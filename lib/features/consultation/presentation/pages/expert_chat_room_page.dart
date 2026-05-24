@@ -105,6 +105,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   Future<void> _ensureProviderInRoom() async {
     final providerId = _currentUser?.id;
     if (providerId == null) return;
+    final patientId = widget.entry.patientId;
 
     try {
       final supabase = Supabase.instance.client;
@@ -118,13 +119,18 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           .timeout(const Duration(seconds: 5));
 
       if (existing == null) {
-        // Room doesn't exist yet — create it with provider
+        // Room doesn't exist yet — create it with both provider and patient
         await supabase
             .from('chat_rooms')
             .insert({
               'id': roomId,
-              'participant_ids': [providerId],
+              'participant_ids': [providerId, patientId],
+              'room_type': 'consultation',
+              'consultation_id': widget.entry.id,
+              'package_id': widget.entry.packageId,
+              'title': widget.entry.packageName,
               'last_message': null,
+              'is_active': true,
               'updated_at': DateTime.now().toIso8601String(),
             })
             .timeout(const Duration(seconds: 5));
@@ -134,17 +140,31 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         final participants = List<String>.from(
           existing['participant_ids'] ?? [],
         );
+        if (!participants.contains(patientId)) {
+          participants.add(patientId);
+        }
         if (!participants.contains(providerId)) {
           participants.add(providerId);
+        }
+
+        final updates = <String, dynamic>{
+          'participant_ids': participants,
+          'room_type': 'consultation',
+          'consultation_id': widget.entry.id,
+          'package_id': widget.entry.packageId,
+          'title': widget.entry.packageName,
+          'is_active': true,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+
+        if ((existing['participant_ids'] as List?)?.length != participants.length ||
+            (existing['room_type'] ?? existing['roomType']) != 'consultation') {
           await supabase
               .from('chat_rooms')
-              .update({
-                'participant_ids': participants,
-                'updated_at': DateTime.now().toIso8601String(),
-              })
+              .update(updates)
               .eq('id', roomId)
               .timeout(const Duration(seconds: 5));
-          debugPrint('ExpertChat: Added provider $providerId to room $roomId');
+          debugPrint('ExpertChat: Updated room $roomId with participants=$participants');
         }
       }
     } catch (e) {

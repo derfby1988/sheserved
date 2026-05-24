@@ -156,34 +156,8 @@ class HomeHeaderSection extends StatelessWidget {
                         // รวม notification ทุกประเภทเข้า list เดียว
                         final List<Map<String, dynamic>> combinedItems = [];
 
-                        // 1. Donation alerts
-                        for (var d in donationAlerts) {
-                          combinedItems.add({
-                            'time': d['updatedAt'] as DateTime? ?? DateTime.now(),
-                            'type': 'donation_update',
-                            'data': d,
-                          });
-                        }
-
-                        // 2. Emergency / Thai Mhung alerts
-                        for (var alert in alerts) {
-                          combinedItems.add({
-                            'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
-                            'type': 'alert',
-                            'data': alert,
-                          });
-                        }
-
-                        // 3. Yield Way alerts
-                        for (var y in yieldWayAlerts) {
-                          combinedItems.add({
-                            'time': DateTime.now(),
-                            'type': 'yield_way',
-                            'data': y,
-                          });
-                        }
-
-                        // 4. ✅ Consultation alerts (เฉพาะผู้ให้บริการ)
+                        // 1. Consultation alerts (สำคัญสุด — อยู่บนสุด)
+                        debugPrint('HomeHeader: consultationAlerts.length=${consultationAlerts.length}');
                         for (var c in consultationAlerts) {
                           combinedItems.add({
                             'time': c['requestedAt'] as DateTime? ?? DateTime.now(),
@@ -192,9 +166,41 @@ class HomeHeaderSection extends StatelessWidget {
                           });
                         }
 
-                        // เรียงลำดับใหม่ล่าสุดขึ้นก่อน
-                        combinedItems.sort((a, b) =>
-                            (b['time'] as DateTime).compareTo(a['time'] as DateTime));
+                        // 2. Donation alerts
+                        for (var d in donationAlerts) {
+                          combinedItems.add({
+                            'time': d['updatedAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'donation_update',
+                            'data': d,
+                          });
+                        }
+
+                        // 3. Emergency / Thai Mhung alerts
+                        for (var alert in alerts) {
+                          combinedItems.add({
+                            'time': alert['createdAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'alert',
+                            'data': alert,
+                          });
+                        }
+
+                        // 4. Yield Way alerts
+                        for (var y in yieldWayAlerts) {
+                          combinedItems.add({
+                            'time': DateTime.now(),
+                            'type': 'yield_way',
+                            'data': y,
+                          });
+                        }
+
+                        // เรียงลำดับ: consultation อยู่บนสุดเสมอ (pinned), ที่เหลือใหม่ล่าสุดก่อน
+                        combinedItems.sort((a, b) {
+                          final aIsConsult = a['type'] == 'consultation';
+                          final bIsConsult = b['type'] == 'consultation';
+                          if (aIsConsult && !bIsConsult) return -1;
+                          if (!aIsConsult && bIsConsult) return 1;
+                          return (b['time'] as DateTime).compareTo(a['time'] as DateTime);
+                        });
 
                         // Medicine reminder อยู่ล่างสุดเสมอ
                         combinedItems.add({
@@ -276,7 +282,7 @@ class HomeHeaderSection extends StatelessWidget {
                               final c = item['data'] as Map<String, dynamic>;
                               final consultId = c['id']?.toString() ?? '';
                               final packageName = c['packageName']?.toString() ?? 'คำร้องขอปรึกษา';
-                              final patientName = c['patientName']?.toString() ?? 'ผู้ป่วย';
+                              final bodyArea = c['bodyArea']?.toString() ?? 'ไม่ระบุบริเวณ';
                               return Dismissible(
                                 key: Key('consult_alert_$consultId'),
                                 direction: DismissDirection.horizontal,
@@ -331,7 +337,7 @@ class HomeHeaderSection extends StatelessWidget {
                                                 maxLines: 1,
                                               ),
                                               Text(
-                                                '$patientName \u2022 $packageName',
+                                                '$packageName \u2022 $bodyArea',
                                                 style: AppTextStyles.caption.copyWith(
                                                   color: Colors.white.withOpacity(0.8),
                                                   fontSize: 8.5,

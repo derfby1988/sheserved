@@ -148,13 +148,18 @@ class _ProviderHistoryPageState extends State<ProviderHistoryPage> {
       shadowColor: Colors.black12,
       child: InkWell(
         onTap: () {
-          final roomId = req.roomId ?? 'consult_${req.id}';
-          // Provider สามารถเปิดดูแชทย้อนหลัง (Read-only) ได้ถ้าเสร็จสิ้น
-          // หรือเปิดแชทปกติถ้ากำลังให้คำปรึกษา
           if (req.status == 'completed' || req.status == 'cancelled') {
-             Navigator.pushNamed(context, '/consultation-history-chat', arguments: req.id);
-          } else if (req.status == 'active' || req.status == 'in_progress') {
-             Navigator.pushNamed(context, '/chat-room', arguments: roomId);
+            Navigator.pushNamed(
+              context,
+              '/consultation-history-chat',
+              arguments: req.id,
+            );
+          } else {
+            Navigator.pushNamed(
+              context,
+              '/chart-board',
+              arguments: req,
+            );
           }
         },
         borderRadius: BorderRadius.circular(12),

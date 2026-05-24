@@ -123,6 +123,8 @@ class _HealthProgramRequestDashboardState
             .then((profs) => _professions = profs),
       ]).timeout(const Duration(seconds: 15));
 
+      debugPrint('Dashboard: _init done — _isProvider=$_isProvider, _availabilityStatus=$_availabilityStatus, _myPackageIds=$_myPackageIds');
+
       // โหลด counts + หน้าแรกของ active tab
       await _loadCounts();
       await _loadTab(_activeTab);
@@ -354,43 +356,54 @@ class _HealthProgramRequestDashboardState
     if (confirm != true) return;
 
     try {
+      debugPrint('Dashboard: _joinRequest starting for entry=${entry.id}');
       // 1. พยายาม Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
       if (entry.packageId != null && user.professionId != null) {
         try {
+          debugPrint('Dashboard: trying assignProviderToGroup');
           await _repo.assignProviderToGroup(
             consultationId: entry.id,
             providerId: user.id,
             packageId: entry.packageId!,
             professionId: user.professionId!,
           );
-        } catch (_) {
+          debugPrint('Dashboard: assignProviderToGroup success');
+        } catch (e) {
           // Fallback: ใช้ระบบเดิม (direct assign) ถ้า expert group ไม่ตรง
-          debugPrint('Expert group match failed, using direct assign fallback');
+          debugPrint('Dashboard: assignProviderToGroup failed ($e), fallback to assignProvider');
           await _repo.assignProvider(
             requestId: entry.id,
             providerId: user.id,
           );
+          debugPrint('Dashboard: assignProvider fallback success');
         }
       } else {
         // ไม่มี packageId หรือ professionId → ใช้ระบบ assign ตรง
+        debugPrint('Dashboard: no packageId/professionId, using direct assign');
         await _repo.assignProvider(
           requestId: entry.id,
           providerId: user.id,
         );
+        debugPrint('Dashboard: direct assign success');
       }
 
       // 1.5 อัปเดตสถานะ request ให้เป็น in_progress
+      debugPrint('Dashboard: updating status to in_progress');
       await _repo.updateStatus(entry.id, 'in_progress');
 
       // 2. เปลี่ยนสถานะตัวเองเป็น busy
+      debugPrint('Dashboard: setting availability to busy');
       await _userRepo.setAvailabilityStatus(user.id, 'busy');
       if (mounted) setState(() => _availabilityStatus = 'busy');
 
       // 3. นำทางเข้าห้องแชท
+      debugPrint('Dashboard: navigating to chat');
       if (mounted) {
         _openChat(entry);
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Dashboard: _joinRequest FAILED: $e');
+      debugPrint(stack.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -405,29 +418,46 @@ class _HealthProgramRequestDashboardState
   // ─── Provider เปลี่ยนสถานะตัวเอง ────────────────────────────────────────────
   Future<void> _toggleAvailability() async {
     final user = _currentUser;
-    if (user == null) return;
+    if (user == null) {
+      debugPrint('Dashboard: _toggleAvailability skipped — user null');
+      return;
+    }
 
     final newStatus = _availabilityStatus == 'busy' ? 'online' : 'busy';
-    await _userRepo.setAvailabilityStatus(user.id, newStatus);
-    if (mounted) setState(() => _availabilityStatus = newStatus);
+    debugPrint('Dashboard: _toggleAvailability current=$_availabilityStatus → new=$newStatus');
+    try {
+      await _userRepo.setAvailabilityStatus(user.id, newStatus);
+      debugPrint('Dashboard: setAvailabilityStatus success');
+      if (mounted) setState(() => _availabilityStatus = newStatus);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            newStatus == 'online'
-                ? '✅ เปลี่ยนเป็นพร้อมรับงานแล้ว'
-                : '🔴 เปลี่ยนเป็นไม่ว่างแล้ว',
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newStatus == 'online'
+                  ? '✅ เปลี่ยนเป็นพร้อมรับงานแล้ว'
+                  : '🔴 เปลี่ยนเป็นไม่ว่างแล้ว',
+            ),
+            backgroundColor: newStatus == 'online'
+                ? AppColors.success
+                : AppColors.warning,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
-          backgroundColor: newStatus == 'online'
-              ? AppColors.success
-              : AppColors.warning,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        );
+      }
+    } catch (e) {
+      debugPrint('Dashboard: _toggleAvailability FAILED: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เปลี่ยนสถานะไม่สำเร็จ: $e'),
+            backgroundColor: AppColors.error,
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -1054,6 +1084,7 @@ class _HealthProgramRequestDashboardState
         !isMyJob &&
         e.status == 'pending' &&
         !isBusy;
+    debugPrint('Dashboard: _buildActionRow entry=${e.id}, _isProvider=$_isProvider, packageId=${e.packageId}, _myPackageIds=$_myPackageIds, status=${e.status}, isMyJob=$isMyJob, isBusy=$isBusy, isMatching=$isMatching, _availabilityStatus=$_availabilityStatus');
 
     if (isMatching) {
       final canJoin = _availabilityStatus != 'busy';

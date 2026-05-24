@@ -445,6 +445,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _activeConsultationId = consultationId;
       });
 
+      await _ensureConsultationRoom(
+        roomId,
+        currentUserId,
+        consultationId: consultationId,
+        title: widget.entry?.packageName ?? widget.request?.packageName,
+      );
+
       await _loadLatestHealthPermission();
       _subscribeHealthPermissionUpdates();
 
@@ -725,31 +732,61 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Future<void> _ensureConsultationRoom(
     String roomId,
     String currentUserId,
+    {String? consultationId, String? title}
   ) async {
     try {
       final supabase = Supabase.instance.client;
       // Check if room already exists
       final existing = await supabase
           .from('chat_rooms')
-          .select('id')
+          .select('id, participant_ids, room_type')
           .eq('id', roomId)
           .maybeSingle()
           .timeout(const Duration(seconds: 5));
 
       if (existing == null) {
-        // Create room with the patient's ID as participant
+        // Create room with the current user's ID as participant
         await supabase
             .from('chat_rooms')
             .insert({
               'id': roomId,
               'participant_ids': [currentUserId],
+              'room_type': 'consultation',
+              if (consultationId != null) 'consultation_id': consultationId,
+              if (title != null && title.isNotEmpty) 'title': title,
               'last_message': null,
+              'is_active': true,
               'updated_at': DateTime.now().toIso8601String(),
             })
             .timeout(const Duration(seconds: 5));
         debugPrint('ChartBoardPage: Created consultation room: $roomId');
       } else {
-        debugPrint('ChartBoardPage: Room already exists: $roomId');
+        final participants = List<String>.from(existing['participant_ids'] ?? []);
+        var shouldUpdate = false;
+        if (!participants.contains(currentUserId)) {
+          participants.add(currentUserId);
+          shouldUpdate = true;
+        }
+
+        final updates = <String, dynamic>{
+          'room_type': 'consultation',
+          'is_active': true,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (consultationId != null) updates['consultation_id'] = consultationId;
+        if (title != null && title.isNotEmpty) updates['title'] = title;
+        if (shouldUpdate) updates['participant_ids'] = participants;
+
+        if (shouldUpdate || (existing['room_type'] ?? existing['roomType']) != 'consultation') {
+          await supabase
+              .from('chat_rooms')
+              .update(updates)
+              .eq('id', roomId)
+              .timeout(const Duration(seconds: 5));
+          debugPrint('ChartBoardPage: Updated consultation room $roomId with participants=$participants');
+        } else {
+          debugPrint('ChartBoardPage: Room already exists: $roomId');
+        }
       }
     } catch (e) {
       debugPrint('ChartBoardPage: Could not ensure room (non-blocking): $e');
@@ -1164,7 +1201,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             _buildExpertStatusBanner(),
             _buildBodyMapSummary(),
             // Pain level selector for patients before payment/activation
-            if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+            if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
               _buildPainLevelSelector(),
             Expanded(
               child: Container(
@@ -1179,7 +1216,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
             ),
             // Payment card for patients before payment/activation
-            if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+            if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
               _buildPaymentCard(),
             _buildChatInput(),
           ],
@@ -3079,7 +3116,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget _buildChatInput() {
     final hasText = _msgController.text.trim().isNotEmpty;
     final status = _consultationData?['status'] as String? ?? 'pending';
-    final isChatActive = _isProvider || status == 'in_progress';
+    final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
     debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive _consultationData=$_consultationData');
     return Stack(
       clipBehavior: Clip.none,
@@ -3195,7 +3232,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
 
           // Lock Overlay for patients before payment
-          if (!_isProvider && (_consultationData?['status'] ?? 'pending') == 'pending')
+          if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
             Positioned.fill(
               child: Container(
                 color: Colors.white.withOpacity(0.1),
@@ -3374,16 +3411,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           'status': 'in_progress',
         });
       } else if (widget.request != null) {
-        // Create new consultation request (mark as active immediately)
+        // Create new consultation request (provider should see it as pending)
+        debugPrint(
+          'ChartBoard: creating consultation request packageId=${widget.request!.packageId}, packageName=${widget.request!.packageName}, status=pending',
+        );
         final newRequest = await repo.createRequest(
           userId: currentUserId,
-          packageId: widget.request!.packageId ?? '',
-          packageName: widget.request!.packageName ?? '',
+          packageId: widget.request!.packageId,
+          packageName: widget.request!.packageName,
           price: widget.request!.price ?? 0,
           bodyArea: widget.request!.bodyArea ?? {},
           symptomsChart: finalSymptomsChart,
           symptoms: widget.request!.symptoms ?? [],
-          status: 'in_progress',
+          status: 'pending',
         );
         consultationId = newRequest.id;
       } else {

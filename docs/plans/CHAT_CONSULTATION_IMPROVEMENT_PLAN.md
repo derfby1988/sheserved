@@ -545,6 +545,9 @@ supabase.channel('member:$userId')
 - [ ] เพิ่ม columns ใน `chat_rooms`, `chat_messages`
 - [ ] อัปเดต `ChatRoom` / `ChatMessage` models
 - [ ] unread badge ใน Chat List
+- [ ] เพิ่ม `room_id` canonical mapping ใน `consultation_requests`
+- [ ] ทำ `room upsert + participant merge` ทุกครั้งก่อนเปิดห้อง
+- [ ] เพิ่ม `repair/backfill migration` สำหรับห้องเก่าที่สมาชิกไม่ครบ
 
 ### Sprint 2 — Session (สัปดาห์ 3-4)
 - [ ] สร้าง `consultation_sessions`
@@ -1159,7 +1162,14 @@ consultation_requests (1)
     └── consultation_reviews (1)        ← คะแนนรีวิว
 ```
 
-### SQL: สร้าง room ที่ผูกกับ consultation
+### SQL: สร้าง/อัปเดต room ที่ผูกกับ consultation
+
+**กฎสำคัญ:**
+
+- ห้ามใช้ `insert-only` กับ consultation room
+- `chat_rooms` ต้องถูก `upsert` ด้วย `consultation_id` เดียวกันเสมอ
+- ต้อง merge `participant_ids` / `chat_room_members` ทุกครั้งที่ patient หรือ provider กลับเข้าห้อง
+- ถ้าพบ room เก่าแต่สมาชิกไม่ครบ ให้ซ่อมด้วย migration/repair script แทนการสร้าง room ใหม่ทับ
 
 ```sql
 -- Function: สร้าง dedicated room เมื่อ provider รับงาน
@@ -1174,7 +1184,7 @@ RETURNS UUID AS $$
 DECLARE
   v_room_id UUID;
 BEGIN
-  -- 1. สร้าง chat room ใหม่
+  -- 1. สร้าง chat room ใหม่ถ้ายังไม่มี หรือเตรียมข้อมูลเพื่อ upsert
   INSERT INTO chat_rooms (
     id, room_type, consultation_id, package_id,
     title, is_active, session_minutes, created_at, updated_at
@@ -1190,7 +1200,7 @@ BEGIN
   )
   RETURNING id INTO v_room_id;
 
-  -- 2. เพิ่มผู้ป่วยและแพทย์เป็น members
+  -- 2. เพิ่มผู้ป่วยและแพทย์เป็น members (merge / idempotent)
   INSERT INTO chat_room_members (room_id, user_id, role)
   VALUES
     (v_room_id, p_patient_id,  'patient'),
@@ -1201,6 +1211,9 @@ BEGIN
   SET room_id = v_room_id,
       updated_at = now()
   WHERE id = p_consultation_id;
+
+  -- 4. ทุกเส้นทางที่กลับเข้าห้องต้องเรียก ensure/upsert เดิมซ้ำได้
+  --    เพื่อป้องกัน history หายเพราะ participant_ids ไม่ครบหรือ room ถูกสร้างแบบ partial
 
   RETURN v_room_id;
 END;

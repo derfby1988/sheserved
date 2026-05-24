@@ -123,6 +123,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // === Consultation Request Notifications (Phase 5) ===
   StreamSubscription? _consultationAlertSub;
+  Timer? _consultationPollTimer;
   final List<Map<String, dynamic>> _consultationAlerts = [];
 
   @override
@@ -166,6 +167,8 @@ class _HomePageState extends ConsumerState<HomePage>
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForDonationStatus(); // Donation status notification
+    final initUser = AuthService.instance.currentUser;
+    debugPrint('HomePage: initState _subscribeConsultationAlerts about to run, professionId=${initUser?.professionId}');
     _subscribeConsultationAlerts(); // ✅ Phase 5: Head sector consultation alerts
 
     // Start auto-refresh timer as a fail-safe (every 90 seconds)
@@ -187,6 +190,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _donationStatusSub?.cancel();
     _yieldWaySub?.cancel();
     _consultationAlertSub?.cancel();
+    _consultationPollTimer?.cancel();
     super.dispose();
   }
 
@@ -474,26 +478,117 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // ──── Consultation Alert Subscription (Phase 5) ────
 
-  /// Subscribe Supabase Realtime เพื่อรับคำขอปรึกษาที่รอ provider รับงาน
-  /// แสดงเฉพาะกรณีผู้ใช้เป็น consultation provider และมี professionId
+  /// แปลง raw request map → alert map ที่ HomeHeaderSection ใช้
+  Map<String, dynamic> _mapToAlert(Map<String, dynamic> m) {
+    final userMap = m['users'] as Map<String, dynamic>? ?? {};
+    final firstName = userMap['first_name']?.toString() ?? '';
+    final lastName = userMap['last_name']?.toString() ?? '';
+    final name = '$firstName $lastName'.trim();
+
+    String resolveBodyArea(dynamic rawBodyArea, dynamic rawSymptomsChart) {
+      final symptomsChart = rawSymptomsChart as Map<String, dynamic>? ?? {};
+      final bodyAreaMap = rawBodyArea as Map<String, dynamic>? ?? {};
+
+      // 1) Prefer explicit symptom parts from symptoms_chart
+      final parts = symptomsChart['parts'];
+      if (parts is List && parts.isNotEmpty) {
+        final labels = parts
+            .map((p) {
+              if (p is Map<String, dynamic>) {
+                return p['label']?.toString() ?? p['name']?.toString() ?? '';
+              }
+              return '';
+            })
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (labels.isNotEmpty) {
+          return labels.join(', ');
+        }
+      }
+
+      // 2) Then use explicit area/label/part fields from body_area
+      final explicit = [
+        bodyAreaMap['area']?.toString(),
+        bodyAreaMap['label']?.toString(),
+        bodyAreaMap['part']?.toString(),
+      ].where((s) => s != null && s!.trim().isNotEmpty && s.trim().toLowerCase() != 'null').map((s) => s!).toList();
+      if (explicit.isNotEmpty) {
+        return explicit.first;
+      }
+
+      // 3) Fallback: derive from non-identity keys only (avoid gender/age/lang)
+      final keys = bodyAreaMap.keys
+          .where((k) => k != 'gender' && k != 'age' && k != 'lang' && k != 'sex')
+          .map((k) => k.toString())
+          .where((k) => k.trim().isNotEmpty)
+          .toList();
+      if (keys.isNotEmpty) {
+        return keys.join(', ');
+      }
+
+      return 'ไม่ระบุบริเวณ';
+    }
+
+    return {
+      'id': m['id'],
+      'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
+      'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
+      'bodyArea': resolveBodyArea(m['body_area'], m['symptoms_chart']),
+      'requestedAt':
+          DateTime.tryParse(m['created_at']?.toString() ?? '') ??
+          DateTime.now(),
+      'status': m['status'],
+    };
+  }
+
+  /// อัปเดต _consultationAlerts จาก raw list
+  void _updateConsultationAlerts(List<Map<String, dynamic>> rawList) {
+    if (!mounted) return;
+    final pendingAlerts = rawList
+        .where((m) => (m['status']?.toString() ?? '') == 'pending')
+        .map(_mapToAlert)
+        .toList();
+    setState(() {
+      _consultationAlerts
+        ..clear()
+        ..addAll(pendingAlerts);
+    });
+  }
+
+  /// Subscribe Supabase Realtime + polling fallback สำหรับคำขอปรึกษา
   void _subscribeConsultationAlerts() {
     final user = AuthService.instance.currentUser;
     if (user == null || user.professionId == null) return;
 
-    // ตรวจว่าเป็น consumer ทั่วไปหรือไม่ (00...0001 = consumer)
     const consumerProfessionId = '00000000-0000-0000-0000-000000000001';
     if (user.professionId == consumerProfessionId) return;
 
     final repo = ConsultationRepository(Supabase.instance.client);
 
     _consultationAlertSub?.cancel();
+    _consultationPollTimer?.cancel();
 
-    // โหลด packageIds ก่อนแล้วค่อย subscribe stream
     repo
         .getPackageIdsForProfession(user.professionId!)
-        .then((packageIds) {
+        .then((packageIds) async {
           if (!mounted) return;
 
+          // 1. โหลดข้อมูลเริ่มต้นทันที (ไม่รอ stream)
+          try {
+            final initial = packageIds.isNotEmpty
+                ? await repo.getRequestsForProfession(
+                    packageIds,
+                    excludeProviderId: user.id,
+                  )
+                : await repo.getAllRequestsWithUserInfo(
+                    excludeProviderId: user.id,
+                  );
+            _updateConsultationAlerts(initial);
+          } catch (e) {
+            debugPrint('HomePage: initial consultation fetch error: $e');
+          }
+
+          // 2. Subscribe realtime stream
           final stream = packageIds.isNotEmpty
               ? repo.watchRequestsForProfession(
                   packageIds,
@@ -504,40 +599,32 @@ class _HomePageState extends ConsumerState<HomePage>
                 );
 
           _consultationAlertSub = stream.listen((rawList) {
-            if (!mounted) return;
-            // กรองเฉพาะ pending (dismissed ถูกกรองที่ฝั่ง DB แล้ว)
-            final pendingAlerts = rawList
-                .where((m) {
-                  final status = m['status']?.toString() ?? '';
-                  return status == 'pending';
-                })
-                .map((m) {
-                  // map ให้ตรงกับ key ที่ HomeHeaderSection ใช้
-                  final userMap = m['users'] as Map<String, dynamic>? ?? {};
-                  final firstName = userMap['first_name']?.toString() ?? '';
-                  final lastName = userMap['last_name']?.toString() ?? '';
-                  final name = '$firstName $lastName'.trim();
-                  return {
-                    'id': m['id'],
-                    'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
-                    'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
-                    'requestedAt':
-                        DateTime.tryParse(m['created_at']?.toString() ?? '') ??
-                        DateTime.now(),
-                    'status': m['status'],
-                  };
-                })
-                .toList();
-
-            setState(() {
-              _consultationAlerts
-                ..clear()
-                ..addAll(pendingAlerts);
-            });
+            _updateConsultationAlerts(rawList);
           });
+
+          // 3. Polling fallback ทุก 30 วินาที (กรณี WebSocket disconnect)
+          _consultationPollTimer = Timer.periodic(
+            const Duration(seconds: 30),
+            (_) async {
+              if (!mounted) return;
+              try {
+                final polled = packageIds.isNotEmpty
+                    ? await repo.getRequestsForProfession(
+                        packageIds,
+                        excludeProviderId: user.id,
+                      )
+                    : await repo.getAllRequestsWithUserInfo(
+                        excludeProviderId: user.id,
+                      );
+                _updateConsultationAlerts(polled);
+              } catch (e) {
+                // เงียบ — ไม่ต้อง log ทุกรอบ
+              }
+            },
+          );
         })
         .catchError((e) {
-          debugPrint('HomePage: _subscribeConsultationAlerts error: $e');
+          debugPrint('HomePage: _subscribeConsultationAlerts setup error: $e');
         });
   }
 
@@ -1150,8 +1237,9 @@ class _HomePageState extends ConsumerState<HomePage>
 
   /// เรียกเมื่อ auth state เปลี่ยน (login / logout)
   void _onAuthChanged() {
-    final userId = ServiceLocator.instance.currentUser?.id;
-    debugPrint('HomePage: _onAuthChanged fired, userId=$userId');
+    final user = AuthService.instance.currentUser;
+    final userId = user?.id;
+    debugPrint('HomePage: _onAuthChanged fired, userId=$userId, professionId=${user?.professionId}');
 
     // Reset connection on auth change
     if (userId != null) {
@@ -1160,6 +1248,7 @@ class _HomePageState extends ConsumerState<HomePage>
     } else {
       // Logout — clear consultation alerts
       _consultationAlertSub?.cancel();
+      _consultationPollTimer?.cancel();
       if (mounted) {
         setState(() {
           _consultationAlerts.clear();

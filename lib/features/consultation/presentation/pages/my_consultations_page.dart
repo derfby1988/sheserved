@@ -145,14 +145,20 @@ class _MyConsultationsPageState extends State<MyConsultationsPage> {
       shadowColor: Colors.black12,
       child: InkWell(
         onTap: () {
-          final roomId = req.roomId ?? 'consult_${req.id}';
-          // ถ้าสถานะเป็น completed ให้เปิดดูแชทย้อนหลัง (Read-only)
-          // ถ้าเป็น active ให้เปิดแชทปกติ
           if (req.status == 'completed' || req.status == 'cancelled') {
-             // ไปหน้า read-only chat history
-             Navigator.pushNamed(context, '/consultation-history-chat', arguments: req.id);
-          } else if (req.status == 'active' || req.status == 'in_progress') {
-             Navigator.pushNamed(context, '/chat-room', arguments: roomId);
+            // ไปหน้า read-only chat history
+            Navigator.pushNamed(
+              context,
+              '/consultation-history-chat',
+              arguments: req.id,
+            );
+          } else {
+            // เคสที่ยังดำเนินอยู่/รอผู้เชี่ยวชาญ → เปิด unified consultation room
+            Navigator.pushNamed(
+              context,
+              '/chart-board',
+              arguments: req,
+            );
           }
         },
         borderRadius: BorderRadius.circular(12),
