@@ -124,7 +124,6 @@ class _HomePageState extends ConsumerState<HomePage>
   // === Consultation Request Notifications (Phase 5) ===
   StreamSubscription? _consultationAlertSub;
   final List<Map<String, dynamic>> _consultationAlerts = [];
-  final Set<String> _dismissedConsultationIds = {};
 
   @override
   void initState() {
@@ -188,7 +187,6 @@ class _HomePageState extends ConsumerState<HomePage>
     _donationStatusSub?.cancel();
     _yieldWaySub?.cancel();
     _consultationAlertSub?.cancel();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -497,18 +495,21 @@ class _HomePageState extends ConsumerState<HomePage>
           if (!mounted) return;
 
           final stream = packageIds.isNotEmpty
-              ? repo.watchRequestsForProfession(packageIds)
-              : repo.watchAllRequestsWithUserInfo();
+              ? repo.watchRequestsForProfession(
+                  packageIds,
+                  excludeProviderId: user.id,
+                )
+              : repo.watchAllRequestsWithUserInfo(
+                  excludeProviderId: user.id,
+                );
 
           _consultationAlertSub = stream.listen((rawList) {
             if (!mounted) return;
-            // กรองเฉพาะ pending ที่ยังไม่ถูก dismiss
+            // กรองเฉพาะ pending (dismissed ถูกกรองที่ฝั่ง DB แล้ว)
             final pendingAlerts = rawList
                 .where((m) {
-                  final id = m['id']?.toString() ?? '';
                   final status = m['status']?.toString() ?? '';
-                  return status == 'pending' &&
-                      !_dismissedConsultationIds.contains(id);
+                  return status == 'pending';
                 })
                 .map((m) {
                   // map ให้ตรงกับ key ที่ HomeHeaderSection ใช้
@@ -540,10 +541,18 @@ class _HomePageState extends ConsumerState<HomePage>
         });
   }
 
-  /// ผู้ใช้ปัดทิ้งการแจ้งเตือนปรึกษา → บันทึก dismiss ใน local Set
-  void _onConsultationAlertDismissed(String consultationId) {
+  /// ผู้ใช้ปัดทิ้งการแจ้งเตือนปรึกษา → บันทึก dismiss ลง Supabase (persist)
+  void _onConsultationAlertDismissed(String consultationId) async {
+    final user = AuthService.instance.currentUser;
+    if (user != null) {
+      final repo = ConsultationRepository(Supabase.instance.client);
+      await repo.dismissRequestForProvider(
+        requestId: consultationId,
+        providerId: user.id,
+      );
+    }
+    // ลบออกจาก list ทันที (optimistic) — stream จะ sync กับ DB เอง
     setState(() {
-      _dismissedConsultationIds.add(consultationId);
       _consultationAlerts.removeWhere((a) => a['id'] == consultationId);
     });
     debugPrint('HomePage: Consultation alert dismissed: $consultationId');
@@ -553,7 +562,6 @@ class _HomePageState extends ConsumerState<HomePage>
   void _onConsultationAlertTapped(String consultationId) {
     // ลบออกจาก head sector ทันที (optimistic)
     setState(() {
-      _dismissedConsultationIds.add(consultationId);
       _consultationAlerts.removeWhere((a) => a['id'] == consultationId);
     });
     Navigator.push(
@@ -1152,10 +1160,11 @@ class _HomePageState extends ConsumerState<HomePage>
     } else {
       // Logout — clear consultation alerts
       _consultationAlertSub?.cancel();
-      setState(() {
-        _consultationAlerts.clear();
-        _dismissedConsultationIds.clear();
-      });
+      if (mounted) {
+        setState(() {
+          _consultationAlerts.clear();
+        });
+      }
     }
 
     _loadConsultationPosition();

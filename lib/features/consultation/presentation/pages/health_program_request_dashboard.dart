@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
+import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
@@ -54,6 +56,7 @@ class _HealthProgramRequestDashboardState
   String _activeTab = 'pending';
   bool _isLoading = false;
   String _searchQuery = '';
+  bool _isNavBarVisible = true;
 
   List<String> _myPackageIds = []; // package IDs ที่ตรงกับอาชีพ provider
   List<Profession> _professions = []; // อาชีพทั้งหมดจาก admin settings
@@ -431,11 +434,44 @@ class _HealthProgramRequestDashboardState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
-      body: NestedScrollView(
-        headerSliverBuilder: (ctx, _) => [_buildAppBar()],
-        body: _isLoading ? _buildLoading() : _buildBody(),
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is UserScrollNotification) {
+            if (notification.direction == ScrollDirection.reverse) {
+              if (_isNavBarVisible) {
+                setState(() => _isNavBarVisible = false);
+              }
+            } else if (notification.direction == ScrollDirection.forward) {
+              if (!_isNavBarVisible) {
+                setState(() => _isNavBarVisible = true);
+              }
+            }
+          }
+          return false;
+        },
+        child: NestedScrollView(
+          headerSliverBuilder: (ctx, _) => [_buildAppBar()],
+          body: _isLoading ? _buildLoading() : _buildBody(),
+        ),
+      ),
+      bottomNavigationBar: TlzBottomNavigationBar(
+        isVisible: _isNavBarVisible,
+        currentIndex: -1, // Dashboard ไม่ใช่ tab หลัก → ไม่ highlight อันไหน ให้ tap ได้ทุกปุ่ม
+        onIndexChanged: (index) {
+          if (index == 2) return;
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/main-app',
+            (route) => route.isFirst,
+            arguments: {'index': index},
+          );
+        },
+        onAddPressed: () {
+          Navigator.pushNamed(context, '/emergency-live');
+        },
       ),
     );
   }
@@ -709,7 +745,7 @@ class _HealthProgramRequestDashboardState
                   color: AppColors.primary,
                   child: ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
                     itemCount: entries.length + (_isLoading ? 1 : 0),
                     itemBuilder: (ctx, i) {
                       if (i == entries.length) {

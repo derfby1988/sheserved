@@ -45,7 +45,7 @@ class PresenceService {
   /// หยุด heartbeat (เมื่อ logout หรือปิดแอป)
   Future<void> stop() async {
     if (_heartbeatTimer == null && _currentUserId == null) return;
-    
+
     final userId = _currentUserId;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
@@ -55,7 +55,12 @@ class PresenceService {
     if (userId != null) {
       try {
         final repo = UserRepository(Supabase.instance.client);
-        await repo.setAvailabilityStatus(userId, 'offline');
+        // ใส่ timeout ป้องกัน logout ค้างถ้า DB ช้า/เน็ตหลุด
+        await repo
+            .setAvailabilityStatus(userId, 'offline')
+            .timeout(const Duration(seconds: 5));
+      } on TimeoutException catch (e) {
+        debugPrint('PresenceService: setAvailabilityStatus timeout: $e');
       } catch (e) {
         debugPrint('PresenceService: Error setting offline status: $e');
       }

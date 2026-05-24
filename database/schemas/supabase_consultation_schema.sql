@@ -8,9 +8,14 @@ CREATE TABLE consultation_requests (
   body_area JSONB,             -- Stores specific locations (height/part)
   symptoms_chart JSONB,        -- Stores the hexagon chart values (e.g., {"headache": "high", "nausea": "medium"})
   status TEXT DEFAULT 'pending', -- 'pending', 'assigned', 'completed'
+  -- 🆕 dismissed_by_provider_ids: รายการ provider IDs ที่ปัด/ปฏิเสธการ์ดคำขอปรึกษานี้
+  dismissed_by_provider_ids UUID[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 🆕 Migration: Add dismissed_by_provider_ids ถ้า table มีอยู่แล้ว
+-- ALTER TABLE consultation_requests ADD COLUMN IF NOT EXISTS dismissed_by_provider_ids UUID[] DEFAULT '{}';
 
 -- Index for querying consultation requests by user
 CREATE INDEX idx_consultation_requests_user_id ON consultation_requests(user_id);

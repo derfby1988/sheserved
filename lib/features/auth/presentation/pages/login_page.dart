@@ -619,38 +619,61 @@ class _LoginPageState extends State<LoginPage>
     });
 
     try {
+      debugPrint('LoginPage: calling _userRepository.login()');
       final user = await _userRepository!.login(
         _usernameController.text.trim(),
         _passwordController.text,
       );
+      debugPrint('LoginPage: _userRepository.login() returned user=${user != null}');
 
       if (!mounted) return;
 
       if (user != null) {
-        await AuthService.instance.login(user);
-        _showSnackBar('เข้าสู่ระบบสำเร็จ');
-        await Future.delayed(const Duration(milliseconds: 500));
+        debugPrint('LoginPage: calling AuthService.instance.login()');
+        await AuthService.instance.login(user).timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            debugPrint('LoginPage: AuthService.login() timeout! Proceeding anyway.');
+          },
+        );
+        debugPrint('LoginPage: AuthService.instance.login() completed');
+        if (mounted) _showSnackBar('เข้าสู่ระบบสำเร็จ');
 
         if (!mounted) return;
         setState(() {
           _isLoading = false;
         });
+        debugPrint('LoginPage: _isLoading set to false');
 
+        debugPrint('LoginPage: scheduling navigation');
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, dynamic>) {
-            final String? target = args['redirect'] ?? args['route'];
-            final dynamic targetArgs = args['args'] ?? args['arguments'];
-            if (target != null) {
-              Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+          try {
+            if (!mounted) {
+              debugPrint('LoginPage: not mounted, skipping navigation');
+              return;
+            }
+            final args = ModalRoute.of(context)?.settings.arguments;
+            debugPrint('LoginPage: args = $args');
+            if (args is Map<String, dynamic>) {
+              final String? target = args['redirect'] ?? args['route'];
+              final dynamic targetArgs = args['args'] ?? args['arguments'];
+              if (target != null) {
+                debugPrint('LoginPage: navigating to $target');
+                Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+              } else {
+                debugPrint('LoginPage: no target, going to /');
+                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+              }
+            } else if (args is String) {
+              debugPrint('LoginPage: navigating to $args');
+              Navigator.pushReplacementNamed(context, args);
             } else {
+              debugPrint('LoginPage: no args, going to /');
               Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             }
-          } else if (args is String) {
-            Navigator.pushReplacementNamed(context, args);
-          } else {
-            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+          } catch (e, stack) {
+            debugPrint('LoginPage navigation error: $e');
+            debugPrint(stack.toString());
           }
         });
       } else {
@@ -707,37 +730,59 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (result.success && result.user != null) {
-        await AuthService.instance.login(result.user!);
+        debugPrint('LoginPage: social calling AuthService.instance.login()');
+        await AuthService.instance.login(result.user!).timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            debugPrint('LoginPage: social AuthService.login() timeout! Proceeding anyway.');
+          },
+        );
+        debugPrint('LoginPage: social AuthService.instance.login() completed');
 
-        if (result.isNewUser) {
-          _showSnackBar('ยินดีต้อนรับ ${result.user!.fullName}');
-        } else {
-          _showSnackBar('เข้าสู่ระบบสำเร็จ');
+        if (mounted) {
+          if (result.isNewUser) {
+            _showSnackBar('ยินดีต้อนรับ ${result.user!.fullName}');
+          } else {
+            _showSnackBar('เข้าสู่ระบบสำเร็จ');
+          }
         }
-
-        await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
         setState(() {
           _isLoading = false;
           _loadingProvider = null;
         });
+        debugPrint('LoginPage: social _isLoading set to false');
 
+        debugPrint('LoginPage: Social login success, scheduling navigation');
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, dynamic>) {
-            final String? target = args['redirect'] ?? args['route'];
-            final dynamic targetArgs = args['args'] ?? args['arguments'];
-            if (target != null) {
-              Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+          try {
+            if (!mounted) {
+              debugPrint('LoginPage: not mounted, skipping navigation');
+              return;
+            }
+            final args = ModalRoute.of(context)?.settings.arguments;
+            debugPrint('LoginPage: social args = $args');
+            if (args is Map<String, dynamic>) {
+              final String? target = args['redirect'] ?? args['route'];
+              final dynamic targetArgs = args['args'] ?? args['arguments'];
+              if (target != null) {
+                debugPrint('LoginPage: navigating to $target');
+                Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+              } else {
+                debugPrint('LoginPage: no target, going to /');
+                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+              }
+            } else if (args is String) {
+              debugPrint('LoginPage: navigating to $args');
+              Navigator.pushReplacementNamed(context, args);
             } else {
+              debugPrint('LoginPage: no args, going to /');
               Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             }
-          } else if (args is String) {
-            Navigator.pushReplacementNamed(context, args);
-          } else {
-            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+          } catch (e, stack) {
+            debugPrint('LoginPage social navigation error: $e');
+            debugPrint(stack.toString());
           }
         });
       } else {

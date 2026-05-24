@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../features/auth/data/models/user_model.dart';
 import 'presence_service.dart';
@@ -30,8 +31,8 @@ class AuthService extends ChangeNotifier {
     _currentUser = user;
     debugPrint('AuthService: User logged in - ${user.username} (Phone: ${user.phone})');
     // เริ่ม heartbeat เพื่อ track สถานะ online แบบ real-time
-    // await เพื่อให้แน่ใจว่า last_seen_at ถูกอัปเดตใน DB ทันที
-    await PresenceService.instance.start(user.id);
+    // ไม่ await — ไม่ให้ block login flow (PresenceService.start ทำงาน fire-and-forget อยู่แล้ว)
+    unawaited(PresenceService.instance.start(user.id));
     notifyListeners();
   }
   

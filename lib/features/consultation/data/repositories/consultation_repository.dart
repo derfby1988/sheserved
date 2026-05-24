@@ -85,9 +85,12 @@ class ConsultationRepository {
   }
 
   /// Stream ALL consultation requests — for expert/admin dashboard
-  Future<List<Map<String, dynamic>>> getAllRequestsWithUserInfo() async {
+  /// [excludeProviderId] ถ้าระบุ → กรองรายการที่ provider นั้นเคย dismiss ออก
+  Future<List<Map<String, dynamic>>> getAllRequestsWithUserInfo({
+    String? excludeProviderId,
+  }) async {
     try {
-      final response = await _client
+      var query = _client
           .from('consultation_requests')
           .select('''
             id, user_id, package_id, package_name, price,
@@ -95,7 +98,17 @@ class ConsultationRepository {
             provider_id,
             symptoms:consultation_symptoms(*),
             users:user_id (first_name, last_name, profile_image_url)
-          ''')
+          ''');
+
+      if (excludeProviderId != null && excludeProviderId.isNotEmpty) {
+        query = query.not(
+          'dismissed_by_provider_ids',
+          'cs',
+          '{$excludeProviderId}',
+        );
+      }
+
+      final response = await query
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 10));
       return List<Map<String, dynamic>>.from(response as List);
@@ -106,17 +119,24 @@ class ConsultationRepository {
   }
 
   /// Stream ALL consultation requests — for expert/admin dashboard
-  Stream<List<Map<String, dynamic>>> watchAllRequestsWithUserInfo() {
+  Stream<List<Map<String, dynamic>>> watchAllRequestsWithUserInfo({
+    String? excludeProviderId,
+  }) {
     return _client
         .from('consultation_requests')
         .stream(primaryKey: ['id'])
-        .asyncMap((_) => getAllRequestsWithUserInfo());
+        .asyncMap((_) => getAllRequestsWithUserInfo(
+              excludeProviderId: excludeProviderId,
+            ));
   }
 
   /// ดึงคำขอเฉพาะแพ็คเกจที่ตรงกับ professionId ของ provider
   /// กรองด้วย package_id ที่กลุ่มอาชีพต้องรับผิดชอบ
+  /// [excludeProviderId] ถ้าระบุ → กรองรายการที่ provider นั้นเคย dismiss ออก
   Future<List<Map<String, dynamic>>> getRequestsForProfession(
-      List<String> packageIds) async {
+    List<String> packageIds, {
+    String? excludeProviderId,
+  }) async {
     try {
       final selectFields = '''
       id, user_id, package_id, package_name, price,
@@ -126,19 +146,24 @@ class ConsultationRepository {
       users:user_id (first_name, last_name, profile_image_url)
     ''';
 
-      // Apply in_() filter BEFORE .order() to stay on PostgrestFilterBuilder
-      final response = packageIds.isNotEmpty
-          ? await _client
-              .from('consultation_requests')
-              .select(selectFields)
-              .inFilter('package_id', packageIds)
-              .order('created_at', ascending: false)
-              .timeout(const Duration(seconds: 10))
-          : await _client
-              .from('consultation_requests')
-              .select(selectFields)
-              .order('created_at', ascending: false)
-              .timeout(const Duration(seconds: 10));
+      // Build query step-by-step to allow PostgrestFilterBuilder chain
+      var query = _client.from('consultation_requests').select(selectFields);
+
+      if (packageIds.isNotEmpty) {
+        query = query.inFilter('package_id', packageIds);
+      }
+
+      if (excludeProviderId != null && excludeProviderId.isNotEmpty) {
+        query = query.not(
+          'dismissed_by_provider_ids',
+          'cs',
+          '{$excludeProviderId}',
+        );
+      }
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
@@ -149,11 +174,16 @@ class ConsultationRepository {
 
   /// Stream real-time คำขอ เฉพาะกลุ่มอาชีพที่ระบุ
   Stream<List<Map<String, dynamic>>> watchRequestsForProfession(
-      List<String> packageIds) {
+    List<String> packageIds, {
+    String? excludeProviderId,
+  }) {
     return _client
         .from('consultation_requests')
         .stream(primaryKey: ['id'])
-        .asyncMap((_) => getRequestsForProfession(packageIds));
+        .asyncMap((_) => getRequestsForProfession(
+              packageIds,
+              excludeProviderId: excludeProviderId,
+            ));
   }
 
   // ============================================================
@@ -325,6 +355,35 @@ class ConsultationRepository {
     } catch (e) {
       debugPrint('getPackageIdsForProfession error: $e');
       return [];
+    }
+  }
+
+  /// Provider ปัด/ปฏิเสธคำขอปรึกษา → เพิ่ม provider ID เข้า dismissed_by_provider_ids
+  Future<void> dismissRequestForProvider({
+    required String requestId,
+    required String providerId,
+  }) async {
+    try {
+      // ดึงค่าปัจจุบันก่อน (ป้องกัน race condition แบบง่าย)
+      final res = await _client
+          .from('consultation_requests')
+          .select('dismissed_by_provider_ids')
+          .eq('id', requestId)
+          .single();
+
+      final current = (res['dismissed_by_provider_ids'] as List?)
+              ?.cast<String>() ??
+          [];
+      if (!current.contains(providerId)) {
+        current.add(providerId);
+        await _client.from('consultation_requests').update({
+          'dismissed_by_provider_ids': current,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', requestId);
+      }
+    } catch (e) {
+      debugPrint('dismissRequestForProvider error: $e');
+      rethrow;
     }
   }
 

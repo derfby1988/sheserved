@@ -37,6 +37,7 @@
 ❌ chat_rooms.participant_ids เป็น array → ไม่ scalable
 ❌ ไม่มี unread_count → ต้อง load message ทุกครั้ง
 ❌ ค้นหาใน Chat List ค้นได้แค่ last_message ไม่ได้ค้นชื่อ
+❌ ~~Dismissible notifications ใช้ in-memory Set (`_dismissedConsultationIds`) → หายเมื่อรีเฟรช~~ ✅ **FIXED** — ดู Section 8: Best Practice
 ```
 
 ---
@@ -2145,7 +2146,7 @@ CREATE POLICY "Patient can respond" ON health_data_permission_requests
 
 ---
 
-## ⚠️ Phase 6.4: Dashboard Pagination, Lazy Loading & UX Refinements (✅ เสร็จสิ้น — Last Updated: 2026-05-24 14:45)
+## ⚠️ Phase 6.4: Dashboard Pagination, Lazy Loading & UX Refinements (✅ เสร็จสิ้น — Last Updated: 2026-05-24 20:03)
 
 ### 🚨 ปัญหาที่พบ
 
@@ -2260,8 +2261,20 @@ void _onScroll() {
 | | ✅ **เพิ่ม** `_hasSubmitted` flag + `PopScope` — หลังส่งคำรักษา back ไปหน้า profile/ประวัติปรึกษา |
 | `main.dart` | ✅ **แก้** route `/chart-board` รองรับ `Map<String, dynamic>` arguments (`entry`, `readOnly`) |
 | | ✅ **เพิ่ม** `navigatorObservers: [dashboardRouteObserver]` สำหรับ `RouteAware` |
-| `presence_service.dart` | ✅ **`await` → `unawaited()`** ใน `start()` — ไม่บล็อก login flow |
+| `presence_service.dart` | ✅ **`await` → `unawaited()`** ใน `start()` — `setAvailabilityStatus()` + `_sendHeartbeat()` ไม่ block |
+| `auth_service.dart` | ✅ **`await` → `unawaited()`** ใน `login()` — ไม่รอ `PresenceService.start()` ก่อน navigate |
+| `user_repository.dart` | ✅ **`login()`** รัน username + phone queries ขนานกัน (`Future.wait`) พร้อม `.timeout(8s)` |
 | `package_healthcare_page.dart` | ✅ **แยก** `_isPackagesLoading` จาก `_isLoading` — provider redirect ทันที ไม่รอ packages |
+| `health_program_request_dashboard.dart` | ✅ **เพิ่ม** `TlzBottomNavigationBar` — นำ navigation bar ส่วนกลางมาใช้ในหน้า Dashboard |
+| | ✅ **`extendBody: true`** + `NotificationListener<ScrollNotification>` — auto-hide nav bar ตอน scroll |
+| | ✅ **เพิ่ม** `bottomNavigationBar: TlzBottomNavigationBar(...)` พร้อม `currentIndex: 0` (Home) |
+| | ✅ **แก้** `ListView.builder` padding bottom `24 → 120` — กัน content ถูก bottom nav ทับ |
+| `consultation_repository.dart` | ✅ **เพิ่ม** `dismissed_by_provider_ids` filter ใน `getAllRequestsWithUserInfo()` และ `getRequestsForProfession()` |
+| | ✅ **เพิ่ม** `dismissRequestForProvider()` — append provider ID เข้า array ใน Supabase |
+| `home_page.dart` | ✅ **แก้** `_onConsultationAlertDismissed` → เรียก `repo.dismissRequestForProvider()` บันทึกลง DB |
+| | ✅ **ลบ** `_dismissedConsultationIds` Set — ไม่ต้องเก็บ local อีกต่อไป |
+| | ✅ **แก้** `_subscribeConsultationAlerts` → ส่ง `excludeProviderId: user.id` ไปกรองที่ฝั่ง DB |
+| `supabase_consultation_schema.sql` | ✅ **เพิ่ม** `dismissed_by_provider_ids UUID[] DEFAULT '{}'` ใน `consultation_requests` |
 
 ### 🎨 UX Refinements ที่เพิ่มเติม
 
@@ -2319,19 +2332,36 @@ void _onScroll() {
 | กด "ยืนยัน" แล้ว | ไปหน้า `/profile` แถบ "ประวัติปรึกษา" |
 
 #### 6️⃣ Fix Login Flow Hang (Spinner ค้างหลังกดเข้าสู่ระบบ)
-**ปัญหา:** หลัง user กดปุ่มเข้าสู่ระบบจากหน้า Login ที่ redirect มาจาก `HomeConsultationWidget` → ปุ่ม/หน้า "ค้าง" ที่ `CircularProgressIndicator` เนื่องจาก async operation บล็อก thread
+**ปัญหา:** หลัง user กดปุ่มเข้าสู่ระบบจากหน้า Login → ปุ่ม/หน้า "ค้าง" ที่ `CircularProgressIndicator` เนื่องจาก async operation บล็อก thread
 
 **จุดที่ 1: `PresenceService.start()` บล็อก `AuthService.login()`**
 - `AuthService.login()` → `await PresenceService.instance.start(user.id)`
 - `PresenceService.start()` → `await repo.setAvailabilityStatus(...)` + `await _sendHeartbeat()`
 - 2 DB writes ติดกัน ไม่มี timeout → ถ้าเน็ตช้า/สัญญาณหลุด → Future ไม่ complete → `_isLoading` ค้าง → ปุ่ม Login หมุนตลอด
 
-**แก้ไข:**
-- เปลี่ยน `await` → `unawaited()` สำหรับ `setAvailabilityStatus()` และ `_sendHeartbeat()`
-- Presence updates เป็น fire-and-forget → ไม่บล็อก caller
-- Timer heartbeat ยังทำงานปกติใน background
+**แก้ไข (Round 1):**
+- เปลี่ยน `await` → `unawaited()` ใน `PresenceService.start()` สำหรับ `setAvailabilityStatus()` และ `_sendHeartbeat()`
+- แต่ยังไม่พอ! `AuthService.login()` ยัง `await PresenceService.instance.start()` อยู่
 
-**จุดที่ 2: `PackageHealthCarePage` บล็อก UI ด้วย `_isLoading`**
+**จุดที่ 2: `AuthService.login()` ยัง `await` อยู่แม้ข้างในเป็น fire-and-forget**
+- แก้ข้างใน `PresenceService.start()` แต่ caller ยัง `await` → ยังรอ Future complete
+
+**แก้ไข (Round 2):**
+- `AuthService.login()` → `unawaited(PresenceService.instance.start(user.id))`
+- ทำให้ login flow ไม่รอ heartbeat อัปเดต last_seen_at ก่อน navigate
+
+**จุดที่ 3: `UserRepository.login()` มี sequential DB queries ไม่มี timeout**
+- Query 1: find by username (ไม่มี timeout)
+- Query 2: find by phone (รอ query 1 ล้มเหลวก่อน)
+- Query 3: user_group_roles (มี timeout แค่ตัวนี้)
+- ถ้า DB ช้า/เน็ตหลุด → query 1 ค้าง → `_isLoading` ค้าง → spinner หมุนตลอด
+
+**แก้ไข:**
+- Query 1 + Query 2 → รันขนานกันด้วย `Future.wait()` พร้อม `.timeout(Duration(seconds: 8))`
+- Query 3 → คง timeout 5 วินาที
+- เพิ่ม `on TimeoutException catch` → return null ไม่ให้ค้าง
+
+**จุดที่ 4: `PackageHealthCarePage` บล็อก UI ด้วย `_isLoading`**
 - `_isLoading = true` ตั้งแต่ initState → build แสดง full-page `CircularProgressIndicator`
 - Provider check (เร็ว) + `_loadLivePackages()` (ช้า) อยู่ใน post-frame callback เดียวกัน → provider ที่ควร redirect ทันที อาจช้าไปด้วย
 - Consumer ต้องรอ packages โหลดก่อนถึงเห็น UI
@@ -2348,12 +2378,133 @@ void _onScroll() {
 | Provider | อาจค้างที่ spinner ถ้า DB ช้า | Redirect ไป Dashboard ทันที ไม่เห็น spinner |
 | Consumer ไม่มี health info | อาจค้างที่ spinner | Redirect ไป `/health-data-entry` เร็วขึ้น |
 | Consumer มี health info | ค้างรอ packages + auth + presence | รอเฉพาะ packages (สั้นลง) |
+| ทุกกลุ่ม (เน็ตช้า/DB timeout) | Spinner หมุนตลอดไม่มี timeout | Timeout 8 วิ → แสดง error → ไม่ค้าง |
 
 **ไฟล์ที่แก้:**
 | ไฟล์ | การเปลี่ยนแปลง |
 |---|---|
-| `presence_service.dart` | `await` → `unawaited()` สำหรับ `setAvailabilityStatus()` และ `_sendHeartbeat()` |
+| `presence_service.dart` | `await` → `unawaited()` ใน `start()` — `setAvailabilityStatus()` และ `_sendHeartbeat()` ไม่ block |
+| `auth_service.dart` | `await PresenceService.start()` → `unawaited(PresenceService.start())` — login flow ไม่รอ heartbeat |
+| `user_repository.dart` | `login()` รัน username + phone queries ขนานกัน (`Future.wait`) พร้อม `.timeout(8s)` — ป้องกัน DB hang |
+| `login_page.dart` | **ลบ** `await Future.delayed(500ms)` หลัง login สำเร็จ — ลด latency นำทาง |
+| | **เพิ่ม** `debugPrint` + `try-catch` ใน `addPostFrameCallback` navigation — trace + ป้องกัน navigation fail เงียบ |
 | `package_healthcare_page.dart` | แยก `_isPackagesLoading` จาก `_isLoading`, provider check จบก่อน load packages |
+
+**แก้ไข (Round 3) — ปัญหาค้างหลังสลับ user (logout → login):**
+
+**ปัญหา:** หลัง logout แล้ว login ใหม่ → login ผ่านแต่ spinner ยังค้าง → ไม่ navigate
+
+**จุดที่ 5: `_onAuthChanged` ใน `HomePage` ยังเรียก `setState()` หลัง logout**
+- `HomePage` ฟัง `AuthService.instance.addListener(_onAuthChanged)`
+- หลัง logout → `_onAuthChanged` ตรวจ `userId == null` → เรียก `setState(() => _consultationAlerts.clear())`
+- ถ้า `HomePage` ถูก dispose (เพราะ navigate ไป LoginPage) → `setState()` บน widget ที่ถูก dispose → Exception → `_onAuthChanged` อาจค้าง หรือ state ไม่สะอาด
+
+**แก้ไข:**
+- `home_page.dart` → `_onAuthChanged` logout branch: เพิ่ม `if (mounted)` ก่อน `setState()`
+- `home_page.dart` → `dispose()`: ลบ `_scrollController.dispose()` ซ้ำ (เรียก 2 ครั้ง → error)
+
+**จุดที่ 6: `_showSnackBar` เรียกบน widget ที่ถูก dispose ได้**
+- หลัง `AuthService.login()` → `_showSnackBar('เข้าสู่ระบบสำเร็จ')`
+- ถ้า `addPostFrameCallback` ทำงานช้า / หน้า navigate ไปแล้ว → `setState()` ใน `_showSnackBar` อาจ crash
+
+**แก้ไข:**
+- `login_page.dart` → ห่อ `_showSnackBar` ด้วย `if (mounted)` ทั้งใน `_handleLogin()` และ `_handleSocialLogin()`
+
+**จุดที่ 7: `PresenceService.stop()` อาจค้างถ้า DB ช้าตอน logout**
+- `logout()` → `await PresenceService.instance.stop()` → `await repo.setAvailabilityStatus(userId, 'offline')`
+- ไม่มี timeout → logout ค้าง → user ไม่กลับไป LoginPage
+
+**แก้ไข:**
+- `presence_service.dart` → `stop()`: `.timeout(Duration(seconds: 5))` บน `setAvailabilityStatus()` พร้อม `on TimeoutException catch`
+
+**ไฟล์ที่แก้ (Round 3):**
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `home_page.dart` | `_onAuthChanged` logout branch: `if (mounted)` ก่อน `setState()`; `dispose()`: ลบ `_scrollController.dispose()` ซ้ำ |
+| `login_page.dart` | `_showSnackBar` ห่อด้วย `if (mounted)` ทั้ง `_handleLogin` และ `_handleSocialLogin` |
+| `presence_service.dart` | `stop()`: `setAvailabilityStatus().timeout(5s)` + `on TimeoutException catch` — ป้องกัน logout ค้าง |
+
+**แก้ไข (Round 4) — เพิ่ม timeout + debug trace ใน login flow:**
+
+**แก้ไข:**
+- `login_page.dart` → `_handleLogin()` และ `_handleSocialLogin()`:
+  - ห่อ `AuthService.instance.login(user)` ด้วย `.timeout(Duration(seconds: 3))` พร้อม `onTimeout`
+  - เพิ่ม `debugPrint` ทุกขั้นตอน (ก่อน/หลัง `_userRepository.login()`, `AuthService.login()`, `_isLoading = false`, navigation)
+  - `addPostFrameCallback` ห่อ `try-catch` + `debugPrint` ถ้า navigation throw exception
+
+**ผลลัพธ์รวม (Round 1-4):**
+| สถานการณ์ | ก่อนแก้ | หลังแก้ |
+|---|---|---|
+| เน็ตช้า/DB timeout ตอน login | Spinner หมุนตลอด | Timeout 8 วิ → return null → แสดง error → ไม่ค้าง |
+| เน็ตช้า/DB timeout ตอน logout | Logout ค้างไม่กลับไป Login | Timeout 5 วิ → skip → navigate ปกติ |
+| สลับ user (logout → login) | Spinner ค้าง ไม่ navigate | ไม่ค้าง; navigation ทำงาน; ไม่มี setState บน disposed widget |
+| `AuthService.login()` ช้า/timeout | Login ค้าง | Timeout 3 วิ → proceed anyway + debugPrint |
+| Navigation throw exception | เงียบ fail → ไม่ไปหน้าอื่น | catch + debugPrint → trace ได้ |
+
+**สรุปรายการ debugPrint ที่ควรเห็นใน console ตอน login สำเร็จ:**
+```
+LoginPage: calling _userRepository.login()
+LoginPage: _userRepository.login() returned user=true
+LoginPage: calling AuthService.instance.login()
+LoginPage: AuthService.instance.login() completed
+LoginPage: _isLoading set to false
+LoginPage: scheduling navigation
+LoginPage: navigating to /
+```
+
+#### 7️⃣ Fix Consultation Alert Dismiss Persist (ปัดทิ้งแล้วกลับมาอีก)
+**ปัญหา:** Provider ปัดการ์ดคำขอปรึกษาทิ้งใน Home header → รีเฟรชหน้า Home → การ์ดกลับมาแสดงอีก
+
+**ต้นเหตุ:** `_dismissedConsultationIds` เป็น `Set<String>` ธรรมดาใน widget state → ไม่ persist → รีเฟรชหน้า = state ใหม่ = Set ว่าง → การ์ดกลับมา
+
+**แก้ไข:**
+1. **Supabase Schema** — เพิ่ม `dismissed_by_provider_ids UUID[] DEFAULT '{}'` ใน `consultation_requests`
+2. **Repository** — เพิ่ม `dismissRequestForProvider()` ที่ fetch current array → append provider ID → update row
+3. **Repository queries** — `getAllRequestsWithUserInfo()` และ `getRequestsForProfession()` รับ `excludeProviderId` → ใช้ `.not('dismissed_by_provider_ids', 'cs', '{providerId}')` กรองที่ฝั่ง DB
+4. **HomePage** — ลบ `_dismissedConsultationIds` Set → `_onConsultationAlertDismissed` เรียก `repo.dismissRequestForProvider()` → DB persist → real-time stream รีเฟรช → การ์ดหายไปถาวร
+
+**ผลลัพธ์:**
+| สถานการณ์ | ก่อนแก้ | หลังแก้ |
+|---|---|---|
+| Provider ปัดทิ้ง + รีเฟรช | การ์ดกลับมา | การ์ดหายไปถาวร |
+| Provider ปัดทิ้ง + logout → login ใหม่ | การ์ดกลับมา | การ์ดหายไป (persist ใน DB) |
+| Provider A ปัด / Provider B ไม่ปัด | — | Provider B ยังเห็นการ์ด (independent dismiss) |
+
+#### 8️⃣ Best Practice: Dismissible Notifications Persist (ป้องกัน in-memory state)
+**หลักการ:** หากฟีเจอร์มีการ "ปัดทิ้ง / dismiss / ซ่อน" ที่ต้องคงอยู่ข้าม session → **ต้อง persist ลง DB** ไม่ใช่เก็บใน widget state
+
+**❌ ห้ามทำ:**
+```dart
+// ผิด — state หายเมื่อรีเฟรชหน้า
+final Set<String> _dismissedIds = {};  // In-memory only
+void dismiss(String id) {
+  _dismissedIds.add(id);  // หายเมื่อ widget rebuild
+}
+```
+
+**✅ ต้องทำ:**
+```dart
+// ถูก — persist ลง Supabase
+Future<void> dismiss(String id) async {
+  await repo.dismissForUser(requestId: id, userId: user.id);
+}
+// Query ฝั่ง DB กรอง dismissed ออก → ไม่กลับมาอีก
+```
+
+**Checklist ก่อน implement dismiss:**
+| คำถาม | ต้องตอบ "ใช่" |
+|---|---|
+| Dismiss แล้วหายไปถาวรหรือไม่? | ✅ ต้อง persist ลง DB |
+| ต้องกรองใน query ฝั่ง server หรือ client? | ✅ Server-side (`.not('col', 'cs', ...)`) |
+| มีกรณี user A dismiss แต่ user B ยังเห็น? | ✅ ใช้ per-user dismiss array |
+| ใช้ `Set<String>` หรือ `List<String>` ใน `_State`? | ❌ ห้าม — ถ้าต้องการ persist |
+
+**ตัวอย่าง pattern ที่ใช้ในระบบนี้:**
+```sql
+-- Schema: dismissed_by_user_ids UUID[] DEFAULT '{}'
+-- Query: .not('dismissed_by_user_ids', 'cs', '{userId}')
+-- Update: fetch → append → update (ป้องกัน race condition)
+```
 
 ### ⏰ ควรทำเมื่อไหร่
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -135,35 +136,39 @@ class UserRepository {
   }
 
   /// เข้าสู่ระบบด้วย Username หรือ Phone และ Password
+  /// รัน query ขนานกัน + timeout ป้องกัน login ค้าง
   Future<UserModel?> login(String identifier, String password) async {
     final hashedPassword = _hashPassword(password);
-    
-    try {
-      // 1. Try finding by username
-      var response = await _client
-          .from('users')
-          .select('*, professions(is_volunteer)')
-          .eq('username', identifier)
-          .eq('password_hash', hashedPassword)
-          .eq('is_active', true)
-          .maybeSingle();
 
-      UserModel? user;
-      if (response != null) {
-        user = UserModel.fromJson(response);
-      } else {
-        // 2. Try finding by phone
-        response = await _client
+    try {
+      // 1. ค้นหา username + phone พร้อมกัน (parallel) พร้อม timeout
+      final results = await Future.wait([
+        _client
+            .from('users')
+            .select('*, professions(is_volunteer)')
+            .eq('username', identifier)
+            .eq('password_hash', hashedPassword)
+            .eq('is_active', true)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 8)),
+        _client
             .from('users')
             .select('*, professions(is_volunteer)')
             .eq('phone', identifier)
             .eq('password_hash', hashedPassword)
             .eq('is_active', true)
-            .maybeSingle();
-            
-        if (response != null) {
-          user = UserModel.fromJson(response);
-        }
+            .maybeSingle()
+            .timeout(const Duration(seconds: 8)),
+      ]);
+
+      UserModel? user;
+      final usernameResult = results[0];
+      final phoneResult = results[1];
+
+      if (usernameResult != null) {
+        user = UserModel.fromJson(usernameResult);
+      } else if (phoneResult != null) {
+        user = UserModel.fromJson(phoneResult);
       }
 
       if (user != null && user.professionId == null) {
@@ -184,6 +189,9 @@ class UserRepository {
       }
 
       return user;
+    } on TimeoutException catch (e) {
+      debugPrint('UserRepository.login timeout: $e');
+      return null;
     } catch (e) {
       debugPrint('UserRepository.login error: $e');
       return null;
