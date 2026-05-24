@@ -2143,3 +2143,127 @@ CREATE POLICY "Patient can respond" ON health_data_permission_requests
 
 *Last Updated: 2026-05-21*
 *Last Updated: 2026-05-21*
+
+---
+
+## ⚠️ Phase 6.4: Dashboard Per-Tab Pagination & Lazy Loading (✅ เสร็จสิ้น — โหลดทีละ 15 การ์ดต่อแถบ)
+
+### 🚨 ปัญหาที่พบ
+
+ปัจจุบัน Dashboard (`health_program_request_dashboard.dart`) **ไม่มี pagination** — โหลดข้อมูลทั้งหมดจาก DB ในครั้งเดียว:
+
+| Method | มี `.limit()`? | ผลกระทบ |
+|---|---|---|
+| `ConsultationRepository.getAllRequestsWithUserInfo()` | ❌ ไม่มี | โหลดทุกแถวในตาราง |
+| `ConsultationRepository.getRequestsForProfession()` | ❌ ไม่มี | โหลดทุกแถวที่ตรง package |
+| `_HealthProgramRequestDashboardState._loadData()` | ❌ ไม่มี | เก็บทั้งหมดใน `_all` |
+
+**ผลกระทบ:**
+- ถ้ามี 1,000+ คำปรึกษา → โหลดช้า + Memory บวม
+- `_applyFilter()` กรองใน memory → ไม่ช่วยลดข้อมูลจาก DB
+- `ListView.builder` ช่วยเรื่อง render ได้ แต่ **ไม่ช่วยเรื่องโหลดข้อมูล**
+
+### 🎯 แนวทางแก้ไข: Per-Tab Pagination (โหลดทีละ 15 การ์ดต่อแถบ)
+
+**หลักการสำคัญ:** แต่ละ tab (`all`/`pending`/`in_progress`/`completed`) โหลดข้อมูลอิสระจากกัน โดยกรอง status ที่ฝั่ง DB:
+
+```dart
+// Repository: กรอง status + pagination ที่ DB
+Future<List<Map<String, dynamic>>> getRequestsByStatus({
+  String? status,  // null = 'all'
+  int page = 0,
+  int pageSize = 15,
+}) async {
+  var query = _client.from('consultation_requests').select('...');
+
+  if (status != null && status != 'all') {
+    query = query.eq('status', status);  // ← กรองที่ DB
+  }
+
+  return await query
+      .order('created_at', ascending: false)
+      .range(page * pageSize, (page + 1) * pageSize - 1)
+      .timeout(Duration(seconds: 10));
+}
+```
+
+```dart
+// Dashboard: State แยกตามแต่ละ tab
+final Map<String, int> _pageByTab = {
+  'all': 0, 'pending': 0, 'in_progress': 0, 'completed': 0
+};
+final Map<String, bool> _hasMoreByTab = {
+  'all': true, 'pending': true, 'in_progress': true, 'completed': true
+};
+final Map<String, List<ConsultationEntry>> _entriesByTab = {};
+
+// โหลดเฉพาะ tab ที่เลือก
+Future<void> _loadTab(String tab, {bool refresh = false}) async {
+  if (refresh) {
+    _pageByTab[tab] = 0;
+    _hasMoreByTab[tab] = true;
+    _entriesByTab[tab] = [];
+  }
+
+  final page = _pageByTab[tab]!;
+  final raw = await _repo.getRequestsByStatus(
+    status: tab == 'all' ? null : tab,
+    page: page,
+    pageSize: 15,
+  );
+
+  if (raw.length < 15) _hasMoreByTab[tab] = false;
+
+  final entries = raw.map(ConsultationEntry.fromMap).toList();
+  _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];
+  _pageByTab[tab] = page + 1;
+}
+
+// Scroll listener → load more เฉพาะ tab ปัจจุบัน
+void _onScroll() {
+  if (_scrollController.position.pixels >=
+      _scrollController.position.maxScrollExtent - 200) {
+    final tab = _filterStatus;
+    if (!_isLoading && _hasMoreByTab[tab]!) {
+      _loadTab(tab);
+    }
+  }
+}
+```
+
+### 📊 เปรียบเทียบก่อน-หลัง
+
+| สถานการณ์ | ก่อน (โหลดทั้งหมด) | หลัง (Per-Tab) |
+|---|---|---|
+| กด tab "เสร็จสิ้น" | โหลดทุก status มาก่อน แล้ว filter ใน memory | โหลดเฉพาะ `status='completed'` 15 รายการ |
+| มี 1,000 รายการ | โหลด 1,000 แถว → ช้า + หน่วยความจำสูง | โหลด 15 แถว → เร็ว + หน่วยความจำต่ำ |
+| Scroll ลงไป | ไม่มีอะไรโหลดเพิ่ม (มีหมดแล้ว) | Load more 15 รายการถัดไป |
+
+### 📝 ตารางการเปลี่ยนแปลงที่ต้องทำ
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `consultation_repository.dart` | ✅ **เพิ่ม** `getRequestsByStatus()` — รองรับ `status` + `page` + `pageSize=15` |
+| | ✅ ใช้ `.eq('status', ...)` กรองที่ DB + `.range()` แบ่งหน้า |
+| | ✅ **เพิ่ม** `getStatusCounts()` — นับจำนวนต่อ status สำหรับ stat chips |
+| `health_program_request_dashboard.dart` | ✅ แก้ `_all` / `_filtered` → `_entriesByTab` (Map แยกตาม tab) |
+| | ✅ แก้ `_filterStatus` → `_activeTab` (string key) |
+| | ✅ เพิ่ม `_pageByTab` / `_hasMoreByTab` (Map แยกตาม tab) |
+| | ✅ เพิ่ม `_scrollController` + `_onScroll()` listener |
+| | ✅ แก้ `_loadData()` → `_loadTab(tab)` โหลดเฉพาะ tab |
+| | ✅ แก้ `_applyFilter()` → `_getFilteredEntries()` กรอง search ใน tab |
+| | ✅ แก้ `_statChip()` onTap → `_switchTab()` |
+| | ✅ แก้ `_buildBody()` → แสดง `_entriesByTab[_activeTab]` + loading indicator |
+| | ✅ แก้ `RefreshIndicator` → `_loadTab(tab, refresh: true)` + `_loadCounts()` |
+
+### ⏰ ควรทำเมื่อไหร่
+
+| จำนวนคำปรึกษา | ควรทำ? |
+|---|---|
+| < 100 | ยังไม่จำเป็น (แต่ทำได้ถ้าต้องการ) |
+| 100-500 | **แนะนำ** (ประสิทธิภาพดีขึ้นมาก) |
+| > 500 | **จำเป็น** (ป้องกัน crash / OOM) |
+
+---
+
+**หลักการ:** Badge แสดง "โอกาส" (แพ็คเกจตรงอาชีพ) แต่ปุ่มแสดง "สิทธิ์" (status + availability) — ทั้งสองอย่างอิสระจากกัน

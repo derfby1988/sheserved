@@ -34,11 +34,21 @@ class _HealthProgramRequestDashboardState
 
   final _currentUser = AuthService.instance.currentUser;
 
-  List<ConsultationEntry> _all = [];
-  List<ConsultationEntry> _filtered = [];
-  bool _isLoading = true;
+  // ── Per-Tab Pagination State ────────────────────────────────────────────────
+  final Map<String, List<ConsultationEntry>> _entriesByTab = {};
+  final Map<String, int> _pageByTab = {
+    'all': 0, 'pending': 0, 'in_progress': 0, 'completed': 0
+  };
+  final Map<String, bool> _hasMoreByTab = {
+    'all': true, 'pending': true, 'in_progress': true, 'completed': true
+  };
+  Map<String, int> _statusCounts = {
+    'all': 0, 'pending': 0, 'in_progress': 0, 'completed': 0
+  };
+  String _activeTab = 'pending';
+  bool _isLoading = false;
   String _searchQuery = '';
-  String _filterStatus = 'all';
+
   List<String> _myPackageIds = []; // package IDs ที่ตรงกับอาชีพ provider
   List<Profession> _professions = []; // อาชีพทั้งหมดจาก admin settings
   bool _isProvider = false;
@@ -47,6 +57,7 @@ class _HealthProgramRequestDashboardState
   StreamSubscription? _subscription;
   String? _highlightedId;
   final Map<String, GlobalKey> _cardKeys = {};
+  final ScrollController _scrollController = ScrollController();
 
   static const _tabs = [
     {'value': 'all', 'label': 'ทั้งหมด'},
@@ -64,6 +75,7 @@ class _HealthProgramRequestDashboardState
   @override
   void dispose() {
     _subscription?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -74,12 +86,12 @@ class _HealthProgramRequestDashboardState
     try {
       debugPrint('Dashboard: Initializing for user ${user.id}');
 
-      // ตรวจว่าเป็น provider หรือเปล่า (มี professionId และไม่ใช่ consumer)
+      // ตรวจว่าเป็น provider หรือเปล่า
       _isProvider =
           user.professionId != null &&
           user.professionId != '00000000-0000-0000-0000-000000000001';
 
-      // โหลดข้อมูลพื้นฐานขนานกันพร้อม timeout
+      // โหลดข้อมูลพื้นฐานขนานกัน
       await Future.wait([
         _userRepo
             .getAvailabilityStatus(user.id)
@@ -88,24 +100,94 @@ class _HealthProgramRequestDashboardState
           _repo
               .getPackageIdsForProfession(user.professionId!)
               .then((ids) => _myPackageIds = ids),
-        // โหลด professions สำหรับแสดง chip บนการ์ด
         ServiceLocator.instance.professionRepository
             .getAllProfessions()
             .then((profs) => _professions = profs),
       ]).timeout(const Duration(seconds: 15));
 
-      // โหลดข้อมูลและ subscribe
-      await _loadData();
+      // โหลด counts + หน้าแรกของ active tab
+      await _loadCounts();
+      await _loadTab(_activeTab);
       _subscribeToChanges();
+
+      // ตั้งค่า scroll listener สำหรับ load more
+      _scrollController.addListener(_onScroll);
     } catch (e) {
       debugPrint('Dashboard init error: $e');
+    }
+  }
+
+  /// โหลดจำนวนรายการต่อ status (สำหรับ stat chips)
+  Future<void> _loadCounts() async {
+    try {
+      final counts = await _repo.getStatusCounts(
+        packageIds: (_isProvider && _myPackageIds.isNotEmpty)
+            ? _myPackageIds
+            : null,
+      );
+      if (mounted) setState(() => _statusCounts = counts);
+    } catch (e) {
+      debugPrint('Dashboard _loadCounts error: $e');
+    }
+  }
+
+  /// โหลดข้อมูลเฉพาะ tab ที่เลือก (pagination)
+  Future<void> _loadTab(String tab, {bool refresh = false}) async {
+    if (_isLoading) return;
+
+    if (refresh) {
+      _pageByTab[tab] = 0;
+      _hasMoreByTab[tab] = true;
+      _entriesByTab[tab] = [];
+    }
+
+    if (!_hasMoreByTab[tab]!) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final page = _pageByTab[tab]!;
+      final raw = await _repo.getRequestsByStatus(
+        status: tab == 'all' ? null : tab,
+        page: page,
+        pageSize: 15,
+        packageIds: (_isProvider && _myPackageIds.isNotEmpty)
+            ? _myPackageIds
+            : null,
+      );
+
+      if (raw.length < 15) _hasMoreByTab[tab] = false;
+
+      final entries = raw.map(ConsultationEntry.fromMap).toList();
+
       if (mounted) {
         setState(() {
+          _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];
+          _pageByTab[tab] = page + 1;
           _isLoading = false;
-          // มั่นใจว่าจะมีการลองโหลดข้อมูลเบื้องต้น
         });
-        _loadData();
       }
+    } catch (e) {
+      debugPrint('Dashboard _loadTab error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Scroll listener → load more เฉพาะ tab ปัจจุบัน
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && _hasMoreByTab[_activeTab]!) {
+        _loadTab(_activeTab);
+      }
+    }
+  }
+
+  /// เปลี่ยน tab → โหลด tab นั้น (ถ้ายังไม่มีข้อมูล)
+  Future<void> _switchTab(String tab) async {
+    setState(() => _activeTab = tab);
+    if (_entriesByTab[tab]?.isEmpty ?? true) {
+      await _loadTab(tab);
     }
   }
 
@@ -114,64 +196,47 @@ class _HealthProgramRequestDashboardState
         ? _repo.watchRequestsForProfession(_myPackageIds)
         : _repo.watchAllRequestsWithUserInfo();
 
-    _subscription = stream.listen((raw) {
-      final entries = raw.map(ConsultationEntry.fromMap).toList();
-      if (mounted) {
-        setState(() {
-          _all = entries;
-          _applyFilter();
-          _isLoading = false;
-        });
-      }
+    _subscription = stream.listen((_) async {
+      // Realtime มา → reload counts + reload active tab
+      await _loadCounts();
+      await _loadTab(_activeTab, refresh: true);
     });
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    try {
-      var raw = (_isProvider && _myPackageIds.isNotEmpty)
-          ? await _repo.getRequestsForProfession(_myPackageIds)
-          : await _repo.getAllRequestsWithUserInfo();
+  /// กรอง search ภายใน tab ปัจจุบัน (client-side)
+  /// สำหรับแถบ 'in_progress' เรียงงานของตัวเอง (isMyJob) ขึ้นก่อน
+  List<ConsultationEntry> _getFilteredEntries() {
+    final entries = _entriesByTab[_activeTab] ?? [];
+    final q = _searchQuery.toLowerCase();
 
-      // Fallback: หากกรองแล้วไม่เจออะไรเลย ให้ลองโหลดทั้งหมดมาดู (เผื่อกรณี mapping package ตกหล่น)
-      if (raw.isEmpty && _isProvider) {
-        debugPrint(
-          'Dashboard: Filtered list empty, falling back to all requests',
-        );
-        raw = await _repo.getAllRequestsWithUserInfo();
-      }
-
-      final entries = raw.map(ConsultationEntry.fromMap).toList();
-      if (mounted) {
-        setState(() {
-          _all = entries;
-          _applyFilter();
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Dashboard error: $e');
-      if (mounted) setState(() => _isLoading = false);
+    var result = entries;
+    if (q.isNotEmpty) {
+      result = entries.where((e) {
+        return e.patientName.toLowerCase().contains(q) ||
+            e.packageName.toLowerCase().contains(q) ||
+            e.bodyArea.toLowerCase().contains(q);
+      }).toList();
     }
+
+    // แถบ 'in_progress': งานของตัวเอง (มีปุ่มเข้าห้องแชท) ขึ้นก่อน
+    if (_activeTab == 'in_progress') {
+      final myId = _currentUser?.id;
+      result.sort((a, b) {
+        final aMine = a.providerId == myId;
+        final bMine = b.providerId == myId;
+        if (aMine && !bMine) return -1;
+        if (!aMine && bMine) return 1;
+        return b.requestedAt.compareTo(a.requestedAt); // ใหม่ → เก่า
+      });
+    }
+
+    return result;
   }
 
-  void _applyFilter() {
-    _filtered = _all.where((e) {
-      final matchStatus = _filterStatus == 'all' || e.status == _filterStatus;
-      final q = _searchQuery.toLowerCase();
-      final matchSearch =
-          q.isEmpty ||
-          e.patientName.toLowerCase().contains(q) ||
-          e.packageName.toLowerCase().contains(q) ||
-          e.bodyArea.toLowerCase().contains(q);
-      return matchStatus && matchSearch;
-    }).toList();
-  }
-
-  int get _total => _all.length;
-  int get _pending => _all.where((e) => e.status == 'pending').length;
-  int get _inProgress => _all.where((e) => e.status == 'in_progress').length;
-  int get _completed => _all.where((e) => e.status == 'completed').length;
+  int get _total => _statusCounts['all'] ?? 0;
+  int get _pending => _statusCounts['pending'] ?? 0;
+  int get _inProgress => _statusCounts['in_progress'] ?? 0;
+  int get _completed => _statusCounts['completed'] ?? 0;
 
   // ─── Provider รับงาน ────────────────────────────────────────────────────────
   Future<void> _joinRequest(ConsultationEntry entry) async {
@@ -403,7 +468,10 @@ class _HealthProgramRequestDashboardState
                       const SizedBox(width: 6),
                       // ปุ่ม Refresh
                       GestureDetector(
-                        onTap: _loadData,
+                        onTap: () async {
+                          await _loadCounts();
+                          await _loadTab(_activeTab, refresh: true);
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
@@ -432,11 +500,8 @@ class _HealthProgramRequestDashboardState
                       _total,
                       Icons.list_alt,
                       Colors.white,
-                      onTap: () {
-                        setState(() => _filterStatus = 'all');
-                        _applyFilter();
-                      },
-                      isActive: _filterStatus == 'all',
+                      onTap: () => _switchTab('all'),
+                      isActive: _activeTab == 'all',
                     ),
                     const SizedBox(width: 8),
                     _statChip(
@@ -444,11 +509,8 @@ class _HealthProgramRequestDashboardState
                       _pending,
                       Icons.pending_outlined,
                       AppColors.warning,
-                      onTap: () {
-                        setState(() => _filterStatus = 'pending');
-                        _applyFilter();
-                      },
-                      isActive: _filterStatus == 'pending',
+                      onTap: () => _switchTab('pending'),
+                      isActive: _activeTab == 'pending',
                     ),
                     const SizedBox(width: 8),
                     _statChip(
@@ -456,11 +518,8 @@ class _HealthProgramRequestDashboardState
                       _inProgress,
                       Icons.forum_outlined,
                       AppColors.info,
-                      onTap: () {
-                        setState(() => _filterStatus = 'in_progress');
-                        _applyFilter();
-                      },
-                      isActive: _filterStatus == 'in_progress',
+                      onTap: () => _switchTab('in_progress'),
+                      isActive: _activeTab == 'in_progress',
                     ),
                     const SizedBox(width: 8),
                     _statChip(
@@ -468,11 +527,8 @@ class _HealthProgramRequestDashboardState
                       _completed,
                       Icons.check_circle_outline,
                       AppColors.success,
-                      onTap: () {
-                        setState(() => _filterStatus = 'completed');
-                        _applyFilter();
-                      },
-                      isActive: _filterStatus == 'completed',
+                      onTap: () => _switchTab('completed'),
+                      isActive: _activeTab == 'completed',
                     ),
                   ],
                 ),
@@ -486,7 +542,10 @@ class _HealthProgramRequestDashboardState
                   Align(
                     alignment: Alignment.centerRight,
                     child: GestureDetector(
-                      onTap: _loadData,
+                      onTap: () async {
+                        await _loadCounts();
+                        await _loadTab(_activeTab, refresh: true);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -593,19 +652,32 @@ class _HealthProgramRequestDashboardState
   );
 
   Widget _buildBody() {
+    final entries = _getFilteredEntries();
     return Column(
       children: [
         _buildSearchFilter(),
         Expanded(
-          child: _filtered.isEmpty
+          child: entries.isEmpty && !_isLoading
               ? _buildEmpty()
               : RefreshIndicator(
-                  onRefresh: _loadData,
+                  onRefresh: () async {
+                    await _loadCounts();
+                    await _loadTab(_activeTab, refresh: true);
+                  },
                   color: AppColors.primary,
                   child: ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: _filtered.length,
-                    itemBuilder: (ctx, i) => _buildCard(_filtered[i], i),
+                    itemCount: entries.length + (_isLoading ? 1 : 0),
+                    itemBuilder: (ctx, i) {
+                      if (i == entries.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return _buildCard(entries[i], i);
+                    },
                   ),
                 ),
         ),
@@ -634,10 +706,7 @@ class _HealthProgramRequestDashboardState
               ],
             ),
             child: TextField(
-              onChanged: (v) {
-                setState(() => _searchQuery = v);
-                _applyFilter();
-              },
+              onChanged: (v) => setState(() => _searchQuery = v),
               style: const TextStyle(fontSize: 14, color: Colors.black87),
               decoration: InputDecoration(
                 hintText: 'ค้นหาผู้ป่วย แพ็คเกจ บริเวณอาการ...',
@@ -662,12 +731,9 @@ class _HealthProgramRequestDashboardState
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (ctx, i) {
                 final tab = _tabs[i];
-                final active = _filterStatus == tab['value'];
+                final active = _activeTab == tab['value'];
                 return GestureDetector(
-                  onTap: () {
-                    setState(() => _filterStatus = tab['value']!);
-                    _applyFilter();
-                  },
+                  onTap: () => _switchTab(tab['value']!),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
@@ -1374,7 +1440,8 @@ class _HealthProgramRequestDashboardState
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _repo.updateStatus(entry.id, s);
-                  _loadData();
+                  await _loadCounts();
+                  await _loadTab(_activeTab, refresh: true);
                 },
               );
             }),

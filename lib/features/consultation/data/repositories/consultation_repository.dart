@@ -156,6 +156,87 @@ class ConsultationRepository {
         .asyncMap((_) => getRequestsForProfession(packageIds));
   }
 
+  // ============================================================
+  // 🆕 Per-Tab Pagination Methods
+  // ============================================================
+
+  /// ดึงคำขอแบบกรอง status + pagination ที่ฝั่ง DB
+  /// [status] เป็น null หรือ 'all' = ไม่กรอง status
+  /// [packageIds] ถ้ามี = กรองเฉพาะ package ที่ตรงกับ provider
+  Future<List<Map<String, dynamic>>> getRequestsByStatus({
+    String? status,
+    int page = 0,
+    int pageSize = 15,
+    List<String>? packageIds,
+  }) async {
+    try {
+      final selectFields = '''
+      id, user_id, package_id, package_name, price,
+      body_area, symptoms_chart, status, created_at, updated_at,
+      provider_id,
+      symptoms:consultation_symptoms(*),
+      users:user_id (first_name, last_name, profile_image_url)
+    ''';
+
+      var query = _client.from('consultation_requests').select(selectFields);
+
+      // กรอง status ที่ DB (ถ้าไม่ใช่ 'all')
+      if (status != null && status != 'all') {
+        query = query.eq('status', status);
+      }
+
+      // กรอง package สำหรับ provider
+      if (packageIds != null && packageIds.isNotEmpty) {
+        query = query.inFilter('package_id', packageIds);
+      }
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+          .timeout(const Duration(seconds: 10));
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('getRequestsByStatus error: $e');
+      return [];
+    }
+  }
+
+  /// ดึงจำนวนรายการต่อ status สำหรับแสดงบน stat chips
+  /// [packageIds] ถ้ามี = นับเฉพาะ package ที่ตรงกับ provider
+  Future<Map<String, int>> getStatusCounts({List<String>? packageIds}) async {
+    final counts = <String, int>{
+      'all': 0,
+      'pending': 0,
+      'in_progress': 0,
+      'completed': 0,
+    };
+
+    try {
+      // นับ 'all'
+      var allQuery = _client.from('consultation_requests').select('id');
+      if (packageIds != null && packageIds.isNotEmpty) {
+        allQuery = allQuery.inFilter('package_id', packageIds);
+      }
+      final allRes = await allQuery.count(CountOption.exact);
+      counts['all'] = allRes.count ?? 0;
+
+      // นับแต่ละ status
+      for (final s in ['pending', 'in_progress', 'completed']) {
+        var q = _client.from('consultation_requests').select('id').eq('status', s);
+        if (packageIds != null && packageIds.isNotEmpty) {
+          q = q.inFilter('package_id', packageIds);
+        }
+        final res = await q.count(CountOption.exact);
+        counts[s] = res.count ?? 0;
+      }
+    } catch (e) {
+      debugPrint('getStatusCounts error: $e');
+    }
+
+    return counts;
+  }
+
   /// Get consultation history for a specific provider
   Future<List<ConsultationRequestModel>> getProviderHistory(String providerId) async {
     final response = await _client
