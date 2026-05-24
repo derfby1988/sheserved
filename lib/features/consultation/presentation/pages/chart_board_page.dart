@@ -351,18 +351,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         setState(() {
           _availablePackages = pks;
           _isLoadingPackages = false;
-          
-          // Set initial package from request or consultation data
-          String? targetPackageId = widget.request?.packageId ?? _consultationData?['package_id'];
-          if (targetPackageId != null) {
-            _selectedPackage = pks.firstWhere(
-              (p) => p.id == targetPackageId,
-              orElse: () => pks.isNotEmpty ? pks.first : null as ConsultationPackage,
-            );
-          } else if (pks.isNotEmpty) {
-            _selectedPackage = pks.first;
-          }
         });
+
+        _syncSelectedPackageFromConsultation();
 
         // If expert statuses already loaded, re-merge with package groups to show waiting icons
         if (_expertStatuses.isNotEmpty && _selectedPackage != null) {
@@ -407,6 +398,124 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     }
     return null;
+  }
+
+  String? _canonicalPackageId() {
+    final entryPackageId = widget.entry?.packageId?.trim();
+    if (entryPackageId != null && entryPackageId.isNotEmpty) return entryPackageId;
+
+    final requestPackageId = widget.request?.packageId?.trim();
+    if (requestPackageId != null && requestPackageId.isNotEmpty) return requestPackageId;
+
+    final consultPackageId = _consultationData?['package_id']?.toString().trim();
+    if (consultPackageId != null && consultPackageId.isNotEmpty) return consultPackageId;
+
+    return null;
+  }
+
+  void _syncSelectedPackageFromConsultation() {
+    final targetPackageId = _canonicalPackageId();
+    if (targetPackageId == null) {
+      debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: no canonical packageId yet');
+      return;
+    }
+
+    final matched = _availablePackages.where((p) => p.id == targetPackageId).toList();
+    if (matched.isNotEmpty) {
+      if (_selectedPackage?.id != matched.first.id) {
+        debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: selected package => ${matched.first.name} ($targetPackageId)');
+      }
+      _selectedPackage = matched.first;
+    } else {
+      debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: packageId=$targetPackageId not found in active packages');
+      _selectedPackage = null;
+    }
+  }
+
+  String _resolveBodyAreaText() {
+    final request = widget.request;
+    final entry = widget.entry;
+    final consultData = _consultationData;
+
+    final symptomLabels = <String>[];
+
+    void collectFromSymptoms(dynamic rawSymptoms) {
+      final symptoms = rawSymptoms as List? ?? const [];
+      for (final s in symptoms) {
+        if (s is SymptomPoint && s.displayLabel.trim().isNotEmpty) {
+          symptomLabels.add(s.displayLabel.trim());
+        } else if (s is Map<String, dynamic>) {
+          final label = s['display_label']?.toString().trim() ?? '';
+          if (label.isNotEmpty) symptomLabels.add(label);
+        }
+      }
+    }
+
+    collectFromSymptoms(request?.symptoms);
+    if (consultData != null) collectFromSymptoms(consultData['symptoms']);
+
+    if (symptomLabels.isNotEmpty) {
+      return symptomLabels.toSet().join(', ');
+    }
+
+    Map<String, dynamic> bodyAreaMap = {};
+    Map<String, dynamic> symptomsChart = {};
+
+    if (entry != null) {
+      symptomsChart = entry.symptomsChart;
+      final entryBodyArea = entry.bodyArea.trim();
+      if (entryBodyArea.isNotEmpty && entryBodyArea != 'ไม่ระบุ') {
+        return entryBodyArea;
+      }
+    }
+
+    if (request != null) {
+      bodyAreaMap = request.bodyArea;
+      symptomsChart = request.symptomsChart;
+    }
+
+    if (consultData != null) {
+      final rawBodyArea = consultData['body_area'];
+      if (rawBodyArea is Map<String, dynamic>) {
+        bodyAreaMap = rawBodyArea;
+      }
+      final rawSymptomsChart = consultData['symptoms_chart'];
+      if (rawSymptomsChart is Map<String, dynamic>) {
+        symptomsChart = rawSymptomsChart;
+      }
+    }
+
+    final parts = symptomsChart['parts'];
+    if (parts is List && parts.isNotEmpty) {
+      final labels = parts
+          .map((p) {
+            if (p is Map<String, dynamic>) {
+              return p['label']?.toString().trim() ?? p['name']?.toString().trim() ?? '';
+            }
+            return '';
+          })
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList();
+      if (labels.isNotEmpty) return labels.join(', ');
+    }
+
+    final explicit = [
+      bodyAreaMap['area']?.toString(),
+      bodyAreaMap['label']?.toString(),
+      bodyAreaMap['part']?.toString(),
+    ].where((s) => s != null && s!.trim().isNotEmpty && s.trim().toLowerCase() != 'null').map((s) => s!.trim()).toList();
+    if (explicit.isNotEmpty) return explicit.first;
+
+    final keys = bodyAreaMap.keys
+        .where((k) => k != 'gender' && k != 'age' && k != 'lang' && k != 'sex')
+        .map((k) => k.toString().trim())
+        .where((k) => k.isNotEmpty)
+        .toSet()
+        .toList();
+    if (keys.isNotEmpty) return keys.join(', ');
+
+    return 'ไม่ระบุบริเวณ';
   }
 
   Future<void> _initChat() async {
@@ -468,6 +577,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         if (mounted) {
           setState(() => _consultationData = consultData as Map<String, dynamic>);
         }
+        _syncSelectedPackageFromConsultation();
         final status = consultData['status'] as String? ?? 'pending';
         
         if (mounted) {
@@ -3996,7 +4106,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           const SizedBox(height: 16),
           _buildDetailRow('ผู้ป่วย', widget.entry?.patientName ?? 'ไม่ระบุ'),
           _buildDetailRow('แพ็คเกจ', widget.entry?.packageName ?? widget.request?.packageName ?? 'ไม่ระบุ'),
-          _buildDetailRow('อาการเบื้องต้น', widget.entry?.bodyArea ?? widget.request?.bodyArea['label'] ?? 'ไม่ระบุ'),
+          _buildDetailRow('อาการเบื้องต้น', _resolveBodyAreaText()),
           const Divider(height: 32),
           const Text(
             'จุดที่พบอาการ (Body Map)',
@@ -4053,7 +4163,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                widget.entry?.bodyArea ?? "ระบุบริเวณร่างกาย",
+                _resolveBodyAreaText(),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
@@ -4387,7 +4497,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  widget.entry?.bodyArea ?? widget.request?.bodyArea['label'] ?? "กำลังประมวลผลข้อมูลอาการ...",
+                  _resolveBodyAreaText(),
                   style: TextStyle(
                     color: Colors.grey.shade700,
                     fontSize: 12,

@@ -485,9 +485,30 @@ class _HomePageState extends ConsumerState<HomePage>
     final lastName = userMap['last_name']?.toString() ?? '';
     final name = '$firstName $lastName'.trim();
 
-    String resolveBodyArea(dynamic rawBodyArea, dynamic rawSymptomsChart) {
+    String resolveBodyArea(
+      dynamic rawBodyArea,
+      dynamic rawSymptomsChart,
+      dynamic rawSymptoms,
+    ) {
+      final symptoms = rawSymptoms as List? ?? const [];
       final symptomsChart = rawSymptomsChart as Map<String, dynamic>? ?? {};
       final bodyAreaMap = rawBodyArea as Map<String, dynamic>? ?? {};
+
+      // 0) Prefer normalized consultation_symptoms.display_label
+      if (symptoms.isNotEmpty) {
+        final labels = symptoms
+            .map((s) {
+              if (s is Map<String, dynamic>) {
+                return s['display_label']?.toString() ?? '';
+              }
+              return '';
+            })
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (labels.isNotEmpty) {
+          return labels.join(', ');
+        }
+      }
 
       // 1) Prefer explicit symptom parts from symptoms_chart
       final parts = symptomsChart['parts'];
@@ -533,7 +554,7 @@ class _HomePageState extends ConsumerState<HomePage>
       'id': m['id'],
       'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
       'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
-      'bodyArea': resolveBodyArea(m['body_area'], m['symptoms_chart']),
+      'bodyArea': resolveBodyArea(m['body_area'], m['symptoms_chart'], m['symptoms']),
       'requestedAt':
           DateTime.tryParse(m['created_at']?.toString() ?? '') ??
           DateTime.now(),
