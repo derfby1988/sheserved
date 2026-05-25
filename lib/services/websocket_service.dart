@@ -43,6 +43,10 @@ class WebSocketService {
   final _yieldWayAlertController = StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Thumbnail] Stream สำหรับ Thumbnail อัปเดตแบบ Real-time (Recommendation #7)
   final _thumbnailUpdateController = StreamController<Map<String, dynamic>>.broadcast();
+  // ✅ [Phase 4] Emergency health sensor / dead-man switch events
+  final _emergencyHealthSensorAlertController = StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyHealthDeadManReminderController = StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyHealthDeadManTriggeredController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -75,6 +79,12 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get yieldWayAlertStream => _yieldWayAlertController.stream;
   /// ✅ [Thumbnail] Thumbnail URL อัปเดตแบบ Real-time — TrendingPanel ใช้เพื่อรีเฟรชรูปพื้นหลังการ์ด (Recommendation #7)
   Stream<Map<String, dynamic>> get thumbnailUpdateStream => _thumbnailUpdateController.stream;
+  /// ✅ [Phase 4] Sensor anomaly alerts for emergency health
+  Stream<Map<String, dynamic>> get emergencyHealthSensorAlertStream => _emergencyHealthSensorAlertController.stream;
+  /// ✅ [Phase 4] Dead-man reminder notifications
+  Stream<Map<String, dynamic>> get emergencyHealthDeadManReminderStream => _emergencyHealthDeadManReminderController.stream;
+  /// ✅ [Phase 4] Dead-man trigger notifications
+  Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream => _emergencyHealthDeadManTriggeredController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -257,6 +267,22 @@ class WebSocketService {
       _socket!.on('thumbnail-updated', (data) {
         debugPrint('[Thumbnail] thumbnail-updated received: $data');
         _thumbnailUpdateController.add(Map<String, dynamic>.from(data));
+      });
+
+      // ✅ [Phase 4] Sensor anomaly alerts / dead-man switch notifications
+      _socket!.on('emergency-health-sensor-alert', (data) {
+        debugPrint('[EmergencyHealth] emergency-health-sensor-alert received: $data');
+        _emergencyHealthSensorAlertController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('emergency-health-dead-man-reminder', (data) {
+        debugPrint('[EmergencyHealth] emergency-health-dead-man-reminder received: $data');
+        _emergencyHealthDeadManReminderController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('emergency-health-dead-man-triggered', (data) {
+        debugPrint('[EmergencyHealth] emergency-health-dead-man-triggered received: $data');
+        _emergencyHealthDeadManTriggeredController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -698,6 +724,9 @@ class WebSocketService {
     _viewerCountController.close();
     _emergencyChatController.close();
     _thaiMhungPhotoController.close();
+    _emergencyHealthSensorAlertController.close();
+    _emergencyHealthDeadManReminderController.close();
+    _emergencyHealthDeadManTriggeredController.close();
   }
 
   /// Send rescue status update

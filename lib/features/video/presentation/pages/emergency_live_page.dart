@@ -15,6 +15,7 @@ import '../../../../config/app_config.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
+import '../../../emergency/data/repositories/emergency_dead_man_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import '../../../donation/data/repositories/donation_repository.dart';
 import '../../../donation/presentation/pages/donation_create_page.dart';  // ✅ เพิ่ม import
@@ -107,6 +108,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   StreamSubscription? _compassSub;
   StreamSubscription? _viewerCountSub;
   StreamSubscription? _yieldWayAlertSub;
+  StreamSubscription? _emergencyHealthSensorAlertSub;
+  StreamSubscription? _emergencyHealthDeadManReminderSub;
+  StreamSubscription? _emergencyHealthDeadManTriggeredSub;
   
   double? _deviceHeading;
   VideoPlayerController? _videoPlayerController;
@@ -152,6 +156,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   Timer? _emergencyHealthCountdownTimer;
   Map<String, dynamic>? _emergencyHealthData;
   bool _isEmergencyHealthDataAvailable = false;
+  EmergencyDeadManCheckin? _deadManCheckin;
+  bool _isDeadManLoading = false;
+  bool _isDeadManCheckingIn = false;
 
   @override
   void initState() {
@@ -167,6 +174,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
     _loadInitialData();
+    _loadDeadManCheckinState();
     _loadDonationRequests(); // ✅ โหลดรายการคำร้องบริจาคที่แอคทีฟอยู่
     _startResponderTracking();
     _initCompass();
@@ -230,6 +238,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _compassSub?.cancel();
     _viewerCountSub?.cancel();
     _yieldWayAlertSub?.cancel();
+    _emergencyHealthSensorAlertSub?.cancel();
+    _emergencyHealthDeadManReminderSub?.cancel();
+    _emergencyHealthDeadManTriggeredSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();
@@ -498,6 +509,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                   ),
                 ),
               ),
+            ),
+
+          if (_isUiVisible && _deadManCheckin?.isEnabled == true)
+            Positioned(
+              left: 16,
+              top: MediaQuery.of(context).padding.top + 88,
+              child: _buildDeadManCheckInChip(),
             ),
 
           if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null)

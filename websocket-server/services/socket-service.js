@@ -111,6 +111,33 @@ function broadcastEmergencyHealthReleased(incidentId, releaseData) {
     });
 }
 
+function broadcastEmergencyHealthSensorAlert(userId, payload) {
+    if (!io || !userId) return;
+    console.log(`[EmergencyHealth] Sensor alert for user ${userId}`);
+    io.to(`user-${userId}`).emit('emergency-health-sensor-alert', {
+        userId,
+        ...payload,
+    });
+}
+
+function broadcastEmergencyHealthDeadManReminder(userId, payload) {
+    if (!io || !userId) return;
+    console.log(`[EmergencyHealth] Dead man reminder for user ${userId}`);
+    io.to(`user-${userId}`).emit('emergency-health-dead-man-reminder', {
+        userId,
+        ...payload,
+    });
+}
+
+function broadcastEmergencyHealthDeadManTriggered(userId, payload) {
+    if (!io || !userId) return;
+    console.log(`[EmergencyHealth] Dead man trigger for user ${userId}`);
+    io.to(`user-${userId}`).emit('emergency-health-dead-man-triggered', {
+        userId,
+        ...payload,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
@@ -120,6 +147,9 @@ module.exports = {
     broadcastNewThaiMhungPhoto,
     broadcastThumbnailUpdate,
     broadcastEmergencyHealthReleased,
+    broadcastEmergencyHealthSensorAlert,
+    broadcastEmergencyHealthDeadManReminder,
+    broadcastEmergencyHealthDeadManTriggered,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

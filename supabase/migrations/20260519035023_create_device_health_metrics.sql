@@ -26,23 +26,54 @@ CREATE INDEX IF NOT EXISTS idx_device_health_metrics_user_metric ON public.devic
 -- Row Level Security (RLS) Policies
 ALTER TABLE public.device_health_metrics ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can insert their own metrics"
-ON public.device_health_metrics
-FOR INSERT
-WITH CHECK (true);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'device_health_metrics'
+          AND policyname = 'Users can insert their own metrics'
+    ) THEN
+        CREATE POLICY "Users can insert their own metrics"
+        ON public.device_health_metrics
+        FOR INSERT
+        WITH CHECK (true);
+    END IF;
 
-CREATE POLICY "Users can view their own metrics"
-ON public.device_health_metrics
-FOR SELECT
-USING (true);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'device_health_metrics'
+          AND policyname = 'Users can view their own metrics'
+    ) THEN
+        CREATE POLICY "Users can view their own metrics"
+        ON public.device_health_metrics
+        FOR SELECT
+        USING (true);
+    END IF;
 
-CREATE POLICY "Users can update their own metrics"
-ON public.device_health_metrics
-FOR UPDATE
-USING (true);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'device_health_metrics'
+          AND policyname = 'Users can update their own metrics'
+    ) THEN
+        CREATE POLICY "Users can update their own metrics"
+        ON public.device_health_metrics
+        FOR UPDATE
+        USING (true);
+    END IF;
 
-CREATE POLICY "Users can delete their own metrics"
-ON public.device_health_metrics
-FOR DELETE
-USING (true);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'device_health_metrics'
+          AND policyname = 'Users can delete their own metrics'
+    ) THEN
+        CREATE POLICY "Users can delete their own metrics"
+        ON public.device_health_metrics
+        FOR DELETE
+        USING (true);
+    END IF;
+END$$;
 

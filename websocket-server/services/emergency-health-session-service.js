@@ -48,12 +48,9 @@ async function createReleaseSession({ patientId, incidentId, videoId }) {
     throw new Error('Supabase service client is not configured');
   }
 
-  const resolvedIncidentId = incidentId || videoId;
+  const resolvedIncidentId = incidentId || videoId || null;
   if (!patientId) {
     throw new Error('patientId is required');
-  }
-  if (!resolvedIncidentId) {
-    throw new Error('incidentId is required');
   }
 
   const { data: settingsRow, error: settingsError } = await supabase
@@ -76,14 +73,18 @@ async function createReleaseSession({ patientId, incidentId, videoId }) {
     };
   }
 
-  const { data: existingSession, error: existingError } = await supabase
+  let existingSessionQuery = supabase
     .from('emergency_health_release_sessions')
     .select('id, incident_id, patient_id, release_delay_minutes, triggered_at, panic_cancelled_at, auto_released_at, released_fields, status, created_at, updated_at')
     .eq('patient_id', patientId)
-    .eq('incident_id', resolvedIncidentId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  existingSessionQuery = resolvedIncidentId == null
+    ? existingSessionQuery.is('incident_id', null)
+    : existingSessionQuery.eq('incident_id', resolvedIncidentId);
+
+  const { data: existingSession, error: existingError } = await existingSessionQuery.maybeSingle();
 
   if (existingError) {
     throw new Error(`Failed to check existing emergency session: ${existingError.message}`);

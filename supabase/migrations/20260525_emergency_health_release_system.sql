@@ -22,8 +22,18 @@ CREATE TABLE IF NOT EXISTS emergency_health_data_settings (
 );
 
 ALTER TABLE emergency_health_data_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Emergency settings owner" ON emergency_health_data_settings
-    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_data_settings'
+          AND policyname = 'Emergency settings owner'
+    ) THEN
+        CREATE POLICY "Emergency settings owner" ON emergency_health_data_settings
+            USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    END IF;
+END$$;
 
 -- ============================================================
 -- TABLE 2: emergency_health_release_sessions
@@ -44,13 +54,39 @@ CREATE TABLE IF NOT EXISTS emergency_health_release_sessions (
 );
 
 ALTER TABLE emergency_health_release_sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Emergency session patient select" ON emergency_health_release_sessions
-    FOR SELECT USING (auth.uid() = patient_id);
-CREATE POLICY "Emergency session patient cancel" ON emergency_health_release_sessions
-    FOR UPDATE USING (auth.uid() = patient_id);
--- INSERT / status updates performed by service_role Node.js cron
-
-ALTER PUBLICATION supabase_realtime ADD TABLE emergency_health_release_sessions;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_release_sessions'
+          AND policyname = 'Emergency session patient select'
+    ) THEN
+        CREATE POLICY "Emergency session patient select" ON emergency_health_release_sessions
+            FOR SELECT USING (auth.uid() = patient_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_release_sessions'
+          AND policyname = 'Emergency session patient cancel'
+    ) THEN
+        CREATE POLICY "Emergency session patient cancel" ON emergency_health_release_sessions
+            FOR UPDATE USING (auth.uid() = patient_id);
+    END IF;
+END$$;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication_rel pr
+        JOIN pg_publication p ON p.oid = pr.prpubid
+        WHERE p.pubname = 'supabase_realtime'
+          AND pr.prrelid = 'emergency_health_release_sessions'::regclass
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE emergency_health_release_sessions;
+    END IF;
+END$$;
 
 -- ============================================================
 -- TABLE 3: emergency_health_access_tokens
@@ -67,8 +103,18 @@ CREATE TABLE IF NOT EXISTS emergency_health_access_tokens (
 );
 
 ALTER TABLE emergency_health_access_tokens ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Responder token select" ON emergency_health_access_tokens
-    FOR SELECT USING (auth.uid() = responder_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_access_tokens'
+          AND policyname = 'Responder token select'
+    ) THEN
+        CREATE POLICY "Responder token select" ON emergency_health_access_tokens
+            FOR SELECT USING (auth.uid() = responder_id);
+    END IF;
+END$$;
 -- INSERT / revoke handled by service_role
 
 -- ============================================================
@@ -90,10 +136,27 @@ CREATE TABLE IF NOT EXISTS health_data_access_logs (
 );
 
 ALTER TABLE health_data_access_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Patient audit select" ON health_data_access_logs
-    FOR SELECT USING (auth.uid() = patient_id);
-CREATE POLICY "Accessor audit select" ON health_data_access_logs
-    FOR SELECT USING (auth.uid() = accessor_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'health_data_access_logs'
+          AND policyname = 'Patient audit select'
+    ) THEN
+        CREATE POLICY "Patient audit select" ON health_data_access_logs
+            FOR SELECT USING (auth.uid() = patient_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'health_data_access_logs'
+          AND policyname = 'Accessor audit select'
+    ) THEN
+        CREATE POLICY "Accessor audit select" ON health_data_access_logs
+            FOR SELECT USING (auth.uid() = accessor_id);
+    END IF;
+END$$;
 -- INSERT only via service_role, no UPDATE/DELETE permitted
 
 -- ============================================================

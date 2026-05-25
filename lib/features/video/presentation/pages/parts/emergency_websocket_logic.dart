@@ -10,6 +10,131 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     }
   }
 
+  Future<void> _loadDeadManCheckinState() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    if (mounted) {
+      setState(() => _isDeadManLoading = true);
+    }
+
+    try {
+      final checkin = await ServiceLocator.instance.emergencyDeadManRepository.fetchCheckin(userId);
+      if (!mounted) return;
+      setState(() {
+        _deadManCheckin = checkin;
+      });
+    } catch (e) {
+      debugPrint('[EmergencyHealth] Failed to load dead-man state: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isDeadManLoading = false);
+      }
+    }
+  }
+
+  Future<void> _checkInNow() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null || _isDeadManCheckingIn) return;
+
+    setState(() => _isDeadManCheckingIn = true);
+    try {
+      await ServiceLocator.instance.emergencyDeadManRepository.updateCheckInTimestamp(userId: userId);
+      await _loadDeadManCheckinState();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('เช็กอินเรียบร้อยแล้ว'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[EmergencyHealth] Dead-man check-in failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('เช็กอินไม่สำเร็จ: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isDeadManCheckingIn = false);
+      }
+    }
+  }
+
+  Widget _buildDeadManCheckInChip() {
+    final checkin = _deadManCheckin;
+    final lastCheckInText = checkin?.lastCheckInAt != null
+        ? DateFormat('dd/MM HH:mm').format(checkin!.lastCheckInAt!.toLocal())
+        : 'ยังไม่เคยเช็กอิน';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _isDeadManLoading || _isDeadManCheckingIn ? null : _checkInNow,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.teal.shade700.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.tealAccent.withOpacity(0.25),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isDeadManLoading || _isDeadManCheckingIn)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              else
+                const Icon(Icons.verified_user_outlined, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _isDeadManCheckingIn ? 'กำลังเช็กอิน...' : 'เช็กอินตอนนี้',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      fontFamily: 'SukhumvitSet',
+                    ),
+                  ),
+                  Text(
+                    'ล่าสุด: $lastCheckInText',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.88),
+                      fontSize: 11,
+                      fontFamily: 'SukhumvitSet',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.touch_app, color: Colors.white, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _setupWebSocketStreams() {
     final ws = WebSocketService();
     _connectionSub?.cancel();
@@ -149,6 +274,24 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (mounted) {
         _showYieldWayDialog(data);
       }
+    });
+
+    _emergencyHealthSensorAlertSub?.cancel();
+    _emergencyHealthSensorAlertSub = ws.emergencyHealthSensorAlertStream.listen((data) {
+      if (!mounted) return;
+      _showEmergencyHealthSensorAlert(data);
+    });
+
+    _emergencyHealthDeadManReminderSub?.cancel();
+    _emergencyHealthDeadManReminderSub = ws.emergencyHealthDeadManReminderStream.listen((data) {
+      if (!mounted) return;
+      _showEmergencyHealthDeadManReminder(data);
+    });
+
+    _emergencyHealthDeadManTriggeredSub?.cancel();
+    _emergencyHealthDeadManTriggeredSub = ws.emergencyHealthDeadManTriggeredStream.listen((data) {
+      if (!mounted) return;
+      _showEmergencyHealthDeadManTriggered(data);
     });
 
     // ✅ [Phase 3a] Listen for emergency health data release broadcast
@@ -400,6 +543,55 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
           );
         },
         onDecline: () {},
+      ),
+    );
+  }
+
+  void _showEmergencyHealthSensorAlert(Map<String, dynamic> data) {
+    final reasons = (data['reasons'] as List?)?.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() ?? const [];
+    final message = reasons.isNotEmpty
+        ? 'ตรวจพบความผิดปกติ: ${reasons.join(' • ')}'
+        : 'ตรวจพบความผิดปกติของข้อมูลสุขภาพ';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.deepOrange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  void _showEmergencyHealthDeadManReminder(Map<String, dynamic> data) {
+    final reminderFor = data['reminderFor']?.toString();
+    final intervalMinutes = data['intervalMinutes']?.toString();
+    final message = reminderFor != null && intervalMinutes != null
+        ? 'กรุณาเช็กอินภายใน $intervalMinutes นาที (เตือนครั้งถัดไป: ${DateTime.tryParse(reminderFor)?.toLocal().toString() ?? reminderFor})'
+        : 'กรุณาเช็กอินตอนนี้เพื่อยืนยันว่าคุณปลอดภัย';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ),
+    );
+  }
+
+  void _showEmergencyHealthDeadManTriggered(Map<String, dynamic> data) {
+    final nextCheckInAt = data['nextCheckInAt']?.toString();
+    final message = nextCheckInAt != null
+        ? 'Dead Man’s Switch ถูกกระตุ้นแล้ว • รอบถัดไป: ${DateTime.tryParse(nextCheckInAt)?.toLocal().toString() ?? nextCheckInAt}'
+        : 'Dead Man’s Switch ถูกกระตุ้นแล้ว';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 7),
       ),
     );
   }

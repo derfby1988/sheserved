@@ -1217,170 +1217,42 @@ setInterval(async () => {
 
 ---
 
-### 6. Implementation Priority (Phase)
+### 6. Implementation Status
 
-เรียงตามความจำเป็นทางธุรกิจและความเสี่ยง:
+สถานะปัจจุบัน: งานใน Emergency Health Data Auto-Release System ทำเสร็จแล้วครบทุก Phase ที่วางไว้
 
-#### Phase 1a — Schema + RLS + Realtime (Critical)
-- สร้าง migration SQL สำหรับ 4 ตารางใหม่ (ดู Section 7):
-  - `emergency_health_data_settings` — การตั้งค่าของผู้ใช้ + `consent_given_at`
-  - `emergency_health_release_sessions` — สถานะ countdown / panic / released
-  - `emergency_health_access_tokens` — token ที่ผูกกับ responder แต่ละคน
-  - `health_data_access_logs` — audit trail (ย้ายมาจาก Phase 4 เพราะจำเป็นตั้งแต่เริ่ม)
-- กำหนด RLS ทุกตาราง (owner read/write, service_role write, accessor read own logs)
-- Enable Supabase Realtime บน `emergency_health_release_sessions`
+- **Phase 1a — Schema + RLS + Realtime**: เสร็จแล้ว
+  - Migrations อยู่ใน `supabase/migrations/`
+  - RLS / policy / realtime ถูกเปิดแล้ว
 
-#### Phase 1b — Field Key Verification (Critical)
-- ตรวจสอบใน production ว่า `consumer_profiles.health_info` JSONB มี keys: `blood_type`, `allergies`, `chronic_conditions`, `surgeries` จริงหรือไม่
-- สร้าง method ใหม่ใน `EmergencyHealthRepository`:
-  - `_fetchRecentPrescriptions(patientId)` — query `prescriptions` by `patient_id` เท่านั้น
-  - `_fetchRecentConsultationNotes(patientId)` — query `consultation_notes` by `patient_id` เท่านั้น
-- สร้าง `EmergencyHealthRepository` (class ใหม่แยกจาก `HealthDataPermissionRepository`)
+- **Phase 1b — Field Key Verification**: เสร็จแล้ว
+  - Emergency repositories แยกการ query `prescriptions` และ `consultation_notes` ตาม `patient_id`
 
-#### Phase 1c — UI Settings + Consent Dialog (Critical)
-- เพิ่ม Section "ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ" ใน `ProfilePage._buildNotificationSettings()`
-- Master Toggle + Consent Dialog (PDPA) + Panels B–E
-- บันทึก/โหลด settings ผ่าน `EmergencyHealthRepository`
+- **Phase 1c — UI Settings + Consent Dialog**: เสร็จแล้ว
+  - เพิ่ม section สำหรับตั้งค่า auto-release และ consent
 
-#### Phase 2a — Node.js Server Cron (High)
-- เพิ่ม cron service ใน `websocket-server/services/emergency-health-release-checker.js`
-- ตรวจทุก 30 วินาที: sessions `status='counting'` ที่ครบเวลา → UPDATE `released` → generate tokens
-- Supabase Realtime broadcast อัตโนมัติหลัง UPDATE
+- **Phase 2a — Node.js Server Cron**: เสร็จแล้ว
+  - `emergency-health-release-checker.js` ตรวจ session และปล่อย token อัตโนมัติ
 
-#### Phase 2b — Flutter Trigger Hook + Panic Cancel (High)
-- Hook ที่ `_uploadIncident()` / `ws.sendEmergencyAlert(...)` ใน `emergency_reporting_logic.dart`
-- ตรวจ `is_enabled` → POST to Node.js → สร้าง session
-- แสดง Panic Cancel Notification (Fullscreen + Sound + Vibration)
-- Subscribe Supabase Realtime บน session ของตัวเอง
+- **Phase 2b — Flutter Trigger Hook + Panic Cancel**: เสร็จแล้ว
+  - Hook จาก `_uploadIncident()` / `ws.sendEmergencyAlert(...)` พร้อม panic cancel flow
 
-#### Phase 3a — Token Validation + Realtime Sub (High)
-- Node.js API endpoint: `GET /api/emergency-health/:incidentId` ตรวจ token + RLS
-- Flutter `EmergencyLivePage`: subscribe `emergency_health_release_sessions` channel
-- Token revocation เมื่อ Master Toggle ปิดระหว่าง incident
+- **Phase 3a — Token Validation + Realtime Sub**: เสร็จแล้ว
+  - `GET /api/emergency-health/:incidentId` และ realtime subscription พร้อม revoke flow
 
-#### Phase 3b — Floating Label + Map Dialog (High)
-- Floating Label Badge บนหมุดแผนที่ใน `emergency_map_section.dart`
-- Dialog/Sheet แสดงข้อมูลสุขภาพ พร้อม Privacy Mask สำหรับผู้ไม่มีสิทธิ์
+- **Phase 3b — Floating Label + Map Dialog**: เสร็จแล้ว
+  - แสดง badge/overlay และ privacy mask บนแผนที่
 
-#### Phase 4 — Sensor Trigger + Dead Man's Switch (Medium)
-- Sensor Anomaly (Apple Health / Google Fit / `device_health_metrics`)
-- Dead Man's Switch + Check-in notification
+- **Phase 4 — Sensor Trigger + Dead Man's Switch**: เสร็จแล้ว
+  - Sensor anomaly alerts, dead-man reminders, and check-in UI / repository wiring พร้อมใช้งาน
 
----
+### 7. Database Schema
 
-### 7. Database Schema (SQL)
+สคีมาถูกแยกไปไว้ใน migration แล้ว เพื่อให้เอกสารนี้เป็นแผนงานที่อ่านง่าย:
 
-```sql
--- ============================================================
--- TABLE 1: การตั้งค่าของผู้ใช้ (User-configurable in Volunteer Tab)
--- ============================================================
-CREATE TABLE IF NOT EXISTS emergency_health_data_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    is_enabled BOOLEAN DEFAULT false,
-    release_delay_minutes INT NOT NULL DEFAULT 5 CHECK (release_delay_minutes BETWEEN 1 AND 120),
-    enabled_fields JSONB NOT NULL DEFAULT '["blood_type","allergies","emergency_contact"]',
-    -- enabled_fields keys: blood_type | allergies | chronic_conditions | surgical_history |
-    --   emergency_contact | device_metrics | prescriptions | consultation_history | weight_history
-    require_active_responder BOOLEAN DEFAULT true,   -- Active Responder (ค่าเริ่มต้น ON)
-    require_medical_profession BOOLEAN DEFAULT false,
-    require_verified BOOLEAN DEFAULT false,
-    emergency_fallback BOOLEAN DEFAULT false,         -- ขยายสิทธิถ้าไม่มีคนผ่านเงื่อนไข
-    whitelisted_user_ids UUID[] DEFAULT '{}',
-    consent_given_at TIMESTAMPTZ,                    -- PDPA: ต้องมีก่อนเปิดใช้ได้
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (user_id)
-);
-
-ALTER TABLE emergency_health_data_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Owner full access" ON emergency_health_data_settings
-    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
--- ============================================================
--- TABLE 2: สถานะ countdown / panic / auto-release
--- ============================================================
-CREATE TABLE IF NOT EXISTS emergency_health_release_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    incident_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    patient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    release_delay_minutes INT NOT NULL DEFAULT 5,
-    triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    panic_cancelled_at TIMESTAMPTZ,
-    auto_released_at TIMESTAMPTZ,
-    released_fields JSONB,
-    status VARCHAR(20) NOT NULL DEFAULT 'counting'
-        CHECK (status IN ('counting','cancelled','released','expired')),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE emergency_health_release_sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Patient reads own sessions" ON emergency_health_release_sessions
-    FOR SELECT USING (auth.uid() = patient_id);
-CREATE POLICY "Patient cancels own sessions" ON emergency_health_release_sessions
-    FOR UPDATE USING (auth.uid() = patient_id);
--- INSERT และ UPDATE status='released' ต้องทำผ่าน service_role (Node.js server) เท่านั้น
-
-ALTER PUBLICATION supabase_realtime ADD TABLE emergency_health_release_sessions;
-
--- ============================================================
--- TABLE 3: Access Tokens (ผูกกับ responder แต่ละคน)
--- ============================================================
-CREATE TABLE IF NOT EXISTS emergency_health_access_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id UUID NOT NULL REFERENCES emergency_health_release_sessions(id) ON DELETE CASCADE,
-    responder_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    incident_id UUID REFERENCES videos(id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,     -- หมดอายุเมื่อ incident resolved (set โดย server)
-    revoked_at TIMESTAMPTZ,              -- revoke ทันทีถ้า patient ปิด Master Toggle
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (session_id, responder_id)    -- 1 token ต่อ 1 responder ต่อ 1 session
-);
-
-ALTER TABLE emergency_health_access_tokens ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Responder reads own token" ON emergency_health_access_tokens
-    FOR SELECT USING (auth.uid() = responder_id);
--- INSERT/UPDATE ทำผ่าน service_role (Node.js server) เท่านั้น
-
--- ============================================================
--- TABLE 4: Audit Trail การเข้าถึงข้อมูลสุขภาพ
--- ============================================================
-CREATE TABLE IF NOT EXISTS health_data_access_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    incident_id UUID REFERENCES videos(id) ON DELETE SET NULL,
-    patient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    accessor_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    accessor_profession_id UUID REFERENCES professions(id) ON DELETE SET NULL,
-    accessed_fields JSONB NOT NULL DEFAULT '{}',
-    access_method VARCHAR(40) NOT NULL
-        CHECK (access_method IN ('map_dialog','emergency_card','auto_release','consultation_request')),
-    token_id UUID REFERENCES emergency_health_access_tokens(id) ON DELETE SET NULL,
-    location_lat DECIMAL(10,8),
-    location_lng DECIMAL(11,8),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE health_data_access_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Patient reads own audit" ON health_data_access_logs
-    FOR SELECT USING (auth.uid() = patient_id);
-CREATE POLICY "Accessor reads own audit" ON health_data_access_logs
-    FOR SELECT USING (auth.uid() = accessor_id);
--- INSERT ผ่าน service_role เท่านั้น (append-only, ห้าม UPDATE/DELETE)
-
--- ============================================================
--- Indexes
--- ============================================================
-CREATE INDEX IF NOT EXISTS idx_eh_settings_user ON emergency_health_data_settings(user_id);
-CREATE INDEX IF NOT EXISTS idx_eh_sessions_patient ON emergency_health_release_sessions(patient_id);
-CREATE INDEX IF NOT EXISTS idx_eh_sessions_status ON emergency_health_release_sessions(status);  -- สำหรับ Node.js cron
-CREATE INDEX IF NOT EXISTS idx_eh_sessions_incident ON emergency_health_release_sessions(incident_id);
-CREATE INDEX IF NOT EXISTS idx_eh_tokens_responder ON emergency_health_access_tokens(responder_id);
-CREATE INDEX IF NOT EXISTS idx_eh_tokens_session ON emergency_health_access_tokens(session_id);
-CREATE INDEX IF NOT EXISTS idx_hd_logs_patient ON health_data_access_logs(patient_id);
-CREATE INDEX IF NOT EXISTS idx_hd_logs_accessor ON health_data_access_logs(accessor_id);
-CREATE INDEX IF NOT EXISTS idx_hd_logs_incident ON health_data_access_logs(incident_id);
-```
+- `supabase/migrations/20260525_emergency_health_release_system.sql`
+- `supabase/migrations/20260526090000_emergency_health_dead_man_checkins.sql`
+- `supabase/migrations/20260519035023_create_device_health_metrics.sql`
 
 ---
 

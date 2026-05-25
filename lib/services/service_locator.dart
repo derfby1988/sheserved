@@ -17,6 +17,7 @@ import '../features/consultation/data/repositories/consultation_repository.dart'
 import '../features/consultation/data/repositories/health_data_permission_repository.dart';
 import '../features/emergency/data/repositories/emergency_health_settings_repository.dart';
 import '../features/emergency/data/repositories/emergency_health_repository.dart';
+import '../features/emergency/data/repositories/emergency_dead_man_repository.dart';
 import '../features/admin/data/repositories/body_region_repository.dart';
 import '../features/admin/data/repositories/profession_repository.dart';
 import '../features/admin/data/repositories/registration_repository.dart';
@@ -47,6 +48,7 @@ class ServiceLocator {
   HealthDataPermissionRepository? _healthPermissionRepository;
   EmergencyHealthSettingsRepository? _emergencyHealthSettingsRepository;
   EmergencyHealthRepository? _emergencyHealthRepository;
+  EmergencyDeadManRepository? _emergencyDeadManRepository;
   BodyRegionRepository? _bodyRegionRepository;
   ProfessionRepository? _professionRepository;
   RegistrationRepository? _registrationRepository;
@@ -184,6 +186,7 @@ class ServiceLocator {
       _healthPermissionRepository = HealthDataPermissionRepository(supabaseClient);
       _emergencyHealthSettingsRepository = EmergencyHealthSettingsRepository(supabaseClient);
       _emergencyHealthRepository = EmergencyHealthRepository(supabaseClient);
+      _emergencyDeadManRepository = EmergencyDeadManRepository(supabaseClient);
       _bodyRegionRepository = BodyRegionRepository(supabaseClient);
       _professionRepository = ProfessionRepository(supabaseClient);
       _registrationRepository = RegistrationRepository(supabaseClient);
@@ -263,6 +266,14 @@ class ServiceLocator {
           EmergencyHealthRepository(Supabase.instance.client);
     }
     return _emergencyHealthRepository!;
+  }
+
+  EmergencyDeadManRepository get emergencyDeadManRepository {
+    if (_emergencyDeadManRepository == null) {
+      _emergencyDeadManRepository =
+          EmergencyDeadManRepository(Supabase.instance.client);
+    }
+    return _emergencyDeadManRepository!;
   }
 
   BodyRegionRepository get bodyRegionRepository {

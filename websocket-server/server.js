@@ -46,6 +46,7 @@ const escrowReleaseService = require('./services/escrow-release-service');
 const escrowDeadlineChecker = require('./services/escrow-deadline-checker');
 const emergencyHealthReleaseChecker = require('./services/emergency-health-release-checker');
 const emergencyHealthSessionService = require('./services/emergency-health-session-service');
+const emergencyHealthMonitorService = require('./services/emergency-health-monitor-service');
 
 // Sync Service
 const { reconcileLocalToCloud } = require('./services/sync-service');
@@ -1853,6 +1854,9 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // 🚨 เริ่ม Emergency Health Release Checker (scheduled job ทุก 30 วินาที)
   emergencyHealthReleaseChecker.start();
+
+  // ⚠️ Phase 4 — Sensor Trigger + Dead Man's Switch monitor
+  emergencyHealthMonitorService.start();
 });
 
 // Graceful shutdown
@@ -1860,6 +1864,7 @@ process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received — shutting down gracefully');
   escrowDeadlineChecker.stop();
   emergencyHealthReleaseChecker.stop();
+  emergencyHealthMonitorService.stop();
   server.close(() => process.exit(0));
 });
 
@@ -1867,5 +1872,6 @@ process.on('SIGINT', () => {
   console.log('[Server] SIGINT received — shutting down gracefully');
   escrowDeadlineChecker.stop();
   emergencyHealthReleaseChecker.stop();
+  emergencyHealthMonitorService.stop();
   server.close(() => process.exit(0));
 });
