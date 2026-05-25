@@ -302,6 +302,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               });
             },
             isYieldPulsing: _isYieldPulsing, // ✅ ส่งสถานะ pulse ให้ Map
+            isEmergencyHealthDataAvailable: _isEmergencyHealthDataAvailable,
+            onShowHealthDataTap: _showEmergencyHealthDataDialog,
+            emergencyHealthStatus: _emergencyHealthSession?['status']?.toString(),
           ),
 
           // Floating New Photo Effect
@@ -474,6 +477,26 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               child: RescueControlPanelWidget(
                 onOpenInMaps: _openInGoogleMaps,
                 onUpdateStatus: _updateRescueStatus,
+              ),
+            ),
+
+          // ✅ [Phase 3a] Floating button to view patient health data
+          if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable)
+            Positioned(
+              right: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 160,
+              child: FloatingActionButton.extended(
+                onPressed: _showEmergencyHealthDataDialog,
+                backgroundColor: Colors.green.shade700,
+                icon: const Icon(Icons.medical_services, color: Colors.white),
+                label: const Text(
+                  'ข้อมูลสุขภาพ',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'SukhumvitSet',
+                  ),
+                ),
               ),
             ),
 

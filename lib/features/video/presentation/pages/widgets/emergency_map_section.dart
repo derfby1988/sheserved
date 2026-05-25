@@ -22,6 +22,9 @@ class EmergencyMapSection extends StatelessWidget {
   final bool isThaiMhungReporting;
   final VoidCallback onBackTap;
   final bool isYieldPulsing;
+  final bool isEmergencyHealthDataAvailable;
+  final VoidCallback? onShowHealthDataTap;
+  final String? emergencyHealthStatus;
 
   const EmergencyMapSection({
     super.key,
@@ -40,6 +43,9 @@ class EmergencyMapSection extends StatelessWidget {
     required this.isThaiMhungReporting,
     required this.onBackTap,
     this.isYieldPulsing = false,
+    this.isEmergencyHealthDataAvailable = false,
+    this.onShowHealthDataTap,
+    this.emergencyHealthStatus,
   });
 
   @override
@@ -103,6 +109,150 @@ class EmergencyMapSection extends StatelessWidget {
             ),
           ),
         ),
+
+        // ✅ [Phase 3b] Floating health data badge on map
+        if (isEmergencyHealthDataAvailable && onShowHealthDataTap != null)
+          Positioned(
+            left: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 120,
+            child: IgnorePointer(
+              ignoring: !isUiVisible,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: isUiVisible ? 1.0 : 0.0,
+                child: GestureDetector(
+                  onTap: onShowHealthDataTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade700,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.medical_services, color: Colors.white, size: 18),
+                        const SizedBox(width: 6),
+                        Text(
+                          'ข้อมูลสุขภาพ',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            fontFamily: 'SukhumvitSet',
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // ✅ [Phase 3b] Privacy mask indicator for locked health data
+        if (!isEmergencyHealthDataAvailable && currentResponseId != null && emergencyHealthStatus == 'counting')
+          Positioned(
+            left: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 120,
+            child: IgnorePointer(
+              ignoring: !isUiVisible,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: isUiVisible ? 1.0 : 0.0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock_clock, color: Colors.white, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'ข้อมูลสุขภาพเร็วๆ นี้',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          fontFamily: 'SukhumvitSet',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // ✅ [Phase 3b] Cancelled / revoked indicator
+        if (!isEmergencyHealthDataAvailable && currentResponseId != null && emergencyHealthStatus == 'cancelled')
+          Positioned(
+            left: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 120,
+            child: IgnorePointer(
+              ignoring: !isUiVisible,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: isUiVisible ? 1.0 : 0.0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock, color: Colors.white, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'ข้อมูลสุขภาพถูกยกเลิก',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          fontFamily: 'SukhumvitSet',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
       ],
     );

@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../services/websocket_service.dart';
 
 /// Domain object for emergency health data settings stored per user.
 class EmergencyHealthSettings {
@@ -159,5 +161,17 @@ class EmergencyHealthSettingsRepository {
         .from('emergency_health_data_settings')
         .upsert(payload, onConflict: 'user_id')
         .eq('user_id', userId);
+  }
+
+  /// [Phase 3a] Revoke all active emergency health sessions and tokens
+  /// when the master toggle is turned off during an incident.
+  Future<void> revokeActiveSessionsIfDisabled(String userId, bool newIsEnabled) async {
+    if (newIsEnabled) return;
+    try {
+      final ws = WebSocketService();
+      await ws.revokeEmergencyHealthSessions(patientId: userId);
+    } catch (e) {
+      debugPrint('[EmergencyHealthSettingsRepository] revoke sessions error: $e');
+    }
   }
 }

@@ -464,6 +464,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       } catch (e) {
         debugPrint('Error auto-dismissing alert on accept: $e');
       }
+
+      // ✅ [Phase 3a] Subscribe to emergency health access tokens for this incident
+      _subscribeToEmergencyHealthTokens();
     } catch (e, stackTrace) { 
       debugPrint('❌ _acceptRescue FAILED: $e');
       debugPrint('❌ StackTrace: $stackTrace');

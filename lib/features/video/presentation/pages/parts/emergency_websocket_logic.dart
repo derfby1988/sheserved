@@ -485,72 +485,461 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   }
 
   Future<void> _showEmergencyHealthDataDialog() async {
-    if (_emergencyHealthData == null) {
+    if (_emergencyHealthData == null && _isEmergencyHealthDataAvailable) {
       await _fetchEmergencyHealthData();
     }
 
+    if (!mounted) return;
+
+    final sessionStatus = _emergencyHealthSession?['status']?.toString();
+
+    // Determine which state to show
+    if (_emergencyHealthData != null && _emergencyHealthData!['allowed'] == true) {
+      _showReleasedHealthDataDialog();
+      return;
+    }
+
+    if (sessionStatus == 'counting') {
+      _showLockedHealthDataDialog(isCounting: true);
+      return;
+    }
+
+    if (sessionStatus == 'cancelled') {
+      _showLockedHealthDataDialog(isCancelled: true);
+      return;
+    }
+
+    // No session or no data available
+    _showLockedHealthDataDialog();
+  }
+
+  void _showReleasedHealthDataDialog() {
     if (!mounted || _emergencyHealthData == null) return;
 
     final patient = _emergencyHealthData!['patient'] as Map<String, dynamic>? ?? {};
     final healthData = _emergencyHealthData!['healthData'] as Map<String, dynamic>? ?? {};
-    final session = _emergencyHealthData!['session'] as Map<String, dynamic>? ?? {};
-    final releasedFields = (session['releasedFields'] as List?)?.cast<String>() ?? [];
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return AlertDialog(
-          title: const Text(
-            'ข้อมูลสุขภาพผู้ป่วย',
-            style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Patient info
-                if (patient['name'] != null)
-                  Text('ชื่อ: ${patient['name']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
-                if (patient['phone'] != null)
-                  Text('เบอร์โทร: ${patient['phone']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
-                if (patient['emergencyContact'] != null)
-                  Text('ติดต่อฉุกเฉิน: ${patient['emergencyContact']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
-                if (patient['emergencyPhone'] != null)
-                  Text('เบอร์ฉุกเฉิน: ${patient['emergencyPhone']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
-                const Divider(height: 24),
-                // Health data fields
-                if (healthData['bloodType'] != null)
-                  _buildHealthDataRow('กรุ๊ปเลือด', healthData['bloodType']),
-                if (healthData['allergies'] != null)
-                  _buildHealthDataRow('แพ้ยา/อาหาร', healthData['allergies']),
-                if (healthData['chronicConditions'] != null)
-                  _buildHealthDataRow('โรคประจำตัว', healthData['chronicConditions']),
-                if (healthData['surgicalHistory'] != null)
-                  _buildHealthDataRow('ประวัติผ่าตัด', healthData['surgicalHistory']),
-                if ((healthData['prescriptions'] as List?)?.isNotEmpty == true) ...[
-                  const SizedBox(height: 12),
-                  const Text('ยาล่าสุด:', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
-                  for (final p in healthData['prescriptions'] as List)
-                    Text('- ${p['medications'] ?? p['notes'] ?? ''}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Handle bar
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.medical_services, color: Colors.green.shade700),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'ข้อมูลสุขภาพผู้ป่วย',
+                                style: TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              Text(
+                                'ปลดล็อกแล้ว • เข้าถึงได้',
+                                style: TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  color: Colors.green.shade700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(),
+                  // Content
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      children: [
+                        // Patient info card
+                        _buildPatientInfoCard(patient),
+                        const SizedBox(height: 16),
+                        // Health data fields
+                        if (healthData['bloodType'] != null)
+                          _buildHealthDataCard('กรุ๊ปเลือด', healthData['bloodType'], Icons.water_drop),
+                        if (healthData['allergies'] != null)
+                          _buildHealthDataCard('แพ้ยา/อาหาร', healthData['allergies'], Icons.warning_amber),
+                        if (healthData['chronicConditions'] != null)
+                          _buildHealthDataCard('โรคประจำตัว', healthData['chronicConditions'], Icons.healing),
+                        if (healthData['surgicalHistory'] != null)
+                          _buildHealthDataCard('ประวัติผ่าตัด', healthData['surgicalHistory'], Icons.local_hospital),
+                        if ((healthData['prescriptions'] as List?)?.isNotEmpty == true) ...[
+                          const SizedBox(height: 16),
+                          _buildSectionHeader('ยาล่าสุด', Icons.medication),
+                          for (final p in healthData['prescriptions'] as List)
+                            _buildListTile(p['medications'] ?? p['notes'] ?? ''),
+                        ],
+                        if ((healthData['consultationNotes'] as List?)?.isNotEmpty == true) ...[
+                          const SizedBox(height: 16),
+                          _buildSectionHeader('บันทึกการรักษา', Icons.description),
+                          for (final n in healthData['consultationNotes'] as List)
+                            _buildListTile(n['chief_complaint'] ?? n['diagnosis'] ?? ''),
+                        ],
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
                 ],
-                if ((healthData['consultationNotes'] as List?)?.isNotEmpty == true) ...[
-                  const SizedBox(height: 12),
-                  const Text('บันทึกการรักษา:', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
-                  for (final n in healthData['consultationNotes'] as List)
-                    Text('- ${n['chief_complaint'] ?? n['diagnosis'] ?? ''}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ปิด', style: TextStyle(fontFamily: 'SukhumvitSet')),
-            ),
-          ],
+              ),
+            );
+          },
         );
       },
+    );
+  }
+
+  void _showLockedHealthDataDialog({bool isCounting = false, bool isCancelled = false}) {
+    if (!mounted) return;
+
+    final session = _emergencyHealthSession;
+    final triggeredAt = session?['triggered_at'] != null
+        ? DateTime.tryParse(session!['triggered_at'].toString())
+        : null;
+    final delayMinutes = (session?['release_delay_minutes'] as num?)?.toInt() ?? 5;
+    final remainingSec = triggeredAt != null
+        ? (delayMinutes * 60) - DateTime.now().difference(triggeredAt).inSeconds
+        : 0;
+    final remainingMin = (remainingSec / 60).ceil().clamp(0, delayMinutes);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.45,
+          minChildSize: 0.3,
+          maxChildSize: 0.6,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      children: [
+                        const SizedBox(height: 16),
+                        // Lock icon with blur effect (Privacy Mask)
+                        Center(
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Blurred placeholder content behind lock
+                              Container(
+                                width: 200,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: BackdropFilter(
+                                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                                    child: Container(
+                                      color: Colors.grey.shade200.withOpacity(0.5),
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Container(width: 80, height: 12, color: Colors.grey.shade300),
+                                          const SizedBox(height: 8),
+                                          Container(width: 120, height: 12, color: Colors.grey.shade300),
+                                          const SizedBox(height: 8),
+                                          Container(width: 60, height: 12, color: Colors.grey.shade300),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Lock icon overlay
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isCancelled ? Colors.grey.shade700 : Colors.orange.shade700,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isCancelled ? Icons.lock : Icons.lock_clock,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          isCancelled
+                              ? 'ข้อมูลสุขภาพถูกยกเลิก'
+                              : (isCounting
+                                  ? 'ข้อมูลสุขภาพกำลังถูกปลดล็อก'
+                                  : 'ข้อมูลสุขภาพไม่พร้อมใช้งาน'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: isCancelled ? Colors.grey.shade700 : Colors.orange.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          isCancelled
+                              ? 'ผู้ป่วยได้ยกเลิกการแชร์ข้อมูลสุขภาพสำหรับเหตุการณ์นี้'
+                              : (isCounting
+                                  ? 'ข้อมูลสุขภาพจะถูกปลดล็อกให้ผู้ช่วยเหลือที่ผ่านเงื่อนไขในอีก $remainingMin นาที'
+                                  : 'ไม่มีข้อมูลสุขภาพที่เปิดใช้งานสำหรับเหตุการณ์นี้'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        if (isCounting && remainingMin > 0)
+                          LinearProgressIndicator(
+                            value: 1.0 - (remainingMin / delayMinutes),
+                            backgroundColor: Colors.grey.shade200,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPatientInfoCard(Map<String, dynamic> patient) {
+    return Card(
+      elevation: 0,
+      color: Colors.blue.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.blue.shade100,
+                  child: Icon(Icons.person, color: Colors.blue.shade700),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        patient['name'] ?? 'ไม่ระบุชื่อ',
+                        style: const TextStyle(
+                          fontFamily: 'SukhumvitSet',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (patient['phone'] != null)
+                        Text(
+                          'เบอร์โทร: ${patient['phone']}',
+                          style: TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (patient['emergencyContact'] != null || patient['emergencyPhone'] != null) ...[
+              const Divider(height: 20),
+              Row(
+                children: [
+                  Icon(Icons.emergency, color: Colors.red.shade400, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${patient['emergencyContact'] ?? ''} ${patient['emergencyPhone'] ?? ''}',
+                      style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthDataCard(String label, dynamic value, IconData icon) {
+    final displayValue = value is List ? value.join(', ') : value.toString();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        elevation: 0,
+        color: Colors.grey.shade50,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: Colors.teal.shade700, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      displayValue,
+                      style: const TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.teal.shade700, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade800,
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildListTile(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 28, top: 4, bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.teal.shade300,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 14),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
