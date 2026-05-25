@@ -97,6 +97,20 @@ function broadcastThumbnailUpdate(incidentId, data) {
     });
 }
 
+/**
+ * Broadcast emergency health data release to responders in incident room
+ * @param {string} incidentId
+ * @param {object} releaseData - { sessionId, patientId, releasedFields, autoReleasedAt }
+ */
+function broadcastEmergencyHealthReleased(incidentId, releaseData) {
+    if (!io) return;
+    console.log(`[EmergencyHealth] Broadcasting health released for incident ${incidentId}`);
+    io.to(`video-${incidentId}`).emit('emergency-health-released', {
+        incidentId,
+        ...releaseData,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
@@ -105,6 +119,7 @@ module.exports = {
     broadcastEmergencyMessage,
     broadcastNewThaiMhungPhoto,
     broadcastThumbnailUpdate,
+    broadcastEmergencyHealthReleased,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

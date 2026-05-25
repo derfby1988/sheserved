@@ -42,8 +42,13 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     final double screenWidth = MediaQuery.of(context).size.width;
     final double videoWidth = (screenWidth - 32) * 0.45;
     double ar = 16 / 9;
-    if (_chewieController != null && _chewieController!.videoPlayerController.value.isInitialized) {
-      ar = _chewieController!.videoPlayerController.value.aspectRatio;
+    try {
+      final controller = _chewieController;
+      if (controller != null && controller.videoPlayerController.value.isInitialized) {
+        ar = controller.videoPlayerController.value.aspectRatio;
+      }
+    } catch (_) {
+      ar = 16 / 9;
     }
     final double videoHeight = videoWidth / ar;
     final double totalUiHeight = videoHeight + 120;
@@ -544,10 +549,15 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         controller.dispose();
         return;
       }
+      final aspectRatio = controller.value.aspectRatio;
+      if (!mounted || _videoPlayerController != controller) {
+        controller.dispose();
+        return;
+      }
       setState(() {
         _chewieController = ChewieController(
           videoPlayerController: controller,
-          aspectRatio: controller.value.aspectRatio,
+          aspectRatio: aspectRatio,
           autoPlay: true,
           looping: false,
           showControls: false,

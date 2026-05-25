@@ -19,13 +19,28 @@ class VideoPlayerWidget extends StatelessWidget {
     this.canViewUnblurred = false,
   });
 
+  bool _isControllerReady(ChewieController? controller) {
+    if (controller == null) return false;
+    try {
+      return controller.videoPlayerController.value.isInitialized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  double _safeAspectRatio(ChewieController? controller) {
+    if (controller == null) return 16 / 9;
+    try {
+      final value = controller.videoPlayerController.value;
+      return value.isInitialized ? value.aspectRatio : 16 / 9;
+    } catch (_) {
+      return 16 / 9;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    double aspectRatio = 16 / 9;
-    if (chewieController != null &&
-        chewieController!.videoPlayerController.value.isInitialized) {
-      aspectRatio = chewieController!.videoPlayerController.value.aspectRatio;
-    }
+    final aspectRatio = _safeAspectRatio(chewieController);
 
     return LayoutBuilder(
       builder: (context, outerConstraints) {
@@ -152,8 +167,7 @@ class VideoPlayerWidget extends StatelessWidget {
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    chewieController != null &&
-                            chewieController!.videoPlayerController.value.isInitialized
+                    _isControllerReady(chewieController)
                         ? Chewie(controller: chewieController!)
                         : Stack(
                             children: [

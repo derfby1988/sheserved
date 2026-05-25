@@ -169,6 +169,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+
   Future<void> _checkCanApproveDonationStatus() async {
     final userId = AuthService.instance.userId;
     if (userId == null) return;
@@ -1706,7 +1707,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return months[month - 1];
   }
 
-  void _handleSave() async {
+  Future<void> _handleSave() async {
     if (_user == null) return;
     setState(() => _isSaving = true);
 

@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import 'auth_service.dart';
 
@@ -415,6 +417,115 @@ class WebSocketService {
       'incidentId': incidentId, // ✅ ส่ง incidentId ไปยัง server
     });
     debugPrint('Sent emergency alert for category: $categoryId, incidentId: $incidentId, thaiMhung: $isThaiMhungEnabled');
+  }
+
+  /// Create emergency health release session on the Node.js server.
+  Future<Map<String, dynamic>?> createEmergencyHealthReleaseSession({
+    required String patientId,
+    required String incidentId,
+    String? videoId,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/emergency-health/sessions'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'patientId': patientId,
+              'incidentId': incidentId,
+              'videoId': videoId ?? incidentId,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        return Map<String, dynamic>.from(decoded as Map);
+      }
+
+      debugPrint(
+        'WebSocketService: createEmergencyHealthReleaseSession failed '
+        '(${response.statusCode}): ${response.body}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('WebSocketService: createEmergencyHealthReleaseSession error: $e');
+      return null;
+    }
+  }
+
+  /// Fetch emergency health data for a responder who has a valid access token.
+  Future<Map<String, dynamic>?> getIncidentHealthData({
+    required String incidentId,
+    required String responderId,
+  }) async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/emergency-health/$incidentId?responderId=$responderId',
+            ),
+            headers: const {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        return Map<String, dynamic>.from(decoded as Map);
+      }
+
+      if (response.statusCode == 403) {
+        debugPrint('WebSocketService: getIncidentHealthData access denied');
+        return null;
+      }
+
+      debugPrint(
+        'WebSocketService: getIncidentHealthData failed '
+        '(${response.statusCode}): ${response.body}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('WebSocketService: getIncidentHealthData error: $e');
+      return null;
+    }
+  }
+
+  /// Revoke all active emergency health sessions and tokens for a patient.
+  Future<Map<String, dynamic>?> revokeEmergencyHealthSessions({
+    required String patientId,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/emergency-health/revoke'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'patientId': patientId}),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        return Map<String, dynamic>.from(decoded as Map);
+      }
+
+      debugPrint(
+        'WebSocketService: revokeEmergencyHealthSessions failed '
+        '(${response.statusCode}): ${response.body}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('WebSocketService: revokeEmergencyHealthSessions error: $e');
+      return null;
+    }
   }
 
   /// Send Rescue Status Update (Feedback loop)

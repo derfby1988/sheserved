@@ -188,6 +188,11 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       if (_selectedEmergencyCategoryId != null) {
         ws.sendEmergencyAlert(userId: userId, categoryId: _selectedEmergencyCategoryId ?? '', videoId: videoId, type: 'video', isThaiMhungEnabled: true);
       }
+
+      if (videoId != null) {
+        await _maybeStartEmergencyHealthReleaseSession(videoId: videoId);
+      }
+
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปโหลดเหตุฉุกเฉินสำเร็จ ระบบกำลังประมวลผล'), backgroundColor: Colors.green));

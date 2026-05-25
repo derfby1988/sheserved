@@ -130,15 +130,33 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
     }
   }
 
+  bool _isControllerReady() {
+    final controller = widget.chewieController;
+    if (controller == null) return false;
+    try {
+      return controller.videoPlayerController.value.isInitialized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  double _safeAspectRatio() {
+    final controller = widget.chewieController;
+    if (controller == null) return 16 / 9;
+    try {
+      final value = controller.videoPlayerController.value;
+      return value.isInitialized ? value.aspectRatio : 16 / 9;
+    } catch (_) {
+      return 16 / 9;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final videoWidth = (constraints.maxWidth - 32) * 0.45;
-        double ar = 16 / 9;
-        if (widget.chewieController != null && widget.chewieController!.videoPlayerController.value.isInitialized) {
-          ar = widget.chewieController!.videoPlayerController.value.aspectRatio;
-        }
+        final ar = _safeAspectRatio();
         final videoHeight = videoWidth / ar;
 
         return Padding(
@@ -189,7 +207,9 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                                   _selectedOverlayPhotoIndex = null;
                                                 });
                                                 widget.onOverlayChanged?.call(false);
-                                                widget.chewieController?.videoPlayerController.play();
+                                                try {
+                                                  widget.chewieController?.videoPlayerController.play();
+                                                } catch (_) {}
                                               } else {
                                                 _galleryKey.currentState?.animateToIndex(currentIndex - 1);
                                               }
@@ -235,7 +255,9 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                                           _selectedOverlayPhotoIndex = null;
                                                         });
                                                         widget.onOverlayChanged?.call(false);
-                                                        widget.chewieController?.videoPlayerController.play();
+                                                        try {
+                                                          widget.chewieController?.videoPlayerController.play();
+                                                        } catch (_) {}
                                                       },
                                                       child: Container(
                                                         decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),

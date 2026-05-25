@@ -44,6 +44,8 @@ const adminRoutes = require('./routes/admin');
 // Escrow Services
 const escrowReleaseService = require('./services/escrow-release-service');
 const escrowDeadlineChecker = require('./services/escrow-deadline-checker');
+const emergencyHealthReleaseChecker = require('./services/emergency-health-release-checker');
+const emergencyHealthSessionService = require('./services/emergency-health-session-service');
 
 // Sync Service
 const { reconcileLocalToCloud } = require('./services/sync-service');
@@ -1183,6 +1185,72 @@ app.post('/api/users/:userId/preferences', async (req, res) => {
   }
 });
 
+// ============ EMERGENCY HEALTH API ============
+
+app.post('/api/emergency-health/sessions', async (req, res) => {
+  try {
+    const { patientId, incidentId, videoId } = req.body || {};
+    const result = await emergencyHealthSessionService.createReleaseSession({
+      patientId,
+      incidentId,
+      videoId,
+    });
+
+    if (!result.created) {
+      return res.status(200).json(result);
+    }
+
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error('[EmergencyHealth] create session error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/emergency-health/:incidentId', async (req, res) => {
+  try {
+    const { incidentId } = req.params;
+    const { responderId } = req.query;
+
+    if (!responderId) {
+      return res.status(400).json({ error: 'responderId is required' });
+    }
+
+    const result = await emergencyHealthSessionService.getIncidentHealthData({
+      incidentId,
+      responderId,
+    });
+
+    if (!result.allowed) {
+      return res.status(403).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('[EmergencyHealth] get health data error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/emergency-health/revoke', async (req, res) => {
+  try {
+    const { patientId } = req.body || {};
+
+    if (!patientId) {
+      return res.status(400).json({ error: 'patientId is required' });
+    }
+
+    const result = await emergencyHealthSessionService.revokeActiveSessions({
+      patientId,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('[EmergencyHealth] revoke sessions error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ============ PROFESSIONS API ============
 
 // Get all professions
@@ -1782,11 +1850,22 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // 🔒 เริ่ม Escrow Deadline Checker (scheduled job ทุก 15 นาที)
   escrowDeadlineChecker.start();
+
+  // 🚨 เริ่ม Emergency Health Release Checker (scheduled job ทุก 30 วินาที)
+  emergencyHealthReleaseChecker.start();
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received — shutting down gracefully');
   escrowDeadlineChecker.stop();
+  emergencyHealthReleaseChecker.stop();
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGINT', () => {
+  console.log('[Server] SIGINT received — shutting down gracefully');
+  escrowDeadlineChecker.stop();
+  emergencyHealthReleaseChecker.stop();
   server.close(() => process.exit(0));
 });

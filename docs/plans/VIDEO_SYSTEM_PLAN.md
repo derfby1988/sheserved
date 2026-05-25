@@ -911,62 +911,476 @@ final response = await http.get(url).timeout(const Duration(seconds: 5));
 
 ---
 
-## 🏥 Emergency Health Data Release System (Future Plan - 2026-03-15)
+## 🏥 Emergency Health Data Auto-Release System (Updated 2026-05-25 Rev.2)
 
-แผนระบบจัดการและส่งต่อข้อมูลสุขภาพส่วนบุคคลแบบอัตโนมัติในสภาวะวิกฤต (หมดสติ/ศูนย์เสียความทรงจำ) ภายใต้เงื่อนไขความปลอดภัยสูงสุด
-
-### 1. หลักการทำงาน (Core Concepts)
-ระบบจะทำการปลดล็อกและส่งข้อมูลสุขภาพที่จำเป็น (เช่น กรุ๊ปเลือด, ประวัติแพ้ยา, โรคประจำตัว) ให้กับกลุ่มบุคคลที่ได้รับอนุญาตเมื่อเข้าเงื่อนไขที่กำหนดไว้ล่วงหน้า โดยแบ่งเป็น 2 รูปแบบหลัก:
-
-1.  **Automatic Trigger (การตรวจจับอัตโนมัติ)**:
-    -   **Connected Devices & Health Sensors**: 
-        -   เชื่อมโยงกับอุปกรณ์ที่ผู้ใช้เพิ่มใน **Connected Devices Section** (หน้า Health Page)
-        -   **Smart Watch/Heart Rate Monitor**: ตรวจจับชีพจรผิดปกติขั้นวิกฤต
-        -   **Blood Pressure**: ตรวจจับค่าความดันที่อยู่ในระดับอันตราย
-        -   **Fall Detection**: ตรวจจับการหกล้มเฉียบพลัน
-    -   **OS Integration**: ดึงข้อมูลจาก Apple Health หรือ Google Fit
-    -   **Dead Man's Switch**: หากผู้ใช้งานไม่มีการตอบสนองต่อระบบ (Check-in) ภายในเวลาที่กำหนด (เช่น 12-24 ชั่วโมง) ในขณะที่เปิดโหมดเฝ้าระวัง
-2.  **Manual Trigger by Authorized Contacts (การอนุญาตโดยบุคคลใกล้ชิด)**:
-    -   ผู้ใช้งานสามารถกำหนดรายชื่อ "บุคคลที่ไว้วางใจ" (Authorized Contacts) ไว้ล่วงหน้า
-    -   บุคคลเหล่านี้สามารถกดปุ่ม "ขอเข้าถึงข้อมูลสุขภาพเพื่อการส่งต่อ" ได้เมื่อพบว่าผู้ใช้งานอยู่ในสภาวะวิกฤต
-### 2. ส่วนติดต่อผู้ใช้ (UI Integration) - หน้า Profile
-เพื่อความสะดวกในการตั้งค่า ระบบจะเพิ่มแถบเมนู (Tab) ใหม่ในหน้า **Profile** (ถัดจากแถบจิตอาสา) เพื่อใช้จัดการ:
--   **Configuration**: เปิด/ปิด Auto-Trigger และกำหนดค่าวิกฤต (ชีพจร/ความดัน) รวมถึง Dead Man's Switch
--   **Authorized Contacts (การจัดการรายชื่อบุคคล)**: 
-    -   ส่วนค้นหาและเพิ่มบุคคลที่อนุญาตให้มีสิทธิ "สั่งปลดล็อกข้อมูล" ในกรณีฉุกเฉิน (Search by ID/Phone)
-    -   แสดงรายการบุคคลที่เลือกไว้ พร้อมข้อมูลความสัมพันธ์และการจัดการ (ลบ/แก้ไข)
--   **Data Disclosure Scope (ขอบเขตข้อมูลที่เปิดเผย)**:
-    -   เลือกข้อมูลสุขภาพที่อนุญาตให้เปิดเผยได้ (เช่น กรุ๊ปเลือด, ประวัติแพ้ยา, โรคประจำตัว, ยาที่ใช้ประจำ)
--   **Recipient Filtering & Professionals (การคัดกรองผู้รับและวิชาชีพ)**:
-    -   เลือกกลุ่มวิชาชีพที่อนุญาตให้เข้าถึงข้อมูล (เช่น หมอ, พยาบาล, กู้ชีพ)
-    -   **Multi-Layer Proximity Control**:
-        -   **Level 1: GPS Radius**: กำหนดรัศมี (Radius) จากตำแหน่งที่เกิดเหตุ (เช่น 2 กิโลเมตร)
-        -   **Level 2: Bluetooth/Short-Range Verification**: (ตัวเลือกเสริม) ข้อมูลจะถูกปลดล็อกให้เจ้าหน้าที่เมื่อระบบตรวจพบว่าเครื่องของเจ้าหน้าที่และเหยื่ออยู่ในระยะสัญญาณ Bluetooth ของกันและกัน (On-Scene Only)
+ระบบปลดล็อกข้อมูลสุขภาพอัตโนมัติสำหรับทีมผู้ให้ช่วยเหลือ เมื่อเจ้าของอุปกรณ์หมดสติ/ไม่ตอบสนอง โดยผู้ใช้เป็นคนตั้งค่า scope, timer และ recipient เองทั้งหมดในแถบ **"จิตอาสา"** ของหน้า Profile — **ยังไม่ต้องสร้าง Tab ใหม่**
 
 ---
 
-### 3. การควบคุมสิทธิการรับข้อมูล (Recipient Filtering)
-เพื่อรักษาความเป็นส่วนตัวสูงสุด ข้อมูลจะไม่ถูกเปิดเผยต่อสาธารณะหรือ "ไทยมุง" แต่จะส่งให้เฉพาะบุคคลตามลำดับสิทธิดังนี้:
+### 1. Data Sources (ตารางสุขภาพที่ใช้)
 
--   **Professional Groups (กลุ่มวิชาชีพ)**: 
-    -   ส่งต่อให้ หมอ, พยาบาล, กู้ชีพ หรืออาชีพที่เกี่ยวข้อง (พิจารณาจาก `profession_id`) ที่กด "ตอบรับช่วยเหลือ" (Accept Help) ในเหตุการณ์นั้นๆ เท่านั้น
--   **User-Defined Occupations**: ผู้ใช้งานสามารถระบุกลุ่มอาชีพเพิ่มเติมที่ตนเองอนุญาตให้เข้าถึงข้อมูลได้ผ่านหน้า Settings
+อิงตาม pattern ของ `HealthDataPermissionRepository` (`lib/features/consultation/data/repositories/health_data_permission_repository.dart`) ซึ่งมีโครงสร้างการดึงข้อมูลสุขภาพแบบ field-based อยู่แล้ว:
+
+| ตาราง | ข้อมูลที่ดึง | ใช้ในสภาวะฉุกเฉิน |
+|-------|-------------|-------------------|
+| `consumer_profiles` | `health_info` (กลุ่มเลือด, แพ้ยา, โรคประจำตัว), `birthday`, `emergency_contact`, `emergency_phone` | ✅ ข้อมูลหลัก |
+| `health_data_logs` | weight, height, BMI history (`field_type`) | ✅ ประวัติร่างกาย |
+| `device_health_metrics` | heart rate, blood pressure, SpO2, blood sugar (`metric_type`) | ✅ ข้อมูลเซนเซอร์ |
+| `consultation_notes` | `chief_complaint`, `diagnosis`, `treatment_plan`, `recommendations` | ✅ ประวัติการรักษา |
+| `prescriptions` | `medications`, `notes`, `status`, `issued_at` | ✅ ยาประจำตัว |
+
+> **หมายเหตุ:** ระบบนี้ไม่ได้สร้างตารางสุขภาพใหม่ แต่ใช้ **View/Join** จากตารางเดิมทั้งหมด และเพิ่มตารางควบคุมการเข้าถึง (`settings`, `sessions`, `tokens`, `logs`) เท่านั้น
+
+#### 1.1 Field Key Mapping (enabled_fields ↔ แหล่งข้อมูล)
+
+> ⚠️ **Critical** — ต้องกำหนดก่อน Phase 1c เพื่อให้ UI Checkbox ตรงกับ query จริง
+> ต้องตรวจสอบก่อน deploy ว่า `health_info` JSONB ใน `consumer_profiles` มี key เหล่านี้จริงใน production
+
+| Key ใน `enabled_fields` | แหล่งข้อมูล | Column / Query | หมายเหตุ |
+|------------------------|------------|---------------|----------|
+| `blood_type` | `consumer_profiles` | `health_info->>'blood_type'` | JSONB extract |
+| `allergies` | `consumer_profiles` | `health_info->>'allergies'` | JSONB extract |
+| `chronic_conditions` | `consumer_profiles` | `health_info->>'chronic_conditions'` | JSONB extract |
+| `surgical_history` | `consumer_profiles` | `health_info->>'surgeries'` | ต้องตรวจสอบ key |
+| `emergency_contact` | `consumer_profiles` | `emergency_contact`, `emergency_phone` | direct columns |
+| `device_metrics` | `device_health_metrics` | query by `user_id` (ไม่ใช้ `consultation_id`) | latest 5 per metric_type |
+| `prescriptions` | `prescriptions` | query by `patient_id` เท่านั้น — **ห้ามใช้ `consultation_id`** | ใช้ `_fetchRecentPrescriptions(patientId)` |
+| `consultation_history` | `consultation_notes` | query by `patient_id` เท่านั้น — **ห้ามใช้ `consultation_id`** | ใช้ `_fetchRecentConsultationNotes(patientId)` |
+| `weight_history` | `health_data_logs` | `field_type = 'weight'` by `user_id` | มีใน `HealthDataPermissionRepository` แล้ว |
+
+> ⚠️ **Critical** — `HealthDataPermissionRepository._fetchPrescriptions()` และ `_fetchConsultationNotes()` ต้องสร้าง method ใหม่แยกต่างหากสำหรับ emergency context ที่ query โดย `patient_id` อย่างเดียว ไม่ใช่ `consultation_id` เพราะสภาวะฉุกเฉินไม่มี consultation
 
 ---
 
-### 3. มาตรการด้านความปลอดภัยและ Privacy
--   **Encrypted Storage**: ข้อมูลสุขภาพที่ละเอียดอ่อนจะถูกเข้ารหัส (Encryption at Rest) ในฐานข้อมูล
--   **Timed Access Token**: ผู้รับข้อมูล (Responders) จะได้รับ Token ชั่วคราวในการเข้าดูข้อมูล ซึ่งจะหมดอายุทันทีเมื่อภารกิจสิ้นสุด (`resolved`)
--   **Audit Trail**: ระบบจะบันทึก Log ทุกครั้งที่มีการเข้าถึงข้อมูล (ใคร, เข้าถึงเมื่อไหร่, ผ่านเงื่อนไขใด) เพื่อใช้ตรวจสอบย้อนหลังได้ 100%
--   **Explicit Consent**: ผู้ใช้งานต้องทำการกดยอมรับนโยบายและตั้งค่าสิทธิด้วยตนเองทั้งหมด (Opt-in Only)
+### 2. User Configurable Settings (UI ในแถบ "จิตอาสา")
+
+#### 2.1 Full Tab Layout — แถบ "จิตอาสา" หลังเพิ่ม Section ใหม่
+
+> ไม่เปลี่ยน Section 1–3 ที่มีอยู่แล้ว (**`_buildNotificationSettings()`**) เพียงต่อท้าย Section ที่ 4 ลงไป
+
+```text
+┌──────────────────────────────────────────┐
+│  การตั้งค่าการแจ้งเตือน                   │  ← header (มีอยู่แล้ว)
+├──────────────────────────────────────────┤
+│  [1] แจ้งเหตุฉุกเฉินใกล้ตัว   [Switch]   │  ← Thai Mhung (มีอยู่แล้ว)
+│       └─ Radius Slider (ถ้าเปิด)         │
+├──────────────────────────────────────────┤
+│  [2] แจ้งเตือนช่วยเปิดทาง      [Switch]   │  ← Yield Way (มีอยู่แล้ว)
+│       └─ Radius Slider (ถ้าเปิด)         │
+├──────────────────────────────────────────┤
+│  [3] กำหนดอาชีพที่เห็นไม่เบลอ            │  ← Unblurred Profession (มีอยู่แล้ว)
+│       (แสดงถ้า Thai Mhung หรือ YW เปิด)  │
+├──────────────────────────────────────────┤
+│  [4] ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ  🆕  │  ← Section ใหม่ (เพิ่มใน Phase 1c)
+│       (แสดงเสมอ — ไม่ขึ้นกับ toggle อื่น) │
+└──────────────────────────────────────────┘
+```
+
+> **Implementation**: ต่อท้าย `_buildUnblurredProfessionSection()` ด้วย `_buildEmergencyHealthSection()` ใหม่ใน `_buildNotificationSettings()`
 
 ---
 
-### 4. โครงสร้างข้อมูลเบื้องต้น (Schema Proposal)
+#### 2.2 UI Proposal: "ข้อมูลสุขภาพฉุกเฉิน" — Section ที่ 4 ในแถบจิตอาสา
 
+เพิ่ม Section ชื่อ **"ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ"** แบ่งเป็น **2 ระดับ**:
 
-[SQL Schema Implemented]
+**ระดับที่ 1 — Card หลัก (แสดงเสมอ):** Master Toggle + สถานะปัจจุบัน
+**ระดับที่ 2 — Sub-panels (แสดงเฉพาะเมื่อ Toggle = ON):** ตั้งค่า Timer, Granularity, Recipients
 
+```text
+╔══════════════════════════════════════════════╗
+║  LEVEL 1 — Card หลัก (แสดงเสมอ)              ║
+╠══════════════════════════════════════════════╣
+║  🏥  ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ          ║
+║      เปิดเผยข้อมูลสุขภาพอัตโนมัติเมื่อ       ║
+║      เกิดเหตุฉุกเฉินและไม่มีการตอบสนอง       ║
+║                              [Switch ON/OFF] ║
+╠══════════════════════════════════════════════╣
+║  LEVEL 2 — Sub-panels (เลื่อนลงมา เมื่อ ON)  ║
+║  ┌──────────────────────────────────────┐   ║
+║  │ ⏱ ระยะเวลาก่อนเปิดเผยอัตโนมัติ      │   ║
+║  │ [3 นาที] [5 นาที] [15 นาที] [กำหนดเอง]│  ║
+║  └──────────────────────────────────────┘   ║
+║  ┌──────────────────────────────────────┐   ║
+║  │ 📋 ข้อมูลที่จะเปิดเผย                │   ║
+║  │ ☑ กลุ่มเลือด    ☑ โรคประจำตัว        │   ║
+║  │ ☑ ยาที่แพ้      ☑ ผู้ติดต่อฉุกเฉิน   │   ║
+║  │ ☐ ประวัติผ่าตัด ☐ ยาประจำตัว         │   ║
+║  │ ☐ ข้อมูลเซนเซอร์ ☐ ประวัติแพทย์     │   ║
+║  │ ☐ ใบสั่งยา                           │   ║
+║  │  [chip "กรอกข้อมูล" → Health Profile] │   ║
+║  └──────────────────────────────────────┘   ║
+║  ┌──────────────────────────────────────┐   ║
+║  │ 👥 เปิดเผยให้กับ                     │   ║
+║  │ ☑ เฉพาะผู้ที่กด "ตอบรับช่วยเหลือ"   │   ║
+║  │ ☐ เฉพาะอาชีพทางการแพทย์             │   ║
+║  │ ☐ เฉพาะผู้ได้รับการรับรอง            │   ║
+║  │ ☐ ระบุบุคคลเฉพาะ (Whitelist)         │   ║
+║  │ ─────────────────────────────────── │    ║
+║  │ ⚠ [Emergency Fallback Toggle]        │   ║
+║  │   ถ้าไม่มีผู้ผ่านเงื่อนไข ให้ขยาย    │   ║
+║  └──────────────────────────────────────┘   ║
+╚══════════════════════════════════════════════╝
+```
+
+**Transition UX:**
+- Switch ON ครั้งแรก → Consent Dialog → ถ้า confirm → `AnimatedSize` ขยาย Level 2 ลงมา
+- Switch OFF → Level 2 ยุบขึ้น (`AnimatedSize`) → revoke tokens ทันที
+- ใช้ `AnimatedSize` + `AnimatedOpacity` แทน `if (enabled) ...[]` เพื่อ UX นุ่มนวล
+
+---
+
+#### A. Level 1 — Master Toggle (Card หลัก)
+```text
+┌──────────────────────────────────────────────────────────┐
+│  [Icon: medical_services]                                  │
+│  เปิดให้ทีมช่วยเหลือเข้าถึงข้อมูลสุขภาพ                   │
+│  เมื่อเกิดเหตุฉุกเฉินและไม่มีการตอบสนอง                   │
+│                                          [Switch: ON/OFF]│
+└──────────────────────────────────────────────────────────┘
+```
+- **Default = OFF** (Privacy-First)
+- เมื่อ **ON ครั้งแรก** → แสดง **Consent Dialog** (PDPA) ก่อนบันทึก:
+  ```text
+  ┌──────────────────────────────────────────────────────────┐
+  │  ข้อมูลที่คุณเลือกจะถูกเปิดเผยต่อผู้ช่วยเหลือที่กำหนด     │
+  │  ในสภาวะฉุกเฉินเท่านั้น ระบบจะบันทึก Audit Trail ทุกครั้ง │
+  │  ที่มีการเข้าถึงข้อมูลของคุณ                               │
+  │                         [ยืนยัน — รับทราบและยินยอม]        │
+  │                         [ยกเลิก]                          │
+  └──────────────────────────────────────────────────────────┘
+  ```
+  บันทึก `consent_given_at` ลง `emergency_health_data_settings` — ถ้ายังไม่ยืนยัน ให้ Switch กลับเป็น OFF อัตโนมัติ
+- เมื่อ **ON** (หลัง consent) → แสดง sub-panels B–E ด้านล่าง
+- เมื่อ **OFF** → ซ่อนทั้งหมด และไม่มีการ auto-release ใดๆ
+  - ถ้า OFF ระหว่าง incident ที่กำลังดำเนินอยู่ → Revoke tokens ทั้งหมด + session status → `expired`
+
+#### B. Level 2 — Auto-Release Timer — "เวลารอก่อนเปิดเผยอัตโนมัติ"
+```text
+┌──────────────────────────────────────────────────────────┐
+│  ระยะเวลาก่อนเปิดเผยข้อมูลอัตโนมัติ                      │
+│  [ 3 นาที ] [ 5 นาที ] [ 15 นาที ] [ 30 นาที ] [กำหนดเอง]│
+│                                                          │
+│  หมายเหตุ: ระบบจะส่งการแจ้งเตือนให้คุณก่อนเสมอ          │
+│  หากไม่ตอบสนองภายในเวลาที่กำหนด จึงจะเปิดเผยต่อทีมช่วยเหลือ│
+└──────────────────────────────────────────────────────────┘
+```
+- ค่าที่เลือกได้: `3`, `5`, `15`, `30` นาที หรือ `custom` (1–120 นาที)
+- UX แนว iPhone Emergency SOS / Apple Watch Fall Detection
+
+#### C. Level 2 — Panic Cancel (Countdown Screen)
+เมื่อ trigger เกิดขึ้น (ผู้ใช้กดปุ่มฉุกเฉิน / เซนเซอร์ตรวจจับ / Dead Man's Switch) ระบบจะ:
+1. แสดง **Full-screen Alert** พร้อมเสียงดัง + นับถอยหลัง (Panic Countdown)
+2. มีปุ่มใหญ่สีเขียว **"ฉันปลอดภัย — ยกเลิกการปลดล็อก"** (Panic Cancel)
+3. หากผู้ใช้กดยกเลิก → สถานะ session เปลี่ยนเป็น `cancelled` → ไม่มีข้อมูลใดถูกส่ง
+4. หากไม่กดภายในเวลาที่กำหนด → ระบบ auto-release ข้อมูลตาม scope ที่ผู้ใช้ตั้งไว้
+
+> **นโยบาย:** การแจ้งเตือน Panic Cancel ต้องรบกวนผู้ใช้ให้มากที่สุดเท่าที่จะเป็นไปได้ (High-priority notification, sound, vibration) เพื่อป้องกันการปล่อยข้อมูลโดยไม่ตั้งใจ
+
+#### D. Level 2 — Data Granularity — "ข้อมูลที่จะเปิดเผย"
+Checkbox ต่อรายการ (ผู้ใช้เลือกเองได้ทุกรายการ):
+- [ ] กลุ่มเลือด
+- [ ] โรคประจำตัว
+- [ ] ยาที่แพ้
+- [ ] ผู้ติดต่อฉุกเฉิน
+- [ ] ประวัติการผ่าตัด
+- [ ] ยาประจำตัว
+- [ ] ข้อมูลจากอุปกรณ์ (เซนเซอร์: ชีพจร, ความดัน)
+- [ ] ประวัติการปรึกษาแพทย์
+- [ ] ใบสั่งยา
+
+> หากข้อมูลยังไม่ได้กรอกในระบบ ให้แสดง chip "กรอกข้อมูล" → navigate ไปหน้า Health Profile
+
+#### E. Level 2 — Recipient Filtering — "เปิดเผยให้กับ"
+**กรองคัดเฉพาะบุคคลที่เข้าร่วมช่วยเหลือ** (ไม่ใช่แค่ profession):
+- [ ] **เฉพาะผู้ที่กด "ตอบรับช่วยเหลือ"** ในเหตุการณ์นั้น (Active Responder Only) — **ค่าเริ่มต้น และแนะนำให้เลือก**
+- [ ] **เฉพาะอาชีพทางการแพทย์** (หมอ/พยาบาล/กู้ชีพ/ปฐมพยาบาล)
+- [ ] **เฉพาะบุคคลที่ได้รับการรับรอง** (Verified Responder)
+- [ ] **ระบุบุคคลเฉพาะเจาะจง** (Whitelist by User ID / Phone) — สำหรับผู้ใช้ที่ต้องการระบุคนที่ไว้ใจได้แบบรายบุคคล
+
+> **หลักการ:** ระบบจะตรวจสอบเงื่อนไขแบบ **AND** — ต้องผ่านทุก checkbox ที่ผู้ใช้เปิดไว้จึงจะได้รับสิทธิ เช่น ถ้าเลือก "Active Responder Only" + "อาชีพทางการแพทย์" → มีสิทธิ์เฉพาะคนที่กดรับเหตุ **และ** เป็นอาชีพทางการแพทย์เท่านั้น
+
+> ⚠️ **Emergency Fallback Warning** — ต้องแจ้งเตือนในหน้า settings: *"หากไม่มีผู้ช่วยเหลือที่ผ่านเงื่อนไขทั้งหมด ข้อมูลจะไม่ถูกส่งให้ใครเลย"* พร้อม option เสริม:
+> - [ ] **Emergency Fallback** — ถ้าไม่มีผู้ผ่านเงื่อนไข ให้ขยายไปยัง Active Responder ทุกคนแทน
+
+**Query สำหรับ Recipient Filtering** (ตาราง `incident_responses` ที่มีอยู่แล้ว):
+```sql
+SELECT ir.volunteer_id
+FROM incident_responses ir
+JOIN user_group_roles ugr ON ugr.user_id = ir.volunteer_id
+JOIN professions p ON p.id = ugr.profession_id
+WHERE ir.video_id = :incident_id
+  AND ir.status IN ('en_route', 'arrived', 'accepted')  -- Active Responder
+  AND (:require_medical = false OR p.category = 'medical')  -- Medical filter
+  AND (:require_verified = false OR ugr.is_verified = true)  -- Verified filter
+```
+
+---
+
+### 3. Trigger Architecture
+
+ระบบรองรับ 3 ช่องทางการ trigger โดยเรียงตามความรุนแรง:
+
+| ลำดับ | Trigger | วิธีตรวจจับ | ลำดับความสำคัญ |
+|-------|---------|------------|---------------|
+| 1 | **Manual Emergency** | อัปโหลดวิดีโอ/ภาพฉุกเฉินสำเร็จ (`_uploadIncident()` ใน `emergency_reporting_logic.dart`) | Phase 2b |
+| 2 | **Sensor Anomaly** | ดึงข้อมูลจาก `device_health_metrics` หรือ Apple Health / Google Fit ที่มีค่าผิดปกติขั้นวิกฤต | Phase 4 |
+| 3 | **Dead Man's Switch** | ผู้ใช้ไม่ Check-in ภายในเวลาที่กำหนด (เช่น 12–24 ชม.) ในขณะที่เปิดโหมดเฝ้าระวัง | Phase 4 |
+
+> ⚠️ **Critical — Trigger Entry Point**: Manual Trigger ต้องเชื่อมที่ `ws.sendEmergencyAlert(...)` ใน `emergency_reporting_logic.dart` ไม่ใช่การ "กดปุ่ม" เพราะ `videoId` ยังไม่มีจนกว่า upload จะสำเร็จ
+
+**Flow การทำงานเมื่อ Trigger:**
+1. `_uploadIncident()` สำเร็จ → ได้ `videoId` → ตรวจสอบ `emergency_health_data_settings.is_enabled` → ถ้า OFF หยุดทันที
+2. สร้าง record ใน `emergency_health_release_sessions` (status = `counting`) via **Node.js server** (service_role)
+3. Flutter แสดง **Panic Cancel Notification** + นับถอยหลังตาม `release_delay_minutes`
+4. หากผู้ใช้กด "ยกเลิก" → PATCH session → `cancelled` → Flutter subscribe realtime รับการเปลี่ยนแปลง
+5. **Node.js cron** (ทุก 30 วินาที) ตรวจ sessions ที่ `status='counting'` และ `triggered_at + release_delay_minutes <= NOW()` → UPDATE → `released` → generate access tokens
+6. Supabase Realtime broadcast → Flutter `EmergencyLivePage` รับ event → แสดง Floating Label บนหมุด
+
+> ⚠️ **Critical — ห้ามทำ Countdown บน Client เท่านั้น**: iOS kill background services ภายใน 30 วินาที Countdown ต้องอยู่บน **Node.js server** (websocket-server ที่มีอยู่แล้ว) Flutter เป็นแค่ subscriber ผ่าน Supabase Realtime
+
+**Node.js Server Cron (เพิ่มใน websocket-server):**
+```javascript
+// ตรวจทุก 30 วินาที — เพิ่มใน websocket-server/services/
+setInterval(async () => {
+  const due = await pool.query(`
+    SELECT id, patient_id, incident_id, released_fields
+    FROM emergency_health_release_sessions
+    WHERE status = 'counting'
+      AND triggered_at + (release_delay_minutes * interval '1 minute') <= NOW()
+  `);
+  for (const session of due.rows) {
+    await pool.query(`UPDATE emergency_health_release_sessions SET status='released', auto_released_at=NOW() WHERE id=$1`, [session.id]);
+    // generate access tokens สำหรับ active responders ของ incident นั้น
+    await generateAccessTokensForResponders(session);
+  }
+}, 30_000);
+```
+
+---
+
+### 4. Volunteer Map Dialog + Floating Label
+
+เมื่อผู้มีสิทธิ (Responder ที่ผ่าน Recipient Filtering) เปิดแผนที่ใน `EmergencyLivePage`:
+
+- **Floating Label บนหมุด**: เหตุการณ์ที่มีข้อมูลสุขภาพพร้อมใช้ จะแสดง **ป้ายลอยสีม่วง/แดง** เหนือหมุดแผนที่:
+  ```text
+  ┌──────────┐
+  │ 🏥 ข้อมูลสุขภาพ │  ← Label ลอยปรากฏเหนือหมุด
+  └──────────┘
+        📍
+  ```
+- **Tap ที่หมุด → เปิด Dialog/Sheet** แสดงข้อมูลสุขภาพที่ผู้ใช้อนุญาตไว้
+- **Token-based Access**: ข้อมูลใน Dialog ดึงผ่าน Node.js API ที่ต้องใช้ `emergency_access_token` จากตาราง `emergency_health_access_tokens` ซึ่ง:
+  - หมดอายุเมื่อเหตุการณ์ `resolved` หรือ `expires_at` ครบ
+  - ถูก revoke ทันทีถ้าเจ้าของปิด Master Toggle ระหว่าง incident (`revoked_at = NOW()`)
+  - Token ผูกกับ `responder_id` — ใช้ข้ามคนไม่ได้
+- **Privacy Mask**: หาก Responder ไม่ผ่านเงื่อนไขที่ผู้ใช้ตั้งไว้ → หมุดไม่แสดง Label และ Dialog แจ้ง "ยังไม่มีสิทธิเข้าถึง"
+- **Realtime Subscription** ใน `EmergencyLivePage` (เพิ่มคล้าย `_supabaseInteractionSub` ที่มีอยู่แล้ว):
+  ```dart
+  // Subscribe เมื่อ session ของ incident นี้เปลี่ยนเป็น 'released'
+  _healthReleaseSub = _client
+    .channel('health_release:$videoId')
+    .onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'emergency_health_release_sessions',
+      filter: PostgresChangeFilter(type: FilterType.eq, column: 'incident_id', value: videoId),
+      callback: (payload) {
+        if (payload.newRecord['status'] == 'released') {
+          setState(() => _healthDataAvailable = true); // แสดง Floating Label
+        }
+      },
+    ).subscribe();
+  ```
+
+---
+
+### 5. Audit Trail
+
+ตาราง `health_data_access_logs` บันทึกทุกการเข้าถึง:
+
+| คอลัมน์ | รายละเอียด |
+|---------|-----------|
+| `id` | UUID Primary Key |
+| `incident_id` | FK → `videos(id)` (เหตุการณ์) |
+| `patient_id` | FK → `users(id)` (เจ้าของข้อมูล) |
+| `accessor_id` | FK → `users(id)` (คนเปิดดู) |
+| `accessor_profession_id` | FK → `professions(id)` |
+| `accessed_fields` | JSONB — รายการ fields ที่เปิดดูตอนนั้น |
+| `access_method` | `map_dialog`, `emergency_card`, `auto_release` |
+| `token_id` | UUID ของ access token ที่ใช้ |
+| `location_lat`, `location_lng` | พิกัดของผู้เข้าถึงตอนเปิดดู |
+| `created_at` | Timestamp |
+
+> ใช้สำหรับตรวจสอบย้อนหลัง 100% ว่าใครเข้าถึงข้อมูลอะไร เมื่อไหร่ ที่ไหน
+
+---
+
+### 6. Implementation Priority (Phase)
+
+เรียงตามความจำเป็นทางธุรกิจและความเสี่ยง:
+
+#### Phase 1a — Schema + RLS + Realtime (Critical)
+- สร้าง migration SQL สำหรับ 4 ตารางใหม่ (ดู Section 7):
+  - `emergency_health_data_settings` — การตั้งค่าของผู้ใช้ + `consent_given_at`
+  - `emergency_health_release_sessions` — สถานะ countdown / panic / released
+  - `emergency_health_access_tokens` — token ที่ผูกกับ responder แต่ละคน
+  - `health_data_access_logs` — audit trail (ย้ายมาจาก Phase 4 เพราะจำเป็นตั้งแต่เริ่ม)
+- กำหนด RLS ทุกตาราง (owner read/write, service_role write, accessor read own logs)
+- Enable Supabase Realtime บน `emergency_health_release_sessions`
+
+#### Phase 1b — Field Key Verification (Critical)
+- ตรวจสอบใน production ว่า `consumer_profiles.health_info` JSONB มี keys: `blood_type`, `allergies`, `chronic_conditions`, `surgeries` จริงหรือไม่
+- สร้าง method ใหม่ใน `EmergencyHealthRepository`:
+  - `_fetchRecentPrescriptions(patientId)` — query `prescriptions` by `patient_id` เท่านั้น
+  - `_fetchRecentConsultationNotes(patientId)` — query `consultation_notes` by `patient_id` เท่านั้น
+- สร้าง `EmergencyHealthRepository` (class ใหม่แยกจาก `HealthDataPermissionRepository`)
+
+#### Phase 1c — UI Settings + Consent Dialog (Critical)
+- เพิ่ม Section "ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ" ใน `ProfilePage._buildNotificationSettings()`
+- Master Toggle + Consent Dialog (PDPA) + Panels B–E
+- บันทึก/โหลด settings ผ่าน `EmergencyHealthRepository`
+
+#### Phase 2a — Node.js Server Cron (High)
+- เพิ่ม cron service ใน `websocket-server/services/emergency-health-release-checker.js`
+- ตรวจทุก 30 วินาที: sessions `status='counting'` ที่ครบเวลา → UPDATE `released` → generate tokens
+- Supabase Realtime broadcast อัตโนมัติหลัง UPDATE
+
+#### Phase 2b — Flutter Trigger Hook + Panic Cancel (High)
+- Hook ที่ `_uploadIncident()` / `ws.sendEmergencyAlert(...)` ใน `emergency_reporting_logic.dart`
+- ตรวจ `is_enabled` → POST to Node.js → สร้าง session
+- แสดง Panic Cancel Notification (Fullscreen + Sound + Vibration)
+- Subscribe Supabase Realtime บน session ของตัวเอง
+
+#### Phase 3a — Token Validation + Realtime Sub (High)
+- Node.js API endpoint: `GET /api/emergency-health/:incidentId` ตรวจ token + RLS
+- Flutter `EmergencyLivePage`: subscribe `emergency_health_release_sessions` channel
+- Token revocation เมื่อ Master Toggle ปิดระหว่าง incident
+
+#### Phase 3b — Floating Label + Map Dialog (High)
+- Floating Label Badge บนหมุดแผนที่ใน `emergency_map_section.dart`
+- Dialog/Sheet แสดงข้อมูลสุขภาพ พร้อม Privacy Mask สำหรับผู้ไม่มีสิทธิ์
+
+#### Phase 4 — Sensor Trigger + Dead Man's Switch (Medium)
+- Sensor Anomaly (Apple Health / Google Fit / `device_health_metrics`)
+- Dead Man's Switch + Check-in notification
+
+---
+
+### 7. Database Schema (SQL)
+
+```sql
+-- ============================================================
+-- TABLE 1: การตั้งค่าของผู้ใช้ (User-configurable in Volunteer Tab)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS emergency_health_data_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    is_enabled BOOLEAN DEFAULT false,
+    release_delay_minutes INT NOT NULL DEFAULT 5 CHECK (release_delay_minutes BETWEEN 1 AND 120),
+    enabled_fields JSONB NOT NULL DEFAULT '["blood_type","allergies","emergency_contact"]',
+    -- enabled_fields keys: blood_type | allergies | chronic_conditions | surgical_history |
+    --   emergency_contact | device_metrics | prescriptions | consultation_history | weight_history
+    require_active_responder BOOLEAN DEFAULT true,   -- Active Responder (ค่าเริ่มต้น ON)
+    require_medical_profession BOOLEAN DEFAULT false,
+    require_verified BOOLEAN DEFAULT false,
+    emergency_fallback BOOLEAN DEFAULT false,         -- ขยายสิทธิถ้าไม่มีคนผ่านเงื่อนไข
+    whitelisted_user_ids UUID[] DEFAULT '{}',
+    consent_given_at TIMESTAMPTZ,                    -- PDPA: ต้องมีก่อนเปิดใช้ได้
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id)
+);
+
+ALTER TABLE emergency_health_data_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner full access" ON emergency_health_data_settings
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- TABLE 2: สถานะ countdown / panic / auto-release
+-- ============================================================
+CREATE TABLE IF NOT EXISTS emergency_health_release_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID REFERENCES videos(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    release_delay_minutes INT NOT NULL DEFAULT 5,
+    triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    panic_cancelled_at TIMESTAMPTZ,
+    auto_released_at TIMESTAMPTZ,
+    released_fields JSONB,
+    status VARCHAR(20) NOT NULL DEFAULT 'counting'
+        CHECK (status IN ('counting','cancelled','released','expired')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE emergency_health_release_sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Patient reads own sessions" ON emergency_health_release_sessions
+    FOR SELECT USING (auth.uid() = patient_id);
+CREATE POLICY "Patient cancels own sessions" ON emergency_health_release_sessions
+    FOR UPDATE USING (auth.uid() = patient_id);
+-- INSERT และ UPDATE status='released' ต้องทำผ่าน service_role (Node.js server) เท่านั้น
+
+ALTER PUBLICATION supabase_realtime ADD TABLE emergency_health_release_sessions;
+
+-- ============================================================
+-- TABLE 3: Access Tokens (ผูกกับ responder แต่ละคน)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS emergency_health_access_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES emergency_health_release_sessions(id) ON DELETE CASCADE,
+    responder_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    incident_id UUID REFERENCES videos(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,     -- หมดอายุเมื่อ incident resolved (set โดย server)
+    revoked_at TIMESTAMPTZ,              -- revoke ทันทีถ้า patient ปิด Master Toggle
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (session_id, responder_id)    -- 1 token ต่อ 1 responder ต่อ 1 session
+);
+
+ALTER TABLE emergency_health_access_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Responder reads own token" ON emergency_health_access_tokens
+    FOR SELECT USING (auth.uid() = responder_id);
+-- INSERT/UPDATE ทำผ่าน service_role (Node.js server) เท่านั้น
+
+-- ============================================================
+-- TABLE 4: Audit Trail การเข้าถึงข้อมูลสุขภาพ
+-- ============================================================
+CREATE TABLE IF NOT EXISTS health_data_access_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID REFERENCES videos(id) ON DELETE SET NULL,
+    patient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    accessor_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    accessor_profession_id UUID REFERENCES professions(id) ON DELETE SET NULL,
+    accessed_fields JSONB NOT NULL DEFAULT '{}',
+    access_method VARCHAR(40) NOT NULL
+        CHECK (access_method IN ('map_dialog','emergency_card','auto_release','consultation_request')),
+    token_id UUID REFERENCES emergency_health_access_tokens(id) ON DELETE SET NULL,
+    location_lat DECIMAL(10,8),
+    location_lng DECIMAL(11,8),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE health_data_access_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Patient reads own audit" ON health_data_access_logs
+    FOR SELECT USING (auth.uid() = patient_id);
+CREATE POLICY "Accessor reads own audit" ON health_data_access_logs
+    FOR SELECT USING (auth.uid() = accessor_id);
+-- INSERT ผ่าน service_role เท่านั้น (append-only, ห้าม UPDATE/DELETE)
+
+-- ============================================================
+-- Indexes
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_eh_settings_user ON emergency_health_data_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_eh_sessions_patient ON emergency_health_release_sessions(patient_id);
+CREATE INDEX IF NOT EXISTS idx_eh_sessions_status ON emergency_health_release_sessions(status);  -- สำหรับ Node.js cron
+CREATE INDEX IF NOT EXISTS idx_eh_sessions_incident ON emergency_health_release_sessions(incident_id);
+CREATE INDEX IF NOT EXISTS idx_eh_tokens_responder ON emergency_health_access_tokens(responder_id);
+CREATE INDEX IF NOT EXISTS idx_eh_tokens_session ON emergency_health_access_tokens(session_id);
+CREATE INDEX IF NOT EXISTS idx_hd_logs_patient ON health_data_access_logs(patient_id);
+CREATE INDEX IF NOT EXISTS idx_hd_logs_accessor ON health_data_access_logs(accessor_id);
+CREATE INDEX IF NOT EXISTS idx_hd_logs_incident ON health_data_access_logs(incident_id);
+```
 
 ---
 

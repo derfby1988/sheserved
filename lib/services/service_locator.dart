@@ -15,6 +15,8 @@ import '../features/pharmacy/data/repositories/pharmacy_repository.dart';
 import '../features/pharmacy/data/services/fda_api_service.dart';
 import '../features/consultation/data/repositories/consultation_repository.dart';
 import '../features/consultation/data/repositories/health_data_permission_repository.dart';
+import '../features/emergency/data/repositories/emergency_health_settings_repository.dart';
+import '../features/emergency/data/repositories/emergency_health_repository.dart';
 import '../features/admin/data/repositories/body_region_repository.dart';
 import '../features/admin/data/repositories/profession_repository.dart';
 import '../features/admin/data/repositories/registration_repository.dart';
@@ -43,6 +45,8 @@ class ServiceLocator {
   ChatRepository? _chatRepository;
   ConsultationRepository? _consultationRepository;
   HealthDataPermissionRepository? _healthPermissionRepository;
+  EmergencyHealthSettingsRepository? _emergencyHealthSettingsRepository;
+  EmergencyHealthRepository? _emergencyHealthRepository;
   BodyRegionRepository? _bodyRegionRepository;
   ProfessionRepository? _professionRepository;
   RegistrationRepository? _registrationRepository;
@@ -178,6 +182,8 @@ class ServiceLocator {
       
       _consultationRepository = ConsultationRepository(supabaseClient);
       _healthPermissionRepository = HealthDataPermissionRepository(supabaseClient);
+      _emergencyHealthSettingsRepository = EmergencyHealthSettingsRepository(supabaseClient);
+      _emergencyHealthRepository = EmergencyHealthRepository(supabaseClient);
       _bodyRegionRepository = BodyRegionRepository(supabaseClient);
       _professionRepository = ProfessionRepository(supabaseClient);
       _registrationRepository = RegistrationRepository(supabaseClient);
@@ -241,6 +247,22 @@ class ServiceLocator {
           HealthDataPermissionRepository(Supabase.instance.client);
     }
     return _healthPermissionRepository!;
+  }
+
+  EmergencyHealthSettingsRepository get emergencyHealthSettingsRepository {
+    if (_emergencyHealthSettingsRepository == null) {
+      _emergencyHealthSettingsRepository =
+          EmergencyHealthSettingsRepository(Supabase.instance.client);
+    }
+    return _emergencyHealthSettingsRepository!;
+  }
+
+  EmergencyHealthRepository get emergencyHealthRepository {
+    if (_emergencyHealthRepository == null) {
+      _emergencyHealthRepository =
+          EmergencyHealthRepository(Supabase.instance.client);
+    }
+    return _emergencyHealthRepository!;
   }
 
   BodyRegionRepository get bodyRegionRepository {

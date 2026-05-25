@@ -37,14 +37,34 @@ class _GlassmorphismVideoControlsState extends State<GlassmorphismVideoControls>
     if (mounted) setState(() {});
   }
 
+  bool _isControllerReady() {
+    final controller = widget.controller;
+    if (controller == null) return false;
+    try {
+      return controller.value.isInitialized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  T? _safeValue<T>(T Function(VideoPlayerController controller) reader) {
+    final controller = widget.controller;
+    if (controller == null) return null;
+    try {
+      return reader(controller);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.controller == null || !widget.controller!.value.isInitialized) {
+    if (!_isControllerReady()) {
       return const SizedBox.shrink();
     }
 
-    final isPlaying = widget.controller!.value.isPlaying;
-    final volume = widget.controller!.value.volume;
+    final isPlaying = _safeValue((controller) => controller.value.isPlaying) ?? false;
+    final volume = _safeValue((controller) => controller.value.volume) ?? 1.0;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -74,30 +94,46 @@ class _GlassmorphismVideoControlsState extends State<GlassmorphismVideoControls>
                 _buildControlButton(
                   icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   onTap: () {
-                    isPlaying ? widget.controller!.pause() : widget.controller!.play();
+                    final controller = widget.controller;
+                    if (controller == null) return;
+                    try {
+                      isPlaying ? controller.pause() : controller.play();
+                    } catch (_) {}
                   },
                 ),
                 _buildDivider(),
                 _buildControlButton(
                   icon: volume > 0 ? Icons.volume_up_rounded : Icons.volume_off_rounded,
                   onTap: () {
-                    widget.controller!.setVolume(volume > 0 ? 0.0 : 1.0);
+                    final controller = widget.controller;
+                    if (controller == null) return;
+                    try {
+                      controller.setVolume(volume > 0 ? 0.0 : 1.0);
+                    } catch (_) {}
                   },
                 ),
                 _buildDivider(),
                 _buildControlButton(
                   icon: Icons.replay_10_rounded,
                   onTap: () {
-                    final newPos = widget.controller!.value.position - const Duration(seconds: 10);
-                    widget.controller!.seekTo(newPos < Duration.zero ? Duration.zero : newPos);
+                    final controller = widget.controller;
+                    if (controller == null) return;
+                    try {
+                      final newPos = controller.value.position - const Duration(seconds: 10);
+                      controller.seekTo(newPos < Duration.zero ? Duration.zero : newPos);
+                    } catch (_) {}
                   },
                 ),
                 _buildDivider(),
                 _buildControlButton(
                   icon: Icons.forward_10_rounded,
                   onTap: () {
-                    final newPos = widget.controller!.value.position + const Duration(seconds: 10);
-                    widget.controller!.seekTo(newPos);
+                    final controller = widget.controller;
+                    if (controller == null) return;
+                    try {
+                      final newPos = controller.value.position + const Duration(seconds: 10);
+                      controller.seekTo(newPos);
+                    } catch (_) {}
                   },
                 ),
               ],

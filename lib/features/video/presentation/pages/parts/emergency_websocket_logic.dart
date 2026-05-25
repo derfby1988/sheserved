@@ -150,6 +150,15 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
         _showYieldWayDialog(data);
       }
     });
+
+    // ✅ [Phase 3a] Listen for emergency health data release broadcast
+    ws.socket?.on('emergency-health-released', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        _handleEmergencyHealthReleased(payload);
+      }
+    });
   }
 
   void _subscribeToVideoEvents(String videoId) {
@@ -167,6 +176,201 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
          }); 
        }
     });
+  }
+
+  Future<void> _maybeStartEmergencyHealthReleaseSession({
+    required String videoId,
+  }) async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    try {
+      final settings = await ServiceLocator.instance.emergencyHealthSettingsRepository.fetchSettings(userId);
+      if (settings == null || !settings.isEnabled || settings.consentGivenAt == null) {
+        debugPrint('[EmergencyHealth] Auto-release is disabled or consent missing for user=$userId');
+        return;
+      }
+
+      final ws = WebSocketService();
+      final result = await ws.createEmergencyHealthReleaseSession(
+        patientId: userId,
+        incidentId: videoId,
+        videoId: videoId,
+      );
+
+      if (!mounted || result == null) return;
+
+      final session = result['session'];
+      if (session is! Map) return;
+
+      _bindEmergencyHealthSession(Map<String, dynamic>.from(session));
+    } catch (e) {
+      debugPrint('[EmergencyHealth] Failed to start release session: $e');
+    }
+  }
+
+  void _bindEmergencyHealthSession(Map<String, dynamic> session) {
+    final sessionId = session['id']?.toString();
+    if (sessionId == null || sessionId.isEmpty) return;
+
+    _emergencyHealthSession = session;
+
+    final status = session['status']?.toString();
+    if (status != 'counting') {
+      _handleEmergencyHealthSessionUpdate(session);
+      return;
+    }
+
+    _startEmergencyHealthCountdown(session);
+
+    _emergencyHealthSessionSub?.unsubscribe();
+    _emergencyHealthSessionSub = Supabase.instance.client
+        .channel('eh_session_$sessionId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'emergency_health_release_sessions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: sessionId,
+          ),
+          callback: (payload) {
+            final updated = payload.newRecord;
+            if (updated is Map<String, dynamic>) {
+              _handleEmergencyHealthSessionUpdate(updated);
+            } else if (updated is Map) {
+              _handleEmergencyHealthSessionUpdate(Map<String, dynamic>.from(updated));
+            }
+          },
+        )
+        .subscribe();
+
+    if (!_hasPlayedEmergencyHealthAlert) {
+      _hasPlayedEmergencyHealthAlert = true;
+      SystemSound.play(SystemSoundType.alert);
+      HapticFeedback.heavyImpact();
+    }
+
+    if (mounted) {
+      setState(() {
+        _isEmergencyHealthPanicVisible = true;
+      });
+    }
+  }
+
+  void _handleEmergencyHealthSessionUpdate(Map<String, dynamic> updatedSession) {
+    _emergencyHealthSession = updatedSession;
+    final status = updatedSession['status']?.toString();
+
+    if (status == 'counting') {
+      _startEmergencyHealthCountdown(updatedSession);
+      if (mounted) {
+        setState(() => _isEmergencyHealthPanicVisible = true);
+      }
+      return;
+    }
+
+    _stopEmergencyHealthCountdown();
+    _emergencyHealthSessionSub?.unsubscribe();
+    _emergencyHealthSessionSub = null;
+    _hasPlayedEmergencyHealthAlert = false;
+    if (mounted) {
+      setState(() => _isEmergencyHealthPanicVisible = false);
+    }
+
+    if (!mounted) return;
+
+    if (status == 'cancelled') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ยกเลิกการปลดล็อกข้อมูลสุขภาพแล้ว'),
+          backgroundColor: Colors.grey,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else if (status == 'released') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ถึงเวลาปลดล็อกข้อมูลสุขภาพแล้ว'),
+          backgroundColor: Colors.deepOrange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _startEmergencyHealthCountdown(Map<String, dynamic> session) {
+    _stopEmergencyHealthCountdown();
+
+    final triggeredAt = DateTime.tryParse(session['triggered_at']?.toString() ?? '');
+    final delayMinutes = int.tryParse(session['release_delay_minutes']?.toString() ?? '') ?? 5;
+    final dueAt = triggeredAt != null
+        ? triggeredAt.add(Duration(minutes: delayMinutes))
+        : DateTime.now().add(Duration(minutes: delayMinutes));
+
+    void refreshCountdown() {
+      final remaining = dueAt.difference(DateTime.now()).inSeconds;
+      _emergencyHealthCountdownSeconds = remaining > 0 ? remaining : 0;
+      if (mounted) {
+        setState(() {
+          _isEmergencyHealthPanicVisible = true;
+        });
+      }
+    }
+
+    refreshCountdown();
+    _emergencyHealthCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      refreshCountdown();
+      if (_emergencyHealthCountdownSeconds <= 0) {
+        _emergencyHealthCountdownTimer?.cancel();
+        _emergencyHealthCountdownTimer = null;
+      }
+    });
+  }
+
+  void _stopEmergencyHealthCountdown() {
+    _emergencyHealthCountdownTimer?.cancel();
+    _emergencyHealthCountdownTimer = null;
+    _emergencyHealthCountdownSeconds = 0;
+  }
+
+  Future<void> _cancelEmergencyHealthSession() async {
+    final sessionId = _emergencyHealthSession?['id']?.toString();
+    if (sessionId == null || sessionId.isEmpty) return;
+
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    try {
+      await Supabase.instance.client
+          .from('emergency_health_release_sessions')
+          .update({
+            'status': 'cancelled',
+            'panic_cancelled_at': AppConfig.currentUtc.toIso8601String(),
+            'updated_at': AppConfig.currentUtc.toIso8601String(),
+          })
+          .eq('id', sessionId)
+          .eq('patient_id', userId);
+
+      if (mounted) {
+        setState(() {
+          _isEmergencyHealthPanicVisible = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[EmergencyHealth] Cancel session failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ยกเลิกไม่สำเร็จ: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   void _showYieldWayDialog(Map<String, dynamic> data) {
@@ -195,11 +399,177 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
             ),
           );
         },
-        onDecline: () {
-          // ปิดหน้า EmergencyLivePage และกลับหน้า Home
-          Navigator.of(context).pop();
-        },
+        onDecline: () {},
       ),
     );
+  }
+
+  // ── Phase 3a: Emergency Health Data Access for Responders ──
+
+  void _subscribeToEmergencyHealthTokens() {
+    final userId = AuthService.instance.userId;
+    if (userId == null || _currentVideoId == null) return;
+
+    _emergencyHealthTokenSub?.unsubscribe();
+    _emergencyHealthTokenSub = Supabase.instance.client
+        .channel('eh_tokens_$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'emergency_health_access_tokens',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'responder_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            final newRecord = payload.newRecord;
+            if (newRecord == null) return;
+            final incidentId = newRecord['incident_id']?.toString();
+            if (incidentId != null && incidentId == _currentVideoId) {
+              _handleEmergencyHealthReleased({
+                'incidentId': incidentId,
+                'sessionId': newRecord['session_id']?.toString(),
+              });
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  void _handleEmergencyHealthReleased(Map<String, dynamic> payload) {
+    if (!mounted) return;
+
+    final incidentId = payload['incidentId']?.toString();
+    if (incidentId == null || incidentId != _currentVideoId) return;
+
+    setState(() {
+      _isEmergencyHealthDataAvailable = true;
+    });
+
+    _fetchEmergencyHealthData();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('ข้อมูลสุขภาพผู้ป่วยพร้อมให้เข้าถึงแล้ว'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 5),
+      ),
+    );
+  }
+
+  Future<void> _fetchEmergencyHealthData() async {
+    final userId = AuthService.instance.userId;
+    final videoId = _currentVideoId;
+    if (userId == null || videoId == null) return;
+
+    try {
+      final ws = WebSocketService();
+      final result = await ws.getIncidentHealthData(
+        incidentId: videoId,
+        responderId: userId,
+      );
+
+      if (!mounted || result == null) return;
+
+      if (result['allowed'] == true) {
+        setState(() {
+          _emergencyHealthData = result;
+          _isEmergencyHealthDataAvailable = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('[EmergencyHealth] fetch data error: $e');
+    }
+  }
+
+  Future<void> _showEmergencyHealthDataDialog() async {
+    if (_emergencyHealthData == null) {
+      await _fetchEmergencyHealthData();
+    }
+
+    if (!mounted || _emergencyHealthData == null) return;
+
+    final patient = _emergencyHealthData!['patient'] as Map<String, dynamic>? ?? {};
+    final healthData = _emergencyHealthData!['healthData'] as Map<String, dynamic>? ?? {};
+    final session = _emergencyHealthData!['session'] as Map<String, dynamic>? ?? {};
+    final releasedFields = (session['releasedFields'] as List?)?.cast<String>() ?? [];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            'ข้อมูลสุขภาพผู้ป่วย',
+            style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Patient info
+                if (patient['name'] != null)
+                  Text('ชื่อ: ${patient['name']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                if (patient['phone'] != null)
+                  Text('เบอร์โทร: ${patient['phone']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                if (patient['emergencyContact'] != null)
+                  Text('ติดต่อฉุกเฉิน: ${patient['emergencyContact']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                if (patient['emergencyPhone'] != null)
+                  Text('เบอร์ฉุกเฉิน: ${patient['emergencyPhone']}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                const Divider(height: 24),
+                // Health data fields
+                if (healthData['bloodType'] != null)
+                  _buildHealthDataRow('กรุ๊ปเลือด', healthData['bloodType']),
+                if (healthData['allergies'] != null)
+                  _buildHealthDataRow('แพ้ยา/อาหาร', healthData['allergies']),
+                if (healthData['chronicConditions'] != null)
+                  _buildHealthDataRow('โรคประจำตัว', healthData['chronicConditions']),
+                if (healthData['surgicalHistory'] != null)
+                  _buildHealthDataRow('ประวัติผ่าตัด', healthData['surgicalHistory']),
+                if ((healthData['prescriptions'] as List?)?.isNotEmpty == true) ...[
+                  const SizedBox(height: 12),
+                  const Text('ยาล่าสุด:', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+                  for (final p in healthData['prescriptions'] as List)
+                    Text('- ${p['medications'] ?? p['notes'] ?? ''}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                ],
+                if ((healthData['consultationNotes'] as List?)?.isNotEmpty == true) ...[
+                  const SizedBox(height: 12),
+                  const Text('บันทึกการรักษา:', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+                  for (final n in healthData['consultationNotes'] as List)
+                    Text('- ${n['chief_complaint'] ?? n['diagnosis'] ?? ''}', style: const TextStyle(fontFamily: 'SukhumvitSet')),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('ปิด', style: TextStyle(fontFamily: 'SukhumvitSet')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHealthDataRow(String label, dynamic value) {
+    final displayValue = value is List ? value.join(', ') : value.toString();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label: ', style: const TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
+          Expanded(child: Text(displayValue, style: const TextStyle(fontFamily: 'SukhumvitSet'))),
+        ],
+      ),
+    );
+  }
+
+  void _unsubscribeEmergencyHealthTokens() {
+    _emergencyHealthTokenSub?.unsubscribe();
+    _emergencyHealthTokenSub = null;
   }
 }

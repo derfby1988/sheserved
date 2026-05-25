@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -83,6 +86,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     return _requestTotals[req.id] ?? req.currentAmount ?? 0.0;
   }
   RealtimeChannel? _supabaseInteractionSub;
+  RealtimeChannel? _emergencyHealthSessionSub;
+  RealtimeChannel? _emergencyHealthTokenSub;
   LatLng? _userLocation;
   bool _isConnected = true;
   String? _currentVideoId;
@@ -140,6 +145,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   bool _isChatVisible = false;
   bool _hasRejected = false;
   String? _currentProfessionName;
+  Map<String, dynamic>? _emergencyHealthSession;
+  bool _isEmergencyHealthPanicVisible = false;
+  bool _hasPlayedEmergencyHealthAlert = false;
+  int _emergencyHealthCountdownSeconds = 0;
+  Timer? _emergencyHealthCountdownTimer;
+  Map<String, dynamic>? _emergencyHealthData;
+  bool _isEmergencyHealthDataAvailable = false;
 
   @override
   void initState() {
@@ -213,12 +225,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _locationSub?.cancel();
     _myLocationStreamSub?.cancel();
     _emergencySub?.cancel();
+    _emergencyHealthSessionSub?.unsubscribe();
+    _emergencyHealthTokenSub?.unsubscribe();
     _compassSub?.cancel();
     _viewerCountSub?.cancel();
     _yieldWayAlertSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();
+    _emergencyHealthCountdownTimer?.cancel();
     _floatingPhotoTimer?.cancel();
     _cameraController?.dispose();
     super.dispose();
@@ -461,8 +476,157 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                 onUpdateStatus: _updateRescueStatus,
               ),
             ),
+
+          if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null)
+            Positioned.fill(
+              child: _buildEmergencyHealthPanicOverlay(),
+            ),
         ],
       ),
+      ),
+    );
+  }
+
+  Widget _buildEmergencyHealthPanicOverlay() {
+    final remaining = _emergencyHealthCountdownSeconds;
+    final minutes = (remaining ~/ 60).toString().padLeft(2, '0');
+    final seconds = (remaining % 60).toString().padLeft(2, '0');
+    final sessionStatus = _emergencyHealthSession?['status']?.toString() ?? 'counting';
+
+    return IgnorePointer(
+      ignoring: false,
+      child: Container(
+        color: Colors.black.withOpacity(0.86),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 540),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.red.shade900.withOpacity(0.96),
+                          Colors.deepOrange.shade900.withOpacity(0.88),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: Colors.white.withOpacity(0.18)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.redAccent.withOpacity(0.35),
+                          blurRadius: 40,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_rounded, color: Colors.white, size: 72),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Panic Cancel Notification',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'SukhumvitSet',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          sessionStatus == 'counting'
+                              ? 'ข้อมูลสุขภาพจะปลดล็อกในอีก $minutes:$seconds'
+                              : 'สถานะปัจจุบัน: $sessionStatus',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'SukhumvitSet',
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: Colors.white.withOpacity(0.14)),
+                          ),
+                          child: Text(
+                            'กดปุ่มด้านล่างเพื่อยกเลิกการปลดล็อกข้อมูลสุขภาพทันที ถ้าคุณกดผิดหรือไม่ต้องการให้ระบบแชร์ข้อมูลกับผู้ช่วยเหลือ',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.96),
+                              fontSize: 15,
+                              height: 1.35,
+                              fontFamily: 'SukhumvitSet',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton.icon(
+                            onPressed: _cancelEmergencyHealthSession,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.redAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            icon: const Icon(Icons.cancel_outlined),
+                            label: const Text(
+                              'ยกเลิกการปลดล็อก',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'SukhumvitSet',
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('กำลังนับถอยหลังจากฝั่งเซิร์ฟเวอร์อยู่'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'นับถอยหลังควบคุมโดยเซิร์ฟเวอร์',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'SukhumvitSet',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
