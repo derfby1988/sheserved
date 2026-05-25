@@ -43,6 +43,21 @@ function _normalizeSettings(row) {
   };
 }
 
+function _normalizeDeadManCheckin(row) {
+  if (!row) return null;
+
+  return {
+    userId: row.user_id,
+    isEnabled: row.is_enabled === true,
+    checkInIntervalMinutes: Number(row.check_in_interval_minutes || 720),
+    lastCheckInAt: row.last_check_in_at || null,
+    lastTriggeredAt: row.last_triggered_at || null,
+    lastReminderAt: row.last_reminder_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
 async function createReleaseSession({ patientId, incidentId, videoId }) {
   if (!supabase) {
     throw new Error('Supabase service client is not configured');
@@ -127,6 +142,139 @@ async function createReleaseSession({ patientId, incidentId, videoId }) {
     session: sessionRow,
     settings,
   };
+}
+
+async function getEmergencyHealthSettings({ userId }) {
+  if (!supabase) {
+    throw new Error('Supabase service client is not configured');
+  }
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  const { data, error } = await supabase
+    .from('emergency_health_data_settings')
+    .select('user_id, is_enabled, release_delay_minutes, enabled_fields, require_active_responder, require_medical_profession, require_verified, emergency_fallback, whitelisted_user_ids, consent_given_at, created_at, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load emergency health settings: ${error.message}`);
+  }
+
+  return _normalizeSettings(data);
+}
+
+async function upsertEmergencyHealthSettings({ userId, settings }) {
+  if (!supabase) {
+    throw new Error('Supabase service client is not configured');
+  }
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  const payload = {
+    user_id: userId,
+    is_enabled: settings?.isEnabled === true,
+    release_delay_minutes: Number(settings?.releaseDelayMinutes || 5),
+    enabled_fields: Array.isArray(settings?.enabledFields) ? settings.enabledFields.map((item) => item.toString()) : [],
+    require_active_responder: settings?.requireActiveResponder !== false,
+    require_medical_profession: settings?.requireMedicalProfession === true,
+    require_verified: settings?.requireVerified === true,
+    emergency_fallback: settings?.emergencyFallback === true,
+    whitelisted_user_ids: Array.isArray(settings?.whitelistedUserIds) ? settings.whitelistedUserIds.map((item) => item.toString()) : [],
+    consent_given_at: settings?.consentGivenAt || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('emergency_health_data_settings')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('user_id, is_enabled, release_delay_minutes, enabled_fields, require_active_responder, require_medical_profession, require_verified, emergency_fallback, whitelisted_user_ids, consent_given_at, created_at, updated_at')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to save emergency health settings: ${error.message}`);
+  }
+
+  return _normalizeSettings(data);
+}
+
+async function getDeadManCheckin({ userId }) {
+  if (!supabase) {
+    throw new Error('Supabase service client is not configured');
+  }
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  const { data, error } = await supabase
+    .from('emergency_health_dead_man_checkins')
+    .select('user_id, is_enabled, check_in_interval_minutes, last_check_in_at, last_triggered_at, last_reminder_at, created_at, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load dead-man check-in state: ${error.message}`);
+  }
+
+  return _normalizeDeadManCheckin(data);
+}
+
+async function upsertDeadManCheckin({ userId, checkin }) {
+  if (!supabase) {
+    throw new Error('Supabase service client is not configured');
+  }
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  const payload = {
+    user_id: userId,
+    is_enabled: checkin?.isEnabled === true,
+    check_in_interval_minutes: Number(checkin?.checkInIntervalMinutes || 720),
+    last_check_in_at: checkin?.lastCheckInAt || null,
+    last_triggered_at: checkin?.lastTriggeredAt || null,
+    last_reminder_at: checkin?.lastReminderAt || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('emergency_health_dead_man_checkins')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('user_id, is_enabled, check_in_interval_minutes, last_check_in_at, last_triggered_at, last_reminder_at, created_at, updated_at')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to save dead-man check-in state: ${error.message}`);
+  }
+
+  return _normalizeDeadManCheckin(data);
+}
+
+async function updateDeadManCheckInTimestamp({ userId, checkInAt }) {
+  if (!supabase) {
+    throw new Error('Supabase service client is not configured');
+  }
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  const { data, error } = await supabase
+    .from('emergency_health_dead_man_checkins')
+    .update({
+      last_check_in_at: (checkInAt || new Date()).toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .select('user_id, is_enabled, check_in_interval_minutes, last_check_in_at, last_triggered_at, last_reminder_at, created_at, updated_at')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to update dead-man check-in timestamp: ${error.message}`);
+  }
+
+  return _normalizeDeadManCheckin(data);
 }
 
 async function getIncidentHealthData({ incidentId, responderId }) {
@@ -359,6 +507,11 @@ async function revokeActiveSessions({ patientId }) {
 
 module.exports = {
   createReleaseSession,
+  getEmergencyHealthSettings,
+  upsertEmergencyHealthSettings,
+  getDeadManCheckin,
+  upsertDeadManCheckin,
+  updateDeadManCheckInTimestamp,
   getIncidentHealthData,
   revokeActiveSessions,
 };

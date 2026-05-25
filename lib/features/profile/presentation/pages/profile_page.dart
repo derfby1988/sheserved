@@ -9,17 +9,21 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/rendering.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
+import 'package:intl/intl.dart';
 import 'package:sheserved/features/consultation/presentation/pages/manage_quick_replies_page.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../services/service_locator.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sheserved/features/emergency/data/repositories/emergency_health_settings_repository.dart';
+import 'package:sheserved/features/emergency/data/repositories/emergency_dead_man_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../../auth/data/models/user_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
@@ -63,6 +67,26 @@ class _ProfilePageState extends State<ProfilePage> {
   // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
   bool _canApproveDonation = false;
   bool _isYieldWayEnabled = false; // สิทธิการแจ้งเตือนให้ทาง (Yield Way)
+
+  // Emergency Health / Dead Man's Switch settings
+  EmergencyHealthSettings? _emergencyHealthSettings;
+  bool _isLoadingEmergencyHealthSettings = false;
+  bool _isSavingEmergencyHealthSettings = false;
+  int _emergencyHealthReleaseDelayMinutes = 5;
+  List<String> _emergencyHealthEnabledFields = List<String>.from(
+    EmergencyHealthSettings.defaultFields,
+  );
+  bool _emergencyHealthRequireActiveResponder = true;
+  bool _emergencyHealthRequireMedicalProfession = false;
+  bool _emergencyHealthRequireVerified = false;
+  bool _emergencyHealthEmergencyFallback = false;
+
+  // Dead Man's Switch settings
+  EmergencyDeadManCheckin? _deadManCheckin;
+  bool _isLoadingDeadManSettings = false;
+  bool _isSavingDeadManSettings = false;
+  bool _deadManEnabled = false;
+  int _deadManCheckInIntervalMinutes = 720;
 
   // ฟีเจอร์กำหนดอาชีพที่เห็นวิดีโอไม่เบลอ
   List<prof.Profession> _allVolunteerProfessions = [];
@@ -156,6 +180,8 @@ class _ProfilePageState extends State<ProfilePage> {
         // ซิงค์ข้อมูลลง Local Session เสมอเพื่อให้ส่วนอื่นๆ ของแอปอัปเดตตาม
         if (_user != null) {
           AuthService.instance.login(_user!);
+          _loadEmergencyHealthSettings();
+          _loadDeadManSettings();
         }
       }
     } catch (e) {
@@ -305,6 +331,199 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: _buildContent(),
               ),
             ),
+    );
+  }
+
+  Widget _buildDeadManSwitchSection() {
+    final checkin = _deadManCheckin;
+    final isEnabled = checkin?.isEnabled ?? _deadManEnabled;
+    final lastCheckInText = checkin?.lastCheckInAt != null
+        ? DateFormat('dd/MM/yyyy HH:mm').format(checkin!.lastCheckInAt!.toLocal())
+        : 'ยังไม่เคยเช็กอิน';
+    final lastTriggeredText = checkin?.lastTriggeredAt != null
+        ? DateFormat('dd/MM/yyyy HH:mm').format(checkin!.lastTriggeredAt!.toLocal())
+        : 'ยังไม่เคยถูกกระตุ้น';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Dead Man\'s Switch',
+          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'ตั้งค่าการเช็กอินอัตโนมัติ และรายงานว่าคุณยังปลอดภัยอยู่',
+          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.watch_later_outlined,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Dead Man Monitor',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          _isLoadingDeadManSettings
+                              ? 'กำลังโหลดการตั้งค่า...'
+                              : isEnabled
+                                  ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการเช็กอินล่าสุด'
+                                  : 'ยังไม่เปิดใช้งาน',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: isEnabled,
+                    onChanged: _isSavingDeadManSettings
+                        ? null
+                        : (value) => _toggleDeadManEnabled(value),
+                    activeThumbColor: Colors.red.shade700,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'ช่วงเวลาตรวจเช็กอิน',
+                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Slider(
+                value: _deadManCheckInIntervalMinutes.toDouble().clamp(60, 1440),
+                min: 60,
+                max: 1440,
+                divisions: 23,
+                label: '$_deadManCheckInIntervalMinutes นาที',
+                activeColor: Colors.red.shade700,
+                onChanged: _isSavingDeadManSettings
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _deadManCheckInIntervalMinutes = value.round();
+                        });
+                      },
+                onChangeEnd: _isSavingDeadManSettings
+                    ? null
+                    : (value) => _saveDeadManSettings(
+                          checkInIntervalMinutes: value.round(),
+                        ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('1 ชม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '$_deadManCheckInIntervalMinutes นาที',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text('24 ชม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildMiniStatusChip('เช็กอินล่าสุด: $lastCheckInText', Icons.check_circle_outline),
+                  _buildMiniStatusChip('กระตุ้นล่าสุด: $lastTriggeredText', Icons.warning_amber_outlined),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isSavingDeadManSettings ? null : _checkInDeadManNow,
+                      icon: const Icon(Icons.touch_app),
+                      label: const Text('เช็กอินตอนนี้'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _isSavingDeadManSettings
+                          ? null
+                          : () => _saveDeadManSettings(isEnabled: isEnabled),
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('บันทึก'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_isLoadingDeadManSettings || _isSavingDeadManSettings) ...[
+                const SizedBox(height: 16),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniStatusChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey.shade700),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: AppTextStyles.bodySmall,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1010,6 +1229,10 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 16),
           _buildYieldWayRadiusSection(),
         ],
+        const SizedBox(height: 24),
+        _buildEmergencyHealthSettingsSection(),
+        const SizedBox(height: 24),
+        _buildDeadManSwitchSection(),
         if (_thaiMhungEnabled ||
             (_profession?.isVolunteer ?? false) ||
             _isYieldWayEnabled) ...[
@@ -1253,6 +1476,586 @@ class _ProfilePageState extends State<ProfilePage> {
       if (mounted) setState(() => _isLoadingProfessions = false);
     }
   }
+
+  Widget _buildEmergencyHealthSettingsSection() {
+    final settings = _emergencyHealthSettings;
+    final isEnabled = settings?.isEnabled ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ',
+          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'ตั้งค่า Dead Man\'s Switch และข้อมูลสุขภาพที่จะปลดล็อกอัตโนมัติเมื่อเกิดเหตุฉุกเฉิน',
+          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.health_and_safety_outlined,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Emergency Health Auto-Release',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          _isLoadingEmergencyHealthSettings
+                              ? 'กำลังโหลดการตั้งค่า...'
+                              : isEnabled
+                                  ? 'เปิดใช้งานอยู่ • พร้อมปลดล็อกเมื่อครบเงื่อนไข'
+                                  : 'ยังไม่เปิดใช้งาน',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: isEnabled,
+                    onChanged: _isSavingEmergencyHealthSettings
+                        ? null
+                        : (value) => _toggleEmergencyHealthEnabled(value),
+                    activeThumbColor: AppColors.primary,
+                  ),
+                ],
+              ),
+              if (settings?.consentGivenAt != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.verified_outlined, color: Colors.green[700], size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'ยินยอมแล้วเมื่อ ${DateFormat('dd/MM/yyyy HH:mm').format(settings!.consentGivenAt!.toLocal())}',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.green[800],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Text(
+                'เวลารอปลดล็อกข้อมูล',
+                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Slider(
+                value: _emergencyHealthReleaseDelayMinutes.toDouble().clamp(1, 120),
+                min: 1,
+                max: 120,
+                divisions: 119,
+                label: '$_emergencyHealthReleaseDelayMinutes นาที',
+                activeColor: AppColors.primary,
+                onChanged: _isSavingEmergencyHealthSettings
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _emergencyHealthReleaseDelayMinutes = value.round();
+                        });
+                      },
+                onChangeEnd: _isSavingEmergencyHealthSettings
+                    ? null
+                    : (value) => _saveEmergencyHealthSettings(
+                          releaseDelayMinutes: value.round(),
+                        ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('1 นาที', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '$_emergencyHealthReleaseDelayMinutes นาที',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text('120 นาที', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'ข้อมูลที่จะแชร์',
+                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _emergencyFieldOptions.map((option) {
+                  final key = option['key']!;
+                  final label = option['label']!;
+                  final selected = _emergencyHealthEnabledFields.contains(key);
+                  return FilterChip(
+                    label: Text(label),
+                    selected: selected,
+                    onSelected: _isSavingEmergencyHealthSettings
+                        ? null
+                        : (value) => _toggleEmergencyField(key, value),
+                    selectedColor: AppColors.primary.withOpacity(0.15),
+                    checkmarkColor: AppColors.primary,
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'เงื่อนไขการปลดล็อก',
+                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              _buildEmergencyBooleanSetting(
+                title: 'ต้องมี responder ที่ active',
+                subtitle: 'เปิดไว้เพื่อให้ข้อมูลปลดล็อกเฉพาะเมื่อมีผู้ช่วยเหลือที่ยัง active',
+                value: _emergencyHealthRequireActiveResponder,
+                onChanged: (value) => _saveEmergencyBooleanSetting(
+                  requireActiveResponder: value,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildEmergencyBooleanSetting(
+                title: 'ต้องเป็นสายอาชีพแพทย์/สาธารณสุข',
+                subtitle: 'ใช้กรองผู้ช่วยเหลือที่มีสิทธิ์พิเศษด้านการรักษา',
+                value: _emergencyHealthRequireMedicalProfession,
+                onChanged: (value) => _saveEmergencyBooleanSetting(
+                  requireMedicalProfession: value,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildEmergencyBooleanSetting(
+                title: 'ต้องยืนยันตัวตนแล้ว',
+                subtitle: 'จำกัดการเข้าถึงเฉพาะผู้ใช้ที่ยืนยันตัวตนแล้ว',
+                value: _emergencyHealthRequireVerified,
+                onChanged: (value) => _saveEmergencyBooleanSetting(
+                  requireVerified: value,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildEmergencyBooleanSetting(
+                title: 'เปิด fallback หากไม่มีคนผ่านเงื่อนไข',
+                subtitle: 'ขยายสิทธิ์อัตโนมัติเมื่อไม่มี responder ที่ตรงตามเงื่อนไข',
+                value: _emergencyHealthEmergencyFallback,
+                onChanged: (value) => _saveEmergencyBooleanSetting(
+                  emergencyFallback: value,
+                ),
+              ),
+              if (_isLoadingEmergencyHealthSettings || _isSavingEmergencyHealthSettings) ...[
+                const SizedBox(height: 16),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmergencyBooleanSetting({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: _isSavingEmergencyHealthSettings ? null : onChanged,
+            activeThumbColor: AppColors.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleEmergencyHealthEnabled(bool enabled) async {
+    if (_user == null) return;
+
+    if (enabled && (_emergencyHealthSettings?.consentGivenAt == null)) {
+      final consented = await _showEmergencyHealthConsentDialog();
+      if (!consented) return;
+    }
+
+    setState(() {
+      _emergencyHealthSettings = (_emergencyHealthSettings ?? EmergencyHealthSettings.defaults())
+          .copyWith(
+        isEnabled: enabled,
+        consentGivenAt: enabled
+            ? (_emergencyHealthSettings?.consentGivenAt ?? DateTime.now())
+            : _emergencyHealthSettings?.consentGivenAt,
+      );
+    });
+
+    await _saveEmergencyHealthSettings(isEnabled: enabled);
+  }
+
+  Future<void> _toggleEmergencyField(String key, bool selected) async {
+    final updatedFields = List<String>.from(_emergencyHealthEnabledFields);
+    if (selected) {
+      if (!updatedFields.contains(key)) updatedFields.add(key);
+    } else {
+      updatedFields.remove(key);
+    }
+
+    setState(() => _emergencyHealthEnabledFields = updatedFields);
+    await _saveEmergencyHealthSettings(enabledFields: updatedFields);
+  }
+
+  Future<void> _saveEmergencyBooleanSetting({
+    bool? requireActiveResponder,
+    bool? requireMedicalProfession,
+    bool? requireVerified,
+    bool? emergencyFallback,
+  }) async {
+    if (requireActiveResponder != null) {
+      setState(() => _emergencyHealthRequireActiveResponder = requireActiveResponder);
+    }
+    if (requireMedicalProfession != null) {
+      setState(() => _emergencyHealthRequireMedicalProfession = requireMedicalProfession);
+    }
+    if (requireVerified != null) {
+      setState(() => _emergencyHealthRequireVerified = requireVerified);
+    }
+    if (emergencyFallback != null) {
+      setState(() => _emergencyHealthEmergencyFallback = emergencyFallback);
+    }
+
+    await _saveEmergencyHealthSettings(
+      requireActiveResponder: requireActiveResponder,
+      requireMedicalProfession: requireMedicalProfession,
+      requireVerified: requireVerified,
+      emergencyFallback: emergencyFallback,
+    );
+  }
+
+  Future<bool> _showEmergencyHealthConsentDialog() async {
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('ยินยอมเปิดใช้ข้อมูลสุขภาพ'),
+          content: const Text(
+            'การเปิดใช้งานนี้จะอนุญาตให้ระบบปลดล็อกข้อมูลสุขภาพอัตโนมัติเมื่อครบเงื่อนไขฉุกเฉิน\n\nคุณยืนยันว่าจะเปิดใช้ฟังก์ชันนี้หรือไม่?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ยกเลิก'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('ยินยอม'),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
+  Future<void> _saveEmergencyHealthSettings({
+    bool? isEnabled,
+    int? releaseDelayMinutes,
+    List<String>? enabledFields,
+    bool? requireActiveResponder,
+    bool? requireMedicalProfession,
+    bool? requireVerified,
+    bool? emergencyFallback,
+  }) async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    final current = _emergencyHealthSettings ?? EmergencyHealthSettings.defaults();
+    final updated = current.copyWith(
+      isEnabled: isEnabled ?? current.isEnabled,
+      releaseDelayMinutes: releaseDelayMinutes ?? _emergencyHealthReleaseDelayMinutes,
+      enabledFields: enabledFields ?? _emergencyHealthEnabledFields,
+      requireActiveResponder:
+          requireActiveResponder ?? _emergencyHealthRequireActiveResponder,
+      requireMedicalProfession:
+          requireMedicalProfession ?? _emergencyHealthRequireMedicalProfession,
+      requireVerified: requireVerified ?? _emergencyHealthRequireVerified,
+      emergencyFallback: emergencyFallback ?? _emergencyHealthEmergencyFallback,
+      consentGivenAt: current.consentGivenAt,
+      updatedAt: DateTime.now(),
+    );
+
+    if (mounted) {
+      setState(() => _isSavingEmergencyHealthSettings = true);
+    }
+
+    try {
+      await ServiceLocator.instance.emergencyHealthSettingsRepository
+          .upsertSettings(userId, updated);
+      await ServiceLocator.instance.emergencyHealthSettingsRepository
+          .revokeActiveSessionsIfDisabled(userId, updated.isEnabled);
+
+      if (!mounted) return;
+      setState(() {
+        _emergencyHealthSettings = updated;
+        _emergencyHealthReleaseDelayMinutes = updated.releaseDelayMinutes;
+        _emergencyHealthEnabledFields = List<String>.from(updated.enabledFields);
+        _emergencyHealthRequireActiveResponder = updated.requireActiveResponder;
+        _emergencyHealthRequireMedicalProfession = updated.requireMedicalProfession;
+        _emergencyHealthRequireVerified = updated.requireVerified;
+        _emergencyHealthEmergencyFallback = updated.emergencyFallback;
+      });
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('บันทึกการตั้งค่าข้อมูลสุขภาพสำเร็จ'),
+          duration: Duration(seconds: 2),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error saving emergency health settings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('บันทึกการตั้งค่าข้อมูลสุขภาพไม่สำเร็จ: $e')),
+        );
+      }
+      await _loadEmergencyHealthSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingEmergencyHealthSettings = false);
+      }
+    }
+  }
+
+  Future<void> _loadDeadManSettings() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    if (mounted) {
+      setState(() => _isLoadingDeadManSettings = true);
+    }
+
+    try {
+      final checkin = await ServiceLocator.instance.emergencyDeadManRepository.fetchCheckin(userId);
+      if (!mounted) return;
+      setState(() {
+        _deadManCheckin = checkin;
+        _deadManEnabled = checkin?.isEnabled ?? false;
+        _deadManCheckInIntervalMinutes = checkin?.checkInIntervalMinutes ?? 720;
+      });
+    } catch (e) {
+      debugPrint('Error loading dead man settings: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingDeadManSettings = false);
+      }
+    }
+  }
+
+  Future<void> _toggleDeadManEnabled(bool enabled) async {
+    if (_user == null) return;
+
+    setState(() {
+      _deadManEnabled = enabled;
+    });
+
+    await _saveDeadManSettings(isEnabled: enabled);
+  }
+
+  Future<void> _saveDeadManSettings({
+    bool? isEnabled,
+    int? checkInIntervalMinutes,
+  }) async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    final current = _deadManCheckin;
+    final nextEnabled = isEnabled ?? _deadManEnabled;
+    final nextInterval = checkInIntervalMinutes ?? _deadManCheckInIntervalMinutes;
+    final nextCheckInAt = nextEnabled ? (current?.lastCheckInAt ?? DateTime.now()) : current?.lastCheckInAt;
+
+    if (mounted) {
+      setState(() => _isSavingDeadManSettings = true);
+    }
+
+    try {
+      await ServiceLocator.instance.emergencyDeadManRepository.upsertCheckin(
+        userId: userId,
+        isEnabled: nextEnabled,
+        intervalMinutes: nextInterval,
+        lastCheckInAt: nextCheckInAt,
+      );
+      await _loadDeadManSettings();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('บันทึก Dead Man\'s Switch สำเร็จ'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error saving dead man settings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('บันทึก Dead Man\'s Switch ไม่สำเร็จ: $e')),
+        );
+      }
+      await _loadDeadManSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingDeadManSettings = false);
+      }
+    }
+  }
+
+  Future<void> _checkInDeadManNow() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null || _isSavingDeadManSettings) return;
+
+    if (mounted) {
+      setState(() => _isSavingDeadManSettings = true);
+    }
+
+    try {
+      await ServiceLocator.instance.emergencyDeadManRepository.updateCheckInTimestamp(userId: userId);
+      await _loadDeadManSettings();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('เช็กอินเรียบร้อยแล้ว'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error performing dead man check-in: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เช็กอินไม่สำเร็จ: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingDeadManSettings = false);
+      }
+    }
+  }
+
+  Future<void> _loadEmergencyHealthSettings() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    if (mounted) {
+      setState(() => _isLoadingEmergencyHealthSettings = true);
+    }
+
+    try {
+      final settings = await ServiceLocator.instance.emergencyHealthSettingsRepository
+              .fetchSettings(userId) ??
+          EmergencyHealthSettings.defaults();
+
+      if (!mounted) return;
+      setState(() {
+        _emergencyHealthSettings = settings;
+        _emergencyHealthReleaseDelayMinutes = settings.releaseDelayMinutes;
+        _emergencyHealthEnabledFields = List<String>.from(settings.enabledFields);
+        _emergencyHealthRequireActiveResponder = settings.requireActiveResponder;
+        _emergencyHealthRequireMedicalProfession = settings.requireMedicalProfession;
+        _emergencyHealthRequireVerified = settings.requireVerified;
+        _emergencyHealthEmergencyFallback = settings.emergencyFallback;
+      });
+    } catch (e) {
+      debugPrint('Error loading emergency health settings: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingEmergencyHealthSettings = false);
+      }
+    }
+  }
+
+  List<Map<String, String>> get _emergencyFieldOptions => const [
+        {'key': 'blood_type', 'label': 'กรุ๊ปเลือด'},
+        {'key': 'allergies', 'label': 'แพ้ยา/อาหาร'},
+        {'key': 'emergency_contact', 'label': 'ผู้ติดต่อฉุกเฉิน'},
+        {'key': 'chronic_conditions', 'label': 'โรคประจำตัว'},
+        {'key': 'surgical_history', 'label': 'ประวัติผ่าตัด'},
+        {'key': 'device_metrics', 'label': 'Device Metrics'},
+        {'key': 'prescriptions', 'label': 'ยาที่รับอยู่'},
+        {'key': 'consultation_history', 'label': 'ประวัติปรึกษา'},
+        {'key': 'weight_history', 'label': 'น้ำหนักย้อนหลัง'},
+      ];
 
   /// UI เลือกอาชีพที่อนุญาตให้เห็นวิดีโอไม่เบลอ
   Widget _buildUnblurredProfessionSection() {

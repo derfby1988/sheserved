@@ -1252,6 +1252,85 @@ app.post('/api/emergency-health/revoke', async (req, res) => {
   }
 });
 
+app.get('/api/emergency-health/settings/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const settings = await emergencyHealthSessionService.getEmergencyHealthSettings({ userId });
+    return res.status(200).json({ settings });
+  } catch (error) {
+    console.error('[EmergencyHealth] get settings error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/emergency-health/settings', async (req, res) => {
+  try {
+    const { userId, settings } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const saved = await emergencyHealthSessionService.upsertEmergencyHealthSettings({
+      userId,
+      settings,
+    });
+
+    return res.status(200).json({ settings: saved });
+  } catch (error) {
+    console.error('[EmergencyHealth] save settings error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/emergency-health/dead-man/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const checkin = await emergencyHealthSessionService.getDeadManCheckin({ userId });
+    return res.status(200).json({ checkin });
+  } catch (error) {
+    console.error('[EmergencyHealth] get dead-man check-in error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/emergency-health/dead-man', async (req, res) => {
+  try {
+    const { userId, checkin } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const saved = await emergencyHealthSessionService.upsertDeadManCheckin({
+      userId,
+      checkin,
+    });
+
+    return res.status(200).json({ checkin: saved });
+  } catch (error) {
+    console.error('[EmergencyHealth] save dead-man check-in error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/emergency-health/dead-man/check-in', async (req, res) => {
+  try {
+    const { userId, checkInAt } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const saved = await emergencyHealthSessionService.updateDeadManCheckInTimestamp({
+      userId,
+      checkInAt: checkInAt ? new Date(checkInAt) : undefined,
+    });
+
+    return res.status(200).json({ checkin: saved });
+  } catch (error) {
+    console.error('[EmergencyHealth] dead-man check-in error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ============ PROFESSIONS API ============
 
 // Get all professions

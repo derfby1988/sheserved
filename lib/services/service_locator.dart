@@ -184,9 +184,9 @@ class ServiceLocator {
       
       _consultationRepository = ConsultationRepository(supabaseClient);
       _healthPermissionRepository = HealthDataPermissionRepository(supabaseClient);
-      _emergencyHealthSettingsRepository = EmergencyHealthSettingsRepository(supabaseClient);
+      _emergencyHealthSettingsRepository = EmergencyHealthSettingsRepository();
       _emergencyHealthRepository = EmergencyHealthRepository(supabaseClient);
-      _emergencyDeadManRepository = EmergencyDeadManRepository(supabaseClient);
+      _emergencyDeadManRepository = EmergencyDeadManRepository();
       _bodyRegionRepository = BodyRegionRepository(supabaseClient);
       _professionRepository = ProfessionRepository(supabaseClient);
       _registrationRepository = RegistrationRepository(supabaseClient);
@@ -255,7 +255,7 @@ class ServiceLocator {
   EmergencyHealthSettingsRepository get emergencyHealthSettingsRepository {
     if (_emergencyHealthSettingsRepository == null) {
       _emergencyHealthSettingsRepository =
-          EmergencyHealthSettingsRepository(Supabase.instance.client);
+          EmergencyHealthSettingsRepository();
     }
     return _emergencyHealthSettingsRepository!;
   }
@@ -271,7 +271,7 @@ class ServiceLocator {
   EmergencyDeadManRepository get emergencyDeadManRepository {
     if (_emergencyDeadManRepository == null) {
       _emergencyDeadManRepository =
-          EmergencyDeadManRepository(Supabase.instance.client);
+          EmergencyDeadManRepository();
     }
     return _emergencyDeadManRepository!;
   }

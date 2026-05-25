@@ -1,4 +1,9 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+
+import '../../../../config/app_config.dart';
 
 /// Represents per-user dead man's switch configuration/check-in state.
 class EmergencyDeadManCheckin {
@@ -18,37 +23,69 @@ class EmergencyDeadManCheckin {
     this.lastReminderAt,
   });
 
+  static String _stringOrEmpty(dynamic value) {
+    if (value == null) return '';
+    return value.toString();
+  }
+
+  static int _intOrDefault(dynamic value, int fallback) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
   factory EmergencyDeadManCheckin.fromJson(Map<String, dynamic> json) {
     return EmergencyDeadManCheckin(
-      userId: json['user_id'] as String,
-      isEnabled: json['is_enabled'] == true,
-      checkInIntervalMinutes: (json['check_in_interval_minutes'] as int?) ?? 720,
+      userId: _stringOrEmpty(json['user_id'] ?? json['userId']),
+      isEnabled: json['is_enabled'] == true || json['isEnabled'] == true,
+      checkInIntervalMinutes: _intOrDefault(
+        json['check_in_interval_minutes'] ?? json['checkInIntervalMinutes'],
+        720,
+      ),
       lastCheckInAt: json['last_check_in_at'] != null
           ? DateTime.tryParse(json['last_check_in_at'].toString())
+          : json['lastCheckInAt'] != null
+              ? DateTime.tryParse(json['lastCheckInAt'].toString())
           : null,
       lastTriggeredAt: json['last_triggered_at'] != null
           ? DateTime.tryParse(json['last_triggered_at'].toString())
+          : json['lastTriggeredAt'] != null
+              ? DateTime.tryParse(json['lastTriggeredAt'].toString())
           : null,
       lastReminderAt: json['last_reminder_at'] != null
           ? DateTime.tryParse(json['last_reminder_at'].toString())
+          : json['lastReminderAt'] != null
+              ? DateTime.tryParse(json['lastReminderAt'].toString())
           : null,
     );
   }
 }
 
 class EmergencyDeadManRepository {
-  final SupabaseClient _client;
+  final String _baseUrl;
 
-  EmergencyDeadManRepository(this._client);
+  EmergencyDeadManRepository({String? baseUrl})
+      : _baseUrl = baseUrl ?? AppConfig.localApiUrl;
 
   Future<EmergencyDeadManCheckin?> fetchCheckin(String userId) async {
-    final row = await _client
-        .from('emergency_health_dead_man_checkins')
-        .select()
-        .eq('user_id', userId)
-        .maybeSingle();
-    if (row == null) return null;
-    return EmergencyDeadManCheckin.fromJson(row as Map<String, dynamic>);
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/api/emergency-health/dead-man/$userId'))
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Failed to load dead-man check-in (${response.statusCode}): ${response.body}');
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final checkin = decoded['checkin'];
+      if (checkin == null) return null;
+      return EmergencyDeadManCheckin.fromJson(Map<String, dynamic>.from(checkin as Map));
+    } catch (e) {
+      debugPrint('[EmergencyDeadManRepository] load failed, using defaults: $e');
+      return null;
+    }
   }
 
   Future<void> upsertCheckin({
@@ -58,29 +95,44 @@ class EmergencyDeadManRepository {
     DateTime? lastCheckInAt,
   }) async {
     final payload = {
-      'user_id': userId,
-      'updated_at': DateTime.now().toIso8601String(),
-      if (isEnabled != null) 'is_enabled': isEnabled,
-      if (intervalMinutes != null) 'check_in_interval_minutes': intervalMinutes,
-      if (lastCheckInAt != null) 'last_check_in_at': lastCheckInAt.toIso8601String(),
+      'userId': userId,
+      'checkin': {
+        if (isEnabled != null) 'isEnabled': isEnabled,
+        if (intervalMinutes != null) 'checkInIntervalMinutes': intervalMinutes,
+        if (lastCheckInAt != null) 'lastCheckInAt': lastCheckInAt.toIso8601String(),
+      },
     };
-    await _client
-        .from('emergency_health_dead_man_checkins')
-        .upsert(payload, onConflict: 'user_id')
-        .eq('user_id', userId);
+
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/api/emergency-health/dead-man'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to save dead-man check-in (${response.statusCode}): ${response.body}');
+    }
   }
 
   Future<void> updateCheckInTimestamp({
     required String userId,
     DateTime? checkInAt,
   }) async {
-    await _client
-        .from('emergency_health_dead_man_checkins')
-        .update({
-          'last_check_in_at': (checkInAt ?? DateTime.now()).toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
-        })
-        .eq('user_id', userId)
-        .eq('is_enabled', true);
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/api/emergency-health/dead-man/check-in'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'userId': userId,
+            'checkInAt': (checkInAt ?? DateTime.now()).toIso8601String(),
+          }),
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to update dead-man check-in (${response.statusCode}): ${response.body}');
+    }
   }
 }

@@ -33,6 +33,36 @@ BEGIN
         CREATE POLICY "Emergency settings owner" ON emergency_health_data_settings
             USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
     END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_data_settings'
+          AND policyname = 'Emergency settings public select'
+    ) THEN
+        CREATE POLICY "Emergency settings public select" ON emergency_health_data_settings
+            FOR SELECT USING (true);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_data_settings'
+          AND policyname = 'Emergency settings public insert'
+    ) THEN
+        CREATE POLICY "Emergency settings public insert" ON emergency_health_data_settings
+            FOR INSERT WITH CHECK (true);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'emergency_health_data_settings'
+          AND policyname = 'Emergency settings public update'
+    ) THEN
+        CREATE POLICY "Emergency settings public update" ON emergency_health_data_settings
+            FOR UPDATE USING (true) WITH CHECK (true);
+    END IF;
 END$$;
 
 -- ============================================================
