@@ -248,21 +248,25 @@ DB_PORT=5432
 PORT=3000
 
 # External Storage path (MANDATORY: MUST POINT TO EXTERNAL DRIVE)
-+TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
-+
-+# Server Network
-+LOCAL_API_URL=http://192.168.1.132:3000
-+
-+# Bunny.net
+TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
+
+# Server Network
+LOCAL_API_URL=http://192.168.X.X:3000
+
+# Bunny.net
 BUNNY_API_KEY=<your_api_key>
 BUNNY_STORAGE_ZONE=<your_storage_zone>
 BUNNY_CDN_URL=<your_cdn_url>
 
 # Config
 MAX_CONCURRENT_TRANSCODES=2
-TEMP_FILE_PATH=./temp/videos
 REDIS_URL=redis://localhost:6379
-LOCAL_API_URL=http://192.168.1.132:3000
+
+# Supabase (MANDATORY for Emergency Health & Background Services)
+# ต้องใช้ SERVICE_ROLE key เท่านั้น — ห้ามใช้ anon key เด็ดขาด
+# รับค่าได้จาก: Supabase Dashboard → Settings → API → Project API keys → service_role
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role_key_from_dashboard>
 ```
 
 ---
@@ -2175,9 +2179,18 @@ Future<BeneficiaryOrg?> resolveBeneficiary(String categoryId) async {
 ```env
 SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 # ห้ามใช้ ANON_KEY เด็ดขาด ให้ใช้ SERVICE_ROLE_KEY เท่านั้น สำหรับ Backend Services
-SUPABASE_SERVICE_ROLE_KEY=eyJhbG... (กุญแจลับยาวๆ ที่ขึ้นต้นด้วย eyJ)
+SUPABASE_SERVICE_ROLE_KEY=<key จาก Supabase Dashboard → Settings → API → service_role>
 ```
-หากใช้ผิดกุญแจ (ตัวอย่างการนำ `anon_key` มาใส่) ลูปการโอนเงินคืนและ Background Service จะพังและถูกตีกลับด้วย Error 401 Unauthorized すぐに.
+
+> **หมายเหตุ (2026-05-26):** Supabase รองรับ key 2 format:
+> - `eyJhbG...` (JWT format — โปรเจคเก่า)
+> - `sb_secret_...` (Secret format — โปรเจคใหม่)
+> ทั้งสองใช้ได้กับ `@supabase/supabase-js` และ Emergency Health Services — ตรวจสอบได้ด้วยคำสั่ง:
+> ```bash
+> node -e "const {createClient}=require('@supabase/supabase-js'); const c=createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY); c.from('videos').select('id').limit(1).then(({error})=>console.log(error?'❌ Key ไม่ถูกต้อง: '+error.message:'✅ Key ใช้ได้'))"
+> ```
+
+หากใช้ผิดกุญแจ (ตัวอย่างการนำ `anon_key` มาใส่) ลูปการโอนเงินคืน, Background Services และ Emergency Health Settings จะพังและถูกตีกลับด้วย Error `Supabase service client is not configured`
 
 #### 10.3 ระบบลงทะเบียนรับมรดก (Partner Onboarding Portal / Self-Service Verification)
 ในเวอร์ชันเปิดใช้งานจริง (Production) แพลตฟอร์มควรยกเลิกการให้ Admin เป็นผู้กรอกข้อมูลการเงินขององค์กรมูลนิธิด้วยตนเอง (Manual Data Entry) เพื่อเพิ่ม Scalability ตามหลัก Platform Economy
@@ -2215,7 +2228,40 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbG... (กุญแจลับยาวๆ ที
 - **Startup Reconciliation**: เพิ่ม `is_synced` ให้ฐานข้อมูลวิดีโอ 
 - เครื่อง Server วิดีโอหลัก (Node.js) จะทำการรัน `reconcileLocalToCloud()` ทุกครั้งที่เปิดเครื่อง หากฐานข้อมูลในรถและบนคลาวด์ไม่ตรงกันเนื่องจากสภาวะอินเทอร์เน็ตหลุด มันจะ Upsert ข้อมูลการยอด Like/View คืนกลับเข้าสู่ Supabase ให้ทันทีเป็นสิ่งแรก
 
-### 11.5 Unified Database & Race Condition Avoidance (Thai Mhung Gallery)
+**กฎสำคัญ (อัปเดต 2026-05-26):**
+
+- **Video Sync — Blacklist Local-only Columns**: ตาราง `videos` ในเครื่องหลักมี column พิเศษที่ไม่มีใน Cloud Schema (`address`, `alley`, `road`, `soi`, `village`, `cached_like_count`, `cached_view_count`, `category_id`, `is_synced`) — `sync-service.js` ใช้ `VIDEO_LOCAL_ONLY_COLUMNS` Set เพื่อกรอง column เหล่านี้ออกก่อน Upsert ทุกครั้ง หากเพิ่ม column ใหม่ที่ Local-only ต้องเพิ่มชื่อใน Set นี้ด้วย
+
+- **Interaction Sync — Pre-filter Duplicates**: ก่อน Upsert interactions จะ Query Cloud เพื่อเช็ค tuple `(video_id, user_id, type)` ที่มีอยู่แล้ว — ถ้า Query ไม่ได้ (Network/Auth) จะ mark ทั้งหมดเป็น `is_synced = true` ใน Local เพื่อหยุด retry ซ้ำ
+
+- **GPS Track Sync — FK Safety**: sync เฉพาะ tracks ที่ `video_id` ขึ้น Cloud แล้ว (`is_synced = true`) เพื่อป้องกัน FK constraint violation
+
+### 11.5 Emergency Health Tables — FK ต้องชี้ไป `public.users` ไม่ใช่ `auth.users`
+
+> **ปัญหาที่เกิดขึ้นจริง (2026-05-26):** ตาราง `emergency_health_data_settings`, `emergency_health_release_sessions`, `emergency_health_access_tokens`, `emergency_health_dead_man_checkins` ถูกสร้างด้วย `REFERENCES auth.users(id)` แต่โปรเจกต์นี้ **ไม่ได้ใช้ Supabase Auth** เลย (`auth.uid()` จะเป็น null เสมอ) ทำให้บันทึกข้อมูลไม่ได้และเกิด error:
+> ```
+> violates foreign key constraint "emergency_health_data_settings_user_id_fkey"
+> ```
+
+**กฎที่ต้องปฏิบัติสำหรับตาราง Emergency Health ทุกตาราง:**
+- FK ที่อ้างถึง user ต้อง `REFERENCES users(id)` (public schema) เสมอ — **ห้ามใช้ `auth.users`**
+- ปิด RLS (`DISABLE ROW LEVEL SECURITY`) เพราะ backend ใช้ service role key จัดการทั้งหมด
+- ห้ามเขียน RLS policy ที่ใช้ `auth.uid()` ในตาราง emergency health
+
+**Migration ที่ apply แล้ว:** `20260526144500_fix_emergency_health_fk_to_public_users.sql`
+
+**หากสร้าง migration ใหม่สำหรับตาราง emergency health ให้ใช้ pattern นี้:**
+```sql
+-- ✅ ถูก
+user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+
+-- ❌ ผิด — auth.uid() เป็น null เสมอในโปรเจกต์นี้
+user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+```
+
+---
+
+### 11.6 Unified Database & Race Condition Avoidance (Thai Mhung Gallery)
 - **ปัญหาเดิม (Data Pollution)**: การใช้ Local API ก่อนหน้านี้ดึงภาพอ้างอิงตาทีละ `category_id` ทำให้เกิดปัญหา "ภาพปนกันข้ามเหตุการณ์"
 - **การแก้ไข (Local API Fast-Path + URL Signature Filter)**: โค้ดใน Application เปลี่ยนวิธีค้นหาใหม่ โดยยังคงยิงหา Local PostgreSQL เพื่อให้ภาพโหลดขึ้นแกลลอรี่ไวที่สุดในหน่วยมิลลิวินาที (ไม่ต้องรอ Cloud Sync หรือหลบเลี่ยงปัญหา Table/RLS ใหม่) แต่เพิ่มกลไกคัดกรองขยะออก:
   - เรียก Local API แบบกวาดรูปไทยมุงทั้งหมดในเครื่อง
