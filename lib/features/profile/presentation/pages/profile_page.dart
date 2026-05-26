@@ -44,6 +44,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   late final ProfileRepository _repository;
   late final DonationRepository _donationRepository;
+  late final EmergencyDeadManRepository _deadManRepo;
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _dynamicValues = {};
 
@@ -116,6 +117,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _repository = ProfileRepository(Supabase.instance.client);
     _donationRepository = DonationRepository(Supabase.instance.client);
+    _deadManRepo = EmergencyDeadManRepository();
 
     // Auth re-verify as per login_navigation_guide
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -523,7 +525,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
-      ),
+            ),
     );
   }
 
@@ -1897,122 +1899,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Future<void> _loadDeadManSettings() async {
-    final userId = AuthService.instance.userId;
-    if (userId == null) return;
-
-    if (mounted) {
-      setState(() => _isLoadingDeadManSettings = true);
-    }
-
-    try {
-      final checkin = await ServiceLocator.instance.emergencyDeadManRepository.fetchCheckin(userId);
-      if (!mounted) return;
-      setState(() {
-        _deadManCheckin = checkin;
-        _deadManEnabled = checkin?.isEnabled ?? false;
-        _deadManCheckInIntervalMinutes = checkin?.checkInIntervalMinutes ?? 720;
-      });
-    } catch (e) {
-      debugPrint('Error loading dead man settings: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingDeadManSettings = false);
-      }
-    }
-  }
-
-  Future<void> _toggleDeadManEnabled(bool enabled) async {
-    if (_user == null) return;
-
-    setState(() {
-      _deadManEnabled = enabled;
-    });
-
-    await _saveDeadManSettings(isEnabled: enabled);
-  }
-
-  Future<void> _saveDeadManSettings({
-    bool? isEnabled,
-    int? checkInIntervalMinutes,
-  }) async {
-    final userId = AuthService.instance.userId;
-    if (userId == null) return;
-
-    final current = _deadManCheckin;
-    final nextEnabled = isEnabled ?? _deadManEnabled;
-    final nextInterval = checkInIntervalMinutes ?? _deadManCheckInIntervalMinutes;
-    final nextCheckInAt = nextEnabled ? (current?.lastCheckInAt ?? DateTime.now()) : current?.lastCheckInAt;
-
-    if (mounted) {
-      setState(() => _isSavingDeadManSettings = true);
-    }
-
-    try {
-      await ServiceLocator.instance.emergencyDeadManRepository.upsertCheckin(
-        userId: userId,
-        isEnabled: nextEnabled,
-        intervalMinutes: nextInterval,
-        lastCheckInAt: nextCheckInAt,
-      );
-      await _loadDeadManSettings();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('บันทึก Dead Man\'s Switch สำเร็จ'),
-          duration: Duration(seconds: 2),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error saving dead man settings: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('บันทึก Dead Man\'s Switch ไม่สำเร็จ: $e')),
-        );
-      }
-      await _loadDeadManSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingDeadManSettings = false);
-      }
-    }
-  }
-
-  Future<void> _checkInDeadManNow() async {
-    final userId = AuthService.instance.userId;
-    if (userId == null || _isSavingDeadManSettings) return;
-
-    if (mounted) {
-      setState(() => _isSavingDeadManSettings = true);
-    }
-
-    try {
-      await ServiceLocator.instance.emergencyDeadManRepository.updateCheckInTimestamp(userId: userId);
-      await _loadDeadManSettings();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('เช็กอินเรียบร้อยแล้ว'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error performing dead man check-in: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เช็กอินไม่สำเร็จ: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingDeadManSettings = false);
-      }
-    }
-  }
-
   Future<void> _loadEmergencyHealthSettings() async {
     final userId = AuthService.instance.userId;
     if (userId == null) return;
@@ -2574,6 +2460,102 @@ class _ProfilePageState extends State<ProfilePage> {
           context,
         ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
       }
+    }
+  }
+
+  // ── Dead Man's Switch helpers ──
+
+  Future<void> _loadDeadManSettings() async {
+    final userId = _user?.id ?? AuthService.instance.userId;
+    if (userId == null) return;
+    setState(() => _isLoadingDeadManSettings = true);
+    try {
+      final checkin = await _deadManRepo.fetchCheckin(userId);
+      if (mounted) {
+        setState(() {
+          _deadManCheckin = checkin;
+          if (checkin != null) {
+            _deadManEnabled = checkin.isEnabled;
+            _deadManCheckInIntervalMinutes = checkin.checkInIntervalMinutes;
+          }
+          _isLoadingDeadManSettings = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('_loadDeadManSettings error: $e');
+      if (mounted) setState(() => _isLoadingDeadManSettings = false);
+    }
+  }
+
+  void _toggleDeadManEnabled(bool value) {
+    setState(() => _deadManEnabled = value);
+    _saveDeadManSettings(isEnabled: value);
+  }
+
+  Future<void> _saveDeadManSettings({
+    int? checkInIntervalMinutes,
+    bool? isEnabled,
+  }) async {
+    final userId = _user?.id ?? AuthService.instance.userId;
+    if (userId == null) return;
+    setState(() => _isSavingDeadManSettings = true);
+    try {
+      await _deadManRepo.upsertCheckin(
+        userId: userId,
+        isEnabled: isEnabled ?? _deadManEnabled,
+        intervalMinutes: checkInIntervalMinutes ?? _deadManCheckInIntervalMinutes,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('บันทึกการตั้งค่า Dead Man สำเร็จ'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      await _loadDeadManSettings();
+    } catch (e) {
+      debugPrint('_saveDeadManSettings error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('บันทึกไม่สำเร็จ: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingDeadManSettings = false);
+    }
+  }
+
+  Future<void> _checkInDeadManNow() async {
+    final userId = _user?.id ?? AuthService.instance.userId;
+    if (userId == null) return;
+    setState(() => _isSavingDeadManSettings = true);
+    try {
+      await _deadManRepo.updateCheckInTimestamp(userId: userId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('เช็กอินสำเร็จ'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      await _loadDeadManSettings();
+    } catch (e) {
+      debugPrint('_checkInDeadManNow error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เช็กอินไม่สำเร็จ: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingDeadManSettings = false);
     }
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,6 +26,13 @@ import '../widgets/package_wheel_selector.dart';
 import '../../../../features/admin/models/profession.dart';
 import 'prescription_editor_page.dart';
 import 'consultation_note_editor_page.dart';
+import '../widgets/timer_badge_widget.dart';
+import '../widgets/body_map_summary_widget.dart';
+import '../widgets/action_buttons_widget.dart';
+import '../widgets/chat_input_bar_widget.dart';
+import '../widgets/mini_voice_player.dart';
+import '../controllers/session_timer_controller.dart';
+import '../controllers/professions_refresh_controller.dart';
 
 class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
@@ -55,10 +63,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   String? _consultationRoomId;
   String? _activeConsultationId;
 
-  List<ChatMessage> _messages = [];
-  bool _isChatLoading = true;
-  bool _isRecording = false;
-  bool _isSending = false;
+  late final ValueNotifier<List<ChatMessage>> _messagesNotifier;
+  late final ValueNotifier<bool> _isChatLoadingNotifier;
+  late final ValueNotifier<bool> _isRecordingNotifier;
+  late final ValueNotifier<bool> _isSendingNotifier;
   bool _isConsultationActive = false; // Locked until paid (for patient)
   bool _isHeaderExpanded = true;
   bool _isProvider = false;
@@ -71,9 +79,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isLoadingPackages = false;
 
   // --- Session Timer Features ---
-  Timer? _sessionTimer;
-  int _remainingSeconds = 900; // Mock 15 mins
-  bool _isTimerRunning = false;
+  late final SessionTimerController _timerController;
   bool _hasReviewed = false;
 
   // --- Expert Status ---
@@ -82,7 +88,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   // --- Professions (for accurate icons/colors from admin settings) ---
   List<Profession> _professions = [];
-  Timer? _professionsRefreshTimer;
+  late final ProfessionsRefreshController _professionsRefreshController;
   Map<String, dynamic>? _consultationData;
 
   // --- Room Status ---
@@ -143,6 +149,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       _selectedPain = widget.request!.symptomsChart['pain_level']?.toString();
     }
 
+    _messagesNotifier = ValueNotifier([]);
+    _isChatLoadingNotifier = ValueNotifier(true);
+    _isRecordingNotifier = ValueNotifier(false);
+    _isSendingNotifier = ValueNotifier(false);
+    _timerController = SessionTimerController(onExpired: _onSessionExpired);
+
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -163,30 +175,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _initChat();
     _loadPackages();
     _loadProfessions();
-    // Refresh professions every 30s to pick up admin icon/color changes
-    _professionsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadProfessions());
+    _professionsRefreshController = ProfessionsRefreshController(onRefresh: _loadProfessions);
+    _professionsRefreshController.start();
     WidgetsBinding.instance.addObserver(this);
     _subscribeHealthPermissionUpdates();
     _startHealthPermissionPolling();
   }
 
   void _startTimer() {
-    debugPrint('[ChartBoard] _startTimer called, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
-    if (_isTimerRunning) return;
-    _isTimerRunning = true;
-    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_remainingSeconds > 0) {
-        if (mounted) {
-          setState(() {
-            _remainingSeconds--;
-          });
-        }
-      } else {
-        _sessionTimer?.cancel();
-        _isTimerRunning = false;
-        _onSessionExpired();
-      }
-    });
+    debugPrint('[ChartBoard] _startTimer called, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
+    _timerController.start();
   }
 
   Future<void> _onSessionExpired() async {
@@ -519,14 +517,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Future<void> _initChat() async {
-    setState(() => _isChatLoading = true);
+    _isChatLoadingNotifier.value = true;
 
     try {
       final currentUserId = _currentUser?.id;
       final supabase = Supabase.instance.client;
 
       if (currentUserId == null) {
-        setState(() => _isChatLoading = false);
+        _isChatLoadingNotifier.value = false;
         return;
       }
 
@@ -541,10 +539,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       if (consultationId == null || consultationId.isEmpty) {
-        setState(() {
-          _isChatLoading = false;
-          _isConsultationActive = false;
-        });
+        _isChatLoadingNotifier.value = false;
+        setState(() => _isConsultationActive = false);
         return;
       }
 
@@ -608,10 +604,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           final totalSeconds = sessionMins * 60;
 
           if (mounted) {
-            setState(() {
-              _remainingSeconds = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
-              // ❌ ไม่เริ่ม timer ตรงนี้ — ต้องรอ _fetchExpertStatuses หรือ stream ตรวจสอบ expert ครบก่อน
-            });
+            _timerController.remainingSeconds.value = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
+            // ❌ ไม่เริ่ม timer ตรงนี้ — ต้องรอ _fetchExpertStatuses หรือ stream ตรวจสอบ expert ครบก่อน
           }
         }
 
@@ -639,17 +633,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 final remaining = (total - elapsed).clamp(0, total);
 
                 if (mounted) {
-                  setState(() {
-                    _remainingSeconds = remaining;
-                    // ❌ ไม่เริ่ม timer แค่เพราะ room มี started_at — ต้องรอ expert ครบก่อน
-                    // Timer จะเริ่มจาก expert status stream เมื่อ _hasAllRequiredExpertsJoined() == true
-                  });
+                  _timerController.remainingSeconds.value = remaining;
+                  // ❌ ไม่เริ่ม timer แค่เพราะ room มี started_at — ต้องรอ expert ครบก่อน
+                  // Timer จะเริ่มจาก expert status stream เมื่อ _hasAllRequiredExpertsJoined() == true
                 }
-              } else if (!newIsActive && _isTimerRunning) {
-                _sessionTimer?.cancel();
-                if (mounted) {
-                  setState(() => _isTimerRunning = false);
-                }
+              } else if (!newIsActive && _timerController.isRunning.value) {
+                _timerController.stop();
               }
             });
       }
@@ -687,8 +676,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             // Fallback: if no required experts defined yet, start when ANY expert joins
             final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
             final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-            debugPrint('[ChartBoard] stream _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
-            if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
+            debugPrint('[ChartBoard] stream _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
+            if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
               debugPrint('[ChartBoard] >>> Starting timer from stream (all required joined)');
               _startTimer();
             }
@@ -698,15 +687,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       final messages = await _chatRepository.getMessages(roomId);
 
       if (mounted) {
-        setState(() {
-          _messages = messages;
-          _isChatLoading = false;
-        });
+        _messagesNotifier.value = messages;
+        _isChatLoadingNotifier.value = false;
 
         // Subscribe to messages
         _messagesSub = _chatRepository.streamMessages(roomId).listen((updatedMessages) {
           if (mounted) {
-            setState(() => _messages = updatedMessages);
+            _messagesNotifier.value = updatedMessages;
             _scrollToBottom();
           }
         });
@@ -717,7 +704,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     } catch (e) {
       debugPrint('ChartBoardPage: Init error: $e');
-      if (mounted) setState(() => _isChatLoading = false);
+      if (mounted) _isChatLoadingNotifier.value = false;
     }
   }
 
@@ -827,8 +814,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Fallback: if no required experts defined yet, start when ANY expert joins
       final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
       final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-      debugPrint('[ChartBoard] initial fetch _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=$_isTimerRunning, remaining=$_remainingSeconds');
-      if (shouldStart && !_isTimerRunning && _remainingSeconds > 0) {
+      debugPrint('[ChartBoard] initial fetch _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
+      if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
         debugPrint('[ChartBoard] >>> Starting timer from initial fetch (all required joined)');
         _startTimer();
       }
@@ -920,9 +907,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   Future<void> _sendMessage() async {
     final text = _msgController.text.trim();
-    if (text.isEmpty || _isSending) return;
+    if (text.isEmpty || _isSendingNotifier.value) return;
 
-    setState(() => _isSending = true);
+    _isSendingNotifier.value = true;
 
     final roomId = _consultationRoomId ?? 'consultation_demo';
 
@@ -937,10 +924,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
 
     _msgController.clear();
-    setState(() {
-      // Optimistic update — show immediately
-      _messages = [..._messages, message];
-    });
+    // Optimistic update — show immediately
+    _messagesNotifier.value = [..._messagesNotifier.value, message];
     _scrollToBottom();
 
     try {
@@ -950,12 +935,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Keep message shown even if send fails (offline mode)
     }
 
-    if (mounted) setState(() => _isSending = false);
+    if (mounted) _isSendingNotifier.value = false;
   }
 
   Future<void> _sendSpecialMessage(String type, String content) async {
-    if (_isSending) return;
-    setState(() => _isSending = true);
+    if (_isSendingNotifier.value) return;
+    _isSendingNotifier.value = true;
 
     final roomId = _consultationRoomId ?? 'consultation_demo';
     final message = ChatMessage(
@@ -970,13 +955,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     try {
       await _chatRepository.sendMessage(message);
-      if (mounted) setState(() => _messages = [..._messages, message]);
+      if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
       _scrollToBottom();
     } catch (e) {
       debugPrint('Special send error: $e');
     }
 
-    if (mounted) setState(() => _isSending = false);
+    if (mounted) _isSendingNotifier.value = false;
   }
 
   Future<File> _processImagePDPA(File originalFile) async {
@@ -1137,7 +1122,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           status: MessageStatus.sent,
         );
         await _chatRepository.sendMessage(message);
-        if (mounted) setState(() => _messages = [..._messages, message]);
+        if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
         _scrollToBottom();
       }
     }
@@ -1150,7 +1135,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final path =
             '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const RecordConfig(), path: path);
-        if (mounted) setState(() => _isRecording = true);
+        if (mounted) _isRecordingNotifier.value = true;
       }
     } catch (e) {
       debugPrint('Record start error: $e');
@@ -1160,7 +1145,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Future<void> _stopRecording() async {
     try {
       final path = await _audioRecorder.stop();
-      if (mounted) setState(() => _isRecording = false);
+      if (mounted) _isRecordingNotifier.value = false;
 
       if (path != null && _currentUser != null) {
         final file = File(path);
@@ -1179,7 +1164,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             status: MessageStatus.sent,
           );
           await _chatRepository.sendMessage(message);
-          if (mounted) setState(() => _messages = [..._messages, message]);
+          if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
           _scrollToBottom();
         }
       }
@@ -1198,7 +1183,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _professionsRefreshTimer?.cancel();
+    _professionsRefreshController.dispose();
     _fadeController.dispose();
     _slideController.dispose();
     _msgController.dispose();
@@ -1209,6 +1194,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _roomSub?.cancel();
     _healthPermissionPollTimer?.cancel();
     _healthPermissionChannel?.unsubscribe();
+    _messagesNotifier.dispose();
+    _isChatLoadingNotifier.dispose();
+    _isRecordingNotifier.dispose();
+    _isSendingNotifier.dispose();
+    _timerController.dispose();
     super.dispose();
   }
 
@@ -1382,41 +1372,47 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildMessagesList() {
-    if (_isChatLoading) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-              strokeWidth: 2,
+    return AnimatedBuilder(
+      animation: Listenable.merge([_messagesNotifier, _isChatLoadingNotifier]),
+      builder: (context, child) {
+        if (_isChatLoadingNotifier.value) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  strokeWidth: 2,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'กำลังเชื่อมต่อห้องแชท...',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              'กำลังเชื่อมต่อห้องแชท...',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
+          );
+        }
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          itemCount: _messages.length,
-          itemBuilder: (context, index) {
-            if (_messages.isEmpty) return const SizedBox.shrink();
-            final msg = _messages[index];
-            final isMe = msg.senderId == (_currentUser?.id ?? 'demo_user');
-            return _buildMessageBubble(msg, isMe);
-          },
-        ),
-      ),
+        final messages = _messagesNotifier.value;
+        return FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                if (messages.isEmpty) return const SizedBox.shrink();
+                final msg = messages[index];
+                final isMe = msg.senderId == (_currentUser?.id ?? 'demo_user');
+                return _buildMessageBubble(msg, isMe);
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1488,7 +1484,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     )
                   else if (message.type == 'voice' &&
                       message.attachmentUrl != null)
-                    _MiniVoicePlayer(url: message.attachmentUrl!, isMe: isMe)
+                    MiniVoicePlayer(url: message.attachmentUrl!, isMe: isMe)
                   else if (message.type == 'prescription')
                     _buildPrescriptionCard(message)
                   else if (message.type == 'summary')
@@ -3224,257 +3220,22 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildChatInput() {
-    final hasText = _msgController.text.trim().isNotEmpty;
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
     debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive _consultationData=$_consultationData');
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Opacity(
-            opacity: isChatActive ? 1.0 : 0.3,
-            child: AbsorbPointer(
-              absorbing: !isChatActive,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (_isProvider) ...[
-                    _buildInputIconButton(
-                      icon: Icons.attach_file,
-                      tooltip: 'เครื่องมือแพทย์',
-                      onTap: _showAttachmentMenu,
-                    ),
-                    const SizedBox(width: 4),
-                    // Removed lock_open button from chat input row for providers. The request button will be placed within the attachment menu.
-
-                  ] else ...[
-                    _buildInputIconButton(
-                      icon: Icons.image_outlined,
-                      tooltip: 'ส่งรูปภาพ',
-                      onTap: _pickAndSendImage,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-
-                  // Text input
-                  Expanded(
-                    child: Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: const Color(0xFF4A8B2C).withOpacity(0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _msgController,
-                        style:
-                            const TextStyle(color: Colors.black87, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'ถามผู้เชี่ยวชาญ...',
-                          hintStyle: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 14,
-                          ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Send / Mic button
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    transitionBuilder: (child, anim) =>
-                        ScaleTransition(scale: anim, child: child),
-                    child: hasText
-                        ? _buildActionButton(
-                            key: const ValueKey('send'),
-                            icon: Icons.send_rounded,
-                            color: Colors.white,
-                            bgColor: const Color(0xFF4A8B2C),
-                            onTap: _sendMessage,
-                            isLoading: _isSending,
-                          )
-                        : GestureDetector(
-                            key: const ValueKey('mic'),
-                            onLongPressStart: (_) => _startRecording(),
-                            onLongPressEnd: (_) => _stopRecording(),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              height: 44,
-                              width: 44,
-                              decoration: BoxDecoration(
-                                color: _isRecording
-                                    ? Colors.redAccent
-                                    : const Color(0xFF4A8B2C),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (_isRecording
-                                            ? Colors.redAccent
-                                            : const Color(0xFF4A8B2C))
-                                        .withOpacity(0.3),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                _isRecording ? Icons.stop_rounded : Icons.mic,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Lock Overlay for patients before payment
-          if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
-            Positioned.fill(
-              child: Container(
-                color: Colors.white.withOpacity(0.1),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.lock_outline, size: 14, color: Colors.orange.shade800),
-                        const SizedBox(width: 6),
-                        Text(
-                          'กดยืนยันเพื่อเริ่มต้นการแชท',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade800,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // ── Read-Only Overlay (โหมดดูอย่างเดียว) ──
-          if (widget.readOnly)
-            Positioned.fill(
-              child: Container(
-                color: Colors.grey.shade100.withOpacity(0.85),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.visibility_outlined,
-                            size: 18, color: Colors.grey.shade600),
-                        const SizedBox(width: 8),
-                        Text(
-                          'โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-  }
-
-  Widget _buildInputIconButton({
-    required IconData icon,
-    required VoidCallback onTap,
-    String? tooltip,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Tooltip(
-        message: tooltip ?? '',
-        child: Container(
-          height: 38,
-          width: 38,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Icon(icon, color: Colors.grey.shade700, size: 20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required Key key,
-    required IconData icon,
-    required Color color,
-    required Color bgColor,
-    required VoidCallback onTap,
-    bool isLoading = false,
-  }) {
-    return GestureDetector(
-      key: key,
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        width: 44,
-        decoration: BoxDecoration(
-          color: bgColor,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: bgColor.withOpacity(0.4),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: isLoading
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : Icon(icon, color: color, size: 20),
-      ),
+    return ChatInputBarWidget(
+      controller: _msgController,
+      isProvider: _isProvider,
+      isChatActive: isChatActive,
+      isSending: _isSendingNotifier,
+      isRecording: _isRecordingNotifier,
+      readOnly: widget.readOnly,
+      onSend: _sendMessage,
+      onStartRecording: _startRecording,
+      onStopRecording: _stopRecording,
+      onPickImage: _pickAndSendImage,
+      onShowAttachmentMenu: _showAttachmentMenu,
+      onTextChanged: (_) => setState(() {}),
     );
   }
 
@@ -3807,89 +3568,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildTimerBadge() {
-    final bool isLowTime = _remainingSeconds < 300 && _isTimerRunning;
-    final bool allRequiredJoined = _hasAllRequiredExpertsJoined();
-    final bool isWaiting = !_isTimerRunning && _remainingSeconds > 0 && !allRequiredJoined;
-    final bool isStarting = !_isTimerRunning && _remainingSeconds > 0 && allRequiredJoined;
-
-    // Color theme per state
-    final Color badgeColor = isWaiting
-        ? Colors.orange
-        : (isLowTime ? Colors.red : AppColors.primary);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isWaiting
-            ? Colors.orange.shade50
-            : (isLowTime ? Colors.red.shade50 : badgeColor.withOpacity(0.1)),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isWaiting
-              ? Colors.orange.withOpacity(0.3)
-              : (isLowTime ? Colors.red.withOpacity(0.3) : badgeColor.withOpacity(0.3)),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isWaiting)
-            const SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.orange)),
-            )
-          else if (isStarting)
-            Icon(
-              Icons.play_circle_outline,
-              size: 14,
-              color: badgeColor,
-            )
-          else
-            Icon(
-              Icons.timer_outlined,
-              size: 14,
-              color: isLowTime ? Colors.red : AppColors.primary,
-            ),
-          const SizedBox(width: 6),
-          Text(
-            isWaiting
-                ? 'รอผู้เชี่ยวชาญเข้าร่วม'
-                : (isStarting ? 'เริ่มให้คำปรึกษา' : _formatTimer(_remainingSeconds)),
-            style: TextStyle(
-              color: isWaiting ? Colors.orange.shade800 : (isLowTime ? Colors.red : badgeColor),
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
+    return TimerBadgeWidget(
+      remainingSeconds: _timerController.remainingSeconds,
+      isTimerRunning: _timerController.isRunning,
+      allRequiredJoined: _hasAllRequiredExpertsJoined(),
+      formatTimer: _formatTimer,
     );
   }
 
   Widget _buildActionButtons() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // ในโหมดดูอย่างเดียว ซ่อนปุ่มจบงานและวิดีโอคอล
-        if (_isProvider && !widget.readOnly)
-          TextButton.icon(
-            onPressed: _showFinishDialog,
-            icon: const Icon(Icons.done_all, color: AppColors.primary, size: 18),
-            label: const Text('จบงาน', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
-          ),
-        if (!widget.readOnly)
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
-            onPressed: _startVideoCall,
-          ),
-        IconButton(
-          icon: const Icon(Icons.info_outline, color: Colors.grey),
-          onPressed: _showConsultationDetails,
-        ),
-        const SizedBox(width: 4),
-      ],
+    return ActionButtonsWidget(
+      isProvider: _isProvider,
+      readOnly: widget.readOnly,
+      onFinishPressed: _showFinishDialog,
+      onVideoCallPressed: _startVideoCall,
+      onInfoPressed: _showConsultationDetails,
     );
   }
 
@@ -4452,67 +4145,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildBodyMapSummary() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.orange.shade50, Colors.white],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.orange.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.analytics_outlined, color: Colors.orange, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'สรุปอาการจาก Body Map',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _resolveBodyAreaText(),
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 12,
-                    height: 1.3,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right, color: Colors.orange),
-        ],
-      ),
-    );
+    return BodyMapSummaryWidget(bodyAreaText: _resolveBodyAreaText());
   }
 
   Widget _buildReviewCard() {
@@ -4575,117 +4208,4 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       ),
     );
   }
-}
-
-// ────────────────────────────────────────────
-// Mini Voice Player
-// ────────────────────────────────────────────
-
-class _MiniVoicePlayer extends StatefulWidget {
-  final String url;
-  final bool isMe;
-  const _MiniVoicePlayer({required this.url, required this.isMe});
-
-  @override
-  State<_MiniVoicePlayer> createState() => _MiniVoicePlayerState();
-}
-
-class _MiniVoicePlayerState extends State<_MiniVoicePlayer> {
-  late AudioPlayer _audioPlayer;
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _audioPlayer = AudioPlayer();
-
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
-    });
-    _audioPlayer.onDurationChanged.listen((d) {
-      if (mounted) setState(() => _duration = d);
-    });
-    _audioPlayer.onPositionChanged.listen((p) {
-      if (mounted) setState(() => _position = p);
-    });
-    _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted)
-        setState(() {
-          _isPlaying = false;
-          _position = Duration.zero;
-        });
-    });
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  String _fmt(Duration d) {
-    final m = d.inMinutes.toString().padLeft(2, '0');
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final iconColor = widget.isMe ? Colors.black87 : Colors.white;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: () async {
-            if (_isPlaying) {
-              await _audioPlayer.pause();
-            } else {
-              await _audioPlayer.play(UrlSource(widget.url));
-            }
-          },
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: (widget.isMe ? Colors.black : Colors.white).withOpacity(
-                0.15,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _isPlaying ? Icons.pause : Icons.play_arrow,
-              color: iconColor,
-              size: 18,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 100,
-              child: LinearProgressIndicator(
-                value: _duration.inMilliseconds > 0
-                    ? _position.inMilliseconds / _duration.inMilliseconds
-                    : 0.0,
-                backgroundColor: iconColor.withOpacity(0.2),
-                valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              _fmt(_isPlaying ? _position : _duration),
-              style: TextStyle(fontSize: 9, color: iconColor.withOpacity(0.7)),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
 }

@@ -36,12 +36,11 @@ class EmergencyDeadManCheckin {
 
   factory EmergencyDeadManCheckin.fromJson(Map<String, dynamic> json) {
     return EmergencyDeadManCheckin(
-      userId: _stringOrEmpty(json['user_id'] ?? json['userId']),
+      userId: (json['user_id'] ?? json['userId']) as String,
       isEnabled: json['is_enabled'] == true || json['isEnabled'] == true,
-      checkInIntervalMinutes: _intOrDefault(
-        json['check_in_interval_minutes'] ?? json['checkInIntervalMinutes'],
-        720,
-      ),
+      checkInIntervalMinutes: (json['check_in_interval_minutes'] as int?) ??
+          (json['checkInIntervalMinutes'] as int?) ??
+          720,
       lastCheckInAt: json['last_check_in_at'] != null
           ? DateTime.tryParse(json['last_check_in_at'].toString())
           : json['lastCheckInAt'] != null
@@ -83,7 +82,7 @@ class EmergencyDeadManRepository {
       if (checkin == null) return null;
       return EmergencyDeadManCheckin.fromJson(Map<String, dynamic>.from(checkin as Map));
     } catch (e) {
-      debugPrint('[EmergencyDeadManRepository] load failed, using defaults: $e');
+      debugPrint('Error fetching dead-man check-in: $e');
       return null;
     }
   }
@@ -94,25 +93,30 @@ class EmergencyDeadManRepository {
     int? intervalMinutes,
     DateTime? lastCheckInAt,
   }) async {
-    final payload = {
-      'userId': userId,
-      'checkin': {
-        if (isEnabled != null) 'isEnabled': isEnabled,
-        if (intervalMinutes != null) 'checkInIntervalMinutes': intervalMinutes,
-        if (lastCheckInAt != null) 'lastCheckInAt': lastCheckInAt.toIso8601String(),
-      },
-    };
+    try {
+      final payload = {
+        'userId': userId,
+        'checkin': {
+          if (isEnabled != null) 'isEnabled': isEnabled,
+          if (intervalMinutes != null) 'checkInIntervalMinutes': intervalMinutes,
+          if (lastCheckInAt != null) 'lastCheckInAt': lastCheckInAt.toIso8601String(),
+        },
+      };
 
-    final response = await http
-        .post(
-          Uri.parse('$_baseUrl/api/emergency-health/dead-man'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 8));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/emergency-health/dead-man'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to save dead-man check-in (${response.statusCode}): ${response.body}');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Failed to save dead-man check-in (${response.statusCode}): ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error upserting dead-man check-in: $e');
+      rethrow;
     }
   }
 
@@ -120,19 +124,24 @@ class EmergencyDeadManRepository {
     required String userId,
     DateTime? checkInAt,
   }) async {
-    final response = await http
-        .post(
-          Uri.parse('$_baseUrl/api/emergency-health/dead-man/check-in'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'userId': userId,
-            'checkInAt': (checkInAt ?? DateTime.now()).toIso8601String(),
-          }),
-        )
-        .timeout(const Duration(seconds: 8));
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/emergency-health/dead-man/check-in'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'userId': userId,
+              'checkInAt': (checkInAt ?? DateTime.now()).toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to update dead-man check-in (${response.statusCode}): ${response.body}');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Failed to update dead-man check-in (${response.statusCode}): ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error updating dead-man check-in timestamp: $e');
+      rethrow;
     }
   }
 }

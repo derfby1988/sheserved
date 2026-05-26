@@ -167,46 +167,51 @@ class EmergencyHealthSettingsRepository {
       if (settings == null) return null;
       return EmergencyHealthSettings.fromJson(Map<String, dynamic>.from(settings as Map));
     } catch (e) {
-      debugPrint('[EmergencyHealthSettingsRepository] load failed, using defaults: $e');
+      debugPrint('Error fetching emergency health settings: $e');
       return null;
     }
   }
 
   Future<EmergencyHealthSettings> upsertSettings(
       String userId, EmergencyHealthSettings settings) async {
-    final payload = {
-      'userId': userId,
-      'settings': {
-        'isEnabled': settings.isEnabled,
-        'releaseDelayMinutes': settings.releaseDelayMinutes,
-        'enabledFields': settings.enabledFields,
-        'requireActiveResponder': settings.requireActiveResponder,
-        'requireMedicalProfession': settings.requireMedicalProfession,
-        'requireVerified': settings.requireVerified,
-        'emergencyFallback': settings.emergencyFallback,
-        'whitelistedUserIds': settings.whitelistedUserIds,
-        'consentGivenAt': settings.consentGivenAt?.toIso8601String(),
-      },
-    };
+    try {
+      final payload = {
+        'userId': userId,
+        'settings': {
+          'isEnabled': settings.isEnabled,
+          'releaseDelayMinutes': settings.releaseDelayMinutes,
+          'enabledFields': settings.enabledFields,
+          'requireActiveResponder': settings.requireActiveResponder,
+          'requireMedicalProfession': settings.requireMedicalProfession,
+          'requireVerified': settings.requireVerified,
+          'emergencyFallback': settings.emergencyFallback,
+          'whitelistedUserIds': settings.whitelistedUserIds,
+          'consentGivenAt': settings.consentGivenAt?.toIso8601String(),
+        },
+      };
 
-    final response = await http
-        .post(
-          Uri.parse('$_baseUrl/api/emergency-health/settings'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 8));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/emergency-health/settings'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to save emergency health settings (${response.statusCode}): ${response.body}');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Failed to save emergency health settings (${response.statusCode}): ${response.body}');
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map && decoded['settings'] is Map) {
+        return EmergencyHealthSettings.fromJson(Map<String, dynamic>.from(decoded['settings'] as Map));
+      }
+
+      return settings;
+    } catch (e) {
+      debugPrint('Error upserting emergency health settings: $e');
+      rethrow;
     }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is Map && decoded['settings'] is Map) {
-      return EmergencyHealthSettings.fromJson(Map<String, dynamic>.from(decoded['settings'] as Map));
-    }
-
-    return settings;
   }
 
   /// [Phase 3a] Revoke all active emergency health sessions and tokens
