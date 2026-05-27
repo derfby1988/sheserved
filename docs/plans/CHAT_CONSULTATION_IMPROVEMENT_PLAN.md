@@ -2529,4 +2529,25 @@ Future<void> dismiss(String id) async {
 
 ---
 
+## 🚨 Critical Backlog — Provider Status Mismatch in `consultation_room_experts`
+
+**ปัญหา:** Provider ที่รับงานแล้ว (`consultation_requests.provider_id` ถูกตั้ง) แต่ `consultation_room_experts.status` ยังเป็น `'waiting'` → `ExpertStatusBanner` แสดงเป็น 🔒 (waiting) แทนที่จะเป็น joined
+
+**สาเหตุ:** `_joinRequest()` ใน `health_program_request_dashboard.dart` fallback ไปใช้ `assignProvider()` (ระบบเก่า) แต่ไม่ได้อัปเดต `consultation_room_experts` ให้เป็น `joined`
+
+**แผนแก้ไข (วิธีที่ 2 — structural):**
+1. **แก้ `_joinRequest`** — หลัง `assignProvider()` fallback success → เพิ่มการอัปเดต `consultation_room_experts` ให้สถานะเป็น `joined` (หรือยิ่งดี: ลบ fallback ระบบเก่า ให้แจ้ง user แทนถ้า expert group ไม่ตรง)
+2. **Backfill ข้อมูลเก่า** — รัน SQL อัปเดต `consultation_room_experts` สำหรับคำปรึกษาที่ `provider_id` ถูกตั้งแล้วแต่ `status` ยังเป็น `waiting`
+3. **(Optional safety net)** เพิ่ม client-side check ใน `_fetchExpertStatuses` ชั่วคราว จนกว่า backfill จะเสร็จ
+
+**ไฟล์ที่เกี่ยวข้อง:**
+- `lib/features/consultation/presentation/pages/health_program_request_dashboard.dart`
+- `lib/features/consultation/presentation/pages/chart_board_page.dart`
+- `lib/features/consultation/data/repositories/consultation_repository.dart`
+- `supabase/migrations/20260516111500_strict_timer_start.sql` (RPC `assign_provider_to_group`)
+
+**ความเร่งด่วน:** 🔴 **สูง** — กระทบ UX หลัก (provider เห็นตัวเองเป็น waiting แม้เข้าร่วมแล้ว) และ timer ไม่เริ่มถูกต้อง
+
+---
+
 **หลักการ:** Badge แสดง "โอกาส" (แพ็คเกจตรงอาชีพ) แต่ปุ่มแสดง "สิทธิ์" (status + availability) — ทั้งสองอย่างอิสระจากกัน
