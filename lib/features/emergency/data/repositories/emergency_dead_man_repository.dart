@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../../config/app_config.dart';
 
-/// Represents per-user dead man's switch configuration/check-in state.
+/// Represents per-user ระบบเฝ้าระวังความปลอดภัย configuration/check-in state.
 class EmergencyDeadManCheckin {
   final String userId;
   final bool isEnabled;
@@ -73,7 +73,7 @@ class EmergencyDeadManRepository {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Failed to load dead-man check-in (${response.statusCode}): ${response.body}');
+        throw Exception('Failed to load ระบบเฝ้าระวังความปลอดภัย check-in (${response.statusCode}): ${response.body}');
       }
 
       final decoded = jsonDecode(response.body);
@@ -82,7 +82,7 @@ class EmergencyDeadManRepository {
       if (checkin == null) return null;
       return EmergencyDeadManCheckin.fromJson(Map<String, dynamic>.from(checkin as Map));
     } catch (e) {
-      debugPrint('Error fetching dead-man check-in: $e');
+      debugPrint('Error fetching ระบบเฝ้าระวังความปลอดภัย check-in: $e');
       return null;
     }
   }
@@ -112,10 +112,10 @@ class EmergencyDeadManRepository {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Failed to save dead-man check-in (${response.statusCode}): ${response.body}');
+        throw Exception('Failed to save ระบบเฝ้าระวังความปลอดภัย check-in (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
-      debugPrint('Error upserting dead-man check-in: $e');
+      debugPrint('Error upserting ระบบเฝ้าระวังความปลอดภัย check-in: $e');
       rethrow;
     }
   }
@@ -137,10 +137,10 @@ class EmergencyDeadManRepository {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Failed to update dead-man check-in (${response.statusCode}): ${response.body}');
+        throw Exception('Failed to update ระบบเฝ้าระวังความปลอดภัย check-in (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
-      debugPrint('Error updating dead-man check-in timestamp: $e');
+      debugPrint('Error updating ระบบเฝ้าระวังความปลอดภัย check-in timestamp: $e');
       rethrow;
     }
   }

@@ -70,7 +70,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     final checkin = _deadManCheckin;
     final lastCheckInText = checkin?.lastCheckInAt != null
         ? DateFormat('dd/MM HH:mm').format(checkin!.lastCheckInAt!.toLocal())
-        : 'ยังไม่เคยเช็กอิน';
+        : 'ยังไม่เคยยืนยันความปลอดภัย';
 
     return Material(
       color: Colors.transparent,
@@ -108,7 +108,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _isDeadManCheckingIn ? 'กำลังเช็กอิน...' : 'เช็กอินตอนนี้',
+                    _isDeadManCheckingIn ? 'กำลังยืนยันความปลอดภัย...' : 'ยืนยันความปลอดภัยตอนนี้',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

@@ -69,7 +69,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _canApproveDonation = false;
   bool _isYieldWayEnabled = false; // สิทธิการแจ้งเตือนให้ทาง (Yield Way)
 
-  // Emergency Health / Dead Man's Switch settings
+  // Emergency Health / ระบบเฝ้าระวังความปลอดภัย settings
   EmergencyHealthSettings? _emergencyHealthSettings;
   bool _isLoadingEmergencyHealthSettings = false;
   bool _isSavingEmergencyHealthSettings = false;
@@ -82,7 +82,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _emergencyHealthRequireVerified = false;
   bool _emergencyHealthEmergencyFallback = false;
 
-  // Dead Man's Switch settings
+  // ระบบเฝ้าระวังความปลอดภัย settings
   EmergencyDeadManCheckin? _deadManCheckin;
   bool _isLoadingDeadManSettings = false;
   bool _isSavingDeadManSettings = false;
@@ -350,12 +350,12 @@ class _ProfilePageState extends State<ProfilePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Dead Man\'s Switch',
+          'ระบบเฝ้าระวังความปลอดภัย',
           style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
         ),
         const SizedBox(height: 8),
         Text(
-          'ตั้งค่าการเช็กอินอัตโนมัติ และรายงานว่าคุณยังปลอดภัยอยู่',
+          'ระบบจะตรวจสอบว่าคุณยังปลอดภัยอยู่โดยให้คุณกดยืนยันภายในระยะเวลาที่กำหนด หากคุณไม่กดยืนยันภายในเวลาที่กำหนด ระบบจะถือว่าอาจมีเหตุฉุกเฉินเกิดขึ้น',
           style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
         ),
         const SizedBox(height: 16),
@@ -395,7 +395,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Dead Man Monitor',
+                          'ระบบเฝ้าระวัง',
                           style: AppTextStyles.bodyMedium.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -404,7 +404,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           _isLoadingDeadManSettings
                               ? 'กำลังโหลดการตั้งค่า...'
                               : isEnabled
-                                  ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการเช็กอินล่าสุด'
+                                  ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการยืนยันความปลอดภัยล่าสุด'
                                   : 'ยังไม่เปิดใช้งาน',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: Colors.grey,
@@ -424,7 +424,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 16),
               Text(
-                'ช่วงเวลาตรวจเช็กอิน',
+                'ช่วงเวลายืนยันความปลอดภัย',
                 style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
@@ -478,7 +478,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: OutlinedButton.icon(
                       onPressed: _isSavingDeadManSettings ? null : _checkInDeadManNow,
                       icon: const Icon(Icons.touch_app),
-                      label: const Text('เช็กอินตอนนี้'),
+                      label: const Text('ยืนยันความปลอดภัยตอนนี้'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -542,7 +542,7 @@ class _ProfilePageState extends State<ProfilePage> {
       slivers: [
         SliverAppBar(
           pinned: true,
-          floating: true,
+          floating: false,
           backgroundColor: AppColors.primary,
           automaticallyImplyLeading: false,
           elevation: 2,
@@ -557,24 +557,18 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(56), // เพิ่มความสูงเผื่อ Scrollbar
+            preferredSize: const Size.fromHeight(49),
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.only(bottom: 4), // เพิ่ม padding ล่างสำหรับ Scrollbar
               decoration: const BoxDecoration(
                 color: Colors.white,
                 border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
               ),
-              child: Scrollbar(
+              child: SingleChildScrollView(
                 controller: _tabScrollController,
-                thumbVisibility: true,
-                thickness: 4.0,
-                radius: const Radius.circular(8.0),
-                child: SingleChildScrollView(
-                  controller: _tabScrollController,
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
                     SizedBox(
                       width: tabWidth,
                       child: _buildTabItem(
@@ -645,7 +639,6 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ),
-      ),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
@@ -679,7 +672,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 24),
               ] else if (_selectedTabIndex == historyTabIndex) ...[
                 SizedBox(
-                  height: MediaQuery.of(context).size.height - 250,
+                  height: MediaQuery.of(context).size.height - 120,
                   child: isConsumer
                       ? const MyConsultationsPage(isEmbedded: true)
                       : const ProviderHistoryPage(isEmbedded: true),
@@ -1231,16 +1224,16 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 16),
           _buildYieldWayRadiusSection(),
         ],
-        const SizedBox(height: 24),
-        _buildEmergencyHealthSettingsSection(),
-        const SizedBox(height: 24),
-        _buildDeadManSwitchSection(),
         if (_thaiMhungEnabled ||
             (_profession?.isVolunteer ?? false) ||
             _isYieldWayEnabled) ...[
           const SizedBox(height: 24),
           _buildUnblurredProfessionSection(),
         ],
+        const SizedBox(height: 24),
+        _buildEmergencyHealthSettingsSection(),
+        const SizedBox(height: 24),
+        _buildDeadManSwitchSection(),
       ],
     );
   }
@@ -1492,7 +1485,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'ตั้งค่า Dead Man\'s Switch และข้อมูลสุขภาพที่จะปลดล็อกอัตโนมัติเมื่อเกิดเหตุฉุกเฉิน',
+          'ตั้งค่าระบบเฝ้าระวังความปลอดภัยและข้อมูลสุขภาพที่จะเปิดเผยอัตโนมัติเมื่อเกิดเหตุฉุกเฉิน',
           style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
         ),
         const SizedBox(height: 16),
@@ -2463,7 +2456,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // ── Dead Man's Switch helpers ──
+  // ── ระบบเฝ้าระวังความปลอดภัย helpers ──
 
   Future<void> _loadDeadManSettings() async {
     final userId = _user?.id ?? AuthService.instance.userId;
@@ -2508,7 +2501,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('บันทึกการตั้งค่า Dead Man สำเร็จ'),
+            content: Text('บันทึกการตั้งค่าระบบเฝ้าระวังความปลอดภัยสำเร็จ'),
             backgroundColor: AppColors.success,
           ),
         );
