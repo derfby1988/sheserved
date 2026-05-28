@@ -14,6 +14,7 @@ class ChatInputBarWidget extends StatelessWidget {
   final VoidCallback onStopRecording;
   final VoidCallback onPickImage;
   final VoidCallback onShowAttachmentMenu;
+  final VoidCallback? onShowQuickReplies;
   final ValueChanged<String>? onTextChanged;
 
   const ChatInputBarWidget({
@@ -29,6 +30,7 @@ class ChatInputBarWidget extends StatelessWidget {
     required this.onStopRecording,
     required this.onPickImage,
     required this.onShowAttachmentMenu,
+    this.onShowQuickReplies,
     this.onTextChanged,
   });
 
@@ -108,6 +110,12 @@ class ChatInputBarWidget extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (isProvider) ...[
+                  buildInputIconButton(
+                    icon: Icons.bolt,
+                    tooltip: 'ข้อความด่วน',
+                    onTap: onShowQuickReplies ?? () {},
+                  ),
+                  const SizedBox(width: 4),
                   buildInputIconButton(
                     icon: Icons.attach_file,
                     tooltip: 'เครื่องมือแพทย์',

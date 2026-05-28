@@ -126,15 +126,37 @@ class ExpertStatusBanner extends StatelessWidget {
                                 : (isRequired ? Colors.grey.shade600 : Colors.grey),
                           ),
                         const SizedBox(width: 6),
-                        Text(
-                          expert['name'] + (isRequired ? ' *' : ''),
-                          style: TextStyle(
-                            color: isJoined
-                                ? (profColor ?? AppColors.primary)
-                                : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
-                            fontSize: 12,
-                            fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
-                          ),
+                        Builder(
+                          builder: (context) {
+                            String displayName = expert['name']?.toString() ?? '';
+                            final profName = prof?.name;
+                            
+                            if (isJoined) {
+                              final groupName = profName ?? expert['expertGroupName']?.toString();
+                              if (groupName != null && groupName.isNotEmpty && groupName != displayName) {
+                                displayName = '$displayName ($groupName)';
+                              }
+                            } else {
+                              // If waiting, show the profession name (กลุ่มอาชีพ) instead of group name (ชื่อหน้ากลุ่ม)
+                              if (profName != null && profName.isNotEmpty) {
+                                displayName = profName;
+                              }
+                            }
+
+                            if (isRequired) {
+                              displayName += ' *';
+                            }
+                            return Text(
+                              displayName,
+                              style: TextStyle(
+                                color: isJoined
+                                    ? (profColor ?? AppColors.primary)
+                                    : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
+                                fontSize: 12,
+                                fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            );
+                          }
                         ),
                       ],
                     ),

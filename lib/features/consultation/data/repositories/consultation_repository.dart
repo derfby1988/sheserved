@@ -399,6 +399,46 @@ class ConsultationRepository {
     }).eq('id', requestId);
   }
 
+  /// Ensure consultation_room_experts rows exist for a consultation.
+  /// ใช้ RPC ensure_room_experts (SECURITY DEFINER) เพื่อ bypass RLS
+  Future<void> ensureRoomExperts({
+    required String consultationId,
+    required String packageId,
+    String? roomId,
+  }) async {
+    try {
+      await _client.rpc('ensure_room_experts', params: {
+        'p_consultation_id': consultationId,
+        'p_package_id': packageId,
+        'p_room_id': roomId,
+      });
+      debugPrint('ensureRoomExperts: RPC succeeded for $consultationId');
+    } catch (e) {
+      debugPrint('ensureRoomExperts error: $e');
+      // Non-fatal: fallbacks in UI will handle it
+    }
+  }
+
+  /// Provider รับงาน: sync provider เข้า consultation_room_experts หลังจาก assignProvider (ระบบเก่า)
+  /// ใช้ RPC sync_provider_to_room_experts (SECURITY DEFINER) เพื่อ bypass RLS
+  Future<void> syncProviderToRoomExperts({
+    required String consultationId,
+    required String providerId,
+    String? professionId,
+  }) async {
+    try {
+      await _client.rpc('sync_provider_to_room_experts', params: {
+        'p_consultation_id': consultationId,
+        'p_provider_id': providerId,
+        'p_profession_id': professionId,
+      });
+      debugPrint('syncProviderToRoomExperts: RPC succeeded for consultationId=$consultationId providerId=$providerId');
+    } catch (e) {
+      debugPrint('syncProviderToRoomExperts error: $e');
+      // Non-fatal: banner may show waiting instead of joined
+    }
+  }
+
   /// Provider รับงาน: เข้าร่วม Expert Group (ระบบใหม่ Phase 1 ป้องกัน Race Condition)
   Future<void> assignProviderToGroup({
     required String consultationId,

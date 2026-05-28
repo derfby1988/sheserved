@@ -107,6 +107,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   // --- Room Status ---
   StreamSubscription? _roomSub;
+  StreamSubscription? _consultationSub;
   DateTime? _roomStartedAt;
 
   // Animation controllers
@@ -459,6 +460,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             }
           });
         }
+
+        // Subscribe to consultation updates so patient sees provider_id / status changes
+        _consultationSub = supabase
+            .from('consultation_requests')
+            .stream(primaryKey: ['id'])
+            .eq('id', consultationId)
+            .listen((updatedList) {
+              if (updatedList.isEmpty) return;
+              final updated = updatedList.first;
+              final newProviderId = updated['provider_id'] as String?;
+              final oldProviderId = _consultationData?['provider_id'] as String?;
+              debugPrint('[ChartBoard] consultation_requests realtime update: provider_id=$newProviderId (was $oldProviderId), status=${updated['status']}');
+              if (mounted) {
+                setState(() {
+                  _consultationData = updated;
+                  final newStatus = updated['status'] as String? ?? 'pending';
+                  _isConsultationActive = (newStatus == 'in_progress') || _isProvider;
+                });
+              }
+              // Re-fetch expert statuses when provider_id or status changes
+              final cid = consultationId;
+              final newStatus = updated['status'] as String? ?? 'pending';
+              final oldStatus = _consultationData?['status'] as String? ?? 'pending';
+              
+              if ((newProviderId != oldProviderId || newStatus != oldStatus) && cid != null && cid.isNotEmpty) {
+                debugPrint('[ChartBoard] provider_id or status changed → re-fetching expert statuses');
+                _fetchExpertStatuses(cid);
+              }
+            });
       }
 
       if (roomData != null) {
@@ -605,6 +635,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
       }).toList();
 
+      // Fallback 0: ensure rows exist from package data (trigger safety net)
+      if (mapped.isEmpty && _consultationData?['package_id'] != null) {
+        debugPrint('[ChartBoard] consultation_room_experts empty — calling ensureRoomExperts');
+        final repo = ServiceLocator.instance.consultationRepository;
+        await repo.ensureRoomExperts(
+          consultationId: consultationId,
+          packageId: _consultationData!['package_id'] as String,
+          roomId: _consultationData!['room_id'] as String?,
+        );
+        // Re-query after insert
+        final refreshed = await Supabase.instance.client
+            .from('consultation_room_experts')
+            .select()
+            .eq('consultation_id', consultationId);
+        if ((refreshed as List).isNotEmpty) {
+          debugPrint('[ChartBoard] ensureRoomExperts succeeded, re-query got ${refreshed.length} rows');
+          mapped = (refreshed as List).map((e) => {
+            'role': e['expert_group_role'],
+            'name': e['expert_group_name'],
+            'status': e['status'],
+            'providerId': e['provider_id'],
+            'isRequired': e['is_required'] as bool? ?? false,
+            'joinedAt': e['joined_at'],
+            'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
+            'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+          }).toList();
+        }
+      }
+
       // Fallback 1: query chat_room_members + users
       if (mapped.isEmpty) {
         debugPrint('[ChartBoard] consultation_room_experts empty — falling back to chat_room_members');
@@ -656,8 +715,30 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           final firstName = user['first_name'] as String? ?? '';
           final lastName = user['last_name'] as String? ?? '';
           final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+
+          // หา profession เพื่อใช้ role ที่ตรงกับ package expert groups
+          final professionId = user['profession_id'] as String?;
+          String role = 'doctor';
+          if (professionId != null && professionId.isNotEmpty) {
+            final prof = await ServiceLocator.instance.professionRepository
+                .getProfessionById(professionId)
+                .catchError((e) => null);
+            if (prof != null) {
+              final profName = prof.name.toLowerCase();
+              if (profName.contains('เภสัช') || profName.contains('pharmacist')) {
+                role = 'pharmacist';
+              } else if (profName.contains('เฉพาะทาง') || profName.contains('specialist')) {
+                role = 'specialist';
+              } else if (profName.contains('อาจารย์') || profName.contains('professor')) {
+                role = 'professor';
+              } else if (profName.contains('หมอ') || profName.contains('แพทย์') || profName.contains('doctor')) {
+                role = 'doctor';
+              }
+            }
+          }
+
           mapped = [{
-            'role': 'expert',
+            'role': role,
             'name': name,
             'status': 'joined',
             'providerId': providerId,
@@ -669,9 +750,33 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         }
       }
 
+      // Client-side safety net: ถ้า provider_id ถูก set แล้วแต่ไม่มี expert ไหน joined → force joined
+      if (_consultationData?['provider_id'] != null) {
+        final providerId = _consultationData!['provider_id'] as String;
+        final hasJoined = mapped.any((e) => e['status'] == 'joined');
+        if (!hasJoined) {
+          debugPrint('[ChartBoard] SAFETY NET: provider_id=$providerId set but no joined expert — forcing joined');
+          bool found = false;
+          for (final expert in mapped) {
+            if (expert['providerId'] == providerId) {
+              expert['status'] = 'joined';
+              expert['joinedAt'] = _consultationData!['updated_at'] ?? DateTime.now().toIso8601String();
+              found = true;
+              break;
+            }
+          }
+          if (!found && mapped.isNotEmpty) {
+            // ไม่เจอ provider ใน mapped → อัปเดตแถว waiting แรกให้เป็น joined
+            mapped.first['status'] = 'joined';
+            mapped.first['providerId'] = providerId;
+            mapped.first['joinedAt'] = _consultationData!['updated_at'] ?? DateTime.now().toIso8601String();
+          }
+        }
+      }
+
       // Merge with package expert groups to show waiting groups with grey icons
       final merged = _mergeWithPackageGroups(mapped);
-      debugPrint('[ChartBoard] _fetchExpertStatuses merged length=${merged.length} (joined=${mapped.length}, waiting=${merged.length - mapped.length})');
+      debugPrint('[ChartBoard] _fetchExpertStatuses merged length=${merged.length} (joined=${mapped.where((e) => e['status'] == 'joined').length}, waiting=${merged.length - mapped.where((e) => e['status'] == 'joined').length})');
 
       if (mounted) {
         setState(() {
@@ -1065,6 +1170,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
     _roomSub?.cancel();
+    _consultationSub?.cancel();
     disposeHealthPermission();
     _messagesNotifier.dispose();
     _isChatLoadingNotifier.dispose();
@@ -1715,14 +1821,50 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
 
     final merged = <Map<String, dynamic>>[...joinedExperts];
-    final joinedRoles = joinedExperts.map((e) => (e['role'] as String? ?? '').toLowerCase()).toSet();
 
     for (final group in package.expertGroups) {
-      // Check if any expert of this role has already joined
-      final alreadyJoined = joinedRoles.contains(group.role.toLowerCase());
+      // Find the corresponding profession for this group to get its legacy role mappings if any
+      final prof = findProfessionByNameOrRole(_professions, group.name, group.role);
+      
+      final groupRoleLower = group.role.toLowerCase();
+      final groupNameLower = group.name.toLowerCase();
+      
+      final targetRoles = <String>{
+        groupRoleLower,
+        if (prof != null) prof.id.toLowerCase(),
+        if (prof != null) prof.name.toLowerCase(),
+      };
+      
+      if (groupNameLower.contains('เภสัช')) {
+        targetRoles.add('pharmacist');
+      } else if (groupNameLower.contains('เฉพาะทาง')) {
+        targetRoles.add('specialist');
+      } else if (groupNameLower.contains('อาจารย์')) {
+        targetRoles.add('professor');
+      } else if (groupNameLower.contains('หมอ') || groupNameLower.contains('แพทย์')) {
+        targetRoles.add('doctor');
+      }
+      
+      bool alreadyJoined = false;
+      for (var i = 0; i < merged.length; i++) {
+        final expert = merged[i];
+        if (expert['status'] == 'waiting') continue; // only check joined experts
+
+        final expertRole = (expert['role'] as String? ?? '').toLowerCase();
+        final expertName = (expert['name'] as String? ?? '').toLowerCase();
+        
+        if (targetRoles.contains(expertRole) || expertName == groupNameLower) {
+          alreadyJoined = true;
+          
+          // Sync UI properties from the group to the joined expert
+          expert['isRequired'] = expert['isRequired'] == true || group.isRequired;
+          expert['expertGroupIcon'] ??= prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
+          expert['professionColorHex'] ??= prof?.colorHex;
+          expert['expertGroupName'] ??= group.name;
+        }
+      }
+
       if (!alreadyJoined) {
-        // Prefer profession icon from admin settings, fallback to package icon or role mapping
-        final prof = findProfessionByNameOrRole(_professions, group.name, group.role);
         final iconName = prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
         merged.add({
           'role': group.role,

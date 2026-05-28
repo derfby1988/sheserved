@@ -368,6 +368,10 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 > | 2 | Room subscription stream | เริ่ม timer เมื่อ `started_at` เปลี่ยน | ลบ `_startTimer()` ออก ให้เหลือแค่ set `_remainingSeconds` |
 > | 3 | Expert status stream | ใช้ `data` (raw DB) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
 > | 4 | `_fetchExpertStatuses()` | ใช้ `mapped` (raw) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
+> | 5 | `_mergeWithPackageGroups` | จับคู่ role ผิดพลาด (UUID vs Legacy string) ทำให้โชว์ชิปซ้ำซ้อน | ใช้ `findProfessionByNameOrRole` และดัก Keyword ภาษาไทยเพื่อเปรียบเทียบ Role ทั้งแบบ UUID และ Text ให้ตรงกัน |
+> | 6 | `consultation_requests` Stream | ฝั่งผู้ป่วยไม่ยอมรีเฟรชหน้าจอเมื่อหมอกดรับงาน | เพิ่มเงื่อนไข `newStatus != oldStatus` เพื่อสั่ง `_fetchExpertStatuses` ทุกครั้งที่สถานะแชทเปลี่ยนเป็น `in_progress` |
+> | 7 | `findProfessionByNameOrRole` | ไม่สามารถจับคู่อาชีพจากตารางใหม่ได้หากเป็นแพ็คเกจเก่า (Legacy) | เพิ่มตารางแมปคำ (Legacy Map) เช่น `'doctor'` -> `'แพทย์ทั่วไป'` เพื่อให้ดึง ID จาก DB ได้ถูกต้อง |
+> | 8 | `ExpertStatusBanner` | แสดงชื่อชิปตามชื่อหน้ากลุ่ม (เช่น "หมอ") แทนที่จะเป็นชื่ออาชีพจริง | ปรับให้ดึง `prof.name` (เช่น "แพทย์ทั่วไป") มาแสดงเสมอ ทั้งตอนรอคนรับงานและตอนที่มีคนเข้าร่วมแล้ว |
 >
 > **เหตุผล:** `data` / `mapped` จาก `consultation_room_experts` มีเฉพาะ expert ที่เข้าร่วมแล้ว ไม่มี waiting groups จากแพ็คเกจ → ตรวจสอบ `isRequired` ไม่ครบ → timer เริ่มก่อน expert ครบ
 >

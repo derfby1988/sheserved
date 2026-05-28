@@ -376,6 +376,13 @@ class _HealthProgramRequestDashboardState
             providerId: user.id,
           );
           debugPrint('Dashboard: assignProvider fallback success');
+          // Sync provider เข้า consultation_room_experts เพื่อให้ banner แสดง joined
+          await _repo.syncProviderToRoomExperts(
+            consultationId: entry.id,
+            providerId: user.id,
+            professionId: user.professionId,
+          );
+          debugPrint('Dashboard: syncProviderToRoomExperts fallback success');
         }
       } else {
         // ไม่มี packageId หรือ professionId → ใช้ระบบ assign ตรง
@@ -385,6 +392,13 @@ class _HealthProgramRequestDashboardState
           providerId: user.id,
         );
         debugPrint('Dashboard: direct assign success');
+        // Sync provider เข้า consultation_room_experts เพื่อให้ banner แสดง joined
+        await _repo.syncProviderToRoomExperts(
+          consultationId: entry.id,
+          providerId: user.id,
+          professionId: user.professionId,
+        );
+        debugPrint('Dashboard: syncProviderToRoomExperts direct success');
       }
 
       // 1.5 อัปเดตสถานะ request ให้เป็น in_progress

@@ -15,14 +15,34 @@ Profession? findProfessionByNameOrRole(
   searchTerms.remove('');
   if (searchTerms.isEmpty) return null;
 
+  // Map legacy roles/names to proper Thai names to match the new DB
+  final legacyMap = <String, String>{
+    'doctor': 'แพทย์ทั่วไป',
+    'หมอ': 'แพทย์ทั่วไป',
+    'specialist': 'แพทย์เฉพาะทาง',
+    'professor': 'อาจารย์แพทย์',
+    'pharmacist': 'เภสัชกร',
+    'เภสัช': 'เภสัชกร',
+    'nurse': 'พยาบาล',
+  };
+
+  final mappedTerms = <String>{};
+  for (final term in searchTerms) {
+    mappedTerms.add(term);
+    if (legacyMap.containsKey(term)) {
+      mappedTerms.add(legacyMap[term]!);
+    }
+  }
+
   for (final prof in professions) {
+    final profId = prof.id.toLowerCase().trim();
     final profName = prof.name.toLowerCase().trim();
     final profNameEn = (prof.nameEn ?? '').toLowerCase().trim();
-    if (searchTerms.any((term) =>
+    if (mappedTerms.any((term) =>
+        profId == term ||
         profName.contains(term) ||
         term.contains(profName) ||
-        profNameEn.contains(term) ||
-        term.contains(profNameEn))) {
+        (profNameEn.isNotEmpty && (profNameEn.contains(term) || term.contains(profNameEn))))) {
       return prof;
     }
   }
