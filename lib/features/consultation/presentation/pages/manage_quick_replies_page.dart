@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/core/constants/app_text_styles.dart';
+import 'package:sheserved/services/service_locator.dart';
 
 class QuickReply {
   final String id;
@@ -49,8 +50,16 @@ class _ManageQuickRepliesPageState extends State<ManageQuickRepliesPage> {
   Future<void> _fetchReplies() async {
     setState(() => _isLoading = true);
     try {
-      final user = await _supabase.auth.getUser();
-      final providerId = user.user?.id ?? '';
+      // ✅ ใช้ ServiceLocator.instance.currentUser ตาม auth_data_guidelines.md
+      final providerId = ServiceLocator.instance.currentUser?.id ?? '';
+      if (providerId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนใช้งาน')),
+          );
+        }
+        return;
+      }
       final response = await _supabase
           .from('doctor_quick_replies')
           .select()
@@ -103,8 +112,8 @@ class _ManageQuickRepliesPageState extends State<ManageQuickRepliesPage> {
 
   Future<void> _saveReply(String content, {QuickReply? reply}) async {
     try {
-      final user = await _supabase.auth.getUser();
-      final providerId = user.user?.id ?? '';
+      // ✅ ใช้ ServiceLocator.instance.currentUser ตาม auth_data_guidelines.md
+      final providerId = ServiceLocator.instance.currentUser?.id ?? '';
       if (reply == null) {
         // Insert new
         final newOrder = (_replies.isNotEmpty) ? _replies.last.sortOrder + 1 : 0;

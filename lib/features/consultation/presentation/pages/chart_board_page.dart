@@ -23,6 +23,7 @@ import '../widgets/package_wheel_selector.dart';
 import '../../../../features/admin/models/profession.dart';
 import 'prescription_editor_page.dart';
 import 'consultation_note_editor_page.dart';
+import 'manage_quick_replies_page.dart';
 import '../widgets/timer_badge_widget.dart';
 import '../widgets/body_map_summary_widget.dart';
 import '../widgets/action_buttons_widget.dart';
@@ -1397,6 +1398,102 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  Future<void> _showQuickRepliesBottomSheet() async {
+    final user = _currentUser;
+    if (user == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => FutureBuilder<List<Map<String, dynamic>>>(
+        future: Supabase.instance.client
+            .from('doctor_quick_replies')
+            .select()
+            .eq('provider_id', user.id)
+            .order('sort_order', ascending: true),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final replies = snapshot.data ?? [];
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'ข้อความด่วน',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => ManageQuickRepliesPage()),
+                          );
+                        },
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('จัดการ'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (replies.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text(
+                      'ยังไม่มีข้อความด่วน\nคุณสามารถกดปุ่ม "จัดการ" เพื่อเพิ่มข้อความได้',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: replies.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final reply = replies[index];
+                        return ListTile(
+                          title: Text(
+                            reply['content']?.toString() ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _msgController.text = reply['content']?.toString() ?? '';
+                            // Move cursor to the end
+                            _msgController.selection = TextSelection.fromPosition(
+                              TextPosition(offset: _msgController.text.length),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildChatInput() {
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
@@ -1413,6 +1510,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       onStopRecording: _stopRecording,
       onPickImage: _pickAndSendImage,
       onShowAttachmentMenu: _showAttachmentMenu,
+      onShowQuickReplies: _showQuickRepliesBottomSheet,
       onTextChanged: (_) => setState(() {}),
     );
   }

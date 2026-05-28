@@ -206,13 +206,16 @@ CREATE TABLE IF NOT EXISTS consultation_reviews (
 CREATE TABLE IF NOT EXISTS doctor_quick_replies (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id UUID NOT NULL REFERENCES users(id),
-  title       TEXT NOT NULL,
+  title       TEXT,     -- อนุญาตให้เป็น null ได้ เนื่องจากหน้า UI ใช้แค่ content
   content     TEXT NOT NULL,
   category    TEXT DEFAULT 'general',
   -- 'greeting'|'follow_up'|'prescription'|'general'
   sort_order  INT DEFAULT 0,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- Note: ปิดการใช้งาน RLS สำหรับตารางนี้ เนื่องจากโปรเจกต์ใช้ Custom Auth
+-- ALTER TABLE doctor_quick_replies DISABLE ROW LEVEL SECURITY;
 ```
 
 ---
@@ -492,26 +495,20 @@ class ChatRoomMember { ... }
 
 ## 🔒 Supabase RLS Policies ที่ต้องเพิ่ม
 
+> **⚠️ ข้อควรระวังสำคัญ (Custom Auth):** 
+> โปรเจกต์นี้ไม่ได้ใช้ Supabase Auth แต่อย่างใด (`auth.uid()` จะมีค่าเป็น `null` เสมอ) และ Query จากแอปจะอยู่ในฐานะ `anon` role 
+> **ห้ามสร้าง Policy ที่อ้างอิง `auth.uid()` หรือระบุ `TO authenticated`** เพราะจะทำให้เกิด Error 42501 Unauthorized 
+> 
+> **แนวทางปฏิบัติสำหรับตารางที่เกี่ยวข้องกับการแชทและประวัติแพทย์:**
+> ให้ทำการปิดใช้งาน RLS สำหรับตารางเหล่านี้ และควบคุม Access Control + Data Filtering ที่ฝั่ง Application Layer (Flutter/Node.js) โดยใช้ข้อมูลจาก `ServiceLocator.instance.currentUser` แทน 
+
 ```sql
--- chat_room_members: เห็นเฉพาะห้องที่ตัวเองอยู่
-CREATE POLICY "Members see their rooms"
-  ON chat_room_members FOR SELECT
-  USING (user_id = auth.uid());
-
--- consultation_notes: ผู้ป่วยเห็นเฉพาะของตัวเอง
-CREATE POLICY "Patients see own notes"
-  ON consultation_notes FOR SELECT
-  USING (patient_id = auth.uid() AND is_visible_to_patient = true);
-
--- prescriptions: เห็นเฉพาะที่เกี่ยวข้อง
-CREATE POLICY "Users see own prescriptions"
-  ON prescriptions FOR SELECT
-  USING (patient_id = auth.uid() OR provider_id = auth.uid());
-
--- consultation_reviews: เขียนได้ครั้งเดียว
-CREATE POLICY "Patients write own review"
-  ON consultation_reviews FOR INSERT
-  WITH CHECK (reviewer_id = auth.uid());
+-- ปิด RLS เพื่อให้ client แบบ anon สามารถเข้าถึงข้อมูลของแชทได้ (จัดการกรองข้อมูลด้วย provider_id / patient_id ในแอป)
+ALTER TABLE chat_room_members DISABLE ROW LEVEL SECURITY;
+ALTER TABLE consultation_notes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE prescriptions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE consultation_reviews DISABLE ROW LEVEL SECURITY;
+ALTER TABLE doctor_quick_replies DISABLE ROW LEVEL SECURITY;
 ```
 
 ---
