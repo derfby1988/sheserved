@@ -2552,3 +2552,383 @@ Future<void> dismiss(String id) async {
 ---
 
 **หลักการ:** Badge แสดง "โอกาส" (แพ็คเกจตรงอาชีพ) แต่ปุ่มแสดง "สิทธิ์" (status + availability) — ทั้งสองอย่างอิสระจากกัน
+
+---
+
+## 🗓️ Next Phases — UX ที่เหลือหลัง Refactor เสร็จ
+
+> สร้าง: 29 พฤษภาคม 2569 | สถานะ: Ready to implement
+
+> **⚠️ Auth Guidelines Compliance ทุก Phase:**
+> - ดึง `userId` จาก `ServiceLocator.instance.currentUser?.id` เท่านั้น ([ดูแนวทาง](/Users/apisekpanyakong/ProjectFlutter/sheserved/.agent/workflows/auth_data_guidelines.md))
+> - ห้ามใช้ `Supabase.instance.client.auth.currentUser?.id` — จะเป็น `null` เสมอ
+> - **ห้ามใช้ mock ID** เช่น `'demo_user'`, `'anonymous'`, `'system'` เป็นค่า fallback
+> - Repository ต้องรับ `userId` เป็นพารามิเตอร์ ไม่ดึงจาก auth ภายใน
+
+### สรุปสิ่งที่ทำแล้ว (เพื่อให้เห็นขอบเขต)
+
+| ส่วน | สถานะ |
+|---|---|
+| Session Timer + Expert Join Rules | ✅ |
+| Expert Status Banner (real-time) | ✅ |
+| Health Permission Mixin | ✅ |
+| Quick Replies + Manage Page | ✅ |
+| Pain Level + Payment Card | ✅ |
+| Message Bubble / Prescription Card / Summary Card | ✅ |
+| Provider Status Mismatch (client safety net) | ✅ (แต่เป็นการแก้ปะ) |
+
+---
+
+### Phase 1: Post-Consultation Review (ให้คะแนน)
+**Priority: 🔴 สูงสุด** — ผู้ป่วยคาดหวังหลังใช้บริการเสมอ
+
+เพิ่ม flow ให้คะแนนและรีวิวหลังเซสชันจบ
+
+**Schema:** `consultation_reviews` (มีในแผนแล้ว ต้องสร้างจริง + ปิด RLS)
+
+**Migration:**
+```sql
+-- supabase/migrations/[timestamp]_create_consultation_reviews.sql
+CREATE TABLE IF NOT EXISTS consultation_reviews (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consultation_id       UUID NOT NULL REFERENCES consultation_requests(id),
+  session_id            UUID REFERENCES consultation_sessions(id),
+  reviewer_id           UUID NOT NULL REFERENCES users(id),
+  provider_id           UUID NOT NULL REFERENCES users(id),
+  rating                SMALLINT CHECK (rating BETWEEN 1 AND 5),
+  rating_communication  SMALLINT CHECK (rating_communication BETWEEN 1 AND 5),
+  rating_expertise      SMALLINT CHECK (rating_expertise BETWEEN 1 AND 5),
+  review_text           TEXT,
+  is_anonymous          BOOLEAN DEFAULT false,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(consultation_id, reviewer_id)
+);
+
+ALTER TABLE consultation_reviews DISABLE ROW LEVEL SECURITY;
+```
+
+**Flutter:**
+| งาน | ไฟล์ |
+|---|---|
+| Model `ConsultationReview` | `lib/features/consultation/data/models/consultation_review.dart` |
+| Review Repository | `lib/features/consultation/data/repositories/review_repository.dart` |
+| Rating Bottom Sheet | `lib/features/consultation/presentation/widgets/review/review_bottom_sheet.dart` |
+| Star Rating Widget | `lib/features/consultation/presentation/widgets/review/star_rating_input.dart` |
+| Provider Review Summary (แพทย์ดูรีวิวของตัวเอง) | `lib/features/consultation/presentation/widgets/review/provider_review_summary.dart` |
+
+**Trigger:** แสดงเมื่อ `status == 'completed'` หรือ session จบ → แสดงครั้งเดียว (`UNIQUE(consultation_id, reviewer_id)`)
+
+**Dependencies:** Phase 2 (End Session Flow) — Review จะถูก trigger หลังจากแพทย์กดจบ session
+
+**Auth Guidelines Compliance:**
+- ดึง `userId` จาก `ServiceLocator.instance.currentUser?.id` เท่านั้น
+- ห้ามใช้ `Supabase.instance.client.auth.currentUser?.id` (จะเป็น `null` เสมอ)
+- Repository ต้องรับ `userId` เป็นพารามิเตอร์ ไม่ดึงจาก auth ภายใน
+- **ห้ามใช้ mock ID** เช่น `'demo_user'`, `'anonymous'` เป็นค่า fallback — ถ้า user ไม่ login ต้อง redirect ไปหน้า login แทน
+
+**Success Criteria:
+- [ ] ผู้ป่วยเห็น Review Bottom Sheet หลัง session จบ
+- [ ] ส่งรีวิวแล้วบันทึกลง DB
+- [ ] แพทย์เห็นคะแนนเฉลี่ยใน dashboard
+- [ ] รีวิวไม่แสดงซ้ำถ้าผู้ป่วยกดข้าม
+
+```
+┌─────────────────────────────┐
+│  ⭐ ให้คะแนนการปรึกษา       │
+│  นพ.สมชาย ใจดี              │
+│  ────────────────────────── │
+│  ความเชี่ยวชาญ: ⭐⭐⭐⭐⭐   │
+│  การสื่อสาร:    ⭐⭐⭐⭐☆    │
+│  [เขียนรีวิว...]            │
+│       [ข้าม]    [ส่ง]      │
+└─────────────────────────────┘
+```
+
+---
+
+### Phase 2: System Messages + End Session Flow
+**Priority: 🔴 สูง** — ผู้ใช้ย้อนกลับมาอ่านไม่รู้ว่าเกิดอะไรขึ้น
+
+**2A: System Messages in Chat Thread**
+
+เพิ่ม `message_type = 'system'` เมื่อ:
+- `status → 'in_progress'` → "เซสชันเริ่มต้นแล้ว"
+- expert เข้าร่วม → "[ชื่อ] เข้าร่วมเซสชัน"
+- session จบ → "การปรึกษาเสร็จสิ้น"
+
+**Schema:** `chat_messages.message_type` มีอยู่แล้วในแผน
+
+**Flutter:**
+| งาน | ไฟล์ |
+|---|---|
+| System message bubble UI | `lib/features/chat/presentation/widgets/system_message_bubble.dart` |
+| Auto-send system message | `chart_board_page.dart` (ใน `_consultationSub` และ `_expertStatusSub`) |
+| ตรวจสอบ message_type ใน MessageBubble | `message_bubble.dart` |
+
+**2B: End Session Flow (แพทย์กดจบ)**
+```
+[แพทย์กด "จบการปรึกษา" ใน Attachment Menu]
+  → ยืนยัน Dialog
+  → อัปเดต consultation_requests.status → 'completed'
+  → อัปเดต chat_rooms.ended_at
+  → ส่ง System Message "การปรึกษาเสร็จสิ้น"
+  → ล็อก chat input ทั้งสองฝ่าย
+  → แสดง Review Bottom Sheet ฝั่งผู้ป่วย
+```
+
+| งาน | ไฟล์ |
+|---|---|
+| "จบการปรึกษา" ใน Attachment Menu | `chart_board_page.dart` (`_showAttachmentMenu`) |
+| Repository `completeConsultation` | `consultation_repository.dart` |
+| ล็อก chat input หลังจบ | `ChatInputBarWidget` รองรับ `readOnly` |
+| Timer auto-expire → จบ session | `SessionTimerController` |
+
+**Dependencies:** Phase 7 (Fix root cause) — ต้องมี `consultation_room_experts.status` ถูกต้องก่อนจะ trigger system message ได้ถูกต้อง
+
+**Auth Guidelines Compliance:**
+- System message ต้องใช้ `senderId` ที่ได้จาก `ServiceLocator.instance.currentUser?.id` เท่านั้น
+- ห้ามใช้ mock ID เช่น `'system'`, `'demo_user'` เป็น senderId — ใช้ `const Uuid().v4()` สำหรับ message ID แต่ senderId ต้องเป็น user จริง
+- End session ต้องตรวจสอบ `_isProvider` จาก `AuthService.instance.currentUser` ไม่ใช่จาก Supabase Auth
+
+**Success Criteria:
+- [ ] System message แสดงใน chat thread เมื่อ status เปลี่ยน
+- [ ] แพทย์กดจบ → status → 'completed'
+- [ ] Chat input ถูกล็อก หลังจบ session
+- [ ] Review Bottom Sheet แสดงฝั่งผู้ป่วย
+- [ ] Timer หมดอัตโนมัติ → จบ session ด้วย
+
+---
+
+### Phase 3: PDPA Image Privacy — Camera Only + Auto Blur
+**Priority: 🟡 ปานกลาง-สูง** — ภาพทางการแพทย์ละเอียดอ่อน
+
+**Problem:** `_pickAndSendImage` ยังเปิด gallery ได้ (`ImagePicker`) และ blur อาจยังไม่สมบูรณ์
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | บังคับ `source: ImageSource.camera` เท่านั้น | `chart_board_page.dart` (`_pickAndSendImage`) |
+| 2 | ตรวจจับใบหน้า + blur อัตโนมัติ (ถ้ายังไม่ blur) | `_processImagePDPA` |
+| 3 | ใส่ Watermark ชื่อผู้ป่วย + timestamp | `_processImagePDPA` |
+| 4 | Storage bucket แบบ Private | ตรวจสอบ Supabase Storage policy |
+| 5 | แสดง PDPA disclaimer ก่อนถ่ายรูป | `chart_board_page.dart` (Dialog) |
+
+**Technical Details:**
+- ใช้ `ui.Image` + `Canvas` สำหรับ blur + watermark
+- ใช้ `GaussianBlur` จาก `dart:ui` หรือ external package
+- Watermark: "Patient: [ชื่อ] | Date: [วันที่]" มุมขวาล่าง โปร่งแสง 50%
+
+**Auth Guidelines Compliance:**
+- Watermark ดึงชื่อผู้ป่วยจาก `ServiceLocator.instance.currentUser?.fullName` เท่านั้น
+- ห้าม hardcode ชื่อ mock ใน watermark
+- Upload รูปต้องใช้ `userId` จาก `ServiceLocator` ใน path/filename (ไม่ใช้ `'demo_user'`)
+
+**Success Criteria:
+- [ ] ไม่สามารถเลือกรูปจาก gallery ได้
+- [ ] ใบหน้าถูก blur อัตโนมัติ
+- [ ] Watermark ปรากฏบนภาพที่อัปโหลด
+- [ ] ภาพเก็บใน private bucket (ไม่ public)
+- [ ] ผู้ป่วยเห็น disclaimer ก่อนถ่าย
+
+---
+
+### Phase 4: Follow-up / นัดหมาย
+**Priority: 🟡 ปานกลาง** — เพิ่มความสมบูรณ์ของบริการ
+
+`consultation_notes.follow_up_date` มีใน schema แล้ว
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | แพทย์ระบุวันนัดใน `ConsultationNoteEditorPage` | `consultation_note_editor_page.dart` |
+| 2 | ผู้ป่วยเห็น "นัดครั้งต่อไป" ใน history | `profile_page.dart` |
+| 3 | แสดง "นัดครั้งต่อไป" ใน ChartBoard หลังจบ | `chart_board_page.dart` |
+| 4 | Push Notification ก่อนวันนัด 1 วัน | background job / cron (Node.js server) |
+
+**UI Mock (ผู้ป่วย):**
+```
+┌─────────────────────────────┐
+│  📅 นัดครั้งต่อไป           │
+│  15 มิถุนายน 2569 เวลา 14:00 │
+│  [เพิ่มปฏิทิน] [ดูรายละเอียด] │
+└─────────────────────────────┘
+```
+
+**Dependencies:** Phase 2 (End Session Flow) — แพทย์ต้องจบ session และบันทึก note ก่อนจะมีวันนัด
+
+**Success Criteria:**
+- [ ] แพทย์เลือกวันนัดได้ใน Note Editor
+- [ ] ผู้ป่วยเห็นวันนัดใน history
+- [ ] Push notification ส่งก่อนวันนัด 1 วัน
+- [ ] กดเพิ่มปฏิทินได้
+
+---
+
+### Phase 5: Chat List Page Improvements
+**Priority: 🟡 ปานกลาง** — `chat_list_page.dart`
+
+จากแผน: Card + gradient, Chip ประเภท, unread badge, search by name, tab filter
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | Card UI + gradient + shadow แทน ListTile | `chat_list_page.dart` |
+| 2 | Chip "ปรึกษาแพทย์" / "กลุ่ม" | `chat_list_page.dart` |
+| 3 | Unread badge จาก `chat_room_members.unread_count` | `chat_list_page.dart` |
+| 4 | Search by name (ชื่อผู้เชี่ยวชาญ) | `chat_list_page.dart` |
+| 5 | Tab filter: ทั้งหมด / ปรึกษา / ทั่วไป | `chat_list_page.dart` |
+| 6 | Realtime unread count update | `chat_list_page.dart` (Supabase channel) |
+
+**Schema:** `chat_room_members.unread_count` มีในแผนแล้ว
+
+**Dependencies:** Sprint 1 จาก Migration Plan (สร้าง `chat_room_members` + migrate participant_ids)
+
+**Success Criteria:**
+- [ ] Card UI สวยงามด้วย gradient + shadow
+- [ ] Unread badge แสดงจำนวนที่ยังไม่อ่าน
+- [ ] Search ค้นชื่อผู้เชี่ยวชาญได้
+- [ ] Tab filter กรองประเภทห้องแชทได้
+- [ ] Unread count อัปเดต real-time
+
+---
+
+### Phase 6: Reply to Message
+**Priority: 🟢 ต่ำ** — nice-to-have
+
+Long press → menu (Reply / Copy / Delete) → `reply_to_id` มีใน schema แล้ว
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | Message context menu (Reply / Copy / Delete) | `message_bubble.dart` |
+| 2 | Quoted message UI ด้านบน bubble | `message_bubble.dart` |
+| 3 | Send message with reply_to_id | `chart_board_page.dart` (`_sendMessage`) |
+| 4 | Repository method `deleteMessage` | `chat_repository.dart` |
+
+**Schema:** `chat_messages.reply_to_id` มีในแผนแล้ว
+
+**UI Mock (Reply):**
+```
+┌─────────────────────────────┐
+│ 💬 นพ.สมชาย ใจดี           │
+│ "อาการเป็นอย่างไรครับ?"   │ ← Quoted (สีเทา)
+│ ────────────────────────── │
+│ "ปวดหัวเล็กน้อยครับ"         │ ← Reply
+└─────────────────────────────┘
+```
+
+**Success Criteria:**
+- [ ] Long press แสดง context menu
+- [ ] Reply แสดง quoted message ด้านบน
+- [ ] Copy message ได้
+- [ ] Delete message ได้ (soft delete: `is_deleted = true`)
+- [ ] reply_to_id บันทึกลง DB
+
+---
+
+### Phase 7: Provider Status Mismatch — Root Cause Fix
+**Priority: 🔴 สูง** — structural bug
+
+**Problem:** `_joinRequest()` fallback ไปใช้ `assignProvider()` (ระบบเก่า) แต่ไม่อัปเดต `consultation_room_experts` เป็น `joined`
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | แก้ `_joinRequest` — หลัง `assignProvider()` → อัปเดต `consultation_room_experts` เป็น `joined` | `health_program_request_dashboard.dart` |
+| 2 | หรือ: ลบ fallback ระบบเก่า ให้แจ้ง user แทนถ้า expert group ไม่ตรง | (ทางเลือกที่ปลอดภัยกว่า) |
+| 3 | Backfill ข้อมูลเก่า — SQL Migration | `supabase/migrations/[timestamp]_backfill_provider_status.sql` |
+| 4 | ลบ client-side safety net หลัง backfill | `chart_board_page.dart` (`_fetchExpertStatuses`) |
+
+**Migration (Backfill):**
+```sql
+-- supabase/migrations/[timestamp]_backfill_provider_status.sql
+-- คำปรึกษาที่ provider_id ถูกตั้งแล้วแต่ consultation_room_experts ยัง waiting
+UPDATE consultation_room_experts
+SET status = 'joined',
+    provider_id = cr.provider_id,
+    joined_at = COALESCE(cr.updated_at, NOW())
+FROM consultation_requests cr
+WHERE consultation_room_experts.consultation_id = cr.id
+  AND cr.provider_id IS NOT NULL
+  AND consultation_room_experts.status = 'waiting';
+```
+
+**ความเร่งด่วน:** 🔴 **สูง** — กระทบ UX หลัก (provider เห็นตัวเองเป็น waiting แม้เข้าร่วมแล้ว) และ timer ไม่เริ่มถูกต้อง
+
+**Auth Guidelines Compliance:**
+- `_joinRequest` ต้องดึง `user.id` จาก `ServiceLocator.instance.currentUser` เท่านั้น
+- ห้ามใช้ `Supabase.instance.client.auth.currentUser` ในการตรวจสอบสิทธิ์ provider
+- RPC `assign_provider_to_group` ต้องรับ `provider_id` จาก Flutter (ไม่ดึงจาก auth ภายใน)
+
+**Dependencies:** ไม่มี — แก้ structural bug โดยตรง
+
+**Success Criteria:
+- [ ] `_joinRequest` อัปเดต `consultation_room_experts` ถูกต้อง
+- [ ] Backfill migration รันผ่าน
+- [ ] Provider เห็นตัวเองเป็น `joined` ทันทีที่รับงาน
+- [ ] Timer เริ่มนับถูกต้องเมื่อ expert ครบ
+- [ ] ลบ client-side safety net ออกแล้ว
+
+---
+
+### Phase 8: Performance & Polish
+**Priority: 🟢 ต่ำ** — ปรับแต่ง
+
+| # | งาน | ไฟล์ |
+|---|---|---|
+| 1 | Loading skeleton แทน CircularProgressIndicator | `chart_board_page.dart`, `chat_list_page.dart` |
+| 2 | Empty state illustration (ไม่มี consultation / ไม่มีข้อความ) | `chart_board_page.dart`, `chat_list_page.dart` |
+| 3 | Haptic feedback (กดส่ง, รับงาน) | `chart_board_page.dart`, `health_program_request_dashboard.dart` |
+| 4 | Animation transition (เปิดห้องแชท, ปิด review sheet) | `chart_board_page.dart` |
+| 5 | Error boundary / retry mechanism | `chart_board_page.dart` |
+
+**Dependencies:** ไม่มี — polish ทำได้เมื่อใดก็ได้
+
+**Success Criteria:**
+- [ ] Loading skeleton แสดงแทน spinner
+- [ ] Empty state มี illustration + ข้อความชัดเจน
+- [ ] Haptic feedback รู้สึกเมื่อกดส่ง / รับงาน
+- [ ] Animation transition ลื่นไหล
+- [ ] Error มี retry button
+
+---
+
+### ลำดับการทำงานแนะนำ
+
+```
+Phase 7 (Fix root cause) → Phase 1 (Review) → Phase 2 (System messages + End session)
+      ↓                                           ↓
+Phase 3 (PDPA) → Phase 4 (Follow-up) → Phase 5 (Chat List) → Phase 6 (Reply) → Phase 8 (Polish)
+```
+
+**เหตุผลการปรับลำดับ:**
+- **Phase 7 ขึ้นก่อน** — เป็น structural bug กระทบ timer + expert status ต้องแก้ก่อนอย่างอื่น
+- **Phase 1 → Phase 2** — Review ต้องใช้ trigger จาก End Session Flow (Phase 2)
+- **Phase 2 ขึ้นก่อน Phase 3-8** — System messages + End session เป็น core flow ที่ต้องมีก่อนเพิ่ม feature อื่น
+
+### สรุป Dependencies ระหว่าง Phases
+
+| Phase | ขึ้นอยู่กับ | เหตุผล |
+|---|---|---|
+| Phase 1 (Review) | Phase 2 | Trigger review หลัง session จบ |
+| Phase 2 (System + End) | Phase 7 | ต้องมี expert status ถูกต้องก่อน trigger system message |
+| Phase 4 (Follow-up) | Phase 2 | แพทย์ต้องจบ session + บันทึก note ก่อนมีวันนัด |
+| Phase 5 (Chat List) | Sprint 1 (Migration) | ต้องมี `chat_room_members` table ก่อน |
+| Phase 6 (Reply) | ไม่มี | เป็น feature เสริม |
+
+### สรุป Impact และ Effort
+
+| Phase | Impact | Effort | Risk |
+|---|---|---|---|
+| 1 (Review) | 🔴 สูง — ผู้ป่วยคาดหวัง | 🟡 ปานกลาง | 🟢 ต่ำ |
+| 2 (System + End) | 🔴 สูง — core flow | 🟡 ปานกลาง | 🟡 ปานกลาง |
+| 3 (PDPA) | 🟡 ปานกลาง — ความเป็นส่วนตัว | 🔴 สูง — blur + watermark | 🟡 ปานกลาง |
+| 4 (Follow-up) | 🟡 ปานกลาง — service completeness | 🟢 ต่ำ | 🟢 ต่ำ |
+| 5 (Chat List) | 🟡 ปานกลาง — UX improvement | 🟡 ปานกลาง | 🟢 ต่ำ |
+| 6 (Reply) | 🟢 ต่ำ — nice-to-have | 🟢 ต่ำ | 🟢 ต่ำ |
+| 7 (Root Cause) | 🔴 สูง — structural bug | 🟡 ปานกลาง | 🟡 ปานกลาง |
+| 8 (Polish) | 🟢 ต่ำ — aesthetics | 🟢 ต่ำ | 🟢 ต่ำ |
+
+**Checklist ก่อนเริ่มแต่ละ Phase:**
+- [ ] อ่านแผน schema ย้อนหลัง (Section 2: Database Schema)
+- [ ] ตรวจสอบตาราง DB มีแล้วหรือยัง (ใช้ `supabase/migrations`)
+- [ ] ปิด RLS สำหรับตารางใหม่ (Custom Auth — ไม่ใช้ `auth.uid()`)
+- [ ] `flutter analyze` ผ่านก่อนเริ่ม
+- [ ] ทำทีละ phase, build + smoke test หลังแต่ละ phase
+- [ ] ไม่รวมหลาย phase ใน commit เดียว
+- [ ] ตรวจสอบ dependencies ของ phase ที่จะทำ

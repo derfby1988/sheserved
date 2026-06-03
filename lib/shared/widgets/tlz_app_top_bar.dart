@@ -195,7 +195,9 @@ class TlzAppTopBar extends StatelessWidget {
         // Cart Button
         TlzCartButton(
           itemCount: cartItemCount,
-          onPressed: onCartTap,
+          onPressed: onCartTap ?? () {
+            Navigator.pushNamed(context, '/cart');
+          },
         ),
       ],
     );
