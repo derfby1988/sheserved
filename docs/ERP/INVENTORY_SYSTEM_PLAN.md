@@ -85,6 +85,19 @@ CREATE TABLE inventory_items (
     (medication_id IS NULL AND custom_medication_id IS NOT NULL)
   )
 );
+
+-- 3. ตารางการตั้งค่ารอบตรวจนับสต็อก (Stocktake Configurations)
+CREATE TABLE stocktake_configurations (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id        UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  -- branch_id            UUID REFERENCES organization_branches(id), -- ถ้าแยกตรวจนับตามสาขา
+  frequency_type       TEXT NOT NULL, -- 'WEEKLY', 'MONTHLY', 'YEARLY', 'CUSTOM'
+  custom_interval_days INTEGER,       -- จำนวนวันกรณีความถี่แบบกำหนดเอง (CUSTOM)
+  next_stocktake_date  DATE NOT NULL, -- วันที่ต้องตรวจนับรอบถัดไป
+  is_active            BOOLEAN DEFAULT true,
+  created_at           TIMESTAMPTZ DEFAULT now(),
+  updated_at           TIMESTAMPTZ DEFAULT now()
+);
 ```
 
 ### ขั้นตอนสำหรับองค์กร (User Flow)
@@ -97,7 +110,9 @@ CREATE TABLE inventory_items (
 ## ฟีเจอร์หลักเบื้องต้น (Core Features)
 - **Stock Management:** ดูยอดคงเหลือของสินค้าแต่ละรายการแบบ Real-time
 - **Lot & Expiry Tracking (FEFO):** จัดการสินค้ายาและเวชภัณฑ์ด้วยระบบเข้าก่อน-ออกก่อนตามวันหมดอายุ (First Expire, First Out) โดยบังคับให้ระบุ Lot Number และ Expiry Date เสมอ และเวลาตัดสต๊อกจะตัดจาก Lot ที่ใกล้หมดอายุก่อนอัตโนมัติ
-- **Stock Movements:** บันทึกประวัติการเข้า-ออกของสินค้า (Goods In / Goods Out / Adjustments)
+- **Stock Movements & Transfer Tracking:** บันทึกประวัติการเข้า-ออกของสินค้า (Goods In / Goods Out / Adjustments) และระบบติดตามสถานะการโยกย้ายสินค้าระหว่างสาขา/คลังย่อย/Shelf (เช่น Pending, In-Transit, Completed, Rejected)
+- **Stocktake / Cycle Counting (ระบบตรวจนับสต็อก):** องค์กร/ผู้ให้บริการสามารถตั้งค่าความถี่ในการตรวจนับสต็อกได้เอง เช่น รายสัปดาห์, รายเดือน, รายปี หรือแบบกำหนดรอบเอง (Custom) โดยระบบจะช่วยแจ้งเตือนเมื่อถึงรอบการนับสต็อก เพื่อให้ยอดตรงกับความจริงเสมอ
+- **Product Label Printing (ระบบพิมพ์ฉลากสินค้าและบาร์โค้ด):** รองรับการพิมพ์ฉลากสินค้า, บาร์โค้ด, และฉลากยา โดยเชื่อมต่อกับเครื่องพิมพ์สติ๊กเกอร์/ความร้อน (Thermal Printers) ที่นิยมใช้ในประเทศไทยได้อย่างครอบคลุม (เช่น เครื่องพิมพ์ที่รองรับคำสั่ง ESC/POS, TSPL, ZPL, CPCL) ผ่านการเชื่อมต่อ USB, Bluetooth, LAN หรือ Wi-Fi 
 - **Multiple Locations (คลังย่อย):** รองรับการแยกคลังย่อยประจำสาขา (`branch_id`) เช่น คลังหน้าร้าน, คลังห้องยา, คลังเก็บหลัก
 
 ## การเชื่อมโยงกับระบบอื่น (Integrations)
@@ -117,9 +132,13 @@ CREATE TABLE inventory_items (
   - ฟังก์ชัน `deduct_inventory_fefo()` สำหรับรับรหัสยา แล้วไปไล่ตัดสต๊อกจาก `inventory_items` ล็อตที่ `expiry_date` ใกล้ที่สุดก่อน หากยอดไม่พอให้ข้ามไปตัดล็อตถัดไปจนครบจำนวน
   - Job แจ้งเตือนยาใกล้หมดอายุ (Expiry Alert) และยาถึงจุดสั่งซื้อ (`reorder_point`)
 - **Flutter UI:**
-  - `InventoryDashboardPage` แสดงภาพรวมสต็อก แจ้งเตือนยาหมดอายุ และ Low Stock
+  - `InventoryDashboardPage` แสดงภาพรวมสต็อก แจ้งเตือนยาหมดอายุ, Low Stock, และแจ้งเตือนรอบการตรวจนับ (Stocktake Alert)
   - `GoodsReceiptPage` ฟอร์มรับของเข้า บังคับกรอก Lot Number, Expiry Date และต้นทุน (Cost)
-  - `StockAdjustmentPage` และ `StockTransferPage` (โอนย้ายสินค้าระหว่างสาขา)
+  - `StockAdjustmentPage` (ปรับปรุงยอดสต็อกหลังการตรวจนับ)
+  - `StockTransferPage` (สร้างคำสั่งโอนย้ายสินค้าระหว่างสาขาหรือคลังย่อย)
+  - `StockMovementTrackingPage` (หน้าประวัติและติดตามสถานะการโยกย้ายสินค้า เช่น ระหว่างทาง(In-Transit), รับเข้าแล้ว, ยกเลิก)
+  - `StocktakeConfigPage` หน้าจอสำหรับผู้ให้บริการตั้งค่าความถี่ในการตรวจนับสต็อก
+  - `LabelPrintingPage` (หน้าจัดการและสั่งพิมพ์ฉลากสินค้า/บาร์โค้ด ตั้งค่าเครื่องพิมพ์และรูปแบบฉลาก)
 
 ### Phase 10: HIS & Pharmacy Integration (Final Phase)
 - **วัตถุประสงค์:** เชื่อมระบบคลังเข้ากับห้องยาของ HIS เต็มรูปแบบ

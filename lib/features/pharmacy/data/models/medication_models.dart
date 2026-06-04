@@ -23,6 +23,7 @@ class MedicationModel {
   final double? price;
   final String? imageUrl;
   final bool inStock;
+  final bool isFavorite;
 
   MedicationModel({
     required this.id,
@@ -44,6 +45,7 @@ class MedicationModel {
     this.price,
     this.imageUrl,
     this.inStock = true,
+    this.isFavorite = false,
   });
 
   factory MedicationModel.fromJson(Map<String, dynamic> json) {
@@ -61,6 +63,7 @@ class MedicationModel {
       price: json['price'] != null ? double.tryParse(json['price'].toString()) : null,
       imageUrl: json['image_url'] as String?,
       inStock: json['in_stock'] as bool? ?? true,
+      isFavorite: json['is_favorite'] as bool? ?? false,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
       

@@ -115,6 +115,20 @@
 - **การดึงข้อมูล HIS (Anonymization):** สามารถอ้างอิงข้อมูลเคสการรักษาจาก HIS มาใช้ประกอบบทความได้ โดยระบบจะปิดบังข้อมูลส่วนบุคคล (Masking) ของผู้ป่วยเป็นค่าเริ่มต้น (Default) อย่างไรก็ตาม ผู้ป่วย (ในฐานะเจ้าของเคส/ผู้รีวิว) สามารถเลือกตั้งค่าเปิดเผยข้อมูลของตนเองในรีวิวได้หากต้องการ
 - **การให้แต้มสะสมสำหรับนักรีวิว (Reviewer Incentives):** เมื่อลูกค้าหรือผู้ป่วยเข้ามาอ่านและเขียนความเห็น (Review) ในเคสรีวิว ระบบจะมอบ "แต้มสะสม (Loyalty Points)" ให้ และจะถูกอัปเดตลงตารางเก็บแต้มสะสมจริง เพื่อใช้เป็นส่วนลดในระบบ CRM ต่อไป
 
+### 8. ระบบประเมินความพึงพอใจและรับฟังความคิดเห็น (Rating & Feedback System)
+
+ระบบนี้ถูกออกแบบมาเพื่อเก็บรวบรวมประสบการณ์ของลูกค้า (Customer Experience) โดยเชื่อมโยงกับสถานะการรับบริการ (Appointments) หรือการสั่งซื้อ (POS)
+
+- **กรณีรับบริการหรือซื้อสินค้าสำเร็จ (Completed / Served):**
+  - **การทำงาน:** เมื่อออเดอร์ใน POS หรือนัดหมายมีสถานะเป็น `completed` ระบบจะทริกเกอร์แจ้งเตือนให้ลูกค้าทำแบบประเมินความพึงพอใจ
+  - **รูปแบบประเมิน:** เป็นการให้คะแนน 1-5 ดาว (CSAT) พร้อมกล่องข้อความรีวิว (สามารถเชื่อมโยงให้แสดงเป็น Public Review ในหน้าโปรไฟล์คลินิกได้)
+  - **Incentive:** ระบบสามารถผูกกับระบบสมาชิกเพื่อแจก "แต้มสะสม" ให้ลูกค้าที่สละเวลามาให้คะแนนและคำติชมได้
+
+- **กรณีลูกค้ายกเลิกสินค้าหรือบริการ (Cancelled / Refunded):**
+  - **การทำงาน:** หากมีการยกเลิกนัดหมาย (Cancelled) หรือคืนเงิน (Refunded) ระบบจะ **ไม่ส่งแบบให้คะแนนดาว (No Star Rating)** เพื่อป้องกันคะแนนเรตติ้งของคลินิกติดลบจากอารมณ์ชั่ววูบ
+  - **รูปแบบประเมิน (Cancellation/Churn Survey):** ระบบจะเปลี่ยนไปส่งแบบฟอร์ม "สอบถามสาเหตุการยกเลิก" แทน เช่น การให้ติ๊กเลือกเหตุผล (รอนานไป, เปลี่ยนใจ, ราคาไม่เหมาะสม) พร้อมกล่องข้อความ
+  - **การจัดการ (Internal Use Only):** ข้อมูลจากการยกเลิกนี้ จะไม่ถูกเปิดเผยสู่สาธารณะ แต่จะวิ่งตรงเข้าสู่ **KPI Dashboard** และรายงาน CRM เพื่อให้ผู้จัดการหรือเจ้าของนำไปปรับปรุงปัญหาคอขวด (Bottleneck) ภายในองค์กรต่อไป
+
 ---
 
 ## Database Schema
@@ -517,6 +531,41 @@ COMMENT ON COLUMN appointment_policies.no_show_penalty_baht IS 'ค่าปร�
 COMMENT ON COLUMN appointment_policies.followup_days_after IS 'ส่ง follow-up หลังนัดกี่วัน';
 
 -- ============================================================
+-- 19. ระบบประเมินและรับฟังความคิดเห็น (Customer Feedbacks)
+-- ============================================================
+CREATE TABLE customer_feedbacks (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id         UUID REFERENCES organization_branches(id),
+  user_id           UUID NOT NULL REFERENCES users(id),
+  
+  reference_type    TEXT NOT NULL,                         -- 'pos_order', 'appointment'
+  reference_id      UUID NOT NULL,                         -- ID ของออเดอร์ หรือ คิวนัดหมาย
+  provider_id       UUID REFERENCES practitioners(id),     -- พนักงานผู้ให้บริการ/แพทย์ที่รับการประเมิน (กรณีให้ดาว/รีวิวรายบุคคล)
+  
+  feedback_type     TEXT NOT NULL,                         -- 'rating' (กรณีสำเร็จ), 'cancellation_reason' (กรณียกเลิก)
+  rating_score      INTEGER,                               -- 1-5 ดาว (เฉพาะ feedback_type = 'rating')
+  reason_code       TEXT,                                  -- โค้ดสาเหตุ (เฉพาะ feedback_type = 'cancellation_reason')
+  comment           TEXT,                                  -- ข้อความเพิ่มเติม
+  
+  is_public         BOOLEAN DEFAULT false,                 -- อนุญาตให้แสดงผลต่อสาธารณะหรือไม่ (เฉพาะเรตติ้งปกติ)
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- 20. รายการยา/สินค้าโปรดของผู้ป่วย (Medication Favorites)
+-- ============================================================
+CREATE TABLE medication_favorites (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  medication_id     UUID NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+  
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, user_id, medication_id)
+);
+
+-- ============================================================
 -- Row Level Security (RLS)
 -- ============================================================
 ALTER TABLE loyalty_point_rules          ENABLE ROW LEVEL SECURITY;
@@ -537,6 +586,8 @@ ALTER TABLE appointments                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE appointment_status_logs      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE appointment_waitlist         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE appointment_policies         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_feedbacks           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE medication_favorites         ENABLE ROW LEVEL SECURITY;
 
 -- ตัวอย่าง RLS: พนักงานเห็นเฉพาะข้อมูลขององค์กรตนเอง
 -- หมายเหตุ: auth.uid() ใช้ได้ถูกต้องใน PostgreSQL RLS (server-side) ไม่ใช่ Dart/Flutter code
@@ -553,6 +604,10 @@ CREATE POLICY appointment_patient_isolation ON appointments
       SELECT profession_id FROM employee_roles WHERE user_id = auth.uid()
     )
   );
+
+-- RLS สำหรับรายการยาโปรด: ผู้ป่วยเห็นและจัดการได้เฉพาะของตนเอง
+CREATE POLICY medication_favorites_patient_isolation ON medication_favorites
+  USING (user_id = auth.uid());
 ```
 
 > **⚠️ Auth Guidelines (สำหรับ Flutter/Dart เท่านั้น):**  
