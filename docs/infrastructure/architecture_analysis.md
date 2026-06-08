@@ -18,6 +18,18 @@
 | **Phase 3** | CQRS · CDN/WAF · Analytics · Auto Scale · Redis Cluster · K8s | 🔵 ~$500–2,000/เดือน | ⏸️ ยังไม่ deploy — สำหรับ 5,000–50,000 คน |
 | **Phase 4** | Distributed DB · Event Sourcing · Multi-Region · GPU Transcoding | 🔵 ~$5,000–20,000+/เดือน | ⏸️ ยังไม่ deploy — สำหรับ 100,000+ คน |
 
+### ตารางสรุปเปรียบเทียบความสามารถรองรับผู้ใช้ทั้ง 4 Phase
+
+| ตัวชี้วัด | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
+|----------|---------|---------|---------|---------|
+| **ผู้ใช้พร้อมกัน** | ~100–500 คน | ~500–1,000 คน | ~5,000–50,000 คน | ~100,000–1,000,000+ คน |
+| **API Throughput** | ~100 req/s | ~500–1,000 req/s | ~10,000–50,000 req/s | ~100,000+ req/s |
+| **ค่าใช้จ่าย/เดือน** | ฟรี | ฟรี | ~$500–2,000 | ~$5,000–20,000+ |
+| **Infra หลัก** | 1 instance + Redis + PostgreSQL | 1 instance + BullMQ + Redis | CDN + K8s + Redis Cluster + Read Replica | Distributed DB + Kafka + Multi-region |
+| **Bottleneck หลัก** | DB direct hit, no queue | Single Redis, single instance | DB write master | Cross-region consistency |
+| **พร้อมใช้งาน** | ✅ แล้ว | ✅ แล้ว | ⏸️ รอสัญญาณ scale | ⏸️ รอ DAU > 50,000 |
+| **เวลาที่ใช้ deploy** | 1–2 สัปดาห์ | 2–4 สัปดาห์ | 1–2 เดือน | 3–6 เดือน |
+
 > [!WARNING]
 > หากต้องการเอกสารเฉพาะด้าน **Auth / Login / Register Security** ให้ดูที่ `auth_security_analysis.md` แทน
 
