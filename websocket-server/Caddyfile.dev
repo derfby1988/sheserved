@@ -1,0 +1,33 @@
+# =============================================================
+# Caddyfile.dev — Port 8080 (ไม่ต้อง sudo)
+# ใช้สำหรับ: ทดสอบเร็วบน localhost และมือถือในวง Wi-Fi เดียวกัน
+# รัน: caddy run --config Caddyfile.dev --adapter caddyfile
+# =============================================================
+
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+
+	header {
+		-Server
+		X-Powered-By "Sheserved-Proxy"
+	}
+
+	handle /socket.io/* {
+		reverse_proxy localhost:3000
+	}
+
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

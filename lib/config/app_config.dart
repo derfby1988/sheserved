@@ -22,15 +22,14 @@ class AppConfig {
   // DEVELOPMENT SERVER (VIDEO PROCESSING / WEBSOCKET)
   // =====================================================
 
-  /// IP ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server
-  /// เปลี่ยนเป็น 127.0.0.1 หากรันบนเครื่องเดียวกัน
-  static const String mainMachineIp = '192.168.1.111'; // LAN IP ที่ Android/iOS ทุกเครื่องในวงเดียวกันเชื่อมต่อได้
+  /// IP หรือ Local Hostname ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server/Caddy
+  static const String mainMachineIp = '192.168.1.111:8080';
 
-  /// URL ของ WebSocket Server
-  static const String localApiUrl = 'http://$mainMachineIp:3000';
+  /// URL ของ API Server ผ่าน Caddy
+  static const String localApiUrl = 'http://$mainMachineIp';
 
-  /// URL สำหรับ WebSocket connection
-  static const String websocketUrl = 'http://$mainMachineIp:3000';
+  /// URL สำหรับ WebSocket connection ผ่าน Caddy (ใช้ http/ws)
+  static const String websocketUrl = 'http://$mainMachineIp';
 
   // =====================================================
   // SUPABASE CONFIGURATION

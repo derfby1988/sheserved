@@ -189,7 +189,7 @@ class Video {
     if (url == null || url.isEmpty) return null;
     if (url.startsWith('https://')) return url;
     return url.replaceFirst(
-      RegExp(r'http://\d+\.\d+\.\d+\.\d+'),
+      RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
       'http://${AppConfig.mainMachineIp}',
     );
   }

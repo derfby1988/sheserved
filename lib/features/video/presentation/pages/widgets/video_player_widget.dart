@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:chewie/chewie.dart';
 import '../../../models/video_models.dart';
+import '../../../../../services/service_locator.dart';
 import 'video_skeleton_widget.dart';
 
 class VideoPlayerWidget extends StatelessWidget {
@@ -110,8 +111,12 @@ class VideoPlayerWidget extends StatelessWidget {
 
                 bool isImageUrl(String? url) {
                   if (url == null) return false;
-                  final lower = url.toLowerCase();
+                  final lower = (Uri.tryParse(url)?.path ?? url).toLowerCase();
                   return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.gif');
+                }
+
+                String normalizeRemoteUrl(String url) {
+                  return ServiceLocator.instance.videoRepository.ensureFullUrl(url);
                 }
 
                 String? imageToDisplay;
@@ -119,9 +124,9 @@ class VideoPlayerWidget extends StatelessWidget {
                   if (isImageUrl(currentVideo!.localFilePath)) {
                     imageToDisplay = currentVideo!.localFilePath;
                   } else if (isImageUrl(currentVideo!.bunnyUrl)) {
-                    imageToDisplay = currentVideo!.bunnyUrl;
+                    imageToDisplay = normalizeRemoteUrl(currentVideo!.bunnyUrl!);
                   } else if (currentVideo!.photoUrls.isNotEmpty && currentVideo!.bunnyUrl == null && currentVideo!.localFilePath == null) {
-                    imageToDisplay = currentVideo!.photoUrls.first;
+                    imageToDisplay = normalizeRemoteUrl(currentVideo!.photoUrls.first);
                   }
                 }
 

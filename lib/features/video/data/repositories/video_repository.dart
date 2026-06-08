@@ -927,16 +927,14 @@ class VideoRepository {
       return url.replaceAll('http://localhost:3000', baseUrl);
     }
 
-    // ✅ Auto-correct IP เก่าที่บันทึกไว้ในฐานข้อมูล
-    // URL จาก server จะมี pattern http://[IP]:3000/temp/videos/...
-    // ถ้า IP ไม่ตรงกับปัจจุบัน ให้แทนที่อัตโนมัติ
-    if (url.contains(':3000') && url.startsWith('http')) {
-      final currentHost = 'http://${AppConfig.mainMachineIp}:3000';
-      if (!url.startsWith(currentHost)) {
-        final corrected = url.replaceFirst(RegExp(r'http://[0-9\.]+:3000'), currentHost);
-        return corrected;
-      }
-      return url;
+    // ✅ Auto-correct URL ที่ชี้ไป local server เดิม (IP/hostname + :3000)
+    // Phase 1 ใช้ Caddy ผ่าน AppConfig.localApiUrl (เช่น http://192.168.1.111:8080)
+    if (url.startsWith('http://') && url.contains(':3000')) {
+      final corrected = url.replaceFirst(
+        RegExp(r'^http://[^/]+:3000'),
+        baseUrl,
+      );
+      return corrected;
     }
 
     if (url.startsWith('http')) return url;

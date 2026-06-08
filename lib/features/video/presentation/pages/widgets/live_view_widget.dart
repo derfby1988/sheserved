@@ -1,6 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:sheserved/features/donation/models/donation_models.dart';
+import '../../../../../services/service_locator.dart';
 import 'video_player_widget.dart';
 import 'viewer_count_widget.dart';
 import 'action_buttons_widget.dart';
@@ -224,49 +226,52 @@ class _LiveViewWidgetState extends State<LiveViewWidget> with WidgetsBindingObse
                                             borderRadius: BorderRadius.circular(40),
                                             child: Container(
                                               color: Colors.black,
-                                              child: Stack(
-                                                fit: StackFit.expand,
-                                                children: [
-                                                  widget.canViewUnblurred
-                                                      ? Image.network(
-                                                          _selectedOverlayPhotoUrl!,
-                                                          fit: BoxFit.contain,
-                                                          loadingBuilder: (context, child, progress) {
-                                                            if (progress == null) return child;
-                                                            return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
+                                              child: Builder(
+                                                builder: (context) {
+                                                  final overlayImageUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(_selectedOverlayPhotoUrl!);
+                                                  return Stack(
+                                                    fit: StackFit.expand,
+                                                    children: [
+                                                      widget.canViewUnblurred
+                                                          ? CachedNetworkImage(
+                                                              imageUrl: overlayImageUrl,
+                                                              fit: BoxFit.contain,
+                                                              placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.pinkAccent)),
+                                                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                            )
+                                                          : ImageFiltered(
+                                                              imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                                              child: CachedNetworkImage(
+                                                                imageUrl: overlayImageUrl,
+                                                                fit: BoxFit.cover,
+                                                                placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.pinkAccent)),
+                                                                errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                              ),
+                                                            ),
+                                                      Positioned(
+                                                        top: 16,
+                                                        right: 16,
+                                                        child: GestureDetector(
+                                                          onTap: () {
+                                                            setState(() {
+                                                              _selectedOverlayPhotoUrl = null;
+                                                              _selectedOverlayPhotoIndex = null;
+                                                            });
+                                                            widget.onOverlayChanged?.call(false);
+                                                            try {
+                                                              widget.chewieController?.videoPlayerController.play();
+                                                            } catch (_) {}
                                                           },
-                                                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
-                                                        )
-                                                      : ImageFiltered(
-                                                          imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                                          child: Image.network(
-                                                            _selectedOverlayPhotoUrl!,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white, size: 50),
+                                                          child: Container(
+                                                            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                                            padding: const EdgeInsets.all(6),
+                                                            child: const Icon(Icons.close, color: Colors.white, size: 20),
                                                           ),
                                                         ),
-                                                  Positioned(
-                                                    top: 16,
-                                                    right: 16,
-                                                    child: GestureDetector(
-                                                      onTap: () {
-                                                        setState(() {
-                                                          _selectedOverlayPhotoUrl = null;
-                                                          _selectedOverlayPhotoIndex = null;
-                                                        });
-                                                        widget.onOverlayChanged?.call(false);
-                                                        try {
-                                                          widget.chewieController?.videoPlayerController.play();
-                                                        } catch (_) {}
-                                                      },
-                                                      child: Container(
-                                                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                                                        padding: const EdgeInsets.all(6),
-                                                        child: const Icon(Icons.close, color: Colors.white, size: 20),
                                                       ),
-                                                    ),
-                                                  ),
-                                                ]
+                                                    ],
+                                                  );
+                                                },
                                               ),
                                             ),
                                           ),

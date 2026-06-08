@@ -1,0 +1,97 @@
+# =============================================================
+# Caddyfile.local — Phase 1: Local Sandbox Testing via mDNS
+# =============================================================
+# Hostname: Mac-mini-khxng-Dave-MacMini.local
+# ใช้สำหรับทดสอบบนเครือข่าย Wi-Fi เดียวกัน (iPhone/Android/Emulator)
+# ไม่ต้องระบุ IP และไม่ต้องเปลี่ยน AppConfig ทุกครั้งที่ IP เปลี่ยน
+#
+# วิธีรัน:
+#   sudo caddy run --config Caddyfile.local
+#
+# ทดสอบ:
+#   curl http://Mac-mini-khxng-Dave-MacMini.local/health
+#   curl http://Mac-mini-khxng-Dave-MacMini.local/api/videos/health
+#
+# Phase 1 — reverse_proxy_plan.md §Phase 1
+# =============================================================
+
+# ─── Global Options ────────────────────────────────────────
+{
+	# ปิด admin API (ไม่จำเป็นสำหรับ local dev)
+	admin off
+	# ใช้ HTTP เท่านั้น (ไม่ขอ SSL ใน local)
+	auto_https off
+}
+
+# ─── HTTP Port 80 → Route ทุก request ────────────────────
+Mac-mini-khxng-Dave-MacMini.local:80 {
+	# ─── Logging ───────────────────────────────────────────
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+
+	# ─── Security Headers ──────────────────────────────────
+	header {
+		# ซ่อน port จริงของ Backend
+		-Server
+		X-Powered-By "Sheserved"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		# บอก Client ว่าผ่าน Proxy
+		X-Forwarded-Proto "http"
+	}
+
+	# ─── WebSocket Route ───────────────────────────────────
+	# Socket.io ใช้ /socket.io/ path
+	handle /socket.io/* {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			# สำคัญ: บอก upstream ว่านี่คือ WebSocket
+			transport http {
+				# รักษา connection ให้ยาวพอสำหรับ WebSocket
+				keepalive 30s
+			}
+		}
+	}
+
+	# ─── API Route ─────────────────────────────────────────
+	handle /api/* {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# ─── Health Check ──────────────────────────────────────
+	handle /health {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# ─── Static Files (temp & uploads) ────────────────────
+	handle /temp/* {
+		reverse_proxy localhost:3000
+	}
+	handle /uploads/* {
+		reverse_proxy localhost:3000
+	}
+
+	# ─── Fallback: ทุก path อื่น → Node.js ────────────────
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
+# NOTE: สำหรับ port 8080 (ไม่ต้อง sudo) ให้ใช้ Caddyfile.dev แทน
+#   caddy run --config Caddyfile.dev

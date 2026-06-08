@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import '../../models/video_models.dart';
+import '../../../../../services/service_locator.dart';
+import 'thai_mhung_gallery_widget.dart';
 
 class ThaiMhungPhotoDetailDialog extends StatelessWidget {
   final ThaiMhungPhoto photo;
@@ -35,19 +37,16 @@ class ThaiMhungPhotoDetailDialog extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: InteractiveViewer(
-              child: Image.network(
-                photo.url,
+              child: CachedNetworkImage(
+                imageUrl: ServiceLocator.instance.videoRepository.ensureFullUrl(photo.url),
                 fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40.0),
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) => Container(
+                placeholder: (context, url) => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(40.0),
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
                   height: 300,
                   width: double.infinity,
                   decoration: BoxDecoration(

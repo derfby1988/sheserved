@@ -251,7 +251,9 @@ PORT=3000
 TEMP_VIDEO_PATH=/Volumes/PostgreSQL/sheserved_videos
 
 # Server Network
-LOCAL_API_URL=http://192.168.X.X:3000
+# Phase 1 (ผ่าน Caddy Reverse Proxy)
+# LOCAL_API_URL ต้องชี้ไปที่ Caddy endpoint ไม่ใช่ Node.js port 3000 โดยตรง
+LOCAL_API_URL=http://192.168.X.X:8080
 
 # Bunny.net
 BUNNY_API_KEY=<your_api_key>
@@ -287,32 +289,35 @@ SUPABASE_SERVICE_ROLE_KEY=<service_role_key_from_dashboard>
 ipconfig getifaddr en0   # WiFi
 ipconfig getifaddr en1   # Ethernet / USB
 ```
-> ใช้ IP ที่ device อื่น (iPhone/iPad) ในวงเดียวกันสามารถเข้าถึงได้
+> ใช้ IP ที่ device อื่น (iPhone/iPad) ในวงเดียวกันสามารถเข้าถึงได้ และให้จดไว้คู่กับ Caddy port `8080`
 
 #### ขั้นตอนที่ 2 — อัปเดต Flutter App Config
 ```dart
 // lib/config/app_config.dart
-static const String mainMachineIp = '192.168.X.X'; // ← เปลี่ยนตรงนี้
+static const String mainMachineIp = '192.168.X.X:8080'; // ← เปลี่ยนตรงนี้ (IP/Host + Caddy port)
 ```
-> **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize IP ใน URL เก่าให้ตรงกับค่านี้เสมอ
+> **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize URL เก่าให้ชี้ไปที่ Caddy endpoint นี้เสมอ
 
 #### ขั้นตอนที่ 3 — อัปเดต Server Environment
 ```bash
 # websocket-server/.env
-LOCAL_API_URL=http://192.168.X.X:3000  # ← เปลี่ยนตรงนี้
+LOCAL_API_URL=http://192.168.X.X:8080  # ← เปลี่ยนตรงนี้
 ```
 
-#### ขั้นตอนที่ 4 — Restart Server
+#### ขั้นตอนที่ 4 — Restart Node.js Server + Start Caddy
 ```bash
 cd websocket-server
-npm start
+npm run dev
+
+# terminal อีกอันสำหรับ reverse proxy
+./start-caddy.sh
 ```
-> ตรวจสอบ log บรรทัด `🌍 Network: http://X.X.X.X:3000` ว่าตรงกับ IP ที่ตั้งไว้
+> ตรวจสอบ log ให้แน่ใจว่า Node.js รันที่ `:3000` และ Caddy รันที่ `:8080`
 
 #### ขั้นตอนที่ 5 — ทดสอบ (Optional)
 ```bash
 # จาก device อื่นในวง
-curl http://192.168.X.X:3000/api/videos/emergency/list
+curl http://192.168.X.X:8080/api/videos/emergency/list
 # ต้องได้ JSON response ไม่ใช่ connection refused
 ```
 
@@ -322,9 +327,10 @@ curl http://192.168.X.X:3000/api/videos/emergency/list
 
 | ไฟล์ | ค่าที่ต้องแก้ | หมายเหตุ |
 |------|--------------|----------|
-| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB |
-| `websocket-server/.env` | `LOCAL_API_URL` | URL ที่ Server ใช้ generate thumbnail URL |
-| `websocket-server/.env` | `LOCAL_API_URL` (ซ้ำ — ลบออก 1 บรรทัด) | ดู env template ด้านบน |
+| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB ให้ชี้ไป Caddy (`:8080`) |
+| `websocket-server/.env` | `LOCAL_API_URL` | URL ที่ Server ใช้ generate thumbnail URL ผ่าน Caddy |
+| `websocket-server/start-caddy.sh` | Caddy startup script | ใช้ `Caddyfile.dev` สำหรับ Phase 1 (`:8080`) |
+| `websocket-server/Caddyfile.dev` | Caddy dev config | bind port `8080` โดยไม่ต้อง sudo |
 
 > **ไม่ต้องแก้**: DB records, ไฟล์ thumbnail ที่มีอยู่ — `_normalizeLocalUrl()` จัดการให้อัตโนมัติ
 
@@ -342,8 +348,8 @@ curl http://192.168.X.X:3000/api/videos/emergency/list
 
 **URL Pattern ที่ถูกต้อง:**
 ```
-# Local (LAN only)
-http://192.168.X.X:3000/uploads/thumbnails/[incidentId]/thumb_[id].webp?t=[timestamp]
+# Local (LAN only, ผ่าน Caddy Phase 1)
+http://192.168.X.X:8080/uploads/thumbnails/[incidentId]/thumb_[id].webp?t=[timestamp]
 
 # CDN (Global)
 https://[storage-zone].b-cdn.net/thumbnails/[incidentId]/thumb_[id].webp
@@ -355,7 +361,7 @@ https://[storage-zone].b-cdn.net/thumbnails/[incidentId]/thumb_[id].webp
 
 ### 🔄 IP Normalization — กลไกป้องกันอัตโนมัติ
 
-ระบบมี **auto-normalization** ที่ Flutter side เพื่อป้องกัน blank cards เมื่อ IP เปลี่ยน:
+ระบบมี **auto-normalization** ที่ Flutter side เพื่อป้องกันรูปเสียเมื่อ IP เปลี่ยน และให้ทุกจุดใช้ URL pipeline เดียวกัน:
 
 ```dart
 // lib/features/video/models/video_models.dart
@@ -368,15 +374,18 @@ String? get bestThumbnailUrl {
 static String? _normalizeLocalUrl(String? url) {
   if (url == null || url.isEmpty) return null;
   if (url.startsWith('https://')) return url; // CDN — ไม่ต้อง normalize
-  // Replace IPv4 เก่าด้วย IP ปัจจุบัน
+  // Replace IPv4/port เก่าด้วย Caddy endpoint ปัจจุบัน
   return url.replaceFirst(
-    RegExp(r'http://\d+\.\d+\.\d+\.\d+'),
+    RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
     'http://${AppConfig.mainMachineIp}',
   );
 }
 ```
 
-**ผลลัพธ์**: แม้ DB เก็บ URL ด้วย IP เก่า `192.168.0.116` — getter จะ return `192.168.1.132:3000/...` ให้อัตโนมัติ โดยต้องอัปเดตแค่ `AppConfig.mainMachineIp` เพียงจุดเดียว
+**ผลลัพธ์**: แม้ DB เก็บ URL ด้วย IP/port เก่า `192.168.0.116:3000` — getter จะ return `192.168.1.111:8080/...` ให้อัตโนมัติ โดยต้องอัปเดตแค่ `AppConfig.mainMachineIp` เพียงจุดเดียว
+
+> ✅ จุดที่ใช้ pipeline นี้ร่วมกันแล้ว: trending cards, Thai Mhung gallery, fullscreen overlay/lightbox, photo detail dialog และ video player image fallback
+> ✅ `ensureFullUrl()` และตัวตรวจจับไฟล์ภาพใน player รองรับทั้ง URL แบบ absolute, relative path และ URL ที่มี query string (`?t=...`)
 
 ---
 
@@ -387,7 +396,10 @@ static String? _normalizeLocalUrl(String? url) {
 ipconfig getifaddr en0
 
 # เริ่ม server
-cd websocket-server && npm start
+cd websocket-server && npm run dev
+
+# เริ่ม reverse proxy (Phase 1)
+cd websocket-server && ./start-caddy.sh
 
 # ตรวจสอบ thumbnail files
 ls websocket-server/uploads/thumbnails/
@@ -397,7 +409,7 @@ psql -U postgres -d sheserved -c \
   "SELECT id, LEFT(thumbnail_url,60) FROM videos WHERE type='emergency' LIMIT 5;"
 
 # ตรวจ API response จริง
-curl -s http://localhost:3000/api/videos/emergency/list | python3 -c \
+curl -s http://localhost:8080/api/videos/emergency/list | python3 -c \
   "import sys,json; [print(v.get('thumbnail_url','(null)')[:70]) for v in json.load(sys.stdin)[:5]]"
 ```
 

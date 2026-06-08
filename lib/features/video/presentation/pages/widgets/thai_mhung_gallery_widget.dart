@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:flutter/material.dart';
+import '../../../../../services/service_locator.dart';
 
 class ThaiMhungPhoto {
   final String id;
@@ -104,6 +105,7 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
 
                 ...visible.map((item) {
                   final isSelected = item.originalIndex == _currentPage;
+                  final imageUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(item.photo.url);
                   return Expanded(
                     child: GestureDetector(
                       onTap: () {
@@ -135,8 +137,8 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                               children: [
                                 Positioned.fill(
                                   // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
-                                  child: CachedNetworkImage(imageUrl: 
-                                    item.photo.url,
+                                  child: CachedNetworkImage(
+                                    imageUrl: imageUrl,
                                     fit: BoxFit.cover,
                                     errorWidget: (context, url, error) => Container(
                                       color: Colors.grey[900],

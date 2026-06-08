@@ -111,9 +111,36 @@ if (USE_DATABASE) {
 // In-memory storage for locations (fallback when database is not available)
 const locationsCache = new Map();
 
+// =====================================================
+// Phase 1 Middleware — Redis-based (ฟรี 100%)
+// Rate Limiting · Idempotency · Cache-Aside
+// ดูรายละเอียด: docs/infrastructure/architecture_analysis.md
+// =====================================================
+const {
+  defaultRateLimiter,
+  strictRateLimiter,
+  authRateLimiter,
+  idempotencyMiddleware,
+  checkDuplicate,
+  clearDuplicate,
+  duplicateCheckMiddleware,
+  cacheAside,
+  invalidateCache,
+  invalidateCacheMany,
+  getSession,
+  setSession,
+  deleteSession,
+  TTL,
+  isHealthy: isRedisHealthy,
+} = require('./middleware');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// ✅ Rate Limiter: ใช้กับ API ทั้งหมด (60 req/min per IP)
+// ยกเว้น Static Files ที่ express.static จัดการเอง
+app.use('/api', defaultRateLimiter);
 
 // Serve static directory for fallback video playback
 const videoDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
@@ -1145,13 +1172,22 @@ app.post('/api/chat/archive/:videoId', async (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  // ✅ Phase 1: เพิ่ม Redis health status
+  const redisOk = await isRedisHealthy().catch(() => false);
   res.json({
     status: 'ok',
     connectedUsers: connectedUsers.size,
-    database: pool ? 'connected' : 'not connected'
+    database: pool ? 'connected' : 'not connected',
+    redis: redisOk ? 'connected' : 'not connected',
+    middleware: {
+      rateLimiter: 'active',
+      idempotency: 'active',
+      cacheAside: 'active',
+    },
   });
 });
+
 
 // UI Preferences API
 app.get('/api/users/:userId/preferences/:key', async (req, res) => {
