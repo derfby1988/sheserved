@@ -20,9 +20,9 @@
 ## 2. โครงสร้างการเชื่อมต่อ (Architecture Flow)
 
 ```
-[📱 Flutter App / Web] ➡️ [🌐 Cloudflare (Edge CDN / SSL / WAF)]
+[📱 Flutter App / Web] ➡️ [🌐 Cloudflare (Edge CDN / SSL / WAF)]  ← Phase 3 (Future)
                                         ⬇️ (Port 443 HTTPS)
-                         [🔌 Reverse Proxy (Caddy / Nginx on VPS)]
+                         [� Caddy Reverse Proxy (:8080 / :80)]   ← Phase 1 (Deployed)
                                         ⬇️ (Local Network Routing)
              ┌──────────────────────────┼──────────────────────────┐
              ▼                          ▼                          ▼
@@ -42,8 +42,10 @@
     *   ทราฟฟิก WebSocket สำหรับอัปเดตยอดบริจาค Real-time จะได้รับการส่งผ่าน Reverse Proxy เพื่อเปิดฟีเจอร์ WebSockets Upgrade (เช่น Connection Multiplexing) ให้ไม่เกิดทราฟฟิกหลุด
 
 ### 3.2 ระบบวิดีโอ ([VIDEO_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/VIDEO_SYSTEM_PLAN.md))
-*   **ความสอดคล้อง:** 
-    *   การประมวลผลวิดีโอ (FFmpeg) และการซิงค์วิดีโอจะรันหลังบ้านโดยไม่ผ่าน API ภายนอกตรงๆ 
+*   **ความสอดคล้อง:**
+    *   **Caddy Phase 1 ใช้งานอยู่จริงแล้ว** — Flutter ชี้มาที่ `http://<IP>:8080` ผ่าน `AppConfig.mainMachineIp`
+    *   `_normalizeLocalUrl()` ใน `video_models.dart` และ `ensureFullUrl()` ใน `video_repository.dart` แปลง URL เก่า (`:3000`, `localhost`) ให้ชี้ไป Caddy (`:8080`) โดยอัตโนมัติ
+    *   การประมวลผลวิดีโอ (FFmpeg) และการซิงค์วิดีโอจะรันหลังบ้านโดยไม่ผ่าน API ภายนอกตรงๆ
     *   ตัววิดีโอ HLS ถูกอัปโหลดขึ้น Bunny.net ไปแล้ว ดังนั้น Reverse Proxy จะมีหน้าที่เพียงรับคำสั่งอัปโหลดเริ่มต้นผ่าน API และส่งสัญญาณผ่าน WebSocket โดยไม่บล็อกแบนด์วิดท์ของระบบจัดส่งวิดีโอ
 
 ### 3.3 ระบบปรึกษาแพทย์ ([CHAT_CONSULTATION_IMPROVEMENT_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/CHAT_CONSULTATION_IMPROVEMENT_PLAN.md))
@@ -118,39 +120,40 @@ Caddy ทำหน้าที่เป็น Reverse Proxy ที่ติด�
 
 ---
 
-### 🟢 Phase 1: การทดสอบบนเครื่องพัฒนาจำลองผ่านเครือข่ายท้องถิ่น (Local Sandbox Testing via mDNS)
-เฟสนี้มีเป้าหมายเพื่อทดสอบระบบจำลองบนเครื่อง Mac ด้วยสถาปัตยกรรมเครือข่ายท้องถิ่น (Multicast DNS / Bonjour) เพื่อให้เครื่องมือถือจริง (Physical Device) หรือ Emulator สามารถเชื่อมต่อมาทดสอบ Reverse Proxy ได้ง่ายโดยไม่ต้องแก้ไขไฟล์ hosts และรองรับการเปลี่ยนวง IP (Dynamic IP) อัตโนมัติ
+### ✅ Phase 1: ทดสอบบนเครื่องพัฒนาจำลองผ่านเครือข่ายท้องถิ่น (Deployed)
+> สถานะ: **เสร็จสิ้นแล้ว** — Caddy ทำงานบน `:8080` (dev) และ `:80` (mDNS) พร้อม `start-caddy.sh`
 
-1. **การค้นหา Local Hostname (บน macOS):**
-   * ไปที่ **System Settings > General > Sharing** ตรวจสอบชื่อในส่วน **Local Hostname** (ตัวอย่างเช่น: `dave-macmini.local`)
-   * หรือรันคำสั่งใน Terminal: `dns-sd -G v4 dave-macmini.local` หรือดูผ่านคำสั่ง `hostname`
+เฟสนี้ใช้ **Caddy** เป็น Reverse Proxy บนเครื่อง Mac โดยแบ่ง config เป็น 2 ไฟล์เพื่อรองรับสถานการณ์ทดสอบที่แตกต่างกัน:
 
-2. **รัน Caddy บนเครื่อง Mac สำหรับทดสอบ (แนะนำสำหรับ Caddy):**
-   ติดตั้ง Caddy ผ่าน Homebrew ด้วยคำสั่ง `brew install caddy` จากนั้นสร้างไฟล์คอนฟิก `Caddyfile.local` ในโฟลเดอร์สำหรับทดสอบ:
-   ```caddy
-   # 1. จัดการ Endpoint API
-   dave-macmini.local:80/api {
-       reverse_proxy localhost:3000
-   }
+| ไฟล์ | Port | ใช้เมื่อ | ต้อง sudo? |
+|------|------|----------|-----------|
+| `Caddyfile.dev` | `:8080` | ทดสอบกับมือถือจริงบน Wi-Fi วงเดียวกัน | ❌ ไม่ต้อง |
+| `Caddyfile.local` | `:80` | ทดสอบผ่าน mDNS hostname (`.local`) บน iOS/macOS | ✅ ต้อง |
 
-   # 2. จัดการ Endpoint WebSockets
-   dave-macmini.local:80/ws {
-       reverse_proxy localhost:3001
-   }
+1. **โครงสร้างไฟล์คอนฟิก (`websocket-server/`):**
+   * `Caddyfile.dev` — bind `:8080` ฟอร์เวิร์ดทุก path ไป `localhost:3000` (รวม WebSocket)
+   * `Caddyfile.local` — bind `*.local:80` ฟอร์เวิร์ด `/api/*`, `/socket.io/*`, `/health`, `/temp/*`, `/uploads/*` ไป `localhost:3000`
+   * `start-caddy.sh` — script เลือก Caddyfile ตาม port ที่ระบุ (default `:8080`)
 
-   # 3. จัดการ Frontend Admin Web ( static files )
-   dave-macmini.local:8080 {
-       root * ./web_build
-       file_server
-       try_files {path} /index.html
-   }
+2. **การรัน Caddy:**
+   ```bash
+   cd websocket-server
+   ./start-caddy.sh        # ใช้ Caddyfile.dev (:8080, ไม่ต้อง sudo)
+   ./start-caddy.sh 80     # ใช้ Caddyfile.local (:80, ต้อง sudo)
    ```
-   รัน Caddy ด้วยคำสั่ง `caddy run --config Caddyfile.local`
 
-3. **ขั้นตอนการทดสอบ (Verification checklist):**
-   * [ ] **Test API Route:** ใช้ Postman หรืออุปกรณ์มือถือที่เชื่อม Wi-Fi วงเดียวกัน เรียกดู `http://dave-macmini.local/api/health` ต้องตอบกลับได้โดยตรง
-   * [ ] **Test WS Connection:** ทดสอบต่อระบบแชทหรือแจ้งเตือนเหตุฉุกเฉินผ่าน `ws://dave-macmini.local/ws`
-   * [ ] **Test Flutter Target:** ปรับ `app_config.dart` ของแอป Flutter ชี้มาที่ `http://dave-macmini.local` (โทรศัพท์จริงที่เชื่อมวง Wi-Fi เดียวกันจะเรียกใช้ได้ทันทีโดยไม่ต้องระบุ IP และไม่ต้องกรอกพอร์ต)
+3. **การตั้งค่า Flutter:**
+   ```dart
+   // lib/config/app_config.dart
+   static const String mainMachineIp = '192.168.1.111:8080';  // ← IP ปัจจุบัน + Caddy port
+   ```
+   > หมายเหตุ: ใช้ **IP จริง** แทน hostname (`.local`) เพราะ Android ไม่รองรับ mDNS resolve ในทุกเครื่อง
+
+4. **ขั้นตอนการทดสอบ (Verification checklist):**
+   * [x] **Test API Route:** `curl http://192.168.1.111:8080/api/videos/emergency/list` → ตอบกลับได้
+   * [x] **Test WS Connection:** WebSocket เชื่อมต่อผ่าน `http://192.168.1.111:8080` ได้
+   * [x] **Test Image Loading:** การ์ดเหตุการณ์/แกลอรี่/Fullscreen แสดงภาพได้ (ผ่าน `_normalizeLocalUrl` + `ensureFullUrl`)
+   * [x] **Test from Android:** ใช้ IP direct ได้โดยไม่ต้องแก้ hosts
 
 ---
 

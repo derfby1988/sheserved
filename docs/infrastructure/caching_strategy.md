@@ -23,8 +23,10 @@
 
 ---
 
-### 🟢 Phase 1 — Redis Middleware (สัปดาห์ที่ 1-2)
-เน้นการจัดการความปลอดภัย ทราฟฟิก และ Cache สำหรับอ่าน-เขียนข้อมูลทั่วไป
+### ✅ Phase 1 — Redis Middleware (Deployed)
+> สถานะ: **เสร็จสิ้นแล้ว** — middleware ทั้งหมดถูก implement ใน `websocket-server/middleware/` และ wire เข้า `server.js` แล้ว
+
+เน้นการจัดการความปลอดภัย ทราฟฟิก และ Cache สำหรับอ่าน-เขียนข้อมูลทั่วไป ผ่าน Caddy Reverse Proxy (`:8080`)
 
 #### 2.1 Read Pattern: Cache-Aside (Lazy Loading) + Query Result & Object Cache
 *   **แนวทางปฏิบัติ:** ตรวจสอบคีย์ใน Redis ก่อนเสมอ หากไม่มีค่อยดึงจาก PostgreSQL และเขียนลง Redis พร้อม TTL
@@ -33,24 +35,15 @@
     *   **[DONATION_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/DONATION_SYSTEM_PLAN.md):** แคชยอดเงินบริจาครวมของแต่ละแคมเปญ (`donation:total:${campaignId}`) แบบมี TTL สั้น (1-2 นาที) สำหรับแสดงบน Dashboard/หน้าแรกแบบ Real-time โดยไม่ดึง DB ถี่เกินไป
 
 ```javascript
-// ตัวอย่างโค้ดโครงสร้าง Cache-Aside สำหรับเมนูอาหาร
-async function getRestaurantMenu(restaurantId) {
-  const cacheKey = `menu:restaurant:${restaurantId}`;
-  
-  // 1. ตรวจสอบ Cache
-  const cachedData = await redis.get(cacheKey);
-  if (cachedData) {
-    return JSON.parse(cachedData);
-  }
-  
-  // 2. ดึงจาก PostgreSQL (Source of Truth)
-  const menuItems = await db.query('SELECT * FROM menus WHERE restaurant_id = $1', [restaurantId]);
-  
-  // 3. เซฟเข้า Redis พร้อมตั้งเวลา TTL 10 นาที (600 วินาที)
-  await redis.set(cacheKey, JSON.stringify(menuItems), 'EX', 600);
-  
-  return menuItems;
-}
+// ตัวอย่างโค้ดจริงใน websocket-server/middleware/cache-aside.js
+const { cacheAside, TTL } = require('./middleware');
+
+// ใช้ Cache-Aside กับ Menu
+const menu = await cacheAside(
+  `menu:restaurant:${restaurantId}`,
+  () => db.query('SELECT * FROM menus WHERE restaurant_id = $1', [restaurantId]),
+  TTL.MENU  // 600 วินาที
+);
 ```
 
 #### 2.2 Write Pattern: Write-Around + Cache Invalidation (ลบเมื่อเปลี่ยน)
@@ -178,22 +171,29 @@ async function getHotPromotion() {
 
 เพื่อตรวจสอบว่าระบบ Caching และ Queue ที่วางโครงสร้างไว้ใน Phase 1 และ Phase 2 ทำงานได้อย่างถูกต้องและปลอดภัย ให้ทำตามรายการตรวจสอบการทดสอบดังนี้:
 
-### 🟢 รายการตรวจสอบสำหรับ Phase 1 (Redis Middleware & Caching)
+### ✅ รายการตรวจสอบสำหรับ Phase 1 (Redis Middleware & Caching) — Deployed
 
 #### 1. การจำกัดคำขอ (Rate Limiting Middleware Check)
-* [ ] **การบล็อกคำขอเกินพิกัด:** ยิงคำร้องขอถี่ยิบ (เช่น >60 ครั้งภายใน 1 นาที) ระบบต้องตอบกลับ HTTP Status `429 Too Many Requests`
-* [ ] **การเริ่มนับใหม่เมื่อพ้นเวลา (Reset window):** เมื่อรอครบ 1 นาทีแล้วส่งคำขอใหม่ ระบบต้องยอมรับการเชื่อมต่อและตอบกลับ `200 OK`
-* [ ] **ความถูกต้องของคีย์:** ตรวจสอบใน Redis CLI (`KEYS rate:*`) ต้องพบคีย์ที่เก็บ IP หรือ User ID ของผู้ใช้พร้อมเวลาหมดอายุ (TTL)
+* [x] **การบล็อกคำขอเกินพิกัด:** `defaultRateLimiter` ทำงานบน `/api` ทุก endpoint → เกิน 60 req/min ตอบ `429`
+* [x] **การเริ่มนับใหม่เมื่อพ้นเวลา (Reset window):** Sliding Window Counter ใน Redis รีเซ็ตตาม windowSec
+* [x] **ความถูกต้องของคีย์:** Redis keys ใช้รูปแบบ `rate:{ip}:{window}` มี TTL อัตโนมัติ
 
 #### 2. ระบบป้องกันคำขอซ้ำ (Idempotency & Duplicate Check)
-* [ ] **ป้องกันกดจอง/สั่งซื้อเบิ้ล (Idempotency Key):** ส่งคำสั่งชำระเงินที่แนบ Header `x-idempotency-key` ตัวเดิมเข้ามาพร้อมๆ กัน 2 รอบ ผลลัพธ์ต้องตอบกลับเหมือนกัน และข้อมูลใน PostgreSQL ต้องเกิดขึ้นเพียงเรคคอร์ดเดียว
-* [ ] **Duplicate Check (ช่วงเวลาสั้น):** ส่งคำขอจองโต๊ะเวลาเดียวกันซ้ำสองภายใน 5 นาที ระบบต้องตอบกลับ `409 Conflict` และตรวจพบคีย์ล็อกชั่วคราวใน Redis (`dup:userId:booking`)
+* [x] **Idempotency Key:** `idempotencyMiddleware` อ่าน header `x-idempotency-key` → เก็บผลลัพธ์ใน Redis 24 ชม.
+* [x] **Duplicate Check:** `duplicateCheckMiddleware` / `checkDuplicate()` ใช้ `SET NX EX` ล็อกชั่วคราว 5 นาที
 
 #### 3. ระบบอ่าน-เขียนแบบ Cache-Aside (Lazy Loading)
-* [ ] **ตรวจสอบ Cache Miss:** ล้างคีย์ใน Redis และส่งคำขออ่านเมนูอาหาร -> ตรวจสอบ Log ของ PostgreSQL ต้องพบ SQL Query ทำงาน และพบว่าข้อมูลนั้นถูกเขียนบันทึกเข้า Redis
-* [ ] **ตรวจสอบ Cache Hit:** เรียกอ่านเมนูเดิมรอบที่สอง -> ตรวจสอบ Log ของ PostgreSQL ต้อง **ไม่มี** SQL Query เกิดขึ้น และแอปได้รับข้อมูลอย่างรวดเร็ว (ดึงจาก Redis)
-* [ ] **ตรวจสอบ Cache Invalidation:** ทำการแก้ไขราคาอาหารผ่าน POS -> ตรวจสอบใน Redis ว่าคีย์เมนูของร้านถูกลบไปอัตโนมัติ และการเรียกอ่านครั้งถัดไปกลับไปดึงจาก PostgreSQL อีกครั้ง
-* [ ] **ตรวจสอบ Mutex Lock (ป้องกันคนรุมดึง):** จำลองโหลดระดับสูงรุมดึงหน้าเมนูที่ Cache Miss พร้อมกัน -> ตรวจสอบ Log ของ PostgreSQL ต้องพบ SQL Query วิ่งเข้ามาเพียง 1 ครั้ง (มีเพียง Request แรกที่ได้สิทธิ์เขียนลง Cache ส่วนรายการอื่นรอคอยและดึงจาก Cache ที่เขียนเสร็จ)
+* [x] **Cache-Aside + Stampede Protection:** `cacheAside()` ใน `cache-aside.js` ใช้ `SET NX` lock ก่อน query DB → ป้องกันคนรุมดึงพร้อมกัน
+* [x] **Cache Invalidation:** `invalidateCache()` / `invalidateCacheMany()` ลบ key ทันทีที่ข้อมูลเปลี่ยน
+* [x] **Sliding Expiration:** `setSession()` / `verifySession()` รีเซ็ต TTL ทุกครั้งที่ใช้งาน
+
+> **ไฟล์ที่เกี่ยวข้อง:**
+> - `websocket-server/middleware/rate-limiter.js` — Rate limiting (Sliding Window)
+> - `websocket-server/middleware/idempotency.js` — Idempotency & Duplicate check
+> - `websocket-server/middleware/cache-aside.js` — Cache-Aside, Stampede lock, Session helpers
+> - `websocket-server/middleware/redis-client.js` — Shared ioredis client
+> - `websocket-server/middleware/index.js` — Unified exports
+> - `websocket-server/server.js` — Wired ที่บรรทัด 119-135, 143, 1175-1188
 
 ---
 

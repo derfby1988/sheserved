@@ -264,6 +264,16 @@ BUNNY_CDN_URL=<your_cdn_url>
 MAX_CONCURRENT_TRANSCODES=2
 REDIS_URL=redis://localhost:6379
 
+### Redis Coordination
+
+Phase 2 BullMQ (video transcode + thumbnail queue) และ Phase 1 middleware (rate limiter, idempotency, cache-aside) ใช้ `REDIS_URL` เดียวกันผ่าน `websocket-server/middleware/redis-client.js` เพื่อให้:
+
+* Rate limiter/duplicate-check ก่อนเข้าคิวได้ผลทันที
+* `idempotencyMiddleware` อ่าน `x-idempotency-key` header จากทุก API รวมถึง escrow transfer endpoints ที่สร้าง `idempotency_key`
+* BullMQ jobs สามารถตรวจสอบ key state (เช่น `idem:` prefix) ได้ในการ retry และ auto-clean เดิม
+
+ควรตรวจสอบให้แน่ใจว่า escrow transfer route ผ่าน middleware เดียวกับ `/api` หลัก (ติดตั้ง `defaultRateLimiter` + `idempotencyMiddleware`) เพื่อให้ `x-idempotency-key` ยังทำงานครบถ้วนก่อนส่งงานเข้า BullMQ queue.
+
 # Supabase (MANDATORY for Emergency Health & Background Services)
 # ต้องใช้ SERVICE_ROLE key เท่านั้น — ห้ามใช้ anon key เด็ดขาด
 # รับค่าได้จาก: Supabase Dashboard → Settings → API → Project API keys → service_role

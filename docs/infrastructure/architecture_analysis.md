@@ -12,11 +12,12 @@
 > [!NOTE]
 > เอกสารนี้เน้นเฉพาะ **Phase ที่ไม่มีค่าใช้จ่าย** ซึ่งสามารถ deploy ได้ทันทีบน infrastructure ที่มีอยู่แล้ว
 
-| Phase | หัวข้อที่ครอบคลุม | ค่าใช้จ่าย |
-|-------|-----------------|------------|
-| **Phase 1** | Rate Limiting · Idempotency · Duplicate Check | 🟢 ฟรี (ใช้ Redis ที่มีอยู่) |
-| **Phase 2** | BullMQ Queue: Booking, Order, Donation, Notification, Video, Sync | 🟢 ฟรี (npm + Redis ที่มีอยู่) |
-| **อนาคต** | CQRS · CDN/WAF · Analytics · Auto Scale | 🔵 วางรากฐานไว้เผื่อขยายตัว (ยังไม่ deploy) |
+| Phase | หัวข้อที่ครอบคลุม | ค่าใช้จ่าย | สถานะ |
+|-------|-----------------|------------|--------|
+| **Phase 1a** | Caddy Reverse Proxy (`:8080` / `:80`) | 🟢 ฟรี | ✅ **Deploy แล้ว** |
+| **Phase 1b** | Rate Limiting · Idempotency · Duplicate Check (Redis Middleware) | 🟢 ฟรี | ⏳ รอ implement |
+| **Phase 2** | BullMQ Queue: Booking, Order, Donation, Notification, Video, Sync | 🟢 ฟรี | ⏳ รอ implement |
+| **อนาคต** | CQRS · CDN/WAF · Analytics · Auto Scale | 🔵 วางรากฐานไว้เผื่อขยายตัว | ⏸️ ยังไม่ deploy |
 
 > [!WARNING]
 > หากต้องการเอกสารเฉพาะด้าน **Auth / Login / Register Security** ให้ดูที่ `auth_security_analysis.md` แทน
@@ -76,18 +77,19 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A["📱 Flutter App"] --> B["🔌 WebSocket Server\nNode.js + Express"]
+    A["📱 Flutter App"] --> B["🔄 Caddy\nReverse Proxy :8080"]
     A --> C["☁️ Supabase\nCloud BaaS"]
-    
-    B --> D["🐘 Local PostgreSQL"]
-    B <-- E["🔴 Redis\nredis://localhost:6379"]
-    
-    C --> F["☁️ Supabase PostgreSQL"]
-    
-    G["🔄 SyncService"] --> D
-    G --> F
-    
-    B --> H["📹 Video Processing\nFFmpeg + Bunny.net"]
+
+    B --> D["🔌 WebSocket Server\nNode.js + Express :3000"]
+    D --> E["🐘 Local PostgreSQL"]
+    D <-- F["🔴 Redis\nredis://localhost:6379"]
+
+    C --> G["☁️ Supabase PostgreSQL"]
+
+    H["🔄 SyncService"] --> E
+    H --> G
+
+    D --> I["📹 Video Processing\nFFmpeg + Bunny.net"]
 ```
 
 ### สิ่งที่ Sheserved มีอยู่แล้ว
@@ -95,9 +97,10 @@ flowchart LR
 | Component | สิ่งที่มี | ไฟล์หลัก |
 |-----------|----------|----------|
 | **Frontend** | Flutter (cross-platform) | [lib/](file:///Users/dave_macmini/sheserved/lib) |
-| **API Server** | Node.js + Express + Socket.io | [server.js](file:///Users/dave_macmini/sheserved/websocket-server/server.js) |
+| **Reverse Proxy** | Caddy (:8080 สำหรับ dev / :80 สำหรับ local mDNS) | [start-caddy.sh](file:///Users/dave_macmini/sheserved/websocket-server/start-caddy.sh) |
+| **API Server** | Node.js + Express + Socket.io (:3000 ผ่าน Caddy) | [server.js](file:///Users/dave_macmini/sheserved/websocket-server/server.js) |
 | **Database** | PostgreSQL (Local + Supabase Cloud) | [schema.sql](file:///Users/dave_macmini/sheserved/database/schema.sql) |
-| **Real-time** | WebSocket (Socket.io) | [websocket_service.dart](file:///Users/dave_macmini/sheserved/lib/services/websocket_service.dart) |
+| **Real-time** | WebSocket (Socket.io ผ่าน Caddy :8080) | [websocket_service.dart](file:///Users/dave_macmini/sheserved/lib/services/websocket_service.dart) |
 | **Cache** | Redis (มี dump.rdb แล้ว) | [.env](file:///Users/dave_macmini/sheserved/websocket-server/.env) `REDIS_URL` |
 | **Sync** | SyncService (Supabase ↔ Local) | [sync_service.dart](file:///Users/dave_macmini/sheserved/lib/services/sync_service.dart) |
 | **Auth** | Custom AuthService + ServiceLocator | [auth_service.dart](file:///Users/dave_macmini/sheserved/lib/services/auth_service.dart) |
