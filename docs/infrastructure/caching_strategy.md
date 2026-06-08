@@ -4,6 +4,8 @@
 เอกสารนี้วิเคราะห์ Caching Patterns จากสถาปัตยกรรมอ้างอิง และนำเสนอแนวทางการประยุกต์ใช้กับ **Sheserved** เพื่อรองรับการขยายตัวในอนาคต โดยมุ่งเน้นแนวทาง **ไม่มีค่าใช้จ่ายเพิ่มเติม (Zero-Cost)** ในช่วงพัฒนาและ Deploy เริ่มต้น
 
 > [!NOTE]
+> เอกสารนี้เป็น **operational companion** ของ [`architecture_analysis.md`](architecture_analysis.md) — เน้นรายละเอียด caching patterns, TTL, key schema และ queue-cache coordination ที่ใช้งานได้จริง ส่วน master plan, queue strategy และลำดับการ implement ดูที่ **architecture_analysis.md: Phase 2** (ข้อเสนอแนะที่ดีที่สุด)
+>
 > แผนงานนี้ครอบคลุมทุกระบบย่อยหลักทั้งหมดในแพลตฟอร์ม Sheserved เพื่อให้แน่ใจว่าระบบทั้งหมดทำงานผสานกันอย่างไร้รอยต่อโดยใช้ฐานข้อมูล Redis เดียวกันโดยไม่มีค่าใช้จ่ายเพิ่ม
 
 ---
@@ -23,8 +25,8 @@
 
 ---
 
-### ✅ Phase 1 — Redis Middleware (Deployed)
-> สถานะ: **เสร็จสิ้นแล้ว** — middleware ทั้งหมดถูก implement ใน `websocket-server/middleware/` และ wire เข้า `server.js` แล้ว
+### ✅ Phase 1 — Redis Middleware (Implemented)
+> สถานะ: **เสร็จสิ้นแล้ว** — middleware (`rate-limiter`, `idempotency`, `cache-aside`, `redis-client`) ถูก implement ใน `websocket-server/middleware/` และ wire เข้า `server.js` แล้ว
 
 เน้นการจัดการความปลอดภัย ทราฟฟิก และ Cache สำหรับอ่าน-เขียนข้อมูลทั่วไป ผ่าน Caddy Reverse Proxy (`:8080`)
 
@@ -111,22 +113,175 @@ async function getHotPromotion() {
 
 ---
 
-### 🟢 Phase 2 — BullMQ Queue System (สัปดาห์ที่ 2-4)
-เน้นการประมวลผลคำขอแบบอะซิงโครนัส (Async Processing) ผ่าน Redis Queue เพื่อช่วยลดภาระโหลดและรับประกันความเสถียรของแอปพลิเคชัน
+### ✅ Phase 2 — BullMQ Queue System + Event-Driven Caching (Documented, รอ implement)
 
-#### 2.5 รายละเอียดการประยุกต์ใช้รายระบบย่อย (Sheserved Subsystems)
+> สถานะ: **Document complete** — เอกสาร + code examples + checklist ครบ รอ implement queue files จริงใน `websocket-server/queues/`
+
+เน้นการประมวลผลคำขอแบบอะซิงโครนัส (Async Processing) ผ่าน Redis Queue และประสานกับ **Cache Invalidation / Warming** แบบ Event-Driven เพื่อลดภาระโหลดและรับประกันความสอดคล้องของข้อมูลระหว่าง Cache กับ Database
+
+#### 2.5 Cache-Queue Coordination Patterns
+
+เมื่อใช้ BullMQ ร่วมกับ Redis Cache ต้องจัดการความสอดคล้องระหว่าง Worker กับ Cache ให้ถูกต้อง:
+
+| Pattern | ใช้เมื่อไหร่ | ตัวอย่างใน Sheserved |
+|---------|-------------|----------------------|
+| **Invalidate-on-Complete** | Worker ประมวลผลเสร็จ → ลบ Cache ที่เกี่ยวข้อง | Booking worker เสร็จ → `del booking:slots:*` |
+| **Warm-on-Complete** | Worker เสร็จ → คำนวณผลลัพธ์ใหม่แล้วเขียน Cache ทันที | Donation total คำนวณใหม่ → `set donation:total:${id}` |
+| **Invalidate-on-Start** | Worker เริ่มทำงาน → ลบ Cache เพื่อป้องกัน stale read ระหว่างประมวลผล | Order worker เริ่ม → `del order:status:${id}` |
+| **Event Broadcast** | Worker ส่ง Event ผ่าน BullMQ → ให้ทุก node ลบ local cache พร้อมกัน | Menu ถูกแก้ไข → broadcast `invalidate:menu:${id}` |
+
+#### 2.6 Event-Driven Cache Invalidation ด้วย BullMQ
+
+แทนการลบ Cache ตรงๆ ใน endpoint ให้ส่ง invalidation event เข้า queue แล้วให้ worker จัดการ:
+
+```javascript
+// websocket-server/queues/notification-queue.js
+const { invalidateCacheMany } = require('../middleware/cache-aside');
+
+const cacheInvalidationWorker = new Worker('notification', async (job) => {
+  if (job.name === 'invalidate-cache') {
+    const { keys, pattern } = job.data;
+
+    if (keys) {
+      await invalidateCacheMany(keys);
+      console.log(`[CacheInvalidation] Cleared keys: ${keys.join(', ')}`);
+    }
+
+    if (pattern) {
+      // ใช้ Redis SCAN ลบ key ตาม pattern (e.g. "menu:restaurant:42:*")
+      const stream = redis.scanStream({ match: pattern, count: 100 });
+      const keysToDelete = [];
+      stream.on('data', (keys) => keysToDelete.push(...keys));
+      await new Promise((resolve, reject) => {
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      if (keysToDelete.length) await redis.del(...keysToDelete);
+    }
+  }
+
+  // ... notification logic
+}, { connection });
+
+// ── ใช้ใน API Endpoint ───────────────────────────────────
+async function updateMenuItem(req, res) {
+  const { itemId, restaurantId } = req.body;
+
+  // 1. Write ลง DB ตรงๆ
+  await db.query('UPDATE menus SET ... WHERE id = $1', [itemId]);
+
+  // 2. Enqueue invalidation event (ไม่ block response)
+  await notificationQueue.add('invalidate-cache', {
+    pattern: `menu:restaurant:${restaurantId}*`,
+    source: 'menu-update',
+    timestamp: Date.now(),
+  });
+
+  res.json({ success: true });
+}
+```
+
+**ข้อดีของ Event-Driven Invalidation:**
+- API response เร็วขึ้น (ไม่ต้องรอ SCAN + DEL บน Redis)
+- ถ้า invalidate ล้มเหลว → BullMQ retry ได้อัตโนมัติ
+- รองรับ **multi-instance** ในอนาคต (หลาย Node.js process ได้รับ invalidation event พร้อมกัน)
+
+#### 2.7 Cache Warming จาก Worker
+
+Worker สามารถเติม Cache ล่วงหน้า (warm cache) หลังจากประมวลผลเสร็จ:
+
+```javascript
+// websocket-server/queues/order-queue.js
+const { cacheAside } = require('../middleware/cache-aside');
+
+const orderWorker = new Worker('order', async (job) => {
+  const { userId, orderId } = job.data;
+
+  // 1. ประมวลผล order → DB
+  await pool.query('UPDATE orders SET status = $1 WHERE id = $2', ['confirmed', orderId]);
+
+  // 2. Warm cache — เติมสถานะ order ใหม่ลง Redis ทันที
+  const freshOrder = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+  await redis.setex(
+    `order:status:${orderId}`,
+    TTL.ORDER_STATUS,
+    JSON.stringify(freshOrder.rows[0])
+  );
+
+  // 3. ลบ cart cache (เพราะสั่งเสร็จแล้ว)
+  await redis.del(`cart:user:${userId}`);
+
+  // 4. Warm booking slots ถ้าเป็น order ที่เกี่ยวข้องกับการจอง
+  await cacheAside(
+    `booking:slots:${freshOrder.rows[0].restaurant_id}:${today}`,
+    () => pool.query('SELECT * FROM booking_slots WHERE ...'),
+    TTL.BOOKING_SLOT
+  );
+}, { connection });
+```
+
+#### 2.8 TTL Configuration สำหรับ Queue + Cache
+
+```javascript
+// websocket-server/middleware/cache-aside.js (ขยายเพิ่มจาก Phase 1)
+const TTL = {
+  // Phase 1 — Existing
+  MENU: 600,           // 10 นาที
+  RESTAURANT: 900,     // 15 นาที
+  SESSION: 7200,       // 2 ชั่วโมง (Sliding)
+
+  // Phase 2 — Queue-related
+  ORDER_STATUS: 300,   // 5 นาที (อัปเดตบ่อย)
+  BOOKING_SLOT: 60,    // 1 นาที (real-time critical)
+  DONATION_TOTAL: 120, // 2 นาที (dashboard)
+  VIDEO_META: 3600,    // 1 ชั่วโมง (เปลี่ยนน้อย)
+  DELIVERY_STATUS: 30, // 30 วินาที (tracking)
+  NOTIFICATION_LOG: 86400, // 24 ชั่วโมง
+};
+```
+
+#### 2.9 Redis Key Schema สำหรับ Phase 2
+
+```
+# Queue metadata (BullMQ internal — อย่าแก้ไขตรง)
+bull:booking:id
+bull:booking:wait
+bull:booking:active
+bull:booking:completed
+bull:booking:failed
+
+# Cache keys — Queue-processed data
+order:status:${orderId}
+booking:slots:${restaurantId}:${date}
+booking:confirmation:${jobId}
+donation:total:${campaignId}
+donation:leaderboard:${campaignId}
+video:meta:${videoId}
+video:thumbnail:${videoId}
+delivery:status:${orderId}
+sync:checkpoint:user:${userId}
+
+# Locks — Distributed mutex สำหรับ queue-sensitive operations
+lock:slot:${restaurantId}:${date}:${time}
+lock:order:pos-inject:${orderId}
+lock:sync:user:${userId}
+lock:donation:consensus:${requestId}
+```
+
+#### 2.10 รายละเอียดการประยุกต์ใช้รายระบบย่อย (Sheserved Subsystems)
+
 ตารางด้านล่างแสดงการจัดการ Caching และ Queue สำหรับแต่ละระบบย่อย โดยสอดคล้องและได้รับการตรวจสอบแล้วว่าไม่ขัดแย้งกับแผนงานหลัก:
 
 | ระบบย่อย (Subsystem) | วิธีการจัดการ Caching / Queue | ตัวอย่างการตั้งชื่อคีย์ (Redis Key Schema) | ความเชื่อมโยงและจุดประสานตามแผนหลัก |
 |---|---|---|---|
 | **1. ระบบสมาชิกและเซสชัน (Auth & Session)** | - Sliding Expiration (3.2)<br>- Invalidation (4.1) เมื่อ logout | `auth:session:${sessionId}`<br>`auth:token:${userId}` | สอดคล้องกับ **[CHAT_CONSULTATION_IMPROVEMENT_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/CHAT_CONSULTATION_IMPROVEMENT_PLAN.md)**: ใช้จัดการสิทธิ์เข้าใช้งานห้องสนทนาของแพทย์และคนไข้โดยไม่ละเมิดสิทธิ์ RLS (เนื่องจากระบบใช้ Custom Auth ของตนเอง) |
-| **2. ระบบข้อมูลร้านและเมนู (Directory & Menu)** | - Cache-Aside (1.1)<br>- Object Cache (7.3)<br>- Write-Around (2.3) เมื่อแก้ไข | `menu:restaurant:${restaurantId}`<br>`restaurant:profile:${restaurantId}` | สอดคล้องกับ **[ERP_CORE_ARCHITECTURE.md](file:///Users/dave_macmini/sheserved/docs/ERP/ERP_CORE_ARCHITECTURE.md)**: จัดเตรียมเมนูและข้อมูลหน้าร้านให้อ่านเร็วที่สุดสำหรับ POS |
-| **3. ระบบสั่งอาหารและตะกร้า (Ordering & Cart)** | - Cache-Aside (1.1) สำหรับอ่านเมนู<br>- Object Cache (7.3) สำหรับตะกร้าสินค้า<br>- BullMQ Queue (Phase 2) สำหรับออร์เดอร์ | `cart:user:${userId}`<br>`order:status:${orderId}` | สอดคล้องกับ **[SHOPPING_CART_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/SHOPPING_CART_PLAN.md)**: ตะกร้าพักไว้ใน Redis แล้วจึงยิง API (POS Injection) ข้ามไปสร้างบิลใน **POS System** ของคลินิกผ่าน `order-queue` |
-| **4. ระบบจองโต๊ะและคิว (Booking & Reservation)** | - Cache-Aside (1.1) สำหรับดูตารางเวลา<br>- Mutex Lock (6.2) กันจองซ้ำ<br>- BullMQ Queue (Phase 2) สำหรับส่งงาน | `booking:slots:${restaurantId}:${date}`<br>`lock:slot:${restaurantId}:${date}:${time}` | สอดคล้องกับ **[CHAT_CONSULTATION_IMPROVEMENT_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/CHAT_CONSULTATION_IMPROVEMENT_PLAN.md)**: ใช้ `SETNX` ล็อกจังหวะเริ่ม Session การนัดหมายแพทย์ ป้องกันไม่ให้ชนกับคิวอื่นของแพทย์ |
-| **5. ระบบบริจาคและเงินประกัน (Donation & Escrow)** | - Write-Around (2.3) ตรงเข้า DB<br>- Cache-Aside (1.1) สำหรับดูยอดรวมโชว์หน้าแรก | `donation:total:${campaignId}`<br>`escrow:status:${escrowId}` | สอดคล้องกับ **[DONATION_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/DONATION_SYSTEM_PLAN.md)**: ใช้การบันทึกระดับ DB ในการลงทะเบียนบริจาค/โหวตอนุมัติเพื่อป้องกัน Race Condition โดยระบบ Caching จะกรองข้อมูลแบบ Read-only เท่านั้น |
-| **6. ระบบประมวลผลวิดีโอ (Video Processing)** | - Cloudflare Free CDN (8.1) แคชรูปภาพ/วิดีโอ<br>- BullMQ Queue (Phase 2) สำหรับรันงานหลังบ้าน | `video:meta:${videoId}`<br>`job:thumbnail:${videoId}` | สอดคล้องกับ **[VIDEO_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/VIDEO_SYSTEM_PLAN.md)**: ใช้ BullMQ จัดการลำดับคิวการประมวลผล (Priority Queue) โดย Emergency alerts จะถูกขยับขึ้นมาประมวลผลก่อน |
-| **7. ระบบจัดส่งและติดตามพิกัด (Delivery & Logistics)** | - GPS cache ชั่วคราวบน Client<br>- BullMQ Queue (Phase 2) อัปเดตพัสดุ | `delivery:status:${orderId}` | สอดคล้องกับ **[Delivery_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/Delivery_PLAN.md)**: เก็บพิกัดและ tracking ไว้ที่ฝั่ง Mobile SDK เป็นหลัก (เพื่อควบคุมงบ Google Maps API) และซิงค์สถานะจัดส่งผ่าน queue |
-| **8. ระบบซิงค์ข้อมูล (Local-Cloud Sync)** | - Distributed Lock (6.2) ป้องกันการซิงค์ซ้อน | `sync:lock:user:${userId}` | สอดคล้องกับ **[ERP_CORE_ARCHITECTURE.md](file:///Users/dave_macmini/sheserved/docs/ERP/ERP_CORE_ARCHITECTURE.md)**: ควบคุมการ Sync คิวสำหรับ Local Database ↔ Supabase Cloud ของคลินิกไม่ให้เกิดการเรียกชนกัน |
+| **2. ระบบข้อมูลร้านและเมนู (Directory & Menu)** | - Cache-Aside (1.1)<br>- Object Cache (7.3)<br>- Write-Around (2.3) เมื่อแก้ไข<br>- **Event-Driven Invalidation** ผ่าน notification-queue | `menu:restaurant:${restaurantId}`<br>`restaurant:profile:${restaurantId}` | สอดคล้องกับ **[ERP_CORE_ARCHITECTURE.md](file:///Users/dave_macmini/sheserved/docs/ERP/ERP_CORE_ARCHITECTURE.md)**: จัดเตรียมเมนูและข้อมูลหน้าร้านให้อ่านเร็วที่สุดสำหรับ POS |
+| **3. ระบบสั่งอาหารและตะกร้า (Ordering & Cart)** | - Cache-Aside (1.1) สำหรับอ่านเมนู<br>- Object Cache (7.3) สำหรับตะกร้าสินค้า<br>- BullMQ Queue (Phase 2) สำหรับออร์เดอร์<br>- **Warm-on-Complete** หลัง POS Injection | `cart:user:${userId}`<br>`order:status:${orderId}` | สอดคล้องกับ **[SHOPPING_CART_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/SHOPPING_CART_PLAN.md)**: ตะกร้าพักไว้ใน Redis แล้วจึงยิง API (POS Injection) ข้ามไปสร้างบิลใน **POS System** ของคลินิกผ่าน `order-queue` |
+| **4. ระบบจองโต๊ะและคิว (Booking & Reservation)** | - Cache-Aside (1.1) สำหรับดูตารางเวลา<br>- Mutex Lock (`SETNX`) กันจองซ้ำ<br>- BullMQ Queue (Phase 2) สำหรับส่งงาน<br>- **Invalidate-on-Complete** slot cache | `booking:slots:${restaurantId}:${date}`<br>`lock:slot:${restaurantId}:${date}:${time}` | สอดคล้องกับ **[CHAT_CONSULTATION_IMPROVEMENT_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/CHAT_CONSULTATION_IMPROVEMENT_PLAN.md)**: ใช้ `SETNX` ล็อกจังหวะเริ่ม Session การนัดหมายแพทย์ ป้องกันไม่ให้ชนกับคิวอื่นของแพทย์ |
+| **5. ระบบบริจาคและเงินประกัน (Donation & Escrow)** | - Write-Around (2.3) ตรงเข้า DB<br>- Cache-Aside (1.1) สำหรับดูยอดรวมโชว์หน้าแรก<br>- **Warm-on-Complete** หลัง escrow release | `donation:total:${campaignId}`<br>`escrow:status:${escrowId}` | สอดคล้องกับ **[DONATION_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/DONATION_SYSTEM_PLAN.md)**: ใช้การบันทึกระดับ DB ในการลงทะเบียนบริจาค/โหวตอนุมัติเพื่อป้องกัน Race Condition โดยระบบ Caching จะกรองข้อมูลแบบ Read-only เท่านั้น |
+| **6. ระบบประมวลผลวิดีโอ (Video Processing)** | - Cloudflare Free CDN (8.1) แคชรูปภาพ/วิดีโอ<br>- BullMQ Queue (Phase 2) สำหรับรันงานหลังบ้าน<br>- **Warm-on-Complete** thumbnail URL + meta | `video:meta:${videoId}`<br>`job:thumbnail:${videoId}` | สอดคล้องกับ **[VIDEO_SYSTEM_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/VIDEO_SYSTEM_PLAN.md)**: ใช้ BullMQ จัดการลำดับคิวการประมวลผล (Priority Queue) โดย Emergency alerts จะถูกขยับขึ้นมาประมวลผลก่อน |
+| **7. ระบบจัดส่งและติดตามพิกัด (Delivery & Logistics)** | - GPS cache ชั่วคราวบน Client<br>- BullMQ Queue (Phase 2) อัปเดตพัสดุ<br>- **Warm-on-Complete** delivery status | `delivery:status:${orderId}` | สอดคล้องกับ **[Delivery_PLAN.md](file:///Users/dave_macmini/sheserved/docs/plans/Delivery_PLAN.md)**: เก็บพิกัดและ tracking ไว้ที่ฝั่ง Mobile SDK เป็นหลัก (เพื่อควบคุมงบ Google Maps API) และซิงค์สถานะจัดส่งผ่าน queue |
+| **8. ระบบซิงค์ข้อมูล (Local-Cloud Sync)** | - Distributed Lock (`SETNX`) ป้องกันการซิงค์ซ้อน<br>- BullMQ Queue (Phase 2) สำหรับ reconcile<br>- **Invalidate-on-Complete** sync checkpoint | `sync:lock:user:${userId}`<br>`sync:checkpoint:user:${userId}` | สอดคล้องกับ **[ERP_CORE_ARCHITECTURE.md](file:///Users/dave_macmini/sheserved/docs/ERP/ERP_CORE_ARCHITECTURE.md)**: ควบคุมการ Sync คิวสำหรับ Local Database ↔ Supabase Cloud ของคลินิกไม่ให้เกิดการเรียกชนกัน |
 
 ---
 
@@ -197,20 +352,52 @@ async function getHotPromotion() {
 
 ---
 
-### 🟢 รายการตรวจสอบสำหรับ Phase 2 (BullMQ Queue System)
+### 🟢 รายการตรวจสอบสำหรับ Phase 2 (BullMQ Queue System + Event-Driven Caching)
 
 #### 1. การทำงานพื้นฐานของ Queue (Job Processing)
-* [ ] **การบันทึก Job อะซิงโครนัส:** ยื่นคำร้องของาน (เช่น สร้างการจอง) -> ระบบต้องตอบกลับสถานะ `202 Accepted` พร้อมส่ง `jobId` กลับมาให้ผู้ใช้งานทันทีโดยไม่ต้องรอให้ DB ทำงานเสร็จ
+* [ ] **การบันทึก Job อะซิงโครนัส:** ยื่นคำร้องของาน (เช่น สร้างการจอง) → ระบบต้องตอบกลับสถานะ `202 Accepted` พร้อมส่ง `jobId` กลับมาให้ผู้ใช้งานทันทีโดยไม่ต้องรอให้ DB ทำงานเสร็จ
 * [ ] **ความสำเร็จของการประมวลผล:** ตรวจสอบหลังบ้านว่า Worker สามารถดึงงานจาก Queue ออกไปเขียนข้อมูลลง PostgreSQL สำเร็จ และส่งข้อความยืนยันผ่าน WebSocket กลับหาผู้ใช้
 * [ ] **สถานะงานใน Redis:** ใช้ Redis CLI ตรวจสอบว่ามีโครงสร้างข้อมูลของ BullMQ บันทึกอยู่ (เช่น คีย์ `bull:booking:active` หรือ `bull:booking:completed`)
 
 #### 2. ลำดับความสำคัญและคิวงานด่วน (Priority Queue Check)
-* [ ] **การแทรกคิวฉุกเฉิน (Emergency Alert):** 
+* [ ] **การแทรกคิวฉุกเฉิน (Emergency Alert):**
   1. ยิงวิดีโอทั่วไป (Normal) เข้าคิวจ่อไว้ 10 รายการ และหยุดการทำงานของ Worker ชั่วคราว
   2. ยิงคำร้องเหตุฉุกเฉิน (Emergency Alert Video) เข้ามาในคิว
-  3. เปิดระบบให้ Worker ทำงาน -> ตรวจสอบลำดับการทำงาน ต้องพบว่าวิดีโอเหตุฉุกเฉินถูกนำมาแปลงไฟล์และดึงข้อมูลก่อนวิดีโอปกติที่จ่ออยู่ก่อนหน้า (Emergency Priority First)
+  3. เปิดระบบให้ Worker ทำงาน → ตรวจสอบลำดับการทำงาน ต้องพบว่าวิดีโอเหตุฉุกเฉินถูกนำมาแปลงไฟล์และดึงข้อมูลก่อนวิดีโอปกติที่จ่ออยู่ก่อนหน้า (Emergency Priority First)
 
 #### 3. ระบบจัดการงานล้มเหลว (Failure & Retry Logic)
-* [ ] **การพยายามใหม่เมื่อระบบมีปัญหา (Auto-Retry):** จำลองกรณีที่ส่งอีเมลแจ้งเตือนไม่สำเร็จ (Network timeout) -> ตรวจสอบว่า BullMQ พยายามส่งใหม่อีกครั้งตามรอบดีเลย์ที่ตั้งไว้ (เช่น retry 3 ครั้ง ห่างกันครั้งละ 5 วินาที)
-* [ ] **การคัดแยกงานเสีย (Failed Jobs Queue):** หากพยายามครบจำนวนแล้วยังไม่สำเร็จ -> ตรวจสอบว่าสถานะย้ายไปอยู่ที่หมวด `failed` เพื่อรอให้ผู้ดูแลระบบเข้ามาสั่งรันซ้ำแบบแมนนวล (Manual Retry)
+* [ ] **การพยายามใหม่เมื่อระบบมีปัญหา (Auto-Retry):** จำลองกรณีที่ส่งอีเมลแจ้งเตือนไม่สำเร็จ (Network timeout) → ตรวจสอบว่า BullMQ พยายามส่งใหม่อีกครั้งตามรอบดีเลย์ที่ตั้งไว้ (เช่น retry 3 ครั้ง ห่างกันครั้งละ 5 วินาที)
+* [ ] **การคัดแยกงานเสีย (Failed Jobs Queue):** หากพยายามครบจำนวนแล้วยังไม่สำเร็จ → ตรวจสอบว่าสถานะย้ายไปอยู่ที่หมวด `failed` เพื่อรอให้ผู้ดูแลระบบเข้ามาสั่งรันซ้ำแบบแมนนวล (Manual Retry)
+
+#### 4. Event-Driven Cache Invalidation
+* [ ] **Invalidate-on-Complete:** สร้าง booking ผ่าน queue → ตรวจสอบว่า Worker ลบ `booking:slots:*` ออกจาก Redis หลังประมวลผลเสร็จ
+* [ ] **Invalidate-on-Start:** สั่ง order ผ่าน queue → ตรวจสอบว่า Worker ลบ `order:status:${id}` ก่อนเริ่มประมวลผล (ป้องกัน stale read)
+* [ ] **Pattern-based Invalidation:** แก้ไขเมนูร้าน → ส่ง invalidation event ผ่าน notification-queue → ใช้ `SCAN` ลบ key ตาม pattern `menu:restaurant:${id}:*` → ตรวจสอบว่า key ถูกลบจริง
+* [ ] **Retry on Invalidation Failure:** ปิด Redis ชั่วคราวแล้วส่ง invalidation event → ตรวจสอบว่า BullMQ retry อัตโนมัติ และ invalidation สำเร็จหลัง Redis กลับมา
+
+#### 5. Cache Warming จาก Worker
+* [ ] **Warm-on-Complete (Order):** Worker ประมวลผล order เสร็จ → ตรวจสอบว่า `order:status:${orderId}` ถูกเติมลง Redis ทันทีด้วยข้อมูลล่าสุดจาก DB
+* [ ] **Warm-on-Complete (Donation):** Worker คำนวณยอดบริจาคใหม่ → ตรวจสอบว่า `donation:total:${campaignId}` ถูกเติมลง Redis พร้อม TTL 120 วินาที
+* [ ] **Cross-Key Invalidation:** Worker สร้าง order เสร็จ → ตรวจสอบว่า `cart:user:${userId}` ถูกลบออกจาก Redis ด้วย
+
+#### 6. TTL Compliance & Cache Consistency
+* [ ] **TTL ตรงตาม spec:** ตรวจสอบ TTL ของแต่ละ key type ด้วย `TTL` command:
+  - `booking:slots:*` ≈ 60 วินาที
+  - `order:status:*` ≈ 300 วินาที
+  - `donation:total:*` ≈ 120 วินาที
+  - `video:meta:*` ≈ 3600 วินาที
+* [ ] **Sliding Expiration สำหรับ Session:** เรียก API ที่ต้องใช้ session → ตรวจสอบว่า `TTL auth:session:*` ถูกรีเซ็ตเป็น 7200 วินาทีทุกครั้งที่ใช้งาน
+* [ ] **Cache Hit / Miss Monitoring:** บันทึกสถิติการอ่าน Cache ในแต่ละ endpoint:
+  - Cache Hit Rate ของ `menu:restaurant:*` ควร ≥ 80%
+  - Cache Miss ของ `booking:slots:*` ควรต่ำเมื่อใช้ Warm-on-Complete
+
+#### 7. Distributed Lock สำหรับ Queue-Sensitive Operations
+* [ ] **Mutex Lock (Booking Slot):** ยิงจอง slot เดียวกันพร้อมกัน 2 รายการ → ตรวจสอบว่า `SETNX lock:slot:*` อนุญาติให้ผ่านแค่รายการเดียว อีกรายการติด `409 Conflict`
+* [ ] **Mutex Lock (POS Injection):** ยิง order เดียวกันซ้ำ → ตรวจสอบว่า `lock:order:pos-inject:*` ป้องกันการ inject ซ้ำ
+* [ ] **Sync Lock:** เรียก sync จาก 2 อุปกรณ์พร้อมกัน → ตรวจสอบว่า `sync:lock:user:*` อนุญาติให้ sync ได้ทีละอุปกรณ์
+
+#### 8. Graceful Shutdown & Connection Reuse
+* [ ] **Worker Pause on Shutdown:** ส่ง `SIGTERM` → ตรวจสอบ log ว่า worker หยุดรับ job ใหม่ (`pause`) ก่อนปิด connection
+* [ ] **Shared Connection:** ตรวจสอบว่า `queues/index.js` ใช้ connection config reuse จาก `redis-client.js` ไม่สร้าง ioredis instance ใหม่สำหรับ BullMQ
+* [ ] **Redis Connection Count:** ใช้ `CLIENT LIST` ใน Redis → connection count ไม่เพิ่มเกิน expected (singleton + BullMQ blocking connection)
 

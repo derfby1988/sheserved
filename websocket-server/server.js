@@ -40,6 +40,9 @@ if (supabaseUrl && supabaseAnonKey) {
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
 const adminRoutes = require('./routes/admin');
+const consultationRoutes = require('./routes/consultation');
+const { shutdown: shutdownConsultationQueue } = require('./services/consultation-queue');
+const donationQueueService = require('./services/donation-queue');
 
 // Escrow Services
 const escrowReleaseService = require('./services/escrow-release-service');
@@ -50,6 +53,8 @@ const emergencyHealthMonitorService = require('./services/emergency-health-monit
 
 // Sync Service
 const { reconcileLocalToCloud } = require('./services/sync-service');
+const syncQueueService = require('./services/sync-queue');
+const notificationQueueService = require('./services/notification-queue');
 
 const app = express();
 const server = http.createServer(app);
@@ -92,10 +97,11 @@ if (USE_DATABASE) {
         // ✅ init thumbnail queue worker ด้วย pool ที่ยืนยันแล้ว
         thumbnailQueue.init(pool);
         // --- 4. การจัดการ State ข้ามอุปกรณ์ ด้วย WebSocket / Local Sync ---
-        // Reconcile Local -> Cloud upon startup
+        // Phase 2: Init sync queue and enqueue startup reconcile job
+        syncQueueService.init(pool, supabase);
         if (supabase) {
-           reconcileLocalToCloud(pool, supabase).catch(err => {
-               console.error('[Sync] Startup sync failed:', err.message);
+           syncQueueService.enqueueSync({ syncType: 'startup' }).catch(err => {
+               console.error('[Sync] Startup sync enqueue failed:', err.message);
            });
         }
       }
@@ -182,10 +188,53 @@ app.use('/uploads/watermarks', express.static(watermarksUploadDir));
 
 // Video Routes
 const thumbnailQueue = require('./services/thumbnail-queue');
+app.use('/api/consultations', consultationRoutes());
 if (pool) {
   app.use('/api/videos', videoRoutes(pool));
   app.use('/api/admin', adminRoutes(pool));
 }
+
+// Phase 2: Health Check Endpoint for BullMQ Queues
+const queueRegistry = require('./queues');
+app.get('/health/queues', async (req, res) => {
+  try {
+    const snapshot = await queueRegistry.getHealthSnapshot();
+    res.status(snapshot.healthy ? 200 : 503).json(snapshot);
+  } catch (err) {
+    console.error('[Health] Queue health check failed:', err.message);
+    res.status(500).json({ error: 'Health check failed', detail: err.message });
+  }
+});
+
+// Phase 2: DLQ / Failed Job Inspection Endpoint
+app.get('/health/queues/:queueName/failed', async (req, res) => {
+  try {
+    const { queueName } = req.params;
+    const { start = 0, end = 49 } = req.query;
+    const jobs = await queueRegistry.getFailedJobs(queueName, parseInt(start, 10), parseInt(end, 10));
+    res.json({ queue: queueName, failedJobs: jobs, count: jobs.length });
+  } catch (err) {
+    console.error(`[Health] Failed to fetch DLQ for ${req.params.queueName}:`, err.message);
+    res.status(500).json({ error: 'DLQ inspection failed', detail: err.message });
+  }
+});
+
+// Phase 2: Requeue failed job endpoint
+app.post('/health/queues/:queueName/retry', async (req, res) => {
+  try {
+    const { queueName } = req.params;
+    const { jobId } = req.body || {};
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId required' });
+    }
+
+    await queueRegistry.retryJob(queueName, jobId);
+    res.json({ queue: queueName, jobId, retried: true });
+  } catch (err) {
+    console.error(`[Health] Failed to retry job ${req.params.queueName}:`, err.message);
+    res.status(500).json({ error: 'Requeue failed', detail: err.message });
+  }
+});
 
 // Store connected users
 const connectedUsers = new Map();
@@ -902,13 +951,23 @@ io.on('connection', (socket) => {
     const { userId, requestId, title, status } = data;
     console.log(`[Donation] Status updated: requestId=${requestId} status=${status} -> notify userId=${userId}`);
     if (userId) {
-      io.to(`user-${userId}`).emit('donation-request-status-updated', {
+      const payload = {
         userId,
         requestId,
         title: title || 'คำร้องบริจาค',
         status,
         timestamp: new Date().toISOString(),
-      });
+      };
+
+      notificationQueueService
+        .enqueueSocketToUser(userId, 'donation-request-status-updated', payload)
+        .then((job) => {
+          console.log(`[Notification] Queued donation status alert jobId=${job.id}`);
+        })
+        .catch((err) => {
+          console.error('[Notification] Failed to enqueue donation alert, fallback emit:', err.message);
+          io.to(`user-${userId}`).emit('donation-request-status-updated', payload);
+        });
     }
   });
 
@@ -924,16 +983,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = await escrowReleaseService.handleConsensusVote(
-      requestId,
-      responderId,
-      canContinue === true,
-      note || null,
-    );
+    // Phase 2: Enqueue to BullMQ instead of blocking the WebSocket event loop
+    try {
+      const { jobId, queued } = await donationQueueService.enqueueConsensusVote(
+        requestId,
+        responderId,
+        canContinue === true,
+        note || null,
+      );
 
-    // ส่งผลกลับให้ Responder ที่โหวต
-    socket.emit('donate-closure-vote-result', { success: true, ...result });
-    console.log(`[Escrow] Vote result: ${JSON.stringify(result)}`);
+      socket.emit('donate-closure-vote-result', {
+        success: true,
+        queued: true,
+        jobId,
+        message: 'Consensus vote queued for processing',
+      });
+      console.log(`[Escrow] Vote queued as job ${jobId} for request=${requestId}`);
+    } catch (err) {
+      console.error('[Escrow] Failed to enqueue consensus vote:', err.message);
+      socket.emit('donate-closure-vote-result', { success: false, error: err.message });
+    }
   });
 
   // ── Admin Manual Escrow Release ──
@@ -948,9 +1017,21 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = await escrowReleaseService.releaseEscrow(requestId, { triggeredBy: 'manual_admin' });
-    socket.emit('admin-release-escrow-result', { success: true, ...result });
-    console.log(`[Escrow] Admin release result: ${JSON.stringify(result)}`);
+    // Phase 2: Enqueue to BullMQ instead of blocking the WebSocket event loop
+    try {
+      const { jobId, queued } = await donationQueueService.enqueueEscrowRelease(requestId, 'manual_admin');
+
+      socket.emit('admin-release-escrow-result', {
+        success: true,
+        queued: true,
+        jobId,
+        message: 'Escrow release queued for processing',
+      });
+      console.log(`[Escrow] Admin release queued as job ${jobId} for request=${requestId}`);
+    } catch (err) {
+      console.error('[Escrow] Failed to enqueue escrow release:', err.message);
+      socket.emit('admin-release-escrow-result', { success: false, error: err.message });
+    }
   });
 
 
@@ -1100,27 +1181,30 @@ app.get('/api/videos/:videoId/chat', async (req, res) => {
   try {
     if (!pool) return res.status(503).json({ error: 'Database not available' });
 
-    const result = await pool.query(
-      `SELECT
-         m.id,
-         m.room_id,
-         r.video_id           AS "videoId",
-         m.sender_id          AS "userId",
-         m.content,
-         m.created_at         AS "timestamp",
-         m.metadata->>'role'         AS role,
-         m.metadata->>'userName'     AS "userName",
-         m.metadata->>'profileImageUrl' AS "profileImageUrl",
-         m.metadata->>'professionName' AS "professionName"
-       FROM chat_messages m
-       JOIN chat_rooms r ON m.room_id = r.id
-       WHERE r.video_id = $1
-       ORDER BY m.created_at ASC
-       LIMIT $2`,
-      [videoId, limit]
-    );
+    const data = await cacheAside(`chat:active:${videoId}:${limit}`, async () => {
+      const result = await pool.query(
+        `SELECT
+           m.id,
+           m.room_id,
+           r.video_id           AS "videoId",
+           m.sender_id          AS "userId",
+           m.content,
+           m.created_at         AS "timestamp",
+           m.metadata->>'role'         AS role,
+           m.metadata->>'userName'     AS "userName",
+           m.metadata->>'profileImageUrl' AS "profileImageUrl",
+           m.metadata->>'professionName' AS "professionName"
+         FROM chat_messages m
+         JOIN chat_rooms r ON m.room_id = r.id
+         WHERE r.video_id = $1
+         ORDER BY m.created_at ASC
+         LIMIT $2`,
+        [videoId, limit]
+      );
+      return result.rows;
+    }, TTL.SESSION);
 
-    res.json(result.rows);
+    res.json(data);
   } catch (error) {
     console.error('[Chat History] Error:', error.message);
     res.status(500).json({ error: error.message });
@@ -1134,25 +1218,28 @@ app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
   try {
     if (!pool) return res.status(503).json({ error: 'Database not available' });
 
-    const result = await pool.query(
-      `SELECT
-         a.id,
-         a.video_id           AS "videoId",
-         a.sender_id          AS "userId",
-         a.content,
-         a.created_at         AS "timestamp",
-         a.metadata->>'role'         AS role,
-         a.metadata->>'userName'     AS "userName",
-         a.metadata->>'profileImageUrl' AS "profileImageUrl",
-         a.metadata->>'professionName' AS "professionName"
-       FROM chat_messages_archive a
-       WHERE a.video_id = $1
-       ORDER BY a.created_at ASC
-       LIMIT $2`,
-      [videoId, limit]
-    );
+    const data = await cacheAside(`chat:archived:${videoId}:${limit}`, async () => {
+      const result = await pool.query(
+        `SELECT
+           a.id,
+           a.video_id           AS "videoId",
+           a.sender_id          AS "userId",
+           a.content,
+           a.created_at         AS "timestamp",
+           a.metadata->>'role'         AS role,
+           a.metadata->>'userName'     AS "userName",
+           a.metadata->>'profileImageUrl' AS "profileImageUrl",
+           a.metadata->>'professionName' AS "professionName"
+         FROM chat_messages_archive a
+         WHERE a.video_id = $1
+         ORDER BY a.created_at ASC
+         LIMIT $2`,
+        [videoId, limit]
+      );
+      return result.rows;
+    }, TTL.SESSION);
 
-    res.json(result.rows);
+    res.json(data);
   } catch (error) {
     console.error('[Chat Archive History] Error:', error.message);
     res.status(500).json({ error: error.message });
@@ -1160,7 +1247,7 @@ app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
 });
 
 // POST /api/chat/archive/:videoId — Manual archive trigger via REST
-app.post('/api/chat/archive/:videoId', async (req, res) => {
+app.post('/api/chat/archive/:videoId', strictRateLimiter, duplicateCheckMiddleware('chat-archive', 10), async (req, res) => {
   const { videoId } = req.params;
   try {
     if (!pool) return res.status(503).json({ error: 'Database not available' });
@@ -1224,7 +1311,7 @@ app.post('/api/users/:userId/preferences', async (req, res) => {
 
 // ============ EMERGENCY HEALTH API ============
 
-app.post('/api/emergency-health/sessions', async (req, res) => {
+app.post('/api/emergency-health/sessions', strictRateLimiter, duplicateCheckMiddleware('emergency-health-session', 10), async (req, res) => {
   try {
     const { patientId, incidentId, videoId } = req.body || {};
     const result = await emergencyHealthSessionService.createReleaseSession({
@@ -1253,23 +1340,26 @@ app.get('/api/emergency-health/:incidentId', async (req, res) => {
       return res.status(400).json({ error: 'responderId is required' });
     }
 
-    const result = await emergencyHealthSessionService.getIncidentHealthData({
-      incidentId,
-      responderId,
-    });
+    const data = await cacheAside(`emergency-health:${incidentId}:${responderId}`, async () => {
+      const result = await emergencyHealthSessionService.getIncidentHealthData({
+        incidentId,
+        responderId,
+      });
+      return result;
+    }, TTL.SESSION);
 
-    if (!result.allowed) {
-      return res.status(403).json(result);
+    if (!data.allowed) {
+      return res.status(403).json(data);
     }
 
-    return res.status(200).json(result);
+    return res.status(200).json(data);
   } catch (error) {
     console.error('[EmergencyHealth] get health data error:', error.message);
     return res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/emergency-health/revoke', async (req, res) => {
+app.post('/api/emergency-health/revoke', strictRateLimiter, duplicateCheckMiddleware('emergency-health-revoke', 10), async (req, res) => {
   try {
     const { patientId } = req.body || {};
 
@@ -1291,15 +1381,18 @@ app.post('/api/emergency-health/revoke', async (req, res) => {
 app.get('/api/emergency-health/settings/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const settings = await emergencyHealthSessionService.getEmergencyHealthSettings({ userId });
-    return res.status(200).json({ settings });
+    const data = await cacheAside(`emergency-health:settings:${userId}`, async () => {
+      const settings = await emergencyHealthSessionService.getEmergencyHealthSettings({ userId });
+      return { settings };
+    }, TTL.SESSION);
+    return res.status(200).json(data);
   } catch (error) {
     console.error('[EmergencyHealth] get settings error:', error.message);
     return res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/emergency-health/settings', async (req, res) => {
+app.post('/api/emergency-health/settings', strictRateLimiter, duplicateCheckMiddleware('emergency-health-settings', 10), async (req, res) => {
   try {
     const { userId, settings } = req.body || {};
     if (!userId) {
@@ -1321,15 +1414,18 @@ app.post('/api/emergency-health/settings', async (req, res) => {
 app.get('/api/emergency-health/dead-man/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const checkin = await emergencyHealthSessionService.getDeadManCheckin({ userId });
-    return res.status(200).json({ checkin });
+    const data = await cacheAside(`emergency-health:dead-man:${userId}`, async () => {
+      const checkin = await emergencyHealthSessionService.getDeadManCheckin({ userId });
+      return { checkin };
+    }, TTL.SESSION);
+    return res.status(200).json(data);
   } catch (error) {
     console.error('[EmergencyHealth] get dead-man check-in error:', error.message);
     return res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/emergency-health/dead-man', async (req, res) => {
+app.post('/api/emergency-health/dead-man', strictRateLimiter, duplicateCheckMiddleware('emergency-health-deadman', 10), async (req, res) => {
   try {
     const { userId, checkin } = req.body || {};
     if (!userId) {
@@ -1348,7 +1444,7 @@ app.post('/api/emergency-health/dead-man', async (req, res) => {
   }
 });
 
-app.post('/api/emergency-health/dead-man/check-in', async (req, res) => {
+app.post('/api/emergency-health/dead-man/check-in', strictRateLimiter, duplicateCheckMiddleware('emergency-health-checkin', 5), async (req, res) => {
   try {
     const { userId, checkInAt } = req.body || {};
     if (!userId) {
@@ -1376,15 +1472,18 @@ app.get('/api/professions', async (req, res) => {
       return res.status(503).json({ error: 'Database not available' });
     }
 
-    const result = await pool.query(
-      `SELECT id, name, name_en, description, icon_name, category, 
-              is_built_in, is_active, requires_verification, display_order,
-              created_at, updated_at
-       FROM professions 
-       WHERE is_active = true 
-       ORDER BY display_order ASC`
-    );
-    res.json(result.rows);
+    const data = await cacheAside('professions:active', async () => {
+      const result = await pool.query(
+        `SELECT id, name, name_en, description, icon_name, category, 
+                is_built_in, is_active, requires_verification, display_order,
+                created_at, updated_at
+         FROM professions 
+         WHERE is_active = true 
+         ORDER BY display_order ASC`
+      );
+      return result.rows;
+    }, TTL.DEFAULT);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching professions:', error);
     res.status(500).json({ error: 'Failed to fetch professions' });
@@ -1399,16 +1498,19 @@ app.get('/api/professions/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const result = await pool.query(
-      `SELECT * FROM professions WHERE id = $1`,
-      [id]
-    );
+    const data = await cacheAside(`profession:${id}`, async () => {
+      const result = await pool.query(
+        `SELECT * FROM professions WHERE id = $1`,
+        [id]
+      );
+      return result.rows[0] || null;
+    }, TTL.DEFAULT);
 
-    if (result.rows.length === 0) {
+    if (data === null) {
       return res.status(404).json({ error: 'Profession not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching profession:', error);
     res.status(500).json({ error: 'Failed to fetch profession' });
@@ -1423,17 +1525,20 @@ app.get('/api/professions/:id/fields', async (req, res) => {
     }
 
     const { id } = req.params;
-    const result = await pool.query(
-      `SELECT id, field_id, label, hint, field_type, is_required, 
-              field_order, icon_name, dropdown_options, validation_regex,
-              validation_message, is_active
-       FROM registration_field_configs 
-       WHERE profession_id = $1 AND is_active = true
-       ORDER BY field_order ASC`,
-      [id]
-    );
+    const data = await cacheAside(`profession:fields:${id}`, async () => {
+      const result = await pool.query(
+        `SELECT id, field_id, label, hint, field_type, is_required, 
+                field_order, icon_name, dropdown_options, validation_regex,
+                validation_message, is_active
+         FROM registration_field_configs 
+         WHERE profession_id = $1 AND is_active = true
+         ORDER BY field_order ASC`,
+        [id]
+      );
+      return result.rows;
+    }, TTL.DEFAULT);
 
-    res.json(result.rows);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching fields:', error);
     res.status(500).json({ error: 'Failed to fetch fields' });
@@ -1443,7 +1548,7 @@ app.get('/api/professions/:id/fields', async (req, res) => {
 // ============ USERS API ============
 
 // Create user
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', strictRateLimiter, duplicateCheckMiddleware('user-create', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -1482,19 +1587,22 @@ app.get('/api/users/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const result = await pool.query(
-      `SELECT u.*, p.name as profession_name, p.category as profession_category
-       FROM users u
-       LEFT JOIN professions p ON u.profession_id = p.id
-       WHERE u.id = $1`,
-      [id]
-    );
+    const data = await cacheAside(`user:${id}`, async () => {
+      const result = await pool.query(
+        `SELECT id, profession_id, first_name, last_name, username, email, 
+                phone, profile_image_url, is_active, is_verified, created_at, updated_at
+         FROM users 
+         WHERE id = $1`,
+        [id]
+      );
+      return result.rows[0] || null;
+    }, TTL.DEFAULT);
 
-    if (result.rows.length === 0) {
+    if (data === null) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Failed to fetch user' });
@@ -1502,7 +1610,7 @@ app.get('/api/users/:id', async (req, res) => {
 });
 
 // Update user
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', strictRateLimiter, duplicateCheckMiddleware('user-update', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -1550,7 +1658,7 @@ app.put('/api/users/:id', async (req, res) => {
 // ============ REGISTRATION APPLICATIONS API ============
 
 // Submit registration application
-app.post('/api/applications', async (req, res) => {
+app.post('/api/applications', idempotencyMiddleware, strictRateLimiter, duplicateCheckMiddleware('application-submit', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -1586,22 +1694,28 @@ app.get('/api/applications', async (req, res) => {
     }
 
     const { status } = req.query;
-    let query = `
-      SELECT a.*, p.name as profession_name, p.category as profession_category
-      FROM registration_applications a
-      LEFT JOIN professions p ON a.profession_id = p.id
-    `;
-    const params = [];
+    const cacheKey = `applications:list:${status || 'all'}`;
 
-    if (status) {
-      query += ' WHERE a.status = $1';
-      params.push(status);
-    }
+    const data = await cacheAside(cacheKey, async () => {
+      let query = `
+        SELECT a.*, p.name as profession_name, p.category as profession_category
+        FROM registration_applications a
+        LEFT JOIN professions p ON a.profession_id = p.id
+      `;
+      const params = [];
 
-    query += ' ORDER BY a.created_at DESC';
+      if (status) {
+        query += ' WHERE a.status = $1';
+        params.push(status);
+      }
 
-    const result = await pool.query(query, params);
-    res.json(result.rows);
+      query += ' ORDER BY a.created_at DESC';
+
+      const result = await pool.query(query, params);
+      return result.rows;
+    }, TTL.DEFAULT);
+
+    res.json(data);
   } catch (error) {
     console.error('Error fetching applications:', error);
     res.status(500).json({ error: 'Failed to fetch applications' });
@@ -1616,27 +1730,29 @@ app.get('/api/applications/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const result = await pool.query(
-      `SELECT a.*, p.name as profession_name
-       FROM registration_applications a
-       LEFT JOIN professions p ON a.profession_id = p.id
-       WHERE a.id = $1`,
-      [id]
-    );
+    const data = await cacheAside(`application:${id}`, async () => {
+      const result = await pool.query(
+        `SELECT a.*, p.name as profession_name
+         FROM registration_applications a
+         LEFT JOIN professions p ON a.profession_id = p.id
+         WHERE a.id = $1`,
+        [id]
+      );
+      return result.rows[0] || null;
+    }, TTL.DEFAULT);
 
-    if (result.rows.length === 0) {
+    if (data === null) {
       return res.status(404).json({ error: 'Application not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching application:', error);
     res.status(500).json({ error: 'Failed to fetch application' });
   }
 });
-
 // Approve application
-app.post('/api/applications/:id/approve', async (req, res) => {
+app.post('/api/applications/:id/approve', strictRateLimiter, duplicateCheckMiddleware('application-approve', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -1672,7 +1788,7 @@ app.post('/api/applications/:id/approve', async (req, res) => {
 });
 
 // Reject application
-app.post('/api/applications/:id/reject', async (req, res) => {
+app.post('/api/applications/:id/reject', strictRateLimiter, duplicateCheckMiddleware('application-reject', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -1980,7 +2096,11 @@ process.on('SIGTERM', () => {
   escrowDeadlineChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
-  server.close(() => process.exit(0));
+  queueRegistry.shutdownAll().catch((err) => {
+    console.error('[Server] Queue registry shutdown failed:', err.message);
+  }).finally(() => {
+    server.close(() => process.exit(0));
+  });
 });
 
 process.on('SIGINT', () => {
@@ -1988,5 +2108,9 @@ process.on('SIGINT', () => {
   escrowDeadlineChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
-  server.close(() => process.exit(0));
+  queueRegistry.shutdownAll().catch((err) => {
+    console.error('[Server] Queue registry shutdown failed:', err.message);
+  }).finally(() => {
+    server.close(() => process.exit(0));
+  });
 });

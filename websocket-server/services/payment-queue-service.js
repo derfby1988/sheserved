@@ -1,11 +1,10 @@
-const { Queue, Worker } = require('bullmq');
+const { Queue, Worker, QueueEvents } = require('bullmq');
 const { createClient } = require('@supabase/supabase-js');
-const Redis = require('ioredis');
+const { createBullmqConnection } = require('./bullmq-connection');
+const { resolveQueueOptions } = require('../utils/queue-config');
 
-// Setup Redis connection for BullMQ
-const connection = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
-    maxRetriesPerRequest: null
-});
+// Shared BullMQ connection config (reuses the existing Redis source of truth)
+const connection = createBullmqConnection();
 
 // Setup Supabase (Service Role for transfers)
 const supabase = createClient(
@@ -14,7 +13,25 @@ const supabase = createClient(
 );
 
 // Create the Transfer Queue
-const transferQueue = new Queue('payment-transfers', { connection });
+const QUEUE_NAME = 'payment-transfers';
+const queueOptions = resolveQueueOptions(QUEUE_NAME, {
+    defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 60000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+    },
+    concurrency: 1,
+});
+
+const transferQueue = new Queue(QUEUE_NAME, {
+    connection,
+    defaultJobOptions: queueOptions.defaultJobOptions,
+});
+const transferQueueEvents = new QueueEvents(QUEUE_NAME, { connection });
+transferQueueEvents.on('error', (err) => {
+    console.warn('[PaymentQueue] QueueEvents error:', err.message);
+});
 
 // Circuit Breaker State
 let failureCount = 0;
@@ -64,7 +81,7 @@ const transferWorker = new Worker('payment-transfers', async job => {
         
         throw error; // Let BullMQ handle the retry based on backoff settings
     }
-}, { connection });
+}, { connection, concurrency: queueOptions.concurrency });
 
 // Listeners for Job State
 transferWorker.on('completed', job => {
@@ -97,7 +114,18 @@ async function enqueueTransfer(transactionId, amount, targetAccount) {
     console.log(`[PaymentQueue] Job enqueued for TX ${transactionId}`);
 }
 
+async function shutdown() {
+    await Promise.allSettled([
+        transferWorker.close(),
+        transferQueue.close(),
+        transferQueueEvents.close(),
+    ]);
+}
+
 module.exports = {
     enqueueTransfer,
-    transferQueue
+    transferQueue,
+    transferWorker,
+    transferQueueEvents,
+    shutdown,
 };

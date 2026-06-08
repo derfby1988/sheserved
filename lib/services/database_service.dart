@@ -12,9 +12,7 @@ class DatabaseService {
 
   /// Singleton instance
   factory DatabaseService({String? baseUrl}) {
-    _instance ??= DatabaseService._(
-      baseUrl ?? 'http://localhost:3000',
-    );
+    _instance ??= DatabaseService._(baseUrl ?? 'http://localhost:3000');
     return _instance!;
   }
 
@@ -26,10 +24,7 @@ class DatabaseService {
   // ============ HTTP HELPERS ============
 
   Future<Map<String, String>> get _headers async {
-    return {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
+    return {'Content-Type': 'application/json', 'Accept': 'application/json'};
   }
 
   Future<dynamic> _get(String endpoint) async {
@@ -58,7 +53,9 @@ class DatabaseService {
         body: json.encode(data),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 202) {
         return json.decode(response.body);
       } else {
         throw Exception('POST $endpoint failed: ${response.statusCode}');
@@ -67,6 +64,11 @@ class DatabaseService {
       debugPrint('DatabaseService POST error: $e');
       rethrow;
     }
+  }
+
+  /// Submit consultation request through websocket-server (202 Accepted)
+  Future<dynamic> submitConsultationRequest(Map<String, dynamic> data) async {
+    return await _post('/api/consultations/requests', data);
   }
 
   Future<dynamic> _put(String endpoint, Map<String, dynamic> data) async {
@@ -119,7 +121,10 @@ class DatabaseService {
   // ============ LOCATIONS API ============
 
   /// Get user's recent locations
-  Future<List<Map<String, dynamic>>> getUserLocations(String userId, {int limit = 100}) async {
+  Future<List<Map<String, dynamic>>> getUserLocations(
+    String userId, {
+    int limit = 100,
+  }) async {
     final result = await _get('/api/locations/$userId?limit=$limit');
     return List<Map<String, dynamic>>.from(result);
   }
@@ -140,7 +145,9 @@ class DatabaseService {
   // ============ REGISTRATION FIELDS API ============
 
   /// Get registration fields for a profession
-  Future<List<Map<String, dynamic>>> getRegistrationFields(String professionId) async {
+  Future<List<Map<String, dynamic>>> getRegistrationFields(
+    String professionId,
+  ) async {
     return await _get('/api/professions/$professionId/fields');
   }
 
@@ -157,14 +164,19 @@ class DatabaseService {
   }
 
   /// Update user
-  Future<Map<String, dynamic>> updateUser(String userId, Map<String, dynamic> userData) async {
+  Future<Map<String, dynamic>> updateUser(
+    String userId,
+    Map<String, dynamic> userData,
+  ) async {
     return await _put('/api/users/$userId', userData);
   }
 
   // ============ REGISTRATION APPLICATIONS API ============
 
   /// Submit registration application
-  Future<Map<String, dynamic>> submitApplication(Map<String, dynamic> applicationData) async {
+  Future<Map<String, dynamic>> submitApplication(
+    Map<String, dynamic> applicationData,
+  ) async {
     return await _post('/api/applications', applicationData);
   }
 
@@ -179,7 +191,10 @@ class DatabaseService {
   }
 
   /// Reject application (admin only)
-  Future<void> rejectApplication(String applicationId, {required String note}) async {
+  Future<void> rejectApplication(
+    String applicationId, {
+    required String note,
+  }) async {
     await _post('/api/applications/$applicationId/reject', {'note': note});
   }
 }

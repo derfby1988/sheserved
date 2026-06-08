@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/consultation_request_model.dart';
 import 'package:sheserved/config/app_config.dart';
@@ -19,44 +22,61 @@ class ConsultationRepository {
     List<SymptomPoint> symptoms = const [],
     String? status,
   }) async {
-    final now = DateTime.now();
+    final authToken = Supabase.instance.client.auth.currentSession?.accessToken;
     final data = {
+      'userId': userId,
       'user_id': userId,
+      'packageId': packageId,
       'package_id': packageId,
+      'packageName': packageName,
       'package_name': packageName,
       'price': price,
       'body_area': bodyArea,
       'symptoms_chart': symptomsChart,
       'status': status ?? 'pending',
-      'created_at': now.toIso8601String(),
-      'updated_at': now.toIso8601String(),
+      'symptoms': symptoms
+          .map(
+            (s) => {
+              'region_id': s.regionId,
+              'side': s.side,
+              'symptom': s.symptom,
+              'display_label': s.displayLabel,
+            },
+          )
+          .toList(),
     };
 
-    // 1. Insert parent request
-    final parentResponse = await _client
-        .from('consultation_requests')
-        .insert(data)
-        .select()
-        .single();
-    
-    final String requestId = parentResponse['id'];
+    final response = await http.post(
+      Uri.parse('${AppConfig.localApiUrl}/api/consultations/requests'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-user-id': userId,
+        if (authToken != null) 'Authorization': 'Bearer $authToken',
+        'x-idempotency-key':
+            'consultation-${sha256.convert(utf8.encode(jsonEncode(data))).toString()}',
+      },
+      body: jsonEncode(data),
+    );
 
-    // 2. Insert child symptoms if any
-    if (symptoms.isNotEmpty) {
-      final symptomsData = symptoms.map((s) => s.toJson(requestId)).toList();
-      await _client.from('consultation_symptoms').insert(symptomsData);
+    if (response.statusCode != 202 &&
+        response.statusCode != 200 &&
+        response.statusCode != 201) {
+      throw Exception(
+        'Failed to submit consultation request: ${response.statusCode} ${response.body}',
+      );
     }
 
-    // Return the model with symptoms populated
-    final fullData = Map<String, dynamic>.from(parentResponse);
-    fullData['symptoms'] = symptoms.map((s) => {
-      'region_id': s.regionId,
-      'side': s.side,
-      'symptom': s.symptom,
-      'display_label': s.displayLabel,
-    }).toList();
-    
-    return ConsultationRequestModel.fromJson(fullData);
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final requestJson = Map<String, dynamic>.from(
+      payload['consultationRequest'] as Map? ?? payload,
+    );
+
+    if (payload['roomId'] != null && requestJson['room_id'] == null) {
+      requestJson['room_id'] = payload['roomId'];
+    }
+
+    return ConsultationRequestModel.fromJson(requestJson);
   }
 
   /// Get consultation requests for a user including symptoms
@@ -73,7 +93,10 @@ class ConsultationRepository {
   }
 
   /// Update consultation request
-  Future<ConsultationRequestModel> updateRequest(String id, Map<String, dynamic> data) async {
+  Future<ConsultationRequestModel> updateRequest(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     data['updated_at'] = DateTime.now().toIso8601String();
     final response = await _client
         .from('consultation_requests')
@@ -90,9 +113,7 @@ class ConsultationRepository {
     String? excludeProviderId,
   }) async {
     try {
-      var query = _client
-          .from('consultation_requests')
-          .select('''
+      var query = _client.from('consultation_requests').select('''
             id, user_id, package_id, package_name, price,
             body_area, symptoms_chart, status, created_at, updated_at,
             provider_id,
@@ -125,9 +146,10 @@ class ConsultationRepository {
     return _client
         .from('consultation_requests')
         .stream(primaryKey: ['id'])
-        .asyncMap((_) => getAllRequestsWithUserInfo(
-              excludeProviderId: excludeProviderId,
-            ));
+        .asyncMap(
+          (_) =>
+              getAllRequestsWithUserInfo(excludeProviderId: excludeProviderId),
+        );
   }
 
   /// ดึงคำขอเฉพาะแพ็คเกจที่ตรงกับ professionId ของ provider
@@ -180,10 +202,12 @@ class ConsultationRepository {
     return _client
         .from('consultation_requests')
         .stream(primaryKey: ['id'])
-        .asyncMap((_) => getRequestsForProfession(
-              packageIds,
-              excludeProviderId: excludeProviderId,
-            ));
+        .asyncMap(
+          (_) => getRequestsForProfession(
+            packageIds,
+            excludeProviderId: excludeProviderId,
+          ),
+        );
   }
 
   // ============================================================
@@ -253,7 +277,10 @@ class ConsultationRepository {
 
       // นับแต่ละ status
       for (final s in ['pending', 'in_progress', 'completed']) {
-        var q = _client.from('consultation_requests').select('id').eq('status', s);
+        var q = _client
+            .from('consultation_requests')
+            .select('id')
+            .eq('status', s);
         if (packageIds != null && packageIds.isNotEmpty) {
           q = q.inFilter('package_id', packageIds);
         }
@@ -268,7 +295,9 @@ class ConsultationRepository {
   }
 
   /// Get consultation history for a specific provider
-  Future<List<ConsultationRequestModel>> getProviderHistory(String providerId) async {
+  Future<List<ConsultationRequestModel>> getProviderHistory(
+    String providerId,
+  ) async {
     final response = await _client
         .from('consultation_requests')
         .select('*, symptoms:consultation_symptoms(*)')
@@ -295,7 +324,9 @@ class ConsultationRepository {
           professionName = profResponse['name']?.toString().toLowerCase() ?? '';
         }
       } catch (e) {
-        debugPrint('getPackageIdsForProfession: failed to get profession name: $e');
+        debugPrint(
+          'getPackageIdsForProfession: failed to get profession name: $e',
+        );
       }
 
       // 2. Fetch all active packages
@@ -312,12 +343,13 @@ class ConsultationRepository {
           final hasMatch = groups.any((g) {
             if (g is! Map) return false;
             final gMap = g;
-            
+
             // Match by ID (UUID)
-            final idMatch = gMap['role'] == professionId ||
+            final idMatch =
+                gMap['role'] == professionId ||
                 gMap['id'] == professionId ||
                 gMap['profession_id'] == professionId;
-            
+
             if (idMatch) return true;
 
             // Match by Name/Role string (Case-insensitive)
@@ -327,29 +359,39 @@ class ConsultationRepository {
 
             if (professionName.isNotEmpty) {
               // Legacy role matching
-              if (role == 'doctor' && (professionName.contains('หมอ') || professionName.contains('แพทย์'))) return true;
-              if (role == 'pharmacist' && professionName.contains('เภสัช')) return true;
-              if (role == 'specialist' && professionName.contains('เฉพาะทาง')) return true;
-              if (role == 'professor' && professionName.contains('อาจารย์')) return true;
-              
+              if (role == 'doctor' &&
+                  (professionName.contains('หมอ') ||
+                      professionName.contains('แพทย์')))
+                return true;
+              if (role == 'pharmacist' && professionName.contains('เภสัช'))
+                return true;
+              if (role == 'specialist' && professionName.contains('เฉพาะทาง'))
+                return true;
+              if (role == 'professor' && professionName.contains('อาจารย์'))
+                return true;
+
               // Direct name match
-              if (professionName.contains(role) || role.contains(professionName)) return true;
+              if (professionName.contains(role) ||
+                  role.contains(professionName))
+                return true;
             }
-            
+
             return false;
           });
-          
+
           if (hasMatch) {
             matchedIds.add(row['id'] as String);
           }
         }
       }
-      
+
       // Log for debugging
-      debugPrint('ConsultationRepo: Profession ($professionId : $professionName) matched packages: $matchedIds');
-      
+      debugPrint(
+        'ConsultationRepo: Profession ($professionId : $professionName) matched packages: $matchedIds',
+      );
+
       // Fallback: If no specific match, for safety in dev, return all or empty?
-      // For now, return all if empty to avoid empty dashboard during setup, 
+      // For now, return all if empty to avoid empty dashboard during setup,
       // but only if profession is valid.
       return matchedIds;
     } catch (e) {
@@ -371,15 +413,17 @@ class ConsultationRepository {
           .eq('id', requestId)
           .single();
 
-      final current = (res['dismissed_by_provider_ids'] as List?)
-              ?.cast<String>() ??
-          [];
+      final current =
+          (res['dismissed_by_provider_ids'] as List?)?.cast<String>() ?? [];
       if (!current.contains(providerId)) {
         current.add(providerId);
-        await _client.from('consultation_requests').update({
-          'dismissed_by_provider_ids': current,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', requestId);
+        await _client
+            .from('consultation_requests')
+            .update({
+              'dismissed_by_provider_ids': current,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', requestId);
       }
     } catch (e) {
       debugPrint('dismissRequestForProvider error: $e');
@@ -392,11 +436,14 @@ class ConsultationRepository {
     required String requestId,
     required String providerId,
   }) async {
-    await _client.from('consultation_requests').update({
-      'status': 'in_progress',
-      'provider_id': providerId,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', requestId);
+    await _client
+        .from('consultation_requests')
+        .update({
+          'status': 'in_progress',
+          'provider_id': providerId,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', requestId);
   }
 
   /// Ensure consultation_room_experts rows exist for a consultation.
@@ -407,11 +454,14 @@ class ConsultationRepository {
     String? roomId,
   }) async {
     try {
-      await _client.rpc('ensure_room_experts', params: {
-        'p_consultation_id': consultationId,
-        'p_package_id': packageId,
-        'p_room_id': roomId,
-      });
+      await _client.rpc(
+        'ensure_room_experts',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_package_id': packageId,
+          'p_room_id': roomId,
+        },
+      );
       debugPrint('ensureRoomExperts: RPC succeeded for $consultationId');
     } catch (e) {
       debugPrint('ensureRoomExperts error: $e');
@@ -427,12 +477,17 @@ class ConsultationRepository {
     String? professionId,
   }) async {
     try {
-      await _client.rpc('sync_provider_to_room_experts', params: {
-        'p_consultation_id': consultationId,
-        'p_provider_id': providerId,
-        'p_profession_id': professionId,
-      });
-      debugPrint('syncProviderToRoomExperts: RPC succeeded for consultationId=$consultationId providerId=$providerId');
+      await _client.rpc(
+        'sync_provider_to_room_experts',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+          'p_profession_id': professionId,
+        },
+      );
+      debugPrint(
+        'syncProviderToRoomExperts: RPC succeeded for consultationId=$consultationId providerId=$providerId',
+      );
     } catch (e) {
       debugPrint('syncProviderToRoomExperts error: $e');
       // Non-fatal: banner may show waiting instead of joined
@@ -452,7 +507,7 @@ class ConsultationRepository {
         .select('expert_groups')
         .eq('id', packageId)
         .maybeSingle();
-        
+
     final expertGroups = (pkgRes?['expert_groups'] as List<dynamic>?) ?? [];
 
     // 2. ดึงชื่อ profession เพื่อใช้เทียบ (กรณีเทียบด้วย role string)
@@ -467,7 +522,8 @@ class ConsultationRepository {
     String? matchedExpertGroupId;
     for (var g in expertGroups) {
       if (g is Map<String, dynamic>) {
-        final idMatch = g['role'] == professionId ||
+        final idMatch =
+            g['role'] == professionId ||
             g['id'] == professionId ||
             g['profession_id'] == professionId;
 
@@ -478,27 +534,36 @@ class ConsultationRepository {
 
         final role = g['role']?.toString().toLowerCase() ?? '';
         if (role.isNotEmpty && professionName.isNotEmpty) {
-          if (role == 'doctor' && (professionName.contains('หมอ') || professionName.contains('แพทย์'))) {
-            matchedExpertGroupId = g['id'] as String?; break;
+          if (role == 'doctor' &&
+              (professionName.contains('หมอ') ||
+                  professionName.contains('แพทย์'))) {
+            matchedExpertGroupId = g['id'] as String?;
+            break;
           }
           if (role == 'pharmacist' && professionName.contains('เภสัช')) {
-            matchedExpertGroupId = g['id'] as String?; break;
+            matchedExpertGroupId = g['id'] as String?;
+            break;
           }
           if (role == 'specialist' && professionName.contains('เฉพาะทาง')) {
-            matchedExpertGroupId = g['id'] as String?; break;
+            matchedExpertGroupId = g['id'] as String?;
+            break;
           }
           if (role == 'professor' && professionName.contains('อาจารย์')) {
-            matchedExpertGroupId = g['id'] as String?; break;
+            matchedExpertGroupId = g['id'] as String?;
+            break;
           }
           if (professionName.contains(role) || role.contains(professionName)) {
-            matchedExpertGroupId = g['id'] as String?; break;
+            matchedExpertGroupId = g['id'] as String?;
+            break;
           }
         }
       }
     }
 
     if (matchedExpertGroupId == null) {
-      throw Exception('ไม่พบกลุ่มผู้เชี่ยวชาญที่ตรงกับวิชาชีพของคุณในแพ็คเกจนี้');
+      throw Exception(
+        'ไม่พบกลุ่มผู้เชี่ยวชาญที่ตรงกับวิชาชีพของคุณในแพ็คเกจนี้',
+      );
     }
 
     // 4. เรียก RPC ด้วย expertGroupId ที่หามาได้
@@ -576,7 +641,7 @@ class ConsultationRepository {
           .select('id')
           .inFilter('status', ['pending', 'in_progress'])
           .count(CountOption.exact);
-      
+
       return response.count ?? 0;
     } catch (e) {
       debugPrint('getActiveRecipientCount error: $e');
@@ -592,4 +657,3 @@ class ConsultationRepository {
         .asyncMap((_) => getActiveRecipientCount());
   }
 }
-

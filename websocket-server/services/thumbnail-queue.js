@@ -9,17 +9,18 @@
  * POST /upload-photos → Respond 200 → addJob() → Worker generates → DB update → WebSocket push
  */
 
-const { Queue, Worker } = require('bullmq');
+const { Queue, Worker, QueueEvents } = require('bullmq');
 const path = require('path');
 const fs = require('fs');
 const socketService = require('./socket-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('./thumbnail-service');
 const watermarkService = require('./watermark-service');
+const { invalidateCacheMany } = require('../middleware');
+const { createBullmqConnection } = require('./bullmq-connection');
+const { resolveQueueOptions } = require('../utils/queue-config');
 
-// ✅ Redis connection (ใช้ ENV ตามที่กำหนดใน .env)
-const connection = {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-};
+// Shared BullMQ connection config (reuses the existing Redis source of truth)
+const connection = createBullmqConnection();
 
 const QUEUE_NAME = 'thumbnail-generation';
 
@@ -36,14 +37,23 @@ function init(pool) {
 }
 
 // ─── Queue ─────────────────────────────────────────────────
+const queueOptions = resolveQueueOptions(QUEUE_NAME, {
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+    },
+    concurrency: 4,
+});
+
 const thumbnailQueue = new Queue(QUEUE_NAME, {
     connection,
-    defaultJobOptions: {
-        attempts: 3,                         // Retry สูงสุด 3 ครั้ง
-        backoff: { type: 'exponential', delay: 2000 }, // Retry หลัง 2s, 4s, 8s
-        removeOnComplete: { count: 100 },    // เก็บ log งานสำเร็จ 100 ชิ้นสุดท้าย
-        removeOnFail: { count: 200 },        // เก็บ log งานล้มเหลว 200 ชิ้นสุดท้าย
-    },
+    defaultJobOptions: queueOptions.defaultJobOptions,
+});
+const thumbnailQueueEvents = new QueueEvents(QUEUE_NAME, { connection });
+thumbnailQueueEvents.on('error', (err) => {
+    console.warn('[ThumbnailQueue] QueueEvents error:', err.message);
 });
 
 /**
@@ -173,6 +183,13 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
         }
     }
 
+    // ✅ Cache invalidation — ทำหลัง DB update เพื่อให้ consumer ได้ข้อมูลใหม่
+    const cacheTargetId = isThaiMhung && incidentId ? incidentId : videoId;
+    await invalidateCacheMany(
+        `video:meta:${cacheTargetId}`,
+        `video:thumbnail:${cacheTargetId}`
+    );
+
     // ✅ Step 4: WebSocket push — แจ้ง TrendingPanel ให้รีเฟรช (Recommendation #7)
     const targetId = isThaiMhung && incidentId ? incidentId : videoId;
     socketService.broadcastThumbnailUpdate(targetId, {
@@ -183,7 +200,7 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
 
 }, {
     connection,
-    concurrency: 4, // generate thumbnail ได้สูงสุด 4 งานพร้อมกัน (เบากว่า video transcode)
+    concurrency: queueOptions.concurrency,
 });
 
 // ─── Worker Event Handlers ──────────────────────────────────
@@ -199,4 +216,12 @@ worker.on('error', (err) => {
     console.error('[ThumbnailWorker] Worker error:', err.message);
 });
 
-module.exports = { addJob, init };
+async function shutdown() {
+    await Promise.allSettled([
+        worker.close(),
+        thumbnailQueue.close(),
+        thumbnailQueueEvents.close(),
+    ]);
+}
+
+module.exports = { addJob, init, thumbnailQueue, thumbnailQueueEvents, worker, shutdown };

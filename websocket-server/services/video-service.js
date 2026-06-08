@@ -12,11 +12,12 @@ const axios = require('axios');
 const sharp = require('sharp');
 const socketService = require('./socket-service');
 const thumbnailQueue = require('./thumbnail-queue');
+const { createBullmqConnection } = require('./bullmq-connection');
+const { resolveQueueOptions } = require('../utils/queue-config');
+const { invalidateCacheMany } = require('../middleware');
 
-// Redis connection config
-const connection = {
-    url: process.env.REDIS_URL || 'redis://localhost:6379'
-};
+// Shared BullMQ connection config (reuses the existing Redis source of truth)
+const connection = createBullmqConnection();
 
 // Database pool reference
 let dbPool = null;
@@ -28,7 +29,21 @@ function init(pool) {
 }
 
 // Initialize Queue
-const videoQueue = new Queue('video-processing', { connection });
+const QUEUE_NAME = 'video-processing';
+const queueOptions = resolveQueueOptions(QUEUE_NAME, {
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 5000 },
+        removeOnComplete: { count: 200 },
+        removeOnFail: { count: 200 },
+    },
+    concurrency: 1,
+});
+
+const videoQueue = new Queue(QUEUE_NAME, {
+    connection,
+    defaultJobOptions: queueOptions.defaultJobOptions,
+});
 
 /**
  * Add video to processing queue
@@ -77,7 +92,7 @@ async function uploadToBunny(outputDir, videoId) {
 /**
  * Worker to process video transcode
  */
-const worker = new Worker('video-processing', async (job) => {
+const worker = new Worker(QUEUE_NAME, async (job) => {
     const { id: videoId, userId, filePath, title } = job.data;
     const baseDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
     const outputDir = path.join(baseDir, videoId);
@@ -260,6 +275,17 @@ const worker = new Worker('video-processing', async (job) => {
                         await dbPool.query('UPDATE videos SET status = $1, progress = 100, bunny_url = $2 WHERE id = $3', ['ready', finalUrl, videoId]);
                     }
 
+                    // Phase 2: Invalidate video caches so consumers get fresh metadata
+                    try {
+                        await invalidateCacheMany(
+                            `video:meta:${videoId}`,
+                            `video:emergency:list:*`,
+                            `video:list:*`
+                        );
+                    } catch (cacheErr) {
+                        console.warn(`[VideoWorker] Cache invalidation warning for ${videoId}:`, cacheErr.message);
+                    }
+
                     socketService.sendStatus(userId, videoId, 'ready', { url: finalUrl });
 
                     // ✅ Bug #3 Fix: Extract Thumbnail Frame จากวิดีโอหลัง Transcode เสร็จ
@@ -322,7 +348,7 @@ const worker = new Worker('video-processing', async (job) => {
     });
 }, {
     connection,
-    concurrency: parseInt(process.env.MAX_CONCURRENT_TRANSCODES || '2')
+    concurrency: queueOptions.concurrency,
 });
 
 /**
@@ -369,7 +395,17 @@ function cleanup(originalPath, outputDir, keepOutputDir = false) {
     }
 }
 
+async function shutdown() {
+    await Promise.allSettled([
+        worker.close(),
+        videoQueue.close(),
+    ]);
+}
+
 module.exports = {
     addToQueue,
-    init
+    init,
+    videoQueue,
+    worker,
+    shutdown
 };

@@ -157,7 +157,9 @@ Caddy ทำหน้าที่เป็น Reverse Proxy ที่ติด�
 
 ---
 
-### 🟢 Phase 2: การทดสอบในสภาพแวดล้อมจำลอง (Staging & SSL Verification)
+### ⏳ Phase 2: การทดสอบในสภาพแวดล้อมจำลอง (Staging & SSL Verification)
+> สถานะ: **Documented, รอ implement** — คอนฟิก Caddy/Nginx + Certbot พร้อม รอ VPS staging environment
+
 เฟสนี้ย้ายระบบขึ้นไปจำลองบน VPS จริง เพื่อทดสอบการรับส่งข้อมูลผ่าน HTTPS (SSL Termination) และระบบต่ออายุใบรับรองฟรีจาก Let's Encrypt
 
 1. **การติดตั้ง Reverse Proxy บนเซิร์ฟเวอร์:**
@@ -199,7 +201,9 @@ Caddy ทำหน้าที่เป็น Reverse Proxy ที่ติด�
 
 ---
 
-### 🟢 Phase 3: ระบบจริงและการแคชข้อมูลระดับสูง (Production & Edge Security)
+### ⏸️ Phase 3: ระบบจริงและการแคชข้อมูลระดับสูง (Production & Edge Security)
+> สถานะ: **Future** — รอ Cloudflare domain + production deploy หลัง Phase 2 ผ่าน
+
 เฟสปรับปรุงระบบขึ้นใช้จริงร่วมกับ Cloudflare เพื่อป้องกันการเจาะและเปิดใช้งาน CDN Caching
 
 1. **การเชื่อมต่อ Cloudflare Edge Proxy (ฟรี 🟢):**

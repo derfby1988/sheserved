@@ -10,6 +10,13 @@ const faceBlurService = require('../services/face-blur-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('../services/thumbnail-service');
 const thumbnailQueue = require('../services/thumbnail-queue');
 const watermarkService = require('../services/watermark-service');
+const {
+    strictRateLimiter,
+    idempotencyMiddleware,
+    duplicateCheckMiddleware,
+    cacheAside,
+    TTL,
+} = require('../middleware');
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -31,7 +38,8 @@ const upload = multer({
     limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
 });
 
-const lastUploadTimestamps = new Map();
+// Phase 1 Middleware: Redis-based rate limiting, idempotency, and duplicate check
+// are now handled by the shared middleware layer instead of in-memory Maps.
 
 module.exports = (pool) => {
     // Initialize video service with the pool
@@ -41,22 +49,28 @@ module.exports = (pool) => {
     router.get('/', async (req, res) => {
         try {
             const { type, category_id } = req.query;
-            let query = 'SELECT * FROM videos WHERE 1=1';
-            let params = [];
-            
-            if (type) {
-                params.push(type);
-                query += ` AND type = $${params.length}`;
-            }
-            if (category_id) {
-                params.push(category_id);
-                query += ` AND category_id = $${params.length}`;
-            }
-            
-            query += ' ORDER BY created_at ASC LIMIT 50';
-            
-            const result = await pool.query(query, params);
-            res.json(result.rows);
+            const cacheKey = `video:list:${type || 'all'}:${category_id || 'all'}`;
+
+            const data = await cacheAside(cacheKey, async () => {
+                let query = 'SELECT * FROM videos WHERE 1=1';
+                let params = [];
+
+                if (type) {
+                    params.push(type);
+                    query += ` AND type = $${params.length}`;
+                }
+                if (category_id) {
+                    params.push(category_id);
+                    query += ` AND category_id = $${params.length}`;
+                }
+
+                query += ' ORDER BY created_at ASC LIMIT 50';
+
+                const result = await pool.query(query, params);
+                return result.rows;
+            }, TTL.DEFAULT);
+
+            res.json(data);
         } catch (error) {
             console.error('[API] Error fetching videos list:', error);
             res.status(500).json({ error: 'Failed to fetch videos' });
@@ -64,7 +78,7 @@ module.exports = (pool) => {
     });
 
     // Upload video
-    router.post('/upload', upload.single('video'), async (req, res) => {
+    router.post('/upload', idempotencyMiddleware, strictRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
         try {
             const { userId, title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
             const file = req.file;
@@ -73,31 +87,13 @@ module.exports = (pool) => {
                 return res.status(400).json({ error: 'No video file provided' });
             }
 
-            // --- STRICT CONTROL ENFORCEMENT ---
-
-            // 1. Rate Limiting (3s Cooldown)
-            const now = Date.now();
-            const lastUpload = lastUploadTimestamps.get(userId) || 0;
-            const cooldownMs = 3000; // 3 Seconds
-
-            if (now - lastUpload < cooldownMs) {
-                const waitSec = Math.ceil((cooldownMs - (now - lastUpload)) / 1000);
-                return res.status(429).json({
-                    error: `Please wait ${waitSec}s before next upload`,
-                    cooldownSeconds: waitSec
-                });
-            }
-
-            // 2. File Size Validation (Enforced by Multer limits as well, but double check)
+            // 1. File Size Validation (Enforced by Multer limits as well, but double check)
             const maxMB = 20;
             if (file.size > maxMB * 1024 * 1024) {
                 return res.status(413).json({
                     error: `File too large. Max allowed: ${maxMB}MB`
                 });
             }
-
-            // Update timestamp after checks
-            lastUploadTimestamps.set(userId, now);
 
             const { categoryId, gpsTracks } = req.body;
 
@@ -152,7 +148,7 @@ module.exports = (pool) => {
     // Upload multiple photos
     // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
     // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
-    router.post('/upload-photos', upload.array('photos', 5), async (req, res) => {
+    router.post('/upload-photos', idempotencyMiddleware, strictRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
         try {
             const userIdFromRequest = req.body.userId;
             const files = req.files;
@@ -173,21 +169,6 @@ module.exports = (pool) => {
                     error: `${modeName} mode allows maximum ${quota} photos per upload`
                 });
             }
-
-            // 1. Rate Limiting (3s Cooldown)
-            const now = Date.now();
-            const lastUpload = lastUploadTimestamps.get(userIdFromRequest) || 0;
-            const cooldownMs = 3000;
-
-            if (now - lastUpload < cooldownMs) {
-                const waitSec = Math.ceil((cooldownMs - (now - lastUpload)) / 1000);
-                return res.status(429).json({
-                    error: `Please wait ${waitSec}s before next upload`,
-                    cooldownSeconds: waitSec
-                });
-            }
-
-            lastUploadTimestamps.set(userIdFromRequest, now);
 
             const { userId, title, description, categoryId, donationRequestId, gpsTracks, incidentId } = req.body;
 
@@ -430,36 +411,40 @@ module.exports = (pool) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
+        const cacheKey = `video:emergency:list:${page}:${limit}`;
 
         console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
         try {
-            // ✅ Optimization for Massive Scale: 
-            // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
-            // 2. Added LIMIT and OFFSET for infinite scrolling
-            const result = await pool.query(`
-                SELECT v.*,
-                    COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
-                    u.profile_image_url AS user_avatar,
-                    dc.name AS category_name,
-                    v.cached_view_count AS viewer_count,
-                    v.cached_like_count AS like_count,
-                    gt.latitude,
-                    gt.longitude,
-                    v.address, v.road, v.soi, v.alley, v.village
-                FROM videos v
-                LEFT JOIN users u ON u.id = v.user_id
-                LEFT JOIN donation_categories dc ON dc.id::text = v.category_id::text
-                LEFT JOIN (
-                    SELECT DISTINCT ON (video_id) video_id, latitude, longitude
-                    FROM video_gps_tracks
-                    ORDER BY video_id, timestamp_offset ASC
-                ) gt ON gt.video_id = v.id
-                WHERE v.type IN ('emergency', 'emergency_photo')
-                ORDER BY v.created_at DESC
-                LIMIT $1 OFFSET $2
-            `, [limit, offset]);
+            const data = await cacheAside(cacheKey, async () => {
+                // ✅ Optimization for Massive Scale:
+                // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
+                // 2. Added LIMIT and OFFSET for infinite scrolling
+                const result = await pool.query(`
+                    SELECT v.*,
+                        COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
+                        u.profile_image_url AS user_avatar,
+                        dc.name AS category_name,
+                        v.cached_view_count AS viewer_count,
+                        v.cached_like_count AS like_count,
+                        gt.latitude,
+                        gt.longitude,
+                        v.address, v.road, v.soi, v.alley, v.village
+                    FROM videos v
+                    LEFT JOIN users u ON u.id = v.user_id
+                    LEFT JOIN donation_categories dc ON dc.id::text = v.category_id::text
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (video_id) video_id, latitude, longitude
+                        FROM video_gps_tracks
+                        ORDER BY video_id, timestamp_offset ASC
+                    ) gt ON gt.video_id = v.id
+                    WHERE v.type IN ('emergency', 'emergency_photo')
+                    ORDER BY v.created_at DESC
+                    LIMIT $1 OFFSET $2
+                `, [limit, offset]);
+                return result.rows;
+            }, TTL.DEFAULT);
 
-            res.json(result.rows);
+            res.json(data);
         } catch (error) {
             console.error('Error fetching emergency videos:', error.message);
             res.status(500).json({ error: 'Failed to fetch emergency videos' });
@@ -467,7 +452,7 @@ module.exports = (pool) => {
     });
 
     // Accept incident
-    router.post('/:id/accept', async (req, res) => {
+    router.post('/:id/accept', strictRateLimiter, duplicateCheckMiddleware('accept-incident', 10), async (req, res) => {
         try {
             const { id } = req.params;
             const { responderId, latitude, longitude } = req.body;
@@ -509,82 +494,88 @@ module.exports = (pool) => {
     router.get('/:id/gps-tracks', async (req, res) => {
         try {
             const { id } = req.params;
-            const result = await pool.query(
-                'SELECT * FROM video_gps_tracks WHERE video_id = $1 ORDER BY timestamp_offset',
-                [id]
-            );
-            res.json(result.rows);
+            const data = await cacheAside(`video:gps:${id}`, async () => {
+                const result = await pool.query(
+                    'SELECT * FROM video_gps_tracks WHERE video_id = $1 ORDER BY timestamp_offset',
+                    [id]
+                );
+                return result.rows;
+            }, TTL.DEFAULT);
+            res.json(data);
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch GPS tracks' });
         }
     });
-
     // Get gallery photos for a specific incident with pagination
     router.get('/:id/gallery', async (req, res) => {
         try {
             const { id } = req.params;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 20;
-            const offset = (page - 1) * limit;
+            const cacheKey = `video:gallery:${id}:${page}:${limit}`;
 
-            const result = await pool.query(
-                `SELECT id, photo_urls, created_at, user_id 
-                 FROM videos 
-                 WHERE type = $1 AND incident_id = $2 
-                 ORDER BY created_at DESC 
-                 LIMIT $3 OFFSET $4`,
-                ['thai_mhung_photo', id, limit, offset]
-            );
+            const data = await cacheAside(cacheKey, async () => {
+                const offset = (page - 1) * limit;
+                const result = await pool.query(
+                    `SELECT id, photo_urls, created_at, user_id 
+                     FROM videos 
+                     WHERE type = $1 AND incident_id = $2 
+                     ORDER BY created_at DESC 
+                     LIMIT $3 OFFSET $4`,
+                    ['thai_mhung_photo', id, limit, offset]
+                );
 
-            // Transform rows to return individual photos
-            const finalPhotos = [];
-            for (const row of result.rows) {
-                let urls = [];
-                if (Array.isArray(row.photo_urls)) urls = row.photo_urls;
-                else if (typeof row.photo_urls === 'string') {
-                    try { urls = JSON.parse(row.photo_urls); } catch(e) {}
+                const finalPhotos = [];
+                for (const row of result.rows) {
+                    let urls = [];
+                    if (Array.isArray(row.photo_urls)) urls = row.photo_urls;
+                    else if (typeof row.photo_urls === 'string') {
+                        try { urls = JSON.parse(row.photo_urls); } catch(e) {}
+                    }
+
+                    for (let i = 0; i < urls.length; i++) {
+                        finalPhotos.push({
+                            id: `${row.id}_${i}`,
+                            photo_url: urls[i],
+                            created_at: row.created_at,
+                            user_id: row.user_id
+                        });
+                    }
                 }
+                return finalPhotos;
+            }, TTL.DEFAULT);
 
-                for (let i = 0; i < urls.length; i++) {
-                    finalPhotos.push({
-                        id: `${row.id}_${i}`,
-                        photo_url: urls[i],
-                        created_at: row.created_at,
-                        user_id: row.user_id
-                    });
-                }
-            }
-
-            res.json(finalPhotos);
+            res.json(data);
         } catch (error) {
             console.error('Error fetching gallery photos:', error.message);
             res.status(500).json({ error: 'Failed to fetch gallery photos' });
         }
     });
-
     // Get interaction summary for a video
     router.get('/:id/interactions', async (req, res) => {
         try {
             const { id } = req.params;
-            const views = await pool.query(
-                "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'view'", [id]
-            );
-            const likes = await pool.query(
-                "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'like'", [id]
-            );
-            const gifts = await pool.query(
-                "SELECT COALESCE(SUM(value), 0) as total FROM video_interactions WHERE video_id = $1 AND type = 'gift'", [id]
-            );
-            res.json({
-                views: parseInt(views.rows[0].cnt),
-                likes: parseInt(likes.rows[0].cnt),
-                donations: parseFloat(gifts.rows[0].total),
-            });
+            const data = await cacheAside(`video:interactions:${id}`, async () => {
+                const views = await pool.query(
+                    "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'view'", [id]
+                );
+                const likes = await pool.query(
+                    "SELECT COUNT(*) as cnt FROM video_interactions WHERE video_id = $1 AND type = 'like'", [id]
+                );
+                const gifts = await pool.query(
+                    "SELECT COALESCE(SUM(value), 0) as total FROM video_interactions WHERE video_id = $1 AND type = 'gift'", [id]
+                );
+                return {
+                    views: parseInt(views.rows[0].cnt),
+                    likes: parseInt(likes.rows[0].cnt),
+                    donations: parseFloat(gifts.rows[0].total),
+                };
+            }, TTL.DONATION);
+            res.json(data);
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch interactions' });
         }
     });
-
     // ✅ [Support Analytics] Get like trend — 10-second buckets, last 5 minutes
     router.get('/:id/likes/trend', async (req, res) => {
         if (!pool) return res.json([]);
@@ -621,14 +612,15 @@ module.exports = (pool) => {
                 `SELECT id FROM video_interactions WHERE video_id = $1 AND user_id = $2 AND type = 'like'`,
                 [id, userId]
             );
-            res.json({ liked: existing.rows.length > 0 });
+            const liked = existing.rows.length > 0;
+            res.json({ liked });
         } catch (error) {
             res.status(500).json({ liked: false });
         }
     });
 
     // ✅ [Support Analytics] Record interaction — DB Toggle for 'like', normal INSERT for others
-    router.post('/:id/interactions', async (req, res) => {
+    router.post('/:id/interactions', strictRateLimiter, duplicateCheckMiddleware('video-interaction', 3), async (req, res) => {
         try {
             const { id } = req.params;
             const { user_id, type, value } = req.body;
@@ -680,13 +672,16 @@ module.exports = (pool) => {
     router.get('/:id', async (req, res) => {
         try {
             const { id } = req.params;
-            const result = await pool.query('SELECT * FROM videos WHERE id = $1', [id]);
+            const data = await cacheAside(`video:meta:${id}`, async () => {
+                const result = await pool.query('SELECT * FROM videos WHERE id = $1', [id]);
+                return result.rows[0] || null;
+            }, TTL.DEFAULT);
 
-            if (result.rows.length === 0) {
+            if (data === null) {
                 return res.status(404).json({ error: 'Video not found' });
             }
 
-            res.json(result.rows[0]);
+            res.json(data);
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch video status' });
         }

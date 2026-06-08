@@ -2,6 +2,13 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const {
+    authRateLimiter,
+    strictRateLimiter,
+    cacheAside,
+    TTL,
+    invalidateCache,
+} = require('../middleware');
 
 module.exports = (pool) => {
     const router = express.Router();
@@ -54,13 +61,17 @@ module.exports = (pool) => {
     });
 
     // GET /api/admin/watermark - Get current watermark config
-    router.get('/watermark', async (req, res) => {
+    router.get('/watermark', authRateLimiter, async (req, res) => {
         try {
-            const result = await pool.query('SELECT * FROM watermark_configs WHERE id = 1');
-            if (result.rows.length === 0) {
+            const data = await cacheAside('admin:watermark:config', async () => {
+                const result = await pool.query('SELECT * FROM watermark_configs WHERE id = 1');
+                return result.rows[0] || null;
+            }, TTL.DEFAULT);
+
+            if (data === null) {
                 return res.status(404).json({ error: 'Watermark configuration not found' });
             }
-            res.json(result.rows[0]);
+            res.json(data);
         } catch (err) {
             console.error('Error fetching watermark config:', err);
             res.status(500).json({ error: 'Server error' });
@@ -68,7 +79,7 @@ module.exports = (pool) => {
     });
 
     // PUT /api/admin/watermark - Update watermark config
-    router.put('/watermark', requireAdmin, async (req, res) => {
+    router.put('/watermark', authRateLimiter, requireAdmin, strictRateLimiter, async (req, res) => {
         const { is_enabled, type, text_content, position, animation_type, opacity, show_incident_id, show_uploader_id } = req.body;
         
         try {
@@ -83,6 +94,7 @@ module.exports = (pool) => {
                 return res.status(404).json({ error: 'Watermark configuration not found' });
             }
             
+            await invalidateCache('admin:watermark:config');
             res.json({ message: 'Watermark configuration updated successfully', data: result.rows[0] });
         } catch (err) {
             console.error('Error updating watermark config:', err);
@@ -91,7 +103,7 @@ module.exports = (pool) => {
     });
 
     // POST /api/admin/watermark/upload - Upload watermark image
-    router.post('/watermark/upload', requireAdmin, upload.single('watermark_image'), async (req, res) => {
+    router.post('/watermark/upload', authRateLimiter, requireAdmin, strictRateLimiter, upload.single('watermark_image'), async (req, res) => {
         try {
             if (!req.file) {
                 return res.status(400).json({ error: 'Please upload a PNG file' });
