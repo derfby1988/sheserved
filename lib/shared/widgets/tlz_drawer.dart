@@ -572,6 +572,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             ),
                             _buildMenuItem(
                               context,
+                              title: 'เฝ้าดูระบบ (System Monitor)',
+                              icon: Icons.monitor_heart_outlined,
+                              onTap: () => _navigateTo(context, '/admin/system-monitor'),
+                              isSubItem: true,
+                            ),
+                            _buildMenuItem(
+                              context,
                               title: 'ตรวจสอบผู้สมัคร',
                               icon: Icons.verified_user_outlined,
                               onTap: () => _navigateTo(context, '/admin/applications'),

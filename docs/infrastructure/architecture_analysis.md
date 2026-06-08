@@ -15,7 +15,8 @@
 | **Phase 1a** | Caddy Reverse Proxy (`:8080` / `:80`) | 🟢 ฟรี | ✅ **Deploy แล้ว** |
 | **Phase 1b** | Rate Limiting · Idempotency · Duplicate Check · Cache-Aside (Redis Middleware) | 🟢 ฟรี | ✅ **Implemented & Wired** — ทุก endpoint มี fast gate + cache layer |
 | **Phase 2** | BullMQ Queue: Consultation, Donation, Video, Sync + Health Check + Graceful Shutdown | 🟢 ฟรี | ✅ **Implemented** — ทุก queue พร้อมใช้งาน พร้อม monitoring และ graceful shutdown |
-| **Phase 3** | CQRS · CDN/WAF · Analytics · Auto Scale | 🔵 วางรากฐานไว้เผื่อขยายตัว | ⏸️ ยังไม่ deploy |
+| **Phase 3** | CQRS · CDN/WAF · Analytics · Auto Scale · Redis Cluster · K8s | 🔵 ~$500–2,000/เดือน | ⏸️ ยังไม่ deploy — สำหรับ 5,000–50,000 คน |
+| **Phase 4** | Distributed DB · Event Sourcing · Multi-Region · GPU Transcoding | 🔵 ~$5,000–20,000+/เดือน | ⏸️ ยังไม่ deploy — สำหรับ 100,000+ คน |
 
 > [!WARNING]
 > หากต้องการเอกสารเฉพาะด้าน **Auth / Login / Register Security** ให้ดูที่ `auth_security_analysis.md` แทน
@@ -1085,6 +1086,77 @@ flowchart TB
 
 ---
 
+## 6. Phase 4 — Massive Scale: 100,000+ Concurrent Users (อนาคต)
+
+> [!IMPORTANT]
+> Phase 4 เป็น **เป้าหมายระยะไกล** ที่ต้องรอสัญญาณชัดเจนว่าถึงจุดต้อง scale จริง ๆ แล้ว ไม่ควรกระโดดเข้าทันทีเพราะมีค่าใช้จ่ายและความซับซ้อนสูงมาก
+
+### 6.1 เงื่อนไขที่จะเข้าสู่ Phase 4
+
+ไม่ควรเริ่ม Phase 4 จนกว่าจะมีสัญญาณต่อไปนี้อย่างน้อย 3 ข้อ:
+
+| สัญญาณ | เกณฑ์ | หมายถึง |
+|--------|--------|---------|
+| **DAU สูงต่อเนื่อง** | > 50,000 คน ติดต่อกัน 3 เดือน | มีฐานผู้ใช้จริง ๆ ที่ต้องรองรับ |
+| **Write throughput สูง** | > 5,000 writes/sec บ่อย ๆ | Database master เริ่มเป็นคอขวด |
+| **Queue backlog สะสม** | Video queue ค้าง > 1 ชม. เป็นประจำ | Worker ไม่ทันตาม demand |
+| **Multi-region latency** | ผู้ใช้หลายประเทศ บ่นเรื่องช้า | ต้อง deploy หลาย region |
+| **Funding/Revenue พร้อม** | มี budget infrastructure > $5,000/เดือน | รองรับค่าใช้จ่ายได้ |
+
+### 6.2 Architecture ของ Phase 4
+
+```mermaid
+flowchart LR
+    A["📱 ผู้ใช้ทั่วโลก"] --> B["🌐 Multi-Region CDN\nCloudflare / AWS CloudFront"]
+    B --> C["🔌 API Gateway\nMultiple Regions"]
+    C --> D["⚡ Redis Cluster\nMulti-Master"]
+    D --> E["📨 Kafka / Pulsar\nDistributed Queue"]
+    E --> F["⚙️ Worker Fleet\nAuto-Scale GPU + CPU"]
+    
+    F --> G["🗄️ Distributed DB\nCockroachDB / YugabyteDB"]
+    F --> H["📊 Analytics\nClickHouse / BigQuery"]
+    F --> I["📧 Multi-Channel\nNotification"]
+    
+    D -.-> J["🧠 Tiered Cache\nL1 In-Memory / L2 Redis / L3 CDN"]
+```
+
+### 6.3 สิ่งที่ต้องเปลี่ยนแปลงโครงสร้าง (ไม่ใช่แค่เพิ่มจำนวน)
+
+| Component | Phase 3 | Phase 4 | เหตุผล |
+|-----------|---------|---------|--------|
+| **Database** | PostgreSQL Master + Read Replicas | CockroachDB / YugabyteDB / Sharding | Master รองรับ writes ได้จำกัด |
+| **Write Model** | Direct UPDATE/INSERT | Event Sourcing (append-only) | ลด contention, audit trail สมบูรณ์ |
+| **Queue** | BullMQ / Kafka | Kafka + partitioning + consumer groups | รองรับ throughput สูงขึ้น 10x |
+| **Cache** | Redis Cluster | Tiered: L1 in-memory → L2 Redis → L3 CDN | ลด latency สำหรับ hot data |
+| **Video** | FFmpeg CPU | GPU transcoding (NVENC) / Managed service | เร็วขึ้น 10x, ประหยัด CPU |
+| **WebSocket** | Socket.io + Redis adapter | Managed (Ably / Pusher) หรือ custom cluster | 100,000+ connections พร้อมกัน |
+| **Deploy** | Kubernetes | Multi-region K8s + service mesh | High availability across regions |
+
+### 6.4 Capacity ที่คาดหวัง
+
+| ระดับ | ผู้ใช้พร้อมกัน | Infrastructure | ค่าใช้จ่าย/เดือน |
+|------|--------------|----------------|----------------|
+| **Phase 4 Entry** | 100,000–200,000 | 3 regions, DB sharding, GPU workers | ~$5,000–10,000 |
+| **Phase 4 Mid** | 500,000–1,000,000 | Multi-region auto-scale, event sourcing | ~$20,000–50,000 |
+| **Phase 4 Scale** | 1,000,000+ | Global edge computing, custom infrastructure | ~$100,000+ |
+
+### 6.5 ความเสี่ยงของ Phase 4
+
+| ความเสี่ยง | ระดับ | แนวทางลดความเสี่ยง |
+|-----------|--------|---------------------|
+| **ค่าใช้จ่ายสูงเกินคาด** | 🔴 สูง | เริ่มจาก managed service ก่อน (AWS/GCP) ไม่ต้องลงทุน hardware |
+| **Complexity สูง** | 🔴 สูง | จ้าง SRE / Platform engineer โดยเฉพาะ |
+| **Data migration ยาก** | 🟡 กลาง | วางแผน migration จาก sharding ก่อนเริ่ม ใช้ dual-write |
+| **Vendor lock-in** | 🟡 กลาง | เลือก open-source ก่อน (CockroachDB, Kafka) |
+
+### 6.6 ข้อสรุป
+
+> **Phase 4 ไม่ใช่ "upgrade" แต่เป็น "redesign"** — ต้องเปลี่ยนโครงสร้างหลายส่วน ไม่ใช่แค่เพิ่ม server
+>
+> แนะนำให้ **รอจนกว่าจะมีสัญญาณชัดเจนว่าถึงจุดตัน** แล้วค่อยลงทุน เพราะ cost และ complexity สูงมาก
+
+---
+
 ## Open Questions (ยังรอคำตอบ แต่เริ่ม Phase 1 และ 2 ได้เลย)
 
 > [!IMPORTANT]
@@ -1106,4 +1178,5 @@ flowchart TB
 > **สถานะปัจจุบัน:**
 > - ✅ **Phase 1 เสร็จสมบูรณ์แล้ว** — ทุก endpoint มี fast gate (rate limit + idempotency + duplicate check) และ cache-aside layer พร้อมใช้งานจริง
 > - ✅ **Phase 2 เสร็จสมบูรณ์แล้ว** — ทุก queue (consultation, donation, video, sync) พร้อม worker, cache invalidation, health check (`/health/queues`), DLQ monitoring และ graceful shutdown
-> - ⏸️ **Phase 3 ยังไม่ต้องทำ** — รอสัญญาณ scale จริงก่อน
+> - ⏸️ **Phase 3 ยังไม่ต้องทำ** — รอสัญญาณ scale จริงก่อน (5,000–50,000 คน)
+> - ⏸️ **Phase 4 ยังไม่ต้องทำ** — รอ DAU > 50,000 ต่อเนื่อง (100,000+ คน)

@@ -27,6 +27,7 @@ import 'features/admin/presentation/pages/body_region_admin_page.dart';
 import 'features/admin/presentation/pages/package_admin_page.dart';
 import 'features/admin/presentation/pages/application_review_page.dart';
 import 'features/admin/presentation/pages/user_category_admin_page.dart';
+import 'features/admin/presentation/pages/system_monitor_page.dart';
 import 'features/pharmacy/presentation/pages/pharmacy_filters_admin_page.dart';
 import 'features/admin/models/profession.dart';
 import 'features/settings/presentation/pages/sync_settings_page.dart';
@@ -159,6 +160,7 @@ class SheservedApp extends StatelessWidget {
         '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
         '/admin/packages': (context) => const PackageAdminPage(),
         '/admin/user-categories': (context) => const UserCategoryAdminPage(),
+        '/admin/system-monitor': (context) => const SystemMonitorPage(),
         '/donate': (context) => const DonationDashboardPage(),
         '/admin/donations': (context) => const DonationAdminPage(),
         '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
