@@ -425,6 +425,68 @@ curl -s http://localhost:8080/api/videos/emergency/list | python3 -c \
 
 ---
 
+### 🐛 Phase 2 Queue Integration Bug — `retryJob is not defined`
+
+> วันที่พบ: 2026-06-09 | สถานะ: ✅ แก้ไขแล้ว | ไฟล์: `websocket-server/queues/index.js`
+
+#### อาการ
+- `npm run dev` หรือ `node server.js` crash ทันทีตอน startup
+- Error: `ReferenceError: retryJob is not defined` ที่ `queues/index.js:233`
+- ผลกระทบ: Node.js ไม่รัน → Caddy ตอบ `502 Bad Gateway` → Flutter ไม่โหลดการ์ด/รูปภาพ
+
+#### สาเหตุ
+`retryJob()` ถูกวางอยู่ **กลาง function `shutdownAll()`** (nested scope) แทนที่จะเป็น top-level function → ตอน `module.exports` หา reference ไม่เจอ
+
+#### วิธีตรวจสอบก่อน deploy
+```bash
+# 1. ตรวจสอบว่าฟังก์ชันที่ export อยู่ระดับ top-level
+grep -n "async function retryJob" websocket-server/queues/index.js
+# ต้องแสดงบรรทัดที่อยู่ **นอก** function อื่น (ไม่ใช่ nested)
+
+# 2. ลองรัน Node.js ดูว่า startup ผ่านหรือไม่
+cd websocket-server && node -c server.js
+# หรือรัน health check หลัง start
+curl http://localhost:3000/health
+```
+
+#### วิธีแก้ไข
+ย้าย `retryJob()` ออกมาอยู่ **ระดับ top-level** (นอก `shutdownAll()`) ก่อน `module.exports`:
+
+```javascript
+// websocket-server/queues/index.js
+
+// ── Retry Job ─────────────────────────────────────────────
+async function retryJob(queueName, jobId) {
+  const entry = registry.find((e) => e.name === queueName);
+  if (!entry || !entry.queue) {
+    throw new Error(`Queue "${queueName}" not found in registry`);
+  }
+  const job = await entry.queue.getJob(jobId);
+  if (!job) {
+    throw new Error(`Job ${jobId} not found in queue ${queueName}`);
+  }
+  await job.retry();
+  return { jobId, queueName };
+}
+
+// ── Exports ────────────────────────────────────────────────
+module.exports = {
+  registry,
+  shutdownAll,
+  getHealthSnapshot,
+  getFailedJobs,
+  retryJob,  // ← ต้องอยู่ใน exports
+  // ...
+};
+```
+
+#### ป้องกัน
+- หลังแก้ไฟล์ `queues/index.js` ให้รัน `node -c server.js` เพื่อ syntax check ก่อน commit
+- ตรวจสอบว่าฟังก์ชันใหม่ไม่ถูกวาง nested ใน `shutdownAll()`, `getHealthSnapshot()` หรือ function อื่น
+- ใช้ `eslint` หรือตรวจสอบ indentation ว่า `async function` อยู่ระดับเดียวกับ `module.exports`
+
+---
+
 ## Cost Estimation
 
 ### Bunny.net (สำหรับประเทศไทย)

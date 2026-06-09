@@ -109,21 +109,6 @@ async function shutdownAll() {
       );
     }
 
-async function retryJob(queueName, jobId) {
-  const entry = registry.find((e) => e.name === queueName);
-  if (!entry || !entry.queue) {
-    throw new Error(`Queue "${queueName}" not found in registry`);
-  }
-
-  const job = await entry.queue.getJob(jobId);
-  if (!job) {
-    throw new Error(`Job ${jobId} not found in queue ${queueName}`);
-  }
-
-  await job.retry();
-  return { jobId, queueName };
-}
-
     if (entry.queue) {
       promises.push(
         entry.queue.close().catch((err) => {
@@ -222,6 +207,22 @@ async function getFailedJobs(queueName, start = 0, end = 49) {
     stacktrace: job.stacktrace,
     timestamp: job.timestamp,
   }));
+}
+
+// ── Retry Job ─────────────────────────────────────────────
+async function retryJob(queueName, jobId) {
+  const entry = registry.find((e) => e.name === queueName);
+  if (!entry || !entry.queue) {
+    throw new Error(`Queue "${queueName}" not found in registry`);
+  }
+
+  const job = await entry.queue.getJob(jobId);
+  if (!job) {
+    throw new Error(`Job ${jobId} not found in queue ${queueName}`);
+  }
+
+  await job.retry();
+  return { jobId, queueName };
 }
 
 // ── Exports ────────────────────────────────────────────────
