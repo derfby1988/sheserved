@@ -846,6 +846,28 @@ curl -s -X POST "$API_URL/health/queues/donation-escrow/retry" \
 3. **Smoke/E2E** ก่อน deploy และหลัง deploy
 4. **Failure injection** เมื่อจะตรวจ resilience หรือก่อนปิด phase
 
+#### ไฟล์ทดสอบที่ใช้
+
+| ชั้นทดสอบ | ไฟล์ | คำสั่งรัน | ความต้องการ |
+|----------|------|-----------|------------|
+| **Unit** | `websocket-server/test-unit.js` | `node test-unit.js` | ไม่ต้อง start server (pure logic) |
+| **Integration** | `websocket-server/test-integration.js` | `node test-integration.js` | Server รันอยู่ (:3000 หรือ :8080) |
+| **Smoke/E2E** | `websocket-server/test-smoke.js` | `node test-smoke.js` | Server รันอยู่ + Redis + PostgreSQL |
+| **Failure Injection** | `websocket-server/test-failure-injection.js` | `node test-failure-injection.js` | Redis รันอยู่ (ไม่ต้อง server) |
+| **Phase 1 Middleware** | `websocket-server/test-phase1-middleware.js` | `node test-phase1-middleware.js` | Redis รันอยู่ |
+| **Phase 2 Queues** | `websocket-server/test-phase2-queues.js` | `node test-phase2-queues.js` | Redis + Server รันอยู่ |
+
+```bash
+# รันทั้งหมดตามลำดับ (ต้องมี Redis และ Server รัน)
+cd websocket-server
+node test-unit.js            # ~2 วินาที
+node test-integration.js   # ~5 วินาที (ต้องมี server)
+node test-smoke.js         # ~3 วินาที (ต้องมี server)
+node test-failure-injection.js # ~3 วินาที
+node test-phase1-middleware.js # ~5 วินาที
+node test-phase2-queues.js   # ~15 วินาที (ต้องมี server)
+```
+
 ---
 
 ### 2.12.2 Detailed Test Matrix
