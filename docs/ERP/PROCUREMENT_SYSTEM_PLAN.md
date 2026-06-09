@@ -30,7 +30,7 @@
 
 3. **Purchase Order (PO)**
    - ใบสั่งซื้ออย่างเป็นทางการส่งให้ Supplier
-   - สามารถสร้างจาก PR (รวมหลาย PR ได้) หรือสั่งตรงได้
+   - สามารถสร้างจาก PR (**รวมหลาย PR เป็น 1 PO ได้ 1:N**) หรือสั่งตรงได้
    - สถานะ: `draft` → `pending_approval` → `approved` → `sent_to_supplier` → `partially_received` → `fully_received` / `cancelled` / `closed`
 
 4. **Approval Workflow (Role + วงเงิน)**
@@ -180,7 +180,8 @@ CREATE TABLE purchase_orders (
   delivery_branch_id    UUID REFERENCES organization_branches(id),
   po_number             TEXT NOT NULL,
   supplier_id           UUID NOT NULL REFERENCES suppliers(id),
-  pr_id                 UUID REFERENCES purchase_requisitions(id),
+  vat_rate              DECIMAL(5,4) DEFAULT 0.0700,
+  -- pr_id removed: รองรับ 1:N ผ่าน purchase_order_pr_links
   status                TEXT NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft','pending_approval','approved','sent_to_supplier','partially_received','fully_received','cancelled','closed')),
   order_date            DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -199,6 +200,16 @@ CREATE TABLE purchase_orders (
   created_at            TIMESTAMPTZ DEFAULT now(),
   updated_at            TIMESTAMPTZ DEFAULT now(),
   UNIQUE (profession_id, po_number)
+);
+
+-- Junction table: รองรับหลาย PR → 1 PO (1:N)
+CREATE TABLE purchase_order_pr_links (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id       UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  purchase_order_id   UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  purchase_requisition_id UUID NOT NULL REFERENCES purchase_requisitions(id) ON DELETE CASCADE,
+  created_at          TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (purchase_order_id, purchase_requisition_id)
 );
 
 CREATE TABLE purchase_order_items (
@@ -319,6 +330,22 @@ CREATE TABLE supplier_price_history (
   created_by              UUID,
   created_at              TIMESTAMPTZ DEFAULT now()
 );
+
+-- Outbox Events (มาตรฐานกลางทุกโมดูล)
+CREATE TABLE outbox_events (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  event_type      TEXT NOT NULL,
+  aggregate_type  TEXT NOT NULL,
+  aggregate_id    UUID NOT NULL,
+  payload         JSONB NOT NULL DEFAULT '{}',
+  status          TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','published','failed')),
+  retry_count     INTEGER NOT NULL DEFAULT 0,
+  error_message   TEXT,
+  occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at    TIMESTAMPTZ
+);
 ```
 
 ### 6. Indexes & Performance
@@ -346,6 +373,10 @@ CREATE INDEX idx_gr_items_po_item ON goods_receipt_items(purchase_order_item_id)
 CREATE INDEX idx_back_order_po ON back_orders(purchase_order_id);
 CREATE INDEX idx_back_order_supplier ON back_orders(supplier_id);
 CREATE INDEX idx_price_history_lookup ON supplier_price_history(profession_id, supplier_id, inventory_item_id, effective_date);
+CREATE INDEX idx_po_pr_link_po ON purchase_order_pr_links(purchase_order_id);
+CREATE INDEX idx_po_pr_link_pr ON purchase_order_pr_links(purchase_requisition_id);
+CREATE INDEX idx_outbox_pending ON outbox_events(profession_id, status, occurred_at)
+  WHERE status IN ('pending','failed');
 ```
 
 ### 7. Trigger อัปเดต updated_at
@@ -366,7 +397,7 @@ BEGIN
   FOREACH tbl IN ARRAY ARRAY[
     'suppliers','procurement_settings',
     'purchase_requisitions','purchase_requisition_items',
-    'purchase_orders','purchase_order_items',
+    'purchase_orders','purchase_order_items','purchase_order_pr_links',
     'goods_receipts','goods_receipt_items',
     'back_orders','reorder_suggestions','supplier_price_history'
   ]
@@ -471,11 +502,18 @@ professions (ERP Core)
          ▼                                                      ▼
 ┌─────────────────────┐    ┌─────────────────────────────┐
 │   purchase_orders   │◄───┤   purchase_order_items      │
-│   - pr_id (FK)      │    │   - inventory_item_id (FK)  │
-│   - supplier_id(FK) │    │   - medication_id (FK)      │
-│   - branch_id       │    │   - custom_medication_id(FK)│
-│   - delivery_branch │    └─────────────────────────────┘
+│   - supplier_id(FK)│    │   - inventory_item_id (FK)  │
+│   - branch_id       │    │   - medication_id (FK)      │
+│   - delivery_branch │    │   - custom_medication_id(FK)│
+│   - vat_rate        │    └─────────────────────────────┘
 └──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│ purchase_order_pr_links     │
+│   - purchase_order_id (FK)  │
+│   - purchase_requisition_id │
+└─────────────────────────────┘
            │ po_id
            │
 ┌──────────▼──────────┐    ┌─────────────────────────────┐
@@ -501,24 +539,33 @@ professions (ERP Core)
 │   - expected_delivery_date│  │  - converted_pr_id          │
 └─────────────────────────┘    └─────────────────────────────┘
 
-┌─────────────────────────┐
-│ supplier_price_history  │
-│   - supplier_id         │
-│   - inventory_item_id   │
-│   - unit_price          │
-│   - effective_date      │
-└─────────────────────────┘
+┌─────────────────────────┐    ┌─────────────────────────────┐
+│ supplier_price_history  │    │     outbox_events           │
+│   - supplier_id         │    │   - event_type              │
+│   - inventory_item_id   │    │   - aggregate_type          │
+│   - unit_price          │    │   - payload (JSONB)         │
+│   - effective_date      │    │   - status                  │
+└─────────────────────────┘    └─────────────────────────────┘
+
+┌─────────────────────────────┐
+│   document_sequences        │
+│   - profession_id           │
+│   - branch_id               │
+│   - prefix / year / last_no │
+└─────────────────────────────┘
 ```
 
 **Key Relationships:**
-- `purchase_orders.pr_id` → `purchase_requisitions` (0..1:1)
 - `purchase_orders.supplier_id` → `suppliers` (N:1)
 - `purchase_order_items.purchase_order_id` → `purchase_orders` (N:1)
+- `purchase_order_pr_links.purchase_order_id` → `purchase_orders` (N:1)
+- `purchase_order_pr_links.purchase_requisition_id` → `purchase_requisitions` (N:1)
 - `goods_receipts.purchase_order_id` → `purchase_orders` (1:1)
 - `goods_receipt_items.purchase_order_item_id` → `purchase_order_items` (N:1)
 - `back_orders.purchase_order_id` → `purchase_orders` (N:1)
 - `back_orders.purchase_order_item_id` → `purchase_order_items` (1:1)
 - `reorder_suggestions.converted_pr_id` → `purchase_requisitions` (0..1:1)
+- `outbox_events.profession_id` → `professions` (N:1)
 
 ---
 
@@ -561,7 +608,7 @@ FOR EACH item IN purchase_order_items:
   item.total_price = item.quantity_ordered * item.unit_price
 
 po.subtotal = SUM(item.total_price)
-po.tax_amount = po.subtotal * vat_rate (ค่าเริ่มต้น 0.07 หรือตาม settings)
+po.tax_amount = po.subtotal * po.vat_rate (default 7.00%, ผู้ใช้สามารถกำหนดเองได้ต่อ PO)
 po.discount_amount = user_input (default 0)
 po.total_amount = po.subtotal + po.tax_amount - po.discount_amount
 ```
@@ -598,11 +645,15 @@ WHEN PR.status = 'approved' AND user clicks "Convert to PO":
   4. INSERT outbox_event:
      - event_type = 'procurement.pr_converted_to_po'
      - payload = { pr_id, po_id, profession_id, total_amount }
+
+  5. FOR EACH pr ที่ถูก convert:
+     UPDATE purchase_requisitions SET status = 'converted_to_po', updated_at = now()
+     (หาก 1 PR → PO แล้ว status เปลี่ยน แต่หาก PR ยังไม่ครบ convert ให้คง status 'approved' ไว้)
 ```
 
 **ข้อจำกัด:**
 - PR ที่มี status ไม่ใช่ `approved` ไม่สามารถ convert เป็น PO ได้
-- 1 PR → 1 PO (1:1) ใน Phase 1
+- 1 PR → N PO ได้ (1:N) ใน Phase 1 — หลาย PR สามารถรวมเป็น PO เดียวกันได้
 
 ### 5.3 การรับของ (GR) → อัปเดต PO & สร้าง Back Order
 
@@ -690,6 +741,44 @@ String generateIdempotencyKey({
 - Create Goods Receipt (สำคัญที่สุด — ป้องกัน stock เพิ่มซ้ำ)
 - Confirm Reorder Suggestion
 - Update Back Order (fulfill partial)
+
+### 5.6 Auto-Numbering Logic (Running Number by Branch)
+
+**รูปแบบ:** `{prefix}-{YYYY}-{branch_code}-{running_number}`
+- **PR:** `PR-2026-BKK-0001`
+- **PO:** `PO-2026-BKK-0001`
+- **GR:** `GR-2026-BKK-0001`
+
+**Logic ที่ Application Layer:**
+```dart
+String generateDocumentNumber({
+  required String prefix,      // 'PR', 'PO', 'GR'
+  required String branchCode,  // จาก organization_branches.code
+  required int currentSequence,
+}) {
+  final year = DateTime.now().year;
+  final seq = currentSequence.toString().padLeft(4, '0');
+  return '$prefix-$year-$branchCode-$seq';
+}
+```
+
+**Sequence Tracking:**
+- เก็บ sequence ต่อ `profession_id` + `branch_id` + `prefix` + `year`
+- หากไม่มี `branch_id` (HQ) ใช้ `branch_code = 'HQ'`
+- Query ล่าสุด: `SELECT MAX(CAST(SUBSTRING(po_number FROM '...') AS INT)) ...`
+- หรือใช้ตาราง `document_sequences` แยกเพื่อป้องกัน race condition
+
+```sql
+CREATE TABLE document_sequences (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id       UUID REFERENCES organization_branches(id),
+  prefix          TEXT NOT NULL,
+  year            INTEGER NOT NULL,
+  last_number     INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (profession_id, branch_id, prefix, year)
+);
+```
 
 ---
 

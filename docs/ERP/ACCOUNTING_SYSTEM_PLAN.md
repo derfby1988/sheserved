@@ -163,14 +163,98 @@ COMMENT ON COLUMN withholding_tax.tax_rate IS 'อัตราภาษีที
    - `5231` ค่าเสื่อมราคา - อุปกรณ์และเครื่องใช้ (Depreciation Expense)
    - `5241` ค่าธรรมเนียมธนาคาร / ค่าธรรมเนียม Payment Gateway (Bank / Gateway Fees)
 
-## แผนการพัฒนา (Implementation Plan Placeholder)
-*(พื้นที่สำหรับเขียน DB Schema, Flutter UI, และ Business Logic ในอนาคต)*
+## แผนการพัฒนา (Implementation Plan)
 
-### 1. Database Schema
-- `chart_of_accounts`
-- `general_ledgers`
-- `journal_entries`
+### 1. ไฟล์ที่สร้างแล้ว (Completed Artifacts)
 
-### 2. Flutter UI
-- `AccountingDashboardPage`
-- `ProfitAndLossReportPage`
+| ไฟล์ | ที่อยู่ | รายละเอียด |
+|------|--------|-----------|
+| **SQL Migration** | `supabase/migrations/20260609180000_create_accounting_core_schema.sql` | Schema หลัก: ตาราง 11 ตาราง + Seed ผังบัญชีไทย 5 หมวด + RLS |
+| **ER Diagram** | `docs/ERP/ACCOUNTING_ER_DIAGRAM.md` | Mermaid ER Diagram + รายละเอียดคอลัมน์ทุกตาราง |
+| **Outbox Spec** | `docs/ERP/ACCOUNTING_OUTBOX_SPEC.md` | ตัวอย่าง payload POS→Accounting, Procurement→Accounting, HR→Accounting |
+
+### 2. ตารางหลักใน Database (11 ตาราง)
+
+- **`organization_branches`** — สาขาขององค์กร (multi-branch support)
+- **`outbox_events`** — Outbox Pattern (event ต้นทางจาก POS/Procurement/HR)
+- **`idempotency_keys`** — กันซ้ำสำหรับ write operation
+- **`exchange_rates`** — อัตราแลกเปลี่ยนสกุลเงิน
+- **`accounting_periods`** — งวดบัญชี (open/closed/locked)
+- **`chart_of_accounts`** — ผังบัญชี 5 หมวด (1XXX-5XXX)
+- **`product_account_mappings`** — ผูกสินค้ากับบัญชี (smart recommendation base)
+- **`journal_entries`** — รายการบัญชี (header)
+- **`journal_entry_lines`** — บรรทัดรายการ (debit/credit double-entry)
+- **`vat_records`** — รายการ VAT (output=input)
+- **`tax_forms`** + **`tax_form_lines`** — ฟอร์มภาษีกรมสรรพากร
+
+`general_ledger` เป็น **View** ที่รวม `journal_entries` + `journal_entry_lines` + `chart_of_accounts` สำหรับบัญชีแยกประเภท
+
+### 3. Outbox Integration (ระบบเชื่อมโยง)
+
+ทุก write operation ที่มีผลต่อเงินหรือสต๊อกต้องผ่าน `outbox_events` ก่อน commit:
+
+| Event | Source | Accounting Impact |
+|-------|--------|-------------------|
+| `pos.sale.completed` | POS System | บันทึกรายได้ + ต้นทุน + VAT ขาย |
+| `procurement.goods_received` | Procurement System | บันทึกสินค้าเข้า + เจ้าหนี้ + VAT ซื้อ |
+| `hr.payroll.processed` | HR System | บันทึนค่าใช้จ่ายเงินเดือน + หัก ณ ที่จ่าย |
+| `accounting.journal.created` | Manual Entry | บันทึกรายการปรับปรุง/ค่าเสื่อม |
+
+Accounting Worker จะ poll `outbox_events` ทุก 5 วินาที → parse payload → สร้าง `journal_entries` (draft → posted) → สร้าง `vat_records` (ถ้ามี) → อัปเดต outbox เป็น `published`
+
+### 4. Flutter Architecture Outline
+
+#### โครงสร้างโฟลเดอร์
+```
+lib/features/accounting/
+├── data/
+│   ├── models/ (ChartOfAccount, JournalEntry, JournalEntryLine, VatRecord, TaxForm)
+│   ├── repositories/ (AccountingRepository, JournalRepository, VatRepository)
+│   └── services/ (AccountingService)
+├── domain/
+│   ├── entities/ (ChartOfAccountEntity, JournalEntryEntity, ProfitLossReport)
+│   └── usecases/ (CreateJournalEntry, PostJournalEntry, GetGeneralLedger, GetProfitLossReport)
+├── presentation/
+│   ├── pages/
+│   │   ├── chart_of_accounts_page.dart — ผังบัญชี 5 หมวด (tree view)
+│   │   ├── journal_entry_page.dart — บันทึกรายวัน (debit=credit validation)
+│   │   ├── general_ledger_page.dart — บัญชีแยกประเภท (filter by account/date)
+│   │   ├── profit_loss_report_page.dart — งบกำไรขาดทุน (P&L)
+│   │   ├── vat_record_page.dart — รายการ VAT ขาย/ซื้อ
+│   │   └── tax_form_list_page.dart — ฟอร์มภาษีภ.ง.ด./ภ.พ.30
+│   ├── widgets/
+│   │   ├── account_tree_tile.dart
+│   │   ├── debit_credit_input.dart
+│   │   ├── balance_summary.dart
+│   │   └── journal_entry_card.dart
+│   └── providers/
+│       ├── accounting_provider.dart
+│       ├── journal_provider.dart
+│       └── report_provider.dart
+└── accounting_routes.dart
+```
+
+#### State Management (Provider Pattern)
+- **AccountingProvider** — จัดการผังบัญชี (load, create, update, delete)
+- **JournalProvider** — จัดการรายการบัญชี (draft → posted → reversed)
+- **ReportProvider** — ดึงรายงาน P&L และ General Ledger
+
+#### Routes
+```
+/accounting/chart-of-accounts
+/accounting/journal-entry
+/accounting/journal-entry/:id
+/accounting/general-ledger
+/accounting/profit-loss
+/accounting/vat-records
+/accounting/tax-forms
+/accounting/tax-forms/:id
+```
+
+### 5. Phase ต่อไป (Future Work)
+
+- **AR/AP (Phase 2):** ตาราง `accounts_receivable`, `ar_payments`, `accounts_payable`, `ap_payments` + UI ติดตามหนี้
+- **Withholding Tax (Phase 2):** ตาราง `withholding_tax_records` + ฟอร์ม ภ.ง.ด.3/53
+- **e-Filing Export (Phase 2):** สร้าง XML/JSON payload ตามมาตรฐานกรมสรรพากร
+- **Audit Trail (Phase 3):** ตาราง `transaction_audit_log` บันทึกทุกการแก้ไข
+- **Integration Tests:** End-to-end POS Sale → Outbox → Journal Entry → VAT Record
