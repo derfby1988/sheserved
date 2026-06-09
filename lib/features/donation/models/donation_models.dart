@@ -45,7 +45,8 @@ enum DonationApprovalStatus {
   pending_local,
   active,
   rejected,
-  cancelled;
+  cancelled,
+  completed;
 
   static DonationApprovalStatus fromString(String? status) {
     return DonationApprovalStatus.values.firstWhere(

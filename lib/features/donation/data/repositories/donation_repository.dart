@@ -419,6 +419,18 @@ class DonationRepository {
         .eq('id', requestId);
   }
 
+  /// ปิดรับบริจาค (ผู้ร้องขอยืนยันว่าได้รับความช่วยเหลือพอแล้ว)
+  Future<void> closeRequest(String requestId, {String? reason}) async {
+    await _client
+        .from('donation_requests')
+        .update({
+          'approval_status': DonationApprovalStatus.completed.name,
+          'closed_at': DateTime.now().toIso8601String(),
+          'closed_reason': reason ?? 'completed_by_requester',
+        })
+        .eq('id', requestId);
+  }
+
   // =====================================================
   // ADMIN CRUD OPERATIONS
   // =====================================================
@@ -467,8 +479,42 @@ class DonationRepository {
 
   /// อัปเดตคำร้องขอ
   Future<void> updateRequest(String id, Map<String, dynamic> data) async {
-    data['updated_at'] = DateTime.now().toIso8601String();
-    await _client.from('donation_requests').update(data).eq('id', id);
+    final request = await _client
+        .from('donation_requests')
+        .select('approval_status')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (request == null) {
+      throw StateError('ไม่พบคำร้องที่ต้องการอัปเดต');
+    }
+
+    final status = DonationApprovalStatus.fromString(request['approval_status']?.toString());
+    if (status != DonationApprovalStatus.pending_local) {
+      throw StateError('คำร้องที่ผ่านการอนุมัติแล้วไม่สามารถแก้ไขรายละเอียดได้');
+    }
+
+    const allowedFields = {
+      'title',
+      'description',
+      'category_id',
+      'community_id',
+      'target_amount',
+      'usage_location',
+      'requester_address',
+      'needed_date',
+      'is_trending',
+    };
+
+    final sanitizedData = <String, dynamic>{};
+    for (final entry in data.entries) {
+      if (allowedFields.contains(entry.key)) {
+        sanitizedData[entry.key] = entry.value;
+      }
+    }
+
+    sanitizedData['updated_at'] = DateTime.now().toIso8601String();
+    await _client.from('donation_requests').update(sanitizedData).eq('id', id);
   }
 
   /// ลบคำร้องขอ

@@ -180,8 +180,8 @@ ON CONFLICT (id) DO NOTHING;
 2. **Atomic Interaction Logic (Backend)**: 
     - **Unique Likes**: ใช้ Database Constraint ป้องกันการกดไลค์ซ้ำและรองรับการ Toggle
     - **Yield Way Calculation**: Server คำนวณจำนวนผู้ที่อยู่บนเส้นทางที่แจ้งเตือนจริง (`notifiedCount`) เพื่อเป็นฐานสำหรับคำนวณเปอร์เซ็นต์ความสำเร็จของการขอทาง
-3. **Real-time Syncing & Feedback**: 
-    - ใช้ **WebSocket** กระจายอีเวนต์ `like-toggled`, `yield-way-updated` และ `donation-updated` เพื่อให้แถบกราฟขยับแบบแอนิเมชันบนหน้าจอของผู้ใช้ทุกคนทันที
+3. **Real-time Syncing & Feedback**:
+    - ใช้ **WebSocket** กระจายอีเวนต์ `like-toggled`, `yield-way-updated`, `donation-progress-updated` และ `donation-closed` เพื่อให้แถบกราฟขยับแบบแอนิเมชันบนหน้าจอของผู้ใช้ทุกคนทันที
     - **Interaction Feedback UI**: ปุ่มกดจะมีการเปลี่ยนสถานะสีและการเรืองแสง (BoxShadow) เมื่อผู้ใช้กดโต้ตอบสำเร็จ
 4. **Consistency across Roles**: ระบบกราฟแบบใหม่นี้ถูกนำไปใช้ทั้งใน `ActionButtonsWidget` (สำหรับผู้ดู) และ `IncidentReportWidget` (สำหรับผู้รายงานเหตุ) เพื่อให้เกิดมาตรฐาน UX เดียวกันทั้งระบบ
 
@@ -223,8 +223,11 @@ ON CONFLICT (id) DO NOTHING;
 - **Map Integration**: ใช้ `video_gps_tracks` เพื่อขยับ Marker บนแผนที่ตาม `currentPosition` ของวิดีโอ
 - **Donation Integration**:
   - เมื่อคลิกปุ่ม "บริจาค" ในหน้าวิดีโอ ให้ตรวจสอบ `donation_request_id` จากวิดีโอนั้น
-  - เรียกใช้ `DonationRepository.getRequests()` เพื่อดึงข้อมูลปลายทาง และเริ่ม Flow การโอนเงิน/บริจาคเดิมที่มีอยู่
-  - หลังการบริจาคสำเร็จ ให้ส่ง Event ผ่าน **Socket.io** เพื่อให้ระบบ Real-time Interactions แสดงข้อความขอบคุณหรือยอดรวมอัปเดตทันที
+  - เรียกใช้ `DonationRepository.getRequestsByVideoId(videoId, activeOnly: true)` เพื่อดึงเฉพาะคำร้องที่ `approval_status = 'active'` — คำร้องที่ปิดรับแล้ว (`completed`) จะไม่แสดง
+  - หลังการบริจาคสำเร็จ ให้ส่ง Event `donation-progress-updated` ผ่าน **Socket.io** เพื่อให้ระบบ Real-time Interactions แสดงยอดรวมอัปเดตทันที
+  - รองรับ Event `donation-closed` จาก Server — เมื่อผู้ร้องขอปิดรับบริจาค ให้อัปเดต UI ซ่อนปุ่มบริจาคของคำร้องนั้นและแสดงข้อความแจ้งเตือนผู้ดูไลฟ์
+  - **Request Mutation Policy**: เมื่อคำร้องเข้าสถานะ `active` แล้ว UI ฝั่งผู้ใช้ต้องแสดงผลแบบ read-only; ปุ่มแก้ไขจะมีเฉพาะ `pending_local` เท่านั้น ส่วนการจบคำร้องให้ใช้ `closeRequest()` หรือ `cancelRequest()` ตามเงื่อนไข และ `deleteRequest()` ต้องจำกัดเฉพาะ admin/maintenance ไม่ให้แสดงใน UI ฝั่งผู้ใช้
+  - **Locked-state Hint**: หากผู้ใช้เปิดคำร้องที่ `active` หรือ `completed` ให้แสดงข้อความช่วยอธิบายว่า “เริ่มเปิดรับแล้ว ระบบล็อกการแก้ไขเพื่อความโปร่งใสต่อผู้บริจาค” เพื่อป้องกันความสับสน
 - **Glassmorphism Overlay**: ใช้ `BackdropFilter` ใน Flutter ซ้อนทับหน้าจอวิดีโอเพื่อให้ได้ลุคตาม Figma
 - **Emergency Priority**: ในหน้า Dashboard ของเจ้าหน้าที่ วิดีโอประเภท `emergency` ต้องแสดงผลโดดเด่นและเข้าถึงง่ายที่สุด
 - **Floating Back Button Strategy**:
@@ -1627,13 +1630,19 @@ if (result.isConfirmed) {
 
 ---
 
-### WebSocket Events ที่ต้องเพิ่ม (สำหรับการปิดรับบริจาค)
+### WebSocket Events — การปิดรับบริจาค (Implemented มิ.ย. 2569)
 
 | Event | ทิศทาง | Payload | ผลลัพธ์ใน Flutter |
 |:------|:-------|:--------|:----------------|
-| `donation-request-closed` | Server → All Clients | `{ videoId, requestId, reason }` | คำร้องใน `_activeDonationRequests` ถูกเอาออก / UI เปลี่ยนสี |
-| `incident-resolved` | Server → All Clients | `{ videoId }` | Auto-trigger การขอ Consent / ปิดคำร้องรับบริจาค |
-| `donation-system-message` | Server → All Clients | `{ videoId, message, type }` | ส่ง System Message เข้า Live Chat แจ้งสถานการณ์รับบริจาคโปร่งใส |
+| `donation-closed` | Flutter → Server → Room | `{ videoId, requestId, title, currentAmount, reason }` | ผู้ร้องขอปิดรับ → Server Broadcast ไปยัง `room-video-{videoId}` |
+| `donation-progress-updated` | Server → Room | `{ videoId, requestId, donationTitle, currentAmount, targetAmount }` | มีการบริจาค gift → อัปเดตยอด current_amount แบบ Real-time |
+| `donation-request-status-updated` | Server → User Room | `{ userId, requestId, title, status }` | สถานะคำร้องเปลี่ยน (เช่น อนุมัติแล้ว) → แจ้งเจ้าของคำร้อง |
+
+**ความสำคัญของ `activeOnly: true`:**
+- `DonationRepository.getRequestsByVideoId(videoId, activeOnly: true)` จะกรองเฉพาะ `approval_status = 'active'`
+- คำร้องที่ถูกปิด (`completed`) จะไม่ปรากฏในหน้าไลฟ์โดยอัตโนมัติ ป้องกันการบริจาคเข้าเคสที่ปิดแล้ว
+- ผู้ดูไลฟ์ที่เปิดอยู่จะได้รับ Event `donation-closed` เพื่อให้ UI อัปเดตยอดรวมและซ่อนปุ่มบริจาคของเคสนั้นทันที
+- `deleteRequest()` ไม่ใช่ action สำหรับผู้ใช้ฝั่ง live/donation sheet; หากต้องมีการลบถาวรให้เป็น flow ของ admin/maintenance เท่านั้น และไม่ควรถูกเรียกจาก UI ผู้ใช้ที่ผูกกับวิดีโอ
 
 ---
 

@@ -1,5 +1,5 @@
 # แผนพัฒนาระบบบริจาค (Donation System Plan)
-> อัปเดตล่าสุด: 23 มี.ค. 2569
+> อัปเดตล่าสุด: 9 มิ.ย. 2569
 
 ## 1. วิสัยทัศน์และเป้าหมาย
 ระบบบริจาค Sheserved มุ่งสร้างแพลตฟอร์มความช่วยเหลือซึ่งกันและกันที่โปร่งใส ตรวจสอบได้ และมีประสิทธิภาพสูง
@@ -69,8 +69,10 @@
 | `requester_address` | TEXT | ที่อยู่ของผู้ร้องขอ |
 | `usage_location` | TEXT | สถานที่/รายละเอียดการไปใช้ |
 | `community_id` | UUID → communities | ชุมชนที่เกี่ยวข้อง (ถ้ามี) |
-| `approval_status` | TEXT | `pending_local` (รออนุมัติ) / `active` (อนุมัติแล้ว) / `rejected` (ปฏิเสธ) |
+| `approval_status` | TEXT | `pending_local` / `active` / `rejected` / `cancelled` / `completed` |
 | `local_verified_at` | TIMESTAMPTZ | เวลาที่กลุ่มอนุมัติครบขั้นสุดท้าย |
+| `closed_at` | TIMESTAMPTZ | เวลาที่ผู้ร้องขอปิดรับบริจาค |
+| `closed_reason` | TEXT | เหตุผลการปิดรับ (เช่น "ได้รับความช่วยเหลือพอแล้ว") |
 
 ---
 
@@ -164,9 +166,9 @@
 
 ---
 
-## 8. การยกเลิกและปิดรับบริจาค (Cancellation & Withdrawal)
+## 8. การยกเลิกและปิดรับบริจาค (Cancellation & Closure)
 
-เพื่อให้ระบบมีความโปร่งใส การยกเลิกคำร้องขอบริจาคต้องเป็นไปตามเงื่อนไขดังนี้:
+เพื่อให้ระบบมีความโปร่งใส การยกเลิกหรือปิดคำร้องขอบริจาคต้องเป็นไปตามเงื่อนไขดังนี้:
 
 ### 8.1 การยกเลิกโดยผู้ร้องขอ (Self-Cancellation)
 | สถานะคำร้อง | เงื่อนไข | ผลลัพธ์ |
@@ -174,10 +176,46 @@
 | `pending_local` (รออนุมัติ) | ยกเลิกได้ทันที | เปลี่ยนสถานะเป็น `cancelled` (Soft Delete) |
 | `active` (เปิดรับบริจาค) | `current_amount == 0` (ยังไม่มีคนบริจาค) | เปลี่ยนสถานะเป็น `cancelled` (Soft Delete) |
 | `active` (เปิดรับบริจาค) | `current_amount > 0` (มีเงินบริจาคแล้ว) | **ไม่อนุญาตให้ยกเลิกเอง** ต้องผ่าน Admin เพื่อตรวจสอบการจัดการเงินที่ได้รับมาแล้ว |
+| `completed` (ปิดรับแล้ว) | — | **ไม่อนุญาตให้ยกเลิก** |
 
-### 8.2 การปิดรับบริจาค (Withdrawal/Completion)
-- เมื่อยอดบริจาคครบตามเป้าหมาย หรือผู้ร้องขอยืนยันว่าได้รับความช่วยเหลือเพียงพอแล้ว
-- บันทึกสถานะเพื่อใช้ในการทำรายงานความโปร่งใสในภายหลัง
+### 8.2 การปิดรับบริจาคโดยผู้ร้องขอ (Self-Closure)
+
+ผู้ร้องขอสามารถปิดรับบริจาคด้วยตนเองได้เมื่อคำร้องอยู่ในสถานะ `active` และมีเงินบริจาคเข้ามาแล้ว (`current_amount > 0`)
+
+**เงื่อนไขการแสดงปุ่ม "ปิดรับ":**
+- `approval_status == active`
+- `current_amount > 0`
+- ไม่ใช่สถานะ `cancelled` หรือ `completed`
+
+**Flow การทำงาน:**
+```
+[ผู้ร้องขอกด "ปิดรับ"]
+    ↓
+[Bottom Sheet: เลือกเหตุผล]
+    - ได้รับความช่วยเหลือพอแล้ว (default)
+    - ครบตามเป้าหมายแล้ว
+    - อื่น ๆ (ระบุเอง)
+    ↓
+[ยืนยัน] → DonationRepository.closeRequest(requestId, reason)
+    ↓
+[DB] อัปเดต approval_status → 'completed'
+       บันทึก closed_at, closed_reason
+    ↓
+[WebSocket] emit 'donation-closed' → room-video-{videoId}
+    ↓
+[ผู้ดูไลฟ์ทุกคน] ได้รับแจ้งเตือนว่าคำร้องปิดรับแล้ว
+```
+
+**สีและ Label สำหรับสถานะ `completed`:**
+| แอตทริบิวต์ | ค่า |
+|------------|------|
+| Icon | `Icons.verified` |
+| Color | `#0066CC` (น้ำเงิน) |
+| Label | "ปิดรับบริจาคแล้ว" |
+
+**ความสอดคล้องกับระบบวิดีโอ:**
+- `DonationRepository.getRequestsByVideoId(videoId, activeOnly: true)` จะกรองไม่แสดง `completed` ในหน้าไลฟ์โดยอัตโนมัติ
+- ผู้ดูไลฟ์ที่เปิดอยู่จะได้รับ Event `donation-closed` แบบ Real-time เพื่ออัปเดต UI ทันที
 
 ---
 
@@ -199,10 +237,13 @@
 - [x] จัดการลากเพื่อเรียงลำดับลื่นไหล (Drag-to-Order)
 - [x] `LeaderVerificationPage`: กรองไม่ให้คำร้องของผู้ใช้เอง (Self-posted) ปรากฏในรายการที่ต้องอนุมัติ — บังคับใช้ทั้งระดับ DB (`.neq`) และระดับ Repository guard
 
-### การยกเลิกและปิดรับบริจาค (Pending)
-- [ ] เพิ่มสถานะ `cancelled` ใน `DonationApprovalStatus`
-- [ ] พัฒนาฟังก์ชัน `cancelRequest` ใน Repository (Soft Delete)
-- [ ] ปรับแก้ UI ใน `DonationRequestManagementPanel` แยกปุ่ม "ยกเลิก" / "ลบ" ตามเงื่อนไขยอดเงินบริจาค
+### การยกเลิกและปิดรับบริจาค (Implemented มิ.ย. 2569)
+- [x] เพิ่มสถานะ `cancelled` และ `completed` ใน `DonationApprovalStatus`
+- [x] พัฒนาฟังก์ชัน `cancelRequest` และ `closeRequest` ใน Repository
+- [x] ปรับแก้ UI ใน `DonationRequestManagementPanel` — แยกปุ่ม "ยกเลิก" / "ลบ" / "ปิดรับ" ตามเงื่อนไขยอดเงินและสถานะ
+- [x] เพิ่ม `_showCloseDialog` Bottom Sheet เลือกเหตุผลการปิดรับ
+- [x] อัปเดตสี/ไอคอน/Label สำหรับสถานะ `completed`
+- [x] แจ้งเตือน Real-time ผู้ดูไลฟ์ผ่าน WebSocket Event `donation-closed`
 - [ ] เพิ่มระบบแจ้งเตือน Admin เมื่อมีการร้องขอยกเลิกเคสที่มีเงินบริจาคแล้ว
 
 ---

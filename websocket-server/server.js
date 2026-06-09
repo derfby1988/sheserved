@@ -971,6 +971,23 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Donation Closed by Requester ──
+  // ผู้ร้องขอปิดรับบริจาค (completed) → แจ้งผู้ดูไลฟ์ทุกคน
+  socket.on('donation-closed', (data) => {
+    const { videoId, requestId, title, currentAmount, reason } = data;
+    console.log(`[Donation] Requester closed request=${requestId} for video=${videoId} reason=${reason}`);
+    if (videoId) {
+      io.to(`room-video-${videoId}`).emit('donation-closed', {
+        videoId,
+        requestId,
+        title: title || 'คำร้องบริจาค',
+        currentAmount: currentAmount || 0,
+        reason: reason || 'completed_by_requester',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   // ── Donate Closure Vote (Consensus) ──
   // Responder โหวตว่าจะรับบริจาคต่อหรือไม่หลัง Mission Complete
   // event: { requestId, responderId, canContinue, note? }
