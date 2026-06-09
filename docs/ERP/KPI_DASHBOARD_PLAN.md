@@ -2,72 +2,605 @@
 
 ## ภาพรวม (Overview)
 
-**KPI Dashboard** คือศูนย์กลางการแสดงผลสรุปเมตริกและเป้าหมายขององค์กร (Executive View) ซึ่งออกแบบมาเพื่อให้เจ้าของกิจการ (Owner) หรือผู้จัดการ (Manager) สามารถติดตามความคืบหน้าของยอดขาย กำไร และประสิทธิภาพของพนักงาน เปรียบเทียบกับเป้าหมายที่ตั้งไว้ (Actual vs Target) ได้แบบ Real-time
+**KPI Dashboard** คือศูนย์กลาง Executive View สำหรับ Owner/Manager ติดตามยอดขาย กำไร และประสิทธิภาพพนักงาน (Actual vs Target)
 
-### การบูรณาการร่วมกับ ERP Dashboard
-- **แยกหน้าต่าง/แถบ (Separate Tab or Page):** KPI Dashboard จะใช้ UI ร่วมกับ `ErpDashboardPage` หลัก แต่จะถูกออกแบบเป็น **Tab แยกลำพัง** หรือปุ่มเข้าสู่หน้า **Executive Dashboard** เฉพาะ เพื่อป้องกันความสับสนกับหน้าการทำงานประจำวัน (Operation Dashboard) ของพนักงานทั่วไป
+### มาตรฐานสถาปัตยกรรม
+- แยกข้อมูลตาม `profession_id` + `branch_id`
+- ไม่ใช้ PostgreSQL RLS `auth.uid()` — ควบคุมที่ Application Layer (Repository + ServiceLocator)
+- Read Model Pattern: `kpi_actuals` แยกจาก Source of Truth
+- Outbox Pattern สำหรับ Alert/Notification
 
----
+### ขอบเขต Phase 1 (Revenue Metric) ✓
+- รองรับ metric: **Revenue** (ยอดขายรวม)
+- Target: `kpi_targets` | Actual: `orders` → `kpi_actuals`
+- Period: `daily`, `weekly`, `monthly`, `quarterly`, `yearly`
+- Alert: warning/critical ตาม % เป้า
 
-## 1. การตั้งเป้าหมายและการดึงข้อมูล (Metrics & Integrations)
+### ขอบเขต Phase 2 (Net Profit + Individual Employee Quota) ✓
+- **Net Profit** — Actual จาก `journal_entries` + `chart_of_accounts` (account_type 4/5)
+- **Individual Employee Revenue** — Actual จาก `orders.served_by` → `employees.user_id`
+- `employees` table สร้างเป็น foundational layer
+- `refresh_kpi_actuals()` รองรับ `p_target_type = 'net_profit'`
+- `refresh_kpi_employee_actuals()` สำหรับ quota รายบุคคล
 
-ข้อมูลบน KPI Dashboard จะเกิดจากการบูรณาการข้อมูลจาก 3 โมดูลหลัก ได้แก่:
-
-### A. เป้าหมายระดับองค์กรและการเงิน (อิงจาก Accounting / Finance)
-- **ตั้งเป้าหมายยอดขาย/กำไร:** กำหนดเป้า (Target) เป็น รายวัน, รายสัปดาห์, รายไตรมาส, และรายปี
-- **Actual Data:** ระบบจะดึงยอดรวมที่เกิดขึ้นจริงแบบเรียลไทม์จากระบบ **POS (ยอดขาย)** และ **Accounting (กำไรสุทธิ - Net Profit)** มาเปรียบเทียบในรูปแบบกราฟ (เช่น Bar Chart / Gauge Chart)
-
-### B. เป้าหมายรายบุคคลและการประเมิน (อิงจาก HR System)
-- **ตั้งเป้าหมายพนักงาน (Individual Quota):** ตั้งยอดเป้าหมายการขายต่อคน เช่น ทันตแพทย์ A, เภสัชกร B
-- **Actual Data:** ดึงข้อมูลจากระบบ POS โดยอ้างอิงฟิลด์ `served_by` เพื่อดูประสิทธิภาพ (Performance) ของพนักงาน
-- **นำไปใช้:** ตัวเลขนี้จะถูกส่งกลับไปที่ **HR System** เพื่อคำนวณโบนัสและค่าคอมมิชชั่นเมื่อสิ้นสุดรอบประเมิน
-
----
-
-## 2. สิทธิการเข้าถึงข้อมูล (Permissions & Access Control)
-
-ระบบ KPI Dashboard ถูกควบคุมความปลอดภัยโดยตรงจากแผนงานหน้าจัดการสิทธิพนักงานในไฟล์ `HR_SYSTEM_PLAN.md` โดยใช้ระบบ `employee_roles` และ `role_module_permissions`:
-
-1. **ระดับเจ้าขององค์กร (Owner / Executive Role):**
-   - **Permission Level:** `Full Access`
-   - **Scope:** เข้าถึงแถบ KPI Dashboard ได้ 100% สามารถกำหนดตัวเลขเป้าหมายรวม (Target) และดูตัวเลขยอดขาย/กำไร ของ **"ทุกสาขา (All Branches)"** และดูเป้าหมายของพนักงานทุกคนได้
-2. **ระดับผู้จัดการ (Branch Manager Role):**
-   - **Permission Level:** `View` หรือ `Edit (เฉพาะตั้งเป้าพนักงาน)`
-   - **Scope:** สามารถเข้าถึง KPI Dashboard ได้ แต่เห็นตัวเลขเป้าหมายและยอดขายเฉพาะของ **"สาขาที่ตนเองดูแลเท่านั้น"**
-3. **ระดับพนักงานทั่วไป (Staff / Employee Role):**
-   - **Permission Level:** `No Access` สำหรับ KPI รวมของบริษัท
-   - **Scope:** หากองค์กรตั้งให้พนักงานเห็นเป้าตัวเองได้ พนักงานจะเห็นเฉพาะหน้า Dashboard ของตัวเองเท่านั้น (Individual Performance) ว่าตนเองทำยอดไปเท่าไหร่และขาดอีกเท่าไหร่
-
-*หมายเหตุ: สิทธิ์การเข้าถึง KPI Dashboard ไม่ได้ถูกผูกมัดกับ Role ของพนักงานอย่างตายตัว ในหน้าต่าง "จัดการสิทธิพนักงาน" (HR Dashboard) จะมี **Toggle Switch ควบคุมสิทธิ์โมดูล KPI Dashboard แยกต่างหาก** ทำให้ Owner/Admin สามารถเปิดหรือปิดการเข้าถึงให้กับพนักงานคนใดก็ได้ตามต้องการอย่างยืดหยุ่น (บันทึกสิทธิ์ลงใน `role_module_permissions`)*
+### ขอบเขต Phase 3 (Additional Metrics) ✓
+- **Consultations** — Actual จาก `consultation_requests` (COUNT ที่ status = 'completed'/'assigned')
+- **Appointments** — Actual จาก `clinic_appointments` (COUNT ที่ status = 'completed')
+- **Gross Profit** — รอ `order_items.cost_price` หรือ `products` table (placeholder function สร้างแล้ว)
+- **Inventory Turnover** — รอ `inventory_items` + `inventory_movements` tables (placeholder function สร้างแล้ว)
 
 ---
 
-## 3. Database Schema (ร่าง)
+## ฟีเจอร์หลัก (Core Features)
 
-เพื่อเก็บข้อมูลเป้าหมาย (Target) จำเป็นต้องมีตารางบันทึกการตั้งค่าแยกออกมา (ส่วนยอด Actual ดึง Query จากระบบอื่น):
+1. **Revenue Target** — ตั้งเป้าหมายยอดขายตามช่วงเวลา (องค์กร/สาขา/พนักงาน)
+2. **Actual vs Target** — Gauge/Bar/Trend chart แสดง `achievement_rate = actual/target*100`
+3. **Alert & Notification** — แจ้งเตือนผ่าน `outbox_events` เมื่อต่ำกว่า threshold
+4. **Multi-Branch & Multi-Period** — Filter สาขา สลับ period real-time
+5. **Read Model Refresh** — `kpi_actuals` pre-aggregated รีเฟรชตาม schedule หรือ on-demand
+6. **Net Profit Target** (Phase 2) — Actual จากบัญชีแยกประเภท (GL) คำนวณจาก รายได้ - ค่าใช้จ่าย
+7. **Individual Employee Quota** (Phase 2) — เป้าหมาย + Actual รายพนักงาน จาก `orders.served_by`
+8. **Consultation Count** (Phase 3) — นับจำนวนการปรึกษาที่สำเร็จจาก `consultation_requests`
+9. **Appointment Count** (Phase 3) — นับจำนวนนัดหมายที่สำเร็จจาก `clinic_appointments` (status = 'completed')
+10. **Gross Profit** (Phase 3 — Planned) — กำไรขั้นต้น (Revenue - COGS) รอ cost tracking
+11. **Inventory Turnover** (Phase 3 — Planned) — อัตราการหมุนเวียนสินค้า รอ inventory system
+
+---
+
+## สถาปัตยกรรม (Architecture)
+
+### Multi-Tenant / Multi-Branch
+- ทุกตารางมี `profession_id` NOT NULL
+- `branch_id` NULL = เป้าหมายรวมทุกสาขา
+- Permission ที่ App Layer (owner → ทุกสาขา, manager → สาขาตน, staff → ตัวเอง)
+
+### Read Model Pattern
+- **Source of Truth:** `orders`, `journal_entries`, `appointments`
+- **Read Model:** `kpi_actuals` (pre-aggregated)
+- **Refresh:** `refresh_kpi_actuals()` function + cron
+- **Why:** Dashboard query บ่อย ไม่ควร scan raw tables ทุกครั้ง
+
+### Outbox Pattern
+- ทุก target change / alert ส่ง event เข้า `outbox_events`
+- Notification Worker อ่าน event → in-app / email
+
+---
+
+## Database Schema
+
+> **คำเตือน:** ไม่มี RLS `auth.uid()` — ควบคุมที่ Application Layer ตาม auth_data_guidelines.md
+
+### 1. kpi_targets (เป้าหมาย)
 
 ```sql
 CREATE TABLE kpi_targets (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profession_id     UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  branch_id         UUID REFERENCES organization_branches(id), -- NULL = เป้าหมายรวมทุกสาขา
-  employee_id       UUID REFERENCES employees(id),             -- NULL = เป้าหมายระดับองค์กร/สาขา
-  
-  target_type       TEXT NOT NULL,                             -- เช่น 'revenue', 'net_profit', 'appointments'
-  target_amount     DECIMAL(15,2) NOT NULL,                    -- ตัวเลขเป้าหมาย
-  period_type       TEXT NOT NULL,                             -- เช่น 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'
-  
-  start_date        DATE NOT NULL,
-  end_date          DATE NOT NULL,
-  
-  created_at        TIMESTAMPTZ DEFAULT now(),
-  updated_at        TIMESTAMPTZ DEFAULT now()
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id     UUID REFERENCES organization_branches(id) ON DELETE CASCADE,
+  employee_id   UUID REFERENCES employees(id) ON DELETE CASCADE,
+  target_type   TEXT NOT NULL
+    CHECK (target_type IN ('revenue','net_profit','gross_profit','appointments','consultations','inventory_turnover')),
+  target_amount DECIMAL(15,2) NOT NULL CHECK (target_amount >= 0),
+  period_type   TEXT NOT NULL
+    CHECK (period_type IN ('daily','weekly','monthly','quarterly','yearly')),
+  start_date    DATE NOT NULL,
+  end_date      DATE NOT NULL,
+  created_by    UUID, updated_by UUID,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT check_date_range CHECK (end_date >= start_date),
+  CONSTRAINT check_scope CHECK (
+    (branch_id IS NULL AND employee_id IS NULL) OR
+    (branch_id IS NOT NULL AND employee_id IS NULL) OR
+    (employee_id IS NOT NULL)
+  )
 );
+```
+
+### 2. kpi_actuals (Read Model)
+
+```sql
+CREATE TABLE kpi_actuals (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id    UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id        UUID REFERENCES organization_branches(id) ON DELETE CASCADE,
+  employee_id      UUID REFERENCES employees(id) ON DELETE CASCADE,
+  target_type      TEXT NOT NULL
+    CHECK (target_type IN ('revenue','net_profit','gross_profit','appointments','consultations','inventory_turnover')),
+  period_type      TEXT NOT NULL
+    CHECK (period_type IN ('daily','weekly','monthly','quarterly','yearly')),
+  period_start     DATE NOT NULL,
+  period_end       DATE NOT NULL,
+  actual_amount    DECIMAL(15,2) NOT NULL DEFAULT 0,
+  target_amount    DECIMAL(15,2) NOT NULL DEFAULT 0,
+  achievement_rate DECIMAL(5,2) GENERATED ALWAYS AS (
+    CASE WHEN target_amount > 0 THEN (actual_amount/target_amount*100) ELSE 0 END
+  ) STORED,
+  data_source      TEXT NOT NULL DEFAULT 'orders'
+    CHECK (data_source IN ('orders','journal_entries','appointments','consultations','manual')),
+  refresh_count    INTEGER NOT NULL DEFAULT 1,
+  last_refresh_at  TIMESTAMPTZ DEFAULT now(),
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, branch_id, employee_id, target_type, period_type, period_start)
+);
+```
+
+### 3. kpi_alert_thresholds
+
+```sql
+CREATE TABLE kpi_alert_thresholds (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id          UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  target_type            TEXT NOT NULL
+    CHECK (target_type IN ('revenue','net_profit','gross_profit','appointments','consultations','inventory_turnover')),
+  warning_threshold_pct  DECIMAL(5,2) NOT NULL DEFAULT 80.00,
+  critical_threshold_pct DECIMAL(5,2) NOT NULL DEFAULT 60.00,
+  alert_enabled          BOOLEAN NOT NULL DEFAULT true,
+  notify_roles           TEXT[] NOT NULL DEFAULT ARRAY['owner','manager'],
+  created_by UUID, updated_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, target_type)
+);
+```
+
+### 4. kpi_refresh_log
+
+```sql
+CREATE TABLE kpi_refresh_log (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id    UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  refresh_type     TEXT NOT NULL DEFAULT 'scheduled'
+    CHECK (refresh_type IN ('scheduled','manual','triggered')),
+  target_type      TEXT,
+  period_type      TEXT,
+  records_processed INTEGER NOT NULL DEFAULT 0,
+  records_inserted  INTEGER NOT NULL DEFAULT 0,
+  records_updated   INTEGER NOT NULL DEFAULT 0,
+  started_at       TIMESTAMPTZ NOT NULL,
+  completed_at     TIMESTAMPTZ,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 5. employees (Prerequisite for Phase 2 Individual Quota)
+
+```sql
+CREATE TABLE employees (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  branch_id     UUID REFERENCES organization_branches(id) ON DELETE SET NULL,
+  employee_code TEXT,
+  full_name     TEXT NOT NULL,
+  position      TEXT,
+  department    TEXT,
+  phone         TEXT,
+  email         TEXT,
+  is_active     BOOLEAN DEFAULT true,
+  hired_at      DATE,
+  created_by UUID, updated_by UUID,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, user_id)
+);
+
+CREATE INDEX idx_employees_profession ON employees(profession_id, is_active) WHERE is_active = true;
+CREATE INDEX idx_employees_user ON employees(user_id);
+CREATE INDEX idx_employees_branch ON employees(branch_id);
+```
+
+### 6. Refresh Function (Revenue — Phase 1 / Net Profit — Phase 2)
+
+```sql
+CREATE OR REPLACE FUNCTION refresh_kpi_actuals(
+  p_profession_id UUID,
+  p_period_type TEXT DEFAULT 'daily',
+  p_lookback_days INTEGER DEFAULT 30
+)
+RETURNS TABLE (inserted INTEGER, updated INTEGER) AS $$
+DECLARE
+  v_inserted INTEGER := 0; v_updated INTEGER := 0;
+  v_now TIMESTAMPTZ := now(); v_start_date DATE;
+BEGIN
+  v_start_date := CURRENT_DATE - p_lookback_days;
+  WITH computed AS (
+    SELECT o.profession_id, o.branch_id, NULL::UUID AS employee_id,
+      'revenue'::TEXT AS target_type, p_period_type AS period_type,
+      CASE p_period_type
+        WHEN 'daily' THEN o.created_at::DATE
+        WHEN 'weekly' THEN DATE_TRUNC('week', o.created_at)::DATE
+        WHEN 'monthly' THEN DATE_TRUNC('month', o.created_at)::DATE
+        WHEN 'quarterly' THEN DATE_TRUNC('quarter', o.created_at)::DATE
+        WHEN 'yearly' THEN DATE_TRUNC('year', o.created_at)::DATE
+      END AS period_start,
+      CASE p_period_type
+        WHEN 'daily' THEN o.created_at::DATE
+        WHEN 'weekly' THEN (DATE_TRUNC('week', o.created_at) + INTERVAL '6 days')::DATE
+        WHEN 'monthly' THEN (DATE_TRUNC('month', o.created_at) + INTERVAL '1 month - 1 day')::DATE
+        WHEN 'quarterly' THEN (DATE_TRUNC('quarter', o.created_at) + INTERVAL '3 months - 1 day')::DATE
+        WHEN 'yearly' THEN (DATE_TRUNC('year', o.created_at) + INTERVAL '1 year - 1 day')::DATE
+      END AS period_end,
+      COALESCE(SUM(o.final_amount), 0) AS actual_amount
+    FROM orders o
+    WHERE o.profession_id = p_profession_id
+      AND o.status IN ('paid', 'completed')
+      AND o.created_at >= v_start_date
+    GROUP BY o.profession_id, o.branch_id, period_start, period_end
+  ), upserted AS (
+    INSERT INTO kpi_actuals (profession_id, branch_id, employee_id, target_type, period_type,
+      period_start, period_end, actual_amount, target_amount, data_source, refresh_count, last_refresh_at)
+    SELECT c.profession_id, c.branch_id, c.employee_id, c.target_type, c.period_type,
+      c.period_start, c.period_end, c.actual_amount, COALESCE(kt.target_amount, 0),
+      'orders', 1, v_now
+    FROM computed c
+    LEFT JOIN kpi_targets kt ON kt.profession_id = c.profession_id
+      AND kt.branch_id IS NOT DISTINCT FROM c.branch_id
+      AND kt.employee_id IS NOT DISTINCT FROM c.employee_id
+      AND kt.target_type = c.target_type AND kt.period_type = c.period_type
+      AND kt.start_date <= c.period_end AND kt.end_date >= c.period_start
+    ON CONFLICT (profession_id, branch_id, employee_id, target_type, period_type, period_start)
+    DO UPDATE SET actual_amount = EXCLUDED.actual_amount, target_amount = EXCLUDED.target_amount,
+      data_source = 'orders', refresh_count = kpi_actuals.refresh_count + 1,
+      last_refresh_at = v_now, updated_at = v_now
+    RETURNING (xmax = 0) AS is_insert
+  )
+  SELECT COUNT(*) FILTER (WHERE is_insert) INTO v_inserted,
+         COUNT(*) FILTER (WHERE NOT is_insert) INTO v_updated FROM upserted;
+  RETURN QUERY SELECT v_inserted, v_updated;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 6. Indexes
+
+```sql
+CREATE INDEX idx_kpi_actuals_lookup ON kpi_actuals(profession_id, branch_id, target_type, period_type, period_start)
+  WHERE last_refresh_at > now() - interval '90 days';
+CREATE INDEX idx_kpi_actuals_achievement ON kpi_actuals(profession_id, achievement_rate, target_type)
+  WHERE target_amount > 0;
+CREATE INDEX idx_kpi_targets_lookup ON kpi_targets(profession_id, branch_id, target_type, period_type, start_date, end_date);
+CREATE INDEX idx_kpi_refresh_log_recent ON kpi_refresh_log(profession_id, refresh_type, started_at DESC)
+  WHERE started_at > now() - interval '7 days';
+CREATE INDEX idx_kpi_alert_thresholds ON kpi_alert_thresholds(profession_id, target_type);
+CREATE INDEX idx_kpi_targets_branch ON kpi_targets(branch_id);
+CREATE INDEX idx_kpi_targets_employee ON kpi_targets(employee_id);
+CREATE INDEX idx_kpi_actuals_branch ON kpi_actuals(branch_id);
+CREATE INDEX idx_kpi_actuals_employee ON kpi_actuals(employee_id);
+```
+
+### 7. Triggers
+
+```sql
+CREATE TRIGGER trg_kpi_targets_updated_at BEFORE UPDATE ON kpi_targets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_kpi_actuals_updated_at BEFORE UPDATE ON kpi_actuals
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_kpi_alert_thresholds_updated_at BEFORE UPDATE ON kpi_alert_thresholds
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 ```
 
 ---
 
-## 4. แผนการพัฒนา UI (Implementation Phases)
-- **Phase A:** พัฒนาหน้า Tab `KPIDashboardView` และฝังลงในหน้าจอ `ErpDashboardPage`
-- **Phase B:** สร้างหน้า Modal เพื่อให้ Owner/Manager สามารถกรอกฟอร์มเพื่อบันทึกตัวเลขลงตาราง `kpi_targets`
-- **Phase C:** สร้าง Chart Widgets (ใช้ไลบรารีเช่น `fl_chart`) เพื่อดึงข้อมูล Actual จาก POS/Accounting มาเทียบกับ Target ตาม `period_type`
+## ER Diagram
+
+```
+professions                    orders (POS)
+  | profession_id                | profession_id, branch_id
+  ▼                              | final_amount, status ('paid')
+┌─────────────┐                  | created_at, served_by
+| kpi_targets |                  ▼
+| - branch_id |◄───────────────── kpi_actuals (Read Model)
+| - employee_id|                   | actual_amount, achievement_rate
+| - target_amount|                 | last_refresh_at
+└──────┬──────┘                  ▼
+       |                      kpi_refresh_log
+       |                      | records_processed, started_at
+       ▼
+┌──────────────────┐
+|kpi_alert_thresholds|
+| warning_threshold_pct |
+| critical_threshold_pct|
+└──────────────────┘
+
+organization_branches
+  | branch_id
+  ▼
+employees
+  | employee_id, user_id
+  |                |
+  |                | orders.served_by = users.id
+  |                ▼
+  |             orders (POS)
+  |             | final_amount, status ('paid')
+  |             | served_by (users.id)
+  |             | created_at
+  |                |
+  └───────────────▶ kpi_actuals (employee revenue)
+
+chart_of_accounts (Accounting)
+  | account_type = 4 (Revenue) / 5 (Expenses)
+  ▼
+journal_entry_lines
+  | journal_entry_id, account_id
+  | debit_amount, credit_amount
+  ▼
+journal_entries
+  | status = 'posted'
+  | entry_date
+  ▼
+  kpi_actuals (net_profit)
+  | data_source = 'journal_entries'
+```
+
+---
+
+## Business Logic
+
+### 1. Actual Calculation (Revenue)
+```
+actual_amount = SUM(orders.final_amount)
+  WHERE status IN ('paid','completed')
+    AND profession_id = ? AND branch_id IS NOT DISTINCT FROM ?
+    AND created_at BETWEEN period_start AND period_end
+
+achievement_rate = (actual_amount / target_amount) * 100
+```
+
+### 2. Refresh Schedule
+```
+Cron Job (every 1 hour for daily, every 6 hours for weekly+)
+  → refresh_kpi_actuals(profession_id, period_type, lookback)
+  → INSERT/UPDATE kpi_actuals
+  → INSERT kpi_refresh_log
+  → IF achievement < critical: INSERT outbox (critical_alert)
+  → ELSE IF achievement < warning: INSERT outbox (warning_alert)
+```
+
+### 3. Alert Workflow
+```
+Trigger: achievement_rate < threshold_pct
+Action:
+  1. INSERT outbox_events (aggregate_type='kpi', event_type='kpi.actual.{warning|citical}_alert')
+  2. Notification Worker reads outbox → creates platform_notifications
+  3. Dashboard shows alert badge
+```
+
+### 4. Actual Calculation (Net Profit — Phase 2)
+```
+actual_amount = SUM(credit_amount WHERE account_type = 4)
+                - SUM(debit_amount WHERE account_type = 5)
+  FROM journal_entries je
+  JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
+  JOIN chart_of_accounts coa ON coa.id = jel.account_id
+  WHERE je.status = 'posted'
+    AND coa.account_type IN (4, 5)
+    AND je.profession_id = ? AND je.branch_id IS NOT DISTINCT FROM ?
+    AND je.entry_date BETWEEN period_start AND period_end
+
+achievement_rate = (actual_amount / target_amount) * 100
+```
+
+### 5. Actual Calculation (Individual Employee Revenue — Phase 2)
+```
+actual_amount = SUM(orders.final_amount)
+  FROM orders o
+  JOIN employees e ON e.user_id = o.served_by AND e.profession_id = o.profession_id
+  WHERE o.status IN ('paid','completed')
+    AND o.served_by IS NOT NULL
+    AND o.profession_id = ? AND o.branch_id IS NOT DISTINCT FROM ?
+    AND e.id = target.employee_id
+    AND o.created_at BETWEEN period_start AND period_end
+
+achievement_rate = (actual_amount / target_amount) * 100
+```
+
+### 6. Actual Calculation (Consultations — Phase 3)
+```
+actual_amount = COUNT(consultation_requests)
+  WHERE status IN ('completed', 'assigned')
+    AND created_at BETWEEN period_start AND period_end
+
+achievement_rate = (actual_amount / target_amount) * 100
+```
+
+### 7. Refresh Schedule (Phase 2 + 3)
+```
+Cron Job (hourly for daily, every 6h for weekly+)
+  → refresh_kpi_actuals(profession_id, period_type, lookback, 'revenue')
+  → refresh_kpi_actuals(profession_id, period_type, lookback, 'net_profit')
+  → refresh_kpi_actuals(profession_id, period_type, lookback, 'consultations')
+  → refresh_kpi_appointments(profession_id, period_type, lookback)
+  → refresh_kpi_employee_actuals(profession_id, period_type, lookback)
+  → INSERT/UPDATE kpi_actuals
+  → INSERT kpi_refresh_log
+  → IF achievement < critical: INSERT outbox (critical_alert)
+  → ELSE IF achievement < warning: INSERT outbox (warning_alert)
+```
+
+### 8. Permission Logic (App Layer)
+```
+owner     → all branches + org-level data + all employees
+manager   → own branch(es) + employees in branch
+staff     → own employee_id only (if module_permission.kpi_dashboard = 'view_own')
+no perm   → 403 Forbidden
+```
+
+---
+
+## Integrations
+
+| System | Phase | Data Source | Table/Field | Status |
+|--------|-------|-------------|-------------|--------|
+| POS | 1 | Revenue Actual | `orders.final_amount` | ✓ Complete |
+| Accounting | 2 | Net Profit | `journal_entries` + `chart_of_accounts` (account_type 4/5) | ✓ Complete |
+| HR | 2 | Individual Quota | `orders.served_by` → `employees.user_id` | ✓ Complete |
+| Consultation | 3 | Consultation Count | `consultation_requests` (status = 'completed') | ✓ Complete |
+| Appointments | 3 | Appointment Count | `clinic_appointments` (status = 'completed') | ✓ Complete |
+| Inventory | 3 | COGS / Turnover | `inventory_items` + `inventory_movements` | ⚠️ Tables not yet created |
+| Procurement | 3 | Gross Profit | `order_items` + `products.cost_price` | ⚠️ cost_price not yet tracked |
+
+---
+
+## Outbox Payload Examples
+
+### kpi.target.created
+```json
+{
+  "event_type": "kpi.target.created",
+  "aggregate_type": "kpi",
+  "aggregate_id": "<target_id>",
+  "profession_id": "<profession_id>",
+  "payload": {
+    "target_id": "<uuid>", "target_type": "revenue",
+    "target_amount": 150000.00, "period_type": "monthly",
+    "start_date": "2026-06-01", "end_date": "2026-06-30",
+    "branch_id": null, "employee_id": null, "created_by": "<user_id>"
+  }
+}
+```
+
+### kpi.actual.warning_alert
+```json
+{
+  "event_type": "kpi.actual.warning_alert",
+  "aggregate_type": "kpi",
+  "aggregate_id": "<actual_id>",
+  "profession_id": "<profession_id>",
+  "payload": {
+    "target_type": "revenue", "period_type": "daily", "period_start": "2026-06-09",
+    "actual_amount": 42000.00, "target_amount": 50000.00,
+    "achievement_rate": 84.00, "warning_threshold_pct": 80.00,
+    "branch_id": "<branch_id>", "alert_level": "warning"
+  }
+}
+```
+
+### kpi.actual.critical_alert
+```json
+{
+  "event_type": "kpi.actual.critical_alert",
+  "aggregate_type": "kpi",
+  "aggregate_id": "<actual_id>",
+  "profession_id": "<profession_id>",
+  "payload": {
+    "target_type": "revenue", "period_type": "daily", "period_start": "2026-06-09",
+    "actual_amount": 28000.00, "target_amount": 50000.00,
+    "achievement_rate": 56.00, "critical_threshold_pct": 60.00,
+    "branch_id": "<branch_id>", "alert_level": "critical"
+  }
+}
+```
+
+---
+
+## Flutter UI Architecture
+
+```
+lib/features/kpi/
+├── data/
+│   ├── models/ (KpiTarget, KpiActual, KpiAlertThreshold)
+│   ├── repositories/ (KpiRepository)
+│   └── services/ (KpiRefreshService)
+├── domain/
+│   ├── entities/ (KpiTargetEntity, KpiDashboardSummary)
+│   └── usecases/ (GetKpiDashboard, CreateKpiTarget, RefreshKpiData)
+└── presentation/
+    ├── pages/ (KpiDashboardPage, KpiTargetFormPage, KpiRefreshHistoryPage)
+    ├── widgets/ (KpiGauge, KpiBarChart, KpiTrendLine, KpiAlertCard, KpiPeriodSelector)
+    └── providers/ (KpiProvider)
+```
+
+### Routes
+```dart
+class KpiRoutes {
+  static const dashboard = '/kpi/dashboard';
+  static const targetForm = '/kpi/target/form';
+  static const refreshHistory = '/kpi/refresh/history';
+}
+```
+
+---
+
+## Implementation Phases
+
+### Phase A: Foundation
+- [ ] SQL Migration: `kpi_targets`, `kpi_actuals`, `kpi_alert_thresholds`, `kpi_refresh_log`
+- [ ] Function: `refresh_kpi_actuals()`
+- [ ] RPC endpoint + Scheduled cron job
+- [ ] Seed default thresholds (warning=80%, critical=60%)
+
+### Phase B: UI Core
+- [ ] `KpiDashboardPage` (Tab ใน ErpDashboardPage หรือหน้าแยก)
+- [ ] `KpiTargetFormPage` (สร้าง/แก้ไขเป้า)
+- [ ] Chart Widgets (Gauge, Bar, Trend) ใช้ `fl_chart`
+- [ ] `KpiProvider` + `KpiRepository`
+- [ ] Wire routes ใน `main.dart`
+
+### Phase 2: Net Profit + Individual Employee Quota ✓
+- [x] SQL Migration: `employees` table (foundational for individual quota)
+- [x] Extend `refresh_kpi_actuals()` รองรับ `p_target_type = 'net_profit'`
+- [x] Create `refresh_kpi_employee_actuals()` สำหรับ quota รายบุคคล
+- [x] Net Profit Alert Threshold seed
+
+### Phase 3: Additional Metrics ✓
+- [x] Extend `refresh_kpi_actuals()` รองรับ `p_target_type = 'consultations'`
+- [x] สร้าง `refresh_kpi_appointments()` จาก `clinic_appointments`
+- [x] Consultation + Appointments alert threshold seed
+- [x] Placeholder functions สำหรับ `gross_profit`, `inventory_turnover`
+- [x] Update KPI plan with Phase 3 scope, business logic, integration status
+
+### Phase C: Alert & Polish (UI)
+- [ ] `KpiAlertCard` + Dashboard badge
+- [ ] `KpiRefreshHistoryPage`
+- [ ] Notification integration (outbox → in-app)
+- [ ] Manual Refresh button (admin)
+- [ ] Performance test 10,000+ orders
+
+---
+
+## Backlog / สิ่งที่ยังไม่ครบ (Future Work)
+
+### Phase 4: Advanced Charts + Real-time
+- **Advanced Charts:** Heatmap, drill-down, comparison YoY/MoM
+- **Real-time WebSocket push:** Real-time update เมื่อมี order ใหม่
+- **Dashboard Widgets:** Home-screen widget สำหรับ Owner/Manager
+
+### Phase 5: Export + Scheduled Reports
+- **Export:** PDF/Excel report สำหรับ executive meeting
+- **Scheduled Report:** Email report รายสัปดาห์/เดือน
+
+### Phase 6: AI / Prediction
+- **Predictive Target:** AI แนะนำ target จาก historical data
+- **Anomaly Detection:** ตรวจจับยอดผิดปกติ (หลุดจาก trend)
+- **What-if Analysis:** จำลอง scenario เปลี่ยน target/price
+
+### Phase 7: Pending Prerequisites (Metrics waiting for other systems)
+- **Gross Profit metric:** รอ `order_items.cost_price` หรือ `products` table with cost tracking
+- **Inventory Turnover metric:** รอ `inventory_items` + `inventory_movements` tables
+
+---
+
+## ไฟล์ที่เกี่ยวข้อง (Related Files)
+
+### Plans
+- `docs/ERP/ERP_CORE_ARCHITECTURE.md` — สถาปัตยกรรมหลัก
+- `docs/ERP/PROCUREMENT_SYSTEM_PLAN.md` — มาตรฐาน schema/business logic
+- `docs/ERP/POS System_plan.md` — แหล่งข้อมูล revenue
+- `docs/ERP/ACCOUNTING_SYSTEM_PLAN.md` — แหล่งข้อมูล net profit (Phase 2)
+- `docs/ERP/HR_SYSTEM_PLAN.md` — แหล่งข้อมูล employee quota (Phase 2)
+- `.agent/workflows/auth_data_guidelines.md` — หลักการควบคุมสิทธิ์
+
+### Migrations (Execution Order)
+1. `supabase/migrations/20260609180000_create_accounting_core_schema.sql` — Accounting (prerequisite for net profit)
+2. `supabase/migrations/20260609215000_create_employees_table.sql` — Employees (prerequisite for individual quota)
+3. `supabase/migrations/20260610010000_create_pos_core_schema.sql` — POS Core (orders, order_items, clinic_appointments, etc.)
+4. `supabase/migrations/20260609220000_create_kpi_schema.sql` — KPI Phase 1 (revenue)
+5. `supabase/migrations/20260609230000_kpi_phase2_net_profit_and_quota.sql` — KPI Phase 2 (net profit + employee quota)
+6. `supabase/migrations/20260610000000_kpi_phase3_additional_metrics.sql` — KPI Phase 3 (consultations + appointments + placeholders)
+
+> **หมายเหตุ:**
+> - `consultation_requests` table อยู่ใน `database/schemas/supabase_consultation_schema.sql` (ยังไม่มีใน supabase/migrations)
+> - `inventory_items`, `inventory_movements`, `products` tables ยังไม่มี
