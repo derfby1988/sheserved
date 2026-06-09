@@ -72,11 +72,32 @@
 
 10. **CDP (Customer Data Platform) / การเชื่อมโยงข้อมูลลูกค้าแบบองค์รวม**
    - **หน้าที่:** ควบรวมข้อมูลลูกค้า (Identity Resolution) จากทุกแหล่งเข้าด้วยกันด้วย **Global ID** เพียงหนึ่งเดียว (Single Customer View / 360-degree View)
-   - **การเชื่อมโยง:** ทำงานข้ามระบบทั้งหมดโดยเฉพาะร่วมกับ **CRM** (ใช้วิเคราะห์พฤติกรรม แบ่งกลุ่มเป้าหมาย และทำ Marketing Automation), **HIS** (ดึงประวัติการรักษา), และ **POS** (ดึงยอดสั่งซื้อ) เพื่อเป็นรากฐานในการส่งมอบการบริการลูกค้า (Customer Service) ที่แม่นยำและตรงจุดที่สุด
+   - **การเชื่อมโยง:** ทำงานข้ามระบบทั้งหมดโดยเฉพาะร่วมกับ **CRM** (ใช้วิเคราะห์พฤติกรรม แบ่งกลุ่มเป้าหมาย และทำ Marketing Automation), **HIS** (ดึงประวัติการรักษา), **POS** (ดึงยอดสั่งซื้อ) และ **Read Model / Analytics** (ดึง aggregated snapshot เพื่อสร้าง 360-degree view แบบ real-time) เพื่อเป็นรากฐานในการส่งมอบการบริการลูกค้า (Customer Service) ที่แม่นยำและตรงจุดที่สุด
 
 11. **[Logistics / Delivery Management](../plans/Delivery_PLAN.md)**
     - **หน้าที่:** ระบบจัดการการจัดส่งสินค้าและยา จัดการรอบรถ ไรเดอร์ และติดตามสถานะพัสดุ
     - **การเชื่อมโยง:** เป็นสะพานเชื่อมระหว่าง **POS** (รับออเดอร์/คิดค่าส่ง), **Inventory** (เบิกของ/แพ็ค/ตัดสต๊อก), และ **Accounting** (รับรู้รายได้ค่าขนส่ง)
+
+12. **Commerce Core (Order & Checkout)**
+    - **หน้าที่:** ระบบคำสั่งซื้อ (Order) และเซสชันชำระเงิน (CheckoutSession) เป็นแกนกลางของการทำธุรกรรมการค้าทุกช่องทาง (POS, ตะกร้าออนไลน์, สั่งยาจาก Telemedicine)
+    - **การเชื่อมโยง:** รับ intent จาก **Cart** (checkout), ส่งคำสั่งซื้อไป **POS** (ผ่าน POS Injection), ส่งข้อมูลรายได้ไป **Accounting** (ผ่าน Outbox), ส่งข้อมูลจัดส่งไป **Logistics**
+
+13. **Cart Core (Shopping Cart & Merchant Grouping)**
+    - **หน้าที่:** ตะกร้าสินค้าสากล (Universal Cart) รองรับ multi-supplier, multi-tenant, การแบ่ง checkout ตาม merchant, และ snapshot ราคา/สต๊อกตอนหยิบใส่ตะกร้า
+    - **การเชื่อมโยง:** ส่งข้อมูล checkout ไป **Commerce** (สร้าง Order), ดึงข้อมูลสินค้าจาก **Inventory** (เช็คสต๊อกแบบ real-time), ดึงโปรไฟล์ลูกค้าจาก **CRM**
+
+14. **Settlement Core (Payout & Vendor Contract)**
+    - **หน้าที่:** จัดการสัญญา vendor (platform fee, settlement cycle), บันทึก settlement ledger, สร้าง payout batch และติดตามการโอนเงินให้แต่ละ merchant
+    - **การเชื่อมโยง:** รับข้อมูลคำสั่งซื้อจาก **Commerce** (เพื่อคำนวณ fee), ส่งข้อมูล payout ไป **Accounting** (เพื่อบันทึก AP/GL), อ่านสถานะชำระเงินจาก **POS**
+
+15. **Read Model / Analytics Core (CQRS & Projections)**
+    - **หน้าที่:** ระบบ projection แบบ event-driven (CQRS) สร้าง dashboard snapshot, materialized view สำหรับรายงาน, และ caching layer แยกจาก transactional database
+    - **การเชื่อมโยง:** อ่าน events จาก **Reliability** (`outbox_events`), สร้าง snapshot สำหรับ **POS** (ยอดขายรวม), **Inventory** (สต๊อกคงเหลือ), **CRM** (แต้มสะสม), **Accounting** (รายงานกำไรขาดทุน)
+
+16. **Reliability Core (Idempotency, Outbox & Audit)**
+    - **หน้าที่:** infrastructure cross-cutting สำหรับความน่าเชื่อถือของระบบ — idempotency keys, outbox/inbox events, transaction audit log, circuit breakers, retry mechanisms, dead letter records
+    - **การเชื่อมโยง:** ทำงานข้ามทุก core และโมดูลธุรกิจ — ทุกการเขียนข้อมูล (write operation) ที่มีผลต่อเงินหรือสต๊อกต้องผ่าน **Reliability** (idempotency check + outbox publish) ก่อน commit
+    - **หมายเหตุ:** เป็น **always-on infrastructure** — ไม่สามารถปิดได้ผ่าน subscription module toggle และไม่มี UI หน้าจัดการแยกใน Dashboard (แต่มี monitoring console สำหรับ ERP Service Manager)
 
 ## ระบบจัดการเอกสารและแบบฟอร์มทางการแพทย์ (Medical Document & Form Management)
 ระบบ ERP รองรับการออกเอกสารทางการแพทย์และเอกสารคลินิกอย่างครบวงจร ภายใต้แนวคิด **Customizable Templates (แบบฟอร์มที่ปรับแต่งได้)** สำหรับแต่ละองค์กร (`profession_id`):
@@ -109,6 +130,11 @@
 - 🔬 **LIS / Lab Management** — จัดการคู่ค้าแล็บ, สั่งตรวจ, รับผลตรวจ
 - 📞 **Telemedicine Management** — ติดตามการปรึกษาทางแชท/วิดีโอคอล, ใบสั่งยาออนไลน์, และสถิติการแจ้งเหตุฉุกเฉิน (Phase สุดท้าย)
 - 🚚 **Logistics Management** — จัดการรอบรถ, ไรเดอร์, และติดตามพิกัดการจัดส่ง
+- 🛍️ **Commerce Management** — ดูคำสั่งซื้อ (Order), เซสชันชำระเงิน (Checkout), และสถานะธุรกรรม
+- 🛒 **Cart Management** — ดูตะกร้าสินค้าที่ยังไม่ checkout, จัดการ merchant grouping, และ snapshot ราคา
+- 💰 **Settlement Management** — ดูสัญญา vendor, ตาราง payout batch, และสถานะการโอนเงิน
+- 📈 **Analytics Management** — ดู dashboard snapshot, รายงานสรุปจาก Read Model projections (ยอดขาย, สต๊อก, แต้ม)
+- ⚙️ **System Operations** — ดูสถานะ outbox events, idempotency keys, circuit breaker states และ dead letter records (เฉพาะ ERP Service Manager หรือผู้ดูแลระบบระดับสูง)
 
 ### 3. จุดเข้าสู่ระบบจากหน้าหลัก (Home Page Entry Point)
 เพื่อรักษาโครงสร้าง UI (Layout) ของแอปพลิเคชันไม่ให้ผิดเพี้ยนไปจากเดิม และแยกประสบการณ์ใช้งานระหว่างผู้ใช้งานทั่วไปกับพนักงานองค์กรอย่างชัดเจน:
@@ -162,7 +188,7 @@ CREATE TABLE organization_roles (
 CREATE TABLE role_module_permissions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_id         UUID NOT NULL REFERENCES organization_roles(id),
-  module_name     TEXT NOT NULL CHECK (module_name IN ('pos', 'inventory', 'procurement', 'accounting', 'hr', 'crm', 'his', 'lis', 'telemedicine', 'logistics')),
+  module_name     TEXT NOT NULL CHECK (module_name IN ('pos', 'inventory', 'procurement', 'accounting', 'hr', 'crm', 'his', 'lis', 'telemedicine', 'logistics', 'commerce', 'cart', 'settlement', 'read_model', 'reliability')),
   access_level    INTEGER NOT NULL CHECK (access_level IN (1, 2, 3)), -- 1=Full, 2=Edit, 3=View
   UNIQUE (role_id, module_name)
 );
@@ -547,13 +573,13 @@ graph TD
 
 ### โมเดลร่วมที่ยังควรเพิ่ม
 
-- **Commerce Core:** `Order`, `OrderItem`, `OrderItemSnapshot`, `CheckoutSession`, `PaymentTransaction`, `PaymentAllocation`, `RefundTransaction`, `PriceSnapshot`
-- **Reliability Core:** `IdempotencyKey`, `OutboxEvent`, `InboxEvent`, `AuditLog`, `TransactionContext`
-- **Inventory Core:** `InventoryReservation`, `StockMovement`, `StockLedger`, `StockAdjustment`
+- **Commerce Core:** `Order`, `OrderItem`, `OrderItemSnapshot`, `CheckoutSession`, `PaymentTransaction`, `PaymentAllocation`, `RefundTransaction`, `PriceSnapshot`, `OrderStatusHistory`, `SalesChannel`, `OrderNote`, `OrderHold`, `OrderDiscountLine`, `OrderItemTaxLine`, `PaymentSchedule`, `BillingAttempt`, `ReturnRequestItem`, `Fulfillment`, `FulfillmentItem`, `CustomerWallet`, `WalletTransaction`
+- **Reliability Core:** `IdempotencyKey`, `OutboxEvent`, `InboxEvent`, `AuditLog`, `TransactionContext`, `CircuitBreakerState`, `RetryAttempt`, `RateLimitPolicy`, `QueueJobAudit`, `DeadLetterRecord`
+- **Inventory Core:** `InventoryLot`, `WarehouseLocation`, `InventoryReservation`, `StockMovement`, `StockLedger`, `StockAdjustment`, `InventoryTransfer`, `StocktakeSession`, `StocktakeLine`, `ReorderSuggestion`, `InventoryAlert`
 - **Cart Core:** `CartSession`, `CartItem`, `CartGroup`, `CartMerchantGroup`, `CartPricingRule`, `CartPromotionSnapshot`
-- **Delivery Core:** `DeliveryOrder`, `Shipment`, `ShipmentItem`, `DeliveryRun`, `RouteStop`, `RiderAssignment`, `ProofOfDelivery`
+- **Delivery Core:** `DeliveryOrder`, `Rider`, `RiderShift`, `DeliveryRun`, `RouteStop`, `ProofOfDelivery`, `DeliveryException`, `CarrierConfig`, `CarrierTrackingMapping`, `DeliveryFeeRule`, `DeliveryTracking`
 - **Settlement Core:** `MerchantAccount`, `VendorContract`, `SettlementLedger`, `PayoutBatch`
-- **Scale / Read Models:** `ReadModelProjection`, `ProjectionCheckpoint`, `DashboardSnapshot`, `QueueJobAudit`, `DeadLetterRecord`
+- **Scale / Read Models:** `ReadModelProjection`, `ProjectionCheckpoint`, `DashboardSnapshot`
 
 ### Schema สำหรับ Transaction Boundary (แนะนำ)
 
@@ -661,6 +687,296 @@ CREATE INDEX idx_audit_created_at ON transaction_audit_log(created_at DESC);
 -- Partition ตามเวลา (แนะนำสำหรับ production)
 -- CREATE TABLE transaction_audit_log_2026_01 PARTITION OF transaction_audit_log
 --   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+```
+
+### Schema สำหรับ Reliability Core (แนะนำ)
+
+> **ผลการวิเคราะห์:** เอกสารระบุ `Reliability Core` ประกอบด้วย `IdempotencyKey`, `OutboxEvent`, `InboxEvent`, `AuditLog`, `TransactionContext` แต่ขาดโมเดลที่สำคัญ 3 ประการ:
+> 1. **`CircuitBreakerState`** — `payment-queue-service.js` มี implementation จริง (failure count, MAX_FAILURES, auto half-open หลัง 30 นาที) แต่เอกสารไม่มี schema หรือ model รองรับ ทำให้ระบบอื่นไม่สามารถ reuse pattern นี้ได้
+> 2. **`RetryAttempt` / `RetryPolicy`** — `queue-config.js` และ BullMQ worker มี retry/backoff (fixed, exponential, linear) แต่ไม่มีตารางเก็บประวัติ retry ข้าม queue หรือ cross-service retry policy ที่เป็น canonical
+> 3. **`RateLimitPolicy`** — `rate-limiter.js` มี sliding window counter บน Redis (60 req/min, strict 10 req/min, auth 5 req/min) แต่เอกสารไม่มี model เก็บ rule หรือตาราง audit การถูก block
+> 4. **`TransactionContext`** — อยู่ในรายชื่อแต่ไม่มี schema ใดๆ ทั้งที่ระบบมี long-running transaction (checkout → payment → inventory → delivery → accounting) ที่ต้องใช้ Saga pattern
+> 5. **`IdempotencyKey`** — เอกสารวาง schema ไว้บน PostgreSQL แต่ implementation จริง (`idempotency.js`) ใช้ Redis (TTL 24 ชม.) ซึ่งเร็วกว่าแต่ไม่ durable ควรมี dual-write หรือ fallback strategy
+
+```sql
+-- ============================================
+-- 1. TRANSACTION CONTEXTS (Saga / Distributed Transaction)
+-- ============================================
+CREATE TABLE transaction_contexts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  saga_type         TEXT NOT NULL,                         -- 'checkout', 'refund', 'procurement_approval'
+  status            TEXT NOT NULL DEFAULT 'started'
+                      CHECK (status IN ('started', 'compensating', 'completed', 'failed', 'cancelled')),
+  root_aggregate_type TEXT NOT NULL,                     -- 'order', 'procurement_request'
+  root_aggregate_id   UUID NOT NULL,
+  steps             JSONB NOT NULL DEFAULT '[]',         -- [{step:'reserve_inventory', status:'completed', started_at, completed_at}, ...]
+  compensation_log  JSONB DEFAULT '[]',                  -- บันทึก compensation action ที่ทำไปแล้ว
+  started_at        TIMESTAMPTZ DEFAULT now(),
+  completed_at      TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_transaction_contexts_root ON transaction_contexts(root_aggregate_type, root_aggregate_id);
+CREATE INDEX idx_transaction_contexts_status ON transaction_contexts(status, created_at DESC);
+
+-- ============================================
+-- 2. CIRCUIT BREAKER STATES
+-- ============================================
+CREATE TABLE circuit_breaker_states (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  service_name      TEXT NOT NULL,                         -- 'payment_gateway', 'omise', 'promptpay_batch', 'supabase'
+  circuit_state     TEXT NOT NULL DEFAULT 'closed'
+                      CHECK (circuit_state IN ('closed', 'open', 'half_open')),
+  failure_count     INTEGER NOT NULL DEFAULT 0,
+  success_count     INTEGER NOT NULL DEFAULT 0,
+  last_failure_at   TIMESTAMPTZ,
+  last_success_at   TIMESTAMPTZ,
+  opened_at         TIMESTAMPTZ,
+  half_open_at      TIMESTAMPTZ,
+  max_failures      INTEGER NOT NULL DEFAULT 5,
+  reset_timeout_sec INTEGER NOT NULL DEFAULT 1800,         -- 30 นาที (ตรงกับ payment-queue-service.js)
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, service_name)
+);
+CREATE INDEX idx_circuit_breaker_profession ON circuit_breaker_states(profession_id, service_name);
+
+-- ============================================
+-- 3. RETRY ATTEMPTS (Cross-Queue / Cross-Service)
+-- ============================================
+CREATE TABLE retry_attempts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  operation_type    TEXT NOT NULL,                         -- 'payment_transfer', 'inventory_sync', 'email_send'
+  target_id         UUID NOT NULL,                         -- ID ของ record ที่ถูก retry (เช่น order_id, transaction_id)
+  attempt_number    INTEGER NOT NULL DEFAULT 1,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'success', 'permanent_failure')),
+  error_message     TEXT,
+  backoff_ms        INTEGER NOT NULL DEFAULT 2000,         -- ตรงกับ queue-config.js DEFAULT_BACKOFF_DELAY_MS
+  next_attempt_at   TIMESTAMPTZ,
+  succeeded_at      TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_retry_attempts_target ON retry_attempts(operation_type, target_id, attempt_number DESC);
+CREATE INDEX idx_retry_attempts_next ON retry_attempts(status, next_attempt_at) WHERE status = 'pending';
+
+-- ============================================
+-- 4. RATE LIMIT POLICIES (Configuration + Audit)
+-- ============================================
+CREATE TABLE rate_limit_policies (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  endpoint_pattern  TEXT NOT NULL,                         -- '/api/orders', '/api/login'
+  window_sec        INTEGER NOT NULL DEFAULT 60,
+  max_requests      INTEGER NOT NULL DEFAULT 60,
+  key_type          TEXT NOT NULL DEFAULT 'ip'
+                      CHECK (key_type IN ('ip', 'user_id', 'api_key')),
+  is_active         BOOLEAN DEFAULT true,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_rate_limit_policies_profession ON rate_limit_policies(profession_id, endpoint_pattern);
+
+-- ============================================
+-- 5. QUEUE JOB AUDIT (BullMQ / Background Worker Traceability)
+-- ============================================
+CREATE TABLE queue_job_audit (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  queue_name        TEXT NOT NULL,                         -- 'payment-transfers', 'donation-escrow', 'sync-queue'
+  job_id            TEXT NOT NULL,                         -- BullMQ job ID
+  job_name          TEXT NOT NULL,
+  job_data          JSONB,
+  status            TEXT NOT NULL
+                      CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'dead_letter')),
+  attempts_made     INTEGER NOT NULL DEFAULT 0,
+  error_message     TEXT,
+  worker_host       TEXT,                                  -- hostname ของ worker ที่ process
+  started_at        TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_queue_job_audit_queue ON queue_job_audit(queue_name, status);
+CREATE INDEX idx_queue_job_audit_profession ON queue_job_audit(profession_id, created_at DESC);
+
+-- ============================================
+-- 6. DEAD LETTER RECORDS (Formalized)
+-- ============================================
+CREATE TABLE dead_letter_records (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  source_queue      TEXT NOT NULL,                         -- ชื่อ queue ต้นทาง
+  original_job_id   TEXT,
+  aggregate_type    TEXT NOT NULL,                         -- 'order', 'payment', 'inventory'
+  aggregate_id      UUID NOT NULL,
+  event_type        TEXT NOT NULL,
+  payload           JSONB NOT NULL,
+  error_message     TEXT NOT NULL,
+  retry_count       INTEGER NOT NULL DEFAULT 0,
+  resolution        TEXT DEFAULT 'unresolved'
+                      CHECK (resolution IN ('unresolved', 'manual_retry', 'compensated', 'ignored')),
+  resolved_by       UUID REFERENCES users(id),
+  resolved_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_dead_letter_unresolved ON dead_letter_records(resolution, created_at) WHERE resolution = 'unresolved';
+CREATE INDEX idx_dead_letter_aggregate ON dead_letter_records(aggregate_type, aggregate_id);
+```
+
+### Schema สำหรับ Tax & Fiscal Document Core (แนะนำ)
+
+> **ผลการวิเคราะห์:** POS System ปัจจุบันเก็บ `vat_amount` และ `wht_amount` เป็น column รวมใน `orders` ซึ่งไม่เพียงพอต่อการออกเอกสารภาษีตามกฎหมายไทย (ใบกำกับภาษี, ใบลดหนี้, ใบเพิ่มหนี้) และไม่รองรับการแยกเอกสารภาษีหลายฉบับต่อหนึ่ง order (เช่น แยกเบิกบริษัท/ส่วนตัว) หรือการตรวจสอบย้อนหลัง (Audit Trail) รายบรรทัด VAT ดังนั้นต้องมี Tax & Fiscal Document Core แยกเป็นเอกสารอิสระจาก order
+
+```sql
+-- ============================================
+-- 1. ORDER ITEM TAX LINES (VAT breakdown รายบรรทัด)
+-- ============================================
+CREATE TABLE order_item_tax_lines (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id   UUID NOT NULL REFERENCES professions(id),
+  branch_id       UUID REFERENCES organization_branches(id),
+  order_item_id   UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+  tax_type        TEXT NOT NULL DEFAULT 'vat'
+                    CHECK (tax_type IN ('vat', 'wht', 'specific_tax', 'excise_tax')),
+  tax_rate        DECIMAL(5,4) NOT NULL DEFAULT 0.0700,     -- เช่น 0.0700 = 7%
+  tax_base_amount DECIMAL(12,2) NOT NULL DEFAULT 0,          -- ฐานภาษี
+  tax_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,          -- มูลค่าภาษี
+  is_inclusive    BOOLEAN NOT NULL DEFAULT true,             -- true = VAT inclusive (ราคารวมภาษี)
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_order_item_tax_lines_item ON order_item_tax_lines(order_item_id);
+CREATE INDEX idx_order_item_tax_lines_profession ON order_item_tax_lines(profession_id);
+
+-- ============================================
+-- 2. TAX INVOICES (ใบกำกับภาษี)
+-- ============================================
+CREATE TABLE tax_invoices (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  order_id          UUID REFERENCES orders(id),              -- NULL ถ้าออกแยกจาก order (manual)
+  invoice_number    TEXT NOT NULL,                            -- เช่น TIV-20260609-0001
+  invoice_type      TEXT NOT NULL DEFAULT 'tax_invoice'       -- 'tax_invoice', 'abbreviated_tax_invoice'
+                    CHECK (invoice_type IN ('tax_invoice', 'abbreviated_tax_invoice')),
+  status            TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'cancelled', 'voided')),
+  buyer_name        TEXT NOT NULL,
+  buyer_tax_id      TEXT,                                     -- เลขประจำตัวผู้เสียภาษีผู้ซื้อ
+  buyer_branch_code TEXT DEFAULT '00000',                      -- รหัสสาขาผู้ซื้อ
+  buyer_address     TEXT,
+  total_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  vat_amount        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_with_vat    DECIMAL(12,2) NOT NULL DEFAULT 0,        -- รวมภาษี
+  issue_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  issue_datetime    TIMESTAMPTZ DEFAULT now(),
+  cancelled_at      TIMESTAMPTZ,
+  cancelled_reason  TEXT,
+  e_invoice_uuid    UUID,                                     -- สำหรับเชื่อม e-Tax Invoice ของกรมสรรพากร
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, invoice_number)
+);
+CREATE INDEX idx_tax_invoices_order ON tax_invoices(order_id);
+CREATE INDEX idx_tax_invoices_profession ON tax_invoices(profession_id, issue_date DESC);
+CREATE INDEX idx_tax_invoices_einvoice ON tax_invoices(e_invoice_uuid) WHERE e_invoice_uuid IS NOT NULL;
+
+-- ============================================
+-- 3. TAX INVOICE ITEMS
+-- ============================================
+CREATE TABLE tax_invoice_items (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tax_invoice_id    UUID NOT NULL REFERENCES tax_invoices(id) ON DELETE CASCADE,
+  order_item_id     UUID REFERENCES order_items(id),          -- NULL ถ้าเป็นรายการเพิ่มเติมด้วยตนเอง
+  item_name         TEXT NOT NULL,
+  item_description  TEXT,
+  quantity          DECIMAL(12,4) NOT NULL DEFAULT 1,
+  unit_price        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_price       DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  vat_rate          DECIMAL(5,4) NOT NULL DEFAULT 0.0700,
+  vat_amount        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  net_amount        DECIMAL(12,2) NOT NULL DEFAULT 0,        -- ราคาสุทธิหลังหักส่วนลด + VAT
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_tax_invoice_items_invoice ON tax_invoice_items(tax_invoice_id);
+
+-- ============================================
+-- 4. RECEIPTS (ใบเสร็จรับเงิน / Simplified Receipt)
+-- ============================================
+CREATE TABLE receipts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  receipt_number    TEXT NOT NULL,
+  receipt_type      TEXT NOT NULL DEFAULT 'cash_receipt'
+                    CHECK (receipt_type IN ('cash_receipt', 'official_receipt')),
+  status            TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'cancelled')),
+  total_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  payment_method    TEXT,
+  issued_by         UUID REFERENCES users(id),
+  issue_datetime    TIMESTAMPTZ DEFAULT now(),
+  cancelled_at      TIMESTAMPTZ,
+  cancelled_reason  TEXT,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, receipt_number)
+);
+CREATE INDEX idx_receipts_order ON receipts(order_id);
+CREATE INDEX idx_receipts_profession ON receipts(profession_id, issue_datetime DESC);
+
+-- ============================================
+-- 5. CREDIT NOTES (ใบลดหนี้)
+-- ============================================
+CREATE TABLE credit_notes (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  tax_invoice_id    UUID NOT NULL REFERENCES tax_invoices(id), -- อ้างอิงใบกำกับภาษีต้นทาง
+  order_id          UUID REFERENCES orders(id),
+  credit_note_number TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('draft', 'active', 'cancelled')),
+  reason            TEXT NOT NULL,                             -- เหตุผลการลดหนี้
+  original_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,        -- มูลค่าเดิม
+  credit_amount     DECIMAL(12,2) NOT NULL DEFAULT 0,        -- มูลค่าลดหนี้
+  vat_adjustment    DECIMAL(12,2) NOT NULL DEFAULT 0,        -- ปรับปรุง VAT
+  issue_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  issue_datetime    TIMESTAMPTZ DEFAULT now(),
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, credit_note_number)
+);
+CREATE INDEX idx_credit_notes_invoice ON credit_notes(tax_invoice_id);
+CREATE INDEX idx_credit_notes_profession ON credit_notes(profession_id, issue_date DESC);
+
+-- ============================================
+-- 6. DEBIT NOTES (ใบเพิ่มหนี้)
+-- ============================================
+CREATE TABLE debit_notes (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  tax_invoice_id    UUID NOT NULL REFERENCES tax_invoices(id),
+  order_id          UUID REFERENCES orders(id),
+  debit_note_number TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('draft', 'active', 'cancelled')),
+  reason            TEXT NOT NULL,
+  original_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  debit_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  vat_adjustment    DECIMAL(12,2) NOT NULL DEFAULT 0,
+  issue_date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  issue_datetime    TIMESTAMPTZ DEFAULT now(),
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, debit_note_number)
+);
+CREATE INDEX idx_debit_notes_invoice ON debit_notes(tax_invoice_id);
+CREATE INDEX idx_debit_notes_profession ON debit_notes(profession_id, issue_date DESC);
 ```
 
 ### Schema สำหรับ Inventory Safety (แนะนำ)
@@ -962,6 +1278,412 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
+### Schema สำหรับ Inventory Core — โมเดลที่ขาดหาย (แนะนำ)
+
+> **ผลการวิเคราะห์:** `ERP_CORE_ARCHITECTURE.md` มี schema สำหรับ `warehouse_locations`, `inventory_lots`, `inventory_reservations`, `stock_movements` ที่ครบถ้วน แต่ขาดโมเดลสำคัญ 6 ประการที่ทำให้ระบบ Inventory ไม่สามารถทำงาน end-to-end ได้:
+> 1. **`StockAdjustment` (Parent Record)** — `stock_movements` มี `movement_type='adjustment'` แต่ไม่มีตาราง `stock_adjustments` เป็น parent ที่บันทึกการปรับยอดแต่ละครั้ง (เหตุผล, ผู้ปรับ, วันที่, รายการ lot ที่ปรับ) → ไม่สามารถทำ adjustment audit trail แบบ grouped ได้
+> 2. **`InventoryTransfer` —** มี `movement_type='transfer_in'/'transfer_out'` ใน `stock_movements` แต่ไม่มี `inventory_transfers` ที่เก็บ transfer request (`from_location_id`, `to_location_id`, `status`, `requested_by`, `approved_by`) → ไม่สามารถ track สถานะการโยกย้าย (Pending → In-Transit → Completed → Rejected) ได้
+> 3. **`StocktakeSession` / `StocktakeLine` —** `INVENTORY_SYSTEM_PLAN.md` มี `stocktake_configurations` และ Phase 9 ระบุหน้า `StocktakePage` แต่ schema ไม่มี `stocktake_sessions` หรือ `stocktake_lines` → ไม่สามารถบันทึกผลการตรวจนับจริงและสร้าง adjustment อัตโนมัติได้
+> 4. **`ReorderSuggestion` —** `inventory_items` (เก่า) มี `reorder_point` แต่ schema ใหม่ (`inventory_lots`) ไม่มี reorder point หรือตาราง `reorder_suggestions` → ขาด automated procurement trigger
+> 5. **`InventoryAlert` —** ไม่มีตารางสำหรับ low stock alert, expiry alert, reorder alert → ต้อง query ทุกครั้งหรือใช้ cron job โดยไม่มี state tracking
+> 6. **`inventory_items` เก่า vs `inventory_lots` ใหม่ —** `INVENTORY_SYSTEM_PLAN.md` ยังใช้ `inventory_items` แบบเก่า (quantity รวมเป็นแถวเดียว, ไม่มี `branch_id`, ไม่มี `warehouse_location_id`, ไม่มี `on_hand/reserved/available` แยกกัน) แต่ `ERP_CORE_ARCHITECTURE.md` มี schema ใหม่ที่ lot-level ซึ่งดีกว่ามาก แต่ไม่มี migration path หรือ backward compatibility สำหรับองค์กรที่เริ่มใช้งานก่อน
+> 7. **Flutter Implementation —** `lib/ERP Dashboard/inventory_management_page.dart` เป็น stub placeholder UI (`Text('Inventory Management UI goes here')`) ยังไม่มี models หรือ repository จริงสำหรับ Inventory Core
+
+```sql
+-- ============================================
+-- 1. STOCK ADJUSTMENTS (Parent record สำหรับการปรับยอด)
+-- ============================================
+CREATE TABLE stock_adjustments (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id   UUID NOT NULL REFERENCES professions(id),
+  branch_id       UUID REFERENCES organization_branches(id),
+  adjustment_type TEXT NOT NULL DEFAULT 'cycle_count'
+                      CHECK (adjustment_type IN ('cycle_count', 'damaged', 'expired', 'lost', 'found', 'system_correction')),
+  status          TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft', 'approved', 'rejected', 'posted')),
+  total_quantity_change INTEGER NOT NULL DEFAULT 0,   -- ผลรวม quantity change (บวก/ลบ)
+  reason          TEXT NOT NULL,                         -- เหตุผลการปรับยอด
+  requested_by    UUID NOT NULL REFERENCES users(id),
+  approved_by     UUID REFERENCES users(id),
+  posted_at       TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_stock_adjustments_profession ON stock_adjustments(profession_id, status);
+CREATE INDEX idx_stock_adjustments_created ON stock_adjustments(created_at DESC);
+
+-- ============================================
+-- 2. STOCK ADJUSTMENT LINES (รายการ lot ที่ถูกปรับในแต่ละครั้ง)
+-- ============================================
+CREATE TABLE stock_adjustment_lines (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  adjustment_id   UUID NOT NULL REFERENCES stock_adjustments(id) ON DELETE CASCADE,
+  lot_id          UUID NOT NULL REFERENCES inventory_lots(id),
+  expected_quantity INTEGER NOT NULL DEFAULT 0,          -- จำนวนตามระบบก่อนปรับ
+  actual_quantity   INTEGER NOT NULL DEFAULT 0,          -- จำนวนที่นับได้จริง
+  quantity_change   INTEGER NOT NULL,                    -- actual - expected (บวก = เพิ่ม, ลบ = ลด)
+  reason          TEXT,                                  -- เหตุผลรายบรรทัด (ถ้าแตกต่างจาก parent)
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_adjustment_lines_adjustment ON stock_adjustment_lines(adjustment_id);
+CREATE INDEX idx_adjustment_lines_lot ON stock_adjustment_lines(lot_id);
+
+-- ============================================
+-- 3. INVENTORY TRANSFERS (คำสั่งโยกย้ายสินค้าระหว่าง location/branch)
+-- ============================================
+CREATE TABLE inventory_transfers (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  from_branch_id    UUID REFERENCES organization_branches(id),
+  to_branch_id      UUID REFERENCES organization_branches(id),
+  from_location_id  UUID REFERENCES warehouse_locations(id),
+  to_location_id    UUID REFERENCES warehouse_locations(id),
+  transfer_number   TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'in_transit', 'received', 'rejected', 'cancelled')),
+  requested_by      UUID NOT NULL REFERENCES users(id),
+  approved_by       UUID REFERENCES users(id),
+  received_by       UUID REFERENCES users(id),
+  shipped_at        TIMESTAMPTZ,
+  received_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, transfer_number)
+);
+CREATE INDEX idx_inventory_transfers_profession ON inventory_transfers(profession_id, status);
+CREATE INDEX idx_inventory_transfers_status ON inventory_transfers(status, created_at DESC);
+
+-- ============================================
+-- 4. INVENTORY TRANSFER LINES
+-- ============================================
+CREATE TABLE inventory_transfer_lines (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transfer_id     UUID NOT NULL REFERENCES inventory_transfers(id) ON DELETE CASCADE,
+  lot_id          UUID NOT NULL REFERENCES inventory_lots(id),
+  quantity        INTEGER NOT NULL CHECK (quantity > 0),
+  received_quantity INTEGER DEFAULT 0,                   -- จำนวนที่รับจริง (อาจไม่ตรงกับที่ส่ง)
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_transfer_lines_transfer ON inventory_transfer_lines(transfer_id);
+
+-- ============================================
+-- 5. STOCKTAKE SESSIONS (รอบการตรวจนับสต๊อก)
+-- ============================================
+CREATE TABLE stocktake_sessions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  session_name      TEXT NOT NULL,                         -- เช่น 'Monthly Count June 2026'
+  frequency_type    TEXT NOT NULL DEFAULT 'custom'         -- 'weekly', 'monthly', 'yearly', 'custom', 'adhoc'
+                      CHECK (frequency_type IN ('weekly', 'monthly', 'yearly', 'custom', 'adhoc')),
+  status            TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft', 'counting', 'reviewing', 'adjusted', 'cancelled')),
+  planned_date      DATE NOT NULL,
+  started_at        TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  conducted_by      UUID REFERENCES users(id),
+  reviewed_by       UUID REFERENCES users(id),
+  adjustment_id     UUID REFERENCES stock_adjustments(id), -- ถ้าสร้าง adjustment แล้ว
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_stocktake_sessions_profession ON stocktake_sessions(profession_id, status);
+CREATE INDEX idx_stocktake_sessions_planned ON stocktake_sessions(planned_date);
+
+-- ============================================
+-- 6. STOCKTAKE LINES (ผลการนับแต่ละ lot)
+-- ============================================
+CREATE TABLE stocktake_lines (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id        UUID NOT NULL REFERENCES stocktake_sessions(id) ON DELETE CASCADE,
+  lot_id            UUID NOT NULL REFERENCES inventory_lots(id),
+  expected_quantity INTEGER NOT NULL DEFAULT 0,          -- จำนวนตามระบบ
+  counted_quantity  INTEGER,                             -- จำนวนที่นับได้ (NULL = ยังไม่นับ)
+  variance          INTEGER GENERATED ALWAYS AS (COALESCE(counted_quantity, 0) - expected_quantity) STORED,
+  is_recounted      BOOLEAN DEFAULT false,               -- true ถ้านับซ้ำแล้ว
+  counted_by        UUID REFERENCES users(id),
+  counted_at        TIMESTAMPTZ,
+  notes             TEXT,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_stocktake_lines_session ON stocktake_lines(session_id);
+CREATE INDEX idx_stocktake_lines_variance ON stocktake_lines(session_id) WHERE variance != 0;
+
+-- ============================================
+-- 7. REORDER SUGGESTIONS (Automated procurement trigger)
+-- ============================================
+CREATE TABLE reorder_suggestions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  medication_id     UUID REFERENCES medications(id),
+  custom_medication_id UUID REFERENCES custom_medications(id),
+  lot_id            UUID REFERENCES inventory_lots(id),
+  current_stock     INTEGER NOT NULL DEFAULT 0,
+  reorder_point     INTEGER NOT NULL DEFAULT 0,
+  suggested_qty     INTEGER NOT NULL DEFAULT 0,          -- จำนวนที่แนะนำให้สั่งซื้อ
+  supplier_id       UUID REFERENCES suppliers(id),       -- ถ้ารู้ supplier ประจำ
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'approved', 'rejected', 'converted_to_po')),
+  approved_by       UUID REFERENCES users(id),
+  purchase_order_id UUID,                                  -- ถ้าสร้าง PO แล้ว
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_reorder_suggestions_pending ON reorder_suggestions(status, created_at) WHERE status = 'pending';
+CREATE INDEX idx_reorder_suggestions_profession ON reorder_suggestions(profession_id, medication_id);
+
+-- ============================================
+-- 8. INVENTORY ALERTS (Low stock / Expiry / Reorder notifications)
+-- ============================================
+CREATE TABLE inventory_alerts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  branch_id         UUID REFERENCES organization_branches(id),
+  alert_type        TEXT NOT NULL                         -- 'low_stock', 'expiry_warning', 'expired', 'reorder', 'transfer_overdue'
+                      CHECK (alert_type IN ('low_stock', 'expiry_warning', 'expired', 'reorder', 'transfer_overdue', 'damaged')),
+  severity          TEXT NOT NULL DEFAULT 'medium'        -- 'low', 'medium', 'high', 'critical'
+                      CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  medication_id     UUID REFERENCES medications(id),
+  custom_medication_id UUID REFERENCES custom_medications(id),
+  lot_id            UUID REFERENCES inventory_lots(id),
+  title             TEXT NOT NULL,
+  message           TEXT NOT NULL,
+  is_read           BOOLEAN DEFAULT false,
+  is_dismissed      BOOLEAN DEFAULT false,
+  resolved_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_inventory_alerts_unread ON inventory_alerts(profession_id, is_read, is_dismissed) WHERE is_read = false AND is_dismissed = false;
+CREATE INDEX idx_inventory_alerts_type ON inventory_alerts(alert_type, severity);
+CREATE INDEX idx_inventory_alerts_created ON inventory_alerts(created_at DESC);
+```
+
+### Schema สำหรับ Cart Core (แนะนำ)
+
+> **ผลการวิเคราะห์:** `SHOPPING_CART_PLAN.md` มีแค่ 3 ตารางพื้นฐาน (`platform_shopping_cart`, `platform_cart_items`, `platform_orders`) ขาดโมเดลสำคัญ 8 ประการ:
+> 1. **Cart 2 ชุดซ้อนกัน —** `POS System_plan.md` มี `shopping_carts` อีกชุด (`items` เป็น JSONB) ทำให้ platform cart กับ POS cart ไม่ sync กัน
+> 2. **ไม่มี Cart Item Snapshot —** `platform_cart_items` เก็บ `unit_price` แบบ current price ไม่ใช่ snapshot → ถ้า merchant เปลี่ยนราคาระหว่าง browse กับ checkout เกิด price mismatch
+> 3. **ไม่มี Checkout Session —** ไม่สามารถ recover ตะกร้าที่กำลังชำระเงินแล้ว app crash หรือตรวจสอบ duplicate checkout ได้
+> 4. **ไม่มี Merchant Group / Cart Split —** ถ้า cart มีสินค้าจาก clinic A + clinic B + platform native ระบบไม่รู้ว่าต้องแตกเป็นกี่ order ย่อย
+> 5. **ไม่มี Payment Allocation —** รับเงินก้อนเดียวแต่ไม่มี ledger ว่าเงินจะแบ่งให้ใครเท่าไหร่
+> 6. **ไม่มี Tax/Discount/Shipping Allocation Policy —** ถ้ามีส่วนลดหรือค่าส่งรวม จะกระจายต่อ merchant อย่างไรให้ถูกต้องตามบัญชี
+> 7. **ไม่มี Stock Reservation จาก Cart —** user ใส่ตะกร้าแล้ว stock ยังไม่ถูกจอง ทำให้ oversell ตอน concurrent สูง
+> 8. **`platform_orders` ไม่มี checkout status —** มีแค่ `payment_status = 'completed'` ไม่รู้ว่าอยู่ขั้นตอนไหน (browsing → checking out → awaiting_payment → paid → split → injected → completed)
+
+```sql
+-- ============================================
+-- 1. CART SESSIONS (Unified Cart — ยุบ platform + POS เป็นชุดเดียว)
+-- ============================================
+CREATE TABLE cart_sessions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id),
+  profession_id   UUID REFERENCES professions(id),       -- NULL = platform-native cart (multi-merchant)
+  branch_id       UUID REFERENCES organization_branches(id),
+  cart_type       TEXT NOT NULL DEFAULT 'platform'        -- 'platform', 'pos', 'telemedicine'
+                      CHECK (cart_type IN ('platform', 'pos', 'telemedicine')),
+  status          TEXT NOT NULL DEFAULT 'active'         -- 'active', 'checkout_in_progress', 'converted', 'abandoned', 'expired'
+                      CHECK (status IN ('active', 'checkout_in_progress', 'converted', 'abandoned', 'expired')),
+  total_items     INTEGER NOT NULL DEFAULT 0,
+  total_quantity  INTEGER NOT NULL DEFAULT 0,
+  subtotal        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_total  DECIMAL(12,2) NOT NULL DEFAULT 0,
+  shipping_total  DECIMAL(12,2) NOT NULL DEFAULT 0,
+  tax_total       DECIMAL(12,2) NOT NULL DEFAULT 0,
+  grand_total     DECIMAL(12,2) NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'THB',
+  expires_at      TIMESTAMPTZ,                             -- หมดอายุถ้าไม่มี activity
+  converted_to_order_id UUID,                            -- ถ้าแปลงเป็น order แล้ว
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_cart_sessions_user ON cart_sessions(user_id, status);
+CREATE INDEX idx_cart_sessions_expires ON cart_sessions(expires_at) WHERE status IN ('active', 'checkout_in_progress');
+
+-- ============================================
+-- 2. CART ITEMS (พร้อม Snapshot)
+-- ============================================
+CREATE TABLE cart_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_session_id UUID NOT NULL REFERENCES cart_sessions(id) ON DELETE CASCADE,
+  profession_id   UUID REFERENCES professions(id),       -- เจ้าของสินค้า (NULL = platform)
+  product_type    TEXT NOT NULL DEFAULT 'medication'      -- 'medication', 'custom_medication', 'service', 'package'
+                      CHECK (product_type IN ('medication', 'custom_medication', 'service', 'package', 'donation')),
+  product_id      UUID NOT NULL,                         -- ID ของสินค้า (ไม่ว่าจะ type อะไร)
+  quantity        INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  -- Current price (ตอน browse)
+  unit_price_current  DECIMAL(12,2) NOT NULL DEFAULT 0,
+  -- Snapshot price (freeze ตอน checkout)
+  unit_price_snapshot DECIMAL(12,2),
+  -- Product snapshot (JSONB บันทึกชื่อ, รูป, หน่วย ตอนใส่ตะกร้า)
+  product_snapshot    JSONB DEFAULT '{}',
+  line_subtotal       DECIMAL(12,2) NOT NULL DEFAULT 0,  -- quantity × unit_price_snapshot (หรือ current ถ้ายังไม่ snapshot)
+  line_discount       DECIMAL(12,2) NOT NULL DEFAULT 0,
+  line_tax            DECIMAL(12,2) NOT NULL DEFAULT 0,
+  line_total          DECIMAL(12,2) NOT NULL DEFAULT 0,  -- subtotal - discount + tax
+  is_selected         BOOLEAN DEFAULT true,               -- ถ้า false = ยังไม่เลือกให้ checkout
+  added_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at          TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_cart_items_cart ON cart_items(cart_session_id, is_selected);
+CREATE INDEX idx_cart_items_product ON cart_items(product_type, product_id);
+
+-- ============================================
+-- 3. CART MERCHANT GROUPS (Cart Split / Multi-merchant)
+-- ============================================
+CREATE TABLE cart_merchant_groups (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_session_id   UUID NOT NULL REFERENCES cart_sessions(id) ON DELETE CASCADE,
+  merchant_type     TEXT NOT NULL DEFAULT 'profession'    -- 'profession', 'platform', 'partner'
+                      CHECK (merchant_type IN ('profession', 'platform', 'partner')),
+  merchant_id       UUID,                                  -- profession_id หรือ partner_id
+  subtotal          DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  shipping_fee      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  tax_amount        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  grand_total       DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_allocation_method TEXT DEFAULT 'proportional' -- 'proportional', 'merchant_first', 'platform_first'
+                      CHECK (discount_allocation_method IN ('proportional', 'merchant_first', 'platform_first')),
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_cart_merchant_groups_cart ON cart_merchant_groups(cart_session_id);
+
+-- ============================================
+-- 4. CART PRICING RULES (Dynamic pricing / Promotion engine)
+-- ============================================
+CREATE TABLE cart_pricing_rules (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID REFERENCES professions(id),       -- NULL = platform-wide rule
+  rule_name         TEXT NOT NULL,
+  rule_type         TEXT NOT NULL                           -- 'discount_percentage', 'discount_amount', 'buy_x_get_y', 'free_shipping', 'bundle_price'
+                      CHECK (rule_type IN ('discount_percentage', 'discount_amount', 'buy_x_get_y', 'free_shipping', 'bundle_price', 'member_price')),
+  applies_to        TEXT NOT NULL DEFAULT 'all'             -- 'all', 'category', 'product', 'merchant'
+                      CHECK (applies_to IN ('all', 'category', 'product', 'merchant')),
+  target_id         UUID,                                    -- product_id หรือ category_id (ถ้า applies_to ไม่ใช่ 'all')
+  min_quantity      INTEGER DEFAULT 1,
+  min_subtotal      DECIMAL(12,2) DEFAULT 0,
+  discount_value    DECIMAL(12,2) DEFAULT 0,               -- % หรือ amount ขึ้นกับ rule_type
+  max_discount      DECIMAL(12,2),                           -- cap ส่วนลดสูงสุด
+  start_at          TIMESTAMPTZ,
+  end_at            TIMESTAMPTZ,
+  usage_limit       INTEGER,                                 -- จำนวนครั้งที่ใช้ได้ (NULL = unlimited)
+  usage_count       INTEGER DEFAULT 0,
+  is_active         BOOLEAN DEFAULT true,
+  priority          INTEGER DEFAULT 100,                     -- ตัวเลขน้อย = ใช้ก่อน
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_cart_pricing_rules_active ON cart_pricing_rules(is_active, start_at, end_at);
+
+-- ============================================
+-- 5. CART PROMOTION SNAPSHOTS (Freeze promotion ตอน checkout)
+-- ============================================
+CREATE TABLE cart_promotion_snapshots (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_session_id   UUID NOT NULL REFERENCES cart_sessions(id) ON DELETE CASCADE,
+  rule_id           UUID REFERENCES cart_pricing_rules(id),
+  rule_name         TEXT NOT NULL,
+  rule_type         TEXT NOT NULL,
+  discount_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  applied_to_merchant_group_id UUID REFERENCES cart_merchant_groups(id),
+  applied_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_cart_promotion_snapshots_cart ON cart_promotion_snapshots(cart_session_id);
+
+-- ============================================
+-- 6. CHECKOUT SESSIONS (Recoverable checkout state machine)
+-- ============================================
+CREATE TABLE checkout_sessions (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_session_id         UUID NOT NULL REFERENCES cart_sessions(id),
+  user_id                 UUID NOT NULL REFERENCES users(id),
+  status                  TEXT NOT NULL DEFAULT 'initiated'
+                              CHECK (status IN ('initiated', 'awaiting_payment', 'payment_confirmed', 'splitting', 'injected', 'completed', 'failed', 'expired')),
+  payment_method          TEXT,                              -- 'credit_card', 'promptpay', 'cash', 'wallet'
+  idempotency_key         TEXT UNIQUE,                       -- กัน duplicate checkout
+  payment_gateway_session_id TEXT,                           -- Stripe/Omise session ID
+  payment_transaction_id  UUID,                              -- อ้างอิง payment_transactions
+  initiated_at            TIMESTAMPTZ DEFAULT now(),
+  expires_at              TIMESTAMPTZ,                         -- เช่น now() + interval '30 minutes'
+  completed_at            TIMESTAMPTZ,
+  failed_at               TIMESTAMPTZ,
+  failure_reason          TEXT,
+  created_at              TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_checkout_sessions_cart ON checkout_sessions(cart_session_id);
+CREATE INDEX idx_checkout_sessions_status ON checkout_sessions(status, expires_at);
+CREATE INDEX idx_checkout_sessions_idempotency ON checkout_sessions(idempotency_key);
+```
+
+### Schema สำหรับ Delivery Core — โมเดลที่ขาดหาย (แนะนำ)
+
+> **ผลการวิเคราะห์:** `ERP_CORE_ARCHITECTURE.md` มี schema Delivery ที่ครบถ้วนกว่า `Delivery_PLAN.md` มาก (9 ตาราง vs 2 ตาราง) แต่ยังมีช่องโหว่ 5 ประการ:
+> 1. **`Shipment` / `ShipmentItem` ขาด schema —** model list เดิมระบุ `Shipment`, `ShipmentItem` แต่ไม่มีตารางใดๆ ในเอกสารหรือ codebase ทั้งหมด ควรมี `shipments` สำหรับ 3PL tracking number และ physical package tracking (`tracking_number`, `carrier_reference`, `shipment_status`) โดยเฉพาะเมื่อใช้ carrier ภายนอก
+> 2. **`RiderAssignment` ไม่มีตาราง —** model list เดิมมี `RiderAssignment` แต่ schema ใช้ `delivery_orders.rider_id` แบบ direct FK ซึ่งเหมาะสมกับ in-house fleet แต่ไม่รองรับการ assign แบบ batch หรือ bidding (เช่น Grab-style ที่ rider กดรับงานเอง) → ควรมี `rider_assignments` ถ้ารองรับ self-assignment หรือ dispatch queue
+> 3. **`Delivery_PLAN.md` ล้าสมัย —** ยังใช้ `pos_receipt_id` ผูกมัดกับ POS (`delivery_orders` → `pos_receipts`) และมีแค่ 5 สถานะ (`pending`, `packed`, `shipping`, `delivered`, `cancelled`) ซึ่งไม่เพียงพอต่องานขนส่งจริง (ขาด `assigned`, `picked_up`, `at_dropoff`, `failed_attempt`, `reattempt_scheduled`, `returned_to_warehouse`) แต่ `ERP_CORE_ARCHITECTURE.md` ได้แก้ไขแล้วด้วย `source_type`/`source_order_id` และ state machine 13 สถานะ
+> 4. **ไม่มี implementation code จริง —** ค้นหาใน `lib/` และ `websocket-server/` ไม่พบ models, repositories, services, หรือ UI pages สำหรับ Delivery Core ใดๆ (`Delivery_PLAN.md` และ `ERP_CORE_ARCHITECTURE.md` เป็น documentation-only ทั้งหมด)
+> 5. **`delivery_tracking` ไม่มี retention policy ใน schema —** แม้เอกสารระบุให้เก็บแค่ 30 วันแล้ว archive แต่ schema ไม่มี partition หรือ `retention_until` column → ตารางนี้จะโตเร็วมากถ้าไรเดอร์เยอะและส่ง location ทุก 10-30 วินาที
+
+```sql
+-- ============================================
+-- A. SHIPMENTS (3PL Physical Package Tracking)
+-- ============================================
+CREATE TABLE shipments (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID NOT NULL REFERENCES professions(id),
+  delivery_order_id UUID NOT NULL REFERENCES delivery_orders(id),
+  carrier_id        UUID REFERENCES carrier_configs(id),
+  tracking_number   TEXT NOT NULL,                     -- เลข tracking ของ 3PL
+  carrier_reference TEXT,                              -- เลขอ้างอิงของ carrier
+  shipment_status   TEXT NOT NULL DEFAULT 'created'
+                      CHECK (shipment_status IN ('created', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'exception', 'returned')),
+  weight_kg         DECIMAL(8,2) DEFAULT 0,
+  dimensions_cm     JSONB,                             -- {length, width, height}
+  label_url         TEXT,                              -- URL ของ shipping label
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_shipments_tracking ON shipments(tracking_number);
+CREATE INDEX idx_shipments_order ON shipments(delivery_order_id);
+
+-- ============================================
+-- B. SHIPMENT ITEMS (รายการสินค้าในแต่ละ shipment)
+-- ============================================
+CREATE TABLE shipment_items (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id       UUID NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  order_item_id     UUID REFERENCES order_items(id),   -- ถ้าสร้างจาก order
+  inventory_lot_id  UUID REFERENCES inventory_lots(id), -- ถ้าต้องระบุ lot
+  item_name         TEXT NOT NULL,
+  quantity          INTEGER NOT NULL CHECK (quantity > 0),
+  weight_kg         DECIMAL(8,2) DEFAULT 0,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_shipment_items_shipment ON shipment_items(shipment_id);
+
+-- ============================================
+-- C. RIDER ASSIGNMENTS (สำหรับ self-assignment / dispatch queue)
+-- ============================================
+CREATE TABLE rider_assignments (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_order_id UUID NOT NULL REFERENCES delivery_orders(id),
+  rider_id          UUID REFERENCES riders(id),
+  assignment_type   TEXT NOT NULL DEFAULT 'auto_dispatch'
+                      CHECK (assignment_type IN ('auto_dispatch', 'manual_assign', 'self_pickup', 'bid_accepted')),
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'accepted', 'rejected', 'expired', 'cancelled')),
+  offered_at        TIMESTAMPTZ DEFAULT now(),
+  accepted_at       TIMESTAMPTZ,
+  rejected_at       TIMESTAMPTZ,
+  rejection_reason  TEXT,
+  expires_at        TIMESTAMPTZ,                         -- หมดอายุถ้า rider ไม่ตอบรับ
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_rider_assignments_order ON rider_assignments(delivery_order_id);
+CREATE INDEX idx_rider_assignments_rider ON rider_assignments(rider_id, status);
+CREATE INDEX idx_rider_assignments_pending ON rider_assignments(status, expires_at)
+  WHERE status = 'pending';
+```
+
 ### Schema สำหรับ Delivery Model (แนะนำ)
 
 ```sql
@@ -1230,6 +1952,138 @@ CREATE INDEX idx_tracking_order ON delivery_tracking(delivery_order_id, recorded
 CREATE INDEX idx_tracking_rider ON delivery_tracking(rider_id, recorded_at DESC);
 ```
 
+### Schema สำหรับ Settlement Core (แนะนำ)
+
+> **ผลการวิเคราะห์:** Settlement Core มี model list (`MerchantAccount`, `VendorContract`, `SettlementLedger`, `PayoutBatch`) แต่ไม่มี schema หรือ analysis ใดๆ ในเอกสาร แม้ `SHOPPING_CART_PLAN.md` จะมี `payment_allocations` และ `payout_batches` แต่ขาดโมเดลสำคัญ 4 ประการ:
+> 1. **`MerchantAccount` ไม่มีตาราง —** ไม่มีข้อมูลบัญชีธนาคาร/ e-Wallet ของ merchant (clinic/partner) ที่จะรับเงิน payout → ไม่สามารถโอนเงินอัตโนมัติได้
+> 2. **`VendorContract` ไม่มีตาราง —** ไม่มีข้อมูลสัญญา platform fee rate, settlement cycle (T+1, T+7, monthly), หรือ minimum payout threshold ต่อ merchant → คำนวณ fee ไม่ถูกต้อง
+> 3. **`SettlementLedger` ไม่มีตาราง —** ไม่มี ledger รวมที่แสดงยอดรอจ่าย (payable), ยอดจ่ายแล้ว (paid), และ balance ต่อ merchant ในแต่ละรอบ → ตรวจสอบย้อนหลังไม่ได้
+> 4. **`PayoutBatch` มีอยู่แต่ไม่สมบูรณ์ —** `payout_batches` ใน Shopping Cart schema มีแค่ `batch_type`, `total_amount`, `status` แต่ไม่มี `payout_method`, `bank_account_id`, `failure_reason`, หรือ retry mechanism
+
+```sql
+-- ============================================
+-- 1. MERCHANT ACCOUNTS (บัญชีรับเงินของ merchant)
+-- ============================================
+CREATE TABLE merchant_accounts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID REFERENCES professions(id),       -- NULL = platform partner
+  partner_id        UUID,                                  -- ถ้าเป็น partner นอก ERP
+  merchant_type     TEXT NOT NULL DEFAULT 'profession'      -- 'profession', 'partner', 'platform'
+                      CHECK (merchant_type IN ('profession', 'partner', 'platform')),
+  account_type      TEXT NOT NULL DEFAULT 'bank'            -- 'bank', 'promptpay', 'wallet'
+                      CHECK (account_type IN ('bank', 'promptpay', 'wallet')),
+  bank_code         TEXT,                                  -- '002' = BBL, '004' = KBANK, ฯลฯ
+  bank_name         TEXT,
+  account_number    TEXT NOT NULL,                         -- เก็บ encrypted ถ้า sensitive
+  account_name      TEXT NOT NULL,
+  promptpay_id      TEXT,                                  -- เบอร์โทรหรือเลขบัตรประชาชน
+  is_primary        BOOLEAN DEFAULT false,                 -- บัญชีหลักสำหรับ payout
+  is_verified       BOOLEAN DEFAULT false,                 -- ยืนยันแล้วหรือยัง
+  verified_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, partner_id, account_type, is_primary)
+);
+CREATE INDEX idx_merchant_accounts_profession ON merchant_accounts(profession_id, merchant_type);
+
+-- ============================================
+-- 2. VENDOR CONTRACTS (สัญญา platform fee / settlement)
+-- ============================================
+CREATE TABLE vendor_contracts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID REFERENCES professions(id),       -- NULL = platform-wide default
+  partner_id        UUID,
+  contract_type     TEXT NOT NULL DEFAULT 'platform_fee'    -- 'platform_fee', 'delivery_fee_share', 'advertising', 'subscription'
+                      CHECK (contract_type IN ('platform_fee', 'delivery_fee_share', 'advertising', 'subscription')),
+  platform_fee_rate DECIMAL(5,4) NOT NULL DEFAULT 0.0300, -- เช่น 0.0300 = 3%
+  minimum_payout    DECIMAL(12,2) NOT NULL DEFAULT 0,      -- ถอนขั้นต่ำ
+  settlement_cycle  TEXT NOT NULL DEFAULT 't_plus_7'         -- 't_plus_1', 't_plus_7', 't_plus_15', 'monthly'
+                      CHECK (settlement_cycle IN ('t_plus_1', 't_plus_7', 't_plus_15', 'monthly')),
+  effective_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+  expiry_date       DATE,
+  is_active         BOOLEAN DEFAULT true,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_vendor_contracts_profession ON vendor_contracts(profession_id, contract_type, is_active);
+
+-- ============================================
+-- 3. SETTLEMENT LEDGERS (ยอดรอจ่าย/จ่ายแล้ว ต่อ merchant ต่อรอบ)
+-- ============================================
+CREATE TABLE settlement_ledgers (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID REFERENCES professions(id),
+  partner_id        UUID,
+  merchant_type     TEXT NOT NULL DEFAULT 'profession'
+                      CHECK (merchant_type IN ('profession', 'partner', 'platform')),
+  settlement_period TEXT NOT NULL,                         -- '2026-06' หรือ '2026-W24'
+  period_start      DATE NOT NULL,
+  period_end        DATE NOT NULL,
+  opening_balance   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_revenue     DECIMAL(12,2) NOT NULL DEFAULT 0,    -- ยอดขายรวมในรอบ
+  total_fee         DECIMAL(12,2) NOT NULL DEFAULT 0,    -- platform fee รวม
+  total_refund      DECIMAL(12,2) NOT NULL DEFAULT 0,    -- ยอดคืนเงิน
+  net_payable       DECIMAL(12,2) NOT NULL DEFAULT 0,    -- ยอดที่ต้องจ่าย
+  total_paid        DECIMAL(12,2) NOT NULL DEFAULT 0,    -- ยอดที่จ่ายไปแล้ว
+  closing_balance   DECIMAL(12,2) NOT NULL DEFAULT 0,    -- net_payable - total_paid
+  status            TEXT NOT NULL DEFAULT 'open'
+                      CHECK (status IN ('open', 'pending_payout', 'partially_paid', 'paid', 'on_hold', 'disputed')),
+  currency          TEXT NOT NULL DEFAULT 'THB',
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, partner_id, settlement_period, merchant_type)
+);
+CREATE INDEX idx_settlement_ledgers_profession ON settlement_ledgers(profession_id, status);
+CREATE INDEX idx_settlement_ledgers_period ON settlement_ledgers(period_start, period_end);
+
+-- ============================================
+-- 4. PAYOUT BATCHES (รวมการโอนจ่ายหลาย merchant — สมบูรณ์)
+-- ============================================
+CREATE TABLE payout_batches (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id     UUID REFERENCES professions(id),   -- NULL = platform payout (หลาย merchant)
+  batch_type        TEXT NOT NULL DEFAULT 'merchant'   -- 'merchant', 'rider', 'refund'
+                      CHECK (batch_type IN ('merchant', 'rider', 'refund')),
+  total_amount      DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  total_records     INTEGER NOT NULL DEFAULT 0,          -- จำนวนรายการใน batch
+  currency          TEXT NOT NULL DEFAULT 'THB',
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'cancelled')),
+  payout_method     TEXT NOT NULL DEFAULT 'bank_transfer' -- 'bank_transfer', 'promptpay', 'wallet'
+                      CHECK (payout_method IN ('bank_transfer', 'promptpay', 'wallet')),
+  bank_reference    TEXT,                                -- เลขอ้างอิงธนาคาร
+  failure_reason    TEXT,
+  retry_count       INTEGER NOT NULL DEFAULT 0,
+  processed_by      UUID REFERENCES users(id),
+  processed_at      TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_payout_batches_status ON payout_batches(status, created_at DESC);
+CREATE INDEX idx_payout_batches_profession ON payout_batches(profession_id, batch_type);
+
+-- ============================================
+-- 5. PAYOUT BATCH LINES (รายละเอียดแต่ละรายการใน batch)
+-- ============================================
+CREATE TABLE payout_batch_lines (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payout_batch_id   UUID NOT NULL REFERENCES payout_batches(id) ON DELETE CASCADE,
+  settlement_ledger_id UUID REFERENCES settlement_ledgers(id),
+  merchant_account_id UUID REFERENCES merchant_accounts(id),
+  merchant_type     TEXT NOT NULL DEFAULT 'profession',
+  merchant_id       UUID,                                  -- profession_id หรือ partner_id
+  payout_amount     DECIMAL(12,2) NOT NULL DEFAULT 0,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  failure_reason    TEXT,
+  bank_reference    TEXT,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  completed_at      TIMESTAMPTZ
+);
+CREATE INDEX idx_payout_batch_lines_batch ON payout_batch_lines(payout_batch_id);
+CREATE INDEX idx_payout_batch_lines_merchant ON payout_batch_lines(merchant_type, merchant_id);
+```
+
 ### Schema สำหรับ Shopping Cart (แนะนำ)
 
 ```sql
@@ -1438,7 +2292,16 @@ CREATE INDEX idx_platform_orders_user ON platform_orders(user_id, created_at DES
 CREATE INDEX idx_platform_orders_checkout ON platform_orders(checkout_session_id);
 ```
 
-### Schema สำหรับ Read Model / Analytics (แนะนำ)
+### Schema สำหรับ Read Model / Analytics Core (แนะนำ)
+
+> **ผลการวิเคราะห์:** `KPI_DASHBOARD_PLAN.md` ระบุว่า "ยอด Actual ดึง Query จากระบบอื่น (POS, Accounting)" ซึ่งหมายความว่าทุกครั้งที่ดู dashboard ต้อง query ข้ามหลายตาราง transactional โดยตรง ขาดโมเดลสำคัญ 6 ประการ:
+> 1. **ไม่มี Read Model / Materialized View —** ไม่มี `dashboard_snapshots` หรือ `kpi_aggregations` ที่ optimize สำหรับการอ่าน ทำให้ dashboard query ไปดึงจาก `orders` + `pos_receipts` + `accounting_entries` + `inventory_movements` + `delivery_orders` พร้อมกัน
+> 2. **ไม่มี Caching Strategy —** ไม่มี Redis / Memcached หรือ PostgreSQL UNLOGGED table สำหรับ snapshot ที่ compute บ่อย → ถ้ามีคนดู dashboard พร้อมกัน 10 คน ระบบต้องคำนวณ aggregate ซ้ำ 10 ครั้ง
+> 3. **ไม่มี Async Data Pipeline —** ไม่มี projection worker ที่ process event จาก `outbox_events` แล้ว update read model แบบ async → dashboard data stale หรือ block write model
+> 4. **ไม่มี Projection Checkpoint —** ถ้า projection worker restart ไม่รู้ว่าคำนวณถึงไหนแล้ว ต้อง full scan ทุกครั้ง
+> 5. **ไม่มี Read Replica / Read-only Endpoint —** dashboard query ไปดึงจาก primary database เดียวกับ transaction → lock contention
+> 6. **ไม่มี Data Retention Policy —** `delivery_tracking` บันทึกพิกัดทุก 5-10 วินาที ถ้าสะสมไม่ลบ ตารางจะโตเร็วมาก
+> 7. **ไม่มี Implementation Code —** ค้นหาใน `lib/` และ `websocket-server/` ไม่พบ projection worker, dashboard repository, หรือ caching layer ใดๆ
 
 ```sql
 -- ============================================
@@ -1640,34 +2503,37 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-### ตาราง priority สำหรับการพัฒนา
+### ตาราง priority สำหรับการพัฒนา (ปรับปรุงหลังวิเคราะห์ 7 Core)
 
-| Priority | สิ่งที่ต้องทำ | เหตุผลหลัก | ผลต่อ scalability |
+| Priority | Core / สิ่งที่ต้องทำ | เหตุผลหลัก | ผลต่อ scalability |
 |---|---|---|---|
-| **P0** | วางแกนธุรกรรมกลาง: `Order`, `PaymentTransaction`, `InventoryReservation`, `OutboxEvent`, `IdempotencyKey` | ลด duplicate write, กัน lost update, และทำให้ checkout ปลอดภัย | **สูงมาก** |
-| **P0** | กำหนด ownership และ state flow ของ `Cart -> Order -> Delivery -> Accounting` ให้ชัด | ป้องกันโมดูลทับกันและทำให้ integration เป็นมาตรฐานเดียว | **สูงมาก** |
-| **P1** | เพิ่ม model สำหรับ delivery เต็มรูปแบบ: rider, run, route stop, POD, exception | ทำให้ logistics ใช้งานจริงได้และรองรับงานพร้อมกันจำนวนมาก | **สูง** |
-| **P1** | เพิ่ม cart split / merchant routing / settlement allocation | จำเป็นสำหรับ global cart ที่ต้องแตก order หลายปลายทาง | **สูง** |
-| **P1** | เพิ่ม stock ledger และ reservation flow ก่อนตัดสต๊อกจริง | ลด oversell และ race condition ตอน concurrent สูง | **สูงมาก** |
-| **P2** | แยก read model / projection สำหรับ dashboard และ monitoring | ลดโหลดบน transactional tables และช่วย scale การอ่าน | **สูง** |
-| **P2** | ขยาย branch / warehouse / stock location / shipping zone | รองรับ multi-branch และ fulfillment หลายพื้นที่ | **กลาง-สูง** |
-| **P2** | วาง settlement และ payout ledger สำหรับ vendor และ rider | จำเป็นต่อ accounting และ reconciliation ที่เชื่อถือได้ | **กลาง-สูง** |
+| **P0** | **Reliability Core** — `IdempotencyKey`, `OutboxEvent`, `InboxEvent`, `TransactionContext`, `CircuitBreakerState` | ทุก core อื่นต้องใช้ — ถ้าไม่มี checkout ไม่ปลอดภัย | **สูงมาก** |
+| **P0** | **Commerce Core** — `Order`, `OrderItem`, `PaymentTransaction`, `CheckoutSession` + state flow `Cart→Order→Delivery→Accounting` | แกนธุรกรรมกลาง ทุกโมดูลอื่นต่อยอด | **สูงมาก** |
+| **P0** | **Inventory Core (พื้นฐาน)** — `InventoryLot`, `InventoryReservation`, `StockMovement`, `WarehouseLocation` | กัน oversell ต้องทำก่อนเปิดขาย — reservation เป็น prerequisite ของ checkout | **สูงมาก** |
+| **P1** | **Cart Core** — `CartSession`, `CartItem` (snapshot), `CheckoutSession` (state machine), `CartMerchantGroup` | ต้องใช้ Commerce + Inventory ที่ P0 เป็นพื้นฐาน | **สูง** |
+| **P1** | **Settlement Core** — `VendorContract`, `MerchantAccount`, `PaymentAllocation`, `SettlementLedger` | dependency ของ Cart split — ต้องคำนวณ fee/payout ตอน checkout | **สูง** |
+| **P1** | **Delivery Core (พื้นฐาน)** — `DeliveryOrder`, `Rider`, `RiderShift`, `DeliveryRun`, `RouteStop`, `POD` | ใช้ได้จริงต้องมีทั้งหมด ไม่ใช่แค่ 2 ตาราง | **สูง** |
+| **P2** | **Read Model / Analytics Core** — `ProjectionCheckpoint`, `DashboardSnapshot`, `KPIAggregations` | ลดโหลดบน transactional tables | **สูง** |
+| **P2** | **Inventory Core (ส่วนขยาย)** — `StockAdjustment`, `InventoryTransfer`, `StocktakeSession`, `ReorderSuggestion`, `InventoryAlert` | ใช้งานจริงได้ แต่ไม่ block checkout | **กลาง-สูง** |
+| **P2** | **Delivery Core (ส่วนขยาย)** — `Shipment`, `ShipmentItem`, `RiderAssignment`, `DeliveryException`, `CarrierConfig` | 3PL, batch assign, exception handling | **กลาง-สูง** |
 | **P3** | ขยาย HIS / LIS / Telemedicine บน backbone ที่นิ่งแล้ว | โมดูล clinical มีความซับซ้อนสูง ควรต่อยอดหลัง core commerce พร้อม | **กลาง** |
 
-### ตาราง Canonical Phase Ordering (แก้ปัญหาเอกสารซ้อนกัน)
+### ตาราง Canonical Phase Ordering (ปรับปรุงหลังวิเคราะห์ 7 Core)
 
 | ERP Phase | ชื่อ Phase | ระบบที่ต้องทำ | Steps ย่อย (จากเอกสารลูก) | เงื่อนไขขึ้นต่อ Phase ก่อน | ความปลอดภัย / ความเร็ว |
 |---|---|---|---|---|---|
-| **Phase 0** | Foundation & Identity | Auth, User, Branch, Role/Permission, Organization Settings | - Auth Service<br>- `organization_branches`<br>- `organization_roles`<br>- `employee_roles`<br>- `role_module_permissions` | — | ถ้าไม่มี phase นี้ก่อน ระบบอื่นจะไม่มี tenant isolation ที่ถูกต้อง |
-| **Phase 1** | Data & Inflow | CRM + Procurement + Inventory + Product/Service Master | - CRM Step 1-3: Schema, Loyalty, Coupon<br>- Procurement Step 1: PR/PO Schema<br>- Inventory Step 1: Stock, Lot, Expiry<br>- Product/Service Catalog (shared master) | Phase 0 | รองรับ zero-mock integration test ได้เพราะมี customer + stock จริง |
-| **Phase 2** | Core Commerce & Platform | POS + Global Cart + Checkout + Payment + Logistics | - POS Step 1-3: Mode A, B, C<br>- Cart Step 1-2: Schema, Split Logic<br>- Payment Step 1: Gateway Integration<br>- Logistics Step 1: Order Routing, Rider Assignment | Phase 1 | POS ต้องมี CRM + Inventory ที่นิ่งก่อน จึงไม่เกิด orphan order |
-| **Phase 3** | Finance & Operations | Accounting + HR + Settlement + Payout | - Accounting Step 1: GL, AP/AR<br>- HR Step 1: Employee, Shift<br>- Settlement Step 1: Platform Fee, Payout | Phase 2 | บันทึกรายได้/รายจ่ายต้องมี order จริงก่อน |
-| **Phase 4** | Clinical & Advanced | HIS + LIS + Telemedicine + CDP + Analytics | - HIS Step 1: EMR, OPD<br>- LIS Step 1: External Lab API<br>- Telemedicine Step 1: Video/Chat Integration<br>- CDP/Analytics Step 1: Read Model, Projection | Phase 1-3 | ระบบ clinical ซับซ้อน ควรต่อยอดหลัง core commerce พร้อม |
+| **Phase 0** | Foundation & Identity + Reliability Core | Auth, User, Branch, Role/Permission, Organization Settings, **Reliability Core** | - Auth Service<br>- `organization_branches`, `organization_roles`, `employee_roles`, `role_module_permissions`<br>- **Reliability Step 1:** `idempotency_keys`, `outbox_events`, `inbox_events`, `transaction_contexts` | — | ถ้าไม่มี tenant isolation + reliability foundation ก่อน ระบบอื่นจะ checkout ไม่ปลอดภัย |
+| **Phase 1** | Data & Inflow | CRM + Procurement + **Inventory Core (พื้นฐาน)** + Product/Service Master | - CRM Step 1-3: Schema, Loyalty, Coupon<br>- Procurement Step 1: PR/PO Schema<br>- **Inventory Step 1:** `inventory_lots`, `warehouse_locations`, `stock_movements`, `inventory_reservations`<br>- Product/Service Catalog (shared master) | Phase 0 | รองรับ zero-mock integration test ได้เพราะมี customer + stock + reservation จริง |
+| **Phase 2** | Core Commerce & Platform | **Commerce Core** + **Cart Core** + Payment + **Settlement Core (พื้นฐาน)** + **Delivery Core (พื้นฐาน)** | - **Commerce Step 1:** `orders`, `order_items`, `payment_transactions`, `checkout_sessions`<br>- **Cart Step 1-2:** `cart_sessions`, `cart_items`, `cart_merchant_groups` (split logic)<br>- **Settlement Step 1:** `vendor_contracts`, `merchant_accounts`, `payment_allocations` (fee/payout ตอน checkout)<br>- Payment Gateway Integration<br>- **Logistics Step 1:** `delivery_orders`, `riders`, `delivery_runs`, `route_stops`, `POD` | Phase 1 | POS ต้องมี Inventory Reservation + Settlement Contract ก่อนจึงไม่เกิด orphan order หรือ split ที่คำนวณไม่ได้ |
+| **Phase 3** | Finance & Operations + Read Model / Analytics Core | Accounting + HR + **Settlement Core (ส่วนขยาย)** + **Read Model / Analytics Core** | - Accounting Step 1: GL, AP/AR<br>- HR Step 1: Employee, Shift<br>- **Settlement Step 2:** `settlement_ledgers`, `payout_batches`, `payout_batch_lines`<br>- **Read Model Step 1:** `projection_checkpoints`, `dashboard_snapshots`, `kpi_aggregations` | Phase 2 | บันทึกรายได้/รายจ่าย + สร้าง read model ต้องมี order จริงก่อน แต่ไม่ต้องรอ clinical |
+| **Phase 4** | Clinical & Advanced | HIS + LIS + Telemedicine + CDP | - HIS Step 1: EMR, OPD<br>- LIS Step 1: External Lab API<br>- Telemedicine Step 1: Video/Chat Integration<br>- CDP Step 1: Customer cohort, analytics enrichment | Phase 1-3 | ระบบ clinical ซับซ้อน ควรต่อยอดหลัง core commerce + read model พร้อม |
 
 **กฎสำหรับเอกสารลูก:**
 - ทุกเอกสารย่อย (POS, CRM, etc.) ต้องระบุ `ERP Phase X / [System] Step Y` แทนการใช้ `Phase 1` ของตัวเอง
 - ถ้าเอกสารลูกมี steps มากกว่า 1 ใน phase เดียวกัน ให้ขนานกันได้ (เช่น CRM Step 1-3 ทำพร้อมกันใน Phase 1)
 - ถ้าเอกสารลูกต้องการเริ่มก่อน upstream เสร็จ ให้ใช้ **mock contract + interface** แต่ห้าม merge ลง production จนกว่า upstream phase จะผ่าน integration test
+- **เอกสารลูกห้าม duplicate DDL — อ้างอิง schema จาก `ERP_CORE_ARCHITECTURE.md` เท่านั้น:** เอกสารลูกกล่าวถึง business logic / UI flow / API contract เท่านั้น ไม่เขียน `CREATE TABLE` ซ้ำ — ถ้า master เปลี่ยน schema เอกสารลูกไม่ต้องแก้ (เพราะไม่มี schema ซ้ำ)
+- **Change Propagation:** เมื่อ `ERP_CORE_ARCHITECTURE.md` อัปเดต schema ของ core ใดๆ เอกสารลูกที่เกี่ยวข้องต้องได้รับการทำเครื่องหมาย `[STALE — รอ sync]` และต้องอัปเดตภายใน 1 sprint
 
 ### ตาราง Canonical Ownership Model
 
@@ -1680,6 +2546,12 @@ $$ LANGUAGE plpgsql;
 | **Payment** | Platform | — | รับเงิน, split, payout |
 | **Accounting (Merchant GL)** | Accounting Module | — | รายได้, ภาษี, ค่าใช้จ่าย |
 | **Accounting (Platform GL)** | Platform Accounting | — | platform fee, payout liability |
+| **Reliability Core** | Platform (infrastructure team) | — | `outbox_events`, `idempotency_keys`, `circuit_breaker_states` — cross-cutting infrastructure |
+| **Inventory Core** | Inventory Module / ERP | Platform (read-only mirror via outbox) | `inventory_lots`, `inventory_reservations` — write ผ่าน `InventoryRepository` เท่านั้น |
+| **Settlement Core** | Platform Accounting | Merchant Module (event consumer) | `vendor_contracts`, `payment_allocations`, `payout_batches` — คำนวณที่ Platform ส่ง event ให้ Merchant Accounting |
+| **Read Model / Analytics Core** | Platform (infrastructure worker) | แต่ละ Module (data source via outbox) | `dashboard_snapshots`, `projection_checkpoints` — module ต่างๆ ส่ง event ให้ worker ประมวลผล ไม่เขียนตรง |
+
+> **กลยุทธ์ Mirror / Replica:** `outbox_events` เป็น canonical channel เดียวสำหรับ cross-module sync — ไม่ให้ module อื่น update ตารางของ module ตรงๆ หรือ query foreign DB โดยตรง
 
 ### ข้อสรุปเชิงปฏิบัติ
 
@@ -1687,17 +2559,41 @@ $$ LANGUAGE plpgsql;
 - **Delivery และ Shopping Cart ควรถูกมองเป็น execution layer ที่ต่อกับ commerce core ไม่ใช่ระบบแยกอิสระ**
 - **ก่อนขยายฟีเจอร์ใหม่ ควรล็อก model กลางและ consistency strategy ให้เสร็จ**
 - **หากต้องรองรับ concurrent สูงจริง ต้องออกแบบไปทาง event-driven + read model + idempotent write ตั้งแต่ต้น**
+- **Data Migration — Strangler Fig + Dual-Write:** ยุบตารางซ้อนทับ (`platform_shopping_cart` + POS `shopping_carts` → `cart_sessions`) ต้องทำผ่าน dual-write (write ทั้งตารางเก่าและใหม่พร้อมกัน 1-2 sprint) แล้วค่อย redirect foreign key และ drop ตารางเก่า — ไม่มี downtime รองรับ rollback
+- **Mirror / Replica ผ่าน Outbox Pattern:** Module ที่เป็น canonical owner เท่านั้นเขียนตารางตัวเอง แล้ว publish event ผ่าน `outbox_events` — module อื่นอ่านผ่าน event ไม่ query DB ตรง
+- **RLS อยู่ที่ Application Layer (Repository Pattern):** เนื่องจากใช้ custom `AuthService` ผ่าน `ServiceLocator` แทน Supabase Auth native → RLS policy ไม่ใช้ที่ PostgreSQL layer แต่ audit ทุก repository ให้ inject `userId` จาก `ServiceLocator` ถูกต้อง
 
 ---
 
 ### สิ่งที่ยังไม่ได้เชื่อมต่อตามแผน
-- **Routing**: ยังไม่ได้กำหนด route สำหรับ `/erpHome`, `/erpDashboard`, `/posManagement`, ฯลฯ ใน `MaterialApp` หรือระบบ router
-- **โมดูลที่ขาด**: ยังไม่มีไฟล์ UI จริงสำหรับ **Procurement Management**, **Accounting Management**, **HR Management**, **CRM Management**, **Permission Management**
-- **เชื่อมโยง Dashboard**: `ErpDashboardPage` ยังไม่เชื่อมต่อกับหน้าโมดูลย่อย (ยังคงเป็น `onTap` ที่ placeholder)
-- **Feature Toggles**: ตาราง `organization_feature_flags` ยังไม่ได้ถูกนำมาใช้ในการเปิด/ปิดโมดูล UI
-- **HomeErpCard Route**: ยังไม่ได้อัปเดต navigation จาก `HomeErpCard` ไปยัง `ErpHomePage`
-- **Permission Page**: ยังไม่มี UI สำหรับจัดการสิทธิ์ (`Permission Management Page`)
-- **KPI Dashboard**: มีการออกแบบแผนงานแล้วที่ `KPI_DASHBOARD_PLAN.md` (ใช้ระบบสิทธิ์ร่วมกับ HR) แต่ยังไม่มีการสร้างหน้าจอ UI จริง
+
+รายการนี้ถูกแบ่งเป็น 3 กลุ่มตามความเร่งด่วนและ Phase Ordering:
+
+#### กลุ่ม A: Current Blockers (ต้องแก้ก่อนเริ่ม Phase ใดๆ)
+
+| ลำดับ | รายการ | เหตุผลที่เป็น Blocker |
+|---|---|---|
+| 1 | **Feature Toggles** — `organization_feature_flags` ยังไม่ถูกนำมาใช้ในการเปิด/ปิดโมดูล UI | ถ้าไม่มี ทุก module ที่ merge ใน Phase 2-3 จะมองเห็นทั้งหมทั้งหมดตั้งแต่ Phase 0 → security risk |
+| 2 | **Permission Page UI** — ยังไม่มีหน้าจอสำหรับจัดการสิทธิ์ (`Permission Management Page`) | Phase 0 ระบุว่ามี Role/Permission แต่จริงๆ ไม่มีที่ให้ admin จัดการ RBAC → ใช้ default role ทุกคน |
+| 3 | **Routing + Dashboard onTap** — `/erpHome`, `/erpDashboard`, `/posManagement` ยังไม่ได้กำหนด route ใน `MaterialApp` และ `ErpDashboardPage` onTap ยังเป็น placeholder | Navigation ขาด → user ไปไม่ถึง module ที่ implement แล้ว |
+| 4 | **HomeErpCard → ErpHomePage** — navigation จาก `HomeErpCard` ยังไม่อัปเดต | Minor blocker — user คลิกจาก Home แล้วไม่เข้า ERP |
+
+#### กลุ่ม B: Future Work (ตาม Phase Ordering)
+
+| Phase | รายการ | หมายเหตุ |
+|---|---|---|
+| **Phase 1** | **Procurement Management UI**, **CRM Management UI**, **Inventory Management UI** | Schema มีแล้ว (`inventory_lots`, `stock_movements`, `warehouse_locations`) แต่ไม่มีหน้าจอให้ admin จัดการ |
+| **Phase 2** | **Cart / Checkout UI**, **Delivery / Logistics UI**, **POS Mode B/C UI** | `SHOPPING_CART_PLAN.md` มี schema เก่า 3 ตาราง — ต้องสร้าง UI สำหรับ `cart_sessions` ใหม่; `Delivery_PLAN.md` เป็น documentation-only |
+| **Phase 3** | **Accounting Management UI**, **HR Management UI**, **Settlement / Payout UI**, **KPI Dashboard UI** | `KPI_DASHBOARD_PLAN.md` มีแผนแต่ไม่มีหน้าจอ; Settlement ต้องรอ Phase 3 (`payout_batches`, `settlement_ledgers`) |
+| **Phase 4** | **HIS / LIS / Telemedicine UI** | รอ core commerce + read model พร้อม |
+
+#### กลุ่ม C: Infrastructure (ไม่มี Phase แต่ต้องมี)
+
+| รายการ | เหตุผล | ความสำคัญ |
+|---|---|---|
+| **Outbox / Idempotency Monitor UI** | ต้องดู `outbox_events`, `dead_letter_records`, `circuit_breaker_states` ได้เพื่อ debug event-driven system | **P2** — ถ้า event หายจะไม่รู้ว่าเกิดอะไร |
+| **Subscription Schema → Phase Mapping** | `subscription_plans` (line 2555) อยู่นอก Phase Ordering — ควร map ว่าอยู่ Phase ไหน (Phase 0 หรือ add-on?) | **P2** — ไม่ชัดว่าเป็น foundation หรือ business feature |
+| **Migration Tool / Backfill Runner** | Strangler Fig + Dual-Write ต้องการเครื่องมือ run backfill script (`cart_sessions` จากตารางเก่า 2 ชุด) | **P2** — ถ้าไม่มีเครื่องมือ backfill จะต้องทำมือ |
 
 *หมายเหตุ: สามารถคลิกที่ชื่อแต่ละระบบเพื่อเข้าไปดู/แก้ไขรายละเอียดแผนงานเชิงลึกได้*สร้างฐานข้อมูล (Subscription Schema)
 
@@ -1712,6 +2608,8 @@ CREATE TABLE subscription_plans (
   trial_days        INTEGER NOT NULL DEFAULT 30,            -- จำนวนวันทดลองใช้
   is_custom         BOOLEAN DEFAULT false,                  -- true = แพลนพิเศษเฉพาะองค์กร
   target_profession_id UUID REFERENCES professions(id),     -- ถ้าเป็น Custom Plan → ระบุองค์กรเป้าหมาย (NULL = แพลนกลาง)
+  required_erp_phase TEXT NOT NULL DEFAULT 'Phase 0',       -- Phase ขั้นต่ำที่ต้องเสร็จก่อนขายแพลนนี้ ('Phase 0'-'Phase 4')
+  minimum_core_version TEXT NOT NULL DEFAULT '1.0.0',       -- Semantic version ของ core schema ที่ compatible
   is_active         BOOLEAN DEFAULT true,
   created_by        UUID NOT NULL REFERENCES users(id),     -- ERP Service Manager ที่สร้าง
   created_at        TIMESTAMPTZ DEFAULT now(),
@@ -1722,7 +2620,8 @@ CREATE TABLE subscription_plans (
 CREATE TABLE subscription_plan_modules (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   plan_id           UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
-  module_name       TEXT NOT NULL,  -- 'pos', 'inventory', 'procurement', 'accounting', 'hr', 'crm', 'his', 'lis', 'telemedicine', 'logistics'
+  module_name       TEXT NOT NULL,  -- 'pos', 'inventory', 'procurement', 'accounting', 'hr', 'crm', 'his', 'lis', 'telemedicine', 'logistics', 'reliability', 'commerce', 'cart', 'settlement', 'read_model'
+                                    -- หมายเหตุ: 'reliability' เป็น always-on infrastructure — ไม่ให้ปิด (is_enabled ต้องเป็น true เสมอ)
   is_enabled        BOOLEAN NOT NULL DEFAULT true,
   UNIQUE (plan_id, module_name)
 );
@@ -1754,7 +2653,21 @@ CREATE TABLE organization_subscriptions (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
--- 5. ประวัติการชำระเงินค่า Subscription
+-- 5. ประวัติการเปลี่ยนแปลง Subscription (Audit Trail)
+CREATE TABLE subscription_change_log (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id   UUID NOT NULL REFERENCES organization_subscriptions(id) ON DELETE CASCADE,
+  changed_field     TEXT NOT NULL,  -- 'plan_id', 'status', 'is_internal_free', 'trial_end_date', 'subscription_end_date'
+  old_value         TEXT,
+  new_value         TEXT NOT NULL,
+  reason            TEXT,           -- เหตุผลการเปลี่ยนแปลง (เช่น 'upgrade_plan', 'free_waiver_approved', 'trial_expired')
+  actor_id          UUID NOT NULL REFERENCES users(id),  -- ใครเป็นคนเปลี่ยน
+  actor_role        TEXT NOT NULL DEFAULT 'system',     -- 'system', 'erp_service_manager', 'organization_owner', 'payment_gateway'
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_subscription_change_log_subscription ON subscription_change_log(subscription_id, created_at DESC);
+
+-- 6. ประวัติการชำระเงินค่า Subscription
 CREATE TABLE subscription_payments (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subscription_id   UUID NOT NULL REFERENCES organization_subscriptions(id) ON DELETE CASCADE,
@@ -1785,6 +2698,7 @@ ALTER TABLE subscription_plans             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscription_plan_modules      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscription_plan_quotas       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_subscriptions     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscription_change_log        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscription_payments          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_usage_counters    ENABLE ROW LEVEL SECURITY;
 ```
@@ -1809,6 +2723,11 @@ ALTER TABLE organization_usage_counters    ENABLE ROW LEVEL SECURITY;
 | **Telemedicine** | `max_teleconsult_minutes_per_month` | จำนวนนาทีวิดีโอคอลต่อเดือน |
 | **Logistics** | `max_delivery_rounds_per_month` | จำนวนรอบจัดส่งต่อเดือน |
 | **Global** | `max_branches` | จำนวนสาขาสูงสุดที่เปิดได้ |
+| **Infrastructure** | `max_outbox_events_per_minute` | จำนวน outbox events ที่สร้างได้ต่อนาที |
+| **Infrastructure** | `max_concurrent_checkouts` | จำนวน checkout พร้อมกันสูงสุด |
+| **Infrastructure** | `max_dashboard_queries_per_hour` | จำนวน dashboard queries ต่อชั่วโมง |
+| **Infrastructure** | `max_inventory_reservation_ttl_minutes` | เวลาสูงสุดที่ stock ถูก reserve ก่อน auto-release |
+| **Infrastructure** | `max_circuit_breaker_recovery_per_hour` | จำนวน recovery จาก circuit breaker ต่อชั่วโมง |
 
 ### กระบวนการทำงาน (Subscription Workflow)
 
@@ -1821,19 +2740,24 @@ ALTER TABLE organization_usage_counters    ENABLE ROW LEVEL SECURITY;
 
 ### การตรวจสอบโควต้าในระบบ (Quota Enforcement Logic)
 
-ระบบจะตรวจสอบโควต้า **ณ จุดที่มีการกระทำสำคัญ** (Write Operation) ทุกครั้ง:
+ระบบจะตรวจสอบโควต้า **ที่ PostgreSQL Layer (RPC Function)** เพื่อให้ทำงานได้ทั้งจาก Flutter App และ Background Worker:
 
 ```
-Flutter App → Repository Layer → QuotaGuard Middleware → Supabase RPC
+Entry Point (Flutter App หรือ Worker)
+  → เรียก Supabase RPC: check_quota(profession_id, quota_key, increment_amount)
+    → PostgreSQL Function ตรวจสอบ is_internal_free + plan_quota + usage_counter
+      → อนุญาต / ปฏิเสธ พร้อม return remaining_quota
+```
 
 ขั้นตอน:
-1. Repository เรียก QuotaGuard.check(professionId, quotaKey)
-2. QuotaGuard ดึง subscription ปัจจุบัน (ตรวจสอบฟิลด์ `is_internal_free`) + โควต้าของแพลน + usage counter
-3. หาก `is_internal_free = true` → ยกเว้นการตรวจสอบทั้งหมด → อนุญาตทันที (สิทธิ์เทียบเท่า Enterprise, Unlimited Quota)
-4. หาก current_value < quota_value → อนุญาต → เพิ่ม counter +1
-5. หาก current_value >= quota_value → ปฏิเสธ → แสดง UpgradeDialog
-6. หาก quota_value = -1 → ไม่จำกัด → อนุญาตทันที
-```
+1. **ทุก write operation** (ทั้งจาก Flutter Repository และ background worker) ต้องผ่าน `check_quota()` RPC **ก่อน** commit transaction
+2. `check_quota()` ดึง subscription ปัจจุบัน + ตรวจสอบ `is_internal_free`
+3. หาก `is_internal_free = true` → ยกเว้น → อนุญาตทันที (ไม่นับ counter)
+4. หาก `quota_value = -1` (Unlimited) → อนุญาตทันที (ไม่ตรวจสอบ ceiling)
+5. หาก `current_value + increment_amount <= quota_value` → อนุญาต → `current_value += increment_amount` (ใช้ `SELECT ... FOR UPDATE` กัน race condition)
+6. หาก `current_value + increment_amount > quota_value` → ปฏิเสธ → return error code `QUOTA_EXCEEDED` → Flutter แสดง UpgradeDialog / Worker เก็บ dead_letter
+
+> **เหตุผล:** QuotaGuard อยู่ที่ PostgreSQL layer แทน Flutter Middleware → worker ที่ consume outbox events ก็ถูกนับ quota เท่ากัน → ไม่มี under-count หรือ over-count
 
 ---
 
@@ -1941,62 +2865,9 @@ Flutter App → Repository Layer → QuotaGuard Middleware → Supabase RPC
 
 ## แผนงานการพัฒนาและลำดับความสำคัญ (Development Roadmap & Phase Ordering)
 
-เพื่อให้ง่ายต่อการแตกงานย่อย (Task Breakdown) และคำนึงถึงความเกี่ยวพันของข้อมูล (Data Dependencies) ลำดับการพัฒนาระบบ ERP ทั้ง 10 โมดูล รวมถึงระบบจัดส่ง [Logistics / Delivery Management](../plans/Delivery_PLAN.md) จะถูกแบ่งออกเป็น 4 เฟสหลักดังนี้:
-
-```mermaid
-graph TD
-    subgraph Phase 1: Foundations
-        POS[1. POS System] --> INV[2. Inventory System]
-    end
-    subgraph Phase 2: Operations
-        INV --> PRO[3. Procurement]
-        PRO --> ACC[4. Accounting]
-        INV --> LOG[5. Logistics/Delivery]
-        POS --> LOG
-    end
-    subgraph Phase 3: Engagement & Staffing
-        POS --> CRM[6. CRM System]
-        POS --> HR[7. HR System]
-    end
-    subgraph Phase 4: Medical & Integrations
-        CRM --> HIS[8. HIS / EMR System]
-        INV --> HIS
-        HIS --> LIS[9. LIS / External Lab]
-        HIS --> TELE[10. Telemedicine & Video]
-    end
-```
-
-### เฟส 1: ระบบรากฐานการค้า (Core Commerce Foundations)
-เป็นเฟสแรกสุดที่ต้องทำเนื่องจากระบบอื่นๆ ต้องใช้ฐานข้อมูลสินค้าและรายการขาย
-1. **[POS System](POS System_plan.md) (ระบบขายหน้าร้าน):** จัดการสินค้า ราคาขาย และการรับชำระเงิน
-2. **[Inventory / Stock System](INVENTORY_SYSTEM_PLAN.md) (ระบบคลังสินค้า):** จัดการ SKU, ล็อตสินค้า, วันหมดอายุ และการตัดสต็อกสินค้าทันทีเมื่อ POS ขายออก
-
-### เฟส 2: ระบบบริหารหลังบ้านและขนส่ง (Operational & Logistics Support)
-เฟสที่ช่วยสนับสนุนการขายและการเคลื่อนย้ายสินค้า
-3. **[Procurement / Purchasing System](PROCUREMENT_SYSTEM_PLAN.md) (ระบบจัดซื้อ):** ทำหน้าที่ออก PR/PO เพื่อนำสินค้าเข้าคลัง (Inventory)
-4. **[Logistics / Delivery Management](../plans/Delivery_PLAN.md) (ระบบจัดส่ง):** เชื่อมโยงเพื่อนำสินค้าหรือยาที่ชำระเงินจาก POS/HIS ไปจัดส่งผ่านพนักงานขับรถหรือไรเดอร์
-5. **[Accounting / Finance System](ACCOUNTING_SYSTEM_PLAN.md) (ระบบบัญชี):** รับรู้รายได้จาก POS และรายจ่ายจาก Procurement เพื่อลงบันทึกสมุดรายวันขั้นต้น
-
-### เฟส 3: ระบบจัดการบุคลากรและลูกค้าสัมพันธ์ (Engagement & Staffing)
-เฟสสำหรับการขยายขีดความสามารถการบริการลูกค้าและการบริหารองค์กร
-6. **[CRM System](CRM_SYSTEM_PLAN.md) (ระบบลูกค้าสัมพันธ์):** จัดการโปรไฟล์ลูกค้า, คะแนนสะสม, แพ็กเกจการรักษา และการรีวิวสินค้าเพื่อสะสมแต้ม
-7. **[HR System](HR_SYSTEM_PLAN.md) (ระบบทรัพยากรบุคคล):** จัดการกะการทำงานพนักงาน และดึงยอดขายจาก POS มาคำนวณค่าคอมมิชชัน
-
-### เฟส 4: ระบบการแพทย์และการเชื่อมต่อภายนอก (Advanced Clinical & Integrations)
-เฟสสุดท้ายที่มีความซับซ้อนสูงและต้องอาศัยฐานข้อมูลคนไข้ (CRM) และคลังยา (Inventory) เป็นพื้นฐาน
-8. **[HIS / Clinic Management System](HIS_SYSTEM_PLAN.md) (ระบบบริหารคลินิก/เวชระเบียน EMR):** จัดการคิวคนไข้, บันทึกการรักษาของแพทย์ (EMR), และการสั่งจ่ายยา
-9. **[LIS / Laboratory Information System (External Lab Integration)](LAB_SYSTEM_PLAN.md) (ระบบแล็บ):** เชื่อมต่อส่งใบสั่งตรวจจาก HIS ไปยังแล็บภายนอก และส่งกลับผลตรวจเข้า EMR
-10. **[Telemedicine System](../plans/CHAT_CONSULTATION_IMPROVEMENT_PLAN.md) & [Video System](../plans/VIDEO_SYSTEM_PLAN.md) (ระบบโทรเวชกรรม):** ให้บริการพบแพทย์ทางไกลผ่าน Video Call บันทึกประวัติเข้า EMR และสั่งยาข้ามไปยังระบบจัดส่ง (Logistics)
-
----
-
-### สิ่งที่ยังไม่ได้เชื่อมต่อตามแผน
-- **Routing**: ยังไม่ได้กำหนด route สำหรับ `/erpHome`, `/erpDashboard`, `/posManagement`, ฯลฯ ใน `MaterialApp` หรือระบบ router
-- **โมดูลที่ขาด**: ยังไม่มีไฟล์ UI จริงสำหรับ **Procurement Management**, **Accounting Management**, **HR Management**, **CRM Management**, **Permission Management**
-- **เชื่อมโยง Dashboard**: `ErpDashboardPage` ยังไม่เชื่อมต่อกับหน้าโมดูลย่อย (ยังคงเป็น `onTap` ที่ placeholder)
-- **Feature Toggles**: ตาราง `organization_feature_flags` ยังไม่ได้ถูกนำมาใช้ในการเปิด/ปิดโมดูล UI
-- **HomeErpCard Route**: ยังไม่ได้อัปเดต navigation จาก `HomeErpCard` ไปยัง `ErpHomePage`
-- **Permission Page**: ยังไม่มี UI สำหรับจัดการสิทธิ์ (`Permission Management Page`)
-- **KPI Dashboard**: มีการออกแบบแผนงานแล้วที่ `KPI_DASHBOARD_PLAN.md` (ใช้ระบบสิทธิ์ร่วมกับ HR) แต่ยังไม่มีการสร้างหน้าจอ UI จริง
-
-*หมายเหตุ: สามารถคลิกที่ชื่อแต่ละระบบเพื่อเข้าไปดู/แก้ไขรายละเอียดแผนงานเชิงลึกได้*
+> **หมายเหตุ:** ส่วนนี้ถูกรวมเข้ากับเนื้อหาหลักข้างต้นแล้ว โปรดดู:
+> - **ตาราง Priority:** `### ตาราง priority สำหรับการพัฒนา (ปรับปรุงหลังวิเคราะห์ 7 Core)`
+> - **ตาราง Phase Ordering:** `### ตาราง Canonical Phase Ordering (ปรับปรุงหลังวิเคราะห์ 7 Core)`
+> - **สิ่งที่ยังไม่ได้เชื่อมต่อ:** `### สิ่งที่ยังไม่ได้เชื่อมต่อตามแผน` (แยก 3 กลุ่ม: Current Blockers / Future Work / Infrastructure)
+>
+> ส่วน Mermaid diagram และรายการ bullet แบบเดิมถูกลบออกเพื่อป้องกัน drift ระหว่างเอกสารหลักกับสำเนา

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../models/donation_models.dart';
@@ -105,25 +106,38 @@ class DonationRepository {
     String? userId,
     bool bypassStatusFilter = false,
   }) async {
-    var query = _client.from('donation_requests').select();
-    
-    if (categoryId != null) {
-      query = query.eq('category_id', categoryId);
-    }
+    try {
+      var query = _client.from('donation_requests').select();
 
-    if (userId != null) {
-      query = query.eq('user_id', userId);
+      if (categoryId != null) {
+        query = query.eq('category_id', categoryId);
+      }
+
+      if (userId != null) {
+        query = query.eq('user_id', userId);
+      }
+
+      if (!bypassStatusFilter) {
+        query = query.eq('approval_status', DonationApprovalStatus.active.name);
+      }
+
+      final response = await query.order('created_at', ascending: false);
+
+      final list = response as List;
+      final results = <DonationRequest>[];
+      for (int i = 0; i < list.length; i++) {
+        try {
+          results.add(DonationRequest.fromJson(list[i] as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('DonationRepository.getRequests: Error parsing request at index $i: $e');
+          // Skip corrupted rows instead of failing the whole query
+        }
+      }
+      return results;
+    } catch (e) {
+      debugPrint('DonationRepository.getRequests: Query error: $e');
+      rethrow;
     }
-    
-    if (!bypassStatusFilter) {
-      query = query.eq('approval_status', DonationApprovalStatus.active.name);
-    }
-    
-    final response = await query.order('created_at', ascending: false);
-    
-    return (response as List)
-        .map((json) => DonationRequest.fromJson(json))
-        .toList();
   }
 
   /// ✅ ดึงคำร้องทั้งหมดที่ผูกกับวิดีโอ (รองรับหลายคำร้องต่อวิดีโอเดียว)
@@ -155,13 +169,7 @@ class DonationRepository {
     String categoryId,
   ) async {
     try {
-      // ดึง profession IDs ของผู้ใช้
-      final userProfIds = await getUserApproverProfessions(userId);
-      if (userProfIds.isEmpty) {
-        return 'คุณยังไม่มีการกำหนดอาชีพในระบบ กรุณาอัปเดตโปรไฟล์ก่อน';
-      }
-
-      // ดึง volunteer_profession_ids ของหมวดหมู่นี้
+      // ดึง volunteer_profession_ids ของหมวดหมู่นี้ก่อน
       final catData = await _client
           .from('donation_categories')
           .select('name, volunteer_profession_ids')
@@ -178,7 +186,14 @@ class DonationRepository {
               .map((e) => e.toString()));
 
       // ถ้าแอดมินไม่กำหนด volunteer_profession_ids เลย → ไม่จำกัดสิทธิ์
+      // (ผู้ใช้ทุกคนสามารถสร้างคำร้องในหมวดหมู่นี้ได้)
       if (volunteerIds.isEmpty) return null;
+
+      // ดึง profession IDs ของผู้ใช้ (เฉพาะเมื่อหมวดหมู่นี้มีการจำกัดสิทธิ์)
+      final userProfIds = await getUserApproverProfessions(userId);
+      if (userProfIds.isEmpty) {
+        return 'คุณยังไม่มีการกำหนดอาชีพในระบบ กรุณาอัปเดตโปรไฟล์ก่อน';
+      }
 
       // ตรวจว่าอาชีพใดของผู้ใช้ที่ตรง
       final hasEligibleProfession =
@@ -492,12 +507,12 @@ class DonationRepository {
       }
 
       // 2. ดึงจากสิทธิ์เพิ่มเติม (user_group_roles table)
+      // Note: user_group_roles ไม่มีคอลัมน์ is_active (ดู migration 20260224103000_groups_and_roles.sql)
       final response = await _client
           .from('user_group_roles')
           .select('profession_id')
-          .eq('user_id', userId)
-          .eq('is_active', true);
-          
+          .eq('user_id', userId);
+
       allProfIds.addAll((response as List).map((r) => r['profession_id'] as String));
 
       return allProfIds.toSet().toList();

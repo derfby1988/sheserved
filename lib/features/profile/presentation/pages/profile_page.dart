@@ -18,6 +18,7 @@ import '../../../../services/auth_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
+import '../../../admin/data/repositories/profession_repository.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,6 +27,7 @@ import 'package:sheserved/features/emergency/data/repositories/emergency_health_
 import 'package:sheserved/features/emergency/data/repositories/emergency_dead_man_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../../auth/data/models/user_model.dart';
+import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supa;
 import '../../../donation/data/repositories/donation_repository.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
@@ -96,6 +98,11 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isSavingUnblurred = false; // สถานะการบันทึกสิทธิ์ดูวิดีโอ
   String? _selectedCategory; // หมวดหมู่ที่กำลังเลือกอยู่
 
+  // ฟีเจอร์เปลี่ยนอาชีพ (Profession Change)
+  List<prof.Profession> _allProfessions = [];
+  bool _isLoadingAllProfessions = false;
+  bool _isChangingProfession = false;
+
   String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
 
   @override
@@ -131,6 +138,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       _loadProfile();
       _loadVolunteerProfessions();
+      _loadAllProfessions();
       _checkCanApproveDonationStatus();
     });
   }
@@ -957,7 +965,86 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 12),
           _buildFieldRow('นามสกุล', _user?.lastName ?? ''),
         ],
+        const SizedBox(height: 12),
+        _buildProfessionRow(),
       ],
+    );
+  }
+
+  Widget _buildProfessionRow() {
+    final professionName = _profession?.name ?? 'ยังไม่ได้เลือกอาชีพ';
+    final isVerified = _user?.verificationStatus == VerificationStatus.verified;
+    final isPending = _user?.verificationStatus == VerificationStatus.pending;
+    final isRejected = _user?.verificationStatus == VerificationStatus.rejected;
+
+    return InkWell(
+      onTap: _isChangingProfession ? null : _showProfessionPicker,
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              'อาชีพ',
+              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    professionName,
+                    style: AppTextStyles.bodyMedium,
+                  ),
+                ),
+                if (isVerified)
+                  const Icon(Icons.verified, color: AppColors.primary, size: 16)
+                else if (isPending)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'รอตรวจสอบ',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.orange,
+                        fontSize: 11,
+                      ),
+                    ),
+                  )
+                else if (isRejected)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'ไม่ผ่าน',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.red,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                if (_isChangingProfession)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1116,6 +1203,310 @@ class _ProfilePageState extends State<ProfilePage> {
         Expanded(child: Text(value, style: AppTextStyles.bodyMedium)),
       ],
     );
+  }
+
+  void _showProfessionPicker() {
+    if (_allProfessions.isEmpty && !_isLoadingAllProfessions) {
+      _loadAllProfessions();
+    }
+
+    // Group professions by category
+    final Map<String, List<prof.Profession>> groups = {};
+    final Map<String, prof.UserCategory> categories = {};
+    for (var p in _allProfessions) {
+      if (!groups.containsKey(p.category.id)) {
+        groups[p.category.id] = [];
+        categories[p.category.id] = p.category;
+      }
+      groups[p.category.id]!.add(p);
+    }
+    final sortedCatIds = categories.keys.toList()
+      ..sort((a, b) => (categories[a]?.displayOrder ?? 0)
+          .compareTo(categories[b]?.displayOrder ?? 0));
+
+    String? expandedCatId = _profession?.category.id;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.55,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(32),
+              topRight: Radius.circular(32),
+            ),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    Text(
+                      'เลือกอาชีพ',
+                      style: AppTextStyles.heading5.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_isLoadingAllProfessions)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: _isLoadingAllProfessions
+                    ? const Center(child: CircularProgressIndicator())
+                    : Scrollbar(
+                        thumbVisibility: true,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          itemCount: sortedCatIds.length,
+                          itemBuilder: (context, index) {
+                            final catId = sortedCatIds[index];
+                            final category = categories[catId]!;
+                            final proList = groups[catId]!;
+
+                            if (proList.length == 1) {
+                              final p = proList.first;
+                              final isSelected = _profession?.id == p.id;
+                              return _buildProfessionPickerItem(
+                                p, isSelected, setModalState,
+                              );
+                            }
+
+                            final isExpanded = expandedCatId == catId;
+                            final hasSelectedInGroup = proList.any(
+                              (p) => _profession?.id == p.id,
+                            );
+
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                dividerColor: Colors.transparent,
+                              ),
+                              child: ExpansionTile(
+                                key: Key('${catId}_$isExpanded'),
+                                initiallyExpanded: isExpanded,
+                                onExpansionChanged: (expanding) {
+                                  setModalState(() {
+                                    expandedCatId = expanding ? catId : null;
+                                  });
+                                },
+                                shape: const Border(),
+                                collapsedShape: const Border(),
+                                tilePadding: EdgeInsets.zero,
+                                childrenPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  _getIconForProfession(category.iconName),
+                                  color: AppColors.primary,
+                                  size: 22,
+                                ),
+                                title: Text(
+                                  category.name,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: hasSelectedInGroup
+                                        ? AppColors.primary
+                                        : AppColors.textPrimary,
+                                  ),
+                                ),
+                                children: proList.map((p) {
+                                  final isSelected = _profession?.id == p.id;
+                                  return _buildProfessionPickerItem(
+                                    p, isSelected, setModalState,
+                                    padding: const EdgeInsets.only(left: 20),
+                                  );
+                                }).toList(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionPickerItem(
+    prof.Profession p,
+    bool isSelected,
+    StateSetter setModalState, {
+    EdgeInsets? padding,
+  }) {
+    final color = p.colorHex != null
+        ? Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')))
+        : AppColors.primary;
+
+    return ListTile(
+      onTap: () {
+        Navigator.pop(context);
+        _onProfessionSelected(p);
+      },
+      contentPadding: padding ?? EdgeInsets.zero,
+      leading: Icon(
+        _getIconForProfession(p.iconName),
+        color: color,
+        size: 22,
+      ),
+      title: Text(
+        p.name,
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: isSelected ? AppColors.primary : AppColors.textPrimary,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      subtitle: p.requiresVerification
+          ? Text(
+              'ต้องผ่านการตรวจสอบ',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.orange,
+                fontSize: 11,
+              ),
+            )
+          : null,
+      trailing: isSelected
+          ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+          : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      tileColor: isSelected ? AppColors.primary.withOpacity(0.05) : null,
+    );
+  }
+
+  IconData _getIconForProfession(String? iconName) {
+    switch (iconName) {
+      case 'shopping_cart': return Icons.shopping_cart;
+      case 'store': return Icons.store;
+      case 'local_hospital': return Icons.local_hospital;
+      case 'medical_services': return Icons.medical_services;
+      case 'delivery_dining': return Icons.delivery_dining;
+      case 'engineering': return Icons.engineering;
+      case 'gavel': return Icons.gavel;
+      case 'person': return Icons.person;
+      case 'school': return Icons.school;
+      case 'restaurant': return Icons.restaurant;
+      case 'spa': return Icons.spa;
+      case 'fitness_center': return Icons.fitness_center;
+      default: return Icons.work;
+    }
+  }
+
+  Future<void> _onProfessionSelected(prof.Profession newProfession) async {
+    if (newProfession.id == _user?.professionId) return;
+
+    // Derive new user type
+    final newUserType = _deriveUserTypeFromProfession(newProfession);
+
+    if (newProfession.requiresVerification) {
+      // Show confirmation dialog for verification-required professions
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('เปลี่ยนอาชีพ'),
+          content: Text(
+            'อาชีพ "${newProfession.name}" ต้องผ่านการตรวจสอบคุณสมบัติก่อนใช้งาน\n\n'
+            'หลังจากส่งคำขอ คุณจะต้องรอการอนุมัติจากแอดมิน ระหว่างนี้คุณอาจไม่สามารถใช้ฟีเจอร์บางอย่างที่ต้องการอาชีพนี้ได้\n\n'
+            'คุณต้องการดำเนินการต่อหรือไม่?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('ยกเลิก'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ดำเนินการต่อ'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    setState(() => _isChangingProfession = true);
+
+    try {
+      final supabase = supa.Supabase.instance.client;
+      final userRepo = UserRepository(supabase);
+      final profRepo = ProfessionRepository(supabase);
+
+      // 1. Update user profession and user_type
+      await userRepo.updateUser(_user!.id, {
+        'profession_id': newProfession.id,
+        'user_type': newUserType.name,
+        'verification_status': newProfession.requiresVerification
+            ? VerificationStatus.pending.value
+            : VerificationStatus.verified.value,
+      });
+
+      // 2. If requires verification, create registration application
+      if (newProfession.requiresVerification) {
+        // Load field configs for the new profession
+        final fields = await profRepo.getFieldConfigsForProfession(newProfession.id);
+
+        await profRepo.createApplication(
+          oderId: _user!.id,
+          professionId: newProfession.id,
+          firstName: _user!.firstName,
+          lastName: _user!.lastName,
+          username: _user!.username,
+          phone: _user!.phone,
+          profileImageUrl: _user!.profileImageUrl,
+          registrationData: {}, // User will fill this in later via profile edit
+        );
+      }
+
+      // 3. Reload profile
+      await _loadProfile();
+
+      if (mounted) {
+        final message = newProfession.requiresVerification
+            ? 'ส่งคำขอเปลี่ยนอาชีพเรียบร้อย รอการตรวจสอบ'
+            : 'เปลี่ยนอาชีพเป็น ${newProfession.name} เรียบร้อยแล้ว';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error changing profession: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เปลี่ยนอาชีพไม่สำเร็จ: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isChangingProfession = false);
+    }
+  }
+
+  UserType _deriveUserTypeFromProfession(prof.Profession profession) {
+    if (profession.category.id == prof.UserCategory.consumerId) {
+      return UserType.consumer;
+    } else if (profession.nameEn?.toLowerCase().contains('clinic') == true) {
+      return UserType.clinic;
+    } else {
+      return UserType.expert;
+    }
   }
 
   Widget _buildNotificationSettings() {
@@ -1469,6 +1860,25 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       debugPrint('ProfilePage: Error loading professions: $e');
       if (mounted) setState(() => _isLoadingProfessions = false);
+    }
+  }
+
+  /// โหลดรายการอาชีพทั้งหมดสำหรับเลือกเปลี่ยนอาชีพ
+  Future<void> _loadAllProfessions() async {
+    if (_isLoadingAllProfessions) return;
+    setState(() => _isLoadingAllProfessions = true);
+    try {
+      final repository = ProfessionRepository(supa.Supabase.instance.client);
+      final professions = await repository.getAllProfessions();
+      if (mounted) {
+        setState(() {
+          _allProfessions = professions;
+          _isLoadingAllProfessions = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ProfilePage: Error loading all professions: $e');
+      if (mounted) setState(() => _isLoadingAllProfessions = false);
     }
   }
 

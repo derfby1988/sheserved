@@ -61,21 +61,26 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
     }
     if (widget.highlightRequestId != oldWidget.highlightRequestId) {
       setState(() => _expandedHistoryId = widget.highlightRequestId);
+      // รีโหลดรายการเมื่อมี highlightRequestId ใหม่ (เช่นหลังจากสร้างคำร้องใหม่)
+      _loadData();
     }
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('DonationRequestManagementPanel._loadData: userId=${widget.userId}');
       final results = await Future.wait([
         widget.repository.getRequests(userId: widget.userId, bypassStatusFilter: true),
         widget.repository.getCategories(),
         widget.repository.getCommunities(),
       ]);
-      
+
       final reqs = results[0] as List<DonationRequest>;
       final cats = results[1] as List<DonationCategory>;
       final comms = results[2] as List<Map<String, dynamic>>;
+
+      debugPrint('DonationRequestManagementPanel._loadData: loaded ${reqs.length} requests, ${cats.length} categories');
 
       // Fetch approvals for progress tracking
       final reqIds = reqs.map((e) => e.id).toList();
@@ -86,7 +91,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
            .select('request_id')
            .inFilter('request_id', reqIds)
            .eq('status', 'approved');
-        
+
         for (var row in (apprResp as List)) {
           final rid = row['request_id'].toString();
           counts[rid] = (counts[rid] ?? 0) + 1;
@@ -103,7 +108,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
         });
       }
     } catch (e) {
-      debugPrint('Error loading donation management data: $e');
+      debugPrint('DonationRequestManagementPanel._loadData error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -111,8 +116,10 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
   Future<void> _loadRequests() async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('DonationRequestManagementPanel._loadRequests: userId=${widget.userId}');
       final reqs = await widget.repository.getRequests(userId: widget.userId, bypassStatusFilter: true);
-      
+      debugPrint('DonationRequestManagementPanel._loadRequests: loaded ${reqs.length} requests');
+
       final reqIds = reqs.map((e) => e.id).toList();
       Map<String, int> counts = {};
       if (reqIds.isNotEmpty) {
@@ -121,7 +128,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
            .select('request_id')
            .inFilter('request_id', reqIds)
            .eq('status', 'approved');
-        
+
         for (var row in (apprResp as List)) {
           final rid = row['request_id'].toString();
           counts[rid] = (counts[rid] ?? 0) + 1;
@@ -136,7 +143,7 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
         });
       }
     } catch (e) {
-      debugPrint('Error loading requests: $e');
+      debugPrint('DonationRequestManagementPanel._loadRequests error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -624,21 +631,35 @@ class _DonationRequestManagementPanelState extends State<DonationRequestManageme
                   ),
               ],
             ),
-            if (widget.showCreateButton)
-              ElevatedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const DonationCreatePage()),
-                ).then((_) => _loadRequests()),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('ขอ', style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Row(
+              children: [
+                // ปุ่มรีเฟรชรายการ
+                IconButton(
+                  onPressed: _loadRequests,
+                  icon: const Icon(Icons.refresh, size: 20),
+                  tooltip: 'รีเฟรชรายการ',
+                  color: AppColors.primary,
                 ),
-              ),
+                const SizedBox(width: 4),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const DonationCreatePage()),
+                  ).then((result) {
+                    // รีโหลดเสมอหลังจากกลับมา แม้ create page จะใช้ pushNamedAndRemoveUntil
+                    _loadRequests();
+                  }),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('ขอ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
         const SizedBox(height: 16),
