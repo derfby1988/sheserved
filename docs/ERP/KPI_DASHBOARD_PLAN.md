@@ -561,6 +561,59 @@ class KpiRoutes {
 
 ---
 
+## ข้อจำกัดเฉพาะ Phase 3 (Prerequisites Blocked)
+
+สอง metric นี้ **ถูก block โดย prerequisite จากโมดูลอื่น** ต้องรอแผน/สคีมาอื่นสำเร็จก่อน:
+
+### Gross Profit — BLOCKED (รอ Procurement + Products)
+```
+สูตร: gross_profit = SUM(orders.final_amount) - COGS
+       COGS = SUM(order_items.quantity × products.cost_price)
+```
+- ❌ `products` table ไม่มี `cost_price` column
+- ❌ ไม่มี Procurement/Purchasing module (ต้องรู้ต้นทุนตอนซื้อเข้า)
+- ❌ `order_items` มีแค่ `unit_price` (ราคาขาย) ไม่มีต้นทุน
+- **Action ต้องทำก่อน:** สร้าง `PROCUREMENT_SYSTEM_PLAN.md` + `products` table ที่มี `cost_price`
+
+### Inventory Turnover — BLOCKED (รอ Inventory System)
+```
+สูตร: turnover = COGS / ((beginning_inventory + ending_inventory) / 2)
+```
+- ❌ `inventory_items` table ไม่มี
+- ❌ `inventory_movements` table ไม่มี
+- ❌ COGS calculation ขึ้นอยู่กับ Gross Profit ที่ยังทำไม่ได้
+- **Action ต้องทำก่อน:** สร้าง Inventory/Warehouse module (`inventory_items` + `inventory_movements`)
+
+### Dependency Chain
+```
+[Procurement System] → ซื้อสินค้า → รู้ต้นทุน → products.cost_price
+      ↓
+[Inventory System] → รับเข้าคลัง → เก็บ stock → inventory_items / inventory_movements
+      ↓
+[KPI Dashboard] → คำนวณ Gross Profit + Inventory Turnover ได้
+```
+
+### ทำไมไม่สร้าง Procurement/Inventory migration ตอนนี้
+
+**แผนมีอยู่แล้ว แต่ migration ยังไม่มี:**
+- `docs/ERP/PROCUREMENT_SYSTEM_PLAN.md` — ครบถ้วน (PR, PO, Goods Receipt, Back Order, Approval)
+- `docs/ERP/INVENTORY_SYSTEM_PLAN.md` — ครบถ้วน (`inventory_items` มี `cost_price`, `stock_movements`, Lot/Expiry)
+- SQL Migration ทั้งสองโมดูล — **ยังไม่มี**
+
+**เหตุผลที่ควรรอ:**
+1. **ขนาดงานใหญ่มาก** — Procurement (~10 ตาราง) + Inventory (~4 ตาราง) + Functions/Triggers/Indexes = งานเท่ากับ KPI Phase 1-3 รวมกัน
+2. **5 metrics พร้อมใช้แล้ว** (Revenue, Net Profit, Employee Quota, Consultations, Appointments) ครอบคลุม ~80% use case Executive Dashboard
+3. **UI เป็น natural next step** — Foundation layer เสร็จแล้ว ควรลงมือทำ Flutter UI (`KpiDashboardPage`, Chart widgets, Provider, Repository) ก่อน
+4. **Procurement/Inventory เป็นโมดูลอิสระ** — ไม่ควรสร้างเพื่อ unblock KPI อย่างเดียว ควรสร้างเมื่อธุรกิจมี pharmacist/warehouse staff และต้องซื้อ/รับสินค้าจริงๆ
+
+**ลำดับถัดไปที่แนะนำ:**
+1. UI Implementation (`KpiDashboardPage`, `fl_chart` widgets, `KpiProvider`, `KpiRepository`, routes)
+2. RPC + Cron Job (`refresh_kpi_actuals()` endpoint + scheduled refresh)
+3. Alert Integration (`KpiAlertCard` + outbox → notification)
+4. (อนาคต) Procurement/Inventory migration เมื่อธุรกิจต้องการ — ค่อย unblock Gross Profit + Inventory Turnover
+
+---
+
 ## Backlog / สิ่งที่ยังไม่ครบ (Future Work)
 
 ### Phase 4: Advanced Charts + Real-time
