@@ -85,45 +85,9 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
--- RLS for orders
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY orders_patient_select ON orders FOR SELECT
-  USING (user_id = auth.uid());
-
-CREATE POLICY orders_staff_select ON orders FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level <= 2
-    )
-  );
-
-CREATE POLICY orders_clinic_select ON orders FOR SELECT
-  USING (
-    profession_id IN (
-      SELECT profession_id FROM user_group_roles
-      WHERE user_id = auth.uid()
-    ) AND (
-      branch_id IS NULL OR branch_id IN (
-        SELECT branch_id FROM employee_roles WHERE user_id = auth.uid()
-      ) OR EXISTS (
-        SELECT 1 FROM employee_roles WHERE user_id = auth.uid() AND branch_id IS NULL
-      )
-    )
-  );
-
-CREATE POLICY orders_insert_authenticated ON orders FOR INSERT
-  WITH CHECK (auth.uid() IS NOT NULL);
-
-CREATE POLICY orders_update_staff ON orders FOR UPDATE
-  USING (
-    served_by = auth.uid() OR
-    EXISTS (
-      SELECT 1 FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level <= 2
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- Order queries scoped by: user_id (patient), served_by (staff), profession_id + branch_id (clinic)
+-- Enforced in Flutter Repository via ServiceLocator.currentUser?.id + role lookups in user_group_roles / employee_roles
 
 -- ============================================
 -- ORDER ITEMS (Line Items)
@@ -144,20 +108,8 @@ CREATE TABLE IF NOT EXISTS order_items (
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY order_items_select ON order_items FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM orders
-      WHERE orders.id = order_items.order_id
-        AND (orders.user_id = auth.uid()
-          OR orders.served_by = auth.uid()
-          OR orders.profession_id IN (
-              SELECT profession_id FROM user_group_roles WHERE user_id = auth.uid()
-          ))
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- Order item visibility governed by parent order scope in Repository
 
 -- ============================================
 -- UNIFIED PAYMENTS
@@ -178,16 +130,8 @@ CREATE TABLE IF NOT EXISTS unified_payments (
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE unified_payments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY payments_select ON unified_payments FOR SELECT
-  USING (
-    user_id = auth.uid() OR
-    EXISTS (
-      SELECT 1 FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level <= 2
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- Payment queries scoped by user_id or role_level in Repository, not PostgreSQL RLS
 
 -- ============================================
 -- SHOPPING CARTS (Mode A only — Per-User Session)
@@ -200,10 +144,8 @@ CREATE TABLE IF NOT EXISTS shopping_carts (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE shopping_carts ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY carts_owner_only ON shopping_carts
-  USING (user_id = auth.uid());
+-- Access Control: Application Layer (Repository Pattern)
+-- Cart queries filtered by user_id injected from ServiceLocator in Repository
 
 -- ============================================
 -- CLINIC SERVICES (Per-Profession Catalog — Mode C)
@@ -222,18 +164,9 @@ CREATE TABLE IF NOT EXISTS clinic_services (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE clinic_services ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY clinic_services_public_read ON clinic_services FOR SELECT
-  USING (is_active = true);
-
-CREATE POLICY clinic_services_staff_write ON clinic_services FOR ALL
-  USING (
-    profession_id IN (
-      SELECT profession_id FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level <= 2
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- clinic_services queries scoped by profession_id + role_level in Repository
+-- Public read (is_active = true) filtered in query, write restricted to staff role checks in Flutter
 
 -- ============================================
 -- CLINIC APPOINTMENTS (สร้างใหม่)
@@ -258,25 +191,8 @@ CREATE TABLE IF NOT EXISTS clinic_appointments (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE clinic_appointments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY appointments_patient_select ON clinic_appointments FOR SELECT
-  USING (patient_id = auth.uid());
-
-CREATE POLICY appointments_clinic_select ON clinic_appointments FOR SELECT
-  USING (
-    profession_id IN (
-      SELECT profession_id FROM user_group_roles WHERE user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY appointments_clinic_update ON clinic_appointments FOR UPDATE
-  USING (
-    profession_id IN (
-      SELECT profession_id FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level <= 2
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- Appointment queries scoped by profession_id + branch_id in Repository, verified against user_group_roles / employee_roles
 
 -- ============================================
 -- PROFESSION INVITATIONS (Staff Invitation Flow)
@@ -298,13 +214,8 @@ CREATE TABLE IF NOT EXISTS profession_invitations (
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE profession_invitations ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY invitations_invitee_select ON profession_invitations FOR SELECT
-  USING (invitee_user_id = auth.uid() OR invited_by = auth.uid());
-
-CREATE POLICY invitations_admin_insert ON profession_invitations FOR INSERT
-  WITH CHECK (invited_by = auth.uid());
+-- Access Control: Application Layer (Repository Pattern)
+-- Invitation queries filtered by current user role in Repository, not by PostgreSQL RLS
 
 -- Unique constraint: ป้องกัน duplicate pending invitations
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_unique_pending
@@ -330,18 +241,8 @@ CREATE TABLE IF NOT EXISTS refund_requests (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE refund_requests ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY refunds_requester_select ON refund_requests FOR SELECT
-  USING (requested_by = auth.uid());
-
-CREATE POLICY refunds_admin_all ON refund_requests FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_group_roles
-      WHERE user_id = auth.uid() AND role_level = 1
-    )
-  );
+-- Access Control: Application Layer (Repository Pattern)
+-- Query filters applied in POS Repository: patient sees own, staff sees clinic-scoped, admin sees all
 
 -- ============================================
 -- IN-APP NOTIFICATIONS (Platform notifications — ไม่ใช้ external push)
@@ -358,11 +259,8 @@ CREATE TABLE IF NOT EXISTS platform_notifications (
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE platform_notifications ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY notifications_owner_only ON platform_notifications
-  USING (user_id = auth.uid());
-
+-- Access Control: Application Layer (Repository Pattern)
+-- RLS enforced in Flutter via ServiceLocator + role checks — see Auth Guidelines Compliance section
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
   ON platform_notifications(user_id, is_read, created_at DESC)
   WHERE is_read = false;
@@ -1245,15 +1143,17 @@ StreamBuilder<List<InvitationModel>>(
 
 ## 8. Auth Guidelines Compliance
 
+> สอดคล้องกับ [auth_data_guidelines.md](../../.agent/workflows/auth_data_guidelines.md) และ [ERP_CORE_ARCHITECTURE.md](ERP_CORE_ARCHITECTURE.md)
+
 - **User ID:** เสมอจาก `ServiceLocator.instance.currentUser?.id`
-- **ห้ามใช้:** `Supabase.instance.client.auth.currentUser?.id`
+- **ห้ามใช้:** `Supabase.instance.client.auth.currentUser?.id` (ค่าจะเป็น `null` เสมอ)
 - **Walk-in patient:** ต้องสร้าง real UUID user record ใน `users` table — ห้าม mock IDs
-- **Role checks:**
-  - Mode B: ตรวจ `role_level` จาก `user_group_roles` (1=Admin, 2=Staff)
-  - Mode C: ตรวจ `profession.usesPosSystem == true` AND `role_level` จาก `user_group_roles`
-- **Profession isolation:** Clinic users query orders ที่ `profession_id = their_profession_id` เท่านั้น
-- **RLS:** ทุก table มี RLS enabled — ไม่มี `DISABLE ROW LEVEL SECURITY`
-- **DB functions:** ใช้ `SECURITY DEFINER` เฉพาะ functions ที่ต้องการ bypass RLS (confirm_payment, post_purchase_actions, refund_review)
+- **Role checks (Application Layer — Repository Pattern):**
+  - Mode B: ตรวจ `role_level` จาก `user_group_roles` (1=Admin, 2=Staff) ในฝั่ง Flutter Repository ก่อน query
+  - Mode C: ตรวจ `profession.usesPosSystem == true` AND `role_level` จาก `user_group_roles` ในฝั่ง Flutter Repository
+- **Profession isolation:** Clinic users query orders ที่ `profession_id = their_profession_id` เท่านั้น — กรองที่ Repository ไม่ใช่ PostgreSQL RLS
+- **Access Control:** ไม่ใช้ `ENABLE ROW LEVEL SECURITY` หรือ `auth.uid()` ใน PostgreSQL เนื่องจากระบบใช้ custom `AuthService` ผ่าน `ServiceLocator` แทน Supabase Auth native → ควบคุมสิทธิ์ที่ Application Layer (Repository Pattern) ตามหลักการใน ERP_CORE_ARCHITECTURE.md
+- **DB functions:** ใช้ `SECURITY DEFINER` เฉพาะ functions ที่ต้องการ elevated privileges (confirm_payment, post_purchase_actions, refund_review) — ไม่ใช้เพื่อ bypass RLS
 
 ---
 
