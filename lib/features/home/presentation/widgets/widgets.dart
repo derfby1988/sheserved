@@ -8,3 +8,4 @@ export 'home_map_background.dart';
 export 'home_consultation_widget.dart';
 export 'home_pharmacy_card.dart';
 export 'home_interesting_section.dart';
+export '../../../../ERP Dashboard/home_erp_card.dart';

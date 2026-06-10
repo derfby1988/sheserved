@@ -62,6 +62,9 @@ import 'features/admin/presentation/pages/platform_settings_page.dart';
 import 'features/kpi/presentation/pages/kpi_dashboard_page.dart';
 import 'features/kpi/presentation/pages/kpi_target_form_page.dart';
 import 'features/kpi/presentation/pages/kpi_refresh_history_page.dart';
+import 'ERP Dashboard/erp_dashboard_shell.dart';
+import 'ERP Dashboard/erp_dashboard_page.dart';
+import 'ERP Dashboard/organization_settings_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -181,6 +184,18 @@ class SheservedApp extends StatelessWidget {
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
       },
       onGenerateRoute: (settings) {
+        // ERP Shell Routes (Drawer + AppBar + Branch Selector)
+        if (settings.name == '/erp' || settings.name == '/erp/dashboard') {
+          return MaterialPageRoute(
+            builder: (context) => const ErpDashboardShell(child: ErpDashboardPage()),
+          );
+        }
+        if (settings.name == '/erp/settings' || settings.name == '/organizationSettings') {
+          return MaterialPageRoute(
+            builder: (context) => const ErpDashboardShell(child: OrganizationSettingsPage()),
+          );
+        }
+
         if (settings.name == '/main-app') {
           final args = settings.arguments as Map<String, dynamic>?;
           final int initialIndex = args?['index'] ?? 0;

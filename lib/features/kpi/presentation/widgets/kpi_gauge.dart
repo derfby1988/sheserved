@@ -37,7 +37,7 @@ class KpiGauge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _getColor(achievementRate);
-    final clampedRate = achievementRate.clamp(0, 150);
+    final clampedRate = achievementRate.clamp(0, 150).toDouble();
 
     return Card(
       elevation: 2,

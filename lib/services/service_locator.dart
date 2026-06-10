@@ -22,6 +22,7 @@ import '../features/admin/data/repositories/body_region_repository.dart';
 import '../features/admin/data/repositories/profession_repository.dart';
 import '../features/admin/data/repositories/registration_repository.dart';
 import '../features/admin/data/repositories/group_role_repository.dart';
+import '../features/admin/data/repositories/organization_settings_repository.dart';
 import 'package:hive/hive.dart';
 import 'auth_service.dart';
 import '../features/video/data/repositories/video_repository.dart';
@@ -53,6 +54,7 @@ class ServiceLocator {
   ProfessionRepository? _professionRepository;
   RegistrationRepository? _registrationRepository;
   GroupRoleRepository? _groupRoleRepository;
+  OrganizationSettingsRepository? _organizationSettingsRepository;
   PharmacyRepository? _pharmacyRepository;
   FdaApiService? _fdaApiService;
   VideoRepository? _videoRepository;
@@ -191,6 +193,7 @@ class ServiceLocator {
       _professionRepository = ProfessionRepository(supabaseClient);
       _registrationRepository = RegistrationRepository(supabaseClient);
       _groupRoleRepository = GroupRoleRepository(supabaseClient);
+      _organizationSettingsRepository = OrganizationSettingsRepository(supabaseClient);
       _pharmacyRepository = PharmacyRepository(supabaseClient);
       _videoRepository = VideoRepository(supabaseClient);
       _donationRepository = DonationRepository(supabaseClient);
@@ -302,6 +305,13 @@ class ServiceLocator {
       _groupRoleRepository = GroupRoleRepository(Supabase.instance.client);
     }
     return _groupRoleRepository!;
+  }
+
+  OrganizationSettingsRepository get organizationSettingsRepository {
+    if (_organizationSettingsRepository == null) {
+      _organizationSettingsRepository = OrganizationSettingsRepository(Supabase.instance.client);
+    }
+    return _organizationSettingsRepository!;
   }
 
   PharmacyRepository get pharmacyRepository {

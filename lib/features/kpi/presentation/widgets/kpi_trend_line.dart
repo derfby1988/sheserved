@@ -44,9 +44,9 @@ class KpiTrendLine extends StatelessWidget {
       );
     }).toList();
 
-    final avgRate = displayData.isNotEmpty
+    final avgRate = (displayData.isNotEmpty
         ? displayData.map((e) => e.achievementRate).reduce((a, b) => a + b) / displayData.length
-        : 0;
+        : 0).toDouble();
 
     return Card(
       elevation: 2,

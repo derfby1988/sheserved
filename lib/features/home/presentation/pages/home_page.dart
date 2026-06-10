@@ -2113,11 +2113,7 @@ class _HomePageState extends ConsumerState<HomePage>
                                         ),
                                       ),
                                     const SizedBox(height: 24),
-                                    HomePharmacyCard(
-                                      key: _pharmacyKey,
-                                      onSearchTap: () =>
-                                          _showSnackBar(context, 'ค้นหาร้านยา'),
-                                    ),
+                                    _buildPharmacyOrErpCard(),
                                     const SizedBox(height: 24),
                                   ],
                                 ),
@@ -2255,6 +2251,25 @@ class _HomePageState extends ConsumerState<HomePage>
   void _showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 1)),
+    );
+  }
+
+  /// แสดง HomeErpCard ถ้าผู้ใช้มี profession_id (องค์กร)
+  /// มิฉะนั้นแสดง HomePharmacyCard (ผู้บริโภคทั่วไป)
+  Widget _buildPharmacyOrErpCard() {
+    final user = AuthService.instance.currentUser;
+    final hasProfession = user?.professionId != null && user!.professionId!.isNotEmpty;
+
+    if (hasProfession) {
+      return HomeErpCard(
+        key: _pharmacyKey,
+        onEnterTap: () => Navigator.of(context).pushNamed('/erp'),
+      );
+    }
+
+    return HomePharmacyCard(
+      key: _pharmacyKey,
+      onSearchTap: () => _showSnackBar(context, 'ค้นหาร้านยา'),
     );
   }
 

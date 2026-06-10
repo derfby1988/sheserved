@@ -158,9 +158,9 @@ class KpiRepository {
       }
     }
 
-    final achievementRate = totalTarget > 0
+    final achievementRate = (totalTarget > 0
         ? (totalActual / totalTarget * 100).clamp(0, 999.99)
-        : 0.0;
+        : 0.0).toDouble();
 
     return KpiDashboardSummary(
       targetType: targetType,
