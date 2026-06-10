@@ -212,11 +212,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. SEED: Default alert thresholds per profession (optional — run manually or via app)
--- Uncomment and run after professions exist:
--- INSERT INTO public.kpi_alert_thresholds (profession_id, target_type)
--- SELECT id, 'revenue' FROM public.professions WHERE uses_pos_system = true
--- ON CONFLICT (profession_id, target_type) DO NOTHING;
+-- 6. SEED: Default alert thresholds per profession
+-- Run after professions exist (safe to re-run via ON CONFLICT)
+INSERT INTO public.kpi_alert_thresholds (profession_id, target_type, warning_threshold_pct, critical_threshold_pct)
+SELECT p.id, 'revenue', 80.00, 60.00
+FROM public.professions p
+WHERE p.uses_pos_system = true
+  AND NOT EXISTS (
+    SELECT 1 FROM public.kpi_alert_thresholds t
+    WHERE t.profession_id = p.id AND t.target_type = 'revenue'
+  )
+ON CONFLICT (profession_id, target_type) DO NOTHING;
 
 -- 7. RLS (Enable but allow all — controlled at Application Layer per auth guidelines)
 ALTER TABLE public.kpi_targets ENABLE ROW LEVEL SECURITY;

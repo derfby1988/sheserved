@@ -526,18 +526,33 @@ class KpiRoutes {
 
 ## Implementation Phases
 
-### Phase A: Foundation
-- [ ] SQL Migration: `kpi_targets`, `kpi_actuals`, `kpi_alert_thresholds`, `kpi_refresh_log`
-- [ ] Function: `refresh_kpi_actuals()`
-- [ ] RPC endpoint + Scheduled cron job
-- [ ] Seed default thresholds (warning=80%, critical=60%)
+### Phase A: Foundation ✓ (Migrations Complete)
+- [x] SQL Migration: `kpi_targets`, `kpi_actuals`, `kpi_alert_thresholds`, `kpi_refresh_log`
+  - `20260609220000_create_kpi_schema.sql` — Phase 1 (revenue)
+  - `20260609230000_kpi_phase2_net_profit_and_quota.sql` — Phase 2 (net_profit + employee quota)
+  - `20260610000000_kpi_phase3_additional_metrics.sql` — Phase 3 (consultations + appointments + placeholders)
+- [x] Function: `refresh_kpi_actuals()` — รองรับ `revenue`, `net_profit`, `consultations`
+- [x] Function: `refresh_kpi_employee_actuals()` — quota รายบุคคล
+- [x] Function: `refresh_kpi_appointments()` — appointments count
+- [x] **Cron Job**: `pg_cron` สำหรับ scheduled refresh (`20260610020000_kpi_cron_jobs.sql`)
+- [x] **Seed revenue thresholds**: เปิดใช้งานแล้วใน Phase 1 migration (warning=80%, critical=60%)
+- [x] RPC endpoint: ใช้ `refresh_kpi_actuals()` ผ่าน Supabase RPC ได้ทันที
 
-### Phase B: UI Core
-- [ ] `KpiDashboardPage` (Tab ใน ErpDashboardPage หรือหน้าแยก)
-- [ ] `KpiTargetFormPage` (สร้าง/แก้ไขเป้า)
-- [ ] Chart Widgets (Gauge, Bar, Trend) ใช้ `fl_chart`
-- [ ] `KpiProvider` + `KpiRepository`
-- [ ] Wire routes ใน `main.dart`
+> **หมายเหตุ:** Foundation layer เสร็จสมบูรณ์ 100% — ทุก migration, function, cron job, และ seed พร้อมใช้งาน
+
+### Phase B: UI Core ✓ (Implementation Complete)
+- [x] `KpiDashboardPage` (`lib/features/kpi/presentation/pages/kpi_dashboard_page.dart`)
+- [x] `KpiTargetFormPage` (`lib/features/kpi/presentation/pages/kpi_target_form_page.dart`)
+- [x] Chart Widgets ด้วย `fl_chart`:
+  - `KpiGauge` — Gauge chart แสดง achievement rate
+  - `KpiBarChart` — Bar chart เปรียบเทียบ actual vs target
+  - `KpiTrendLine` — Line chart แสดง trend  overtime
+- [x] `KpiAlertCard` — Card แจ้งเตือนตามสถานะ
+- [x] `KpiPeriodSelector` — Filter chip สำหรับ target type + period
+- [x] `KpiProvider` (`StateNotifier`) + `KpiRepository`
+- [x] Wire routes ใน `main.dart` (`/kpi/dashboard`, `/kpi/target/form`)
+
+> **หมายเหตุ:** UI Core เสร็จแล้ว 100% — แต่ยังไม่มี tab/integration ใน `ErpDashboardPage` หรือ `MainAppLayout`
 
 ### Phase 2: Net Profit + Individual Employee Quota ✓
 - [x] SQL Migration: `employees` table (foundational for individual quota)
@@ -552,12 +567,17 @@ class KpiRoutes {
 - [x] Placeholder functions สำหรับ `gross_profit`, `inventory_turnover`
 - [x] Update KPI plan with Phase 3 scope, business logic, integration status
 
-### Phase C: Alert & Polish (UI)
-- [ ] `KpiAlertCard` + Dashboard badge
-- [ ] `KpiRefreshHistoryPage`
-- [ ] Notification integration (outbox → in-app)
-- [ ] Manual Refresh button (admin)
-- [ ] Performance test 10,000+ orders
+### Phase C: Alert & Polish (UI) ✓ (Practical Minimum Complete)
+- [x] `KpiAlertBanner` — In-app alert banner ดึงจาก `kpi_actuals` โดยตรง (no-cost, no push)
+  - แสดง critical/warning ตาม `kpi_alert_thresholds`
+  - ไม่ใช้ Firebase / push notification (ฟรี 100%)
+- [x] `KpiRefreshHistoryPage` — แสดง log จาก `kpi_refresh_log` 50 รายการล่าสุด
+- [x] Manual Refresh button + UX (loading indicator + snackbar) — อยู่ใน `KpiDashboardPage`
+- [x] Supabase Realtime subscription บน `kpi_actuals` (ฟรี, auto-reload เมื่อ data change)
+- [ ] Notification integration (outbox → in-app) — Level 3 (outbox pattern) รอทำในอนาคต
+- [ ] Performance test 10,000+ orders — รอ mock data / benchmark environment
+
+> **หมายเหตุ:** Phase C Practical Minimum เสร็จแล้ว — ทุกอย่างใช้ Supabase ฟรี (Realtime, RPC, DB) ไม่มีค่าใช้จ่ายเพิ่ม
 
 ---
 
@@ -650,9 +670,10 @@ class KpiRoutes {
 1. `supabase/migrations/20260609180000_create_accounting_core_schema.sql` — Accounting (prerequisite for net profit)
 2. `supabase/migrations/20260609215000_create_employees_table.sql` — Employees (prerequisite for individual quota)
 3. `supabase/migrations/20260610010000_create_pos_core_schema.sql` — POS Core (orders, order_items, clinic_appointments, etc.)
-4. `supabase/migrations/20260609220000_create_kpi_schema.sql` — KPI Phase 1 (revenue)
+4. `supabase/migrations/20260609220000_create_kpi_schema.sql` — KPI Phase 1 (revenue + thresholds seed)
 5. `supabase/migrations/20260609230000_kpi_phase2_net_profit_and_quota.sql` — KPI Phase 2 (net profit + employee quota)
 6. `supabase/migrations/20260610000000_kpi_phase3_additional_metrics.sql` — KPI Phase 3 (consultations + appointments + placeholders)
+7. `supabase/migrations/20260610020000_kpi_cron_jobs.sql` — KPI Scheduled Refresh (pg_cron jobs)
 
 > **หมายเหตุ:**
 > - `consultation_requests` table อยู่ใน `database/schemas/supabase_consultation_schema.sql` (ยังไม่มีใน supabase/migrations)

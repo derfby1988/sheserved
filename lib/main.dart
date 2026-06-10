@@ -59,6 +59,9 @@ import 'features/consultation/presentation/pages/my_consultations_page.dart';
 import 'features/consultation/presentation/pages/provider_history_page.dart';
 import 'features/consultation/presentation/pages/consultation_chat_history_page.dart';
 import 'features/admin/presentation/pages/platform_settings_page.dart';
+import 'features/kpi/presentation/pages/kpi_dashboard_page.dart';
+import 'features/kpi/presentation/pages/kpi_target_form_page.dart';
+import 'features/kpi/presentation/pages/kpi_refresh_history_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -173,6 +176,9 @@ class SheservedApp extends StatelessWidget {
         '/rescue-map': (context) => const RescuePage(),
         '/my-consultations': (context) => const MyConsultationsPage(),
         '/provider-history': (context) => const ProviderHistoryPage(),
+        '/kpi/dashboard': (context) => const KpiDashboardPage(),
+        '/kpi/target/form': (context) => const KpiTargetFormPage(),
+        '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/main-app') {
