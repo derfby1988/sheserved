@@ -675,6 +675,773 @@ CREATE POLICY medication_favorites_patient_isolation ON medication_favorites
 
 ---
 
+## ระบบสิทธิ์การใช้งาน (RBAC & Permission System)
+
+CRM Module ใช้ระบบสิทธิ์แบบ RBAC ที่กำหนดไว้ใน [ERP_CORE_ARCHITECTURE.md](ERP_CORE_ARCHITECTURE.md) โดยไม่สร้างระบบสิทธิ์ใหม่แยก
+
+### โครงสร้างสิทธิ์ (3 ระดับต่อโมดูล)
+
+```sql
+-- organization_roles: ตำแหน่งที่องค์กรสร้างเอง (เช่น "Owner", "แคชเชียร์", "เภสัชกร")
+-- role_module_permissions: สิทธิ์ต่อโมดูล (module_name = 'crm')
+-- employee_roles: ผู้ใช้คนไหนมีตำแหน่งอะไร ในสาขาไหน
+```
+
+| ระดับ | ค่า | ความสามารถใน CRM |
+|-------|------|------------------|
+| **Full Access** | `access_level = 1` | สร้าง/แก้ไข/ลบ ทุกอย่าง + ตั้งค่า + โอนสิทธิ์ (ผ่าน HR) |
+| **Edit** | `access_level = 2` | สร้าง/แก้ไข ข้อมูลได้ แต่ไม่ถึงขั้นตั้งค่าระบบ |
+| **View Only** | `access_level = 3` | ดูข้อมูลและรายงานเท่านั้น |
+
+### สิทธิ์การเข้าถึง Dashboard ตามระดับ
+
+| ส่วน / การกระทำ | Full (1) | Edit (2) | View (3) |
+|-------------------|---------|---------|---------|
+| **Today's Stats** | ✅ | ✅ | ✅ |
+| **Appointment Queue** | ✅ + เปลี่ยนสถานะ | ✅ + เปลี่ยนสถานะ | ✅ ดูอย่างเดียว |
+| **Create Appointment** | ✅ | ✅ | ❌ ซ่อนปุ่ม |
+| **Edit/Cancel Appointment** | ✅ | ✅ | ❌ ซ่อน |
+| **Coupon/Promotion Mgmt** | ✅ สร้าง/แก้/ลบ | ✅ สร้าง/แก้ | ✅ ดูอย่างเดียว |
+| **Loyalty Rules / Tiers** | ✅ แก้ไขกฎ | ✅ แก้ไข | ✅ ดูอย่างเดียว |
+| **Settings (Schedule/Policy)** | ✅ | ❌ | ❌ |
+| **Reports & Analytics** | ✅ ทุกรายงาน | ✅ รายงานพื้นฐาน | ✅ Summary |
+| **Manual Refresh** | ✅ | ✅ | ✅ |
+
+### ระดับสาขา (Branch Scope)
+
+- **`branch_id = NULL`** → สิทธิ์ HQ (Headquarters) เห็นข้อมูลทุกสาขาในองค์กร
+- **`branch_id = UUID`** → สิทธิ์เฉพาะสาขานั้น ๆ
+- **Branch Selector** แสดงใน Dashboard เฉพาะเมื่อ user มี scope หลายสาขา (HQ) หรือมีสิทธิ์ใน `employee_roles` หลาย `branch_id`
+
+### การกำหนด Owner และการโอนสิทธิ์
+
+- **Owner** = ผู้ใช้ที่ได้รับสิทธิ์ครั้งแรกจาก Sheserved (ผ่านการอนุมัติตามกฎของหน้า "จัดการกลุ่ม" และ "จัดการอาชีพ")
+- Owner สามารถ **สร้างตำแหน่ง** (Organization Roles) และ **กำหนดสิทธิ์** (Role Module Permissions) ให้แต่ละตำแหน่งเองได้
+- **การโอนสิทธิ์** (Transfer Ownership) ทำผ่าน **HR Dashboard** (`/hr/employees` หรือ `/hr/roles`) — **ไม่ใช่** CRM Dashboard
+- หลังจากโอนสิทธิ์แล้ว user ใหม่จะกลายเป็น Owner และสามารถจัดการตำแหน่ง/สิทธิ์ขององค์กรตนเองได้
+
+### การตรวจสอบสิทธิ์ใน Flutter
+
+```dart
+// ดึงสิทธิ์ CRM ของ user ปัจจุบัน
+final accessLevel = await _crmRepo.getCrmAccessLevel(
+  userId: ServiceLocator.instance.currentUser?.id,
+  professionId: currentProfessionId,
+);
+
+// accessLevel: 1 = Full | 2 = Edit | 3 = View
+// branchScope: null = HQ (ทุกสาขา) | UUID = เฉพาะสาขา
+```
+
+> **หมายเหตุ:** ไม่ใช้ `auth.uid()` ใน Repository — ดึง `userId` ผ่าน `ServiceLocator` เสมอ (ตาม auth_data_guidelines)
+
+---
+
+## ออกแบบหน้า CRM Dashboard (Dashboard Page Design)
+
+### หลักการออกแบบ
+1. **"Today's Pulse"** — แสดงสิ่งที่เกิดขึ้นวันนี้เป็นหลัก
+2. **Quick Actions** — เข้าถึง sub-module ได้ในคลิกเดียว
+3. **Alerts First** — สิ่งที่ต้องจัดการด่วนขึ้นก่อน (queue, no-show, waitlist)
+4. **Metrics Summary** — ยอดรวมที่ต้องรู้ (รายได้นัด, แต้ม, คูปอง)
+
+### Layout (Top → Bottom)
+
+```
+┌─────────────────────────────────────────┐
+│  App Bar: "CRM Dashboard"               │
+│  [Branch Selector] [Refresh] [Settings]   │
+├─────────────────────────────────────────┤
+│  1. Alert Banner (critical alerts)      │
+│     • ผู้ป่วยยกเลิกนัดวันนี้           │
+│     • No-show เช้านี้                   │
+│     • Waitlist ที่รอแจ้งเตือน           │
+├─────────────────────────────────────────┤
+│  2. Today's Stats Row                   │
+│     [นัดทั้งหมด] [มาแล้ว] [รออยู่] [ยกเลิก]│
+├─────────────────────────────────────────┤
+│  3. Appointment Queue (scrollable)    │
+│     [Patient A] [checked_in] [→]        │
+│     [Patient B] [pending] [→]           │
+├─────────────────────────────────────────┤
+│  4. Quick Actions Grid (3x3)            │
+│     [ปฏิทิน] [สร้างนัด] [Queue] [ลูกค้า] │
+│     [คูปอง] [โปรโมชัน] [แต้ม] [แพ็กเกจ] │
+│     [ระดับสมาชิก] [รายงาน] [ตั้งค่า]    │
+├─────────────────────────────────────────┤
+│  5. Active Promotions (cards)           │
+│     • โปรโมชันรันอยู่ + คูปองใกล้หมดอายุ│
+├─────────────────────────────────────────┤
+│  6. Recent Activity (list)              │
+│     • แต้มที่ออกให้ล่าสุด               │
+│     • คูปองที่ใช้ล่าสุด                 │
+│     • Feedback ใหม่                     │
+└─────────────────────────────────────────┘
+```
+
+### Quick Actions Grid (9 ปุ่ม)
+
+| แถว | ปุ่มที่ 1 | ปุ่มที่ 2 | ปุ่มที่ 3 |
+|-----|----------|----------|----------|
+| 1 | 📅 ปฏิทินนัด | ➕ สร้างนัด | 👥 Queue |
+| 2 | 🎫 คูปอง | 🏷️ โปรโมชัน | ⭐ แต้ม |
+| 3 | 🏅 ระดับสมาชิก | 📊 รายงาน | ⚙️ ตั้งค่า |
+
+- ปุ่มที่ต้องสิทธิ์ Edit ขึ้นไปจะ **disabled** หรือ **ซ่อน** หาก user มีสิทธิ์ View Only
+- ปุ่ม **ตั้งค่า** แสดงเฉพาะ Full Access
+
+#### การปรับแต่งการจัดเรียง (User Customizable)
+
+ผู้ใช้สามารถ **ลาก-วาง (Drag & Drop)** ปรับตำแหน่งปุ่มใน Quick Actions Grid ได้ โดยบันทึกลง `user_module_layouts` (ใช้ตารางเดียวกับ ERP Dashboard Module Cards — แยก field `crm_quick_actions_order`):
+
+```sql
+-- เพิ่ม column ใน user_module_layouts สำหรับ CRM
+ALTER TABLE user_module_layouts ADD COLUMN crm_quick_actions_order TEXT[] DEFAULT '{}';
+```
+
+- ปุ่มที่ถูกซ่อนด้วย Feature Toggle จะไม่แสดงใน grid แม้ user จะเคยจัดเรียงไว้
+- ปุ่มที่ user ซ่อนเอง (long-press → "ซ่อน") จะถูกบันทึกใน `crm_quick_actions_order` เป็นรายการที่ถูก filter ออก
+- กดปุ่ม "เรียงคืนเริ่มต้น" → ใช้ลำดับ default ตามตารางด้านบน
+
+### Real-time Updates
+- Supabase Realtime บน `appointments` (ฟรี) → Queue อัปเดตแบบ live
+- Auto-reload เมื่อมีการเปลี่ยนสถานะนัดหมาย
+
+---
+
+## การเปิด/ปิดฟีเจอร์ (Feature Toggles)
+
+แต่ละองค์กรสามารถเปิด/ปิดโมดูลย่อยใน CRM ได้ผ่าน `organization_feature_flags`
+
+```sql
+CREATE TABLE organization_feature_flags (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id UUID NOT NULL REFERENCES professions(id),
+  feature_name  TEXT NOT NULL,
+  is_enabled    BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, feature_name)
+);
+```
+
+### Feature Flags สำหรับ CRM
+
+| Feature Name | คำอธิบาย | ผลต่อ Dashboard |
+|-------------|---------|----------------|
+| `crm_loyalty` | ระบบแต้มสะสม | ซ่อน section แต้ม + ปุ่ม "แต้ม" |
+| `crm_coupons` | ระบบคูปอง | ซ่อน section คูปอง + ปุ่ม "คูปอง" |
+| `crm_promotions` | ระบบโปรโมชัน | ซ่อน section โปรโมชัน + ปุ่ม "โปรโมชัน" |
+| `crm_packages` | ระบบแพ็กเกจ | ซ่อน section แพ็กเกจ + ปุ่ม "แพ็กเกจ" |
+| `crm_tiers` | ระบบระดับสมาชิก | ซ่อน section tier + ปุ่ม "ระดับสมาชิก" |
+| `crm_appointments` | ระบบนัดหมาย | ซ่อนทุกอย่างเกี่ยวกับ appointment |
+| `crm_feedback` | ระบบประเมิน | ซ่อน section feedback |
+
+- หาก `crm_appointments = false` → Dashboard แสดงเฉพาะ Loyalty + Coupon + Promotion (ไม่มี Queue/Calendar)
+- หากทุก CRM feature = false → Dashboard แสดงข้อความ "โมดูล CRM ยังไม่เปิดใช้งาน"
+
+---
+
+## จุดเข้าสู่ CRM Dashboard (Entry Point from Home Page)
+
+CRM Dashboard ไม่ใช่หน้า standalone — ผู้ใช้เข้าถึงผ่าน **ERP Dashboard Shell** (`/erp`) ซึ่งเข้าถึงได้จากหน้า Home ผ่าน `HomeErpCard`
+
+### การ์ดบนหน้า Home (Role-based)
+
+| Role | การ์ด | Badge แจ้งเตือน | กดแล้วไป |
+|------|--------|-----------------|----------|
+| **Consumer** | `HomePharmacyCard` (เดิม) | ไม่มี | ค้นหาร้านยา |
+| **Employee** | `HomeErpCard` | 🔔 In-App (ฟรี) | `/erp` → เลือก CRM module |
+| **Owner** | `HomeErpCard` + ปุ่ม "จัดการ" | 🔔 In-App (ฟรี) | `/erp` หรือ `/erp/settings` |
+| **Sheserved Admin** | `HomeErpCard` (🏢 Admin) | 🔔 In-App (ฟรี) | `/admin/subscription/tiers` |
+
+> **หมายเหตุ:** Badge แจ้งเตือนบน `HomeErpCard` ใช้ **In-App Notification (Headsector)** ผ่าน Supabase Realtime — **ฟรี 100%** ไม่ต้องใช้ Push/SMS/Line
+
+### การนำทางภายใน ERP Shell
+
+```
+หน้า Home
+    │
+    ├── HomeErpCard (onTap) ──► /erp (ErpDashboardShell)
+    │       │
+    │       ├── 📊 /erp/dashboard (Overview รวมทุก module)
+    │       │       │
+    │       │       ├── 📊 CRM Dashboard card ──► /erp/crm
+    │       │       ├── 🛒 POS Management card ──► /erp/pos
+    │       │       └── 📦 Inventory card ──► /erp/inventory
+    │       │
+    │       ├── 📊 /erp/crm ──► CrmDashboardPage (หน้านี้)
+    │       │       ├── 🎫 /erp/crm/coupons
+    │       │       ├── 🏷️ /erp/crm/promotions
+    │       │       ├── ⭐ /erp/crm/loyalty
+    │       │       ├── 📅 /erp/crm/appointments
+    │       │       └── 📊 /erp/crm/reports
+    │       │
+    │       ├── 🛒 /erp/pos
+    │       ├── 📦 /erp/inventory
+    │       ├── 👥 /erp/hr
+    │       ├── 💰 /erp/accounting
+    │       └── ⚙️ /erp/settings
+    │
+    └── (Consumer) ──► HomePharmacyCard (ปกติ)
+```
+
+### การแสดง CRM Dashboard ตาม Feature Toggle
+
+- หาก `crm_module = false` (ใน `organization_feature_flags`) → ERP Dashboard ไม่แสดง CRM card
+- หาก `crm_module = true` แต่ `crm_appointments = false` → แสดง Dashboard แต่ไม่มี Queue/Calendar
+- หากทุก CRM feature = false → Dashboard แสดง "โมดูล CRM ยังไม่เปิดใช้งาน" + ปุ่ม "สมัครใช้งาน"
+
+### การแสดงตามสิทธิ์ (RBAC)
+
+```dart
+// ใน CrmDashboardPage
+@override
+Widget build(BuildContext context) {
+  final accessLevel = ref.watch(crmAccessLevelProvider); // 1=Full, 2=Edit, 3=View
+  
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('CRM Dashboard'),
+      actions: [
+        // ปุ่ม "สร้างนัด" แสดงเฉพาะ Full/Edit
+        if (accessLevel <= 2) 
+          IconButton(icon: const Icon(Icons.add), onPressed: _createAppointment),
+        // ปุ่ม "ตั้งค่า" แสดงเฉพาะ Full
+        if (accessLevel == 1)
+          IconButton(icon: const Icon(Icons.settings), onPressed: _openSettings),
+      ],
+    ),
+    body: ...
+  );
+}
+```
+
+### In-App Notification Badge บน HomeErpCard
+
+```dart
+// ใน HomeErpCard — ดึง unread count จาก notificationProvider
+Consumer(builder: (context, ref, _) {
+  final unreadCount = ref.watch(unreadNotificationCountProvider);
+  return Row(
+    children: [
+      if (unreadCount > 0) ...[
+        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text('$unreadCount ใหม่', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600)),
+      ] else
+        Text('ไม่มีการแจ้งเตือนใหม่', style: TextStyle(color: Colors.grey)),
+    ],
+  );
+});
+```
+
+> **หลักการ:** Badge แจ้งเตือนบน `HomeErpCard` ไม่ใช่ Push Notification — เป็น **In-App Realtime** ที่อ่านจาก `notifications` table ผ่าน Supabase Realtime (ฟรี)
+
+---
+
+## ออกแบบ Responsive (Responsive Design Specification)
+
+### Breakpoints
+
+| ขนาด | Breakpoint | อุปกรณ์หลัก |
+|------|-----------|------------|
+| **Mobile** | < 600px | มือถือพนักงาน (Portrait) |
+| **Tablet** | 600–900px | แท็บเล็ตหน้าเคาน์เตอร์ (Portrait/Landscape) |
+| **Desktop** | > 900px | เว็บแอดมิน, แท็บเล็ต Landscape |
+
+> **หลักการ:** อุปกรณ์หลักของคลินิก/ศูนย์สุขภาพคือ **แท็บเล็ตแนวนอน (Landscape Tablet)** — ต้อง optimize สำหรับขนาดนี้เป็นพิเศษ แต่รองรับมือถือและ Desktop ด้วย
+
+### Layout ตามขนาดจอ
+
+#### 1. App Bar
+
+| ขนาด | App Bar |
+|------|---------|
+| **Mobile** | Title + Branch Dropdown (icon) + Refresh (icon) + Menu (hamburger) |
+| **Tablet** | Title + Branch Dropdown (text) + Refresh + Settings + Drawer Toggle |
+| **Desktop** | Title + Branch Dropdown + Breadcrumb + Refresh + Settings + User Avatar |
+
+#### 2. Alert Banner
+
+| ขนาด | ลักษณะ |
+|------|--------|
+| **Mobile** | Full width card, single alert ต่อแถว, vertical scroll |
+| **Tablet** | 2 alerts ต่อแถว (grid) |
+| **Desktop** | 3 alerts ต่อแถว + dismiss all button |
+
+#### 3. Today's Stats Row (Wrap Widget)
+
+```dart
+// ใช้ Wrap แทน Row เพื่อให้ auto-flow ไปบรรทัดถัดไป
+Wrap(
+  spacing: 12,
+  runSpacing: 12,
+  children: stats.map((s) => StatCard(...)).toList(),
+)
+```
+
+| ขนาด | Stats ต่อแถว | ลักษณะ |
+|------|-------------|--------|
+| **Mobile** | 2 | Compact card, icon + number + label |
+| **Tablet** | 4 | Standard card, icon + number + label + trend |
+| **Desktop** | 4+ | Expanded card, พื้นที่มากขึ้น, แสดง sparkline chart |
+
+#### 4. Appointment Queue
+
+| ขนาด | ลักษณะ |
+|------|--------|
+| **Mobile** | Vertical card list — แต่ละ card มีชื่อ, เวลา, สถานะ badge, ปุ่ม action หลัก (1-2 ปุ่ม) |
+| **Tablet** | 2-column grid — card มีรายละเอียดมากขึ้น (บริการ, แพทย์, หมายเหตุ) |
+| **Desktop** | Data table — sortable columns, filter bar, bulk action, pagination |
+
+```dart
+// Adaptive layout
+if (screenWidth < 600) {
+  return AppointmentListView(appointments);
+} else if (screenWidth < 900) {
+  return AppointmentGridView(appointments, crossAxisCount: 2);
+} else {
+  return AppointmentDataTable(appointments);
+}
+```
+
+#### 5. Quick Actions Grid
+
+| ขนาด | คอลัมน์ | ปุ่ม |
+|------|--------|------|
+| **Mobile** | 2 | Label ใต้ icon, compact |
+| **Tablet** | 3 | Label ข้าง icon หรือใต้, standard |
+| **Desktop** | 4 | Label + description, expanded |
+
+```dart
+GridView.count(
+  crossAxisCount: screenWidth < 600 ? 2 : screenWidth < 900 ? 3 : 4,
+  childAspectRatio: screenWidth < 600 ? 1.2 : 1.0,
+  children: quickActions.map((a) => QuickActionButton(a)).toList(),
+)
+```
+
+#### 6. Active Promotions & Recent Activity
+
+| ขนาด | Promotions | Activity |
+|------|-----------|----------|
+| **Mobile** | Horizontal scroll cards | Collapsible list |
+| **Tablet** | 2-col grid | Full list |
+| **Desktop** | Side-by-side: Promotions (left 60%) + Activity (right 40%) |
+
+### Navigation Pattern
+
+#### Collapsible Sidebar (Adaptive) — ตาม UI Reference
+
+ERP Dashboard ใช้ **Collapsible Sidebar** (ไม่ใช่ Bottom Navigation) แบบ 2 สถานะ:
+
+```
+State A: Collapsed (Mini Rail)          State B: Expanded
+┌────────┐                              ┌──────────────┐
+│ 🔷  >  │                              │ 🔷 ERP    <  │
+├────────┤                              ├──────────────┤
+│ 📊     │                              │ 📊 Dashboard │
+│ 🛒     │                              │ 🛒 POS       │
+│ 📦     │                              │ 📦 Inventory │
+│ 👥     │                              │ 👥 HR        │
+│ 💰     │                              │ 💰 Accounting│
+│ 🔔 2   │                              │ 🔔 CRM       │ 2
+│ 💬 5   │                              │ � Messages  │ 5
+│ ⚙️     │                              │ ⚙️ Settings  │
+│        │                              │              │
+│ [Promo]│                              │ [Promo Card] │
+│ 🔗     │                              │ [External]   │
+└────────┘                              └──────────────┘
+  56dp                                    240dp
+```
+
+#### องค์ประกอบหลัก (จาก UI Reference)
+
+1. **Toggle Button (มุมขวาบนของ sidebar)**
+   - สถานะ Collapsed → ปุ่ม `>` (expand)
+   - สถานะ Expanded → ปุ่ม `<` (collapse)
+   - กดแล้วเปลี่ยนสถานะทันที (animated)
+
+2. **Logo/Brand (ด้านบน)**
+   - Collapsed: แสดง favicon/icon อย่างเดียว
+   - Expanded: แสดง `🏢 ชื่อองค์กร` + icon
+
+3. **Navigation Items**
+   - Collapsed: Icon อย่างเดียว (28x28)
+   - Expanded: Icon + Label (16sp) + Badge (ถ้ามี)
+   - Badge: วงกลมสีแดง/ส้ม มุมขวาบนของ icon
+
+4. **Notification & Messages**
+   - มี Badge แสดงจำนวน (เช่น 🔔 CRM `2`, 💬 Messages `5`)
+   - Badge อ่านจาก `notifications` table (In-App, ฟรี)
+   - กดแล้วไปหน้า `/erp/notifications`
+
+5. **Bottom Section**
+   - **Promotion Card** (ถ้ามี): "Upgrade to AI Features" / "สมัคร Premium" — กดไป `/admin/subscription/tiers`
+   - **External Link Icon** (collapsed) หรือปุ่ม (expanded)
+   - แสดงเฉพาะเมื่อมี Tier ที่สูงกว่าให้ upgrade
+
+#### Drawer Modes ตามขนาดจอ
+
+| ขนาด/ทิศทาง | Mode | กว้าง | ลักษณะ |
+|-------------|------|-------|--------|
+| **Mobile Portrait** | Overlay + Expandable | 240dp | ปกคลุมเต็มจอ, เริ่ม collapsed, กด `>` expand |
+| **Mobile Landscape** | Persistent Mini Rail | 56dp | Icon อย่างเดียว, tooltip ชื่อเมื่อ hover/long-press |
+| **Tablet Portrait** | Overlay + Expandable | 240dp | ปกคลุม 70%, เริ่ม collapsed |
+| **Tablet Landscape** | Persistent Expandable | 56dp → 240dp | เริ่ม collapsed, กด `>` expand |
+| **Desktop** | Persistent Expanded | 240dp | แสดงเต็มตลอด, มี sub-menu |
+
+#### สีและ Theme
+
+| ส่วน | สี | ค่า |
+|------|-----|-----|
+| **Background** | Primary Dark | `#00695C` (Teal Dark) หรือสี primary ขององค์กร |
+| **Active Item** | Surface | `#FFFFFF` (bg) + Primary (text) |
+| **Inactive Icon** | On Surface (dim) | `rgba(255,255,255,0.6)` |
+| **Inactive Label** | On Surface | `#FFFFFF` |
+| **Badge BG** | Error | `#EF4444` |
+| **Badge Text** | On Error | `#FFFFFF` |
+| **Toggle Button** | Accent | `#FFC107` (Amber) หรือสีองค์กร |
+| **Bottom Card** | Surface | `#FFFFFF` (bg) + gradient overlay |
+
+```dart
+// Collapsible Sidebar Widget
+class CollapsibleSidebar extends StatefulWidget {
+  @override
+  _CollapsibleSidebarState createState() => _CollapsibleSidebarState();
+}
+
+class _CollapsibleSidebarState extends State<CollapsibleSidebar> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 900;
+    final sidebarWidth = _isExpanded ? 240.0 : 56.0;
+    
+    // ดึงสีจากธีมที่ user เลือก (fallback เป็น sheserved_default)
+    final theme = ref.watch(userDashboardThemeProvider);
+    final primaryColor = _hexToColor(theme.primaryColor, fallback: const Color(0xFF00695C));
+    final accentColor = _hexToColor(theme.accentColor, fallback: const Color(0xFFFFC107));
+    final surfaceColor = _hexToColor(theme.surfaceColor, fallback: Colors.white);
+    final textPrimary = _hexToColor(theme.textPrimary, fallback: Colors.white);
+    final textSecondary = _hexToColor(theme.textSecondary, fallback: Colors.white70);
+    final errorColor = _hexToColor(theme.errorColor, fallback: const Color(0xFFEF4444));
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      width: sidebarWidth,
+      color: primaryColor, // <- ใช้สีจากธีมที่ user เลือก
+      child: Column(
+        children: [
+          // Header: Logo + Toggle
+          _buildHeader(),
+          // Navigation Items
+          Expanded(
+            child: ListView(
+              children: [
+                _buildNavItem(Icons.dashboard, 'Dashboard', '/erp/dashboard'),
+                _buildNavItem(Icons.point_of_sale, 'POS', '/erp/pos'),
+                _buildNavItem(Icons.inventory, 'Inventory', '/erp/inventory'),
+                _buildNavItem(Icons.people, 'HR', '/erp/hr'),
+                _buildNavItem(Icons.account_balance, 'Accounting', '/erp/accounting'),
+                _buildNavItem(Icons.business, 'CRM', '/erp/crm', badgeCount: 2),
+                _buildNavItem(Icons.notifications, 'Notifications', '/erp/notifications', badgeCount: 5),
+                _buildNavItem(Icons.settings, 'Settings', '/erp/settings'),
+              ],
+            ),
+          ),
+          // Bottom: Promo Card
+          if (_isExpanded) _buildPromoCard(),
+          if (!_isExpanded) _buildExternalLinkIcon(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          // Logo
+          const Icon(Icons.local_hospital, color: Colors.white, size: 28),
+          if (_isExpanded) ...[
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('คลินิกหมอสมชาย', 
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
+          // Toggle Button (ใช้ accent color จากธีม)
+          GestureDetector(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: accentColor, // <- ใช้สีจากธีม
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                _isExpanded ? Icons.chevron_left : Icons.chevron_right,
+                color: Colors.black,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(IconData icon, String label, String route, {int? badgeCount}) {
+    final isSelected = ModalRoute.of(context)?.settings.name == route;
+    return InkWell(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: isSelected
+          ? const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              ),
+            )
+          : null,
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                Icon(icon,
+                  color: isSelected ? primaryColor : textSecondary, // <- ใช้สีจากธีม
+                  size: 24,
+                ),
+                if (badgeCount != null && badgeCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(color: errorColor, shape: BoxShape.circle), // <- ใช้สีจากธีม
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Text('$badgeCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 9),
+                        textAlign: TextAlign.center),
+                    ),
+                  ),
+              ],
+            ),
+            if (_isExpanded) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(label,
+                  style: TextStyle(
+                    color: isSelected ? primaryColor : textPrimary, // <- ใช้สีจากธีม
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (badgeCount != null && badgeCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: errorColor, borderRadius: BorderRadius.circular(12)), // <- ใช้สีจากธีม
+                  child: Text('$badgeCount', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPromoCard() {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.auto_awesome, color: Colors.amber, size: 32),
+          const SizedBox(height: 8),
+          const Text('สมัคร Premium', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/admin/subscription/tiers'),
+            style: ElevatedButton.styleFrom(backgroundColor: accentColor), // <- ใช้สีจากธีม
+            child: const Text('สมัครเลย', style: TextStyle(color: Colors.black, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExternalLinkIcon() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: IconButton(
+        icon: Icon(Icons.open_in_new, color: textSecondary, size: 20), // <- ใช้สีจากธีม
+        onPressed: () {},
+      ),
+    );
+  }
+
+  // Helper: แปลง hex string เป็น Color
+  Color _hexToColor(String? hex, {required Color fallback}) {
+    if (hex == null || hex.isEmpty) return fallback;
+    return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+  }
+}
+```
+
+### โครงสร้าง Navigation (ERP Dashboard Sub-Pages)
+
+ทุกหน้าใน `/docs/ERP` (รวมถึง CRM) เป็น **sub-pages ของ ERP Dashboard** — ไม่ใช่หน้า standalone:
+
+```
+ERP Dashboard (Main)
+├── 🏠 Dashboard (Overview)
+├── 🛒 POS Management
+│   └── sub-pages...
+├── 📦 Inventory Management
+│   └── sub-pages...
+├── 💊 Pharmacy
+│   └── sub-pages...
+├── 💰 Accounting
+│   └── sub-pages...
+├── 👥 HR Management
+│   └── sub-pages... (รวมถึง Role/Permission/Transfer Ownership)
+├── 📊 CRM Management  ← นี่คือ CRM Module
+│   ├── 📊 CRM Dashboard (หน้านี้)
+│   ├── 🎫 Coupons
+│   ├── 🏷️ Promotions
+│   ├── ⭐ Loyalty
+│   ├── 🏅 Member Tiers
+│   ├── 📅 Appointments
+│   │   ├── 📋 Queue Dashboard
+│   │   ├── 📅 Calendar
+│   │   ├── ➕ Create Appointment
+│   │   ├── 👤 Patient Appointments
+│   │   └── ⚙️ Settings
+│   └── 📊 Reports
+└── ⚙️ System Settings
+```
+
+**Routing Pattern:**
+```dart
+// ERP Dashboard เป็น shell route
+'/erp'                      → ErpDashboardPage (with Drawer)
+'/erp/crm'                  → CrmDashboardPage (sub-page)
+'/erp/crm/coupons'          → CouponManagementPage
+'/erp/crm/appointments'     → AppointmentDashboardPage
+'/erp/crm/appointments/new' → AppointmentCreatePage
+
+// ไม่ใช่ standalone route:
+// ❌ '/crm/dashboard' — standalone ไม่มี ERP context
+```
+
+**State Management:**
+- `ErpDashboardShell` เป็น parent widget ที่มี Drawer + AppBar
+- ทุก sub-page (รวมถึง CRM) เป็น `child` ที่ถูก render ภายใน shell
+- `selectedModule` และ `selectedSubPage` เก็บใน `ErpDashboardProvider`
+- CRM Dashboard รู้ว่าตัวเองอยู่ใน ERP context ผ่าน `InheritedWidget` หรือ `Provider`
+
+### Orientation Handling
+
+| ทิศทาง | พฤติกรรม |
+|--------|----------|
+| **Portrait** | Drawer เป็น overlay, Queue เป็น list, Stats 2 ต่อแถว |
+| **Landscape** | Drawer เป็น mini rail (ถ้าเป็น tablet), Queue เป็น 2-col grid, Stats 4 ต่อแถว |
+
+```dart
+// ตรวจจับ orientation
+final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+final isTablet = screenWidth >= 600;
+
+if (isTablet && isLandscape) {
+  // Use expanded layout: side-by-side panels, persistent drawer
+} else {
+  // Use stacked layout: single column, overlay drawer
+}
+```
+
+### Safe Area & Padding
+
+```dart
+// ใช้ SafeArea ทุกหน้า + padding ตาม breakpoint
+Padding(
+  padding: EdgeInsets.symmetric(
+    horizontal: screenWidth < 600 ? 16 : screenWidth < 900 ? 24 : 32,
+    vertical: 16,
+  ),
+  child: content,
+)
+```
+
+### ตัวอย่าง Code Skeleton (Adaptive CRM Dashboard)
+
+```dart
+class CrmDashboardPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isTablet = screenWidth >= 600;
+    final isDesktop = screenWidth >= 900;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('CRM Dashboard'),
+        actions: [
+          if (isDesktop) const BranchSelectorDropdown(),
+          if (!isDesktop) IconButton(icon: const Icon(Icons.business), onPressed: () {}),
+          const RefreshButton(),
+          if (isDesktop) const SettingsButton(),
+        ],
+      ),
+      drawer: isDesktop ? null : const CrmNavigationDrawer(),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: isDesktop ? 32 : isTablet ? 24 : 16,
+          ),
+          child: Column(
+            children: [
+              const CrmAlertBanner(),
+              _buildStatsRow(context, isDesktop, isTablet),
+              _buildAppointmentSection(context, isDesktop, isTablet, isLandscape),
+              _buildQuickActionsGrid(context, isDesktop, isTablet),
+              if (isDesktop)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Expanded(flex: 6, child: ActivePromotionsSection()),
+                    Expanded(flex: 4, child: RecentActivitySection()),
+                  ],
+                )
+              else ...[
+                const ActivePromotionsSection(),
+                const RecentActivitySection(),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+---
+
 ## Flutter UI (แผนการพัฒนา)
 
 ```
@@ -740,43 +1507,128 @@ lib/features/crm/
 
 ## แผนการพัฒนา (Roadmap)
 
+### Foundation Phase (DB + Core Logic)
+
 | Phase | งาน | สถานะ |
 |-------|-----|-------|
-| **Phase 1** | สร้าง DB Schema + RLS ทั้งหมด (CRM + Appointment) | ☐ TODO |
-| **Phase 2** | Loyalty Point Repository + การคำนวณแต้มใน POS | ☐ TODO |
-| **Phase 3** | Coupon Repository + การตรวจสอบและใช้คูปองใน POS | ☐ TODO |
-| **Phase 4** | Promotion Engine (คำนวณส่วนลดอัตโนมัติ) | ☐ TODO |
-| **Phase 5** | Flutter UI: CRM Dashboard, Coupon/Promotion Management | ☐ TODO |
-| **Phase 6** | Member Tier + Prepaid Package | ☐ TODO |
-| **Phase 7** | Follow-up & Birthday Promotion (Notification) | ☐ TODO |
-| **Phase 8** | Appointment: DB Schema, RLS, Service Schedule, Practitioners | ☐ TODO |
-| **Phase 9** | Appointment: `slot_calculator_service` + `appointment_repository` | ☐ TODO |
-| **Phase 10** | Appointment: Staff UI — Queue Dashboard, Calendar, Status Management | ☐ TODO |
-| **Phase 11** | Appointment: Consumer App UI — Booking Flow, Slot Picker, My Appointments | ☐ TODO |
-| **Phase 12** | Appointment: Notification — Reminder 24h/2h, Follow-up, Waitlist Alert | ☐ TODO |
-| **Phase 13** | Appointment: Reports — No-show Rate, Utilization, Revenue Integration | ☐ TODO |
+| **Phase 1** | สร้าง DB Schema + RLS ทั้งหมด (20 ตาราง CRM + Appointment) | ☐ TODO |
+| **Phase 2** | Feature Toggle API (`organization_feature_flags` CRUD) | ☐ TODO |
+| **Phase 3** | RBAC Integration — `get_crm_access_level()` RPC + `crmRepo.getAccessLevel()` | ☐ TODO |
+
+### Loyalty & Coupon Phase
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 4** | Loyalty Point: `loyalty_point_rules` + `customer_loyalty_wallets` + `loyalty_point_transactions` | ☐ TODO |
+| **Phase 5** | Loyalty POS Service — คำนวณแต้มอัตโนมัติตอน checkout | ☐ TODO |
+| **Phase 6** | Coupon: `coupons` + `coupon_usages` + validation logic | ☐ TODO |
+| **Phase 7** | Coupon POS Service — ตรวจสอบและใช้คูปองใน POS | ☐ TODO |
+| **Phase 8** | Promotion Engine: `promotions` + auto-discount calculation | ☐ TODO |
+
+### Membership Phase
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 9** | Member Tier: `member_tiers` + tier upgrade/downgrade logic | ☐ TODO |
+| **Phase 10** | Prepaid Package: `customer_packages` + `package_session_logs` + POS deduction | ☐ TODO |
+
+### CRM Dashboard UI Phase
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 11** | `crm_dashboard_page.dart` — Dashboard หลัก (Stats + Queue + Quick Actions) | ☐ TODO |
+| **Phase 12** | Coupon/Promotion/Loyalty Management Pages | ☐ TODO |
+| **Phase 13** | Customer Profile Page (`customer_profile_page.dart`) | ☐ TODO |
+| **Phase 14** | CRM Reports — Loyalty summary, Coupon usage, Revenue from CRM | ☐ TODO |
+
+### Appointment Phase (Staff Side — ERP)
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 15** | Appointment Master Data: `service_schedules`, `service_rooms`, `practitioners`, `appointment_service_types`, `appointment_policies` | ☐ TODO |
+| **Phase 16** | Slot Calculator Service — คำนวณ Slot ว่างแบบ Real-time | ☐ TODO |
+| **Phase 17** | Appointment Repository + Business Logic (create, update, cancel, reschedule) | ☐ TODO |
+| **Phase 18** | Staff UI: `appointment_dashboard_page.dart` (Queue + Calendar) | ☐ TODO |
+| **Phase 19** | Staff UI: `appointment_detail_page.dart` + Status Management | ☐ TODO |
+| **Phase 20** | Staff UI: `appointment_create_page.dart` (Staff booking) | ☐ TODO |
+
+### Appointment Phase (Consumer Side — Patient App)
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 21** | Consumer UI: `book_appointment_page.dart` + `appointment_slot_picker.dart` | ☐ TODO |
+| **Phase 22** | Consumer UI: `my_appointments_page.dart` + `appointment_checkin_page.dart` | ☐ TODO |
+| **Phase 23** | Waitlist: `appointment_waitlist` + auto-notify when slot available | ☐ TODO |
+
+### Notification & Reports Phase
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 24** | Notification: Booking confirmation, Reminder 24h/2h, Follow-up | ☐ TODO |
+| **Phase 25** | Birthday Promotion auto-trigger | ☐ TODO |
+| **Phase 26** | Appointment Reports: No-show Rate, Utilization, Revenue | ☐ TODO |
+| **Phase 27** | Customer Feedback: `customer_feedbacks` + Rating system | ☐ TODO |
+
+### Content & Case Review Phase (ท้ายสุด)
+
+| Phase | งาน | สถานะ |
+|-------|-----|-------|
+| **Phase 28** | Content Management — เชื่อมบทความ/เคสรีวิวกับโปรไฟล์แพทย์ | ☐ TODO |
+| **Phase 29** | Reviewer Incentive — แต้มสะสมสำหรับผู้เขียนรีวิว | ☐ TODO |
+
+> **หมายเหตุ:** Phase 1-3 เป็น Foundation ที่ต้องเสร็จก่อนทุกอย่าง  Phase 4-10 (Loyalty/Coupon/Membership) และ Phase 11-14 (CRM Dashboard) สามารถทำขนานกันได้  Phase 15-23 (Appointment) ควรทำเป็นกลุ่มเพราะมี dependency ซ้อนกัน
 
 ---
 
 ## สิ่งที่ต้องทำต่อ (Next Steps)
 
-### 🗄️ ฝั่ง Database (PostgreSQL RLS)
-- RLS policies ใช้ `auth.uid()` ได้ปกติ — เป็นฟังก์ชัน server-side ของ PostgreSQL/Supabase ไม่ขัดแย้งกับ auth_data_guidelines
-- ทดสอบ RLS: พนักงานเห็นข้อมูลองค์กร, ผู้ป่วยเห็นนัดของตนเองเท่านั้น
-- สร้าง unit test / integration test สำหรับการเข้าถึงนัดหมายตามสิทธิ์
+### 🗄️ ฝั่ง Database (PostgreSQL)
 
-### 📱 ฝั่ง Flutter/Dart (สำคัญ — ตาม auth_data_guidelines)
+- [ ] สร้าง Migration รวม 20 ตาราง (Phase 1)
+- [ ] RLS Policies สำหรับทุกตาราง (ใช้ `auth.uid()` ได้ปกติ — server-side)
+- [ ] RPC Function: `get_crm_access_level(p_user_id, p_profession_id)` → คืน `access_level` + `branch_scope`
+- [ ] RPC Function: `get_available_slots(p_profession_id, p_branch_id, p_date, p_service_type_id)` → คืนรายการ Slot ว่าง
+- [ ] Seed Data: ตัวอย่าง `loyalty_point_rules`, `appointment_service_types`, `appointment_policies`
+- [ ] ทดสอบ RLS: พนักงานเห็นข้อมูลองค์กร, ผู้ป่วยเห็นนัดของตนเองเท่านั้น
+
+### 🔐 ฝั่ง RBAC & Permission
+
+- [ ] ตรวจสอบ `organization_roles` ในองค์กรที่สมัครใหม่ — ระบบต้องสร้าง "Owner" role อัตโนมัติ
+- [ ] ตรวจสอบ `role_module_permissions` — Owner ต้องได้ `access_level = 1` ทุกโมดูลรวมถึง `crm`
+- [ ] สร้าง UI ใน **HR Dashboard** สำหรับ Transfer Ownership (ไม่ใช่ CRM Dashboard)
+- [ ] เอกสารกระบวนการ: Owner → สร้างตำแหน่ง → กำหนดสิทธิ์ → เชิญพนักงาน → พนักงาน accept
+
+### 🎛️ ฝั่ง Feature Toggles
+
+- [ ] Migration: `organization_feature_flags` (ถ้ายังไม่มี)
+- [ ] Seed: Default flags สำหรับ CRM (`crm_loyalty = true`, `crm_coupons = true`, ฯลฯ)
+- [ ] Flutter Provider: `CrmFeatureFlagsProvider` — โหลด flags ตอนเข้า Dashboard
+- [ ] UI Guard: ซ่อน/แสดง section ตาม feature flag (ไม่ redirect ไม่ error — แค่ซ่อน)
+
+### 📱 ฝั่ง Flutter/Dart (ตาม auth_data_guidelines)
+
 - **ห้าม** ใช้ `Supabase.instance.client.auth.currentUser` หรือ `_client.auth.currentUser` ใน Repository ใด ๆ
-- **ต้อง** ดึง `userId` ผ่าน `ServiceLocator.instance.currentUser?.id` เสมอ เช่น:
+- **ต้อง** ดึง `userId` ผ่าน `ServiceLocator.instance.currentUser?.id` เสมอ:
   ```dart
   // ✅ ถูกต้อง
   final userId = ServiceLocator.instance.currentUser?.id;
-  await _appointmentRepo.createAppointment(userId: userId, ...);
+  final professionId = ServiceLocator.instance.currentUser?.professionId;
+  await _appointmentRepo.createAppointment(userId: userId, professionId: professionId, ...);
 
   // ❌ ผิด — จะได้ค่า null เสมอ
   final userId = _client.auth.currentUser?.id;
   ```
-- ทุก Repository ที่เกี่ยวกับ appointment ต้องรับ `userId` เป็น parameter จาก UI layer
+- ทุก Repository ต้องรับ `userId` + `professionId` เป็น parameter จาก UI layer
+- `CrmDashboardPage` ต้องเช็ค `accessLevel` ก่อน render ทุกส่วน
 
+### 🧪 Testing Plan
+
+- [ ] Unit Test: `SlotCalculatorService` — คำนวณ Slot ว่างถูกต้อง
+- [ ] Unit Test: `CouponValidation` — ตรวจสอบ expiry, usage limit, min purchase
+- [ ] Integration Test: Appointment lifecycle (pending → confirmed → checked_in → completed)
+- [ ] Integration Test: RBAC — View user เข้า Settings ต้องถูก reject
+- [ ] UI Test: Feature Toggle ปิด `crm_appointments` → Dashboard ไม่แสดง Queue
+
+---
 
 *หมายเหตุ: ทุกหน้าจอใน CRM Management จะแสดงผลเฉพาะข้อมูลขององค์กรและสาขาที่พนักงานมีสิทธิ์เข้าถึงเท่านั้น ตามระบบสิทธิ์ที่กำหนดไว้ใน [ERP_CORE_ARCHITECTURE.md](ERP_CORE_ARCHITECTURE.md)*

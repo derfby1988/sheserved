@@ -136,11 +136,486 @@
 - 📈 **Analytics Management** — ดู dashboard snapshot, รายงานสรุปจาก Read Model projections (ยอดขาย, สต๊อก, แต้ม)
 - ⚙️ **System Operations** — ดูสถานะ outbox events, idempotency keys, circuit breaker states และ dead letter records (เฉพาะ ERP Service Manager หรือผู้ดูแลระบบระดับสูง)
 
-### 3. จุดเข้าสู่ระบบจากหน้าหลัก (Home Page Entry Point)
+### 3. หน้า Overview ของ ERP Dashboard (`/erp/dashboard`)
+
+หน้าแรกที่แสดงเมื่อเข้า ERP Dashboard เป็น **ภาพรวมของโมดูล** ที่เปิดใช้งาน ไม่ใช่หน้ารายละเอียดของโมดูลใดโมดูลหนึ่ง
+
+**ประกอบด้วย:**
+1. **Organization Header** — ชื่อองค์กร + โลโก้ + สาขาที่เลือก + Subscription Tier
+2. **Module Cards Grid** — การ์ดเข้าถึงโมดูลที่เปิดใช้งาน (ตาม `organization_feature_flags` + `tier_features`)
+   - โมดูลที่ปิด → ซ่อน
+   - โมดูลที่ไม่อยู่ใน Tier → disabled หรือ badge "ต้องสมัคร"
+3. **Recent Notifications** — แจ้งเตือนล่าสุดจากทุกโมดูล (In-App, ฟรี)
+4. **Quick Stats (Optional)** — จำนวน notification ที่ยังไม่อ่าน ต่อโมดูล (ไม่ใช่ KPI ธุรกิจ)
+
+**ไม่ประกอบด้วย:**
+- ❌ **KPI Summary** (ยอดขาย, สต๊อก, แต้ม) → อยู่ใน **Analytics Management** (`/erp/analytics`) หรือแต่ละโมดูลย่อย
+- ❌ **รายงานละเอียด** → อยู่ในแต่ละโมดูล เช่น `/erp/crm/reports`, `/erp/pos/reports`
+- ❌ **กราฟ/Chart** → อยู่ใน Analytics Management หรือโมดูลย่อย
+
+> **หลักการ:** Overview เป็น **Entry Point/Navigation Hub** — ให้ user เห็นว่ามีโมดูลอะไรบ้าง และเข้าไปยังโมดูลนั้นๆ ได้ในคลิกเดียว
+
+### 4. การปรับแต่งการจัดเรียง Module Cards (User Customizable Grid)
+
+ผู้ใช้งานแต่ละคนสามารถ **ลาก-วาง (Drag & Drop)** การ์ดโมดูลเพื่อจัดเรียงตามความชอบได้ โดยระบบจะ **บันทึกตำแหน่งลงฐานข้อมูล** และ **เรียกใช้ตำแหน่งล่าสุด** ที่บันทึกไว้ในครั้งถัดไป
+
+#### ฐานข้อมูล (Database Schema)
+
+```sql
+CREATE TABLE user_module_layouts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  
+  -- รายการโมดูลเรียงตามลำดับที่ user กำหนด
+  module_order    TEXT[] NOT NULL DEFAULT '{}',
+                  -- เช่น {'crm','pos','inventory','hr','accounting'}
+  
+  -- โมดูลที่ user ซ่อน (ไม่แสดงบน Dashboard)
+  hidden_modules  TEXT[] NOT NULL DEFAULT '{}',
+                  -- เช่น {'his','lis'} — โมดูลที่ปิดอยู่จะถูกซ่อนโดยอัตโนมัติ ไม่ต้องเก็บในนี้
+  
+  -- สถานะการแก้ไข
+  is_customized   BOOLEAN DEFAULT false,  -- true = user ปรับแต่งแล้ว, false = ใช้ default
+  
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, profession_id)
+);
+
+-- Index สำหรับดึง layout เร็ว
+CREATE INDEX idx_user_module_layouts_user ON user_module_layouts(user_id, profession_id);
+
+-- RLS: user เห็นเฉพาะ layout ของตนเอง
+ALTER TABLE user_module_layouts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY user_module_layout_isolation ON user_module_layouts
+  USING (user_id = auth.uid());
+```
+
+#### ลำดับเริ่มต้น (Default Order)
+
+ถ้า user ยังไม่เคยปรับแต่ง (`is_customized = false`) ใช้ลำดับ default:
+
+```dart
+const defaultModuleOrder = [
+  'crm',        // 1. CRM (สำคัญที่สุดสำหรับคลินิก)
+  'pos',        // 2. POS
+  'inventory',  // 3. Inventory
+  'hr',         // 4. HR
+  'accounting', // 5. Accounting
+  'pharmacy',   // 6. Pharmacy
+  'procurement',// 7. Procurement
+  'his',        // 8. HIS
+  'telemedicine',// 9. Telemedicine
+  'logistics',  // 10. Logistics
+  'commerce',   // 11. Commerce
+  'analytics',  // 12. Analytics
+  'settings',   // 13. Settings (ล่างสุด)
+];
+```
+
+#### การทำงานของ UI
+
+```dart
+// ReorderableGridView หรือ DragTarget + Draggable
+class ModuleCardsGrid extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final layout = ref.watch(userModuleLayoutProvider);
+    final modules = ref.watch(enabledModulesProvider); // กรองตาม feature toggle + tier
+    
+    // รวมลำดับจาก layout กับโมดูลที่เปิดใช้งาน
+    final orderedModules = _applyLayoutOrder(modules, layout.moduleOrder);
+    
+    return ReorderableGridView.count(
+      crossAxisCount: isDesktop ? 4 : isTablet ? 3 : 2,
+      children: orderedModules.map((module) => ModuleCard(module)).toList(),
+      onReorder: (oldIndex, newIndex) {
+        // อัปเดต UI ทันที (optimistic)
+        ref.read(userModuleLayoutProvider.notifier).reorder(oldIndex, newIndex);
+        // บันทึกลง DB (debounce 500ms)
+        ref.read(userModuleLayoutProvider.notifier).saveLayout();
+      },
+    );
+  }
+}
+```
+
+#### กฎการปรับแต่ง
+
+- **ซ่อนโมดูล:** กดค้าง → เลือก "ซ่อน" → เพิ่มลง `hidden_modules` → ไม่แสดงบน grid
+- **เรียงคืน:** ปุ่ม "เรียงคืนเริ่มต้น" → ล้าง `module_order` + `hidden_modules` → ใช้ default
+- **ลำดับซ้ำกันได้:** user A เรียง CRM ก่อน, user B เรียง POS ก่อน — แยกกันตาม `user_id`
+- **เปลี่ยน profession:** แต่ละ profession มี layout แยก (`profession_id` ใน unique key)
+- **ไม่กระทบผู้ใช้อื่น:** layout เป็นของ user คนนั้นเท่านั้น (RLS)
+
+#### API / RPC
+
+```sql
+-- ดึง layout ของ user
+CREATE OR REPLACE FUNCTION get_user_module_layout(
+  p_user_id UUID,
+  p_profession_id UUID
+) RETURNS JSONB AS $$
+  SELECT jsonb_build_object(
+    'module_order', module_order,
+    'hidden_modules', hidden_modules,
+    'is_customized', is_customized
+  )
+  FROM user_module_layouts
+  WHERE user_id = p_user_id AND profession_id = p_profession_id;
+$$ LANGUAGE plpgsql;
+
+-- บันทึก layout
+CREATE OR REPLACE FUNCTION save_user_module_layout(
+  p_user_id UUID,
+  p_profession_id UUID,
+  p_module_order TEXT[],
+  p_hidden_modules TEXT[]
+) RETURNS VOID AS $$
+  INSERT INTO user_module_layouts (user_id, profession_id, module_order, hidden_modules, is_customized)
+  VALUES (p_user_id, p_profession_id, p_module_order, p_hidden_modules, true)
+  ON CONFLICT (user_id, profession_id)
+  DO UPDATE SET
+    module_order = EXCLUDED.module_order,
+    hidden_modules = EXCLUDED.hidden_modules,
+    is_customized = true,
+    updated_at = now();
+$$ LANGUAGE plpgsql;
+```
+
+---
+
+### 4.5 การปรับแต่งธีมสี Dashboard (User Theme Customization)
+
+ผู้ใช้งานแต่ละคนสามารถเลือก **ธีมสี (Color Theme)** ของ ERP Dashboard ได้ที่หน้า **"ตั้งค่า Dashboard"** (`/erp/settings/theme`) โดยใช้งานครั้งแรกจะได้ **ธีมเริ่มต้นของ Sheserved**
+
+#### ฐานข้อมูล (Database Schema)
+
+```sql
+-- ============================================================
+-- ตารางธีมสีของผู้ใช้ (User Dashboard Theme)
+-- ============================================================
+CREATE TABLE user_dashboard_themes (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  profession_id         UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  
+  -- ธีมที่เลือก
+  theme_preset          TEXT DEFAULT 'sheserved_default',
+                          -- 'sheserved_default', 'ocean_blue', 'sunset_orange',
+                          -- 'forest_green', 'royal_purple', 'midnight_black',
+                          -- 'coral_pink', 'custom'
+  
+  -- สีที่กำหนดเอง (ถ้า theme_preset = 'custom')
+  custom_primary        TEXT,  -- เช่น '#00695C' (sidebar bg)
+  custom_accent         TEXT,  -- เช่น '#FFC107' (toggle button, badge)
+  custom_surface        TEXT,  -- เช่น '#FFFFFF' (active item bg)
+  custom_text_primary   TEXT,  -- เช่น '#FFFFFF' (label text)
+  custom_text_secondary TEXT,  -- เช่น 'rgba(255,255,255,0.7)' (dim icon)
+  custom_error          TEXT,  -- เช่น '#EF4444' (badge bg)
+  
+  -- สถานะ
+  is_using_custom       BOOLEAN DEFAULT false,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, profession_id)
+);
+
+-- RLS
+ALTER TABLE user_dashboard_themes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY user_theme_isolation ON user_dashboard_themes
+  USING (user_id = auth.uid());
+
+-- ============================================================
+-- ตารางธีมสีเริ่มต้นของ Sheserved (Master Presets)
+-- ============================================================
+CREATE TABLE theme_presets (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  preset_key    TEXT NOT NULL UNIQUE,  -- 'sheserved_default', 'ocean_blue', ...
+  preset_name_th TEXT NOT NULL,         -- 'Sheserved Default', 'สีฟ้ามหาสมุทร'
+  preset_name_en TEXT NOT NULL,
+  
+  -- สีหลัก
+  primary_color      TEXT NOT NULL,  -- sidebar background
+  accent_color       TEXT NOT NULL,  -- toggle button, highlights
+  surface_color      TEXT NOT NULL,  -- active item bg
+  text_primary       TEXT NOT NULL,  -- label text
+  text_secondary     TEXT NOT NULL,  -- dim icon
+  error_color        TEXT NOT NULL,  -- badge bg
+  
+  -- สีเสริม
+  card_bg            TEXT,           -- bottom promo card bg
+  card_text          TEXT,           -- bottom promo card text
+  gradient_start     TEXT,           -- sidebar gradient start (optional)
+  gradient_end       TEXT,           -- sidebar gradient end (optional)
+  
+  is_active          BOOLEAN DEFAULT true,
+  created_at         TIMESTAMPTZ DEFAULT now()
+);
+
+-- Seed: Sheserved Default Theme (Teal Dark)
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('sheserved_default', 'Sheserved Default', 'Sheserved Default', '#00695C', '#FFC107', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+
+-- Seed: Ocean Blue
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('ocean_blue', 'สีฟ้ามหาสมุทร', 'Ocean Blue', '#1565C0', '#FF6F00', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+
+-- Seed: Sunset Orange
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('sunset_orange', 'สีส้มพระอาทิตย์ตก', 'Sunset Orange', '#E65100', '#FFD600', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+
+-- Seed: Forest Green
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('forest_green', 'สีเขียวป่าไม้', 'Forest Green', '#2E7D32', '#FFEB3B', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+
+-- Seed: Royal Purple
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('royal_purple', 'สีม่วงราชา', 'Royal Purple', '#6A1B9A', '#FFEA00', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+
+-- Seed: Midnight Black
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('midnight_black', 'สีดำเที่ยงคืน', 'Midnight Black', '#212121', '#00E676', '#424242', '#FFFFFF', 'rgba(255,255,255,0.6)', '#EF4444', '#424242', '#FFFFFF');
+
+-- Seed: Coral Pink
+INSERT INTO theme_presets (preset_key, preset_name_th, preset_name_en, primary_color, accent_color, surface_color, text_primary, text_secondary, error_color, card_bg, card_text) VALUES
+('coral_pink', 'สีชมพูปะการัง', 'Coral Pink', '#C2185B', '#76FF03', '#FFFFFF', '#FFFFFF', 'rgba(255,255,255,0.7)', '#EF4444', '#FFFFFF', '#1F2937');
+```
+
+#### ธีมที่มีให้เลือก (Presets)
+
+| Preset Key | ชื่อ (ไทย) | Primary (Sidebar BG) | Accent (Toggle/Badge) | ลักษณะ |
+|-----------|-----------|----------------------|----------------------|--------|
+| `sheserved_default` | Sheserved Default | `#00695C` (Teal) | `#FFC107` (Amber) | คลาสสิก, สบายตา |
+| `ocean_blue` | สีฟ้ามหาสมุทร | `#1565C0` (Blue) | `#FF6F00` (Deep Orange) | สดชื่น, มืออาชีพ |
+| `sunset_orange` | สีส้มพระอาทิตย์ตก | `#E65100` (Orange) | `#FFD600` (Yellow) | อบอุ่น, กระตือรือร้น |
+| `forest_green` | สีเขียวป่าไม้ | `#2E7D32` (Green) | `#FFEB3B` (Yellow) | ธรรมชาติ, สุขภาพ |
+| `royal_purple` | สีม่วงราชา | `#6A1B9A` (Purple) | `#FFEA00` (Yellow) | หรูหรา, โดดเด่น |
+| `midnight_black` | สีดำเที่ยงคืน | `#212121` (Black) | `#00E676` (Green) | มืด, ประหยัดแบต |
+| `coral_pink` | สีชมพูปะการัง | `#C2185B` (Pink) | `#76FF03` (Lime) | สดใส, สร้างสรรค์ |
+| `custom` | กำหนดเอง | ตาม user | ตาม user | ปรับทุกสีได้ |
+
+> **หมายเหตุ:** ธีม `sheserved_default` ใช้เป็นค่าเริ่มต้นสำหรับผู้ใช้งานทุกคนที่เข้าใช้ ERP Dashboard เป็นครั้งแรก (`theme_preset = 'sheserved_default'`)
+
+#### หน้าเลือกธีม (`/erp/settings/theme`)
+
+```
+┌─────────────────────────────────────────────┐
+│  <- กลับ  |  ธีมสี Dashboard                  |
+├─────────────────────────────────────────────┤
+│  ธีมที่ใช้งานอยู่                           │
+│  ┌───────────────────────────────────────┐  │
+│  │ 🎨 [Preview Box]                      │  │
+│  │    Sheserved Default                   │  │
+│  │    #00695C + #FFC107                   │  │
+│  └───────────────────────────────────────┘  │
+│                                              │
+│  เลือกธีม                                   │
+│  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐          │
+│  │ 🟢  │ │ 🔵  │ │ 🟠  │ │ 🟩  │          │
+│  │Default│ │Ocean│ │Sun- │ │Forest│          │
+│  │     │ │Blue │ │ set │ │Green │          │
+│  └─────┘ └─────┘ └─────┘ └─────┘          │
+│  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐          │
+│  │ 🟣  │ │ ⬛  │ │ 🩷  │ │ 🎨  │          │
+│  │Royal│ │Mid- │ │Coral│ │Custom│          │
+│  │     │ │night│ │Pink │ │     │          │
+│  └─────┘ └─────┘ └─────┘ └─────┘          │
+│                                              │
+│  [กำหนดสีเอง]  <- แสดงเฉพาะเมื่อเลือก Custom  │
+│  ┌───────────────────────────────────────┐  │
+│  │ Primary:     [🎨 #00695C]            │  │
+│  │ Accent:      [🎨 #FFC107]            │  │
+│  │ Surface:     [🎨 #FFFFFF]            │  │
+│  │ Text Primary: [🎨 #FFFFFF]            │  │
+│  │ Error:        [🎨 #EF4444]            │  │
+│  └───────────────────────────────────────┘  │
+│                                              │
+│        [💾 บันทึก]    [❌ คืนค่าเริ่มต้น]     │
+└─────────────────────────────────────────────┘
+```
+
+#### การใช้งานธีมใน CollapsibleSidebar
+
+```dart
+class ThemedCollapsibleSidebar extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(userDashboardThemeProvider);
+    
+    // ใช้สีจากธีมที่ user เลือก
+    final primaryColor = Color(int.parse(theme.primaryColor.replaceFirst('#', '0xFF')));
+    final accentColor = Color(int.parse(theme.accentColor.replaceFirst('#', '0xFF')));
+    final surfaceColor = Color(int.parse(theme.surfaceColor.replaceFirst('#', '0xFF')));
+    final textPrimary = Color(int.parse(theme.textPrimary.replaceFirst('#', '0xFF')));
+    final textSecondary = Color(int.parse(theme.textSecondary.replaceFirst('#', '0xFF')));
+    final errorColor = Color(int.parse(theme.errorColor.replaceFirst('#', '0xFF')));
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      color: primaryColor, // <- ใช้สีจากธีม
+      child: Column(
+        children: [
+          // Toggle button ใช้ accent color
+          _buildToggleButton(accentColor),
+          // Nav items ใช้ textPrimary / textSecondary
+          _buildNavItems(primaryColor, surfaceColor, textPrimary, textSecondary),
+          // Badge ใช้ errorColor
+          _buildBadge(errorColor),
+        ],
+      ),
+    );
+  }
+}
+```
+
+#### API / RPC
+
+```sql
+-- ดึงธีมของ user
+CREATE OR REPLACE FUNCTION get_user_dashboard_theme(
+  p_user_id UUID,
+  p_profession_id UUID
+) RETURNS JSONB AS $$
+  SELECT jsonb_build_object(
+    'preset', theme_preset,
+    'custom', jsonb_build_object(
+      'primary', custom_primary,
+      'accent', custom_accent,
+      'surface', custom_surface,
+      'text_primary', custom_text_primary,
+      'text_secondary', custom_text_secondary,
+      'error', custom_error
+    ),
+    'is_custom', is_using_custom
+  )
+  FROM user_dashboard_themes
+  WHERE user_id = p_user_id AND profession_id = p_profession_id;
+$$ LANGUAGE plpgsql;
+
+-- บันทึกธีม
+CREATE OR REPLACE FUNCTION save_user_dashboard_theme(
+  p_user_id UUID,
+  p_profession_id UUID,
+  p_preset TEXT,
+  p_custom JSONB DEFAULT NULL
+) RETURNS VOID AS $$
+  INSERT INTO user_dashboard_themes (
+    user_id, profession_id, theme_preset,
+    custom_primary, custom_accent, custom_surface,
+    custom_text_primary, custom_text_secondary, custom_error,
+    is_using_custom
+  )
+  SELECT 
+    p_user_id, p_profession_id, p_preset,
+    p_custom->>'primary', p_custom->>'accent', p_custom->>'surface',
+    p_custom->>'text_primary', p_custom->>'text_secondary', p_custom->>'error',
+    (p_preset = 'custom')
+  ON CONFLICT (user_id, profession_id)
+  DO UPDATE SET
+    theme_preset = EXCLUDED.theme_preset,
+    custom_primary = EXCLUDED.custom_primary,
+    custom_accent = EXCLUDED.custom_accent,
+    custom_surface = EXCLUDED.custom_surface,
+    custom_text_primary = EXCLUDED.custom_text_primary,
+    custom_text_secondary = EXCLUDED.custom_text_secondary,
+    custom_error = EXCLUDED.custom_error,
+    is_using_custom = EXCLUDED.is_using_custom,
+    updated_at = now();
+$$ LANGUAGE plpgsql;
+
+-- ดึงรายการธีม preset ทั้งหมด
+CREATE OR REPLACE FUNCTION get_theme_presets()
+RETURNS JSONB AS $$
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'key', preset_key,
+      'name_th', preset_name_th,
+      'name_en', preset_name_en,
+      'colors', jsonb_build_object(
+        'primary', primary_color,
+        'accent', accent_color,
+        'surface', surface_color,
+        'text_primary', text_primary,
+        'text_secondary', text_secondary,
+        'error', error_color
+      )
+    )
+    ORDER BY preset_key
+  )
+  FROM theme_presets
+  WHERE is_active = true;
+$$ LANGUAGE plpgsql;
+```
+
+#### กฎการใช้งานธีม
+
+- **ครั้งแรก:** `INSERT` อัตโนมัติด้วย `theme_preset = 'sheserved_default'` เมื่อ user เข้า ERP Dashboard ครั้งแรก
+- **เปลี่ยนธีม:** เลือก preset จากหน้า settings → `save_user_dashboard_theme()` → `Consumer` re-build sidebar ทันที
+- **Custom:** เปิด color picker → กำหนดสีเอง 6 ค่า → `theme_preset = 'custom'`
+- **คืนค่าเริ่มต้น:** กด "คืนค่าเริ่มต้น" → `theme_preset = 'sheserved_default'` + ล้าง `custom_*`
+- **แยกตาม profession:** แต่ละ profession มี theme แยก (`profession_id` ใน unique key)
+- **Sheserved Admin:** สามารถเพิ่ม/ลบ/แก้ไข `theme_presets` ได้ผ่าน `/admin/theme-presets`
+
+### 5. จุดเข้าสู่ระบบจากหน้าหลัก (Home Page Entry Point)
+
 เพื่อรักษาโครงสร้าง UI (Layout) ของแอปพลิเคชันไม่ให้ผิดเพี้ยนไปจากเดิม และแยกประสบการณ์ใช้งานระหว่างผู้ใช้งานทั่วไปกับพนักงานองค์กรอย่างชัดเจน:
-- **กลไกการแสดงผล (Dynamic Card Replacement):** ระบบจะตรวจสอบสถานะผู้ใช้งานที่ล็อกอินว่ามีสิทธิ์อยู่ในตาราง `employee_roles` หรือไม่
-- **ผู้ใช้ทั่วไป (Consumer):** หน้าจอ Home จะแสดง `HomePharmacyCard` (สำหรับค้นหาและสั่งซื้อยา) ตามปกติ
-- **พนักงาน/เจ้าขององค์กร (Staff/Owner):** ระบบจะ **ซ่อน** `HomePharmacyCard` และนำการ์ด **`HomeErpCard` (การจัดการองค์กร / ERP Dashboard)** มาวางแทนที่ในตำแหน่งเดียวกัน เพื่อเป็นจุดศูนย์กลางในการเข้าถึงระบบจัดการ ERP ของสาขาที่ตนเองได้รับสิทธิ์ โดยที่ความสูงและการจัดวางในหน้าจอ Home จะยังคงเหมือนเดิมทุกประการ
+
+#### หลักการ: Dynamic Card Replacement (ไม่เปลี่ยน Layout)
+
+- **กลไกการแสดงผล:** ระบบตรวจสอบ `employee_roles` + `role` field ของผู้ใช้ แล้วเลือกการ์ดที่เหมาะสม
+- **ขนาดและตำแหน่ง:** `HomeErpCard` ใช้ `key` เดียวกัน (`_pharmacyKey`) มี padding, borderRadius, shadow, icon size เหมือน `HomePharmacyCard` ทุกประการ — ไม่กระทบการคำนวณ map offset หรือ layout ใดๆ ของหน้า Home
+- **Responsive:** รองรับ Portrait และ Landscape (constraint width 50% เหมือนเดิม)
+
+#### การ์ดตาม Role (บนหน้า Home)
+
+| Role | การ์ดที่แสดง | เนื้อหา | ปุ่ม Action |
+|------|-------------|---------|------------|
+| **Consumer** | `HomePharmacyCard` | 💊 ร้านยาใกล้คุณ / จัดส่ง 10 นาที | `[ค้นหา]` |
+| **Employee** | `HomeErpCard` | 📊 ERP Dashboard / จัดการคลินิก / 🔔 2 ใหม่ | `[เข้า]` |
+| **Owner** | `HomeErpCard` | 📊 ERP Dashboard / จัดการคลินิก / 🔔 2 ใหม่ | `[จัด管理] [เข้า]` |
+| **Sheserved Admin** | `HomeErpCard` | 🏢 Sheserved Admin / จัดการระบบ ERP / 🔔 5 ระบบ | `[เข้า]` |
+
+> **หมายเหตุ:** Badge แจ้งเตือน (`🔔`) บน `HomeErpCard` ใช้ **In-App Notification (Headsector)** ซึ่งเป็นช่องทาง **ฟรี 100%** ผ่าน Supabase Realtime ไม่มีค่าใช้จ่ายเพิ่ม
+
+#### เงื่อนไขการแสดง HomeErpCard
+
+```dart
+bool shouldShowErpCard(User user) {
+  if (user == null) return false;
+  if (user.role == 'sheserved_admin') return true;
+  // ตรวจสอบ employee_roles
+  return user.professionId != null 
+      && user.professionId != '00000000-0000-0000-0000-000000000001' // Consumer profession
+      && hasEmployeeRole(user.id, user.professionId);
+}
+```
+
+#### Routing จาก HomeErpCard
+
+```
+Home Page
+    │
+    ├── HomeErpCard (onTap)
+    │       │
+    │       ▼
+    │   /erp ──► ErpDashboardShell (Drawer + AppBar + Branch Selector)
+    │       │
+    │       ├── 📊 /erp/dashboard (Overview รวมทุก module + Quick Actions)
+    │       ├── 🛒 /erp/pos
+    │       ├── 📦 /erp/inventory
+    │       ├── 👥 /erp/hr
+    │       ├── 📊 /erp/crm ──► CrmDashboardPage
+    │       ├── 💰 /erp/accounting
+    │       └── ⚙️ /erp/settings
+    │
+    └── (ถ้าไม่มี ERP access) ──► HomePharmacyCard (ปกติ)
+```
+
+- `/erp` เป็น **Shell Route** — มี Drawer + AppBar คงที่ ทุก sub-page render ภายใน shell
+- การ์ด `HomeErpCard` ไม่ใช่ standalone page — กดแล้วเข้า `/erp` (shell) ไม่ใช่ `/erpDashboard`
+- **Sheserved Admin** กดเข้า `/admin/subscription/tiers` (แยกจาก ERP shell — เป็นหน้า Admin ภายใน)
 
 ### 4. ระบบสิทธิ์การใช้งาน (Permission System)
 
