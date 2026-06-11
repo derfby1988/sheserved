@@ -141,12 +141,18 @@
 หน้าแรกที่แสดงเมื่อเข้า ERP Dashboard เป็น **ภาพรวมของโมดูล** ที่เปิดใช้งาน ไม่ใช่หน้ารายละเอียดของโมดูลใดโมดูลหนึ่ง
 
 **ประกอบด้วย:**
-1. **Organization Header** — ชื่อองค์กร + โลโก้ + สาขาที่เลือก + Subscription Tier
-2. **Module Cards Grid** — การ์ดเข้าถึงโมดูลที่เปิดใช้งาน (ตาม `organization_feature_flags` + `tier_features`)
+1. **Organization Header** — ชื่อองค์กร + โลโก้ + สาขาที่เลือก + Subscription Tier โดยใช้ glass card แบบ soft pastel ใน Light mode
+2. **Module Cards Board** — การ์ดเข้าถึงโมดูลที่เปิดใช้งาน (ตาม `organization_feature_flags` + `tier_features`) แบบ mixed-size responsive board
    - โมดูลที่ปิด → ซ่อน
    - โมดูลที่ไม่อยู่ใน Tier → disabled หรือ badge "ต้องสมัคร"
 3. **Recent Notifications** — แจ้งเตือนล่าสุดจากทุกโมดูล (In-App, ฟรี)
 4. **Quick Stats (Optional)** — จำนวน notification ที่ยังไม่อ่าน ต่อโมดูล (ไม่ใช่ KPI ธุรกิจ)
+
+**รูปแบบการจัดวางภาพรวม:**
+- **Mobile:** 2-column responsive board, มีบาง tile span 2 columns
+- **Tablet:** 3-column board, สลับ tile แบบ square / capsule / hero card
+- **Desktop:** 4-column board, ยังยืดหยุ่นตามความกว้างหน้าจอ
+- **Light mode:** ใช้โทน iOS natural pastel + glass shine ตาม `ERP_GLASSMORPHISM_PLAN.md`
 
 **ไม่ประกอบด้วย:**
 - ❌ **KPI Summary** (ยอดขาย, สต๊อก, แต้ม) → อยู่ใน **Analytics Management** (`/erp/analytics`) หรือแต่ละโมดูลย่อย
@@ -287,6 +293,8 @@ $$ LANGUAGE plpgsql;
 ---
 
 ### 4.5 การปรับแต่งธีมสี Dashboard (User Theme Customization)
+
+> **ดูแผน UI/UX ฉบับรวม:** [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) — รวม Glassmorphism + Light/Dark Theme + Sidebar Navigation
 
 ผู้ใช้งานแต่ละคนสามารถเลือก **ธีมสี (Color Theme)** ของ ERP Dashboard ได้ที่หน้า **"ตั้งค่า Dashboard"** (`/erp/settings/theme`) โดยใช้งานครั้งแรกจะได้ **ธีมเริ่มต้นของ Sheserved**
 

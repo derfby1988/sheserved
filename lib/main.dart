@@ -65,6 +65,8 @@ import 'features/kpi/presentation/pages/kpi_refresh_history_page.dart';
 import 'ERP Dashboard/erp_dashboard_shell.dart';
 import 'ERP Dashboard/erp_dashboard_page.dart';
 import 'ERP Dashboard/organization_settings_page.dart';
+import 'features/erp/presentation/pages/theme_settings_page.dart';
+import 'features/erp/presentation/pages/glassmorphism_settings_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -187,12 +189,26 @@ class SheservedApp extends StatelessWidget {
         // ERP Shell Routes (Drawer + AppBar + Branch Selector)
         if (settings.name == '/erp' || settings.name == '/erp/dashboard') {
           return MaterialPageRoute(
+            settings: settings,
             builder: (context) => const ErpDashboardShell(child: ErpDashboardPage()),
           );
         }
         if (settings.name == '/erp/settings' || settings.name == '/organizationSettings') {
           return MaterialPageRoute(
+            settings: settings,
             builder: (context) => const ErpDashboardShell(child: OrganizationSettingsPage()),
+          );
+        }
+        if (settings.name == '/erp/settings/theme') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const ErpDashboardShell(child: ThemeSettingsPage()),
+          );
+        }
+        if (settings.name == '/erp/settings/glass') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const ErpDashboardShell(child: GlassmorphismSettingsPage()),
           );
         }
 
