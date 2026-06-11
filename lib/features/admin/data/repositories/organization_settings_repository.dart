@@ -63,6 +63,8 @@ class OrganizationSettingsRepository {
         professionId: professionId,
         professionName: profResponse['name'] ?? '',
         professionNameEn: profResponse['name_en'],
+        professionIconName: profResponse['icon_name'],
+        professionColorHex: profResponse['color_hex'],
         logoUrl: profResponse['logo_url'],
         taxId: profResponse['tax_id'],
         phone: profResponse['phone'],

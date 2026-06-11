@@ -4,6 +4,8 @@ class OrganizationSettings {
   final String professionId;
   final String professionName;
   final String? professionNameEn;
+  final String? professionIconName;
+  final String? professionColorHex;
   final String? logoUrl;
   final String? taxId;
   final String? phone;
@@ -22,6 +24,8 @@ class OrganizationSettings {
     required this.professionId,
     required this.professionName,
     this.professionNameEn,
+    this.professionIconName,
+    this.professionColorHex,
     this.logoUrl,
     this.taxId,
     this.phone,
@@ -63,6 +67,8 @@ class OrganizationSettings {
       professionId: profession['profession_id'] ?? json['profession_id'] ?? '',
       professionName: profession['profession_name'] ?? '',
       professionNameEn: profession['profession_name_en'],
+      professionIconName: profession['icon_name'] ?? json['icon_name'],
+      professionColorHex: profession['color_hex'] ?? json['color_hex'],
       logoUrl: profession['logo_url'],
       taxId: profession['tax_id'],
       phone: profession['phone'],
@@ -104,6 +110,8 @@ class OrganizationSettings {
     String? professionId,
     String? professionName,
     String? professionNameEn,
+    String? professionIconName,
+    String? professionColorHex,
     String? logoUrl,
     String? taxId,
     String? phone,
@@ -122,6 +130,8 @@ class OrganizationSettings {
       professionId: professionId ?? this.professionId,
       professionName: professionName ?? this.professionName,
       professionNameEn: professionNameEn ?? this.professionNameEn,
+      professionIconName: professionIconName ?? this.professionIconName,
+      professionColorHex: professionColorHex ?? this.professionColorHex,
       logoUrl: logoUrl ?? this.logoUrl,
       taxId: taxId ?? this.taxId,
       phone: phone ?? this.phone,

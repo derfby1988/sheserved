@@ -121,7 +121,7 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
 
     return Row(
       children: [
-        // Logo thumbnail
+        // Logo thumbnail (org logo → profession icon → business fallback)
         if (settings.hasLogo)
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
@@ -130,11 +130,21 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
               width: 28,
               height: 28,
               fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Icon(Icons.business, size: 24, color: textPrimary),
+              errorBuilder: (_, __, ___) => _professionIconOrFallback(
+                settings.professionIconName,
+                settings.professionColorHex,
+                textPrimary,
+                size: 24,
+              ),
             ),
           )
         else
-          Icon(Icons.business, size: 24, color: textPrimary),
+          _professionIconOrFallback(
+            settings.professionIconName,
+            settings.professionColorHex,
+            textPrimary,
+            size: 24,
+          ),
         const SizedBox(width: 8),
         // Org name + branch
         Expanded(
@@ -178,6 +188,59 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
           ),
       ],
     );
+  }
+
+  /// แสดง icon ตาม profession.icon_name พร้อมสีจาก profession.color_hex
+  static Widget _professionIconOrFallback(
+    String? iconName,
+    String? colorHex,
+    Color fallbackColor, {
+    required double size,
+  }) {
+    final icon = _professionIconData(iconName);
+    final color = _parseHexColor(colorHex) ?? fallbackColor;
+    return Icon(icon, size: size, color: color);
+  }
+
+  static IconData _professionIconData(String? iconName) {
+    switch (iconName) {
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'store':
+        return Icons.store;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'person':
+        return Icons.person;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'engineering':
+        return Icons.engineering;
+      case 'gavel':
+        return Icons.gavel;
+      case 'school':
+        return Icons.school;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'spa':
+        return Icons.spa;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      default:
+        return Icons.business;
+    }
+  }
+
+  static Color? _parseHexColor(String? hex) {
+    if (hex == null || hex.isEmpty) return null;
+    try {
+      final clean = hex.replaceFirst('#', '');
+      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
+      if (clean.length == 8) return Color(int.parse(clean, radix: 16));
+    } catch (_) {}
+    return null;
   }
 }
 

@@ -90,6 +90,8 @@ BEGIN
         'profession_id', id,
         'profession_name', name,
         'profession_name_en', name_en,
+        'icon_name', icon_name,
+        'color_hex', color_hex,
         'logo_url', logo_url,
         'tax_id', tax_id,
         'phone', phone,

@@ -263,6 +263,8 @@ class _OrganizationHeader extends StatelessWidget {
               isDark: isDark,
               accentColor: accentColor,
               imageUrl: org.hasLogo ? org.logoUrl : null,
+              professionIconName: org.professionIconName,
+              professionColorHex: org.professionColorHex,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -321,16 +323,24 @@ class _LogoBadge extends StatelessWidget {
   final Color accentColor;
   final Widget? child;
   final String? imageUrl;
+  final String? professionIconName;
+  final String? professionColorHex;
 
   const _LogoBadge({
     required this.isDark,
     required this.accentColor,
     this.child,
     this.imageUrl,
+    this.professionIconName,
+    this.professionColorHex,
   });
 
   @override
   Widget build(BuildContext context) {
+    final fallbackIcon = _professionIconData(professionIconName);
+    final fallbackColor = _parseHexColor(professionColorHex) ??
+        (isDark ? accentColor : const Color(0xFF4F7DF3));
+
     return Container(
       width: 56,
       height: 56,
@@ -349,8 +359,53 @@ class _LogoBadge extends StatelessWidget {
             ? DecorationImage(image: NetworkImage(imageUrl!), fit: BoxFit.contain)
             : null,
       ),
-      child: imageUrl == null ? Center(child: child) : null,
+      child: imageUrl == null
+          ? Center(
+              child: child ?? Icon(fallbackIcon, size: 28, color: fallbackColor),
+            )
+          : null,
     );
+  }
+
+  static IconData _professionIconData(String? iconName) {
+    switch (iconName) {
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'store':
+        return Icons.store;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'person':
+        return Icons.person;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'engineering':
+        return Icons.engineering;
+      case 'gavel':
+        return Icons.gavel;
+      case 'school':
+        return Icons.school;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'spa':
+        return Icons.spa;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      default:
+        return Icons.business;
+    }
+  }
+
+  static Color? _parseHexColor(String? hex) {
+    if (hex == null || hex.isEmpty) return null;
+    try {
+      final clean = hex.replaceFirst('#', '');
+      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
+      if (clean.length == 8) return Color(int.parse(clean, radix: 16));
+    } catch (_) {}
+    return null;
   }
 }
 
@@ -466,20 +521,21 @@ class _DashboardModuleBoard extends StatelessWidget {
     Color tint(int index, Color fallback) => isDark ? fallback : pastel![index % pastel.length];
 
     return [
-      _DashboardModuleSpec(label: 'POS Management', routeName: '/posManagement', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Inventory Management', routeName: '/inventoryManagement', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Procurement Management', routeName: '/procurementManagement', icon: Icons.shopping_bag, span: 2, heightFactor: 0.68, variant: _ModuleTileVariant.capsule, tintColor: tint(2, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Accounting Management', routeName: '/accountingManagement', icon: Icons.account_balance, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'HR Management', routeName: '/hrManagement', icon: Icons.people_alt, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'CRM Management', routeName: '/crmManagement', icon: Icons.contact_support, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(5, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'KPI / Analytics', routeName: '/kpi/dashboard', icon: Icons.analytics, span: 2, heightFactor: 1.42, variant: _ModuleTileVariant.tall, tintColor: tint(6, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Organization Settings', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'POS Management', thaiLabel: 'ขายหน้าร้าน', routeName: '/posManagement', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Inventory Management', thaiLabel: 'คลังสินค้า', routeName: '/inventoryManagement', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Procurement Management', thaiLabel: 'จัดซื้อจัดจ้าง', routeName: '/procurementManagement', icon: Icons.shopping_bag, span: 2, heightFactor: 0.68, variant: _ModuleTileVariant.capsule, tintColor: tint(2, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Accounting Management', thaiLabel: 'บัญชี', routeName: '/accountingManagement', icon: Icons.account_balance, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'HR Management', thaiLabel: 'บุคคล', routeName: '/hrManagement', icon: Icons.people_alt, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'CRM Management', thaiLabel: 'ลูกค้าสัมพันธ์', routeName: '/crmManagement', icon: Icons.contact_support, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(5, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'KPI / Analytics', thaiLabel: 'วิเคราะห์ข้อมูล / KPI', routeName: '/kpi/dashboard', icon: Icons.analytics, span: 2, heightFactor: 1.42, variant: _ModuleTileVariant.tall, tintColor: tint(6, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
     ];
   }
 }
 
 class _DashboardModuleSpec {
   final String label;
+  final String thaiLabel;
   final String routeName;
   final IconData icon;
   final int span;
@@ -489,6 +545,7 @@ class _DashboardModuleSpec {
 
   const _DashboardModuleSpec({
     required this.label,
+    required this.thaiLabel,
     required this.routeName,
     required this.icon,
     required this.span,
@@ -568,12 +625,24 @@ class _ModuleTile extends StatelessWidget {
                           children: [
                             Text(
                               spec.label,
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(
                                 fontSize: 12.4,
                                 fontWeight: FontWeight.w700,
                                 color: textColor,
+                                height: 1.08,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              spec.thaiLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w400,
+                                color: textColor.withOpacity(0.55),
                                 height: 1.08,
                               ),
                             ),
@@ -591,20 +660,38 @@ class _ModuleTile extends StatelessWidget {
                         const Spacer(flex: 1),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Text(
-                            spec.label,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: spec.variant == _ModuleTileVariant.tall ? 12.9 : 12.7,
-                              fontWeight: FontWeight.w600,
-                              color: textColor,
-                              height: 1.12,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                spec.label,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: spec.variant == _ModuleTileVariant.tall ? 11.8 : 11.6,
+                                  fontWeight: FontWeight.w600,
+                                  color: textColor,
+                                  height: 1.12,
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                spec.thaiLabel,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: spec.variant == _ModuleTileVariant.tall ? 10.4 : 10.2,
+                                  fontWeight: FontWeight.w400,
+                                  color: textColor.withOpacity(0.55),
+                                  height: 1.12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const Spacer(flex: 3),
+                        const Spacer(flex: 2),
                       ],
                     ),
                   ),
