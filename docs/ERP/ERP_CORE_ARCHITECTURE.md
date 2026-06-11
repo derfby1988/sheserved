@@ -3101,6 +3101,21 @@ $$ LANGUAGE plpgsql;
 >   - UI Pages: `EmrListPage`, `OpdVisitPage`, `PrescriptionPage`, `LabResultsPage`, `PatientCohortPage`
 >   - Routes: `/clinical/emr`, `/clinical/opd`, `/clinical/prescriptions`, `/clinical/lab`, `/clinical/cohorts`
 > - **Compile Status:** `flutter run` ✅ (exit code 0) — SM X135G, ERP Dashboard "แพทย์ทั่วไป" โหลดสำเร็จ
+| **Phase 5** | Commerce Polish + Loyalty + Reports | POS Refund + CRM Loyalty Auto + KPI Export | - POS Step 5: Refund requests + review workflow<br>- CRM Step 5: Loyalty auto-calculation at checkout<br>- KPI Step 5: PDF/Excel export + scheduled reports | Phase 1-4 | ต่อยอด commerce ที่มีอยู่ ไม่ต้องใช้ external service |
+
+> **สถานะ Phase 5 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611200000_erp_phase_5_polish_loyalty_reports.sql` ✅
+>   - **POS Step 5:** `refund_requests` (order_id, amount, reason, status, requested_by, reviewed_by)
+>   - **CRM Step 5:** `loyalty_point_rules` (profession_id, points_per_baht, bonus_multiplier) — ใช้ existing `loyalty_points`
+>   - **KPI Step 5:** `scheduled_reports` (profession_id, report_type, frequency, last_run_at, next_run_at)
+>   - RPC: `request_refund()`, `review_refund()`, `calculate_loyalty_points()`, `generate_report_payload()`
+> - **Flutter Layer สร้างแล้ว:**
+>   - Models: `RefundRequest`, `LoyaltyRule`, `ScheduledReport`
+>   - Repository: `PhaseFiveRepository` (Refund, Loyalty, Reports)
+>   - Provider: `PhaseFiveNotifier` + `phaseFiveProvider`
+>   - UI Pages: `RefundListPage`, `LoyaltyRulesPage`, `ReportExportPage`
+>   - Routes: `/erp/refunds`, `/erp/loyalty`, `/erp/reports`
+> - **Compile Status:** `flutter run` ✅ (exit code 0)
 
 > **Implementation rule:** เมื่อเริ่มลงมือทำ ให้ยึดตารางนี้เป็นแหล่งอ้างอิงเดียวสำหรับลำดับงานทั้งหมด และอ้างอิงชื่อขั้นงานย่อยตาม `ERP Phase X / [System] Step Y` เสมอ เพื่อไม่ให้ phase numbering ของเอกสารลูกคลาดเคลื่อนจาก canonical order ข้างต้น
 

@@ -539,7 +539,10 @@ class _DashboardModuleBoard extends StatelessWidget {
       _DashboardModuleSpec(label: 'Prescriptions', thaiLabel: 'ใบสั่งยา', routeName: '/clinical/prescriptions', icon: Icons.medication, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Lab Results', thaiLabel: 'ผลแล็บ', routeName: '/clinical/lab', icon: Icons.biotech, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Patient Cohorts', thaiLabel: 'กลุ่มผู้ป่วย', routeName: '/clinical/cohorts', icon: Icons.groups, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Refunds', thaiLabel: 'คืนเงิน', routeName: '/erp/refunds', icon: Icons.undo, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Loyalty Rules', thaiLabel: 'แต้มสะสม', routeName: '/erp/loyalty', icon: Icons.stars, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Reports', thaiLabel: 'รายงาน', routeName: '/erp/reports', icon: Icons.assessment, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(10, const Color(0xFFCCFF00))),
     ];
   }
 }

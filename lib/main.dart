@@ -88,6 +88,9 @@ import 'features/erp/presentation/pages/opd_visit_page.dart';
 import 'features/erp/presentation/pages/prescription_page.dart';
 import 'features/erp/presentation/pages/lab_results_page.dart';
 import 'features/erp/presentation/pages/patient_cohort_page.dart';
+import 'features/erp/presentation/pages/refund_list_page.dart';
+import 'features/erp/presentation/pages/loyalty_rules_page.dart';
+import 'features/erp/presentation/pages/report_export_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -390,6 +393,30 @@ class SheservedApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => ErpDashboardShell(child: PatientCohortPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/refunds') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: RefundListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/loyalty') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: LoyaltyRulesPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/reports') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: ReportExportPage(professionId: professionId)),
           );
         }
 
