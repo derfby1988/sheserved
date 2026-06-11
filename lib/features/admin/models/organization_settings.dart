@@ -158,6 +158,7 @@ class OrganizationBranch {
   final String? address;
   final String? phone;
   final String? email;
+  final String? branchTaxCode;
   final bool isMainBranch;
   final bool isActive;
 
@@ -169,6 +170,7 @@ class OrganizationBranch {
     this.address,
     this.phone,
     this.email,
+    this.branchTaxCode,
     this.isMainBranch = false,
     this.isActive = true,
   });
@@ -184,6 +186,7 @@ class OrganizationBranch {
       address: json['address'],
       phone: json['phone'],
       email: json['email'],
+      branchTaxCode: json['branch_tax_code'],
       isMainBranch: json['is_main_branch'] ?? false,
       isActive: json['is_active'] ?? true,
     );
@@ -198,6 +201,7 @@ class OrganizationBranch {
       'address': address,
       'phone': phone,
       'email': email,
+      'branch_tax_code': branchTaxCode,
       'is_main_branch': isMainBranch,
       'is_active': isActive,
     };
@@ -211,6 +215,7 @@ class OrganizationBranch {
     String? address,
     String? phone,
     String? email,
+    String? branchTaxCode,
     bool? isMainBranch,
     bool? isActive,
   }) {
@@ -222,6 +227,7 @@ class OrganizationBranch {
       address: address ?? this.address,
       phone: phone ?? this.phone,
       email: email ?? this.email,
+      branchTaxCode: branchTaxCode ?? this.branchTaxCode,
       isMainBranch: isMainBranch ?? this.isMainBranch,
       isActive: isActive ?? this.isActive,
     );

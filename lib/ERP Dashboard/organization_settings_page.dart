@@ -1,11 +1,14 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../features/erp/presentation/providers/organization_settings_provider.dart';
 import '../features/admin/models/organization_settings.dart';
+import '../features/erp/presentation/widgets/glass_card.dart';
+import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
+import '../features/erp/data/models/dashboard_theme.dart';
 
-/// Organization Settings Page
-/// ฟอร์มตั้งค่าองค์กร: ชื่อ, โลโก้, ที่อยู่, ภาษา, สกุลเงิน, สาขา
 class OrganizationSettingsPage extends ConsumerStatefulWidget {
   const OrganizationSettingsPage({Key? key}) : super(key: key);
 
@@ -15,6 +18,7 @@ class OrganizationSettingsPage extends ConsumerStatefulWidget {
 
 class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsPage> {
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _nameEnController = TextEditingController();
   final _logoUrlController = TextEditingController();
@@ -29,10 +33,8 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
   String _timezone = 'Asia/Bangkok';
   String _storageMode = 'cloud';
 
-  final List<TextEditingController> _branchNameControllers = [];
-  final List<TextEditingController> _branchCodeControllers = [];
-  final List<TextEditingController> _branchPhoneControllers = [];
-  final List<TextEditingController> _branchAddressControllers = [];
+  final Map<String, _BranchControllers> _branchControllers = {};
+  String? _editingBranchId;
 
   @override
   void initState() {
@@ -60,17 +62,12 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
     _timezone = settings.timezone;
     _storageMode = settings.storageMode;
 
-    _branchNameControllers.clear();
-    _branchCodeControllers.clear();
-    _branchPhoneControllers.clear();
-    _branchAddressControllers.clear();
+    _branchControllers.clear();
     for (final branch in settings.branches) {
-      _branchNameControllers.add(TextEditingController(text: branch.branchName));
-      _branchCodeControllers.add(TextEditingController(text: branch.branchCode));
-      _branchPhoneControllers.add(TextEditingController(text: branch.phone ?? ''));
-      _branchAddressControllers.add(TextEditingController(text: branch.address ?? ''));
+      _branchControllers[branch.id] = _BranchControllers.fromBranch(branch);
     }
-    setState(() {});
+
+    if (mounted) setState(() {});
   }
 
   @override
@@ -83,10 +80,9 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
     _emailController.dispose();
     _addressController.dispose();
     _selfHostApiUrlController.dispose();
-    for (final c in _branchNameControllers) c.dispose();
-    for (final c in _branchCodeControllers) c.dispose();
-    for (final c in _branchPhoneControllers) c.dispose();
-    for (final c in _branchAddressControllers) c.dispose();
+    for (final bc in _branchControllers.values) {
+      bc.dispose();
+    }
     super.dispose();
   }
 
@@ -109,248 +105,217 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
         );
 
     if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกข้อมูลองค์กรสำเร็จ'), backgroundColor: Colors.green),
-      );
+      _showSnackBar('บันทึกข้อมูลองค์กรสำเร็จ', isError: false);
     } else if (mounted) {
       final err = ref.read(organizationSettingsProvider).errorMessage ?? 'บันทึกไม่สำเร็จ';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err), backgroundColor: Colors.red),
-      );
+      _showSnackBar(err, isError: true);
     }
+  }
+
+  Future<void> _saveBranch(OrganizationBranch branch) async {
+    final ctrls = _branchControllers[branch.id];
+    if (ctrls == null) return;
+
+    final updated = await ref.read(organizationSettingsProvider.notifier).saveBranch(
+      branchId: branch.id,
+      branchCode: ctrls.code.text.trim(),
+      branchName: ctrls.name.text.trim(),
+      taxId: ctrls.taxId.text.trim().isEmpty ? null : ctrls.taxId.text.trim(),
+      branchTaxCode: ctrls.branchTaxCode.text.trim().isEmpty ? null : ctrls.branchTaxCode.text.trim(),
+      address: ctrls.address.text.trim().isEmpty ? null : ctrls.address.text.trim(),
+      phone: ctrls.phone.text.trim().isEmpty ? null : ctrls.phone.text.trim(),
+      email: ctrls.email.text.trim().isEmpty ? null : ctrls.email.text.trim(),
+      isMainBranch: branch.isMainBranch,
+      isActive: branch.isActive,
+    );
+
+    if (updated != null && mounted) {
+      setState(() => _editingBranchId = null);
+      _showSnackBar('บันทึกสาขาสำเร็จ', isError: false);
+      _syncFormFromState();
+    } else if (mounted) {
+      final err = ref.read(organizationSettingsProvider).errorMessage ?? 'บันทึกสาขาไม่สำเร็จ';
+      _showSnackBar(err, isError: true);
+    }
+  }
+
+  Future<void> _deleteBranch(String branchId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ยืนยันการลบ'),
+        content: const Text('ต้องการลบสาขานี้หรือไม่?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ลบ', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final success = await ref.read(organizationSettingsProvider.notifier).deleteBranch(branchId);
+    if (success && mounted) {
+      _showSnackBar('ลบสาขาสำเร็จ', isError: false);
+    }
+  }
+
+  void _showSnackBar(String message, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final orgState = ref.watch(organizationSettingsProvider);
+    final themeState = ref.watch(dashboardThemeProvider);
+    final isDark = themeState.theme?.isDarkMode ?? false;
+
+    final bgColors = isDark
+        ? [const Color(0xFF0F0F0F), const Color(0xFF1A1A1A)]
+        : [const Color(0xFFDFF8FF), const Color(0xFFDFF7E8), const Color(0xFFF4E4FB)];
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
+    final textSecondary = isDark ? Colors.white70 : const Color(0xFF617181);
 
     if (orgState.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0F0F0F) : const Color(0xFFE8F6FF),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F0F0F) : const Color(0xFFE8F6FF),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(
+          'ตั้งค่าองค์กร',
+          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: textPrimary),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: textPrimary),
+      ),
+      body: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: bgColors,
+                stops: isDark ? null : const [0.0, 0.5, 1.0],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          if (!isDark) ...[
+            Positioned(top: -60, left: -30, child: _Blob(color: const Color(0xFFBFE7FF), size: 180)),
+            Positioned(top: 80, right: -50, child: _Blob(color: const Color(0xFFCFEFBA), size: 200)),
+            Positioned(bottom: -70, left: 40, child: _Blob(color: const Color(0xFFF0D6FF), size: 190)),
+          ],
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Section: Organization Info
-                    _SectionTitle(title: 'ข้อมูลองค์กร', icon: Icons.business),
-                    const SizedBox(height: 12),
-                    _TextField(controller: _nameController, label: 'ชื่อองค์กร *', validator: (v) => v == null || v.trim().isEmpty ? 'กรุณากรอกชื่อองค์กร' : null),
-                    _TextField(controller: _nameEnController, label: 'ชื่อภาษาอังกฤษ'),
-                    _TextField(controller: _logoUrlController, label: 'URL โลโก้'),
-                    _TextField(controller: _taxIdController, label: 'เลขประจำตัวผู้เสียภาษี', keyboardType: TextInputType.number),
-                    _TextField(controller: _phoneController, label: 'เบอร์โทรศัพท์'),
-                    _TextField(controller: _emailController, label: 'อีเมล', keyboardType: TextInputType.emailAddress),
-                    _TextField(controller: _addressController, label: 'ที่อยู่', maxLines: 3),
-                    const SizedBox(height: 16),
-
-                    // Section: Preferences
-                    _SectionTitle(title: 'การตั้งค่าทั่วไป', icon: Icons.settings),
-                    const SizedBox(height: 12),
-                    _DropdownRow(
-                      label: 'สกุลเงิน',
-                      value: _currency,
-                      items: const [
-                        DropdownMenuItem(value: 'THB', child: Text('THB — บาท')),
-                        DropdownMenuItem(value: 'USD', child: Text('USD — ดอลลาร์')),
-                      ],
-                      onChanged: (v) => setState(() => _currency = v!),
-                    ),
-                    _DropdownRow(
-                      label: 'ภาษา',
-                      value: _language,
-                      items: const [
-                        DropdownMenuItem(value: 'th', child: Text('ไทย')),
-                        DropdownMenuItem(value: 'en', child: Text('English')),
-                      ],
-                      onChanged: (v) => setState(() => _language = v!),
-                    ),
-                    _DropdownRow(
-                      label: 'เขตเวลา',
-                      value: _timezone,
-                      items: const [
-                        DropdownMenuItem(value: 'Asia/Bangkok', child: Text('Asia/Bangkok')),
-                        DropdownMenuItem(value: 'UTC', child: Text('UTC')),
-                      ],
-                      onChanged: (v) => setState(() => _timezone = v!),
-                    ),
-                    _DropdownRow(
-                      label: 'โหมดจัดเก็บข้อมูล',
-                      value: _storageMode,
-                      items: const [
-                        DropdownMenuItem(value: 'cloud', child: Text('Cloud (Supabase)')),
-                        DropdownMenuItem(value: 'self_host', child: Text('Self-host')),
-                      ],
-                      onChanged: (v) => setState(() => _storageMode = v!),
-                    ),
-                    if (_storageMode == 'self_host')
-                      _TextField(controller: _selfHostApiUrlController, label: 'URL API Self-host'),
-                    const SizedBox(height: 24),
-
-                    // Section: Branches
-                    _SectionTitle(title: 'สาขา', icon: Icons.location_on),
-                    const SizedBox(height: 12),
-                    _BranchesList(
-                      branches: orgState.settings?.branches ?? [],
-                      onAddBranch: () async {
-                        final notifier = ref.read(organizationSettingsProvider.notifier);
-                        final settings = orgState.settings;
-                        if (settings == null) return;
-                        final newBranch = await notifier.saveBranch(
-                          branchCode: 'BR${(settings.branches.length + 1).toString().padLeft(2, '0')}',
-                          branchName: 'สาขาใหม่',
-                          isMainBranch: settings.branches.isEmpty,
-                        );
-                        if (newBranch != null && mounted) {
-                          _syncFormFromState();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('เพิ่มสาขาสำเร็จ'), backgroundColor: Colors.green),
-                          );
-                        }
-                      },
-                      onDeleteBranch: (branchId) async {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('ยืนยันการลบ'),
-                            content: const Text('ต้องการลบสาขานี้หรือไม่?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
-                              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ลบ', style: TextStyle(color: Colors.red))),
-                            ],
-                          ),
-                        );
-                        if (confirmed == true) {
-                          await ref.read(organizationSettingsProvider.notifier).deleteBranch(branchId);
-                          if (mounted) _syncFormFromState();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 32),
-                    // Save button (moved from AppBar to avoid duplicate Scaffold)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: orgState.isSaving ? null : _save,
-                        icon: orgState.isSaving
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.save),
-                        label: Text(orgState.isSaving ? 'กำลังบันทึก...' : 'บันทึก', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0066FF),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
+                    const SizedBox(height: 8),
+                    _SectionTitle(title: 'ข้อมูลองค์กร', icon: Icons.business, isDark: isDark),
+                    const SizedBox(height: 10),
+                    GlassCard(
+                      section: GlassSection.card,
+                      tintColor: const Color(0xFFBFE7FF),
+                      borderRadius: 24,
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          _GlassField(label: 'ชื่อองค์กร (ภาษาไทย)', controller: _nameController, isDark: isDark, validator: (v) => v == null || v.isEmpty ? 'กรุณากรอกชื่อองค์กร' : null),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'ชื่อองค์กร (ภาษาอังกฤษ)', controller: _nameEnController, isDark: isDark),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'โลโก้ URL', controller: _logoUrlController, isDark: isDark, hint: 'https://...'),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'เลขที่ผู้เสียภาษี', controller: _taxIdController, isDark: isDark),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'โทรศัพท์', controller: _phoneController, isDark: isDark, keyboardType: TextInputType.phone),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'อีเมล', controller: _emailController, isDark: isDark, keyboardType: TextInputType.emailAddress),
+                          const SizedBox(height: 14),
+                          _GlassField(label: 'ที่อยู่', controller: _addressController, isDark: isDark, maxLines: 2),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    _SectionTitle(title: 'การตั้งค่าทั่วไป', icon: Icons.settings, isDark: isDark),
+                    const SizedBox(height: 10),
+                    GlassCard(
+                      section: GlassSection.card,
+                      tintColor: const Color(0xFFF0E7B4),
+                      borderRadius: 24,
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          _GlassDropdown(
+                            label: 'ภาษา', value: _language,
+                            items: const [MapEntry('th', 'ภาษาไทย'), MapEntry('en', 'English')],
+                            isDark: isDark, onChanged: (v) => setState(() => _language = v),
+                          ),
+                          const SizedBox(height: 14),
+                          _GlassDropdown(
+                            label: 'สกุลเงิน', value: _currency,
+                            items: const [MapEntry('THB', 'บาท (THB)'), MapEntry('USD', 'ดอลลาร์ (USD)')],
+                            isDark: isDark, onChanged: (v) => setState(() => _currency = v),
+                          ),
+                          const SizedBox(height: 14),
+                          _GlassDropdown(
+                            label: 'เขตเวลา', value: _timezone,
+                            items: const [MapEntry('Asia/Bangkok', 'Asia/Bangkok'), MapEntry('UTC', 'UTC')],
+                            isDark: isDark, onChanged: (v) => setState(() => _timezone = v),
+                          ),
+                          const SizedBox(height: 14),
+                          _GlassDropdown(
+                            label: 'โหมดจัดเก็บข้อมูล', value: _storageMode,
+                            items: const [
+                              MapEntry('cloud', 'Cloud (Supabase)'),
+                              MapEntry('self_host', 'Self-Host'),
+                              MapEntry('hybrid', 'Hybrid'),
+                            ],
+                            isDark: isDark, onChanged: (v) => setState(() => _storageMode = v),
+                          ),
+                          if (_storageMode != 'cloud') ...[
+                            const SizedBox(height: 14),
+                            _GlassField(label: 'Self-Host API URL', controller: _selfHostApiUrlController, isDark: isDark, hint: 'https://192.168.1.111:8080'),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SectionTitle(title: 'สาขา', icon: Icons.account_tree, isDark: isDark),
+                    const SizedBox(height: 10),
+                    _buildBranches(orgState, isDark, textPrimary, textSecondary),
                     const SizedBox(height: 32),
+                    _GlassActionButton(
+                      label: 'บันทึกข้อมูลองค์กร',
+                      icon: Icons.save_rounded,
+                      tintColor: const Color(0xFF4F7DF3),
+                      isDark: isDark,
+                      isLoading: orgState.isSaving,
+                      onTap: _save,
+                    ),
+                    const SizedBox(height: 24),
                   ],
-                ),
-              ),
-            );
-  }
-}
-
-// ========================
-// UI Components
-// ========================
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  const _SectionTitle({required this.title, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF0066FF)),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E)),
-        ),
-      ],
-    );
-  }
-}
-
-class _TextField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final String? Function(String?)? validator;
-  final TextInputType? keyboardType;
-  final int? maxLines;
-
-  const _TextField({
-    required this.controller,
-    required this.label,
-    this.validator,
-    this.keyboardType,
-    this.maxLines,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: controller,
-        validator: validator,
-        keyboardType: keyboardType,
-        maxLines: maxLines ?? 1,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-        ),
-      ),
-    );
-  }
-}
-
-class _DropdownRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final List<DropdownMenuItem<String>> items;
-  final ValueChanged<String?> onChanged;
-
-  const _DropdownRow({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade700)),
-          ),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: value,
-                  items: items,
-                  onChanged: onChanged,
                 ),
               ),
             ),
@@ -359,92 +324,442 @@ class _DropdownRow extends StatelessWidget {
       ),
     );
   }
-}
 
-class _BranchesList extends StatelessWidget {
-  final List<OrganizationBranch> branches;
-  final VoidCallback onAddBranch;
-  final ValueChanged<String> onDeleteBranch;
-
-  const _BranchesList({
-    required this.branches,
-    required this.onAddBranch,
-    required this.onDeleteBranch,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildBranches(
+    OrganizationSettingsState orgState,
+    bool isDark,
+    Color textPrimary,
+    Color textSecondary,
+  ) {
+    final branches = orgState.settings?.branches ?? [];
     if (branches.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Column(
-          children: [
-            Text('ยังไม่มีสาขา', style: GoogleFonts.inter(color: Colors.grey.shade600)),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: onAddBranch,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('เพิ่มสาขาหลัก'),
-            ),
-          ],
+      return GlassCard(
+        section: GlassSection.card,
+        tintColor: const Color(0xFFE8E0F0),
+        borderRadius: 20,
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text(
+            'ยังไม่มีสาขา',
+            style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
+          ),
         ),
       );
     }
 
     return Column(
-      children: [
-        ...branches.map((branch) {
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Row(
+      children: branches.map((branch) {
+        final isEditing = _editingBranchId == branch.id;
+        final ctrls = _branchControllers[branch.id];
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: GlassCard(
+            section: GlassSection.card,
+            tintColor: branch.isMainBranch ? const Color(0xFFBDEBDB) : const Color(0xFFE8E0F0),
+            borderRadius: 20,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            (branch.isMainBranch ? const Color(0xFF4CAF50) : const Color(0xFF9E9E9E))
+                                .withOpacity(isDark ? 0.4 : 0.2),
+                            (branch.isMainBranch ? const Color(0xFF4CAF50) : const Color(0xFF9E9E9E))
+                                .withOpacity(isDark ? 0.2 : 0.1),
+                          ],
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          branch.isMainBranch ? Icons.star_rounded : Icons.store_rounded,
+                          size: 20,
+                          color: branch.isMainBranch ? const Color(0xFF4CAF50) : textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            branch.branchName,
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: textPrimary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${branch.branchCode}${branch.branchTaxCode != null && branch.branchTaxCode!.isNotEmpty ? ' · รหัสสาขาภาษี: ${branch.branchTaxCode}' : ''}',
+                            style: GoogleFonts.inter(fontSize: 12, color: textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (branch.isMainBranch)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: const Color(0xFF4CAF50).withOpacity(isDark ? 0.25 : 0.12),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50).withOpacity(isDark ? 0.4 : 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          'สาขาหลัก',
+                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF2E7D32)),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    if (!isEditing) ...[
+                      _IconBtn(icon: Icons.edit_rounded, tintColor: const Color(0xFF4F7DF3), isDark: isDark, onTap: () => setState(() => _editingBranchId = branch.id)),
+                      const SizedBox(width: 4),
+                      if (!branch.isMainBranch)
+                        _IconBtn(icon: Icons.delete_rounded, tintColor: const Color(0xFFE53935), isDark: isDark, onTap: () => _deleteBranch(branch.id)),
+                    ] else
+                      _IconBtn(icon: Icons.close_rounded, tintColor: textSecondary, isDark: isDark, onTap: () => setState(() => _editingBranchId = null)),
+                  ],
+                ),
+                if (isEditing && ctrls != null) ...[
+                  const SizedBox(height: 16),
+                  const Divider(height: 1, color: Color(0x1A000000)),
+                  const SizedBox(height: 16),
+                  _GlassField(label: 'รหัสสาขา', controller: ctrls.code, isDark: isDark),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'ชื่อสาขา', controller: ctrls.name, isDark: isDark),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'รหัสสาขาภาษี', controller: ctrls.branchTaxCode, isDark: isDark, hint: 'เช่น 00000, 00001'),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'เลขที่ผู้เสียภาษี', controller: ctrls.taxId, isDark: isDark),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'โทรศัพท์', controller: ctrls.phone, isDark: isDark, keyboardType: TextInputType.phone),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'อีเมล', controller: ctrls.email, isDark: isDark, keyboardType: TextInputType.emailAddress),
+                  const SizedBox(height: 12),
+                  _GlassField(label: 'ที่อยู่', controller: ctrls.address, isDark: isDark, maxLines: 2),
+                  const SizedBox(height: 16),
+                  Row(
                     children: [
-                      Text(
-                        branch.branchName,
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      Expanded(
+                        child: _GlassActionButton(
+                          label: 'บันทึกสาขา',
+                          icon: Icons.save_rounded,
+                          tintColor: const Color(0xFF4CAF50),
+                          isDark: isDark,
+                          isLoading: orgState.isSaving,
+                          onTap: () => _saveBranch(branch),
+                        ),
                       ),
-                      Text(
-                        '${branch.branchCode}${branch.isMainBranch ? ' (สาขาหลัก)' : ''}',
-                        style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                      if (branch.phone != null && branch.phone!.isNotEmpty)
-                        Text(branch.phone!, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
                     ],
                   ),
-                ),
-                if (!branch.isMainBranch)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                    onPressed: () => onDeleteBranch(branch.id),
-                  ),
+                ],
               ],
             ),
-          );
-        }).toList(),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: onAddBranch,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('เพิ่มสาขา'),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _BranchControllers {
+  final TextEditingController code;
+  final TextEditingController name;
+  final TextEditingController taxId;
+  final TextEditingController branchTaxCode;
+  final TextEditingController phone;
+  final TextEditingController email;
+  final TextEditingController address;
+
+  _BranchControllers({
+    required this.code,
+    required this.name,
+    required this.taxId,
+    required this.branchTaxCode,
+    required this.phone,
+    required this.email,
+    required this.address,
+  });
+
+  factory _BranchControllers.fromBranch(OrganizationBranch branch) {
+    return _BranchControllers(
+      code: TextEditingController(text: branch.branchCode),
+      name: TextEditingController(text: branch.branchName),
+      taxId: TextEditingController(text: branch.taxId ?? ''),
+      branchTaxCode: TextEditingController(text: branch.branchTaxCode ?? ''),
+      phone: TextEditingController(text: branch.phone ?? ''),
+      email: TextEditingController(text: branch.email ?? ''),
+      address: TextEditingController(text: branch.address ?? ''),
+    );
+  }
+
+  void dispose() {
+    code.dispose();
+    name.dispose();
+    taxId.dispose();
+    branchTaxCode.dispose();
+    phone.dispose();
+    email.dispose();
+    address.dispose();
+  }
+}
+
+class _Blob extends StatelessWidget {
+  final Color color;
+  final double size;
+  const _Blob({required this.color, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withOpacity(0.45),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.20), blurRadius: 70, spreadRadius: 25)],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final bool isDark;
+  const _SectionTitle({required this.title, required this.icon, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: textPrimary.withOpacity(0.7)),
+        const SizedBox(width: 8),
+        Text(title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: textPrimary)),
+      ],
+    );
+  }
+}
+
+class _GlassField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final bool isDark;
+  final String? hint;
+  final TextInputType? keyboardType;
+  final int? maxLines;
+  final String? Function(String?)? validator;
+
+  const _GlassField({
+    required this.label,
+    required this.controller,
+    required this.isDark,
+    this.hint,
+    this.keyboardType,
+    this.maxLines = 1,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF8A9AAC);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: textPrimary.withOpacity(0.85))),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          validator: validator,
+          style: GoogleFonts.inter(fontSize: 14, color: textPrimary, fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.inter(fontSize: 13.5, color: textSecondary.withOpacity(0.6)),
+            filled: true,
+            fillColor: (isDark ? Colors.white : const Color(0xFFFFFFFF)).withOpacity(isDark ? 0.06 : 0.55),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.white.withOpacity(isDark ? 0.12 : 0.5), width: 1.5),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.white.withOpacity(isDark ? 0.12 : 0.5), width: 1.5),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: const Color(0xFF4F7DF3).withOpacity(0.6), width: 2),
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GlassDropdown extends StatelessWidget {
+  final String label;
+  final String value;
+  final List<MapEntry<String, String>> items;
+  final bool isDark;
+  final ValueChanged<String> onChanged;
+
+  const _GlassDropdown({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.isDark,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF8A9AAC);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: textPrimary.withOpacity(0.85))),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: (isDark ? Colors.white : const Color(0xFFFFFFFF)).withOpacity(isDark ? 0.06 : 0.55),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(isDark ? 0.12 : 0.5), width: 1.5),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              isExpanded: true,
+              icon: Icon(Icons.keyboard_arrow_down_rounded, color: textSecondary, size: 20),
+              dropdownColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF8FBFF),
+              style: GoogleFonts.inter(fontSize: 14, color: textPrimary, fontWeight: FontWeight.w500),
+              items: items.map((e) {
+                return DropdownMenuItem<String>(
+                  value: e.key,
+                  child: Text(e.value, style: GoogleFonts.inter(fontSize: 14, color: textPrimary)),
+                );
+              }).toList(),
+              onChanged: (v) {
+                if (v != null) onChanged(v);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GlassActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color tintColor;
+  final bool isDark;
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  const _GlassActionButton({
+    required this.label,
+    required this.icon,
+    required this.tintColor,
+    required this.isDark,
+    this.isLoading = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = isDark ? Colors.white : const Color(0xFF1D2733);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                tintColor.withOpacity(isDark ? 0.35 : 0.22),
+                tintColor.withOpacity(isDark ? 0.22 : 0.12),
+              ],
+            ),
+            border: Border.all(color: Colors.white.withOpacity(isDark ? 0.25 : 0.55), width: 1.5),
+            boxShadow: [
+              BoxShadow(color: tintColor.withOpacity(isDark ? 0.25 : 0.15), blurRadius: 18, offset: const Offset(0, 5)),
+            ],
+          ),
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: textColor),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 18, color: textColor),
+                      const SizedBox(width: 8),
+                      Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: textColor)),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final Color tintColor;
+  final bool isDark;
+  final VoidCallback? onTap;
+
+  const _IconBtn({required this.icon, required this.tintColor, required this.isDark, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: tintColor.withOpacity(isDark ? 0.2 : 0.1),
+            border: Border.all(color: Colors.white.withOpacity(isDark ? 0.2 : 0.5), width: 1),
+          ),
+          child: Center(child: Icon(icon, size: 18, color: tintColor)),
+        ),
+      ),
     );
   }
 }

@@ -35,11 +35,13 @@ ALTER TABLE public.organization_branches
     ADD COLUMN IF NOT EXISTS address TEXT,
     ADD COLUMN IF NOT EXISTS phone TEXT,
     ADD COLUMN IF NOT EXISTS email TEXT,
+    ADD COLUMN IF NOT EXISTS branch_tax_code TEXT,
     ADD COLUMN IF NOT EXISTS is_main_branch BOOLEAN DEFAULT false;
 
 COMMENT ON COLUMN public.organization_branches.address IS 'ที่อยู่สาขา';
 COMMENT ON COLUMN public.organization_branches.phone IS 'เบอร์โทรสาขา';
 COMMENT ON COLUMN public.organization_branches.email IS 'อีเมลสาขา';
+COMMENT ON COLUMN public.organization_branches.branch_tax_code IS 'รหัสสาขาสำหรับออกใบกำกับภาษี เช่น 00000, 00001';
 COMMENT ON COLUMN public.organization_branches.is_main_branch IS 'true = สาขาหลัก (default สำหรับ KPI/Report)';
 
 -- Index for quick lookup of main branch
@@ -98,6 +100,7 @@ BEGIN
             'branch_code', branch_code,
             'branch_name', branch_name,
             'tax_id', tax_id,
+            'branch_tax_code', branch_tax_code,
             'address', address,
             'phone', phone,
             'email', email,
@@ -172,6 +175,7 @@ CREATE OR REPLACE FUNCTION public.upsert_branch(
     p_branch_code TEXT,
     p_branch_name TEXT,
     p_tax_id TEXT,
+    p_branch_tax_code TEXT,
     p_address TEXT,
     p_phone TEXT,
     p_email TEXT,
@@ -188,6 +192,7 @@ BEGIN
             branch_code = p_branch_code,
             branch_name = p_branch_name,
             tax_id = p_tax_id,
+            branch_tax_code = p_branch_tax_code,
             address = p_address,
             phone = p_phone,
             email = p_email,
@@ -202,11 +207,11 @@ BEGIN
     IF v_id IS NULL THEN
         -- Insert new
         INSERT INTO public.organization_branches (
-            profession_id, branch_code, branch_name, tax_id,
+            profession_id, branch_code, branch_name, tax_id, branch_tax_code,
             address, phone, email, is_main_branch, is_active
         )
         VALUES (
-            p_profession_id, p_branch_code, p_branch_name, p_tax_id,
+            p_profession_id, p_branch_code, p_branch_name, p_tax_id, p_branch_tax_code,
             p_address, p_phone, p_email, p_is_main_branch, COALESCE(p_is_active, true)
         )
         RETURNING id INTO v_id;

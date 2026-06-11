@@ -114,9 +114,12 @@
 ทุกองค์กรที่ผ่านการยืนยันจาก Admin Sheserved (ตามขั้นตอนการลงทะเบียนในหมวดหมู่ที่ Sheserved กำหนด) จะได้รับหน้าจอ **ERP Dashboard** เป็นของตนเอง ซึ่งประกอบด้วย:
 
 ### 1. หน้าตั้งค่าเบื้องต้น (Organization Settings)
-- ข้อมูลองค์กร (ชื่อ, ที่อยู่, เลขที่ผู้เสียภาษี, โลโก้)
-- ข้อมูลการติดต่อและช่องทางการชำระเงิน
-- การตั้งค่าภาษา, สกุลเงิน, และเขตเวลา
+- [x] ข้อมูลองค์กร (ชื่อ, ที่อยู่, เลขที่ผู้เสียภาษี, โลโก้, โทรศัพท์, อีเมล)
+- [x] การตั้งค่าภาษา, สกุลเงิน, เขตเวลา, โหมดจัดเก็บข้อมูล (cloud/self-host/hybrid)
+- [x] Multi-Branch Support: จัดการสาขา (เพิ่ม/แก้ไข/ลบ) พร้อมรหัสสาขาภาษี (`branch_tax_code`)
+- [x] UI Glassmorphism: ใช้ `GlassCard`, `GlassButton`, พื้นหลัง pastel gradient
+- [ ] ช่องทางการชำระเงิน (Payment Channels) — **รอ Phase 3** (Accounting Module)
+- [ ] Validation logic สำหรับ `branch_tax_code` — **รอ Phase 3** (Accounting Module)
 
 ### 2. หน้าจัดการแยกรายโมดูล (Module Management Pages)
 แต่ละโมดูลใน ERP จะมีหน้าจัดการของตัวเองภายใน Dashboard ขององค์กร ได้แก่:
@@ -654,6 +657,7 @@ CREATE TABLE organization_branches (
   branch_tax_code TEXT,                                     -- รหัสสาขาสำหรับออกใบกำกับภาษี เช่น '00000', '00001'
   address         TEXT,
   phone           TEXT,
+  email           TEXT,
   is_active       BOOLEAN DEFAULT true,
   created_at      TIMESTAMPTZ DEFAULT now(),
   updated_at      TIMESTAMPTZ DEFAULT now(),

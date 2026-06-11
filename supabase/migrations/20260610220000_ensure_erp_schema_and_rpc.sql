@@ -54,6 +54,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'organization_branches' AND column_name = 'email') THEN
         ALTER TABLE public.organization_branches ADD COLUMN email TEXT;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'organization_branches' AND column_name = 'branch_tax_code') THEN
+        ALTER TABLE public.organization_branches ADD COLUMN branch_tax_code TEXT;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'organization_branches' AND column_name = 'is_main_branch') THEN
         ALTER TABLE public.organization_branches ADD COLUMN is_main_branch BOOLEAN DEFAULT false;
     END IF;
@@ -114,6 +117,7 @@ BEGIN
             'branch_code', branch_code,
             'branch_name', branch_name,
             'tax_id', tax_id,
+            'branch_tax_code', branch_tax_code,
             'address', address,
             'phone', phone,
             'email', email,
@@ -188,6 +192,7 @@ CREATE OR REPLACE FUNCTION public.upsert_branch(
     p_branch_code TEXT,
     p_branch_name TEXT,
     p_tax_id TEXT,
+    p_branch_tax_code TEXT,
     p_address TEXT,
     p_phone TEXT,
     p_email TEXT,
@@ -205,6 +210,7 @@ BEGIN
             branch_code = p_branch_code,
             branch_name = p_branch_name,
             tax_id = p_tax_id,
+            branch_tax_code = p_branch_tax_code,
             address = p_address,
             phone = p_phone,
             email = p_email,
@@ -220,11 +226,11 @@ BEGIN
         -- Insert new
         INSERT INTO public.organization_branches (
             profession_id, branch_code, branch_name,
-            tax_id, address, phone, email,
+            tax_id, branch_tax_code, address, phone, email,
             is_main_branch, is_active
         ) VALUES (
             p_profession_id, p_branch_code, p_branch_name,
-            p_tax_id, p_address, p_phone, p_email,
+            p_tax_id, p_branch_tax_code, p_address, p_phone, p_email,
             p_is_main_branch, p_is_active
         )
         RETURNING * INTO v_result;
@@ -236,6 +242,7 @@ BEGIN
         'branch_code', v_result.branch_code,
         'branch_name', v_result.branch_name,
         'tax_id', v_result.tax_id,
+        'branch_tax_code', v_result.branch_tax_code,
         'address', v_result.address,
         'phone', v_result.phone,
         'email', v_result.email,
