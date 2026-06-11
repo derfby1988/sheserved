@@ -67,6 +67,27 @@ import 'ERP Dashboard/erp_dashboard_page.dart';
 import 'ERP Dashboard/organization_settings_page.dart';
 import 'features/erp/presentation/pages/theme_settings_page.dart';
 import 'features/erp/presentation/pages/glassmorphism_settings_page.dart';
+import 'features/erp/presentation/pages/role_management_page.dart';
+import 'features/erp/presentation/pages/permission_management_page.dart';
+import 'features/erp/presentation/pages/feature_flags_page.dart';
+import 'features/erp/presentation/pages/product_list_page.dart';
+import 'features/erp/presentation/pages/customer_list_page.dart';
+import 'features/erp/presentation/pages/inventory_page.dart';
+import 'features/erp/presentation/pages/supplier_list_page.dart';
+import 'features/erp/presentation/pages/cart_page.dart';
+import 'features/erp/presentation/pages/checkout_page.dart';
+import 'features/erp/presentation/pages/delivery_orders_page.dart';
+import 'features/erp/presentation/pages/counter_pos_page.dart';
+import 'features/erp/presentation/pages/clinic_pos_page.dart';
+import 'features/erp/presentation/pages/order_success_page.dart';
+import 'features/erp/presentation/pages/employee_list_page.dart';
+import 'features/erp/presentation/pages/gl_entries_page.dart';
+import 'features/erp/presentation/pages/dashboard_analytics_page.dart';
+import 'features/erp/presentation/pages/emr_list_page.dart';
+import 'features/erp/presentation/pages/opd_visit_page.dart';
+import 'features/erp/presentation/pages/prescription_page.dart';
+import 'features/erp/presentation/pages/lab_results_page.dart';
+import 'features/erp/presentation/pages/patient_cohort_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -209,6 +230,166 @@ class SheservedApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => const ErpDashboardShell(child: GlassmorphismSettingsPage()),
+          );
+        }
+        if (settings.name == '/erp/roles') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: RoleManagementPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/feature-flags') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: FeatureFlagsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/products') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: ProductListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/customers') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: CustomerListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: InventoryPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/suppliers') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: SupplierListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/cart') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: CartPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/checkout') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: CheckoutPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/delivery') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: DeliveryOrdersPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/pos/counter') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: CounterPosPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/pos/clinic') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: ClinicPosPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/order/success') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final orderId = args?['orderId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => OrderSuccessPage(orderId: orderId),
+          );
+        }
+        if (settings.name == '/erp/employees') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: EmployeeListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/gl-entries') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: GlEntriesPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/analytics') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: DashboardAnalyticsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/clinical/emr') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: EmrListPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/clinical/opd') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: OpdVisitPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/clinical/prescriptions') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: PrescriptionPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/clinical/lab') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: LabResultsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/clinical/cohorts') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: PatientCohortPage(professionId: professionId)),
           );
         }
 

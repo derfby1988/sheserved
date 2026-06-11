@@ -94,6 +94,7 @@ class _ErpDashboardPageState extends ConsumerState<ErpDashboardPage> {
                         width: boardWidth - 32,
                         columns: columns,
                         theme: theme,
+                        professionId: orgState.settings?.professionId ?? '',
                       ),
                     );
                   },
@@ -474,11 +475,13 @@ class _DashboardModuleBoard extends StatelessWidget {
   final double width;
   final int columns;
   final DashboardTheme? theme;
+  final String professionId;
 
   const _DashboardModuleBoard({
     required this.width,
     required this.columns,
     required this.theme,
+    required this.professionId,
   });
 
   @override
@@ -498,7 +501,7 @@ class _DashboardModuleBoard extends StatelessWidget {
         return SizedBox(
           width: itemWidth,
           height: itemHeight,
-          child: _ModuleTile(spec: spec, theme: theme),
+          child: _ModuleTile(spec: spec, theme: theme, professionId: professionId),
         );
       }).toList(),
     );
@@ -521,14 +524,22 @@ class _DashboardModuleBoard extends StatelessWidget {
     Color tint(int index, Color fallback) => isDark ? fallback : pastel![index % pastel.length];
 
     return [
-      _DashboardModuleSpec(label: 'POS Management', thaiLabel: 'ขายหน้าร้าน', routeName: '/posManagement', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Inventory Management', thaiLabel: 'คลังสินค้า', routeName: '/inventoryManagement', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Procurement Management', thaiLabel: 'จัดซื้อจัดจ้าง', routeName: '/procurementManagement', icon: Icons.shopping_bag, span: 2, heightFactor: 0.68, variant: _ModuleTileVariant.capsule, tintColor: tint(2, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Accounting Management', thaiLabel: 'บัญชี', routeName: '/accountingManagement', icon: Icons.account_balance, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'HR Management', thaiLabel: 'บุคคล', routeName: '/hrManagement', icon: Icons.people_alt, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'CRM Management', thaiLabel: 'ลูกค้าสัมพันธ์', routeName: '/crmManagement', icon: Icons.contact_support, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(5, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'KPI / Analytics', thaiLabel: 'วิเคราะห์ข้อมูล / KPI', routeName: '/kpi/dashboard', icon: Icons.analytics, span: 2, heightFactor: 1.42, variant: _ModuleTileVariant.tall, tintColor: tint(6, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Counter POS', thaiLabel: 'ขายหน้าร้าน', routeName: '/erp/pos/counter', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Clinic POS', thaiLabel: 'ขายบริการคลินิก', routeName: '/erp/pos/clinic', icon: Icons.local_hospital, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Inventory Management', thaiLabel: 'คลังสินค้า', routeName: '/erp/inventory', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Procurement Management', thaiLabel: 'จัดซื้อจัดจ้าง', routeName: '/erp/suppliers', icon: Icons.shopping_bag, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Cart & Checkout', thaiLabel: 'ตะกร้า/ชำระเงิน', routeName: '/erp/cart', icon: Icons.shopping_cart, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Delivery', thaiLabel: 'การจัดส่ง', routeName: '/erp/delivery', icon: Icons.local_shipping, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'GL Entries', thaiLabel: 'บัญชีแยกประเภท', routeName: '/erp/gl-entries', icon: Icons.account_balance, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'HR Management', thaiLabel: 'บุคคล', routeName: '/erp/employees', icon: Icons.people_alt, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'CRM Management', thaiLabel: 'ลูกค้าสัมพันธ์', routeName: '/erp/customers', icon: Icons.contact_support, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(5, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Analytics', thaiLabel: 'วิเคราะห์ข้อมูล', routeName: '/erp/analytics', icon: Icons.analytics, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(6, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'EMR Records', thaiLabel: 'ประวัติผู้ป่วย', routeName: '/clinical/emr', icon: Icons.folder_shared, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'OPD Visits', thaiLabel: 'ตรวจผู้ป่วยนอก', routeName: '/clinical/opd', icon: Icons.medical_services, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Prescriptions', thaiLabel: 'ใบสั่งยา', routeName: '/clinical/prescriptions', icon: Icons.medication, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Lab Results', thaiLabel: 'ผลแล็บ', routeName: '/clinical/lab', icon: Icons.biotech, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Patient Cohorts', thaiLabel: 'กลุ่มผู้ป่วย', routeName: '/clinical/cohorts', icon: Icons.groups, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
     ];
   }
 }
@@ -560,10 +571,12 @@ enum _ModuleTileVariant { square, capsule, tall }
 class _ModuleTile extends StatelessWidget {
   final _DashboardModuleSpec spec;
   final DashboardTheme? theme;
+  final String professionId;
 
   const _ModuleTile({
     required this.spec,
     required this.theme,
+    required this.professionId,
   });
 
   @override
@@ -587,7 +600,10 @@ class _ModuleTile extends StatelessWidget {
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          onTap: () => Navigator.of(context).pushNamed(spec.routeName),
+          onTap: () => Navigator.of(context).pushNamed(
+            spec.routeName,
+            arguments: {'professionId': professionId},
+          ),
           borderRadius: BorderRadius.circular(radius),
           child: Padding(
             padding: EdgeInsets.symmetric(

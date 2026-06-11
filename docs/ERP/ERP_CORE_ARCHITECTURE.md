@@ -3010,10 +3010,99 @@ $$ LANGUAGE plpgsql;
 | ERP Phase | ชื่อ Phase | ระบบที่ต้องทำ | Steps ย่อย (จากเอกสารลูก) | เงื่อนไขขึ้นต่อ Phase ก่อน | ความปลอดภัย / ความเร็ว |
 |---|---|---|---|---|---|
 | **Phase 0** | Foundation & Identity + Reliability Core | Auth, User, Branch, Role/Permission, Organization Settings, **Reliability Core** | - Auth Service<br>- `organization_branches`, `organization_roles`, `employee_roles`, `role_module_permissions`<br>- **Reliability Step 1:** `idempotency_keys`, `outbox_events`, `inbox_events`, `transaction_contexts` | — | ถ้าไม่มี tenant isolation + reliability foundation ก่อน ระบบอื่นจะ checkout ไม่ปลอดภัย |
+
+> **สถานะ Phase 0 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
+>   - `inbox_events`, `transaction_contexts` (Reliability Core)
+>   - `organization_roles`, `role_module_permissions`, `employee_roles` (RBAC)
+>   - `organization_feature_flags` (Feature Toggles)
+>   - RPC functions: `get_user_roles_and_permissions`, `get_profession_feature_flags`, `upsert_feature_flag`, `create_transaction_context`, `update_transaction_context`
+> - **Migration Seed:** `20260611150000_seed_phase_0_defaults.sql`
+>   - System roles: `owner`, `admin`, `manager`, `staff`, `cashier`, `accountant`
+>   - Default permissions ตามบทบาท (Owner=Full, Cashier=POS+Cart, etc.)
+>   - Default feature flags (ทั้งหมด disabled — secure by default)
+> - **Flutter Layer:**
+>   - Models: `OrganizationRole`, `RoleModulePermission`, `EmployeeRole`, `OrganizationFeatureFlag`
+>   - Repository: `PhaseZeroRepository` (RBAC + Feature Flags + Transaction Context)
+>   - Provider: `PhaseZeroNotifier` + `phaseZeroProvider` (พร้อม `hasModulePermission()`, `isFeatureEnabled()`, `toggleFeatureFlag()`)
+>   - UI Pages: `RoleManagementPage`, `PermissionManagementPage`, `FeatureFlagsPage` (ใช้ GlassCard + responsive)
+>   - Routes: `/erp/roles`, `/erp/feature-flags`
+> - **Existing (ไม่ต้องสร้างใหม่):** `users`, `professions`, `organization_branches`, `outbox_events`, `idempotency_keys`
 | **Phase 1** | Data & Inflow | CRM + Procurement + **Inventory Core (พื้นฐาน)** + Product/Service Master | - CRM Step 1-3: Schema, Loyalty, Coupon<br>- Procurement Step 1: PR/PO Schema<br>- **Inventory Step 1:** `inventory_lots`, `warehouse_locations`, `stock_movements`, `inventory_reservations`<br>- Product/Service Catalog (shared master) | Phase 0 | รองรับ zero-mock integration test ได้เพราะมี customer + stock + reservation จริง |
+
+> **สถานะ Phase 1 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611160000_erp_phase_1_data_and_inflow.sql`
+>   - **Product Master:** `product_categories`, `products` (shared master สำหรับ POS + Cart)
+>   - **CRM:** `loyalty_tiers`, `customers`, `loyalty_points`, `coupons`, `coupon_redemptions`
+>   - **Procurement:** `suppliers`, `purchase_requisitions`, `purchase_orders`, `purchase_order_items`
+>   - **Inventory Core:** `warehouse_locations`, `inventory_lots` (FEFO), `stock_movements` (ledger), `inventory_reservations` (oversell prevention)
+>   - **RPC functions:** `get_product_stock_summary`, `get_product_total_stock`, `get_product_reserved_quantity`, `get_product_available_stock`, `create_inventory_reservation`, `update_customer_stats`
+> - **Migration Seed:** `20260611161000_seed_phase_1_sample_data.sql`
+>   - Product categories, sample products, loyalty tiers, warehouse locations, sample suppliers
+> - **Flutter Layer:**
+>   - Models: `Product`, `Customer`, `Supplier`, `InventoryLot`
+>   - Repository: `PhaseOneRepository` (Products, Customers, Suppliers, Inventory, Coupons, POs)
+>   - Provider: `PhaseOneNotifier` + `phaseOneProvider` (พร้อม helper `lowStockProducts`, `expiringLots`, `expiredLots`)
+>   - UI Pages: `ProductListPage`, `CustomerListPage`, `SupplierListPage`, `InventoryPage` (ใช้ GlassCard + TabBar)
+>   - Routes: `/erp/products`, `/erp/customers`, `/erp/suppliers`, `/erp/inventory`
+> - **Integration:** รองรับ zero-mock — product → inventory lot → stock movement → customer → สร้าง order ใน Phase 2 ได้ทันที
 | **Phase 2** | Core Commerce & Platform | **Commerce Core** + **Cart Core** + Payment + **Settlement Core (พื้นฐาน)** + **Delivery Core (พื้นฐาน)** | - **Commerce Step 1:** `orders`, `order_items`, `payment_transactions`, `checkout_sessions`<br>- **Cart Step 1-2:** `cart_sessions`, `cart_items`, `cart_merchant_groups` (split logic)<br>- **Settlement Step 1:** `vendor_contracts`, `merchant_accounts`, `payment_allocations` (fee/payout ตอน checkout)<br>- Payment Gateway Integration<br>- **Logistics Step 1:** `delivery_orders`, `riders`, `delivery_runs`, `route_stops`, `POD` | Phase 1 | POS ต้องมี Inventory Reservation + Settlement Contract ก่อนจึงไม่เกิด orphan order หรือ split ที่คำนวณไม่ได้ |
+
+> **สถานะ Phase 2 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611170000_erp_phase_2_core_commerce.sql`
+>   - `checkout_sessions` (state machine: created → payment_pending → paid → confirmed → cancelled → expired)
+>   - `payment_transactions` (PromptPay, cash, credit_card + provider_txn_id)
+>   - `delivery_orders` (pending → preparing → in_transit → delivered)
+> - **Migration Schema:** `20260611171000_erp_phase_2_settlement_logistics_cart.sql`
+>   - **Settlement Core:** `vendor_contracts`, `merchant_accounts`, `payment_allocations`
+>   - **Logistics Core:** `riders`, `delivery_runs`, `route_stops`
+>   - **Cart Core:** `cart_sessions`, `cart_items`, `cart_merchant_groups`
+>   - RPC: `calculate_payment_allocation`, `assign_delivery_to_rider`, `add_item_to_cart`
+> - **Migration Seed:** `20260611172000_seed_phase_2_sample_data.sql`
+>   - 3 riders, 3 vendor contracts, 2 merchant accounts
+> - **Existing Tables (from POS Core):** `orders`, `order_items`, `unified_payments`, `shopping_carts`, `clinic_services`, `clinic_appointments`
+> - **Flutter Layer:**
+>   - Models: `CheckoutSession`, `PaymentTransaction`, `DeliveryOrder`, `VendorContract`, `CartSession`, `Rider`
+>   - Repository: `PhaseTwoRepository` (Checkout, Payment, Delivery, Settlement, Cart, Logistics)
+>   - Provider: `PhaseTwoNotifier` + `phaseTwoProvider`
+>   - UI Pages: `CartPage`, `CheckoutPage`, `OrderSuccessPage`, `CounterPosPage` (Mode B), `ClinicPosPage` (Mode C), `DeliveryOrdersPage`
+>   - Routes: `/erp/cart`, `/erp/checkout`, `/erp/pos/counter`, `/erp/pos/clinic`, `/erp/delivery`, `/order/success`
+> - **Integration:** `CounterPosPage` → `orders`/`order_items` (existing POS Core); `CartPage` → `cart_sessions`/`cart_items` (normalized) + `shopping_carts` (JSONB fallback)
 | **Phase 3** | Finance & Operations + Read Model / Analytics Core | Accounting + HR + **Settlement Core (ส่วนขยาย)** + **Read Model / Analytics Core** | - Accounting Step 1: GL, AP/AR<br>- HR Step 1: Employee, Shift<br>- **Settlement Step 2:** `settlement_ledgers`, `payout_batches`, `payout_batch_lines`<br>- **Read Model Step 1:** `projection_checkpoints`, `dashboard_snapshots`, `kpi_aggregations` | Phase 2 | บันทึกรายได้/รายจ่าย + สร้าง read model ต้องมี order จริงก่อน แต่ไม่ต้องรอ clinical |
+
+> **สถานะ Phase 3 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611180000_erp_phase_3_finance_operations.sql`
+>   - **Accounting Core:** `chart_of_accounts`, `gl_entries`, `accounts_receivable`, `accounts_payable`
+>   - **HR Core:** `employees`, `shifts`
+>   - **Settlement Step 2:** `settlement_ledgers`, `payout_batches`, `payout_batch_lines`
+>   - **Read Model Core:** `projection_checkpoints`, `dashboard_snapshots`, `kpi_aggregations`
+>   - RPC: `create_gl_from_order`, `upsert_dashboard_snapshot`
+> - **Flutter Layer:**
+>   - Models: `Employee`, `GlEntry`, `DashboardSnapshot`
+>   - Repository: `PhaseThreeRepository` (HR, GL, Dashboard Snapshots)
+>   - Provider: `PhaseThreeNotifier` + `phaseThreeProvider`
+>   - UI Pages: `EmployeeListPage`, `GlEntriesPage`, `DashboardAnalyticsPage`
+>   - Routes: `/erp/employees`, `/erp/gl-entries`, `/erp/analytics`
+> - **Integration:** `create_gl_from_order()` auto-debits cash + credits revenue จาก `orders.grand_total`; `CounterPosPage` → `OrderRepository.createOrderFromCart()` → `orders` + `order_items` → สร้าง GL อัตโนมัติ
+> - **Compile Status:** `flutter run` ✅ (exit code 0) — SM X135G, ERP Dashboard "แพทย์ทั่วไป" โหลดสำเร็จ
 | **Phase 4** | Clinical & Advanced | HIS + LIS + Telemedicine + CDP | - HIS Step 1: EMR, OPD<br>- LIS Step 1: External Lab API<br>- Telemedicine Step 1: Video/Chat Integration<br>- CDP Step 1: Customer cohort, analytics enrichment | Phase 1-3 | ระบบ clinical ซับซ้อน ควรต่อยอดหลัง core commerce + read model พร้อม |
+
+> **สถานะ Phase 4 (2026-06-11):** ✅ COMPLETE
+> - **Migration Schema:** `20260611190000_erp_phase_4_clinical_advanced.sql` ✅ **สำเร็จ**
+>   - **HIS Step 1:** `emr_records`, `opd_visits`, `medical_prescriptions`, `medical_prescription_items`, `vitals`
+>   - **LIS Step 1:** `lab_tests`, `lab_results`, `lab_external_requests`
+>   - **Telemedicine Step 1:** `tele_consultations` (ใช้ existing `consultation_requests` + `chat_rooms`)
+>   - **CDP Step 1:** `customer_cohorts`, `cohort_members`, `analytics_events`
+>   - RPC: `create_opd_visit()` (auto queue number), `add_patient_to_cohort()`
+> - **Flutter Layer สร้างแล้ว:**
+>   - Models: `EmrRecord`, `OpdVisit`
+>   - Repository: `PhaseFourRepository` (EMR, OPD, Prescriptions, Lab, Cohorts)
+>   - Provider: `PhaseFourNotifier` + `phaseFourProvider`
+>   - UI Pages: `EmrListPage`, `OpdVisitPage`, `PrescriptionPage`, `LabResultsPage`, `PatientCohortPage`
+>   - Routes: `/clinical/emr`, `/clinical/opd`, `/clinical/prescriptions`, `/clinical/lab`, `/clinical/cohorts`
+> - **Compile Status:** `flutter run` ✅ (exit code 0) — SM X135G, ERP Dashboard "แพทย์ทั่วไป" โหลดสำเร็จ
+
+> **Implementation rule:** เมื่อเริ่มลงมือทำ ให้ยึดตารางนี้เป็นแหล่งอ้างอิงเดียวสำหรับลำดับงานทั้งหมด และอ้างอิงชื่อขั้นงานย่อยตาม `ERP Phase X / [System] Step Y` เสมอ เพื่อไม่ให้ phase numbering ของเอกสารลูกคลาดเคลื่อนจาก canonical order ข้างต้น
 
 **กฎสำหรับเอกสารลูก:**
 - ทุกเอกสารย่อย (POS, CRM, etc.) ต้องระบุ `ERP Phase X / [System] Step Y` แทนการใช้ `Phase 1` ของตัวเอง

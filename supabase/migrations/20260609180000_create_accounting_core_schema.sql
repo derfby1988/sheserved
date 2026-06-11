@@ -315,35 +315,57 @@ ALTER TABLE public.vat_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tax_forms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tax_form_lines ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "org_branches_select" ON public.organization_branches;
 CREATE POLICY "org_branches_select" ON public.organization_branches FOR SELECT USING (true);
+DROP POLICY IF EXISTS "org_branches_modify" ON public.organization_branches;
 CREATE POLICY "org_branches_modify" ON public.organization_branches FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "outbox_select" ON public.outbox_events;
 CREATE POLICY "outbox_select" ON public.outbox_events FOR SELECT USING (true);
+DROP POLICY IF EXISTS "outbox_modify" ON public.outbox_events;
 CREATE POLICY "outbox_modify" ON public.outbox_events FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "idempotency_select" ON public.idempotency_keys;
 CREATE POLICY "idempotency_select" ON public.idempotency_keys FOR SELECT USING (true);
+DROP POLICY IF EXISTS "idempotency_modify" ON public.idempotency_keys;
 CREATE POLICY "idempotency_modify" ON public.idempotency_keys FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "accounting_select" ON public.accounting_periods;
 CREATE POLICY "accounting_select" ON public.accounting_periods FOR SELECT USING (true);
+DROP POLICY IF EXISTS "accounting_modify" ON public.accounting_periods;
 CREATE POLICY "accounting_modify" ON public.accounting_periods FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "coa_select" ON public.chart_of_accounts;
 CREATE POLICY "coa_select" ON public.chart_of_accounts FOR SELECT USING (true);
+DROP POLICY IF EXISTS "coa_modify" ON public.chart_of_accounts;
 CREATE POLICY "coa_modify" ON public.chart_of_accounts FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "mapping_select" ON public.product_account_mappings;
 CREATE POLICY "mapping_select" ON public.product_account_mappings FOR SELECT USING (true);
+DROP POLICY IF EXISTS "mapping_modify" ON public.product_account_mappings;
 CREATE POLICY "mapping_modify" ON public.product_account_mappings FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "je_select" ON public.journal_entries;
 CREATE POLICY "je_select" ON public.journal_entries FOR SELECT USING (true);
+DROP POLICY IF EXISTS "je_modify" ON public.journal_entries;
 CREATE POLICY "je_modify" ON public.journal_entries FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "jel_select" ON public.journal_entry_lines;
 CREATE POLICY "jel_select" ON public.journal_entry_lines FOR SELECT USING (true);
+DROP POLICY IF EXISTS "jel_modify" ON public.journal_entry_lines;
 CREATE POLICY "jel_modify" ON public.journal_entry_lines FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "vat_select" ON public.vat_records;
 CREATE POLICY "vat_select" ON public.vat_records FOR SELECT USING (true);
+DROP POLICY IF EXISTS "vat_modify" ON public.vat_records;
 CREATE POLICY "vat_modify" ON public.vat_records FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "tax_select" ON public.tax_forms;
 CREATE POLICY "tax_select" ON public.tax_forms FOR SELECT USING (true);
+DROP POLICY IF EXISTS "tax_modify" ON public.tax_forms;
 CREATE POLICY "tax_modify" ON public.tax_forms FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "tax_line_select" ON public.tax_form_lines;
 CREATE POLICY "tax_line_select" ON public.tax_form_lines FOR SELECT USING (true);
+DROP POLICY IF EXISTS "tax_line_modify" ON public.tax_form_lines;
 CREATE POLICY "tax_line_modify" ON public.tax_form_lines FOR ALL USING (true);
