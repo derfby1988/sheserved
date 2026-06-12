@@ -77,6 +77,8 @@ import 'features/erp/presentation/pages/supplier_list_page.dart';
 import 'features/erp/presentation/pages/cart_page.dart';
 import 'features/erp/presentation/pages/checkout_page.dart';
 import 'features/erp/presentation/pages/delivery_orders_page.dart';
+import 'features/erp/presentation/pages/vendor_contracts_page.dart';
+import 'features/erp/presentation/pages/payment_channels_page.dart';
 import 'features/erp/presentation/pages/counter_pos_page.dart';
 import 'features/erp/presentation/pages/clinic_pos_page.dart';
 import 'features/erp/presentation/pages/order_success_page.dart';
@@ -294,9 +296,10 @@ class SheservedApp extends StatelessWidget {
         if (settings.name == '/erp/checkout') {
           final args = settings.arguments as Map<String, dynamic>?;
           final professionId = args?['professionId'] as String? ?? '';
+          final sessionId = args?['sessionId'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: CheckoutPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(child: CheckoutPage(professionId: professionId, sessionId: sessionId)),
           );
         }
         if (settings.name == '/erp/delivery') {
@@ -305,6 +308,22 @@ class SheservedApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => ErpDashboardShell(child: DeliveryOrdersPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/vendor-contracts') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: VendorContractsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/payment-channels') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: PaymentChannelsPage(professionId: professionId)),
           );
         }
         if (settings.name == '/erp/pos/counter') {

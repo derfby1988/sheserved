@@ -5,6 +5,10 @@ import '../models/employee_role.dart';
 import '../models/organization_feature_flag.dart';
 import '../models/organization_role.dart';
 import '../models/role_module_permission.dart';
+import '../models/transaction_audit_log.dart';
+import '../models/circuit_breaker_state.dart';
+import '../models/dead_letter_record.dart';
+import '../models/retry_attempt.dart';
 
 /// Repository สำหรับ ERP Phase 0 — Reliability Core + RBAC + Feature Flags
 class PhaseZeroRepository {
@@ -273,6 +277,198 @@ class PhaseZeroRepository {
       debugPrint('[Phase0Repo] updateTransactionContext error: $e');
       debugPrint('[Phase0Repo] stackTrace: $st');
       return false;
+    }
+  }
+
+  // ========================
+  // RELIABILITY — Audit Log
+  // ========================
+
+  Future<List<TransactionAuditLog>> getAuditLogs({
+    String? professionId,
+    String? tableName,
+    String? recordId,
+    int limit = 100,
+  }) async {
+    try {
+      var query = _client.from('transaction_audit_log').select();
+      if (professionId != null) query = query.eq('profession_id', professionId);
+      if (tableName != null) query = query.eq('table_name', tableName);
+      if (recordId != null) query = query.eq('record_id', recordId);
+      final response = await query
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return (response as List)
+          .map((e) => TransactionAuditLog.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] getAuditLogs error: $e');
+      return [];
+    }
+  }
+
+  Future<int?> recordAuditLog({
+    required String tableName,
+    required String recordId,
+    required String action,
+    Map<String, dynamic>? oldValues,
+    Map<String, dynamic>? newValues,
+    String? actorId,
+    String actorType = 'user',
+    String? professionId,
+    String? reason,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'record_audit_log',
+        params: {
+          'p_table_name': tableName,
+          'p_record_id': recordId,
+          'p_action': action,
+          'p_old_values': oldValues,
+          'p_new_values': newValues,
+          'p_actor_id': actorId,
+          'p_actor_type': actorType,
+          'p_profession_id': professionId,
+          'p_reason': reason,
+        },
+      );
+      return response != null ? (response as num).toInt() : null;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] recordAuditLog error: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // RELIABILITY — Circuit Breaker
+  // ========================
+
+  Future<List<CircuitBreakerState>> getCircuitBreakers(String professionId) async {
+    try {
+      final response = await _client
+          .from('circuit_breaker_states')
+          .select()
+          .eq('profession_id', professionId)
+          .order('updated_at', ascending: false);
+      return (response as List)
+          .map((e) => CircuitBreakerState.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] getCircuitBreakers error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> updateCircuitBreaker({
+    required String professionId,
+    required String serviceName,
+    required String result, // 'success' or 'failure'
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'update_circuit_breaker',
+        params: {
+          'p_profession_id': professionId,
+          'p_service_name': serviceName,
+          'p_result': result,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] updateCircuitBreaker error: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // RELIABILITY — Dead Letter
+  // ========================
+
+  Future<List<DeadLetterRecord>> getDeadLetterRecords(String professionId) async {
+    try {
+      final response = await _client
+          .from('dead_letter_records')
+          .select()
+          .eq('profession_id', professionId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => DeadLetterRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] getDeadLetterRecords error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> resolveDeadLetter({
+    required String deadLetterId,
+    required String resolution,
+    String? resolvedBy,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'resolve_dead_letter',
+        params: {
+          'p_dead_letter_id': deadLetterId,
+          'p_resolution': resolution,
+          'p_resolved_by': resolvedBy,
+        },
+      );
+      return response as bool? ?? false;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] resolveDeadLetter error: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // RELIABILITY — Retry Attempts
+  // ========================
+
+  Future<List<RetryAttempt>> getRetryAttempts({
+    required String professionId,
+    String? operationType,
+    String? targetId,
+  }) async {
+    try {
+      var query = _client
+          .from('retry_attempts')
+          .select()
+          .eq('profession_id', professionId);
+      if (operationType != null) query = query.eq('operation_type', operationType);
+      if (targetId != null) query = query.eq('target_id', targetId);
+      final response = await query
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => RetryAttempt.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] getRetryAttempts error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> createRetryAttempt({
+    required String professionId,
+    required String operationType,
+    required String targetId,
+    int backoffMs = 2000,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'create_retry_attempt',
+        params: {
+          'p_profession_id': professionId,
+          'p_operation_type': operationType,
+          'p_target_id': targetId,
+          'p_backoff_ms': backoffMs,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] createRetryAttempt error: $e');
+      return null;
     }
   }
 }

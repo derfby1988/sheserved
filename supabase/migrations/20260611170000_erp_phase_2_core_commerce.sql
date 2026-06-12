@@ -200,7 +200,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Confirm checkout (transition to confirmed + create order)
+-- Confirm checkout (transition to confirmed + link order)
+-- Accepts 'created' or 'payment_pending' for synchronous POS/counter flow
 CREATE OR REPLACE FUNCTION confirm_checkout(
     p_session_id UUID,
     p_order_id UUID
@@ -212,7 +213,25 @@ BEGIN
         order_id = p_order_id,
         updated_at = NOW()
     WHERE id = p_session_id
-      AND status = 'paid';
+      AND status IN ('created', 'payment_pending', 'paid');
+
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Update checkout session status + payment method
+CREATE OR REPLACE FUNCTION update_checkout_session_status(
+    p_session_id UUID,
+    p_status TEXT,
+    p_payment_method TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE public.checkout_sessions
+    SET status = p_status,
+        payment_method = COALESCE(p_payment_method, payment_method),
+        updated_at = NOW()
+    WHERE id = p_session_id;
 
     RETURN FOUND;
 END;

@@ -477,3 +477,45 @@ EXCEPTION WHEN OTHERS THEN
     RETURN false;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Remove item from cart and recalculate totals
+CREATE OR REPLACE FUNCTION remove_item_from_cart(
+    p_cart_item_id UUID
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_cart_session_id UUID;
+BEGIN
+    -- Get cart session id before delete
+    SELECT cart_session_id INTO v_cart_session_id
+    FROM public.cart_items
+    WHERE id = p_cart_item_id;
+
+    IF v_cart_session_id IS NULL THEN
+        RETURN false;
+    END IF;
+
+    DELETE FROM public.cart_items WHERE id = p_cart_item_id;
+
+    -- Recalculate cart session totals
+    UPDATE public.cart_sessions
+    SET total_amount = (
+        SELECT COALESCE(SUM(line_total), 0) FROM public.cart_items WHERE cart_session_id = v_cart_session_id
+    ),
+    vat_amount = (
+        SELECT COALESCE(SUM(vat_amount), 0) FROM public.cart_items WHERE cart_session_id = v_cart_session_id
+    ),
+    net_amount = (
+        SELECT COALESCE(SUM(line_total + vat_amount), 0) FROM public.cart_items WHERE cart_session_id = v_cart_session_id
+    ),
+    item_count = (
+        SELECT COUNT(*) FROM public.cart_items WHERE cart_session_id = v_cart_session_id
+    ),
+    updated_at = NOW()
+    WHERE id = v_cart_session_id;
+
+    RETURN true;
+EXCEPTION WHEN OTHERS THEN
+    RETURN false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

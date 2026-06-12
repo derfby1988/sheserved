@@ -118,8 +118,14 @@
 - [x] การตั้งค่าภาษา, สกุลเงิน, เขตเวลา, โหมดจัดเก็บข้อมูล (cloud/self-host/hybrid)
 - [x] Multi-Branch Support: จัดการสาขา (เพิ่ม/แก้ไข/ลบ) พร้อมรหัสสาขาภาษี (`branch_tax_code`)
 - [x] UI Glassmorphism: ใช้ `GlassCard`, `GlassButton`, พื้นหลัง pastel gradient
-- [ ] ช่องทางการชำระเงิน (Payment Channels) — **รอ Phase 3** (Accounting Module)
-- [ ] Validation logic สำหรับ `branch_tax_code` — **รอ Phase 3** (Accounting Module)
+- [x] ช่องทางการชำระเงิน (Payment Channels) — `payment_channels` table + `PaymentChannelsPage` + dynamic checkout methods
+- [x] Validation logic สำหรับ `branch_tax_code` — DB-level `validate_branch_tax_code()` + Flutter `_isValidBranchTaxCode()` (5 digits, e.g., 00000)
+
+### สถานะปัจจุบัน
+- ✔️ ฟีเจอร์ Organization Settings (Glassmorphism, editable branches, branch_tax_code+email) เสร็จแล้วตาม checklist ด้านบน
+- ⏳ Phase 0 (RBAC, Reliability Core, Feature Flags, Organization Settings schema) และ Phase 1 (CRM + Procurement + Inventory data) ถูก mark ว่า ✅ COMPLETE โดยมีทั้ง migration + Flutter layer cover
+- ✅ Phase 2 (Commerce/Cart/Settlement/Delivery) **COMPLETE** — มีทั้ง migration + Flutter layer ครบถ้วน สามารถเพิ่ม/ลบตะกร้า → checkout → สร้าง order → ชำระเงิน → delivery → ดู vendor contracts ได้
+- ✅ Payment Channels (`payment_channels` + `seed_default_payment_channels` + `PaymentChannelsPage`) + branch_tax_code validation (DB + Flutter) **COMPLETE** — migration รันสำเร็จบน Supabase
 
 ### 2. หน้าจัดการแยกรายโมดูล (Module Management Pages)
 แต่ละโมดูลใน ERP จะมีหน้าจัดการของตัวเองภายใน Dashboard ขององค์กร ได้แก่:
@@ -169,6 +175,7 @@
 ผู้ใช้งานแต่ละคนสามารถ **ลาก-วาง (Drag & Drop)** การ์ดโมดูลเพื่อจัดเรียงตามความชอบได้ โดยระบบจะ **บันทึกตำแหน่งลงฐานข้อมูล** และ **เรียกใช้ตำแหน่งล่าสุด** ที่บันทึกไว้ในครั้งถัดไป
 
 #### ฐานข้อมูล (Database Schema)
+> **สถานะ:** ✅ Phase 0 COMPLETE — `user_module_layouts` มี migration + Flutter layer (`ModuleManagementPage`, drag-drop reordering)
 
 ```sql
 CREATE TABLE user_module_layouts (
@@ -259,6 +266,7 @@ class ModuleCardsGrid extends ConsumerWidget {
 - **ไม่กระทบผู้ใช้อื่น:** layout เป็นของ user คนนั้นเท่านั้น (RLS)
 
 #### API / RPC
+> **สถานะ:** ✅ Phase 0 COMPLETE — RPC พร้อมใช้งาน
 
 ```sql
 -- ดึง layout ของ user
@@ -302,6 +310,7 @@ $$ LANGUAGE plpgsql;
 ผู้ใช้งานแต่ละคนสามารถเลือก **ธีมสี (Color Theme)** ของ ERP Dashboard ได้ที่หน้า **"ตั้งค่า Dashboard"** (`/erp/settings/theme`) โดยใช้งานครั้งแรกจะได้ **ธีมเริ่มต้นของ Sheserved**
 
 #### ฐานข้อมูล (Database Schema)
+> **สถานะ:** ✅ Phase 0 COMPLETE — schema + migration + Flutter layer พร้อม
 
 ```sql
 -- ============================================================
@@ -482,6 +491,7 @@ class ThemedCollapsibleSidebar extends ConsumerWidget {
 ```
 
 #### API / RPC
+> **สถานะ:** ✅ Phase 0 COMPLETE — RPC พร้อมใช้งาน
 
 ```sql
 -- ดึงธีมของ user
@@ -647,6 +657,7 @@ Home Page
 
 ```sql
 -- ตารางเก็บข้อมูลสาขาของแต่ละองค์กร (Multi-Branch Support)
+> **สถานะ:** ✅ Phase 0 COMPLETE — `organization_branches`, `organization_roles`, `employee_roles` มี migration + UI
 CREATE TABLE organization_branches (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id   UUID NOT NULL REFERENCES professions(id),
@@ -704,6 +715,7 @@ CREATE TABLE employee_roles (
 
 ```sql
 CREATE TABLE organization_feature_flags (
+> **สถานะ:** ✅ Phase 0 COMPLETE — `organization_feature_flags` มี migration + UI toggle
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id UUID NOT NULL REFERENCES professions(id),
   feature_name  TEXT NOT NULL,                -- เช่น 'crm_loyalty', 'crm_coupons', 'crm_promotions', 'pos_module', 'inventory_module'
@@ -1068,7 +1080,17 @@ graph TD
 - **Settlement Core:** `MerchantAccount`, `VendorContract`, `SettlementLedger`, `PayoutBatch`
 - **Scale / Read Models:** `ReadModelProjection`, `ProjectionCheckpoint`, `DashboardSnapshot`
 
-### Schema สำหรับ Transaction Boundary (แนะนำ)
+### Schema สำหรับ Transaction Boundary
+> **สถานะ:** ✅ **Implement แล้ว** (2026-06-12)
+> - `idempotency_keys` — อยู่ใน `20260609180000_create_accounting_core_schema.sql`
+> - `outbox_events` — อยู่ใน `20260609180000_create_accounting_core_schema.sql`
+> - `inbox_events` — อยู่ใน `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
+> - `transaction_contexts` — อยู่ใน `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
+> - `transaction_audit_log` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - `dead_letter_events` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - RPC: `record_audit_log`, `create_transaction_context`, `update_transaction_context`
+> - Dart models: `TransactionAuditLog`, `InboxEvent` (existing), `TransactionContext` (existing)
+> - PhaseZeroRepository methods: `getAuditLogs`, `recordAuditLog`, `createTransactionContext`, `updateTransactionContext`
 
 ```sql
 -- ============================================
@@ -1176,7 +1198,16 @@ CREATE INDEX idx_audit_created_at ON transaction_audit_log(created_at DESC);
 --   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
 ```
 
-### Schema สำหรับ Reliability Core (แนะนำ)
+### Schema สำหรับ Reliability Core
+> **สถานะ:** ✅ **Implement แล้ว** (2026-06-12)
+> - `circuit_breaker_states` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - `retry_attempts` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - `rate_limit_policies` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - `queue_job_audit` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - `dead_letter_records` — อยู่ใน `20260612140000_add_reliability_transaction_tables.sql`
+> - RPC: `update_circuit_breaker`, `create_retry_attempt`, `resolve_dead_letter`
+> - Dart models: `CircuitBreakerState`, `RetryAttempt`, `DeadLetterRecord`
+> - PhaseZeroRepository methods: `getCircuitBreakers`, `updateCircuitBreaker`, `getDeadLetterRecords`, `resolveDeadLetter`, `getRetryAttempts`, `createRetryAttempt`
 
 > **ผลการวิเคราะห์:** เอกสารระบุ `Reliability Core` ประกอบด้วย `IdempotencyKey`, `OutboxEvent`, `InboxEvent`, `AuditLog`, `TransactionContext` แต่ขาดโมเดลที่สำคัญ 3 ประการ:
 > 1. **`CircuitBreakerState`** — `payment-queue-service.js` มี implementation จริง (failure count, MAX_FAILURES, auto half-open หลัง 30 นาที) แต่เอกสารไม่มี schema หรือ model รองรับ ทำให้ระบบอื่นไม่สามารถ reuse pattern นี้ได้
@@ -1314,6 +1345,7 @@ CREATE INDEX idx_dead_letter_aggregate ON dead_letter_records(aggregate_type, ag
 ```
 
 ### Schema สำหรับ Tax & Fiscal Document Core (แนะนำ)
+> **สถานะ:** 🔴 ยังไม่ implement — เป็น schema แนะนำสำหรับอนาคต (ใบกำกับภาษี, ใบลดหนี้, ใบเพิ่มหนี้)
 
 > **ผลการวิเคราะห์:** POS System ปัจจุบันเก็บ `vat_amount` และ `wht_amount` เป็น column รวมใน `orders` ซึ่งไม่เพียงพอต่อการออกเอกสารภาษีตามกฎหมายไทย (ใบกำกับภาษี, ใบลดหนี้, ใบเพิ่มหนี้) และไม่รองรับการแยกเอกสารภาษีหลายฉบับต่อหนึ่ง order (เช่น แยกเบิกบริษัท/ส่วนตัว) หรือการตรวจสอบย้อนหลัง (Audit Trail) รายบรรทัด VAT ดังนั้นต้องมี Tax & Fiscal Document Core แยกเป็นเอกสารอิสระจาก order
 
@@ -1467,6 +1499,7 @@ CREATE INDEX idx_debit_notes_profession ON debit_notes(profession_id, issue_date
 ```
 
 ### Schema สำหรับ Inventory Safety (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — `warehouse_locations`, `inventory_lots`, `stock_movements` อยู่ใน migration Phase 1; ฟังก์ชัน `reserve_stock`, `deduct_stock` ยังไม่ migrate
 
 ```sql
 -- ============================================
@@ -1765,16 +1798,26 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-### Schema สำหรับ Inventory Core — โมเดลที่ขาดหาย (แนะนำ)
+### Schema สำหรับ Inventory Core — โมเดลที่ขาดหาย
+> **สถานะ:** ✅ **Implement แล้ว** (2026-06-12)
+> - `stock_adjustments` — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - `inventory_transfers` + `inventory_transfer_lines` — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - `stocktake_sessions` + `stocktake_lines` — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - `inventory_alerts` (low_stock, expiry, reorder) — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - `custom_medications` (tenant-specific products) — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - `inventory_items` (stock summary + cost/selling/reorder_point) — อยู่ใน `20260612150000_add_inventory_system.sql`
+> - RPC: `deduct_inventory_fefo`, `create_stock_adjustment`, `create_inventory_transfer`, `complete_inventory_transfer`, `check_inventory_alerts`, `complete_stocktake_session`
+> - Dart models: `InventoryItem`, `CustomMedication`, `StocktakeConfiguration`, `StocktakeSession`, `StocktakeLine`, `StockAdjustment`, `InventoryTransfer`, `InventoryTransferLine`, `InventoryAlert`
+> - PhaseOneRepository + PhaseOneNotifier methods ครบ CRUD + FEFO deduction
 
-> **ผลการวิเคราะห์:** `ERP_CORE_ARCHITECTURE.md` มี schema สำหรับ `warehouse_locations`, `inventory_lots`, `inventory_reservations`, `stock_movements` ที่ครบถ้วน แต่ขาดโมเดลสำคัญ 6 ประการที่ทำให้ระบบ Inventory ไม่สามารถทำงาน end-to-end ได้:
-> 1. **`StockAdjustment` (Parent Record)** — `stock_movements` มี `movement_type='adjustment'` แต่ไม่มีตาราง `stock_adjustments` เป็น parent ที่บันทึกการปรับยอดแต่ละครั้ง (เหตุผล, ผู้ปรับ, วันที่, รายการ lot ที่ปรับ) → ไม่สามารถทำ adjustment audit trail แบบ grouped ได้
-> 2. **`InventoryTransfer` —** มี `movement_type='transfer_in'/'transfer_out'` ใน `stock_movements` แต่ไม่มี `inventory_transfers` ที่เก็บ transfer request (`from_location_id`, `to_location_id`, `status`, `requested_by`, `approved_by`) → ไม่สามารถ track สถานะการโยกย้าย (Pending → In-Transit → Completed → Rejected) ได้
-> 3. **`StocktakeSession` / `StocktakeLine` —** `INVENTORY_SYSTEM_PLAN.md` มี `stocktake_configurations` และ Phase 9 ระบุหน้า `StocktakePage` แต่ schema ไม่มี `stocktake_sessions` หรือ `stocktake_lines` → ไม่สามารถบันทึกผลการตรวจนับจริงและสร้าง adjustment อัตโนมัติได้
-> 4. **`ReorderSuggestion` —** `inventory_items` (เก่า) มี `reorder_point` แต่ schema ใหม่ (`inventory_lots`) ไม่มี reorder point หรือตาราง `reorder_suggestions` → ขาด automated procurement trigger
-> 5. **`InventoryAlert` —** ไม่มีตารางสำหรับ low stock alert, expiry alert, reorder alert → ต้อง query ทุกครั้งหรือใช้ cron job โดยไม่มี state tracking
-> 6. **`inventory_items` เก่า vs `inventory_lots` ใหม่ —** `INVENTORY_SYSTEM_PLAN.md` ยังใช้ `inventory_items` แบบเก่า (quantity รวมเป็นแถวเดียว, ไม่มี `branch_id`, ไม่มี `warehouse_location_id`, ไม่มี `on_hand/reserved/available` แยกกัน) แต่ `ERP_CORE_ARCHITECTURE.md` มี schema ใหม่ที่ lot-level ซึ่งดีกว่ามาก แต่ไม่มี migration path หรือ backward compatibility สำหรับองค์กรที่เริ่มใช้งานก่อน
-> 7. **Flutter Implementation —** `lib/ERP Dashboard/inventory_management_page.dart` เป็น stub placeholder UI (`Text('Inventory Management UI goes here')`) ยังไม่มี models หรือ repository จริงสำหรับ Inventory Core
+> **ผลการวิเคราะห์เดิม:** ขาดโมเดลสำคัญ 6 ประการที่ทำให้ระบบ Inventory ไม่สามารถทำงาน end-to-end ได้
+> ✅ **แก้ไขแล้ว:**
+> 1. **`StockAdjustment`** — `stock_adjustments` table + `create_stock_adjustment()` RPC + `StockAdjustment` model + `PhaseOneRepository.createStockAdjustment()`
+> 2. **`InventoryTransfer`** — `inventory_transfers` + `inventory_transfer_lines` + `create_inventory_transfer()` + `complete_inventory_transfer()` + `InventoryTransfer` model
+> 3. **`StocktakeSession` / `StocktakeLine`** — `stocktake_sessions` + `stocktake_lines` + `complete_stocktake_session()` RPC + `StocktakeSession`, `StocktakeLine` models
+> 4. **`InventoryAlert`** — `inventory_alerts` + `check_inventory_alerts()` RPC + `InventoryAlert` model
+> 5. **`inventory_items` vs `inventory_lots`** — สร้าง `inventory_items` ใหม่เป็น stock summary (quantity, cost_price, selling_price, reorder_point) โดย `inventory_lots` ยังคงเป็น lot-level detail สำหรับ FEFO deduction
+> 6. **Flutter Implementation** — `PhaseOneRepository` + `PhaseOneNotifier` ครบ CRUD สำหรับทุก table ใหม่ + FEFO deduction helper
 
 ```sql
 -- ============================================
@@ -1947,6 +1990,7 @@ CREATE INDEX idx_inventory_alerts_created ON inventory_alerts(created_at DESC);
 ```
 
 ### Schema สำหรับ Cart Core (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — `cart_sessions`, `cart_items`, `checkout_sessions` อยู่ใน migration Phase 2; `cart_merchant_groups`, `payment_allocations` ยังไม่ migrate
 
 > **ผลการวิเคราะห์:** `SHOPPING_CART_PLAN.md` มีแค่ 3 ตารางพื้นฐาน (`platform_shopping_cart`, `platform_cart_items`, `platform_orders`) ขาดโมเดลสำคัญ 8 ประการ:
 > 1. **Cart 2 ชุดซ้อนกัน —** `POS System_plan.md` มี `shopping_carts` อีกชุด (`items` เป็น JSONB) ทำให้ platform cart กับ POS cart ไม่ sync กัน
@@ -2102,6 +2146,7 @@ CREATE INDEX idx_checkout_sessions_idempotency ON checkout_sessions(idempotency_
 ```
 
 ### Schema สำหรับ Delivery Core — โมเดลที่ขาดหาย (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — `riders`, `delivery_orders`, `delivery_runs`, `route_stops` อยู่ใน migration Phase 2; `delivery_exceptions`, `carrier_configs`, `delivery_tracking` ยังไม่ migrate
 
 > **ผลการวิเคราะห์:** `ERP_CORE_ARCHITECTURE.md` มี schema Delivery ที่ครบถ้วนกว่า `Delivery_PLAN.md` มาก (9 ตาราง vs 2 ตาราง) แต่ยังมีช่องโหว่ 5 ประการ:
 > 1. **`Shipment` / `ShipmentItem` ขาด schema —** model list เดิมระบุ `Shipment`, `ShipmentItem` แต่ไม่มีตารางใดๆ ในเอกสารหรือ codebase ทั้งหมด ควรมี `shipments` สำหรับ 3PL tracking number และ physical package tracking (`tracking_number`, `carrier_reference`, `shipment_status`) โดยเฉพาะเมื่อใช้ carrier ภายนอก
@@ -2172,6 +2217,7 @@ CREATE INDEX idx_rider_assignments_pending ON rider_assignments(status, expires_
 ```
 
 ### Schema สำหรับ Delivery Model (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — ดูรายละเอียดใน section Delivery Core ด้านบน
 
 ```sql
 -- ============================================
@@ -2440,6 +2486,7 @@ CREATE INDEX idx_tracking_rider ON delivery_tracking(rider_id, recorded_at DESC)
 ```
 
 ### Schema สำหรับ Settlement Core (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — `vendor_contracts` อยู่ใน migration Phase 2; `merchant_accounts`, `settlement_ledgers`, `payout_batch_lines` ยังไม่ migrate
 
 > **ผลการวิเคราะห์:** Settlement Core มี model list (`MerchantAccount`, `VendorContract`, `SettlementLedger`, `PayoutBatch`) แต่ไม่มี schema หรือ analysis ใดๆ ในเอกสาร แม้ `SHOPPING_CART_PLAN.md` จะมี `payment_allocations` และ `payout_batches` แต่ขาดโมเดลสำคัญ 4 ประการ:
 > 1. **`MerchantAccount` ไม่มีตาราง —** ไม่มีข้อมูลบัญชีธนาคาร/ e-Wallet ของ merchant (clinic/partner) ที่จะรับเงิน payout → ไม่สามารถโอนเงินอัตโนมัติได้
@@ -2572,6 +2619,7 @@ CREATE INDEX idx_payout_batch_lines_merchant ON payout_batch_lines(merchant_type
 ```
 
 ### Schema สำหรับ Shopping Cart (แนะนำ)
+> **สถานะ:** ⏳ บางส่วน implement — `cart_sessions`, `cart_items`, `checkout_sessions` อยู่ใน migration Phase 2; ตารางอื่นๆ ยังเป็นแนวทาง
 
 ```sql
 -- ============================================
@@ -2780,6 +2828,7 @@ CREATE INDEX idx_platform_orders_checkout ON platform_orders(checkout_session_id
 ```
 
 ### Schema สำหรับ Read Model / Analytics Core (แนะนำ)
+> **สถานะ:** 🔴 ยังไม่ implement — เป็น schema แนะนำสำหรับอนาคต (projection checkpoints, dashboard snapshots, KPI aggregations, materialized views)
 
 > **ผลการวิเคราะห์:** `KPI_DASHBOARD_PLAN.md` ระบุว่า "ยอด Actual ดึง Query จากระบบอื่น (POS, Accounting)" ซึ่งหมายความว่าทุกครั้งที่ดู dashboard ต้อง query ข้ามหลายตาราง transactional โดยตรง ขาดโมเดลสำคัญ 6 ประการ:
 > 1. **ไม่มี Read Model / Materialized View —** ไม่มี `dashboard_snapshots` หรือ `kpi_aggregations` ที่ optimize สำหรับการอ่าน ทำให้ dashboard query ไปดึงจาก `orders` + `pos_receipts` + `accounting_entries` + `inventory_movements` + `delivery_orders` พร้อมกัน
@@ -3005,47 +3054,112 @@ $$ LANGUAGE plpgsql;
 | **P2** | **Delivery Core (ส่วนขยาย)** — `Shipment`, `ShipmentItem`, `RiderAssignment`, `DeliveryException`, `CarrierConfig` | 3PL, batch assign, exception handling | **กลาง-สูง** |
 | **P3** | ขยาย HIS / LIS / Telemedicine บน backbone ที่นิ่งแล้ว | โมดูล clinical มีความซับซ้อนสูง ควรต่อยอดหลัง core commerce พร้อม | **กลาง** |
 
+### สรุปสถานะงานปัจจุบัน (Complete / Partial / Missing)
+
+| Core / งาน | สถานะ | หลักฐานในเอกสาร | ข้อสรุปเชิงปฏิบัติ |
+|---|---|---|---|
+| **Phase 0 Foundations** | **Complete** | `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql` + Flutter layer | ใช้เป็นฐานได้แล้ว |
+| **Phase 1 Inflow / Inventory base** | **Complete** | `warehouse_locations`, `inventory_lots`, `stock_movements`, `inventory_reservations` + `custom_medications`, `inventory_items`, `stocktake_configurations`, `stocktake_sessions`, `stocktake_lines`, `stock_adjustments`, `inventory_transfers`, `inventory_transfer_lines`, `inventory_alerts` + RPC (`deduct_inventory_fefo`, `create_stock_adjustment`, `create_inventory_transfer`, `complete_inventory_transfer`, `check_inventory_alerts`, `complete_stocktake_session`) + Dart models (`InventoryItem`, `CustomMedication`, `StocktakeConfiguration`, `StocktakeSession`, `StockAdjustment`, `InventoryTransfer`, `InventoryAlert`) + PhaseOneRepository/Notifier | ใช้เป็นฐาน checkout / stock reservation + FEFO + stocktake + transfer + alert ได้ |
+| **Phase 2 Commerce / Cart / Delivery base** | **Complete** | `checkout_sessions`, `payment_transactions`, `cart_sessions`, `riders`, `delivery_runs`, `route_stops` + `confirm_checkout` fix + `update_checkout_session_status` | checkout flow ครบ end-to-end |
+| **Payment Channels** | **Complete** | migration `20260612080000_add_payment_channels_and_tax_validation.sql` + `PaymentChannelsPage` | ใช้ได้จริง และ checkout เปลี่ยนเป็น dynamic ได้แล้ว |
+| **branch_tax_code validation** | **Complete** | `validate_branch_tax_code()` + client-side `_isValidBranchTaxCode()` | ปิดช่องโหว่ข้อมูลสาขาภาษีได้แล้ว |
+| **Inventory runtime functions** | **Implemented** | migration `20260612092000_add_inventory_runtime_functions.sql` (`release_stock_reservation`, `deduct_stock`, `cleanup_expired_reservations`) + `PhaseOneRepository` + `CheckoutPage` / `CounterPosPage` wire | production-ready สำหรับ checkout/pos flow |
+| **Settlement full model** | **Complete** | `vendor_contracts` + `merchant_accounts` + `payment_allocations` + `settlement_ledgers` + `payout_batches` + `payout_batch_lines` + RPC `calculate_payment_allocation` / `create_payout_batch` + Dart models + PhaseTwoRepository methods + auto-wire checkout/pos | คำนวณ fee + payout end-to-end ได้แล้ว |
+| **Delivery extensions** | **Complete** | base delivery + `shipments`, `shipment_items`, `carrier_configs`, `delivery_exceptions`, `proof_of_deliveries` + RPC (`record_delivery_exception`, `create_shipment`, `complete_delivery_with_proof`) + Dart models + PhaseTwoRepository/Notifier | logistics pipeline พร้อมใช้ |
+| **Read Model / Analytics** | **Complete** | `projection_checkpoints` + `dashboard_snapshots` + `kpi_aggregations` + RPC (`upsert_dashboard_snapshot`, `generate_daily_snapshot`, `get_snapshot_comparison`, `upsert_kpi_aggregation`, `advance_projection_checkpoint`) + Dart models (`DashboardSnapshot`, `ProjectionCheckpoint`, `KpiAggregation`) + PhaseTwoRepository/Notifier | dashboard + KPI pipeline พร้อมใช้ |
+| **Transaction Boundary / Reliability extras** | **Complete** | `idempotency_keys` + `outbox_events` + `inbox_events` + `transaction_contexts` (existing) + `transaction_audit_log` + `dead_letter_events` + `circuit_breaker_states` + `retry_attempts` + `rate_limit_policies` + `queue_job_audit` + `dead_letter_records` (migration `20260612140000_add_reliability_transaction_tables.sql`) + RPC (`record_audit_log`, `update_circuit_breaker`, `create_retry_attempt`, `resolve_dead_letter`) + Dart models (`TransactionAuditLog`, `CircuitBreakerState`, `RetryAttempt`, `DeadLetterRecord`) + PhaseZeroRepository methods | reliability infrastructure ครบ end-to-end พร้อมใช้ |
+
+### Roadmap ถัดไปที่แนะนำ (เรียงลำดับทำจริง)
+
+1. **~~ปิด Inventory runtime gap~~** ✅ **2026-06-12**
+   - migration `20260612092000_add_inventory_runtime_functions.sql` (`release_stock_reservation`, `deduct_stock`, `cleanup_expired_reservations`)
+   - `PhaseOneRepository` + `CheckoutPage` / `CounterPosPage` wire เรียบร้อย — กัน oversell + stock ค้างได้แล้ว
+
+2. **~~เช็ก payment / checkout pipeline~~** ✅ **2026-06-12**
+   - `confirm_checkout` bug (ตรวจ `status = 'paid'` แต่ session เป็น `'created'`) → แก้เป็น `IN ('created', 'payment_pending', 'paid')`
+   - เพิ่ม `update_checkout_session_status()` RPC
+   - `CheckoutPage` / `CounterPosPage` บันทึก `payment_transaction` + `checkout_session_id` link + อัปเดต `order.status = 'paid'` เรียบร้อย
+
+3. **~~เติม Settlement ให้ครบ~~** ✅ **2026-06-12**
+   - migration `20260612123000_add_settlement_rpc_functions.sql` (`calculate_payment_allocation`, `create_payout_batch`, `get_settlement_summary`)
+   - Dart models: `MerchantAccount`, `PaymentAllocation`, `SettlementLedger`, `PayoutBatch`, `PayoutBatchLine`
+   - `PhaseTwoRepository` + `PhaseTwoNotifier` methods ครบ CRUD
+   - `CheckoutPage` / `CounterPosPage` auto-calculate allocation หลัง payment success
+   - fee split + payout batch end-to-end พร้อมใช้
+
+4. **~~เติม Delivery extensions~~** ✅ **2026-06-12**
+   - migration `20260612130000_add_delivery_extensions.sql` (`shipments`, `shipment_items`, `carrier_configs`, `delivery_exceptions`, `proof_of_deliveries`)
+   - RPC: `record_delivery_exception`, `create_shipment`, `complete_delivery_with_proof`, `update_route_stop_status`
+   - Dart models: `DeliveryRun`, `RouteStop`, `Shipment`, `CarrierConfig`, `DeliveryException`, `ProofOfDelivery`
+   - `PhaseTwoRepository` + `PhaseTwoNotifier` methods ครบ CRUD
+
+5. **~~ค่อยทำ Read Model / Analytics pipeline~~** ✅ **2026-06-12**
+   - migration `20260612130000_add_analytics_rpc_functions.sql` (`upsert_dashboard_snapshot`, `generate_daily_snapshot`, `get_snapshot_comparison`, `upsert_kpi_aggregation`, `advance_projection_checkpoint`)
+   - Dart models: `DashboardSnapshot`, `ProjectionCheckpoint`, `KpiAggregation`
+   - `PhaseTwoRepository` + `PhaseTwoNotifier` methods ครบ CRUD
+   - dashboard + KPI pipeline พร้อมใช้
+
+6. **~~ปิดความไม่สอดคล้องของ Reliability / Transaction sections~~** ✅ **2026-06-12**
+   - migration `20260612140000_add_reliability_transaction_tables.sql` (`transaction_audit_log`, `dead_letter_events`, `circuit_breaker_states`, `retry_attempts`, `rate_limit_policies`, `queue_job_audit`, `dead_letter_records`)
+   - RPC: `record_audit_log`, `update_circuit_breaker`, `create_retry_attempt`, `resolve_dead_letter`
+   - Dart models: `TransactionAuditLog`, `CircuitBreakerState`, `RetryAttempt`, `DeadLetterRecord`
+   - `PhaseZeroRepository` methods ครบ CRUD
+   - reliability infrastructure ครบ end-to-end พร้อมใช้
+
 ### ตาราง Canonical Phase Ordering (ปรับปรุงหลังวิเคราะห์ 7 Core)
 
 | ERP Phase | ชื่อ Phase | ระบบที่ต้องทำ | Steps ย่อย (จากเอกสารลูก) | เงื่อนไขขึ้นต่อ Phase ก่อน | ความปลอดภัย / ความเร็ว |
 |---|---|---|---|---|---|
 | **Phase 0** | Foundation & Identity + Reliability Core | Auth, User, Branch, Role/Permission, Organization Settings, **Reliability Core** | - Auth Service<br>- `organization_branches`, `organization_roles`, `employee_roles`, `role_module_permissions`<br>- **Reliability Step 1:** `idempotency_keys`, `outbox_events`, `inbox_events`, `transaction_contexts` | — | ถ้าไม่มี tenant isolation + reliability foundation ก่อน ระบบอื่นจะ checkout ไม่ปลอดภัย |
 
-> **สถานะ Phase 0 (2026-06-11):** ✅ COMPLETE
+> **สถานะ Phase 0 (2026-06-12):** ✅ COMPLETE
 > - **Migration Schema:** `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
 >   - `inbox_events`, `transaction_contexts` (Reliability Core)
 >   - `organization_roles`, `role_module_permissions`, `employee_roles` (RBAC)
 >   - `organization_feature_flags` (Feature Toggles)
 >   - RPC functions: `get_user_roles_and_permissions`, `get_profession_feature_flags`, `upsert_feature_flag`, `create_transaction_context`, `update_transaction_context`
+> - **Migration Schema:** `20260609180000_create_accounting_core_schema.sql` (existing)
+>   - `outbox_events`, `idempotency_keys` (Reliability Core)
+> - **Migration Schema:** `20260612140000_add_reliability_transaction_tables.sql` (new)
+>   - `transaction_audit_log`, `dead_letter_events` (Transaction Boundary)
+>   - `circuit_breaker_states`, `retry_attempts`, `rate_limit_policies`, `queue_job_audit`, `dead_letter_records` (Reliability Core)
+>   - RPC functions: `record_audit_log`, `update_circuit_breaker`, `create_retry_attempt`, `resolve_dead_letter`
 > - **Migration Seed:** `20260611150000_seed_phase_0_defaults.sql`
 >   - System roles: `owner`, `admin`, `manager`, `staff`, `cashier`, `accountant`
 >   - Default permissions ตามบทบาท (Owner=Full, Cashier=POS+Cart, etc.)
 >   - Default feature flags (ทั้งหมด disabled — secure by default)
 > - **Flutter Layer:**
->   - Models: `OrganizationRole`, `RoleModulePermission`, `EmployeeRole`, `OrganizationFeatureFlag`
->   - Repository: `PhaseZeroRepository` (RBAC + Feature Flags + Transaction Context)
+>   - Models: `OrganizationRole`, `RoleModulePermission`, `EmployeeRole`, `OrganizationFeatureFlag`, `TransactionAuditLog`, `CircuitBreakerState`, `RetryAttempt`, `DeadLetterRecord`
+>   - Repository: `PhaseZeroRepository` (RBAC + Feature Flags + Transaction Context + Reliability / Audit / Circuit Breaker / Dead Letter / Retry)
 >   - Provider: `PhaseZeroNotifier` + `phaseZeroProvider` (พร้อม `hasModulePermission()`, `isFeatureEnabled()`, `toggleFeatureFlag()`)
 >   - UI Pages: `RoleManagementPage`, `PermissionManagementPage`, `FeatureFlagsPage` (ใช้ GlassCard + responsive)
 >   - Routes: `/erp/roles`, `/erp/feature-flags`
 > - **Existing (ไม่ต้องสร้างใหม่):** `users`, `professions`, `organization_branches`, `outbox_events`, `idempotency_keys`
 | **Phase 1** | Data & Inflow | CRM + Procurement + **Inventory Core (พื้นฐาน)** + Product/Service Master | - CRM Step 1-3: Schema, Loyalty, Coupon<br>- Procurement Step 1: PR/PO Schema<br>- **Inventory Step 1:** `inventory_lots`, `warehouse_locations`, `stock_movements`, `inventory_reservations`<br>- Product/Service Catalog (shared master) | Phase 0 | รองรับ zero-mock integration test ได้เพราะมี customer + stock + reservation จริง |
 
-> **สถานะ Phase 1 (2026-06-11):** ✅ COMPLETE
+> **สถานะ Phase 1 (2026-06-12):** ✅ COMPLETE
 > - **Migration Schema:** `20260611160000_erp_phase_1_data_and_inflow.sql`
 >   - **Product Master:** `product_categories`, `products` (shared master สำหรับ POS + Cart)
 >   - **CRM:** `loyalty_tiers`, `customers`, `loyalty_points`, `coupons`, `coupon_redemptions`
 >   - **Procurement:** `suppliers`, `purchase_requisitions`, `purchase_orders`, `purchase_order_items`
 >   - **Inventory Core:** `warehouse_locations`, `inventory_lots` (FEFO), `stock_movements` (ledger), `inventory_reservations` (oversell prevention)
 >   - **RPC functions:** `get_product_stock_summary`, `get_product_total_stock`, `get_product_reserved_quantity`, `get_product_available_stock`, `create_inventory_reservation`, `update_customer_stats`
+> - **Migration Schema ใหม่:** `20260612150000_add_inventory_system.sql`
+>   - **Custom Medications:** `custom_medications` (tenant-specific products)
+>   - **Inventory Items:** `inventory_items` (stock summary + cost/selling/reorder)
+>   - **Stocktake:** `stocktake_configurations`, `stocktake_sessions`, `stocktake_lines`
+>   - **Adjustments & Transfers:** `stock_adjustments`, `inventory_transfers`, `inventory_transfer_lines`
+>   - **Alerts:** `inventory_alerts` (low_stock, expiry, reorder)
+>   - **RPC functions:** `deduct_inventory_fefo`, `create_stock_adjustment`, `create_inventory_transfer`, `complete_inventory_transfer`, `check_inventory_alerts`, `complete_stocktake_session`
 > - **Migration Seed:** `20260611161000_seed_phase_1_sample_data.sql`
 >   - Product categories, sample products, loyalty tiers, warehouse locations, sample suppliers
 > - **Flutter Layer:**
->   - Models: `Product`, `Customer`, `Supplier`, `InventoryLot`
->   - Repository: `PhaseOneRepository` (Products, Customers, Suppliers, Inventory, Coupons, POs)
->   - Provider: `PhaseOneNotifier` + `phaseOneProvider` (พร้อม helper `lowStockProducts`, `expiringLots`, `expiredLots`)
+>   - Models: `Product`, `Customer`, `Supplier`, `InventoryLot`, `InventoryItem`, `CustomMedication`, `StocktakeConfiguration`, `StocktakeSession`, `StockAdjustment`, `InventoryTransfer`, `InventoryAlert`
+>   - Repository: `PhaseOneRepository` (Products, Customers, Suppliers, Inventory, Coupons, POs + Inventory System CRUD + FEFO)
+>   - Provider: `PhaseOneNotifier` + `phaseOneProvider` (พร้อม helper `lowStockProducts`, `expiringLots`, `expiredLots`, `inventoryItems`, `inventoryAlerts`)
 >   - UI Pages: `ProductListPage`, `CustomerListPage`, `SupplierListPage`, `InventoryPage` (ใช้ GlassCard + TabBar)
 >   - Routes: `/erp/products`, `/erp/customers`, `/erp/suppliers`, `/erp/inventory`
-> - **Integration:** รองรับ zero-mock — product → inventory lot → stock movement → customer → สร้าง order ใน Phase 2 ได้ทันที
+> - **Integration:** รองรับ zero-mock — product → inventory lot → stock movement → customer → สร้าง order ใน Phase 2 ได้ทันที + FEFO deduction ตัดสต๊อกอัตโนมัติ
 | **Phase 2** | Core Commerce & Platform | **Commerce Core** + **Cart Core** + Payment + **Settlement Core (พื้นฐาน)** + **Delivery Core (พื้นฐาน)** | - **Commerce Step 1:** `orders`, `order_items`, `payment_transactions`, `checkout_sessions`<br>- **Cart Step 1-2:** `cart_sessions`, `cart_items`, `cart_merchant_groups` (split logic)<br>- **Settlement Step 1:** `vendor_contracts`, `merchant_accounts`, `payment_allocations` (fee/payout ตอน checkout)<br>- Payment Gateway Integration<br>- **Logistics Step 1:** `delivery_orders`, `riders`, `delivery_runs`, `route_stops`, `POD` | Phase 1 | POS ต้องมี Inventory Reservation + Settlement Contract ก่อนจึงไม่เกิด orphan order หรือ split ที่คำนวณไม่ได้ |
 
 > **สถานะ Phase 2 (2026-06-11):** ✅ COMPLETE
@@ -3062,27 +3176,33 @@ $$ LANGUAGE plpgsql;
 >   - 3 riders, 3 vendor contracts, 2 merchant accounts
 > - **Existing Tables (from POS Core):** `orders`, `order_items`, `unified_payments`, `shopping_carts`, `clinic_services`, `clinic_appointments`
 > - **Flutter Layer:**
->   - Models: `CheckoutSession`, `PaymentTransaction`, `DeliveryOrder`, `VendorContract`, `CartSession`, `Rider`
+>   - Models: `CheckoutSession`, `PaymentTransaction`, `DeliveryOrder`, `VendorContract`, `CartSession`, `CartItem`, `Rider`
 >   - Repository: `PhaseTwoRepository` (Checkout, Payment, Delivery, Settlement, Cart, Logistics)
->   - Provider: `PhaseTwoNotifier` + `phaseTwoProvider`
->   - UI Pages: `CartPage`, `CheckoutPage`, `OrderSuccessPage`, `CounterPosPage` (Mode B), `ClinicPosPage` (Mode C), `DeliveryOrdersPage`
->   - Routes: `/erp/cart`, `/erp/checkout`, `/erp/pos/counter`, `/erp/pos/clinic`, `/erp/delivery`, `/order/success`
+>   - Provider: `PhaseTwoNotifier` + `phaseTwoProvider` (รองรับ cart, checkout, payment, delivery, vendor contracts)
+>   - UI Pages: `CartPage`, `CheckoutPage`, `OrderSuccessPage`, `CounterPosPage` (Mode B), `ClinicPosPage` (Mode C), `DeliveryOrdersPage`, `VendorContractsPage`
+>   - Routes: `/erp/cart`, `/erp/checkout`, `/erp/pos/counter`, `/erp/pos/clinic`, `/erp/delivery`, `/erp/vendor-contracts`, `/order/success`
+>   - RPC เพิ่มเติม: `remove_item_from_cart`
 > - **Integration:** `CounterPosPage` → `orders`/`order_items` (existing POS Core); `CartPage` → `cart_sessions`/`cart_items` (normalized) + `shopping_carts` (JSONB fallback)
 | **Phase 3** | Finance & Operations + Read Model / Analytics Core | Accounting + HR + **Settlement Core (ส่วนขยาย)** + **Read Model / Analytics Core** | - Accounting Step 1: GL, AP/AR<br>- HR Step 1: Employee, Shift<br>- **Settlement Step 2:** `settlement_ledgers`, `payout_batches`, `payout_batch_lines`<br>- **Read Model Step 1:** `projection_checkpoints`, `dashboard_snapshots`, `kpi_aggregations` | Phase 2 | บันทึกรายได้/รายจ่าย + สร้าง read model ต้องมี order จริงก่อน แต่ไม่ต้องรอ clinical |
 
-> **สถานะ Phase 3 (2026-06-11):** ✅ COMPLETE
+> **สถานะ Phase 3 (2026-06-12):** ✅ COMPLETE
 > - **Migration Schema:** `20260611180000_erp_phase_3_finance_operations.sql`
 >   - **Accounting Core:** `chart_of_accounts`, `gl_entries`, `accounts_receivable`, `accounts_payable`
 >   - **HR Core:** `employees`, `shifts`
 >   - **Settlement Step 2:** `settlement_ledgers`, `payout_batches`, `payout_batch_lines`
 >   - **Read Model Core:** `projection_checkpoints`, `dashboard_snapshots`, `kpi_aggregations`
 >   - RPC: `create_gl_from_order`, `upsert_dashboard_snapshot`
+> - **Migration Schema ใหม่:** `20260612080000_add_payment_channels_and_tax_validation.sql`
+>   - **Payment Channels Core:** `payment_channels` (channel_code, channel_name, channel_type, is_enabled, is_default, config JSONB, fee_percent, display_order, icon_name)
+>   - **RLS:** `payment_channels_select` (public) + `payment_channels_modify` (owner/admin via `employee_roles`)
+>   - **RPC:** `seed_default_payment_channels(p_profession_id)` — seed cash/PromptPay/credit_card
+>   - **Validation:** `validate_branch_tax_code(p_branch_tax_code TEXT)` — ตัวเลข 5 หลัก (00000 = สำนักงานใหญ่)
 > - **Flutter Layer:**
 >   - Models: `Employee`, `GlEntry`, `DashboardSnapshot`
 >   - Repository: `PhaseThreeRepository` (HR, GL, Dashboard Snapshots)
 >   - Provider: `PhaseThreeNotifier` + `phaseThreeProvider`
->   - UI Pages: `EmployeeListPage`, `GlEntriesPage`, `DashboardAnalyticsPage`
->   - Routes: `/erp/employees`, `/erp/gl-entries`, `/erp/analytics`
+>   - UI Pages: `EmployeeListPage`, `GlEntriesPage`, `DashboardAnalyticsPage`, `PaymentChannelsPage`
+>   - Routes: `/erp/employees`, `/erp/gl-entries`, `/erp/analytics`, `/erp/payment-channels`
 > - **Integration:** `create_gl_from_order()` auto-debits cash + credits revenue จาก `orders.grand_total`; `CounterPosPage` → `OrderRepository.createOrderFromCart()` → `orders` + `order_items` → สร้าง GL อัตโนมัติ
 > - **Compile Status:** `flutter run` ✅ (exit code 0) — SM X135G, ERP Dashboard "แพทย์ทั่วไป" โหลดสำเร็จ
 | **Phase 4** | Clinical & Advanced | HIS + LIS + Telemedicine + CDP | - HIS Step 1: EMR, OPD<br>- LIS Step 1: External Lab API<br>- Telemedicine Step 1: Video/Chat Integration<br>- CDP Step 1: Customer cohort, analytics enrichment | Phase 1-3 | ระบบ clinical ซับซ้อน ควรต่อยอดหลัง core commerce + read model พร้อม |
@@ -3190,6 +3310,7 @@ $$ LANGUAGE plpgsql;
 
 ```sql
 -- 1. แพลนการสมัคร (สร้างโดย Sheserved Admin / ERP Service Manager)
+> **สถานะ:** 🔴 ยังไม่ implement — เป็น schema แนะนำสำหรับอนาคต (subscription plans, quotas, billing)
 CREATE TABLE subscription_plans (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   plan_name         TEXT NOT NULL,                          -- เช่น 'Starter', 'Pro', 'Enterprise'

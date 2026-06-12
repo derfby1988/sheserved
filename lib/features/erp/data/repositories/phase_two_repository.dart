@@ -5,7 +5,22 @@ import '../models/payment_transaction.dart';
 import '../models/delivery_order.dart';
 import '../models/vendor_contract.dart';
 import '../models/cart_session.dart';
+import '../models/cart_item.dart';
+import '../models/payment_channel.dart';
 import '../models/rider.dart';
+import '../models/merchant_account.dart';
+import '../models/payment_allocation.dart';
+import '../models/payout_batch.dart';
+import '../models/payout_batch_line.dart';
+import '../models/delivery_run.dart';
+import '../models/route_stop.dart';
+import '../models/shipment.dart';
+import '../models/carrier_config.dart';
+import '../models/delivery_exception.dart';
+import '../models/proof_of_delivery.dart';
+import '../models/dashboard_snapshot.dart';
+import '../models/projection_checkpoint.dart';
+import '../models/kpi_aggregation.dart';
 
 /// Repository สำหรับ ERP Phase 2 — Core Commerce & Platform
 /// ครอบคลุม: Checkout, Payment, Delivery
@@ -70,6 +85,27 @@ class PhaseTwoRepository {
       return response as bool? ?? false;
     } catch (e, st) {
       debugPrint('[Phase2Repo] confirmCheckout error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateCheckoutSessionStatus(
+    String sessionId,
+    String status, {
+    String? paymentMethod,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'update_checkout_session_status',
+        params: {
+          'p_session_id': sessionId,
+          'p_status': status,
+          'p_payment_method': paymentMethod,
+        },
+      );
+      return response as bool? ?? false;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] updateCheckoutSessionStatus error: $e');
       return false;
     }
   }
@@ -201,6 +237,118 @@ class PhaseTwoRepository {
     }
   }
 
+  Future<List<MerchantAccount>> getMerchantAccounts(String professionId) async {
+    try {
+      final response = await _client
+          .from('merchant_accounts')
+          .select()
+          .eq('profession_id', professionId)
+          .order('is_primary', ascending: false);
+      return (response as List)
+          .map((e) => MerchantAccount.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getMerchantAccounts error: $e');
+      return [];
+    }
+  }
+
+  Future<List<PaymentAllocation>> getPaymentAllocationsByProfession(String professionId) async {
+    try {
+      final response = await _client
+          .from('payment_allocations')
+          .select()
+          .eq('profession_id', professionId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => PaymentAllocation.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getPaymentAllocationsByProfession error: $e');
+      return [];
+    }
+  }
+
+  Future<List<PaymentAllocation>> getPaymentAllocationsByOrder(String orderId) async {
+    try {
+      final response = await _client
+          .from('payment_allocations')
+          .select()
+          .eq('order_id', orderId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => PaymentAllocation.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getPaymentAllocationsByOrder error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> createPayoutBatch(
+    String professionId, {
+    String? merchantAccountId,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'create_payout_batch',
+        params: {
+          'p_profession_id': professionId,
+          'p_merchant_account_id': merchantAccountId,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] createPayoutBatch error: $e');
+      return null;
+    }
+  }
+
+  Future<List<PayoutBatch>> getPayoutBatches(String professionId) async {
+    try {
+      final response = await _client
+          .from('payout_batches')
+          .select()
+          .eq('profession_id', professionId)
+          .order('batch_date', ascending: false);
+      return (response as List)
+          .map((e) => PayoutBatch.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getPayoutBatches error: $e');
+      return [];
+    }
+  }
+
+  Future<List<PayoutBatchLine>> getPayoutBatchLines(String batchId) async {
+    try {
+      final response = await _client
+          .from('payout_batch_lines')
+          .select()
+          .eq('payout_batch_id', batchId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => PayoutBatchLine.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getPayoutBatchLines error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getSettlementSummary(String professionId) async {
+    try {
+      final response = await _client.rpc(
+        'get_settlement_summary',
+        params: {'p_profession_id': professionId},
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getSettlementSummary error: $e');
+      return null;
+    }
+  }
+
   // ========================
   // CART CORE
   // ========================
@@ -260,6 +408,37 @@ class PhaseTwoRepository {
     }
   }
 
+  Future<List<CartItem>> getCartItems(String cartSessionId) async {
+    try {
+      final response = await _client
+          .from('cart_items')
+          .select()
+          .eq('cart_session_id', cartSessionId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => CartItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getCartItems error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> removeItemFromCart(String cartItemId) async {
+    try {
+      final response = await _client.rpc(
+        'remove_item_from_cart',
+        params: {
+          'p_cart_item_id': cartItemId,
+        },
+      );
+      return response as bool? ?? false;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] removeItemFromCart error: $e');
+      return false;
+    }
+  }
+
   // ========================
   // LOGISTICS CORE
   // ========================
@@ -299,6 +478,412 @@ class PhaseTwoRepository {
     } catch (e, st) {
       debugPrint('[Phase2Repo] assignDeliveryToRider error: $e');
       return null;
+    }
+  }
+
+  // ------------------------
+  // Delivery Extensions
+  // ------------------------
+
+  Future<List<DeliveryRun>> getDeliveryRuns(String professionId) async {
+    try {
+      final response = await _client
+          .from('delivery_runs')
+          .select()
+          .eq('profession_id', professionId)
+          .order('run_date', ascending: false);
+      return (response as List)
+          .map((e) => DeliveryRun.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getDeliveryRuns error: $e');
+      return [];
+    }
+  }
+
+  Future<List<RouteStop>> getRouteStops(String deliveryRunId) async {
+    try {
+      final response = await _client
+          .from('route_stops')
+          .select()
+          .eq('delivery_run_id', deliveryRunId)
+          .order('stop_sequence', ascending: true);
+      return (response as List)
+          .map((e) => RouteStop.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getRouteStops error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> updateRouteStopStatus(String routeStopId, String status) async {
+    try {
+      final response = await _client.rpc(
+        'update_route_stop_status',
+        params: {
+          'p_route_stop_id': routeStopId,
+          'p_status': status,
+        },
+      );
+      return response as bool? ?? false;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] updateRouteStopStatus error: $e');
+      return false;
+    }
+  }
+
+  Future<String?> createShipment({
+    required String professionId,
+    required String deliveryOrderId,
+    String? carrierConfigId,
+    String? trackingNumber,
+    double weightKg = 0,
+    Map<String, dynamic> dimensionsCm = const {},
+    double shippingCost = 0,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'create_shipment',
+        params: {
+          'p_profession_id': professionId,
+          'p_delivery_order_id': deliveryOrderId,
+          'p_carrier_config_id': carrierConfigId,
+          'p_tracking_number': trackingNumber,
+          'p_weight_kg': weightKg,
+          'p_dimensions_cm': dimensionsCm,
+          'p_shipping_cost': shippingCost,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] createShipment error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Shipment>> getShipments(String professionId) async {
+    try {
+      final response = await _client
+          .from('shipments')
+          .select()
+          .eq('profession_id', professionId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => Shipment.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getShipments error: $e');
+      return [];
+    }
+  }
+
+  Future<List<CarrierConfig>> getCarrierConfigs(String professionId) async {
+    try {
+      final response = await _client
+          .from('carrier_configs')
+          .select()
+          .eq('profession_id', professionId)
+          .eq('is_active', true)
+          .order('carrier_name');
+      return (response as List)
+          .map((e) => CarrierConfig.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getCarrierConfigs error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> recordDeliveryException({
+    required String professionId,
+    required String deliveryOrderId,
+    required String exceptionType,
+    String severity = 'medium',
+    String? description,
+    String? photoUrl,
+    double? gpsLat,
+    double? gpsLng,
+    String? routeStopId,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'record_delivery_exception',
+        params: {
+          'p_profession_id': professionId,
+          'p_delivery_order_id': deliveryOrderId,
+          'p_exception_type': exceptionType,
+          'p_severity': severity,
+          'p_description': description,
+          'p_photo_url': photoUrl,
+          'p_gps_lat': gpsLat,
+          'p_gps_lng': gpsLng,
+          'p_route_stop_id': routeStopId,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] recordDeliveryException error: $e');
+      return null;
+    }
+  }
+
+  Future<List<DeliveryException>> getDeliveryExceptions(String deliveryOrderId) async {
+    try {
+      final response = await _client
+          .from('delivery_exceptions')
+          .select()
+          .eq('delivery_order_id', deliveryOrderId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => DeliveryException.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getDeliveryExceptions error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> completeDeliveryWithProof({
+    required String deliveryOrderId,
+    required String proofType,
+    String? proofUrl,
+    Map<String, dynamic> metadata = const {},
+    String? verifiedBy,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'complete_delivery_with_proof',
+        params: {
+          'p_delivery_order_id': deliveryOrderId,
+          'p_proof_type': proofType,
+          'p_proof_url': proofUrl,
+          'p_metadata': metadata,
+          'p_verified_by': verifiedBy,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] completeDeliveryWithProof error: $e');
+      return null;
+    }
+  }
+
+  Future<List<ProofOfDelivery>> getProofOfDeliveries(String deliveryOrderId) async {
+    try {
+      final response = await _client
+          .from('proof_of_deliveries')
+          .select()
+          .eq('delivery_order_id', deliveryOrderId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => ProofOfDelivery.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getProofOfDeliveries error: $e');
+      return [];
+    }
+  }
+
+  // ========================
+  // ANALYTICS / READ MODEL
+  // ========================
+
+  Future<List<DashboardSnapshot>> getDashboardSnapshots(String professionId, {String? snapshotType}) async {
+    try {
+      var query = _client
+          .from('dashboard_snapshots')
+          .select()
+          .eq('profession_id', professionId);
+      if (snapshotType != null) {
+        query = query.eq('snapshot_type', snapshotType);
+      }
+      final response = await query
+          .order('snapshot_date', ascending: false);
+      return (response as List)
+          .map((e) => DashboardSnapshot.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getDashboardSnapshots error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> upsertDashboardSnapshot({
+    required String professionId,
+    required String snapshotType,
+    required Map<String, dynamic> metrics,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'upsert_dashboard_snapshot',
+        params: {
+          'p_profession_id': professionId,
+          'p_snapshot_type': snapshotType,
+          'p_metrics': metrics,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] upsertDashboardSnapshot error: $e');
+      return null;
+    }
+  }
+
+  Future<String?> generateDailySnapshot(String professionId) async {
+    try {
+      final response = await _client.rpc(
+        'generate_daily_snapshot',
+        params: {'p_profession_id': professionId},
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] generateDailySnapshot error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getSnapshotComparison(String professionId, {String snapshotType = 'daily'}) async {
+    try {
+      final response = await _client.rpc(
+        'get_snapshot_comparison',
+        params: {
+          'p_profession_id': professionId,
+          'p_snapshot_type': snapshotType,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getSnapshotComparison error: $e');
+      return null;
+    }
+  }
+
+  Future<List<KpiAggregation>> getKpiAggregations(String professionId, {String? category}) async {
+    try {
+      var query = _client
+          .from('kpi_aggregations')
+          .select()
+          .eq('profession_id', professionId);
+      if (category != null) {
+        query = query.eq('kpi_category', category);
+      }
+      final response = await query
+          .order('period_end', ascending: false);
+      return (response as List)
+          .map((e) => KpiAggregation.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getKpiAggregations error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> upsertKpiAggregation({
+    required String professionId,
+    required String kpiName,
+    required String kpiCategory,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double value,
+    double? targetValue,
+    String unit = 'count',
+    bool isBetterHigher = true,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'upsert_kpi_aggregation',
+        params: {
+          'p_profession_id': professionId,
+          'p_kpi_name': kpiName,
+          'p_kpi_category': kpiCategory,
+          'p_period_start': periodStart.toIso8601String().split('T')[0],
+          'p_period_end': periodEnd.toIso8601String().split('T')[0],
+          'p_value': value,
+          'p_target_value': targetValue,
+          'p_unit': unit,
+          'p_is_better_higher': isBetterHigher,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] upsertKpiAggregation error: $e');
+      return null;
+    }
+  }
+
+  Future<List<ProjectionCheckpoint>> getProjectionCheckpoints(String professionId) async {
+    try {
+      final response = await _client
+          .from('projection_checkpoints')
+          .select()
+          .eq('profession_id', professionId)
+          .order('updated_at', ascending: false);
+      return (response as List)
+          .map((e) => ProjectionCheckpoint.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getProjectionCheckpoints error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> advanceProjectionCheckpoint({
+    required String professionId,
+    required String projectionName,
+    String? lastEventId,
+    int lastEventSeq = 0,
+    Map<String, dynamic> stateSnapshot = const {},
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'advance_projection_checkpoint',
+        params: {
+          'p_profession_id': professionId,
+          'p_projection_name': projectionName,
+          'p_last_event_id': lastEventId,
+          'p_last_event_seq': lastEventSeq,
+          'p_state_snapshot': stateSnapshot,
+        },
+      );
+      return response as String?;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] advanceProjectionCheckpoint error: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // PAYMENT CHANNELS
+  // ========================
+
+  Future<List<PaymentChannel>> getPaymentChannels(String professionId) async {
+    try {
+      final response = await _client
+          .from('payment_channels')
+          .select()
+          .eq('profession_id', professionId)
+          .eq('is_enabled', true)
+          .order('display_order', ascending: true);
+      return (response as List)
+          .map((e) => PaymentChannel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] getPaymentChannels error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> updatePaymentChannelEnabled(String channelId, bool enabled) async {
+    try {
+      await _client
+          .from('payment_channels')
+          .update({'is_enabled': enabled, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', channelId);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase2Repo] updatePaymentChannelEnabled error: $e');
+      return false;
     }
   }
 }

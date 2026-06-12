@@ -2,13 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/models/dashboard_theme.dart';
-import '../../data/repositories/order_repository.dart';
 import '../providers/phase_two_provider.dart';
 import '../widgets/glass_card.dart';
-
-final _orderRepoProvider = Provider<OrderRepository>((ref) {
-  return OrderRepository(Supabase.instance.client);
-});
 
 class CartPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -23,8 +18,6 @@ class CartPage extends ConsumerStatefulWidget {
 }
 
 class _CartPageState extends ConsumerState<CartPage> {
-  List<Map<String, dynamic>> _items = [];
-  bool _isLoading = true;
   bool _isProcessing = false;
 
   @override
@@ -34,26 +27,9 @@ class _CartPageState extends ConsumerState<CartPage> {
   }
 
   Future<void> _loadCart() async {
-    final repo = ref.read(_orderRepoProvider);
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    final cart = await repo.getShoppingCart(user.id);
-    final items = (cart?['items'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-    setState(() {
-      _items = items;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _saveCart() async {
-    final repo = ref.read(_orderRepoProvider);
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-    await repo.upsertShoppingCart(user.id, _items);
+    await ref.read(phaseTwoProvider.notifier).loadCart(user.id);
   }
 
   @override
@@ -66,9 +42,9 @@ class _CartPageState extends ConsumerState<CartPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: _isLoading
+      body: state.isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
+          : state.cartItems.isEmpty
               ? const Center(
                   child: Text(
                     'ตะกร้าว่างเปล่า\nเพิ่มสินค้าจากหน้าสินค้า',
@@ -78,19 +54,21 @@ class _CartPageState extends ConsumerState<CartPage> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _items.length,
+                  itemCount: state.cartItems.length,
                   itemBuilder: (context, index) {
-                    final item = _items[index];
+                    final item = state.cartItems[index];
                     return _CartItemCard(
                       item: item,
-                      onRemove: () {
-                        setState(() => _items.removeAt(index));
-                        _saveCart();
+                      onRemove: () async {
+                        final success = await ref.read(phaseTwoProvider.notifier).removeItemFromCart(item.id);
+                        if (!success && mounted) {
+                          _showSnackBar('ลบสินค้าล้มเหลว');
+                        }
                       },
                     );
                   },
                 ),
-      bottomNavigationBar: _items.isEmpty || _isLoading
+      bottomNavigationBar: state.cartItems.isEmpty || state.isLoading
           ? null
           : SafeArea(
               child: Padding(
@@ -107,7 +85,7 @@ class _CartPageState extends ConsumerState<CartPage> {
                         children: [
                           const Text('รวมทั้งสิ้น', style: TextStyle(fontSize: 16)),
                           Text(
-                            '฿${_total.toStringAsFixed(2)}',
+                            '฿${state.cartTotal.toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -119,8 +97,8 @@ class _CartPageState extends ConsumerState<CartPage> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _isProcessing ? null : () => _checkout(),
-                          child: _isProcessing
+                          onPressed: state.isSaving || _isProcessing ? null : () => _checkout(),
+                          child: state.isSaving || _isProcessing
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
@@ -137,57 +115,46 @@ class _CartPageState extends ConsumerState<CartPage> {
     );
   }
 
-  double get _total {
-    return _items.fold(0, (sum, item) {
-      final price = (item['price'] as num?)?.toDouble() ?? 0;
-      final qty = (item['quantity'] as int?) ?? 1;
-      return sum + (price * qty);
-    });
-  }
-
   Future<void> _checkout() async {
-    if (_items.isEmpty) return;
+    final state = ref.read(phaseTwoProvider);
+    if (state.cartItems.isEmpty) return;
 
-    final repo = ref.read(_orderRepoProvider);
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนทำรายการ')),
-      );
+      _showSnackBar('กรุณาเข้าสู่ระบบก่อนทำรายการ');
       return;
     }
 
     setState(() => _isProcessing = true);
 
-    final order = await repo.createOrderFromCart(
+    // Create checkout session from cart
+    final cartSnapshot = state.cartItems.map((i) => i.toJson()).toList();
+    final session = await ref.read(phaseTwoProvider.notifier).startCheckout(
       professionId: widget.professionId,
       userId: user.id,
-      cartItems: _items,
-      posMode: 'mode_a',
+      cartSnapshot: {'items': cartSnapshot},
+      totalAmount: state.cartTotal,
     );
 
     setState(() => _isProcessing = false);
 
-    if (order != null && mounted) {
-      // Clear cart
-      setState(() => _items.clear());
-      await _saveCart();
-
-      // Navigate to checkout or success
+    if (session != null && mounted) {
       Navigator.of(context).pushNamed(
         '/erp/checkout',
-        arguments: {'professionId': widget.professionId, 'orderId': order.id},
+        arguments: {'professionId': widget.professionId, 'sessionId': session.id},
       );
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('สร้างรายการขายล้มเหลว กรุณาลองใหม่')),
-      );
+      _showSnackBar('สร้าง checkout session ล้มเหลว กรุณาลองใหม่');
     }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
 class _CartItemCard extends StatelessWidget {
-  final Map<String, dynamic> item;
+  final dynamic item;
   final VoidCallback onRemove;
 
   const _CartItemCard({
@@ -197,9 +164,9 @@ class _CartItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = item['name'] as String? ?? 'สินค้า';
-    final price = (item['price'] as num?)?.toDouble() ?? 0;
-    final qty = (item['quantity'] as int?) ?? 1;
+    final name = item.productName;
+    final price = item.unitPrice;
+    final qty = item.quantity;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

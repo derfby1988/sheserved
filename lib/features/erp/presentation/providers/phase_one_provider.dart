@@ -6,6 +6,13 @@ import '../../data/models/customer.dart';
 import '../../data/models/inventory_lot.dart';
 import '../../data/models/product.dart';
 import '../../data/models/supplier.dart';
+import '../../data/models/inventory_item.dart';
+import '../../data/models/custom_medication.dart';
+import '../../data/models/stocktake_configuration.dart';
+import '../../data/models/stocktake_session.dart';
+import '../../data/models/stock_adjustment.dart';
+import '../../data/models/inventory_transfer.dart';
+import '../../data/models/inventory_alert.dart';
 import '../../data/repositories/phase_one_repository.dart';
 
 // ========================
@@ -32,6 +39,15 @@ class PhaseOneState {
   final List<Map<String, dynamic>> coupons;
   final List<Map<String, dynamic>> purchaseOrders;
 
+  // Inventory System
+  final List<InventoryItem> inventoryItems;
+  final List<CustomMedication> customMedications;
+  final List<StocktakeConfiguration> stocktakeConfigs;
+  final List<StocktakeSession> stocktakeSessions;
+  final List<StockAdjustment> stockAdjustments;
+  final List<InventoryTransfer> inventoryTransfers;
+  final List<InventoryAlert> inventoryAlerts;
+
   // Selected
   final Product? selectedProduct;
   final List<Map<String, dynamic>> selectedProductStockSummary;
@@ -47,6 +63,13 @@ class PhaseOneState {
     this.inventoryLots = const [],
     this.coupons = const [],
     this.purchaseOrders = const [],
+    this.inventoryItems = const [],
+    this.customMedications = const [],
+    this.stocktakeConfigs = const [],
+    this.stocktakeSessions = const [],
+    this.stockAdjustments = const [],
+    this.inventoryTransfers = const [],
+    this.inventoryAlerts = const [],
     this.selectedProduct,
     this.selectedProductStockSummary = const [],
     this.selectedProductLots = const [],
@@ -63,6 +86,13 @@ class PhaseOneState {
     List<InventoryLot>? inventoryLots,
     List<Map<String, dynamic>>? coupons,
     List<Map<String, dynamic>>? purchaseOrders,
+    List<InventoryItem>? inventoryItems,
+    List<CustomMedication>? customMedications,
+    List<StocktakeConfiguration>? stocktakeConfigs,
+    List<StocktakeSession>? stocktakeSessions,
+    List<StockAdjustment>? stockAdjustments,
+    List<InventoryTransfer>? inventoryTransfers,
+    List<InventoryAlert>? inventoryAlerts,
     Product? selectedProduct,
     bool clearSelectedProduct = false,
     List<Map<String, dynamic>>? selectedProductStockSummary,
@@ -80,6 +110,13 @@ class PhaseOneState {
       inventoryLots: inventoryLots ?? this.inventoryLots,
       coupons: coupons ?? this.coupons,
       purchaseOrders: purchaseOrders ?? this.purchaseOrders,
+      inventoryItems: inventoryItems ?? this.inventoryItems,
+      customMedications: customMedications ?? this.customMedications,
+      stocktakeConfigs: stocktakeConfigs ?? this.stocktakeConfigs,
+      stocktakeSessions: stocktakeSessions ?? this.stocktakeSessions,
+      stockAdjustments: stockAdjustments ?? this.stockAdjustments,
+      inventoryTransfers: inventoryTransfers ?? this.inventoryTransfers,
+      inventoryAlerts: inventoryAlerts ?? this.inventoryAlerts,
       selectedProduct: clearSelectedProduct ? null : (selectedProduct ?? this.selectedProduct),
       selectedProductStockSummary: selectedProductStockSummary ?? this.selectedProductStockSummary,
       selectedProductLots: selectedProductLots ?? this.selectedProductLots,
@@ -318,6 +355,164 @@ class PhaseOneNotifier extends StateNotifier<PhaseOneState> {
     } catch (e, st) {
       debugPrint('[Phase1] loadPurchaseOrders ERROR: $e');
       state = state.copyWith(isLoading: false, errorMessage: 'โหลดใบสั่งซื้อล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // INVENTORY ITEMS
+  // ========================
+
+  Future<void> loadInventoryItems(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final items = await _repository.getInventoryItems(professionId);
+      state = state.copyWith(isLoading: false, inventoryItems: items);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadInventoryItems ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดสต็อกล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadLowStockItems(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final items = await _repository.getLowStockItems(professionId);
+      state = state.copyWith(isLoading: false, inventoryItems: items);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadLowStockItems ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดสินค้าใกล้หมดล้มเหลว: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> deductInventoryFefo({
+    required String professionId,
+    required String inventoryItemId,
+    required int quantity,
+    String referenceType = 'sale',
+    String? referenceId,
+  }) async {
+    try {
+      return await _repository.deductInventoryFefo(
+        professionId: professionId,
+        inventoryItemId: inventoryItemId,
+        quantity: quantity,
+        referenceType: referenceType,
+        referenceId: referenceId,
+      );
+    } catch (e, st) {
+      debugPrint('[Phase1] deductInventoryFefo ERROR: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // CUSTOM MEDICATIONS
+  // ========================
+
+  Future<void> loadCustomMedications(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final meds = await _repository.getCustomMedications(professionId);
+      state = state.copyWith(isLoading: false, customMedications: meds);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadCustomMedications ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดยาเฉพาะล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // STOCKTAKE
+  // ========================
+
+  Future<void> loadStocktakeConfigurations(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final configs = await _repository.getStocktakeConfigurations(professionId);
+      state = state.copyWith(isLoading: false, stocktakeConfigs: configs);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadStocktakeConfigurations ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดตั้งค่าตรวจนับล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadStocktakeSessions(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final sessions = await _repository.getStocktakeSessions(professionId);
+      state = state.copyWith(isLoading: false, stocktakeSessions: sessions);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadStocktakeSessions ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรอบตรวจนับล้มเหลว: $e');
+    }
+  }
+
+  Future<int?> completeStocktakeSession({
+    required String sessionId,
+    String? approvedBy,
+  }) async {
+    try {
+      final count = await _repository.completeStocktakeSession(
+        sessionId: sessionId,
+        approvedBy: approvedBy,
+      );
+      return count;
+    } catch (e, st) {
+      debugPrint('[Phase1] completeStocktakeSession ERROR: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // STOCK ADJUSTMENTS
+  // ========================
+
+  Future<void> loadStockAdjustments(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final adjustments = await _repository.getStockAdjustments(professionId);
+      state = state.copyWith(isLoading: false, stockAdjustments: adjustments);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadStockAdjustments ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดการปรับสต็อกล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // INVENTORY TRANSFERS
+  // ========================
+
+  Future<void> loadInventoryTransfers(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final transfers = await _repository.getInventoryTransfers(professionId);
+      state = state.copyWith(isLoading: false, inventoryTransfers: transfers);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadInventoryTransfers ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดการโอนย้ายล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // INVENTORY ALERTS
+  // ========================
+
+  Future<void> loadInventoryAlerts(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final alerts = await _repository.getInventoryAlerts(professionId);
+      state = state.copyWith(isLoading: false, inventoryAlerts: alerts);
+    } catch (e, st) {
+      debugPrint('[Phase1] loadInventoryAlerts ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดแจ้งเตือนสต็อกล้มเหลว: $e');
+    }
+  }
+
+  Future<int> checkInventoryAlerts(String professionId) async {
+    try {
+      return await _repository.checkInventoryAlerts(professionId);
+    } catch (e, st) {
+      debugPrint('[Phase1] checkInventoryAlerts ERROR: $e');
+      return 0;
     }
   }
 }

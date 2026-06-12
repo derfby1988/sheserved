@@ -4,11 +4,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../../data/models/order.dart';
 import '../../data/repositories/order_repository.dart';
+import '../../data/repositories/phase_two_repository.dart';
 import '../providers/phase_one_provider.dart';
 import '../widgets/glass_card.dart';
 
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {
   return OrderRepository(Supabase.instance.client);
+});
+
+final _phaseTwoRepoProvider = Provider<PhaseTwoRepository>((ref) {
+  return PhaseTwoRepository(Supabase.instance.client);
 });
 
 /// Counter POS Page (Mode B) — ขายหน้าร้านแบบเคาน์เตอร์
@@ -183,6 +188,7 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
     if (_cartItems.isEmpty) return;
 
     final repo = ref.read(orderRepositoryProvider);
+    final phaseOneRepo = ref.read(phaseOneRepositoryProvider);
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -193,6 +199,35 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
 
     setState(() => _isProcessing = true);
 
+    // --- 1. Reserve stock ---
+    final reservationIds = <String>[];
+    for (final item in _cartItems) {
+      final productId = item['id'] as String? ?? '';
+      final qty = (item['quantity'] as int?) ?? 1;
+      final name = item['name'] as String? ?? '';
+
+      final rid = await phaseOneRepo.createInventoryReservation(
+        professionId: widget.professionId,
+        productId: productId,
+        quantity: qty,
+        reservationType: 'order',
+        referenceId: user.id,
+        expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      );
+      if (rid == null) {
+        for (final existingId in reservationIds) {
+          await phaseOneRepo.releaseStockReservation(existingId);
+        }
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('สินค้า $name มีไม่เพียงพอ')),
+        );
+        return;
+      }
+      reservationIds.add(rid);
+    }
+
+    // 2. Create order
     final order = await repo.createOrderFromCart(
       professionId: widget.professionId,
       userId: user.id,
@@ -200,9 +235,60 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
       posMode: 'mode_b_counter',
     );
 
+    if (order == null && mounted) {
+      for (final rid in reservationIds) {
+        await phaseOneRepo.releaseStockReservation(rid);
+      }
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('สร้างรายการขายล้มเหลว กรุณาลองใหม่')),
+      );
+      return;
+    }
+
+    // 3. Create payment transaction (POS cash = immediate completed)
+    final phaseTwoRepo = ref.read(_phaseTwoRepoProvider);
+    double totalAmount = 0;
+    for (final item in _cartItems) {
+      final price = (item['price'] as num?)?.toDouble() ?? 0;
+      final qty = (item['quantity'] as int?) ?? 1;
+      totalAmount += price * qty;
+    }
+    final vat = totalAmount * 0.07;
+    final grandTotal = totalAmount + vat;
+
+    final txn = await phaseTwoRepo.createPaymentTransaction({
+      'profession_id': widget.professionId,
+      'order_id': order!.id,
+      'user_id': user.id,
+      'amount': grandTotal,
+      'payment_method': 'cash',
+      'status': 'completed',
+    });
+
+    // 3a. Auto-calculate settlement allocation (fee split)
+    if (txn != null) {
+      await phaseTwoRepo.calculatePaymentAllocation(
+        orderId: order.id,
+        paymentTxnId: txn.id,
+        grossAmount: grandTotal,
+      );
+    }
+
+    // 4. Update order status to paid
+    await repo.updateOrderStatus(order.id, 'paid');
+
+    // 5. Deduct stock after order created
+    for (final rid in reservationIds) {
+      await phaseOneRepo.deductStock(
+        reservationId: rid,
+        orderId: order.id,
+      );
+    }
+
     setState(() => _isProcessing = false);
 
-    if (order != null && mounted) {
+    if (mounted) {
       // Clear cart
       setState(() => _cartItems.clear());
 
@@ -210,10 +296,6 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
       Navigator.of(context).pushNamed(
         '/order/success',
         arguments: {'orderId': order.id},
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('สร้างรายการขายล้มเหลว กรุณาลองใหม่')),
       );
     }
   }

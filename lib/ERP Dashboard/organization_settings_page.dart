@@ -116,12 +116,18 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
     final ctrls = _branchControllers[branch.id];
     if (ctrls == null) return;
 
+    final branchTaxCode = ctrls.branchTaxCode.text.trim();
+    if (branchTaxCode.isNotEmpty && !_isValidBranchTaxCode(branchTaxCode)) {
+      _showSnackBar('รหัสสาขาภาษีต้องเป็นตัวเลข 5 หลัก (เช่น 00000, 00001)', isError: true);
+      return;
+    }
+
     final updated = await ref.read(organizationSettingsProvider.notifier).saveBranch(
       branchId: branch.id,
       branchCode: ctrls.code.text.trim(),
       branchName: ctrls.name.text.trim(),
       taxId: ctrls.taxId.text.trim().isEmpty ? null : ctrls.taxId.text.trim(),
-      branchTaxCode: ctrls.branchTaxCode.text.trim().isEmpty ? null : ctrls.branchTaxCode.text.trim(),
+      branchTaxCode: branchTaxCode.isEmpty ? null : branchTaxCode,
       address: ctrls.address.text.trim().isEmpty ? null : ctrls.address.text.trim(),
       phone: ctrls.phone.text.trim().isEmpty ? null : ctrls.phone.text.trim(),
       email: ctrls.email.text.trim().isEmpty ? null : ctrls.email.text.trim(),
@@ -172,6 +178,13 @@ class _OrganizationSettingsPageState extends ConsumerState<OrganizationSettingsP
         margin: const EdgeInsets.all(16),
       ),
     );
+  }
+
+  /// Validate Thai branch tax code format (5 digits, e.g., 00000 = head office)
+  bool _isValidBranchTaxCode(String value) {
+    if (value.isEmpty) return true; // optional
+    final regex = RegExp(r'^[0-9]{5}$');
+    return regex.hasMatch(value);
   }
 
   @override
