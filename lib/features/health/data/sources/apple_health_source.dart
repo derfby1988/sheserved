@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'health_data_source.dart';
 import '../models/device_health_metric.dart';
@@ -27,7 +28,7 @@ class AppleHealthSource implements HealthDataSource {
   String get sourceName => 'Apple Health';
 
   @override
-  Future<bool> isAvailable() async => Platform.isIOS;
+  Future<bool> isAvailable() async => !kIsWeb && Platform.isIOS;
 
   @override
   Future<bool> requestPermissions() async {

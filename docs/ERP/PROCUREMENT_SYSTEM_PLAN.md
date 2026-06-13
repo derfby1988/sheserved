@@ -11,7 +11,7 @@
 - มี **ระบบแจ้งเตือน/รายงาน** ถึงผู้สั่ง ผู้อนุมัติ ผู้รับของ และ Supplier
 - มี **Auto-Reorder** แต่ต้องมีผู้ยืนยัน (Confirmed) จึงมีผล
 - รองรับ **2 โหมด Price History** (Snapshot ใน PO/PR = โหมด A เป็นค่าเริ่มต้น, ตาราง `supplier_price_history` = โหมด B เลือกใช้ได้)
-- ไม่มี 3-Way Matching ใน Phase 1 (Phase 2 ค่อยเพิ่มใบวางบิล)
+- ไม่มี 3-Way Matching ใน Procurement Step 1 (Procurement Step 4 ค่อยเพิ่มใบวางบิล)
 
 ---
 
@@ -24,20 +24,20 @@
 
 2. **Purchase Requisition (PR)**
    - ใบขอซื้อจากแผนก/สาขา (เช่น ห้องยาขอซื้อยาเพิ่ม)
-   - ระบุสินค้าจาก `inventory_items` หรือ `medications` หรือ `custom_medications`
-   - ประมาณการราคา (`estimated_unit_price`)
-   - สถานะ: `draft` → `pending_approval` → `approved` → `converted_to_po` / `rejected` / `cancelled`
+   - ระบุสินค้าจาก `products` (✅ unified product catalog)
+   - ประมาณการราคา (`estimated_unit_price`) — ⏳ PR Items จะอยู่ใน Step 2
+   - สถานะ: `draft` → `pending_approval` → `approved` → `converted` / `rejected`
 
 3. **Purchase Order (PO)**
    - ใบสั่งซื้ออย่างเป็นทางการส่งให้ Supplier
-   - สามารถสร้างจาก PR (**รวมหลาย PR เป็น 1 PO ได้ 1:N**) หรือสั่งตรงได้
-   - สถานะ: `draft` → `pending_approval` → `approved` → `sent_to_supplier` → `partially_received` → `fully_received` / `cancelled` / `closed`
+   - Step 1: 1 PR → 1 PO (ผ่าน `pr_id` FK ตรง) หรือสั่งตรงได้
+   - สถานะ: `draft` → `sent` → `partially_received` → `fully_received` / `cancelled`
 
 4. **Approval Workflow (Role + วงเงิน)**
    - Staff สร้าง PR/PO → Manager/Admin อนุมัติ
-   - ถ้ายอด < `approval_amount_threshold` (ค่าเริ่มต้น 10,000 บาท) Staff สั่งได้เลย (ขึ้นกับสิทธิ์)
-   - ถ้ายอด >= threshold ต้องผ่าน Manager/Admin
-   - บันทึก `approved_by`, `approved_at`, `approval_notes`
+   - ถ้ายอด < `approval_amount_threshold` (ค่าเริ่มต้น 10,000 บาท) ผู้มี `access_level >= 2` สั่งได้เลย
+   - ถ้ายอด >= threshold ต้องผ่าน `access_level = 3` (Full Access)
+   - บันทึก `approved_by`, `approved_at`
 
 5. **Goods Receipt (GR)**
    - รับของเข้าตาม PO ได้หลายครั้ง (Partial Receipt)
@@ -75,10 +75,34 @@
 - `delivery_branch_id` = สาขาที่รับของ (default = `branch_id`)
 - พนักงานระดับ HQ ดูรวมทุกสาขาได้ สาขาย่อยเห็นเฉพาะสาขาตนเอง
 
-### ระดับสิทธิ์ 3 ขั้น (Per-Module Permission)
-- **Admin/Manager:** อนุมัติ PR/PO, ตั้งค่า, ยกเลิกเอกสาร
-- **Editor:** สร้าง/แก้ไข PR, PO, Goods Receipt, ยืนยัน Reorder Suggestion
-- **Viewer:** ดูรายงาน ดูประวัติ ไม่สามารถแก้ไขได้
+### ระดับสิทธิ์ Per-Module Permission (ผ่าน `role_module_permissions`)
+
+ระบบสิทธิ์ใช้ตาราง `role_module_permissions` จาก Reliability Core (Phase 0) โดย `module_name = 'procurement'`:
+
+| access_level | ชื่อ | ความสามารถใน Procurement |
+|---|---|---|
+| **3 (Full Access)** | ผู้จัดการ/Admin | อนุมัติ PR/PO, ตั้งค่า, ยกเลิกเอกสาร, ดูรายงานทุกสาขา |
+| **2 (Edit Access)** | เจ้าหน้าที่จัดซื้อ | สร้าง/แก้ไข PR, PO, Goods Receipt, ยืนยัน Reorder Suggestion |
+| **1 (View Only)** | ผู้ดูข้อมูล | ดูรายงาน ดูประวัติ ไม่สามารถแก้ไขได้ |
+| **0 (None)** | ไม่มีสิทธิ์ | ไม่สามารถเข้าถึงโมดูล Procurement ได้ |
+
+**ตรวจสอบสิทธิ์ที่ Application Layer:**
+```dart
+// ดึง access_level ของ user ใน module procurement
+final roles = await supabase.rpc('get_user_roles_and_permissions', params: {
+  'p_user_id': currentUser.id,
+  'p_profession_id': currentUser.professionId,
+});
+final procurementLevel = roles
+    .expand((r) => (r['permissions'] as List))
+    .where((p) => p['module_name'] == 'procurement')
+    .map((p) => p['access_level'] as int)
+    .fold(0, max); // ใช้ค่าสูงสุดจากทุก role
+
+if (procurementLevel < 2) throw UnauthorizedException('ไม่มีสิทธิ์แก้ไข');
+```
+
+**Branch Isolation:** ตรวจสอบ `employee_roles.branch_id` — ถ้า `NULL` = HQ ดูทุกสาขา, ถ้ามีค่า = เห็นเฉพาะสาขานั้น
 
 ### State Transition Hardening
 - ใช้ `CHECK` constraints บนสถานะ (status) ป้องกันการเปลี่ยนสถานะผิดลำดับที่ฐานข้อมูล
@@ -90,150 +114,144 @@
 
 > **คำเตือน:** ไม่มีนโยบาย RLS ใดๆ ที่ใช้ `auth.uid()` ในฐานข้อมูล PostgreSQL การเข้าถึงข้อมูลควบคุมที่ Application Layer (Repository Pattern + ServiceLocator) ตาม [auth_data_guidelines.md](../../.agent/workflows/auth_data_guidelines.md)
 
+> **สถานะ Migration:** ตาราง `suppliers`, `purchase_requisitions`, `purchase_orders`, `purchase_order_items` ถูก migrate แล้วใน `20260611160000_erp_phase_1_data_and_inflow.sql` — Schema ด้านล่างตรงกับ DB จริง
+>
+> ตาราง `purchase_requisition_items`, `goods_receipts`, `goods_receipt_items`, `back_orders`, `reorder_suggestions`, `supplier_price_history`, `procurement_settings`, `document_sequences` **ยังไม่ได้ migrate** — จะอยู่ใน Procurement Step 2+
+
 ### 1. ตาราง Master & Config
 
 ```sql
--- ผู้จัดจำหน่าย
+-- ผู้จัดจำหน่าย (✅ Migrated: 20260611160000)
 CREATE TABLE suppliers (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id    UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  name             TEXT NOT NULL,
+  supplier_name    TEXT NOT NULL,
   contact_name     TEXT,
   phone            TEXT,
   email            TEXT,
   address          TEXT,
   tax_id           TEXT,
-  payment_terms    INTEGER DEFAULT 30,
+  payment_terms    TEXT DEFAULT 'net_30',      -- net_30, net_60, cash, etc.
+  lead_time_days   INTEGER DEFAULT 7,
   is_active        BOOLEAN DEFAULT true,
-  created_by       UUID,
-  updated_by       UUID,
   created_at       TIMESTAMPTZ DEFAULT now(),
   updated_at       TIMESTAMPTZ DEFAULT now()
 );
 
--- ตั้งค่าระบบจัดซื้อต่อองค์กร
+-- ตั้งค่าระบบจัดซื้อต่อองค์กร (⏳ ยังไม่ migrate — Procurement Step 2)
 CREATE TABLE procurement_settings (
   id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id                   UUID NOT NULL UNIQUE REFERENCES professions(id) ON DELETE CASCADE,
   enable_price_history_tracking   BOOLEAN DEFAULT false,
-  default_payment_terms           INTEGER DEFAULT 30,
+  default_payment_terms           TEXT DEFAULT 'net_30',
   auto_reorder_threshold_multiplier DECIMAL(3,2) DEFAULT 1.0,
   approval_amount_threshold       DECIMAL(12,2) DEFAULT 10000,
   created_at                      TIMESTAMPTZ DEFAULT now(),
   updated_at                      TIMESTAMPTZ DEFAULT now()
 );
+
+-- ลำดับเลขที่เอกสาร (⏳ ยังไม่ migrate — Procurement Step 2)
+CREATE TABLE document_sequences (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id       UUID REFERENCES organization_branches(id) ON DELETE CASCADE,
+  prefix          TEXT NOT NULL,                      -- 'PR', 'PO', 'GR'
+  year            INTEGER NOT NULL,                   -- ปี ค.ศ. เช่น 2026
+  last_number     INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, branch_id, prefix, year)
+);
+
 ```
 
 ### 2. ตาราง Purchase Requisition (PR)
 
 ```sql
+-- ✅ Migrated: 20260611160000
 CREATE TABLE purchase_requisitions (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id     UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  branch_id         UUID REFERENCES organization_branches(id),
-  pr_number         TEXT NOT NULL,
-  requester_id      UUID NOT NULL,
-  requester_notes   TEXT,
+  branch_id         UUID REFERENCES organization_branches(id) ON DELETE SET NULL,
+  requester_id      UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  pr_number         TEXT NOT NULL,                      -- PR-20260611-001
   status            TEXT NOT NULL DEFAULT 'draft'
-    CHECK (status IN ('draft','pending_approval','approved','rejected','converted_to_po','cancelled')),
-  total_amount      DECIMAL(12,2) DEFAULT 0,
-  approved_by       UUID,
+    CHECK (status IN ('draft','pending_approval','approved','rejected','converted')),
+  total_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
+  notes             TEXT,
+  approved_by       UUID REFERENCES users(id) ON DELETE SET NULL,
   approved_at       TIMESTAMPTZ,
-  approval_notes    TEXT,
-  created_by        UUID,
-  updated_by        UUID,
   created_at        TIMESTAMPTZ DEFAULT now(),
   updated_at        TIMESTAMPTZ DEFAULT now(),
   UNIQUE (profession_id, pr_number)
 );
 
+-- ⏳ ยังไม่ migrate — Procurement Step 2
+-- (Step 1 ใช้ PR-level เท่านั้น ยังไม่แยก line items)
 CREATE TABLE purchase_requisition_items (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id          UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
   requisition_id         UUID NOT NULL REFERENCES purchase_requisitions(id) ON DELETE CASCADE,
-  inventory_item_id      UUID REFERENCES inventory_items(id),
-  medication_id          UUID REFERENCES medications(id),
-  custom_medication_id   UUID REFERENCES custom_medications(id),
+  product_id             UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
   item_name              TEXT NOT NULL,
   quantity_requested     INTEGER NOT NULL CHECK (quantity_requested > 0),
   estimated_unit_price   DECIMAL(12,2),
   estimated_total_price  DECIMAL(12,2),
-  uom                    TEXT,
-  notes                  TEXT,
-  created_at             TIMESTAMPTZ DEFAULT now(),
-  updated_at             TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT check_item_source CHECK (
-    (inventory_item_id IS NOT NULL) OR
-    (medication_id IS NOT NULL) OR
-    (custom_medication_id IS NOT NULL)
-  )
-);
-```
-
-### 3. ตาราง Purchase Order (PO)
-
-```sql
-CREATE TABLE purchase_orders (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profession_id         UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  branch_id             UUID REFERENCES organization_branches(id),
-  delivery_branch_id    UUID REFERENCES organization_branches(id),
-  po_number             TEXT NOT NULL,
-  supplier_id           UUID NOT NULL REFERENCES suppliers(id),
-  vat_rate              DECIMAL(5,4) DEFAULT 0.0700,
-  -- pr_id removed: รองรับ 1:N ผ่าน purchase_order_pr_links
-  status                TEXT NOT NULL DEFAULT 'draft'
-    CHECK (status IN ('draft','pending_approval','approved','sent_to_supplier','partially_received','fully_received','cancelled','closed')),
-  order_date            DATE NOT NULL DEFAULT CURRENT_DATE,
-  expected_delivery_date DATE,
-  subtotal              DECIMAL(12,2) DEFAULT 0,
-  tax_amount            DECIMAL(12,2) DEFAULT 0,
-  discount_amount       DECIMAL(12,2) DEFAULT 0,
-  total_amount          DECIMAL(12,2) DEFAULT 0,
-  approved_by           UUID,
-  approved_at           TIMESTAMPTZ,
-  approval_notes        TEXT,
-  sent_to_supplier_at   TIMESTAMPTZ,
-  notes                 TEXT,
-  created_by            UUID,
-  updated_by            UUID,
-  created_at            TIMESTAMPTZ DEFAULT now(),
-  updated_at            TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (profession_id, po_number)
-);
-
--- Junction table: รองรับหลาย PR → 1 PO (1:N)
-CREATE TABLE purchase_order_pr_links (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profession_id       UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  purchase_order_id   UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-  purchase_requisition_id UUID NOT NULL REFERENCES purchase_requisitions(id) ON DELETE CASCADE,
-  created_at          TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (purchase_order_id, purchase_requisition_id)
-);
-
-CREATE TABLE purchase_order_items (
-  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profession_id          UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  purchase_order_id      UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-  inventory_item_id      UUID REFERENCES inventory_items(id),
-  medication_id          UUID REFERENCES medications(id),
-  custom_medication_id   UUID REFERENCES custom_medications(id),
-  item_name              TEXT NOT NULL,
-  quantity_ordered       INTEGER NOT NULL CHECK (quantity_ordered > 0),
-  quantity_received      INTEGER NOT NULL DEFAULT 0 CHECK (quantity_received >= 0),
-  unit_price             DECIMAL(12,2) NOT NULL,
-  total_price            DECIMAL(12,2) NOT NULL,
-  uom                    TEXT,
   notes                  TEXT,
   created_at             TIMESTAMPTZ DEFAULT now(),
   updated_at             TIMESTAMPTZ DEFAULT now()
 );
 ```
 
-### 4. ตาราง Goods Receipt & Back Order
+### 3. ตาราง Purchase Order (PO)
 
 ```sql
+-- ✅ Migrated: 20260611160000
+CREATE TABLE purchase_orders (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id         UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  branch_id             UUID REFERENCES organization_branches(id) ON DELETE SET NULL,
+  supplier_id           UUID NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+  pr_id                 UUID REFERENCES purchase_requisitions(id) ON DELETE SET NULL,
+  po_number             TEXT NOT NULL,                      -- PO-20260611-001
+  status                TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','sent','partially_received','fully_received','cancelled')),
+  total_amount          DECIMAL(12,2) NOT NULL DEFAULT 0,
+  tax_amount            DECIMAL(12,2) NOT NULL DEFAULT 0,
+  grand_total           DECIMAL(12,2) NOT NULL DEFAULT 0,
+  notes                 TEXT,
+  expected_delivery_date DATE,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, po_number)
+);
+
+-- ✅ Migrated: 20260611160000
+CREATE TABLE purchase_order_items (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id                  UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id             UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  quantity_ordered       INTEGER NOT NULL DEFAULT 1 CHECK (quantity_ordered > 0),
+  quantity_received      INTEGER NOT NULL DEFAULT 0,
+  unit_price             DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_price            DECIMAL(12,2) NOT NULL DEFAULT 0,
+  expected_delivery_date DATE,
+  notes                  TEXT,
+  created_at             TIMESTAMPTZ DEFAULT now()
+);
+```
+
+> **หมายเหตุ Step 1:**
+> - PO:PR ใช้ FK ตรง (`pr_id`) ในขณะนี้ รองรับ 1:1 ก่อน
+> - Junction table `purchase_order_pr_links` (รองรับ N:1) จะเพิ่มใน Procurement Step 2 ถ้าจำเป็น
+> - `delivery_branch_id`, `vat_rate`, `discount_amount`, `approved_by/at`, `sent_to_supplier_at` จะเพิ่มใน Step 2 เมื่อ Approval Workflow สมบูรณ์
+
+### 4. ตาราง Goods Receipt & Back Order
+
+> **สถานะ:** ⏳ ยังไม่ migrate — จะอยู่ใน Procurement Step 2
+
+```sql
+-- ⏳ ยังไม่ migrate — Procurement Step 2
 CREATE TABLE goods_receipts (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id           UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
@@ -242,17 +260,16 @@ CREATE TABLE goods_receipts (
   gr_number               TEXT NOT NULL,
   receipt_date            TIMESTAMPTZ DEFAULT now(),
   supplier_delivery_note  TEXT,
-  received_by             UUID NOT NULL,
+  received_by             UUID NOT NULL REFERENCES users(id),
   status                  TEXT NOT NULL DEFAULT 'completed'
     CHECK (status IN ('pending','completed','rejected')),
   notes                   TEXT,
-  created_by              UUID,
-  updated_by              UUID,
   created_at              TIMESTAMPTZ DEFAULT now(),
   updated_at              TIMESTAMPTZ DEFAULT now(),
   UNIQUE (profession_id, gr_number)
 );
 
+-- ⏳ ยังไม่ migrate — Procurement Step 2
 CREATE TABLE goods_receipt_items (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id           UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
@@ -270,7 +287,7 @@ CREATE TABLE goods_receipt_items (
   CONSTRAINT check_accepted_plus_rejected CHECK (quantity_accepted + quantity_rejected = quantity_received)
 );
 
--- ติดตั้ง Back Order (จำนวนที่ยังไม่ได้รับจาก PO)
+-- ⏳ ยังไม่ migrate — Procurement Step 2
 CREATE TABLE back_orders (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id           UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
@@ -294,13 +311,15 @@ CREATE TABLE back_orders (
 
 ### 5. ตาราง Reorder Suggestions & Price History
 
+> **สถานะ:** ⏳ ยังไม่ migrate — จะอยู่ใน Procurement Step 3
+
 ```sql
--- แนะนำการสั่งซื้ออัตโนมัติ (ต้องมีผู้ยืนยัน จึงมีผล)
+-- ⏳ ยังไม่ migrate — Procurement Step 3
 CREATE TABLE reorder_suggestions (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id           UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
   branch_id               UUID REFERENCES organization_branches(id),
-  inventory_item_id       UUID NOT NULL REFERENCES inventory_items(id),
+  product_id              UUID NOT NULL REFERENCES products(id),
   current_quantity        INTEGER NOT NULL,
   reorder_point           INTEGER NOT NULL,
   suggested_quantity      INTEGER NOT NULL CHECK (suggested_quantity > 0),
@@ -315,73 +334,81 @@ CREATE TABLE reorder_suggestions (
   updated_at              TIMESTAMPTZ DEFAULT now()
 );
 
--- ประวัติราคาจาก Supplier (ใช้เมื่อโหมด B เปิด)
+-- ⏳ ยังไม่ migrate — Procurement Step 3 (ใช้เมื่อโหมด Price History เปิด)
 CREATE TABLE supplier_price_history (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id           UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
   supplier_id             UUID NOT NULL REFERENCES suppliers(id),
-  medication_id           UUID REFERENCES medications(id),
-  custom_medication_id    UUID REFERENCES custom_medications(id),
-  inventory_item_id       UUID REFERENCES inventory_items(id),
+  product_id              UUID NOT NULL REFERENCES products(id),
   unit_price              DECIMAL(12,2) NOT NULL,
-  uom                     TEXT,
   effective_date          DATE NOT NULL DEFAULT CURRENT_DATE,
   notes                   TEXT,
-  created_by              UUID,
   created_at              TIMESTAMPTZ DEFAULT now()
 );
+```
 
--- Outbox Events (มาตรฐานกลางทุกโมดูล)
+### 6. Outbox Events (ตารางกลาง — Reliability Core)
+
+> **สถานะ:** ✅ Migrated แล้วใน `20260609180000_create_accounting_core_schema.sql`
+>
+> Procurement **ไม่นิยาม `outbox_events` เอง** แต่ใช้ตารางกลางจาก Reliability Core:
+
+```sql
+-- ✅ ตารางกลาง (อยู่ใน 20260609180000 แล้ว — ไม่ต้อง migrate ซ้ำ)
+-- Procurement ใช้ aggregate_type = 'procurement_gr' สำหรับ event ทุกประเภท
 CREATE TABLE outbox_events (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  event_type      TEXT NOT NULL,
-  aggregate_type  TEXT NOT NULL,
+  aggregate_type  TEXT NOT NULL CHECK (aggregate_type IN (
+    'pos_sale','procurement_gr','hr_payroll','telemedicine','logistics','manual'
+  )),
   aggregate_id    UUID NOT NULL,
+  event_type      TEXT NOT NULL,      -- เช่น 'procurement.po_sent', 'procurement.goods_receipted'
   payload         JSONB NOT NULL DEFAULT '{}',
   status          TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending','published','failed')),
-  retry_count     INTEGER NOT NULL DEFAULT 0,
+    CHECK (status IN ('pending','published','failed','processing')),
+  retry_count     INT NOT NULL DEFAULT 0,
   error_message   TEXT,
-  occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at      TIMESTAMPTZ DEFAULT now(),
   published_at    TIMESTAMPTZ
 );
 ```
 
-### 6. Indexes & Performance
+### 7. Indexes & Performance
+
+> **สถานะ:** ✅ Index สำหรับตารางที่ migrate แล้วถูกสร้างพร้อม migration  
+> ⏳ Index สำหรับตาราง GR/Back Orders/Reorder จะสร้างพร้อม migration ของตารางเหล่านั้น
 
 ```sql
--- Partial indexes: ลดต้นทุน query เอกสารที่ Active
-CREATE INDEX idx_pr_active ON purchase_requisitions(profession_id, branch_id, status)
-  WHERE status IN ('draft','pending_approval','approved');
-CREATE INDEX idx_po_active ON purchase_orders(profession_id, branch_id, status)
-  WHERE status IN ('draft','pending_approval','approved','sent_to_supplier','partially_received');
+-- ✅ Indexes ที่ migrate แล้ว (อยู่ใน 20260611160000)
+CREATE INDEX idx_suppliers_profession ON suppliers(profession_id, is_active, supplier_name);
+CREATE INDEX idx_pr_profession ON purchase_requisitions(profession_id, status, created_at DESC);
+CREATE INDEX idx_po_profession ON purchase_orders(profession_id, status, created_at DESC);
+CREATE INDEX idx_po_supplier ON purchase_orders(supplier_id, status);
+CREATE INDEX idx_po_items_po ON purchase_order_items(po_id);
+CREATE INDEX idx_po_items_product ON purchase_order_items(product_id);
+
+-- ⏳ Indexes สำหรับตาราง Step 2+
 CREATE INDEX idx_gr_recent ON goods_receipts(profession_id, branch_id, receipt_date)
   WHERE receipt_date > now() - interval '90 days';
 CREATE INDEX idx_back_order_open ON back_orders(profession_id, status)
   WHERE status IN ('open','partially_fulfilled');
 CREATE INDEX idx_reorder_pending ON reorder_suggestions(profession_id, branch_id, status)
   WHERE status = 'pending';
-CREATE INDEX idx_supplier_active ON suppliers(profession_id, is_active)
-  WHERE is_active = true;
-
--- Indexes สำหรับ FK lookup
-CREATE INDEX idx_pr_items_requisition ON purchase_requisition_items(requisition_id);
-CREATE INDEX idx_po_items_order ON purchase_order_items(purchase_order_id);
 CREATE INDEX idx_gr_items_receipt ON goods_receipt_items(goods_receipt_id);
 CREATE INDEX idx_gr_items_po_item ON goods_receipt_items(purchase_order_item_id);
 CREATE INDEX idx_back_order_po ON back_orders(purchase_order_id);
 CREATE INDEX idx_back_order_supplier ON back_orders(supplier_id);
-CREATE INDEX idx_price_history_lookup ON supplier_price_history(profession_id, supplier_id, inventory_item_id, effective_date);
-CREATE INDEX idx_po_pr_link_po ON purchase_order_pr_links(purchase_order_id);
-CREATE INDEX idx_po_pr_link_pr ON purchase_order_pr_links(purchase_requisition_id);
-CREATE INDEX idx_outbox_pending ON outbox_events(profession_id, status, occurred_at)
-  WHERE status IN ('pending','failed');
+CREATE INDEX idx_price_history_lookup ON supplier_price_history(profession_id, supplier_id, product_id, effective_date);
+CREATE INDEX idx_document_sequences_lookup ON document_sequences(profession_id, branch_id, prefix, year);
 ```
 
-### 7. Trigger อัปเดต updated_at
+### 8. Trigger อัปเดต updated_at
+
+> **สถานะ:** ✅ Triggers สำหรับ `suppliers`, `purchase_requisitions`, `purchase_orders` ถูกสร้างแล้วใน migration
 
 ```sql
+-- ฟังก์ชันกลาง (✅ มีอยู่แล้วจาก migration ก่อนหน้า)
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -390,24 +417,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DO $$
-DECLARE
-  tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'suppliers','procurement_settings',
-    'purchase_requisitions','purchase_requisition_items',
-    'purchase_orders','purchase_order_items','purchase_order_pr_links',
-    'goods_receipts','goods_receipt_items',
-    'back_orders','reorder_suggestions','supplier_price_history'
-  ]
-  LOOP
-    EXECUTE format(
-      'CREATE TRIGGER trg_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();',
-      tbl, tbl
-    );
-  END LOOP;
-END $$;
+-- Triggers ที่ migrate แล้ว:
+-- ✅ trg_suppliers_updated_at
+-- ✅ trg_pr_updated_at (purchase_requisitions)
+-- ✅ trg_po_updated_at (purchase_orders)
+-- ⏳ ตาราง Step 2+ จะเพิ่ม trigger พร้อม migration (เช่น trg_procurement_settings_updated_at, trg_goods_receipts_updated_at, trg_back_orders_updated_at, trg_document_sequences_updated_at เป็นต้น)
 ```
 
 ---
@@ -417,19 +431,24 @@ END $$;
 ### 1. Approval Workflow
 
 ```
-PR/PO Status Flow:
-draft → pending_approval → approved → converted_to_po / sent_to_supplier
+PR Status Flow:
+draft → pending_approval → approved → converted
   ↓         ↓                ↓
-cancelled  rejected       rejected
+(ลบ draft)  rejected       rejected
+
+PO Status Flow:
+draft → sent → partially_received → fully_received
+  ↓                                     ↓
+cancelled                            (เสร็จสิ้น)
 ```
 
 **Logic ที่ Application Layer (Flutter / API):**
 - เมื่อ Staff กด "Submit for Approval":
-  1. ตรวจสอบ `procurement_settings.approval_amount_threshold`
-  2. ถ้า `total_amount` < threshold และผู้ใช้มีสิทธิ์ Editor ขึ้นไป → อนุมัติอัตโนมัติ (`status = 'approved'`, `approved_by = currentUser.id`)
-  3. ถ้า `total_amount` >= threshold → `status = 'pending_approval'` รอ Manager/Admin กดอนุมัติ
-- เมื่อ Manager กด "Reject": บันทึก `approval_notes` และ revert สถานะ
-- **ไม่มี RLS ใน PostgreSQL** ตรวจสอบสิทธิ์ที่ Repository Layer โดยดู `employee_roles` ก่อน execute
+  1. ตรวจสอบ `procurement_settings.approval_amount_threshold` (⏳ Step 2)
+  2. ถ้า `total_amount` < threshold และผู้ใช้มี `access_level >= 2` → อนุมัติอัตโนมัติ (`status = 'approved'`, `approved_by = currentUser.id`)
+  3. ถ้า `total_amount` >= threshold → `status = 'pending_approval'` รอ `access_level = 3` กดอนุมัติ
+- เมื่อ Manager กด "Reject": revert เป็น `status = 'rejected'`
+- **ไม่มี RLS ใน PostgreSQL** ตรวจสอบ `role_module_permissions.access_level` ที่ Repository Layer ก่อน execute
 
 ### 2. Auto-Reorder Logic
 
@@ -476,8 +495,8 @@ System: update PO.items.quantity_received = 70
 
 **โหมด A (Default):**
 - ไม่ต้องสร้าง `supplier_price_history`
-- ราคา snapshot อยู่ใน `purchase_order_items.unit_price` และ `purchase_requisition_items.estimated_unit_price`
-- Query ราคาเก่า: `SELECT unit_price FROM purchase_order_items WHERE inventory_item_id = ? ORDER BY created_at DESC`
+- ราคา snapshot อยู่ใน `purchase_order_items.unit_price`
+- Query ราคาเก่า: `SELECT unit_price FROM purchase_order_items poi JOIN purchase_orders po ON poi.po_id = po.id WHERE poi.product_id = ? ORDER BY po.created_at DESC`
 
 **โหมด B (เลือกใช้):**
 - ตั้งค่า `procurement_settings.enable_price_history_tracking = true`
@@ -495,30 +514,40 @@ professions (ERP Core)
   ▼
 ┌─────────────────┐    ┌────────────────────────┐    ┌─────────────────────┐
 │    suppliers    │    │ procurement_settings   │    │organization_branches│
-│   (Master)      │    │     (Config)           │    │     (ERP Core)      │
+│  (✅ Migrated)  │    │   (⏳ Step 2)          │    │     (✅ Migrated)   │
 └────────┬────────┘    └────────────────────────┘    └─────────────────────┘
          │ supplier_id                                          │
          │                                                      │ branch_id
          ▼                                                      ▼
 ┌─────────────────────┐    ┌─────────────────────────────┐
 │   purchase_orders   │◄───┤   purchase_order_items      │
-│   - supplier_id(FK)│    │   - inventory_item_id (FK)  │
-│   - branch_id       │    │   - medication_id (FK)      │
-│   - delivery_branch │    │   - custom_medication_id(FK)│
-│   - vat_rate        │    └─────────────────────────────┘
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────────────┐
-│ purchase_order_pr_links     │
-│   - purchase_order_id (FK)  │
-│   - purchase_requisition_id │
-└─────────────────────────────┘
-           │ po_id
+│  (✅ Migrated)      │    │  (✅ Migrated)              │
+│   - supplier_id(FK)│    │   - po_id (FK)              │
+│   - pr_id (FK)     │    │   - product_id (FK→products)│
+│   - branch_id       │    └──────────┬──────────────────┘
+└──────────┬──────────┘               │ po_id (via lot)
+           │                          ▼
+           │              ┌─────────────────────────────┐
+           │              │   inventory_lots             │
+           │              │  (✅ Migrated)               │
+           │              │   - product_id               │
+           │              │   - po_id (FK→purchase_orders)│
+           │              │   - quantity_remaining        │
+           │              └──────────┬──────────────────┘
+           │                         │
+           │                         ▼
+           │              ┌─────────────────────────────┐
+           │              │   stock_movements            │
+           │              │  (✅ Migrated)               │
+           │              │   - lot_id (FK)              │
+           │              │   - movement_type='receipt'   │
+           │              │   - reference_type='po'       │
+           │              └─────────────────────────────┘
            │
 ┌──────────▼──────────┐    ┌─────────────────────────────┐
 │   goods_receipts    │◄───┤   goods_receipt_items       │
-│   - purchase_order_id│    │   - purchase_order_item_id  │
+│  (⏳ Step 2)       │    │  (⏳ Step 2)               │
+│   - purchase_order_id│   │   - purchase_order_item_id  │
 │   - received_by      │    │   - quantity_accepted       │
 │   - branch_id        │    │   - lot_number              │
 └──────────────────────┘    │   - expiry_date             │
@@ -526,63 +555,70 @@ professions (ERP Core)
 
 ┌─────────────────────────┐    ┌─────────────────────────────┐
 │ purchase_requisitions   │◄───┤ purchase_requisition_items  │
-│   - requester_id        │    │   - inventory_item_id       │
-│   - approved_by         │    │   - medication_id           │
-│   - branch_id           │    │   - custom_medication_id    │
-└─────────────────────────┘    └─────────────────────────────┘
+│  (✅ Migrated)          │    │  (⏳ Step 2)               │
+│   - requester_id        │    │   - product_id (FK→products)│
+│   - approved_by         │    └─────────────────────────────┘
+│   - branch_id           │
+└─────────────────────────┘
 
 ┌─────────────────────────┐    ┌─────────────────────────────┐
 │     back_orders         │    │  reorder_suggestions        │
-│   - purchase_order_id   │    │  - inventory_item_id        │
+│  (⏳ Step 2)           │    │  (⏳ Step 3)               │
+│   - purchase_order_id   │    │  - product_id               │
 │   - purchase_order_item_id│  │  - preferred_supplier_id    │
 │   - supplier_id         │    │  - confirmed_by             │
 │   - expected_delivery_date│  │  - converted_pr_id          │
 └─────────────────────────┘    └─────────────────────────────┘
 
 ┌─────────────────────────┐    ┌─────────────────────────────┐
-│ supplier_price_history  │    │     outbox_events           │
-│   - supplier_id         │    │   - event_type              │
-│   - inventory_item_id   │    │   - aggregate_type          │
+│ supplier_price_history  │    │  outbox_events (Reliability)│
+│  (⏳ Step 3)           │    │  (✅ Migrated — ตารางกลาง)  │
+│   - supplier_id         │    │   - aggregate_type =        │
+│   - product_id          │    │     'procurement_gr'        │
 │   - unit_price          │    │   - payload (JSONB)         │
 │   - effective_date      │    │   - status                  │
 └─────────────────────────┘    └─────────────────────────────┘
-
-┌─────────────────────────────┐
-│   document_sequences        │
-│   - profession_id           │
-│   - branch_id               │
-│   - prefix / year / last_no │
-└─────────────────────────────┘
 ```
 
 **Key Relationships:**
 - `purchase_orders.supplier_id` → `suppliers` (N:1)
-- `purchase_order_items.purchase_order_id` → `purchase_orders` (N:1)
-- `purchase_order_pr_links.purchase_order_id` → `purchase_orders` (N:1)
-- `purchase_order_pr_links.purchase_requisition_id` → `purchase_requisitions` (N:1)
-- `goods_receipts.purchase_order_id` → `purchase_orders` (1:1)
+- `purchase_orders.pr_id` → `purchase_requisitions` (N:1, Step 1 = 1:1)
+- `purchase_order_items.po_id` → `purchase_orders` (N:1)
+- `purchase_order_items.product_id` → `products` (N:1)
+- `inventory_lots.po_id` → `purchase_orders` (N:1 — GR สร้าง lot ที่อ้างอิง PO)
+- `goods_receipts.purchase_order_id` → `purchase_orders` (N:1)
 - `goods_receipt_items.purchase_order_item_id` → `purchase_order_items` (N:1)
 - `back_orders.purchase_order_id` → `purchase_orders` (N:1)
-- `back_orders.purchase_order_item_id` → `purchase_order_items` (1:1)
 - `reorder_suggestions.converted_pr_id` → `purchase_requisitions` (0..1:1)
-- `outbox_events.profession_id` → `professions` (N:1)
+- `outbox_events` → ตารางกลาง Reliability Core (ใช้ `aggregate_type = 'procurement_gr'`)
 
 ---
 
 ## การเชื่อมโยงกับระบบอื่น (Integrations)
 
 ### Inventory System
-- เมื่อ GR สถานะ `completed` → เพิ่ม stock ใน `inventory_items.quantity` ตาม `quantity_accepted`
-- สร้าง `stock_movements` (type = 'goods_receipt') พร้อมอ้างอิง `goods_receipt_id`
-- บันทึก `lot_number`, `expiry_date`, `unit_cost` ลง `inventory_items` หรือตาราง lot ย่อย (ตาม [INVENTORY_SYSTEM_PLAN.md](INVENTORY_SYSTEM_PLAN.md))
+- เมื่อ GR สถานะ `completed` → สร้าง/อัปเดต **`inventory_lots`** (ไม่ใช่ `inventory_items.quantity` โดยตรง):
+  - `INSERT INTO inventory_lots (product_id, po_id, lot_number, expiry_date, quantity_received, quantity_remaining, unit_cost, ...)`
+  - หรือ `UPDATE inventory_lots SET quantity_remaining = quantity_remaining + accepted WHERE lot_number = ? AND product_id = ?`
+- สร้าง `stock_movements` (movement_type = `'receipt'`, reference_type = `'po'`, reference_id = PO ID)
+- ใช้ RPC `get_product_total_stock(product_id, branch_id)` ตรวจสอบ stock รวม
+- บันทึก `lot_number`, `expiry_date`, `unit_cost` ลง `inventory_lots` ตรง (✅ มี `po_id` FK อยู่แล้ว)
 
-### Accounting System (Phase 1)
+### Accounting System
 - เมื่อ GR `completed` → สร้างรายการ Accounts Payable (AP) อัตโนมัติ
-- ส่ง event ผ่าน `outbox_events`:
+- ส่ง event ผ่าน `outbox_events` (ตารางกลาง Reliability Core):
+  - `aggregate_type = 'procurement_gr'`
   - `event_type = 'procurement.goods_receipted'`
   - payload ประกอบด้วย `profession_id`, `purchase_order_id`, `goods_receipt_id`, `total_cost`, `supplier_id`
-- Accounting Module อ่าน event แล้วบันทึกลง GL/AP ตามผังบัญชี
-- **ไม่มี 3-Way Matching ใน Phase 1** (ไม่ต้อง matching กับใบวางบิล)
+- Accounting Module อ่านจาก `inbox_events` แล้วบันทึกลง GL/AP ตามผังบัญชี
+- **ไม่มี 3-Way Matching ใน Step 1** (ไม่ต้อง matching กับใบวางบิล — อยู่ใน Step 3)
+
+### Tax & Fiscal Document Core (การเชื่อมโยงภาษี)
+- ใน Step 1 การคำนวณภาษีจะทำแบบง่ายใน PO (`purchase_orders.tax_amount` คำนวณตาม `vat_rate` ของคู่ค้า)
+- เมื่อระบบพัฒนาถึง Step 3 (3-Way Matching) และระบบ Accounting Core รองรับแบบเต็มรูปแบบ:
+  - จะเปลี่ยนมาใช้โครงสร้างภาษีของ **Tax & Fiscal Document Core** เพื่อรองรับการคำนวณภาษีแบบละเอียดรายบรรทัดผ่านตาราง `order_item_tax_lines`
+  - รองรับตัวเลือกราคารวมภาษี/แยกภาษี (`is_inclusive` flag)
+  - บันทึกการรับใบกำกับภาษีซื้อผ่านตาราง `tax_invoices` โดยอ้างอิงตรงจาก Goods Receipt และ Supplier Invoice
 
 ### Notification / Dashboard Alert
 - ทุกการเปลี่ยนสถานะ PR/PO/GR/Back Order ที่สำคัญ ส่ง event เข้า `outbox_events`
@@ -623,37 +659,30 @@ WHEN PR.status = 'approved' AND user clicks "Convert to PO":
      - pr_id = pr.id
      - supplier_id = user_selected (หรือ preferred_supplier จาก reorder)
      - branch_id = pr.branch_id
-     - delivery_branch_id = pr.branch_id (default)
      - status = 'draft'
-     - subtotal/tax/total = calculated from items
+     - total_amount/tax_amount/grand_total = calculated from items
 
-  2. FOR EACH pr_item IN purchase_requisition_items:
+  2. FOR EACH pr_item IN purchase_requisition_items (⏳ Step 2):
      CREATE purchase_order_item:
-       - purchase_order_id = new_po.id
-       - inventory_item_id = pr_item.inventory_item_id
-       - medication_id = pr_item.medication_id
-       - custom_medication_id = pr_item.custom_medication_id
-       - item_name = pr_item.item_name
+       - po_id = new_po.id
+       - product_id = pr_item.product_id
        - quantity_ordered = pr_item.quantity_requested
        - unit_price = pr_item.estimated_unit_price (หรือ last_price จาก history)
        - total_price = quantity_ordered * unit_price
 
   3. UPDATE purchase_requisitions:
-     - status = 'converted_to_po'
+     - status = 'converted'
      - updated_at = now()
 
-  4. INSERT outbox_event:
+  4. INSERT outbox_events:
+     - aggregate_type = 'procurement_gr'
      - event_type = 'procurement.pr_converted_to_po'
      - payload = { pr_id, po_id, profession_id, total_amount }
-
-  5. FOR EACH pr ที่ถูก convert:
-     UPDATE purchase_requisitions SET status = 'converted_to_po', updated_at = now()
-     (หาก 1 PR → PO แล้ว status เปลี่ยน แต่หาก PR ยังไม่ครบ convert ให้คง status 'approved' ไว้)
 ```
 
 **ข้อจำกัด:**
 - PR ที่มี status ไม่ใช่ `approved` ไม่สามารถ convert เป็น PO ได้
-- 1 PR → N PO ได้ (1:N) ใน Phase 1 — หลาย PR สามารถรวมเป็น PO เดียวกันได้
+- Step 1: 1 PR → 1 PO (ผ่าน `pr_id` FK ตรง) — รองรับ N:1 ใน Step 2
 
 ### 5.3 การรับของ (GR) → อัปเดต PO & สร้าง Back Order
 
@@ -683,42 +712,45 @@ WHEN Goods Receipt ถูกบันทึก (status = 'completed'):
      ELSE IF ANY po_items.quantity_received > 0:
        - status = 'partially_received'
 
-  5. UPDATE inventory_items:
-     - quantity += SUM(gr_item.quantity_accepted) per inventory_item
-     - บันทึก lot_number, expiry_date, unit_cost
+  5. UPSERT inventory_lots:
+     - product_id = po_item.product_id
+     - po_id = po.id
+     - lot_number = gr_item.lot_number
+     - expiry_date = gr_item.expiry_date
+     - quantity_received += gr_item.quantity_accepted
+     - quantity_remaining += gr_item.quantity_accepted
+     - unit_cost = gr_item.unit_cost
 
   6. INSERT stock_movements:
-     - type = 'goods_receipt'
+     - lot_id = inventory_lot.id
+     - movement_type = 'receipt'
+     - reference_type = 'po'
+     - reference_id = po.id
      - quantity = gr_item.quantity_accepted
-     - reference_id = goods_receipt_id
 
-  7. INSERT outbox_events:
+  7. INSERT outbox_events (aggregate_type = 'procurement_gr'):
      - event_type = 'procurement.goods_receipted'
-     - event_type = 'inventory.stock_increased'
-     - event_type = 'accounting.ap_created' (Phase 1)
+     - event_type = 'procurement.po_fully_received' (if fully)
 ```
 
 ### 5.4 State Transition Guard Matrix
 
-**PO Status Transitions:**
+**PO Status Transitions (ตรงกับ DB จริง — 5 สถานะ):**
 | จากสถานะ | ไปยัง | เงื่อนไข | ผู้ทำได้ |
 |---|---|---|---|
-| `draft` | `pending_approval` | มีรายการสินค้าอย่างน้อย 1 รายการ | Editor/Manager |
-| `draft` | `cancelled` | — | Editor/Manager |
-| `pending_approval` | `approved` | total < threshold หรือ Manager อนุมัติ | Auto / Manager |
-| `pending_approval` | `rejected` | — | Manager/Admin |
-| `approved` | `sent_to_supplier` | — | Editor/Manager |
-| `sent_to_supplier` | `partially_received` | GR บางส่วน | System/Receiver |
-| `sent_to_supplier` | `fully_received` | GR ครบทุกรายการ | System/Receiver |
+| `draft` | `sent` | มีรายการสินค้าอย่างน้อย 1 รายการ | access_level ≥ 2 |
+| `draft` | `cancelled` | — | access_level ≥ 2 |
+| `sent` | `partially_received` | GR บางส่วน | System/Receiver |
+| `sent` | `fully_received` | GR ครบทุกรายการ | System/Receiver |
+| `sent` | `cancelled` | ยังไม่มี GR | access_level = 3 |
 | `partially_received` | `fully_received` | GR ครบทุกรายการที่ยังค้าง | System/Receiver |
-| `partially_received` | `closed` | ผู้ใช้ตัดสินใจไม่รับของที่เหลือ | Manager/Admin |
-| `any` (ก่อน sent) | `cancelled` | ยังไม่ sent_to_supplier | Manager/Admin |
+| `partially_received` | `cancelled` | ผู้ใช้ตัดสินใจไม่รับของที่เหลือ | access_level = 3 |
 
 **PR Status Transitions:**
 | จากสถานะ | ไปยัง | เงื่อนไข | ผู้ทำได้ |
 |---|---|---|---|
 | `draft` | `pending_approval` | — | Editor |
-| `approved` | `converted_to_po` | มี PO ถูกสร้างจาก PR นี้ | Editor/Manager |
+| `approved` | `converted` | มี PO ถูกสร้างจาก PR นี้ | access_level ≥ 2 |
 | `approved` | `rejected` | — | Manager/Admin |
 
 ### 5.5 Idempotency Keys
@@ -766,23 +798,14 @@ String generateDocumentNumber({
 - เก็บ sequence ต่อ `profession_id` + `branch_id` + `prefix` + `year`
 - หากไม่มี `branch_id` (HQ) ใช้ `branch_code = 'HQ'`
 - Query ล่าสุด: `SELECT MAX(CAST(SUBSTRING(po_number FROM '...') AS INT)) ...`
-- หรือใช้ตาราง `document_sequences` แยกเพื่อป้องกัน race condition
-
-```sql
-CREATE TABLE document_sequences (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profession_id   UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
-  branch_id       UUID REFERENCES organization_branches(id),
-  prefix          TEXT NOT NULL,
-  year            INTEGER NOT NULL,
-  last_number     INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (profession_id, branch_id, prefix, year)
-);
-```
+- หรือใช้ตาราง `document_sequences` แยก เพื่อป้องกัน race condition (ดูรายละเอียดโครงสร้างตารางได้ในส่วนฐานข้อมูล [ตาราง Master & Config](#1-ตาราง-master--config))
 
 ---
 
 ## หน้าจอ Flutter UI (Flutter Pages)
+
+> [!NOTE]
+> ใน **Procurement Step 1** หน้าจอหลักได้รับการรวมศูนย์ไว้ในหน้าจอเดียวที่สวยงามและรองรับ Responsive Layout คือ [ProcurementPage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/procurement_page.dart) โดยใช้การสลับ Tab (ผู้จัดจำหน่าย, ใบขอซื้อ, ใบสั่งซื้อ) และ Dialog Forms ฝังในหน้าเพื่อความสะดวกและรวดเร็วในการทำงาน
 
 ### Procurement Dashboard
 - `ProcurementDashboardPage` — ภาพรวม: PR รออนุมัติ, PO รอส่ง, GR วันนี้, Back Order ค้าง, Reorder Alert
@@ -852,8 +875,7 @@ CREATE TABLE document_sequences (
     "total_cost": 42500.00,
     "items": [
       {
-        "inventory_item_id": "inv-uuid-001",
-        "medication_id": "med-uuid-001",
+        "product_id": "prod-uuid-001",
         "item_name": "Paracetamol 500mg",
         "quantity_accepted": 100,
         "quantity_rejected": 0,
@@ -862,8 +884,7 @@ CREATE TABLE document_sequences (
         "expiry_date": "2027-06-01"
       },
       {
-        "inventory_item_id": "inv-uuid-002",
-        "medication_id": "med-uuid-002",
+        "product_id": "prod-uuid-002",
         "item_name": "Amoxicillin 250mg",
         "quantity_accepted": 50,
         "quantity_rejected": 5,
@@ -872,7 +893,7 @@ CREATE TABLE document_sequences (
         "expiry_date": "2027-12-01"
       },
       {
-        "inventory_item_id": "inv-uuid-003",
+        "product_id": "prod-uuid-003",
         "item_name": "Syringe 3cc",
         "quantity_accepted": 20,
         "quantity_rejected": 0,
@@ -961,7 +982,7 @@ CREATE TABLE document_sequences (
     "supplier_id": "sup-uuid-001",
     "supplier_name": "บริษัท ยาดี จำกัด",
     "item_name": "Amoxicillin 250mg",
-    "inventory_item_id": "inv-uuid-002",
+    "product_id": "prod-uuid-002",
     "quantity_back_ordered": 45,
     "quantity_fulfilled": 0,
     "expected_delivery_date": "2026-06-20",
@@ -978,21 +999,21 @@ CREATE TABLE document_sequences (
 {
   "event_id": "evt-stock-001",
   "event_type": "inventory.stock_increased",
-  "aggregate_type": "inventory_item",
-  "aggregate_id": "inv-uuid-001",
+  "aggregate_type": "procurement_gr",
+  "aggregate_id": "prod-uuid-001",
   "profession_id": "prof-uuid-123",
   "branch_id": "branch-uuid-001",
   "occurred_at": "2026-06-09T14:30:00Z",
   "payload": {
-    "inventory_item_id": "inv-uuid-001",
+    "product_id": "prod-uuid-001",
     "item_name": "Paracetamol 500mg",
-    "quantity_change": 100,
-    "previous_quantity": 15,
-    "new_quantity": 115,
-    "source_type": "goods_receipt",
-    "source_id": "gr-uuid-001",
-    "unit_cost": 150.00,
+    "lot_id": "lot-uuid-001",
     "lot_number": "LOT-2026-A001",
+    "quantity_received": 100,
+    "quantity_remaining": 100,
+    "source_type": "goods_receipt",
+    "source_po_id": "po-uuid-001",
+    "unit_cost": 150.00,
     "expiry_date": "2027-06-01"
   }
 }
@@ -1130,16 +1151,12 @@ inventory_items: Paracetamol 500mg
        total_amount = 50,000
 
   → สร้าง purchase_order_items จาก PR items
-  → PR.status = 'converted_to_po'
+  → PR.status = 'converted'
   → Outbox: procurement.pr_converted_to_po
 
-ผู้จัดการกด "อนุมัติ PO"
-  → PO.status = 'approved'
-  → Outbox: procurement.po_approved
-
 เภสัชกรกด "Send to Supplier"
-  → PO.status = 'sent_to_supplier'
-  → sent_to_supplier_at = 2026-06-09 10:00:00
+  → PO.status = 'sent'
+  → Outbox: procurement.po_sent
 ```
 
 **Step 5 — Supplier ส่งของ (GR #1)**
@@ -1169,15 +1186,13 @@ inventory_items: Paracetamol 500mg
     status = 'open'
     expected_delivery_date = '2026-06-25' (เภสัชกรกรอก)
 
-  → อัปเดต Inventory:
-    Paracetamol: 15 → 215 (+200)
-    Amoxicillin: 20 → 70 (+50)
+  → อัปเดต Inventory (inventory_lots):
+    Paracetamol: สร้าง lot LOT-2026-A001, qty_remaining = 200
+    Amoxicillin: สร้าง lot LOT-2026-B001, qty_remaining = 50
 
-  → Outbox:
+  → Outbox (aggregate_type = 'procurement_gr'):
     - procurement.goods_receipted
-    - inventory.stock_increased (2 events)
     - procurement.back_order_created
-    - accounting.ap_created (total_cost = 200*150 + 50*200 = 40,000)
 ```
 
 **Step 6 — Supplier ส่งของครั้งที่ 2 (GR #2)**
@@ -1198,21 +1213,20 @@ inventory_items: Paracetamol 500mg
     quantity_fulfilled = 50
     status = 'fulfilled'
 
-  → อัปเดต Inventory:
-    Amoxicillin: 70 → 120 (+50)
+  → อัปเดต Inventory (inventory_lots):
+    Amoxicillin: lot LOT-2026-B002, qty_remaining = 50
 
-  → Outbox:
+  → Outbox (aggregate_type = 'procurement_gr'):
     - procurement.goods_receipted
-    - inventory.stock_increased
+    - procurement.po_fully_received
     - procurement.back_order_fulfilled
-    - accounting.ap_created (10,000)
 ```
 
 **สรุปรายงานที่ผู้ใช้เห็น:**
 | เอกสาร | รายการ | สั่ง/ขอ | รับแล้ว | ค้าง | สถานะ |
 |---|---|---|---|---|---|
-| PR-2026-0001 | Paracetamol 500mg | 200 | — | — | converted_to_po |
-| PR-2026-0001 | Amoxicillin 250mg | 100 | — | — | converted_to_po |
+| PR-2026-0001 | Paracetamol 500mg | 200 | — | — | converted |
+| PR-2026-0001 | Amoxicillin 250mg | 100 | — | — | converted |
 | PO-2026-0001 | Paracetamol 500mg | 200 | 200 | 0 | fully_received |
 | PO-2026-0001 | Amoxicillin 250mg | 100 | 100 | 0 | fully_received |
 | GR-2026-0001 | (รวม) | — | 250 | 50 (back order) | completed |
@@ -1415,18 +1429,16 @@ $$ LANGUAGE plpgsql;
 | 1.5 | Manager อนุมัติ PR | PR.status = 'pending_approval' | PR.status = 'approved', approved_at != null |
 | 1.6 | Staff ธรรมดาพยายามอนุมัติ PR | user = Staff (Viewer) | ข้อผิดพลาด: "ไม่มีสิทธิ์อนุมัติ" |
 | 1.7 | Convert PR ที่ยังไม่ approved | PR.status = 'draft' | ข้อผิดพลาด: "PR ต้องได้รับการอนุมัติก่อน" |
-| 1.8 | Convert PR ที่ approved แล้ว | PR.status = 'approved' | PO ถูกสร้าง, PR.status = 'converted_to_po' |
+| 1.8 | Convert PR ที่ approved แล้ว | PR.status = 'approved' | PO ถูกสร้าง, PR.status = 'converted' |
 
 ### Group 2: PO Lifecycle & Approval
 
 | # | Test Case | Input | Expected Result |
 |---|---|---|---|
-| 2.1 | PO total calculation | subtotal=50,000, vat=7%, discount=0 | total = 53,500 |
-| 2.2 | PO with discount | subtotal=50,000, discount=5,000 | subtotal=50,000, total=48,150 (vat หลังหักส่วนลด) |
-| 2.3 | Submit PO ที่ total < threshold | total = 5,000 | PO.status = 'approved' (auto) |
-| 2.4 | Cancel PO ที่ยังไม่ sent | PO.status = 'approved' | PO.status = 'cancelled' |
-| 2.5 | Cancel PO ที่ sent แล้ว | PO.status = 'sent_to_supplier' | ข้อผิดพลาด: "ไม่สามารถยกเลิก PO ที่ส่งให้ Supplier แล้ว" |
-| 2.6 | Send PO ให้ Supplier | PO.status = 'approved' | PO.status = 'sent_to_supplier', sent_to_supplier_at != null |
+| 2.1 | PO total calculation | total_amount=50,000, tax=3,500 | grand_total = 53,500 |
+| 2.2 | Cancel PO ที่ยังไม่ sent | PO.status = 'draft' | PO.status = 'cancelled' |
+| 2.3 | Cancel PO ที่ sent แล้ว (ยังไม่มี GR) | PO.status = 'sent' | PO.status = 'cancelled' (access_level = 3 เท่านั้น) |
+| 2.4 | Send PO ให้ Supplier | PO.status = 'draft' | PO.status = 'sent' |
 
 ### Group 3: Goods Receipt & Back Order
 
@@ -1438,7 +1450,7 @@ $$ LANGUAGE plpgsql;
 | 3.4 | GR ซ้ำ (idempotency) | same idempotency key กด 2 ครั้ง | ครั้งที่ 2: ข้อผิดพลาด "operation นี้ถูกประมวลผลแล้ว", stock ไม่เพิ่มซ้ำ |
 | 3.5 | GR ครั้งที่ 2 ทำให้ครบ | back_order qty=50, GR#2 accepted=50 | PO.status = 'fully_received', back_order.status = 'fulfilled' |
 | 3.6 | GR ที่ accepted + rejected != received | accepted=40, rejected=5, received=50 | CHECK constraint failed |
-| 3.7 | Inventory updated after GR | Paracetamol qty=15, GR accepted=200 | Inventory qty = 215 |
+| 3.7 | Inventory updated after GR | Paracetamol, GR accepted=200 | inventory_lots สร้าง lot ใหม่, qty_remaining = 200, มี stock_movement type='receipt' |
 
 ### Group 4: Auto-Reorder
 
@@ -1610,34 +1622,156 @@ class GoodsReceipt {
 - **ไม่มีนโยบาย RLS ใดๆ ที่ใช้ `auth.uid()` ใน PostgreSQL** ทุกตารางใช้ `profession_id` และ `branch_id` เป็น tenant isolation
 - การตรวจสอบสิทธิ์ผู้ใช้ทำที่ **Application Layer** ผ่าน Repository Pattern:
   - ดึง `userId` จาก `ServiceLocator.instance.currentUser?.id` (ไม่ใช่ `Supabase.instance.client.auth.currentUser`)
-  - ตรวจสอบ `employee_roles` ว่าผู้ใช้มีสิทธิ์ในโมดูล Procurement ระดับใด (Viewer/Editor/Manager)
-  - กรองข้อมูลตาม `profession_id` และ `branch_id` ก่อน execute query
-- `created_by`, `updated_by`, `approved_by`, `received_by`, `confirmed_by` เก็บ `UUID` ของผู้ใช้จาก Application Layer ไม่ใช่จาก `auth.uid()` ของ Supabase
+  - ตรวจสอบ `role_module_permissions` ว่าผู้ใช้มี `access_level` ระดับใดใน module `'procurement'` (0=None, 1=View, 2=Edit, 3=Full)
+  - กรองข้อมูลตาม `profession_id` และ `employee_roles.branch_id` ก่อน execute query
+- `approved_by`, `received_by`, `confirmed_by`, `requester_id` เก็บ `UUID` ของผู้ใช้จาก Application Layer ไม่ใช่จาก `auth.uid()` ของ Supabase
 - ทุก write operation ที่มีผลต่อ stock หรือเงิน ต้องผ่าน Reliability Core (idempotency check + outbox publish) ก่อน commit
+
+---
+
+## Integration with Reliability Core (✅ Implement แล้ว)
+
+> Procurement ใช้โครงสร้างพื้นฐาน Reliability Core ที่ implement แล้วใน Phase 0 migrations:
+> - `outbox_events` → `20260609180000_create_accounting_core_schema.sql`
+> - `idempotency_keys` → `20260609180000_create_accounting_core_schema.sql`
+> - `inbox_events` → `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
+> - `transaction_contexts` → `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql`
+> - `transaction_audit_log` → `20260612140000_add_reliability_transaction_tables.sql`
+
+### Outbox Events
+
+Procurement ใช้ `aggregate_type = 'procurement_gr'` สำหรับ event ทุกประเภท:
+
+| event_type | เมื่อไร | Consumer(s) |
+|---|---|---|
+| `procurement.pr_approved` | PR ได้รับการอนุมัติ | Notification |
+| `procurement.po_sent` | PO ส่งให้ Supplier | Notification |
+| `procurement.goods_receipted` | GR completed | Inventory, Accounting |
+| `procurement.back_order_created` | มีของค้างส่ง | Notification |
+| `procurement.po_fully_received` | PO รับของครบ | Notification, Accounting |
+
+### Idempotency Keys
+
+Operations ที่ต้องผ่าน idempotency check (`scope = 'procurement'`):
+- การสร้าง GR (ป้องกันการรับของซ้ำ)
+- การอนุมัติ PR/PO (ป้องกันกดอนุมัติซ้ำ)
+
+### Transaction Context (Saga) สำหรับ GR Completed
+
+```
+Saga: goods_receipt_complete (source_module = 'procurement')
+────────────────────────────────────────────────
+1. create_transaction_context(
+     source_module='procurement',
+     operation_type='goods_receipt_complete'
+   )
+2. Step: update_po_items
+   → quantity_received += accepted ต่อ PO item
+3. Step: upsert_inventory_lots
+   → INSERT/UPDATE inventory_lots (po_id, quantity_remaining)
+4. Step: insert_stock_movements
+   → movement_type='receipt', reference_type='po'
+5. Step: create_back_orders (if partial)
+   → quantity_back_ordered = ordered - received
+6. Step: update_po_status
+   → 'partially_received' or 'fully_received'
+7. Step: publish_outbox_events
+   → 'procurement.goods_receipted'
+   → 'procurement.po_fully_received' (if fully)
+8. update_transaction_context(status='committed')
+
+Compensation (if step 3 fails):
+  → Rollback step 2 (revert quantity_received)
+  → update_transaction_context(status='compensating' → 'compensated')
+```
+
+### Inbox Events (สำหรับ Procurement เป็น Consumer)
+
+| source aggregate_type | event_type | สิ่งที่ Procurement ทำ |
+|---|---|---|
+| `pos_sale` | `inventory.stock_low` | ตรวจสอบ reorder_point และสร้าง reorder_suggestion |
+
+### Audit Trail
+ทุกการเปลี่ยนแปลงสถานะ PR/PO/GR ต้องบันทึกลง `transaction_audit_log` ผ่าน RPC `record_audit_log()`
+
+---
+
+## Feature Toggle & Subscription
+
+> Procurement ใช้ `organization_feature_flags` (✅ ตาราง + RPC implement แล้วใน Phase 0)
+
+| feature_name | status | ผล |
+|---|---|---|
+| `procurement_module` | `enabled` | เข้าถึงได้ปกติ |
+| `procurement_module` | `disabled` | UI Locked: ข้อมูลเดิมยังอยู่, ไม่สามารถสร้าง/แก้ไขเอกสาร |
+| `procurement_module` | `beta` | เปิดทดลอง มี badge "ทดลองใช้งาน" |
+
+**ตรวจสอบที่ App Layer:**
+```dart
+final flags = await supabase.rpc('get_profession_feature_flags', params: {
+  'p_profession_id': currentUser.professionId,
+});
+final procurementFlag = flags.firstWhere(
+  (f) => f['feature_name'] == 'procurement_module',
+  orElse: () => {'status': 'disabled'},
+);
+if (procurementFlag['status'] == 'disabled') {
+  // แสดง Locked UI
+}
+```
+
+---
+
+## DataBroker & Storage Mode
+
+> Procurement repository ต้อง routing ผ่าน **DataBroker** ตาม ERP Core Architecture:
+> - **Cloud Mode:** API calls ไป Supabase โดยตรง
+> - **Self-host Mode:** API calls ไป IP ของ External Drive (PostgreSQL ที่คลินิก host เอง)
+>
+> Repository ไม่ควร hardcode endpoint แต่ใช้ `DataBroker.resolve()` เพื่อกำหนด base URL
+
+---
+
+## Notification System
+
+> รายละเอียด notification delivery ดำเนินการตาม [ERP_NOTIFICATION_SYSTEM_PLAN.md](ERP_NOTIFICATION_SYSTEM_PLAN.md)
+> - In-App Notification ผ่าน Supabase Realtime (ฟรี)
+> - Email/LINE ตาม config ของแต่ละองค์กร
+>
+> Procurement event payloads (ดู section "Outbox Event Payloads" ด้านบน) ถูกส่งผ่าน `outbox_events` → Notification Service อ่านและแสดงตามช่องทางที่เหมาะสม
 
 ---
 
 ## แผนการพัฒนา (Phased Implementation)
 
-### Phase 1: Procurement Core (PR + PO + GR + Supplier)
-- **Schema:** สร้างทุกตารางตามเอกสารฉบับนี้ (ยกเว้น `supplier_price_history` ถ้าไม่เปิดโหมด B)
-- **UI:** `SupplierDirectoryPage`, `PrListPage`, `PrFormPage`, `PoListPage`, `PoFormPage`, `GoodsReceiptFormPage`
-- **Logic:** Approval Workflow, Partial Receipt, Auto-Back Order, ส่ง outbox ไป Inventory
-- **Integration:** รับของเสร็จ → อัปเดต stock ใน Inventory + ส่ง outbox ไป Accounting (AP auto-create)
-- **ไม่ทำ:** 3-Way Matching, Supplier Invoice matching
+> **Phase Naming Convention:** ใช้รูปแบบ "ERP Phase X / Procurement Step Y" เพื่อสอดคล้องกับ ERP Master Phase
 
-### Phase 2: Auto-Reorder & Price History
-- **Schema:** เพิ่ม `reorder_suggestions`, `supplier_price_history`, `procurement_settings`
-- **UI:** `ReorderSuggestionPage`, `ProcurementSettingsPage`, `SupplierDetailPage` (แสดงกราฟราคา)
+### ERP Phase 1 / Procurement Step 1: Core (PR + PO + Supplier) ✅ Completed (เสร็จสมบูรณ์ในโค้ดและ DB)
+- **Schema (✅):** `suppliers`, `purchase_requisitions`, `purchase_orders`, `purchase_order_items` → `20260611160000`
+- **Inventory (✅):** `inventory_lots` (with `po_id` FK), `stock_movements`, `warehouse_locations` → `20260611160000`
+- **Reliability (✅):** `outbox_events`, `idempotency_keys`, `inbox_events`, `transaction_contexts`, `transaction_audit_log`
+- **RBAC (✅):** `role_module_permissions` (module = `'procurement'`), `organization_feature_flags`
+- **UI (✅):** [ProcurementPage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/procurement_page.dart) (รวบรวม Suppliers, PR และ PO ไว้ในหน้าเดียวแบบ Tabbed UI คลุมด้วยเส้นทาง `/erp/suppliers`)
+- **ไม่ทำ:** GR formal table, Back Orders, 3-Way Matching, document_sequences
+
+### ERP Phase 1 / Procurement Step 2: GR + Back Order + Auto-Reorder
+- **Schema (⏳):** เพิ่ม `goods_receipts`, `goods_receipt_items`, `back_orders`, `purchase_requisition_items`, `procurement_settings`, `document_sequences`
+- **UI:** `GoodsReceiptFormPage`, `BackOrderListPage`, `ProcurementSettingsPage`
+- **Logic:** Approval Workflow เต็มรูป (threshold-based), Partial Receipt, Auto-Back Order, ส่ง outbox ไป Inventory + Accounting
+- **Integration:** GR completed → `inventory_lots` + `stock_movements` + outbox → Accounting (AP auto-create)
+
+### ERP Phase 1 / Procurement Step 3: Auto-Reorder & Price History
+- **Schema (⏳):** เพิ่ม `reorder_suggestions`, `supplier_price_history`
+- **UI:** `ReorderSuggestionPage`, `SupplierDetailPage` (แสดงกราฟราคา)
 - **Logic:** Background job ตรวจสอบ stock ต่ำ, ผู้ใช้ยืนยันก่อน convert เป็น PR
-- **Feature:** เปิด/ปิดโหมด B ได้ตามการตั้งค่า
+- **Feature:** เปิด/ปิดโหมด Price History ได้ตามการตั้งค่า
 
-### Phase 3: Reporting & Advanced Integration
-- **UI:** `ProcurementDashboardPage`, `ProcurementReportPage`, `BackOrderListPage` พร้อมกราฟ
+### ERP Phase 3 / Procurement Step 4: Reporting & Advanced Integration
+- **UI:** `ProcurementDashboardPage`, `ProcurementReportPage` พร้อมกราฟ
 - **Integration:** เพิ่ม 3-Way Matching (PO vs GR vs Supplier Invoice) เมื่อ Accounting Module รองรับ `supplier_invoices`
 - **Feature:** ส่ง PO PDF ให้ Supplier ผ่าน email, รองรับการค้นหาย้อนหลังแบบ full-text
 
-### Phase 4: HIS & Pharmacy Integration
+### ERP Phase 4 / Procurement Step 5: HIS & Pharmacy Integration
 - เชื่อม PR กับการสั่งยาใน HIS (ห้องยาขอซื้อยา → สร้าง PR อัตโนมัติ)
 - เชื่อม Goods Receipt กับ FEFO/Lot/Expiry ของ Inventory System อย่างสมบูรณ์
 - รองรับการสั่งซื้อยาควบคุมพิเศษ (ตามกฎหมายไทย) พร้อม audit trail

@@ -73,7 +73,13 @@ import 'features/erp/presentation/pages/feature_flags_page.dart';
 import 'features/erp/presentation/pages/product_list_page.dart';
 import 'features/erp/presentation/pages/customer_list_page.dart';
 import 'features/erp/presentation/pages/inventory_page.dart';
-import 'features/erp/presentation/pages/supplier_list_page.dart';
+import 'features/erp/presentation/pages/inventory_dashboard_page.dart';
+import 'features/erp/presentation/pages/stock_transfer_page.dart';
+import 'features/erp/presentation/pages/stock_adjustment_page.dart';
+import 'features/erp/presentation/pages/stock_movement_tracking_page.dart';
+import 'features/erp/presentation/pages/stocktake_config_page.dart';
+import 'features/erp/presentation/pages/goods_receipt_page.dart';
+import 'features/erp/presentation/pages/procurement_page.dart';
 import 'features/erp/presentation/pages/cart_page.dart';
 import 'features/erp/presentation/pages/checkout_page.dart';
 import 'features/erp/presentation/pages/delivery_orders_page.dart';
@@ -277,12 +283,60 @@ class SheservedApp extends StatelessWidget {
             builder: (context) => ErpDashboardShell(child: InventoryPage(professionId: professionId)),
           );
         }
+        if (settings.name == '/erp/inventory/dashboard') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: InventoryDashboardPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory/transfer') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: StockTransferPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory/adjustment') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: StockAdjustmentPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory/movements') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: StockMovementTrackingPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory/stocktake-config') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: StocktakeConfigPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/inventory/receipt') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: GoodsReceiptPage(professionId: professionId)),
+          );
+        }
         if (settings.name == '/erp/suppliers') {
           final args = settings.arguments as Map<String, dynamic>?;
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: SupplierListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(child: ProcurementPage(professionId: professionId)),
           );
         }
         if (settings.name == '/erp/cart') {

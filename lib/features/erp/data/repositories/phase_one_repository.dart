@@ -14,6 +14,9 @@ import '../models/stock_adjustment.dart';
 import '../models/inventory_transfer.dart';
 import '../models/inventory_transfer_line.dart';
 import '../models/inventory_alert.dart';
+import '../models/purchase_requisition.dart';
+import '../models/purchase_order.dart';
+import '../models/purchase_order_item.dart';
 
 /// Repository สำหรับ ERP Phase 1 — Data & Inflow
 /// ครอบคลุม: Product Master, CRM, Procurement, Inventory
@@ -37,7 +40,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => Product.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getProducts error: $e');
       return [];
     }
@@ -50,8 +53,8 @@ class PhaseOneRepository {
           .insert(data)
           .select()
           .single();
-      return Product.fromJson(response as Map<String, dynamic>);
-    } catch (e, st) {
+      return Product.fromJson(response);
+    } catch (e) {
       debugPrint('[Phase1Repo] createProduct error: $e');
       return null;
     }
@@ -61,7 +64,7 @@ class PhaseOneRepository {
     try {
       await _client.from('products').update(data).eq('id', productId);
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] updateProduct error: $e');
       return false;
     }
@@ -77,7 +80,7 @@ class PhaseOneRepository {
         },
       );
       return response as int?;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getProductAvailableStock error: $e');
       return null;
     }
@@ -98,7 +101,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => Customer.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getCustomers error: $e');
       return [];
     }
@@ -111,8 +114,8 @@ class PhaseOneRepository {
           .insert(data)
           .select()
           .single();
-      return Customer.fromJson(response as Map<String, dynamic>);
-    } catch (e, st) {
+      return Customer.fromJson(response);
+    } catch (e) {
       debugPrint('[Phase1Repo] createCustomer error: $e');
       return null;
     }
@@ -122,7 +125,7 @@ class PhaseOneRepository {
     try {
       await _client.from('customers').update(data).eq('id', customerId);
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] updateCustomer error: $e');
       return false;
     }
@@ -143,7 +146,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => Supplier.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getSuppliers error: $e');
       return [];
     }
@@ -156,8 +159,8 @@ class PhaseOneRepository {
           .insert(data)
           .select()
           .single();
-      return Supplier.fromJson(response as Map<String, dynamic>);
-    } catch (e, st) {
+      return Supplier.fromJson(response);
+    } catch (e) {
       debugPrint('[Phase1Repo] createSupplier error: $e');
       return null;
     }
@@ -177,7 +180,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryLot.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryLots error: $e');
       return [];
     }
@@ -194,7 +197,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryLot.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryLotsByProduct error: $e');
       return [];
     }
@@ -214,7 +217,7 @@ class PhaseOneRepository {
       );
       if (response == null) return [];
       return List<Map<String, dynamic>>.from(response as List);
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getProductStockSummary error: $e');
       return [];
     }
@@ -224,7 +227,7 @@ class PhaseOneRepository {
     try {
       await _client.from('inventory_lots').insert(data);
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] createInventoryLot error: $e');
       return false;
     }
@@ -238,25 +241,64 @@ class PhaseOneRepository {
     try {
       await _client.from('stock_movements').insert(data);
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] recordStockMovement error: $e');
       return false;
     }
   }
 
-  Future<List<Map<String, dynamic>>> getStockMovements(String productId) async {
+  Future<List<Map<String, dynamic>>> getStockMovements({
+    String? productId,
+    String? customMedicationId,
+    String? professionId,
+    int limit = 50,
+  }) async {
     try {
-      final response = await _client
+      var query = _client
           .from('stock_movements')
-          .select()
-          .eq('product_id', productId)
+          .select();
+
+      if (productId != null) {
+        query = query.eq('product_id', productId);
+      }
+      if (customMedicationId != null) {
+        query = query.eq('custom_medication_id', customMedicationId);
+      }
+      if (professionId != null) {
+        query = query.eq('profession_id', professionId);
+      }
+
+      final response = await query
           .order('created_at', ascending: false)
-          .limit(50);
+          .limit(limit);
       return (response as List)
           .map((e) => e as Map<String, dynamic>)
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getStockMovements error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getStockMovementsByProfession(
+    String professionId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'get_stock_movements_by_profession',
+        params: {
+          'p_profession_id': professionId,
+          'p_limit': limit,
+          'p_offset': offset,
+        },
+      );
+      return (response as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getStockMovementsByProfession error: $e');
       return [];
     }
   }
@@ -276,7 +318,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => e as Map<String, dynamic>)
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getCoupons error: $e');
       return [];
     }
@@ -286,8 +328,58 @@ class PhaseOneRepository {
     try {
       await _client.from('coupons').insert(data);
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] createCoupon error: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // PURCHASE REQUISITIONS
+  // ========================
+
+  Future<List<PurchaseRequisition>> getPurchaseRequisitions(String professionId) async {
+    try {
+      final response = await _client
+          .from('purchase_requisitions')
+          .select('*, requester:users(display_name), approver:users(display_name), branch:organization_branches(name)')
+          .eq('profession_id', professionId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => PurchaseRequisition.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getPurchaseRequisitions error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> createPurchaseRequisition(Map<String, dynamic> data) async {
+    try {
+      await _client.from('purchase_requisitions').insert(data);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createPurchaseRequisition error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updatePurchaseRequisitionStatus(
+    String prId,
+    String status, {
+    String? approvedBy,
+  }) async {
+    try {
+      final data = {
+        'status': status,
+        'updated_at': DateTime.now().toIso8601String(),
+        if (approvedBy != null) 'approved_by': approvedBy,
+        if (approvedBy != null) 'approved_at': DateTime.now().toIso8601String(),
+      };
+      await _client.from('purchase_requisitions').update(data).eq('id', prId);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] updatePurchaseRequisitionStatus error: $e');
       return false;
     }
   }
@@ -296,19 +388,89 @@ class PhaseOneRepository {
   // PURCHASE ORDERS
   // ========================
 
-  Future<List<Map<String, dynamic>>> getPurchaseOrders(String professionId) async {
+  Future<List<PurchaseOrder>> getPurchaseOrders(String professionId) async {
     try {
       final response = await _client
           .from('purchase_orders')
-          .select('*, supplier:suppliers(supplier_name)')
+          .select('*, supplier:suppliers(supplier_name), branch:organization_branches(name), purchase_requisitions(pr_number)')
           .eq('profession_id', professionId)
           .order('created_at', ascending: false);
       return (response as List)
-          .map((e) => e as Map<String, dynamic>)
+          .map((e) => PurchaseOrder.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getPurchaseOrders error: $e');
       return [];
+    }
+  }
+
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(String poId) async {
+    try {
+      final response = await _client
+          .from('purchase_order_items')
+          .select('*, product:products(name, unit_of_measure)')
+          .eq('po_id', poId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => PurchaseOrderItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getPurchaseOrderItems error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> createPurchaseOrder({
+    required Map<String, dynamic> poData,
+    required List<Map<String, dynamic>> itemsData,
+  }) async {
+    try {
+      // 1. Insert purchase order
+      final poResponse = await _client
+          .from('purchase_orders')
+          .insert(poData)
+          .select()
+          .single();
+      
+      final String poId = poResponse['id'] as String;
+
+      // 2. Prepare items data with the new poId
+      final itemsToInsert = itemsData.map((item) {
+        return {
+          ...item,
+          'po_id': poId,
+        };
+      }).toList();
+
+      // 3. Insert items
+      await _client.from('purchase_order_items').insert(itemsToInsert);
+
+      // 4. If this PO was created from a PR, update the PR status to 'converted'
+      final String? prId = poData['pr_id'] as String?;
+      if (prId != null) {
+        await updatePurchaseRequisitionStatus(prId, 'converted');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createPurchaseOrder error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updatePurchaseOrderStatus(String poId, String status) async {
+    try {
+      await _client
+          .from('purchase_orders')
+          .update({
+            'status': status,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', poId);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] updatePurchaseOrderStatus error: $e');
+      return false;
     }
   }
 
@@ -341,7 +503,7 @@ class PhaseOneRepository {
         },
       );
       return response as String?;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] createInventoryReservation error: $e');
       return null;
     }
@@ -354,7 +516,7 @@ class PhaseOneRepository {
         params: {'p_reservation_id': reservationId},
       );
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] releaseStockReservation error: $e');
       return false;
     }
@@ -373,7 +535,7 @@ class PhaseOneRepository {
         },
       );
       return true;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] deductStock error: $e');
       return false;
     }
@@ -383,7 +545,7 @@ class PhaseOneRepository {
     try {
       final response = await _client.rpc('cleanup_expired_reservations');
       return (response as num?)?.toInt() ?? 0;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] cleanupExpiredReservations error: $e');
       return 0;
     }
@@ -404,9 +566,60 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryItem.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryItems error: $e');
       return [];
+    }
+  }
+
+  Future<InventoryItem?> findInventoryItem({
+    required String professionId,
+    String? productId,
+    String? customMedicationId,
+    String? branchId,
+  }) async {
+    try {
+      var query = _client
+          .from('inventory_items')
+          .select()
+          .eq('profession_id', professionId);
+
+      if (productId != null) {
+        query = query.eq('product_id', productId);
+      }
+      if (customMedicationId != null) {
+        query = query.eq('custom_medication_id', customMedicationId);
+      }
+      if (branchId != null) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      final response = await query.maybeSingle();
+      if (response == null) return null;
+      return InventoryItem.fromJson(response);
+    } catch (e) {
+      debugPrint('[Phase1Repo] findInventoryItem error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> createInventoryItem(Map<String, dynamic> data) async {
+    try {
+      await _client.from('inventory_items').insert(data);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createInventoryItem error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateInventoryItem(String id, Map<String, dynamic> data) async {
+    try {
+      await _client.from('inventory_items').update(data).eq('id', id);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] updateInventoryItem error: $e');
+      return false;
     }
   }
 
@@ -422,7 +635,7 @@ class PhaseOneRepository {
           .map((e) => InventoryItem.fromJson(e as Map<String, dynamic>))
           .toList();
       return items.where((i) => i.isLowStock).toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getLowStockItems error: $e');
       return [];
     }
@@ -447,7 +660,7 @@ class PhaseOneRepository {
         },
       );
       return response as Map<String, dynamic>?;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] deductInventoryFefo error: $e');
       return null;
     }
@@ -468,7 +681,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => CustomMedication.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getCustomMedications error: $e');
       return [];
     }
@@ -489,9 +702,76 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => StocktakeConfiguration.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getStocktakeConfigurations error: $e');
       return [];
+    }
+  }
+
+  Future<String?> createStocktakeConfiguration({
+    required String professionId,
+    String? branchId,
+    String name = 'Stocktake',
+    String frequencyType = 'MONTHLY',
+    int? customIntervalDays,
+    DateTime? nextStocktakeDate,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'create_stocktake_configuration',
+        params: {
+          'p_profession_id': professionId,
+          'p_branch_id': branchId,
+          'p_name': name,
+          'p_frequency_type': frequencyType,
+          'p_custom_interval_days': customIntervalDays,
+          'p_next_stocktake_date': nextStocktakeDate?.toIso8601String().split('T')[0],
+        },
+      );
+      return response as String?;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createStocktakeConfiguration error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> updateStocktakeConfiguration({
+    required String configId,
+    String? name,
+    String? frequencyType,
+    int? customIntervalDays,
+    DateTime? nextStocktakeDate,
+    bool? isActive,
+  }) async {
+    try {
+      await _client.rpc(
+        'update_stocktake_configuration',
+        params: {
+          'p_config_id': configId,
+          'p_name': name,
+          'p_frequency_type': frequencyType,
+          'p_custom_interval_days': customIntervalDays,
+          'p_next_stocktake_date': nextStocktakeDate?.toIso8601String().split('T')[0],
+          'p_is_active': isActive,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] updateStocktakeConfiguration error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteStocktakeConfiguration(String configId) async {
+    try {
+      await _client.rpc(
+        'delete_stocktake_configuration',
+        params: {'p_config_id': configId},
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] deleteStocktakeConfiguration error: $e');
+      return false;
     }
   }
 
@@ -505,7 +785,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => StocktakeSession.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getStocktakeSessions error: $e');
       return [];
     }
@@ -520,7 +800,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => StocktakeLine.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getStocktakeLines error: $e');
       return [];
     }
@@ -539,7 +819,7 @@ class PhaseOneRepository {
         },
       );
       return response != null ? (response as num).toInt() : null;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] completeStocktakeSession error: $e');
       return null;
     }
@@ -559,7 +839,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => StockAdjustment.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getStockAdjustments error: $e');
       return [];
     }
@@ -588,7 +868,7 @@ class PhaseOneRepository {
         },
       );
       return response as String?;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] createStockAdjustment error: $e');
       return null;
     }
@@ -608,7 +888,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryTransfer.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryTransfers error: $e');
       return [];
     }
@@ -623,7 +903,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryTransferLine.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryTransferLines error: $e');
       return [];
     }
@@ -654,7 +934,7 @@ class PhaseOneRepository {
         },
       );
       return response as String?;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] createInventoryTransfer error: $e');
       return null;
     }
@@ -673,7 +953,7 @@ class PhaseOneRepository {
         },
       );
       return response as bool? ?? false;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] completeInventoryTransfer error: $e');
       return false;
     }
@@ -696,7 +976,7 @@ class PhaseOneRepository {
       return (response as List)
           .map((e) => InventoryAlert.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] getInventoryAlerts error: $e');
       return [];
     }
@@ -709,7 +989,7 @@ class PhaseOneRepository {
         params: {'p_profession_id': professionId},
       );
       return (response as num?)?.toInt() ?? 0;
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('[Phase1Repo] checkInventoryAlerts error: $e');
       return 0;
     }

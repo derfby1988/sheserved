@@ -527,6 +527,12 @@ class _DashboardModuleBoard extends StatelessWidget {
       _DashboardModuleSpec(label: 'Counter POS', thaiLabel: 'ขายหน้าร้าน', routeName: '/erp/pos/counter', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Clinic POS', thaiLabel: 'ขายบริการคลินิก', routeName: '/erp/pos/clinic', icon: Icons.local_hospital, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Inventory Management', thaiLabel: 'คลังสินค้า', routeName: '/erp/inventory', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Inventory Dashboard', thaiLabel: 'ภาพรวมคลัง', routeName: '/erp/inventory/dashboard', icon: Icons.dashboard, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Stock Transfer', thaiLabel: 'โอนย้ายสินค้า', routeName: '/erp/inventory/transfer', icon: Icons.swap_horiz, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Stock Adjustment', thaiLabel: 'ปรับสต็อก', routeName: '/erp/inventory/adjustment', icon: Icons.tune, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Stock Movements', thaiLabel: 'ประวัติสต็อก', routeName: '/erp/inventory/movements', icon: Icons.history, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Stocktake Config', thaiLabel: 'ตั้งค่าตรวจนับ', routeName: '/erp/inventory/stocktake-config', icon: Icons.fact_check, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Goods Receipt', thaiLabel: 'รับของเข้า', routeName: '/erp/inventory/receipt', icon: Icons.arrow_downward, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Procurement Management', thaiLabel: 'จัดซื้อจัดจ้าง', routeName: '/erp/suppliers', icon: Icons.shopping_bag, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Cart & Checkout', thaiLabel: 'ตะกร้า/ชำระเงิน', routeName: '/erp/cart', icon: Icons.shopping_cart, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Delivery', thaiLabel: 'การจัดส่ง', routeName: '/erp/delivery', icon: Icons.local_shipping, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
@@ -543,6 +549,7 @@ class _DashboardModuleBoard extends StatelessWidget {
       _DashboardModuleSpec(label: 'Loyalty Rules', thaiLabel: 'แต้มสะสม', routeName: '/erp/loyalty', icon: Icons.stars, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Reports', thaiLabel: 'รายงาน', routeName: '/erp/reports', icon: Icons.assessment, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
       _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(10, const Color(0xFFCCFF00))),
+      _DashboardModuleSpec(label: 'Role Management', thaiLabel: 'จัดการสิทธิ์ผู้ใช้', routeName: '/erp/roles', icon: Icons.admin_panel_settings, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(10, const Color(0xFFCCFF00))),
     ];
   }
 }

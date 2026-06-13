@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'health_data_source.dart';
 import '../models/device_health_metric.dart';
@@ -25,7 +26,7 @@ class HealthConnectSource implements HealthDataSource {
   String get sourceName => 'Health Connect';
 
   @override
-  Future<bool> isAvailable() async => Platform.isAndroid;
+  Future<bool> isAvailable() async => !kIsWeb && Platform.isAndroid;
 
   @override
   Future<bool> requestPermissions() async {

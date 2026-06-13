@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/sources/health_data_source.dart';
@@ -338,6 +339,13 @@ class HealthNotifier extends StateNotifier<HealthState> {
   }
 
   void _initSource() {
+    if (kIsWeb) {
+      state = state.copyWith(
+        connectionState: HealthConnectionState.error,
+        errorMessage: 'OS not supported on Web',
+      );
+      return;
+    }
     HealthDataSource source;
     if (Platform.isIOS) {
       source = AppleHealthSource();

@@ -123,9 +123,20 @@
 
 ### สถานะปัจจุบัน
 - ✔️ ฟีเจอร์ Organization Settings (Glassmorphism, editable branches, branch_tax_code+email) เสร็จแล้วตาม checklist ด้านบน
-- ⏳ Phase 0 (RBAC, Reliability Core, Feature Flags, Organization Settings schema) และ Phase 1 (CRM + Procurement + Inventory data) ถูก mark ว่า ✅ COMPLETE โดยมีทั้ง migration + Flutter layer cover
+- ✅ Phase 0 (RBAC, Reliability Core, Feature Flags, Organization Settings schema) **COMPLETE**
+- ✅ Phase 1 (CRM + Procurement + Inventory data) **COMPLETE** — migration + Flutter layer cover
 - ✅ Phase 2 (Commerce/Cart/Settlement/Delivery) **COMPLETE** — มีทั้ง migration + Flutter layer ครบถ้วน สามารถเพิ่ม/ลบตะกร้า → checkout → สร้าง order → ชำระเงิน → delivery → ดู vendor contracts ได้
 - ✅ Payment Channels (`payment_channels` + `seed_default_payment_channels` + `PaymentChannelsPage`) + branch_tax_code validation (DB + Flutter) **COMPLETE** — migration รันสำเร็จบน Supabase
+- ✅ Phase 5 (POS Refund + CRM Loyalty Auto-calculation + KPI Export Reports) **COMPLETE** — migration + RPC + Flutter UI ครบถ้วน
+- 🔄 Phase 3 (Finance & Analytics) **IN PROGRESS**
+- ✅ **Inventory / Stock System (Phase 9 Core) — ทำล่วงหน้าเสร็จแล้ว (2026-06-13):**
+  - ✅ Database: `inventory_items`, `inventory_lots`, `stocktake_*`, `stock_adjustments`, `inventory_transfers`, `inventory_alerts`, `stock_movements`, `custom_medications` + RLS
+  - ✅ Schema Fix (2026-06-13): `stock_movements` + `inventory_lots` รองรับ `custom_medication_id` (แก้ `product_id NOT NULL` blocker)
+  - ✅ RPC: `deduct_inventory_fefo()`, `create_inventory_transfer()`, `complete_inventory_transfer()`, `create_stock_adjustment()`, `complete_stocktake_session()`, `check_inventory_alerts()`, `create/release_inventory_reservation()`, `get_stock_movements_by_profession()`, `create/update/delete_stocktake_configuration()`
+  - ✅ Flutter UI: `InventoryPage` (6 tabs + FAB + Dialog), `InventoryDashboardPage` (summary + alerts + quick actions), `StockTransferPage` (พร้อมเลือกสาขา), `StockAdjustmentPage`, `StockMovementTrackingPage`, `StocktakeConfigPage` (CRUD), `GoodsReceiptPage` (รองรับ custom medications + สาขา) + PhaseOneNotifier (load/create/complete/CRUD)
+  - ✅ Routes: `/erp/inventory`, `/erp/inventory/dashboard`, `/erp/inventory/transfer`, `/erp/inventory/adjustment`, `/erp/inventory/movements`, `/erp/inventory/stocktake-config`, `/erp/inventory/receipt` + Dashboard tiles
+  - ✅ websocket-server: `inventory-alert-checker.js` (scheduled job ทุก 24 ชม.) เรียก `check_inventory_alerts()` อัตโนมัติ
+  - ✅ Zero-Mock testing: ทุก operation ใช้ RPC จริงกับ Supabase (ไม่ต้อง mock data)
 
 ### 2. หน้าจัดการแยกรายโมดูล (Module Management Pages)
 แต่ละโมดูลใน ERP จะมีหน้าจัดการของตัวเองภายใน Dashboard ขององค์กร ได้แก่:
@@ -646,9 +657,9 @@ Home Page
 - **3 ระดับสิทธิ์ต่อโมดูล (3 Permission Levels per Module):**
   | ระดับ | ความสามารถ |
   |-------|------------|
-  | **ระดับ 1 (Full Access)** | เข้าถึงได้ทุกฟังก์ชัน, แก้ไข, ลบ, ออกรายงาน |
+  | **ระดับ 1 (View Only)** | ดูข้อมูลและรายงานได้เท่านั้น ไม่สามารถแก้ไขข้อมูลใดๆ |
   | **ระดับ 2 (Edit Access)** | ใช้งานและแก้ไขข้อมูลได้ แต่ไม่สามารถลบหรือเข้าถึงการตั้งค่าขั้นสูง |
-  | **ระดับ 3 (View Only)** | ดูข้อมูลและรายงานได้เท่านั้น ไม่สามารถแก้ไขข้อมูลใดๆ |
+  | **ระดับ 3 (Full Access)** | เข้าถึงได้ทุกฟังก์ชัน, แก้ไข, ลบ, ออกรายงาน |
 
 #### การจัดการสิทธิ์
 - **หน้าจัดการสิทธิ์** (`Permission Management Page`): แต่ละองค์กรมีหน้าจัดการสิทธิ์เป็นของตนเองภายใน Dashboard
@@ -687,7 +698,7 @@ CREATE TABLE role_module_permissions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_id         UUID NOT NULL REFERENCES organization_roles(id),
   module_name     TEXT NOT NULL CHECK (module_name IN ('pos', 'inventory', 'procurement', 'accounting', 'hr', 'crm', 'his', 'lis', 'telemedicine', 'logistics', 'commerce', 'cart', 'settlement', 'read_model', 'reliability')),
-  access_level    INTEGER NOT NULL CHECK (access_level IN (1, 2, 3)), -- 1=Full, 2=Edit, 3=View
+  access_level    INTEGER NOT NULL CHECK (access_level IN (1, 2, 3)), -- 1=View, 2=Edit, 3=Full
   UNIQUE (role_id, module_name)
 );
 

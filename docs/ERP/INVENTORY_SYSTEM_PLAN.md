@@ -123,23 +123,81 @@ CREATE TABLE stocktake_configurations (
 ## แผนการพัฒนา (Phased Implementation)
 *ระบบ Inventory ถูกจัดวางไว้ใน Phase ท้ายๆ เนื่องจากมีความซับซ้อนสูง และต้องรอให้ระบบพื้นฐาน (POS, Accounting, HR) นิ่งก่อน โดยเฉพาะฟีเจอร์ยาและ Lot/Expiry*
 
+> **สถานะอัปเดตล่าสุด:** ส่วนใหญ่ของ Phase 9 ได้ถูกนำไป implement ล่วงหน้าเพื่อรองรับ POS/Checkout ที่ต้องตัดสต๊อกจริง ทำให้หลายฟีเจอร์ข้ามมาอยู่ใน Phase 2–3 แทน
+>
+> **อัปเดตครั้งใหญ่ (2026-06-13):** แก้ไข blocker `stock_movements.product_id NOT NULL` + `inventory_lots.product_id NOT NULL` ที่ทำให้ custom medications ใช้งานไม่ได้ เพิ่มหน้า Phase 9 ที่เหลือทั้งหมดที่ไม่มี dependency กับงานอื่น
+
 ### Phase 9: Inventory Core & Lot Management (Pre-HIS Phase)
 - **วัตถุประสงค์:** สร้างระบบคลังสินค้าที่รองรับ Multi-branch และระบบ Lot/Expiry อย่างสมบูรณ์ เพื่อเตรียมพร้อมให้ระบบ HIS (Pharmacy) เรียกใช้งาน
-- **Database Schema Updates:**
-  - สร้าง `inventory_items` ที่ทำหน้าที่เป็นระดับ Lot ย่อย (Row-level FEFO)
-  - สร้าง `stock_movements` (Transaction logs) เพื่อบันทึกประวัติ In/Out/Transfer/Adjust
-- **Backend Logic (Supabase RPC):**
-  - ฟังก์ชัน `deduct_inventory_fefo()` สำหรับรับรหัสยา แล้วไปไล่ตัดสต๊อกจาก `inventory_items` ล็อตที่ `expiry_date` ใกล้ที่สุดก่อน หากยอดไม่พอให้ข้ามไปตัดล็อตถัดไปจนครบจำนวน
-  - Job แจ้งเตือนยาใกล้หมดอายุ (Expiry Alert) และยาถึงจุดสั่งซื้อ (`reorder_point`)
-- **Flutter UI:**
-  - `InventoryDashboardPage` แสดงภาพรวมสต็อก แจ้งเตือนยาหมดอายุ, Low Stock, และแจ้งเตือนรอบการตรวจนับ (Stocktake Alert)
-  - `GoodsReceiptPage` ฟอร์มรับของเข้า บังคับกรอก Lot Number, Expiry Date และต้นทุน (Cost)
-  - `StockAdjustmentPage` (ปรับปรุงยอดสต็อกหลังการตรวจนับ)
-  - `StockTransferPage` (สร้างคำสั่งโอนย้ายสินค้าระหว่างสาขาหรือคลังย่อย)
-  - `StockMovementTrackingPage` (หน้าประวัติและติดตามสถานะการโยกย้ายสินค้า เช่น ระหว่างทาง(In-Transit), รับเข้าแล้ว, ยกเลิก)
-  - `StocktakeConfigPage` หน้าจอสำหรับผู้ให้บริการตั้งค่าความถี่ในการตรวจนับสต็อก
-  - `LabelPrintingPage` (หน้าจัดการและสั่งพิมพ์ฉลากสินค้า/บาร์โค้ด ตั้งค่าเครื่องพิมพ์และรูปแบบฉลาก)
+
+#### ✅ Database Schema & RLS (Complete — 2026-06-12)
+- ✅ `custom_medications` — สินค้าเฉพาะองค์กร
+- ✅ `inventory_items` — สต็อกระดับ Lot ย่อย (Row-level FEFO)
+- ✅ `inventory_lots` — ประวัติ Lot รับเข้า
+- ✅ `stocktake_configurations` / `stocktake_sessions` / `stocktake_lines` — ตรวจนับสต็อก
+- ✅ `stock_adjustments` — ปรับสต็อก
+- ✅ `inventory_transfers` / `inventory_transfer_lines` — โอนย้ายสินค้า
+- ✅ `inventory_alerts` — แจ้งเตือนสต็อก
+- ✅ `stock_movements` — Transaction logs (In/Out/Transfer/Adjust)
+- ✅ RLS Policies เปิดใช้งานแล้ว (`USING (true)` — ต้องแก้ก่อน Production)
+
+#### ✅ Backend Logic — Supabase RPC (Complete — 2026-06-13)
+- ✅ `deduct_inventory_fefo()` — ตัดสต๊อกตาม FEFO (ใช้แล้วใน Checkout/Counter POS)
+- ✅ `create_inventory_transfer()` — สร้างรายการโอนย้าย + reserve stock
+- ✅ `complete_inventory_transfer()` — ยืนยันโอนย้ายปลายทาง + บันทึก stock_movement (transfer_in/transfer_out)
+- ✅ `create_stock_adjustment()` — สร้างปรับสต็อก + อัปเดต quantity + บันทึก stock_movement
+- ✅ `complete_stocktake_session()` — ปิดรอบตรวจนับ + สร้าง adjustment อัตโนมัติ
+- ✅ `check_inventory_alerts()` — ตรวจสอบและสร้างแจ้งเตือน (low_stock, expiry_warning, expired)
+- ✅ `create_inventory_reservation()` / `release_inventory_reservation()` — จอง/คืนสต๊อก (POS pre-deduct)
+- ✅ `get_stock_movements_by_profession()` — query ประวัติสต็อกตาม profession (พร้อม pagination)
+- ✅ `create_stocktake_configuration()` — สร้างตั้งค่ารอบตรวจนับ
+- ✅ `update_stocktake_configuration()` — แก้ไขตั้งค่ารอบตรวจนับ
+- ✅ `delete_stocktake_configuration()` — ลบ/ปิดการใช้งานตั้งค่า
+
+#### ✅ Flutter UI — PhaseOneNotifier + Pages (Complete — 2026-06-13)
+- ✅ `InventoryPage` — 6 tabs: สต็อก, แจ้งเตือน, ตรวจนับ, โอนย้าย, ปรับสต็อก, รับเข้า (พร้อม Pull-to-refresh)
+- ✅ `InventoryDashboardPage` — ภาพรวมสต็อก (summary cards + แจ้งเตือนล่าสุด + quick actions)
+- ✅ `StockTransferPage` — ฟอร์มสร้างรายการโอนย้าย (เลือกหลายสินค้า, จำนวน, หมายเหตุ, **เลือกสาขาต้นทาง/ปลายทาง**)
+- ✅ `StockAdjustmentPage` — ฟอร์มปรับสต็อก (เลือกสินค้า, แสดงจำนวนปัจจุบัน, ประเภท, จำนวนหลังปรับ, เหตุผล)
+- ✅ `StockMovementTrackingPage` — ประวัติการเคลื่อนไหวสต็อก (In/Out/Transfer/Adjust/Expiry แบบเต็มจอ)
+- ✅ `StocktakeConfigPage` — ตั้งค่าความถี่ตรวจนับสต็อก (CRUD + เลือกสาขา + วันที่ตรวจนับถัดไป)
+- ✅ `GoodsReceiptPage` — รับของเข้าคลังแบบเต็มจอ (เลือกสินค้า/ยาคัสตอม + Lot + จำนวน + ต้นทุน + วันหมดอายุ + **เลือกสาขา**)
+- ✅ FAB ใน `InventoryPage` (tab โอนย้าย/ปรับสต็อก) + Dialog สร้าง Adjustment/Transfer inline
+- ✅ ปุ่ม Action: ปิดรอบตรวจนับ + ยืนยันโอนย้าย ในแต่ละรายการ
+- ✅ `PhaseOneNotifier` — เพิ่ม `loadStockMovements()`, `create/update/deleteStocktakeConfiguration()`, `recordStockReceipt()` รองรับ `customMedicationId`
+- ✅ Routes: `/erp/inventory`, `/erp/inventory/dashboard`, `/erp/inventory/transfer`, `/erp/inventory/adjustment`, `/erp/inventory/movements`, `/erp/inventory/stocktake-config`, `/erp/inventory/receipt`
+- ✅ Dashboard tiles: คลังสินค้า, ภาพรวมคลัง, โอนย้ายสินค้า, ปรับสต็อก, ประวัติสต็อก, ตั้งค่าตรวจนับ, รับของเข้า
+
+#### 🆕 Schema Fixes (2026-06-13)
+- ✅ Migration: `20260613110000_fix_stock_movements_for_custom_medications.sql`
+  - `inventory_lots.product_id` → nullable + เพิ่ม `custom_medication_id` + `inventory_item_id` + `check_lot_source`
+  - `stock_movements.product_id` → nullable + เพิ่ม `custom_medication_id` + `inventory_item_id` + `check_movement_source`
+  - อัปเดต `deduct_inventory_fefo()`, `create_stock_adjustment()`, `complete_inventory_transfer()` ให้ insert ทุก FK
+  - เพิ่ม RPC `get_stock_movements_by_profession()`, `create/update/delete_stocktake_configuration()`
+  - เพิ่ม indexes สำหรับ custom_medication_id, inventory_item_id, profession_id
+
+#### ⏳ ยังไม่เสร็จ / คงเหลือสำหรับ Phase 9
+- ⏳ `LabelPrintingPage` — พิมพ์ฉลาก/บาร์โค้ด (รอ hardware integration / thermal printer libraries)
+- ⏳ RLS Policies แบบ Production-ready (เปลี่ยนจาก `USING (true)` เป็น `profession_id = current_setting('app.profession_id')::UUID`)
+- ⏳ `StockAdjustmentPage` — เพิ่ม `branch_id` dropdown (schema `stock_adjustments` ยังไม่มี `branch_id` — ต้องเพิ่ม migration)
+- ⏳ `warehouse_locations` Flutter layer — ยังไม่มี model/repository/provider (schema มีแล้ว)
+- ⏳ POS/Checkout integration กับ `deduct_inventory_fefo()` แบบเต็มรูปแบบ (รอ POS เสร็จ)
 
 ### Phase 10: HIS & Pharmacy Integration (Final Phase)
 - **วัตถุประสงค์:** เชื่อมระบบคลังเข้ากับห้องยาของ HIS เต็มรูปแบบ
 - **การทำงาน:** เมื่อห้องยาใน HIS สั่งจ่ายยา (Prescription Fulfilled) ระบบจะเรียก `deduct_inventory_fefo()` อัตโนมัติ เพื่อตัดสต๊อกยา และส่งข้อมูลต้นทุนไปยัง Accounting System ทันที
+- **สถานะ:** ⏳ รอ Phase 4 Clinical/HIS เสร็จก่อน
+
+---
+
+## สรุปความพร้อมใช้งาน (Zero-Mock Testing)
+
+ทุกฟีเจอร์ที่ขึ้นเครื่องหมาย ✅ ด้านบน สามารถทดสอบโดยไม่ต้องใช้ mock data ได้ทันที เพราะ:
+1. Migration รันบน Supabase แล้ว:
+   - `20260612150000_add_inventory_system.sql` (Schema + RPC หลัก)
+   - `20260613110000_fix_stock_movements_for_custom_medications.sql` (Fix custom medication support + เพิ่ม RPC ใหม่)
+2. RPC functions ทำงานจริง (`SECURITY DEFINER` + ตรวจสอบ stock จริง)
+3. RLS เปิดอยู่ (แม้จะไม่ปลอดภัยสำหรับ production แต่ทดสอบผ่าน)
+4. `CheckoutPage` / `CounterPosPage` ก็เรียก `deductStock` / `createInventoryReservation` จริงแล้ว
+5. `PhaseOneNotifier` มี methods ครบทั้ง load + create + complete + CRUD stocktake config + stock movements
+6. `websocket-server` มี `inventory-alert-checker.js` (scheduled job ทุก 24 ชม.) เรียก `check_inventory_alerts()` อัตโนมัติ

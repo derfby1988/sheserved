@@ -50,6 +50,7 @@ const escrowDeadlineChecker = require('./services/escrow-deadline-checker');
 const emergencyHealthReleaseChecker = require('./services/emergency-health-release-checker');
 const emergencyHealthSessionService = require('./services/emergency-health-session-service');
 const emergencyHealthMonitorService = require('./services/emergency-health-monitor-service');
+const inventoryAlertChecker = require('./services/inventory-alert-checker');
 
 // Sync Service
 const { reconcileLocalToCloud } = require('./services/sync-service');
@@ -2100,7 +2101,10 @@ server.listen(PORT, '0.0.0.0', () => {
   // 🔒 เริ่ม Escrow Deadline Checker (scheduled job ทุก 15 นาที)
   escrowDeadlineChecker.start();
 
-  // 🚨 เริ่ม Emergency Health Release Checker (scheduled job ทุก 30 วินาที)
+  // � เริ่ม Inventory Alert Checker (scheduled job ทุก 24 ชั่วโมง)
+  inventoryAlertChecker.start();
+
+  // �🚨 เริ่ม Emergency Health Release Checker (scheduled job ทุก 30 วินาที)
   emergencyHealthReleaseChecker.start();
 
   // ⚠️ Phase 4 — Sensor Trigger + Dead Man's Switch monitor
@@ -2111,6 +2115,7 @@ server.listen(PORT, '0.0.0.0', () => {
 process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received — shutting down gracefully');
   escrowDeadlineChecker.stop();
+  inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
   queueRegistry.shutdownAll().catch((err) => {
@@ -2123,6 +2128,7 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('[Server] SIGINT received — shutting down gracefully');
   escrowDeadlineChecker.stop();
+  inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
   queueRegistry.shutdownAll().catch((err) => {
