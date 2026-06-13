@@ -47,62 +47,7 @@
 
 ### โครงสร้างฐานข้อมูล (Database Schema)
 
-```sql
--- ตารางพื้นฐานสำหรับเก็บข้อมูลฟอร์มภาษีทั้งหมด
-CREATE TABLE tax_record (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id  UUID NOT NULL REFERENCES organizations(id),
-    profession_id    UUID NOT NULL REFERENCES professions(id),
-    tax_year         INT,                         -- ปีภาษี (สำหรับภ.ง.ด.1, 30, …)
-    tax_period       VARCHAR(7),                  -- YYYY-MM หรือ YYYY-QN (สำหรับภ.ง.ด.3, 5, 53)
-    filing_date      DATE,                        -- วันที่ยื่นฟอร์ม
-    source_form      VARCHAR(10) NOT NULL,        -- ชื่อฟอร์ม (ภ.ง.ด.1, 3, 5, …)
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ฟิลด์อธิบาย (COMMENT) ภาษาไทย
-COMMENT ON COLUMN tax_record.organization_id IS 'รหัสองค์กร (tenant)';
-COMMENT ON COLUMN tax_record.profession_id IS 'รหัสอาชีพ – แยกข้อมูล multi‑tenant';
-COMMENT ON COLUMN tax_record.tax_year IS 'ปีภาษี (ใช้กับฟอร์มที่อิงปี)';
-COMMENT ON COLUMN tax_record.tax_period IS 'ช่วงเวลาภาษี (เดือนหรือไตรมาส)';
-COMMENT ON COLUMN tax_record.filing_date IS 'วันที่ยื่นฟอร์มต่อกรมสรรพากร';
-COMMENT ON COLUMN tax_record.source_form IS 'รหัสฟอร์มภาษีที่ระบุ (เช่น ภ.ง.ด.1)';
-
--- ตัวอย่างตารางย่อย (ฟอร์มภ.ง.ด.1 – ภาษีเงินได้บุคคลธรรมดา)
-CREATE TABLE personal_income_tax (
-    id               UUID PRIMARY KEY REFERENCES tax_record(id),
-    taxpayer_id      VARCHAR(20) NOT NULL,                -- เลขประจำตัวผู้เสียภาษี
-    total_income     NUMERIC(15,2) NOT NULL,              -- รายได้รวมก่อนหักค่าใช้จ่าย
-    deductions       NUMERIC(15,2) DEFAULT 0,            -- รายการหักลบ
-    tax_rate         NUMERIC(5,2) NOT NULL,              -- อัตราภาษี (%)
-    tax_amount       NUMERIC(15,2) GENERATED ALWAYS AS ( (total_income - deductions) * tax_rate/100 ) STORED,
-    CHECK (source_form = 'ภ.ง.ด.1')
-);
-COMMENT ON COLUMN personal_income_tax.taxpayer_id IS 'เลขประจำตัวผู้เสียภาษี (เช่น เลขบัตรประชาชน)';
-COMMENT ON COLUMN personal_income_tax.total_income IS 'รวมรายได้ทั้งหมดของปีนั้น';
-COMMENT ON COLUMN personal_income_tax.deductions IS 'รวมค่าใช้จ่ายที่อนุญาตให้หัก';
-COMMENT ON COLUMN personal_income_tax.tax_rate IS 'อัตราภาษีที่ใช้คำนวณ (เปอร์เซ็น)';
-
--- ตัวอย่างตารางย่อย (ภ.ง.ด.3 – ภาษีหัก ณ ที่จ่าย)
-CREATE TABLE withholding_tax (
-    id               UUID PRIMARY KEY REFERENCES tax_record(id),
-    payer_id         VARCHAR(20) NOT NULL,                -- ผู้หักภาษี
-    payee_id         VARCHAR(20) NOT NULL,                -- ผู้รับเงินที่ถูกหัก
-    document_no      VARCHAR(30),                         -- เลขที่เอกสาร/ใบเสร็จ
-    tax_base         NUMERIC(15,2) NOT NULL,              -- ฐานภาษีที่คำนวณ
-    tax_rate         NUMERIC(5,2) NOT NULL,               -- อัตราภาษี (%)
-    tax_amount       NUMERIC(15,2) GENERATED ALWAYS AS ( tax_base * tax_rate/100 ) STORED,
-    date_paid        DATE,
-    CHECK (source_form = 'ภ.ง.ด.3')
-);
-COMMENT ON COLUMN withholding_tax.payer_id IS 'ผู้หักภาษี (เช่น บริษัท)';
-COMMENT ON COLUMN withholding_tax.payee_id IS 'ผู้รับเงินที่ถูกหัก (เช่น พนักงาน)';
-COMMENT ON COLUMN withholding_tax.tax_base IS 'ฐานภาษีที่ต้องหัก';
-COMMENT ON COLUMN withholding_tax.tax_rate IS 'อัตราภาษีที่กำหนด';
-
--- ตารางย่อยอื่น ๆ (VAT, Tax Invoice, Customs Tax, ฯลฯ) จะมีโครงสร้างคล้ายกันและใช้ CHECK(source_form = '…')
-```
+> **หมายเหตุ:** ตารางภาษีในระบบปัจจุบันใช้ `tax_forms` + `tax_form_lines` (see ER Diagram) สำหรับเก็บข้อมูลฟอร์มภาษีทั่วไป ตารางย่อยเฉพาะทาง (`tax_record`, `personal_income_tax`, `withholding_tax`) เป็น **แผนอนาคต** สำหรับ e-Filing ขั้นสูง ยังไม่มี migration ในระบบปัจจุบัน
 
 
 
@@ -286,6 +231,8 @@ lib/features/erp/
 ### 5. Phase ต่อไป (Future Work)
 
 - **AR/AP UI Polish:** เพิ่มฟีเจอร์ payment matching, aging report, statement export
+- **AR/AP Accounting Flow (Deferred):** สร้าง AR จาก order ที่ยังไม่ชำระเต็ม และสร้าง AP จาก procurement/PO/received invoice ที่ยังไม่จ่าย โดยให้ Flutter เป็น client layer และให้ server-side/RPC เป็นผู้ตัดสินใจทางบัญชีหลัก
+- **AR/AP Data Source Integration (Deferred):** ผูก flow เข้ากับ `orders`, `unified_payments`, `purchase_orders`, `goods_receipts`, และ supplier invoice เมื่อพร้อมทำงานต่อ
 - **Withholding Tax (Phase 2):** ตาราง `withholding_tax_records` + ฟอร์ม ภ.ง.ด.3/53
 - **e-Filing Export (Phase 2):** สร้าง XML/JSON payload ตามมาตรฐานกรมสรรพากร
 - **Audit Trail (Phase 3):** ตาราง `transaction_audit_log` บันทึกทุกการแก้ไข

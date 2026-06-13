@@ -69,6 +69,7 @@ class _AccountsPayablePageState extends ConsumerState<AccountsPayablePage> {
       _StatusFilter('partial', 'จ่ายบางส่วน'),
       _StatusFilter('paid', 'จ่ายแล้ว'),
       _StatusFilter('overdue', 'เลยกำหนด'),
+      _StatusFilter('written_off', 'ตัดหนี้สูญ'),
     ];
 
     return GlassCard(
@@ -140,6 +141,7 @@ class _AccountsPayablePageState extends ConsumerState<AccountsPayablePage> {
       case 'partial': return 'จ่ายบางส่วน';
       case 'paid': return 'จ่ายแล้ว';
       case 'overdue': return 'เลยกำหนด';
+      case 'written_off': return 'ตัดหนี้สูญ';
       default: return status;
     }
   }

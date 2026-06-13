@@ -10,6 +10,7 @@ enum GlassSection { sidebar, card, dialog }
 class DashboardTheme {
   final bool isDarkMode;
   final String themePreset;
+  final Map<String, dynamic>? moduleLayoutJson;
   final String? customPrimary;
   final String? customAccent;
   final String? customSurface;
@@ -25,6 +26,7 @@ class DashboardTheme {
   const DashboardTheme({
     this.isDarkMode = false,
     this.themePreset = 'sheserved_default',
+    this.moduleLayoutJson,
     this.customPrimary,
     this.customAccent,
     this.customSurface,
@@ -43,6 +45,7 @@ class DashboardTheme {
     return DashboardTheme(
       isDarkMode: json['is_dark_mode'] as bool? ?? false,
       themePreset: json['theme_preset'] as String? ?? 'sheserved_default',
+      moduleLayoutJson: json['module_layout_json'] as Map<String, dynamic>?,
       customPrimary: json['custom_primary'] as String?,
       customAccent: json['custom_accent'] as String?,
       customSurface: json['custom_surface'] as String?,
@@ -105,6 +108,7 @@ class DashboardTheme {
   DashboardTheme copyWith({
     bool? isDarkMode,
     String? themePreset,
+    Map<String, dynamic>? moduleLayoutJson,
     String? customPrimary,
     String? customAccent,
     String? customSurface,
@@ -120,6 +124,7 @@ class DashboardTheme {
     return DashboardTheme(
       isDarkMode: isDarkMode ?? this.isDarkMode,
       themePreset: themePreset ?? this.themePreset,
+      moduleLayoutJson: moduleLayoutJson ?? this.moduleLayoutJson,
       customPrimary: customPrimary ?? this.customPrimary,
       customAccent: customAccent ?? this.customAccent,
       customSurface: customSurface ?? this.customSurface,

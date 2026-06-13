@@ -44,19 +44,28 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     final bgColors = isDark
         ? [const Color(0xFF0F0F0F), const Color(0xFF1A1A1A)]
         : [const Color(0xFFDFF8FF), const Color(0xFFDFF7E8), const Color(0xFFF4E4FB)];
-    final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
     final iconColor = isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F0F0F) : const Color(0xFFE8F6FF),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: _buildAppBarTitle(context, orgState, isDark),
+        toolbarHeight: orgState.settings != null && orgState.settings!.branches.length > 1 ? 68 : kToolbarHeight,
+        title: _buildAppBarTitle(orgState, isDark),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: iconColor),
         actions: [
+          if (orgState.settings != null && orgState.settings!.branches.length > 1)
+            _BranchSelector(
+              branches: orgState.settings!.branches,
+              selectedBranchId: orgState.selectedBranchId,
+              onChanged: (branchId) {
+                ref.read(organizationSettingsProvider.notifier).selectBranch(branchId);
+              },
+              isDark: isDark,
+            ),
           // Theme quick toggle
           IconButton(
             icon: Icon(
@@ -99,16 +108,18 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     );
   }
 
-  /// Build AppBar title with organization name + branch selector
-  Widget _buildAppBarTitle(BuildContext context, OrganizationSettingsState orgState, bool isDark) {
+  Widget _buildAppBarTitle(OrganizationSettingsState orgState, bool isDark) {
     final settings = orgState.settings;
     final textPrimary = isDark ? Colors.white : const Color(0xFF1D2733);
     final textSecondary = isDark ? Colors.white70 : const Color(0xFF617181);
 
-    if (orgState.isLoading || settings == null) {
+    if (settings == null) {
       return Text(
         'ERP Dashboard',
-        style: GoogleFonts.inter(color: textPrimary, fontWeight: FontWeight.w600),
+        style: GoogleFonts.inter(
+          color: textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
       );
     }
 
@@ -119,129 +130,44 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
           )
         : settings.selectedBranch;
 
-    return Row(
+    if (settings.branches.length <= 1 || selectedBranch == null || selectedBranch.branchName.isEmpty) {
+      return Text(
+        'ERP Dashboard',
+        style: GoogleFonts.inter(
+          color: textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Logo thumbnail (org logo → profession icon → business fallback)
-        if (settings.hasLogo)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.network(
-              settings.logoUrl!,
-              width: 28,
-              height: 28,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => _professionIconOrFallback(
-                settings.professionIconName,
-                settings.professionColorHex,
-                textPrimary,
-                size: 24,
-              ),
-            ),
-          )
-        else
-          _professionIconOrFallback(
-            settings.professionIconName,
-            settings.professionColorHex,
-            textPrimary,
-            size: 24,
-          ),
-        const SizedBox(width: 8),
-        // Org name + branch
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                settings.professionName,
-                style: GoogleFonts.inter(
-                  color: textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (selectedBranch != null)
-                Text(
-                  selectedBranch.branchName,
-                  style: GoogleFonts.inter(
-                    color: textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
+        Text(
+          'ERP Dashboard',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: textPrimary,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        // Branch selector dropdown (if multiple branches)
-        if (settings.branches.length > 1)
-          _BranchSelector(
-            branches: settings.branches,
-            selectedBranchId: orgState.selectedBranchId,
-            onChanged: (branchId) {
-              ref.read(organizationSettingsProvider.notifier).selectBranch(branchId);
-            },
-            isDark: isDark,
+        const SizedBox(height: 1),
+        Text(
+          selectedBranch.branchName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
           ),
+        ),
       ],
     );
   }
 
-  /// แสดง icon ตาม profession.icon_name พร้อมสีจาก profession.color_hex
-  static Widget _professionIconOrFallback(
-    String? iconName,
-    String? colorHex,
-    Color fallbackColor, {
-    required double size,
-  }) {
-    final icon = _professionIconData(iconName);
-    final color = _parseHexColor(colorHex) ?? fallbackColor;
-    return Icon(icon, size: size, color: color);
-  }
-
-  static IconData _professionIconData(String? iconName) {
-    switch (iconName) {
-      case 'shopping_cart':
-        return Icons.shopping_cart;
-      case 'store':
-        return Icons.store;
-      case 'local_hospital':
-        return Icons.local_hospital;
-      case 'person':
-        return Icons.person;
-      case 'medical_services':
-        return Icons.medical_services;
-      case 'delivery_dining':
-        return Icons.delivery_dining;
-      case 'engineering':
-        return Icons.engineering;
-      case 'gavel':
-        return Icons.gavel;
-      case 'school':
-        return Icons.school;
-      case 'restaurant':
-        return Icons.restaurant;
-      case 'spa':
-        return Icons.spa;
-      case 'fitness_center':
-        return Icons.fitness_center;
-      default:
-        return Icons.business;
-    }
-  }
-
-  static Color? _parseHexColor(String? hex) {
-    if (hex == null || hex.isEmpty) return null;
-    try {
-      final clean = hex.replaceFirst('#', '');
-      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
-      if (clean.length == 8) return Color(int.parse(clean, radix: 16));
-    } catch (_) {}
-    return null;
-  }
 }
 
 /// Compact branch selector for AppBar

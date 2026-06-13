@@ -42,12 +42,14 @@
 
 - **พื้นหลัง:** ฟ้าอ่อน + เขียวอ่อน + ม่วงอ่อน แบบ gradient หลวม ๆ พร้อม blob เบลอด้านหลัง (`#DFF8FF` → `#DFF7E8` → `#F4E4FB`)
 - **AppBar:** transparent (`backgroundColor: Colors.transparent`, `elevation: 0`, `extendBodyBehindAppBar: true`) — ไม่มีสีทึบ เห็น gradient พื้นหลังผ่านมา
+- **AppBar title:** `ERP Dashboard` แบบ compact; ถ้ามีหลายสาขาให้แสดงชื่อสาขาที่เลือกเป็น subtitle 1 บรรทัดใต้ title
 - **AppBar icons/text (Light):** icon สีน้ำเงิน `#4F7DF3`, text สีเทาเข้ม `#1D2733`
 - **AppBar icons/text (Dark):** icon + text สี lime `#CCFF00`
+- **Branch selector:** อยู่ใน AppBar actions แบบ pill สีอ่อน `#F5FBFF` + border ฟ้าอ่อน `#D7E8F6`, radius 999px
+- **Dashboard body:** แสดง module board โดยตรง; ไม่ render organization header card ซ้ำใต้ AppBar
 - **Cards:** ใช้ `GlassCard` แบบมี inner shine, shadow นุ่ม และ tint เฉพาะการ์ด
 - **Typography:** ข้อความอยู่กึ่งกลางภายในการ์ด แต่ยังคงลำดับสายตาชัดเจน
 - **Shape language:** เน้นวงกลม, capsule, rounded square มากกว่ากรอบเหลี่ยมแข็ง
-- **Branch selector:** pill สีอ่อน `#F5FBFF` + border ฟ้าอ่อน `#D7E8F6`, radius 999px
 
 ---
 
@@ -141,6 +143,7 @@ lib/features/erp/
 ├── data/
 │   ├── models/
 │   │   ├── dashboard_theme.dart      # Theme model
+│   │   ├── dashboard_module_layout.dart # Dashboard module grouping/layout model
 │   │   └── theme_preset.dart         # Preset model
 │   └── repositories/
 │       └── dashboard_theme_repository.dart  # DB operations
@@ -155,6 +158,7 @@ lib/features/erp/
 │   │   └── glass_preview_box.dart   # Preview box widget
 │   └── pages/
 │       ├── theme_settings_page.dart       # Theme settings
+│       ├── module_layout_settings_page.dart # Module grouping/color management
 │       └── glassmorphism_settings_page.dart # Glass settings
 ```
 
@@ -168,6 +172,16 @@ lib/features/erp/
 - Light: 8 preset color circles + Custom color picker
 - Dark: Fixed preset display (ไม่ให้ปรับ)
 - ปุ่ม 💾 บันทึก / ❌ คืนค่าเริ่มต้น
+- มี shortcut ไปยังหน้า **Module Layout Settings** สำหรับจัดการการ์ดและกลุ่ม
+
+### Module Layout Settings (`/erp/settings/modules`)
+
+- เปลี่ยนชื่อกลุ่มได้
+- รีเซตชื่อกลุ่มกลับค่าเริ่มต้นได้
+- รีเซตเฉพาะกลุ่มกลับค่าเริ่มต้นได้ โดยคงการ์ดในกลุ่มไว้
+- รีเซตสีของทุกกลุ่มกลับ default ได้
+- รีเซต layout ทั้งหมดกลับ default ได้
+- drag-and-drop ย้ายการ์ดข้ามกลุ่ม
 
 ### Glassmorphism Settings (`/erp/settings/glass`)
 
@@ -190,10 +204,14 @@ lib/features/erp/
    └── มี → ดึงมาใช้
 
 2. เปิด ERP Dashboard → userDashboardThemeProvider โหลด theme
+   → AppBar แสดง title แบบ compact และชื่อสาขาเฉพาะกรณีมีหลายสาขา
+   → แสดง branch selector ใน AppBar actions
    → แก้ไข sidebar bg, accent, card style ตาม theme
+   → dashboard body แสดงเฉพาะ module board ไม่ render organization header ซ้ำ
 
 3. กด Settings → Theme Tab → เลือก preset / custom color
    → กดบันทึก → UPDATE DB → Provider rebuild → UI เปลี่ยนทันที
+   → เข้า Module Layout Settings เพื่อจัดการกลุ่มสี/ลำดับการ์ด
 
 4. กด Settings → Glass Tab → ปรับ opacity/blur slider
    → กดบันทึก → UPDATE DB → Provider rebuild → UI เปลี่ยนทันที

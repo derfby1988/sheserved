@@ -69,6 +69,7 @@ class _AccountsReceivablePageState extends ConsumerState<AccountsReceivablePage>
       _StatusFilter('partial', 'ชำระบางส่วน'),
       _StatusFilter('paid', 'ชำระแล้ว'),
       _StatusFilter('overdue', 'เลยกำหนด'),
+      _StatusFilter('written_off', 'ตัดหนี้สูญ'),
     ];
 
     return GlassCard(
@@ -140,6 +141,7 @@ class _AccountsReceivablePageState extends ConsumerState<AccountsReceivablePage>
       case 'partial': return 'ชำระบางส่วน';
       case 'paid': return 'ชำระแล้ว';
       case 'overdue': return 'เลยกำหนด';
+      case 'written_off': return 'ตัดหนี้สูญ';
       default: return status;
     }
   }

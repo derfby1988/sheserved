@@ -76,9 +76,12 @@ class ThemeSettingsPage extends ConsumerWidget {
             ],
 
             // Actions
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
               children: [
-                Expanded(
+                SizedBox(
+                  width: 220,
                   child: ElevatedButton.icon(
                     onPressed: state.isSaving ? null : () => notifier.selectPreset('sheserved_default'),
                     icon: const Icon(Icons.restore),
@@ -87,6 +90,14 @@ class ThemeSettingsPage extends ConsumerWidget {
                       backgroundColor: Colors.grey.shade200,
                       foregroundColor: Colors.black87,
                     ),
+                  ),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).pushNamed('/erp/settings/modules'),
+                    icon: const Icon(Icons.dashboard_customize),
+                    label: const Text('จัดการกลุ่มการ์ด'),
                   ),
                 ),
               ],

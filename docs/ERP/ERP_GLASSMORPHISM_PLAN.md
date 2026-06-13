@@ -18,10 +18,11 @@ Light mode ของ dashboard ใช้โทน **iOS natural pastel** พร�
 ### AppBar (ERP Shell)
 
 - **Light mode:** `backgroundColor: Colors.transparent`, `elevation: 0`, `extendBodyBehindAppBar: true`
-- **Title text:** `#1D2733` (dark gray)
+- **Title text:** `ERP Dashboard` แบบ compact; ถ้ามีหลายสาขาให้แสดงชื่อสาขาที่เลือกเป็น subtitle 1 บรรทัดใต้ title
 - **Icons:** น้ำเงิน `#4F7DF3` (theme toggle, notification, back)
-- **Branch selector:** pill `#F5FBFF` + border `#D7E8F6`, radius 999px
+- **Branch selector:** pill `#F5FBFF` + border `#D7E8F6`, radius 999px อยู่ใน AppBar actions
 - **Dark mode:** text/icon สี lime `#CCFF00`
+- **Dashboard body:** ไม่ render organization header card ซ้ำใต้ AppBar; เนื้อหาหลักเริ่มจาก module board โดยตรง
 
 ### 1.1 Module Board Visual Language
 

@@ -30,6 +30,21 @@ class DashboardThemeRepository {
     }
   }
 
+  /// บันทึก layout ของโมดูลใน dashboard
+  Future<bool> saveModuleLayout(String userId, String professionId, Map<String, dynamic> moduleLayoutJson) async {
+    try {
+      await _client.rpc('save_dashboard_module_layout', params: {
+        'p_user_id': userId,
+        'p_profession_id': professionId,
+        'p_module_layout_json': moduleLayoutJson,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[ThemeRepo] saveModuleLayout error: $e');
+      return false;
+    }
+  }
+
   // ========================
   // READ — Glass Settings
   // ========================

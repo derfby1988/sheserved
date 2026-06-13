@@ -66,6 +66,7 @@ import 'ERP Dashboard/erp_dashboard_shell.dart';
 import 'ERP Dashboard/erp_dashboard_page.dart';
 import 'ERP Dashboard/organization_settings_page.dart';
 import 'features/erp/presentation/pages/theme_settings_page.dart';
+import 'features/erp/presentation/pages/module_layout_settings_page.dart';
 import 'features/erp/presentation/pages/glassmorphism_settings_page.dart';
 import 'features/erp/presentation/pages/role_management_page.dart';
 import 'features/erp/presentation/pages/permission_management_page.dart';
@@ -239,6 +240,12 @@ class SheservedApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => const ErpDashboardShell(child: ThemeSettingsPage()),
+          );
+        }
+        if (settings.name == '/erp/settings/modules') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const ErpDashboardShell(child: ModuleLayoutSettingsPage()),
           );
         }
         if (settings.name == '/erp/settings/glass') {

@@ -5,6 +5,7 @@ import '../features/erp/presentation/providers/organization_settings_provider.da
 import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
 import '../features/erp/presentation/widgets/glass_card.dart';
 import '../features/erp/data/models/dashboard_theme.dart';
+import '../features/erp/data/models/dashboard_module_layout.dart';
 import '../features/admin/models/organization_settings.dart';
 import 'erp_first_time_setup_page.dart';
 
@@ -54,15 +55,6 @@ class _ErpDashboardPageState extends ConsumerState<ErpDashboardPage> {
         SafeArea(
           child: Column(
             children: [
-              _OrganizationHeader(
-                isLoading: orgState.isLoading,
-                settings: orgState.settings,
-                selectedBranchId: orgState.selectedBranchId,
-                theme: theme,
-                onBranchChanged: (branchId) {
-                  ref.read(organizationSettingsProvider.notifier).selectBranch(branchId);
-                },
-              ),
               if (orgState.errorMessage != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -486,75 +478,164 @@ class _DashboardModuleBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = theme?.isDarkMode ?? false;
-    final specs = _moduleSpecs(isDark);
+    final layout = theme?.moduleLayoutJson != null
+        ? DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson)
+        : DashboardModuleLayoutConfig.defaultLayout();
     final spacing = columns >= 3 ? 11.0 : 10.0;
-    final tileWidth = (width - (spacing * (columns - 1))) / columns;
+    // The group card adds horizontal padding (14 on each side via GlassCard).
+    // Use the actual inner width so cards can still fit 2-4 columns correctly.
+    final innerWidth = width - 28;
+    final tileWidth = (innerWidth - (spacing * (columns - 1))) / columns;
 
-    return Wrap(
-      spacing: spacing,
-      runSpacing: spacing,
-      children: specs.map((spec) {
-        final span = spec.span.clamp(1, columns);
-        final itemWidth = span == columns ? width : (tileWidth * span) + (spacing * (span - 1));
-        final itemHeight = tileWidth * spec.heightFactor;
-        return SizedBox(
-          width: itemWidth,
-          height: itemHeight,
-          child: _ModuleTile(spec: spec, theme: theme, professionId: professionId),
-        );
-      }).toList(),
+    final groupedModules = _groupModules(layout);
+
+    return Column(
+      children: [
+        for (final entry in groupedModules)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _GroupSection(
+              title: entry.group.title,
+              color: entry.group.color,
+              count: entry.modules.length,
+              child: Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: entry.modules.map((module) {
+                  final spec = _buildSpec(module, entry.group.color);
+                  final span = spec.span.clamp(1, columns);
+                  final itemWidth = span == columns ? innerWidth : (tileWidth * span) + (spacing * (span - 1));
+                  final itemHeight = tileWidth * spec.heightFactor;
+                  return SizedBox(
+                    width: itemWidth,
+                    height: itemHeight,
+                    child: _ModuleTile(spec: spec, theme: theme, professionId: professionId),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
-  List<_DashboardModuleSpec> _moduleSpecs(bool isDark) {
-    final pastel = isDark
-        ? null
-        : <Color>[
-            const Color(0xFFBFE7FF),
-            const Color(0xFFCFEFBA),
-            const Color(0xFFF0E7B4),
-            const Color(0xFFA7D8F5),
-            const Color(0xFFBDEBDB),
-            const Color(0xFFE5F6C8),
-            const Color(0xFFD7D0FF),
-            const Color(0xFFF7C9A9),
-          ];
+  List<_DashboardGroupSection> _groupModules(DashboardModuleLayoutConfig layout) {
+    final assigned = <String>{};
+    final sections = <_DashboardGroupSection>[];
 
-    Color tint(int index, Color fallback) => isDark ? fallback : pastel![index % pastel.length];
+    for (final group in layout.groups) {
+      final modules = group.moduleIds
+          .map((id) => dashboardModuleById(id))
+          .whereType<DashboardModuleDefinition>()
+          .toList();
+      assigned.addAll(group.moduleIds);
+      if (modules.isNotEmpty) {
+        sections.add(_DashboardGroupSection(group: group, modules: modules));
+      }
+    }
 
-    return [
-      _DashboardModuleSpec(label: 'Counter POS', thaiLabel: 'ขายหน้าร้าน', routeName: '/erp/pos/counter', icon: Icons.point_of_sale, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Clinic POS', thaiLabel: 'ขายบริการคลินิก', routeName: '/erp/pos/clinic', icon: Icons.local_hospital, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(0, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Inventory Management', thaiLabel: 'คลังสินค้า', routeName: '/erp/inventory', icon: Icons.inventory_2, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Inventory Dashboard', thaiLabel: 'ภาพรวมคลัง', routeName: '/erp/inventory/dashboard', icon: Icons.dashboard, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Stock Transfer', thaiLabel: 'โอนย้ายสินค้า', routeName: '/erp/inventory/transfer', icon: Icons.swap_horiz, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Stock Adjustment', thaiLabel: 'ปรับสต็อก', routeName: '/erp/inventory/adjustment', icon: Icons.tune, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Stock Movements', thaiLabel: 'ประวัติสต็อก', routeName: '/erp/inventory/movements', icon: Icons.history, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Stocktake Config', thaiLabel: 'ตั้งค่าตรวจนับ', routeName: '/erp/inventory/stocktake-config', icon: Icons.fact_check, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Goods Receipt', thaiLabel: 'รับของเข้า', routeName: '/erp/inventory/receipt', icon: Icons.arrow_downward, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(1, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Procurement Management', thaiLabel: 'จัดซื้อจัดจ้าง', routeName: '/erp/suppliers', icon: Icons.shopping_bag, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Cart & Checkout', thaiLabel: 'ตะกร้า/ชำระเงิน', routeName: '/erp/cart', icon: Icons.shopping_cart, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(2, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Delivery', thaiLabel: 'การจัดส่ง', routeName: '/erp/delivery', icon: Icons.local_shipping, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'GL Entries', thaiLabel: 'บัญชีแยกประเภท', routeName: '/erp/gl-entries', icon: Icons.account_balance, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Chart of Accounts', thaiLabel: 'ผังบัญชี', routeName: '/erp/chart-of-accounts', icon: Icons.account_tree, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'AR', thaiLabel: 'ลูกหนี้การค้า', routeName: '/erp/accounts-receivable', icon: Icons.request_quote, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'AP', thaiLabel: 'เจ้าหนี้การค้า', routeName: '/erp/accounts-payable', icon: Icons.payment, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(3, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'HR Management', thaiLabel: 'บุคคล', routeName: '/erp/employees', icon: Icons.people_alt, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Shifts', thaiLabel: 'ตารางเวร', routeName: '/erp/shifts', icon: Icons.calendar_month, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(4, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'CRM Management', thaiLabel: 'ลูกค้าสัมพันธ์', routeName: '/erp/customers', icon: Icons.contact_support, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(5, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Analytics', thaiLabel: 'วิเคราะห์ข้อมูล', routeName: '/erp/analytics', icon: Icons.analytics, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(6, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'EMR Records', thaiLabel: 'ประวัติผู้ป่วย', routeName: '/clinical/emr', icon: Icons.folder_shared, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'OPD Visits', thaiLabel: 'ตรวจผู้ป่วยนอก', routeName: '/clinical/opd', icon: Icons.medical_services, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(7, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Prescriptions', thaiLabel: 'ใบสั่งยา', routeName: '/clinical/prescriptions', icon: Icons.medication, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Lab Results', thaiLabel: 'ผลแล็บ', routeName: '/clinical/lab', icon: Icons.biotech, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Patient Cohorts', thaiLabel: 'กลุ่มผู้ป่วย', routeName: '/clinical/cohorts', icon: Icons.groups, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(8, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Refunds', thaiLabel: 'คืนเงิน', routeName: '/erp/refunds', icon: Icons.undo, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Loyalty Rules', thaiLabel: 'แต้มสะสม', routeName: '/erp/loyalty', icon: Icons.stars, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Reports', thaiLabel: 'รายงาน', routeName: '/erp/reports', icon: Icons.assessment, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(9, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Organization Settings', thaiLabel: 'ตั้งค่าองค์กร', routeName: '/erp/settings', icon: Icons.business, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(10, const Color(0xFFCCFF00))),
-      _DashboardModuleSpec(label: 'Role Management', thaiLabel: 'จัดการสิทธิ์ผู้ใช้', routeName: '/erp/roles', icon: Icons.admin_panel_settings, span: 1, heightFactor: 0.96, variant: _ModuleTileVariant.square, tintColor: tint(10, const Color(0xFFCCFF00))),
-    ];
+    final fallback = dashboardModuleDefinitions.where((module) => !assigned.contains(module.id)).toList();
+    if (fallback.isNotEmpty) {
+      sections.add(
+        _DashboardGroupSection(
+          group: DashboardModuleGroupConfig(
+            id: 'ungrouped',
+            title: 'ไม่มีกลุ่ม',
+            colorHex: '#D9E8FF',
+            moduleIds: fallback.map((m) => m.id).toList(),
+          ),
+          modules: fallback,
+        ),
+      );
+    }
+
+    return sections;
+  }
+
+  _DashboardModuleSpec _buildSpec(DashboardModuleDefinition module, Color tintColor) {
+    return _DashboardModuleSpec(
+      label: module.label,
+      thaiLabel: module.thaiLabel,
+      routeName: module.routeName,
+      icon: module.icon,
+      span: module.span,
+      heightFactor: module.heightFactor,
+      variant: _mapVariant(module.variant),
+      tintColor: tintColor,
+    );
+  }
+
+  _ModuleTileVariant _mapVariant(DashboardModuleTileVariant variant) {
+    return switch (variant) {
+      DashboardModuleTileVariant.square => _ModuleTileVariant.square,
+      DashboardModuleTileVariant.capsule => _ModuleTileVariant.capsule,
+      DashboardModuleTileVariant.tall => _ModuleTileVariant.tall,
+    };
+  }
+}
+
+class _DashboardGroupSection {
+  final DashboardModuleGroupConfig group;
+  final List<DashboardModuleDefinition> modules;
+
+  const _DashboardGroupSection({required this.group, required this.modules});
+}
+
+class _GroupSection extends StatelessWidget {
+  final String title;
+  final Color color;
+  final int count;
+  final Widget child;
+
+  const _GroupSection({
+    required this.title,
+    required this.color,
+    required this.count,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      section: GlassSection.card,
+      tintColor: color,
+      borderRadius: 22,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
   }
 }
 

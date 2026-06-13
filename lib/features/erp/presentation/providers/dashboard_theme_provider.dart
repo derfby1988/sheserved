@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/models/dashboard_theme.dart';
+import '../../data/models/dashboard_module_layout.dart';
 import '../../data/models/theme_preset.dart';
 import '../../data/repositories/dashboard_theme_repository.dart';
 
@@ -75,6 +76,69 @@ class DashboardThemeNotifier extends StateNotifier<DashboardThemeState> {
 
   DashboardThemeNotifier(this._repository) : super(const DashboardThemeState());
 
+  /// โหลด/normalize layout เริ่มต้น ถ้ายังไม่มี
+  DashboardModuleLayoutConfig get moduleLayout {
+    final theme = state.theme;
+    if (theme?.moduleLayoutJson == null) {
+      return DashboardModuleLayoutConfig.defaultLayout();
+    }
+    return DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson);
+  }
+
+  Future<bool> resetModuleLayout() async {
+    return saveModuleLayout(DashboardModuleLayoutConfig.defaultLayout());
+  }
+
+  Future<bool> resetModuleColors() async {
+    final currentLayout = moduleLayout;
+    final defaultLayout = DashboardModuleLayoutConfig.defaultLayout();
+    final defaultColorByGroupId = {
+      for (final group in defaultLayout.groups) group.id: group.colorHex,
+    };
+
+    final updatedGroups = currentLayout.groups.map((group) {
+      final defaultColor = defaultColorByGroupId[group.id];
+      if (defaultColor == null) return group;
+      return group.copyWith(colorHex: defaultColor);
+    }).toList();
+
+    return saveModuleLayout(currentLayout.copyWith(groups: updatedGroups));
+  }
+
+  Future<bool> renameModuleGroup(String groupId, String title) async {
+    return saveModuleLayout(moduleLayout.renameGroup(groupId, title));
+  }
+
+  Future<bool> resetModuleGroupTitle(String groupId) async {
+    return saveModuleLayout(moduleLayout.resetGroupTitle(groupId));
+  }
+
+  Future<bool> resetModuleGroup(String groupId) async {
+    return saveModuleLayout(moduleLayout.resetGroupAppearance(groupId));
+  }
+
+  Future<bool> saveModuleLayout(DashboardModuleLayoutConfig layout) async {
+    final userId = state.userId;
+    final professionId = state.professionId;
+    if (userId == null || professionId == null) return false;
+
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.saveModuleLayout(userId, professionId, layout.toJson());
+      if (success) {
+        final currentTheme = state.theme;
+        if (currentTheme != null) {
+          state = state.copyWith(theme: currentTheme.copyWith(moduleLayoutJson: layout.toJson()));
+        }
+      }
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, errorMessage: 'บันทึก layout ล้มเหลว: $e');
+      return false;
+    }
+  }
+
   // ========================
   // Load Theme
   // ========================
@@ -94,11 +158,16 @@ class DashboardThemeNotifier extends StateNotifier<DashboardThemeState> {
       final theme = results[0] as DashboardTheme?;
       final presets = results[1] as List<ThemePreset>;
 
-      debugPrint('[Theme] loaded — isDark=${theme?.isDarkMode}, preset=${theme?.themePreset}, presets=${presets.length}');
+      final resolvedTheme = theme ?? DashboardTheme(moduleLayoutJson: DashboardModuleLayoutConfig.defaultLayout().toJson());
+      final themeWithLayout = resolvedTheme.moduleLayoutJson == null
+          ? resolvedTheme.copyWith(moduleLayoutJson: DashboardModuleLayoutConfig.defaultLayout().toJson())
+          : resolvedTheme;
+
+      debugPrint('[Theme] loaded — isDark=${themeWithLayout.isDarkMode}, preset=${themeWithLayout.themePreset}, presets=${presets.length}');
 
       state = state.copyWith(
         isLoading: false,
-        theme: theme,
+        theme: themeWithLayout,
         presets: presets,
       );
     } catch (e, st) {

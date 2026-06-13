@@ -5,6 +5,7 @@ import '../../data/models/chart_of_account.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/account_selector_sheet.dart';
 
 class GlEntriesPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -133,20 +134,46 @@ class _GlEntriesPageState extends ConsumerState<GlEntriesPage> {
             ],
           ),
           const SizedBox(height: 8),
-          if (state.chartOfAccounts.isNotEmpty)
-            DropdownButtonFormField<String?>(
-              decoration: const InputDecoration(labelText: 'บัญชี'),
-              initialValue: _selectedAccountId,
-              isExpanded: true,
-              items: [
-                const DropdownMenuItem(value: null, child: Text('ทั้งหมด')),
-                ...state.chartOfAccounts.map((a) => DropdownMenuItem(
-                  value: a.id,
-                  child: Text('${a.accountCode} ${a.accountName}'),
-                )),
-              ],
-              onChanged: (v) => setState(() => _selectedAccountId = v),
+          InkWell(
+            onTap: () async {
+              final selected = await showAccountSelectorSheet(
+                context: context,
+                accounts: state.chartOfAccounts,
+                title: 'เลือกบัญชีกรอง',
+                selected: state.chartOfAccounts.firstWhere(
+                  (a) => a.id == _selectedAccountId,
+                  orElse: () => state.chartOfAccounts.first,
+                ),
+              );
+              if (selected != null) {
+                setState(() => _selectedAccountId = selected.id);
+              }
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet, size: 18, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _selectedAccountId == null
+                          ? 'บัญชี: ทั้งหมด'
+                          : 'บัญชี: ${_accountName(_selectedAccountId!, state.chartOfAccounts)}',
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                ],
+              ),
             ),
+          ),
           if (_fromDate != null || _toDate != null || _selectedAccountId != null)
             TextButton(
               onPressed: () => setState(() {
@@ -185,15 +212,43 @@ class _GlEntriesPageState extends ConsumerState<GlEntriesPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'บัญชี'),
-                  initialValue: selectedAccountId,
-                  isExpanded: true,
-                  items: accounts.map((a) => DropdownMenuItem(
-                    value: a.id,
-                    child: Text('${a.accountCode} ${a.accountName}'),
-                  )).toList(),
-                  onChanged: (v) => setState(() => selectedAccountId = v!),
+                InkWell(
+                  onTap: () async {
+                    final selected = await showAccountSelectorSheet(
+                      context: ctx,
+                      accounts: accounts,
+                      title: 'เลือกบัญชี',
+                      selected: accounts.firstWhere(
+                        (a) => a.id == selectedAccountId,
+                        orElse: () => accounts.first,
+                      ),
+                    );
+                    if (selected != null) {
+                      setState(() => selectedAccountId = selected.id);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.account_balance_wallet, size: 18, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _accountName(selectedAccountId, accounts),
+                            style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                      ],
+                    ),
+                  ),
                 ),
                 ListTile(
                   title: const Text('วันที่'),

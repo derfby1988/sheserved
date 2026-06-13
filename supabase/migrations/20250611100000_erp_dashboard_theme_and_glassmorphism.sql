@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS public.user_dashboard_themes (
   profession_id           UUID NOT NULL REFERENCES public.professions(id) ON DELETE CASCADE,
   theme_preset            TEXT DEFAULT 'sheserved_default' REFERENCES public.theme_presets(preset_key),
   is_dark_mode            BOOLEAN DEFAULT false,
+  module_layout_json      JSONB,
   -- Custom colors (ใช้เมื่อ theme_preset = 'custom')
   custom_primary          TEXT,
   custom_accent           TEXT,
@@ -77,6 +78,9 @@ CREATE TABLE IF NOT EXISTS public.user_dashboard_themes (
   UNIQUE(user_id, profession_id)
 );
 
+ALTER TABLE public.user_dashboard_themes
+  ADD COLUMN IF NOT EXISTS module_layout_json JSONB;
+
 -- Index เพื่อ query เร็ว
 CREATE INDEX IF NOT EXISTS idx_user_dashboard_themes_user_id ON public.user_dashboard_themes(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_dashboard_themes_profession_id ON public.user_dashboard_themes(profession_id);
@@ -85,9 +89,11 @@ CREATE INDEX IF NOT EXISTS idx_user_dashboard_themes_profession_id ON public.use
 ALTER TABLE public.user_dashboard_themes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.theme_presets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "service_role full access user_dashboard_themes" ON public.user_dashboard_themes;
 CREATE POLICY "service_role full access user_dashboard_themes" ON public.user_dashboard_themes
   FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "service_role full access theme_presets" ON public.theme_presets;
 CREATE POLICY "service_role full access theme_presets" ON public.theme_presets
   FOR ALL USING (true) WITH CHECK (true);
 
@@ -144,6 +150,7 @@ BEGIN
   RETURN jsonb_build_object(
     'is_dark_mode', v_theme.is_dark_mode,
     'theme_preset', v_theme.theme_preset,
+    'module_layout_json', v_theme.module_layout_json,
     'custom_primary', v_theme.custom_primary,
     'custom_accent', v_theme.custom_accent,
     'custom_surface', v_theme.custom_surface,
@@ -156,6 +163,26 @@ BEGIN
     'glass_blur_level', v_theme.glass_blur_level,
     'resolved_preset', v_preset_record
   );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- บันทึก layout ของการ์ดโมดูลใน ERP Dashboard
+CREATE OR REPLACE FUNCTION public.save_dashboard_module_layout(
+  p_user_id UUID,
+  p_profession_id UUID,
+  p_module_layout_json JSONB
+) RETURNS VOID AS $$
+BEGIN
+  INSERT INTO public.user_dashboard_themes (
+    user_id, profession_id, module_layout_json
+  )
+  VALUES (
+    p_user_id, p_profession_id, p_module_layout_json
+  )
+  ON CONFLICT (user_id, profession_id)
+  DO UPDATE SET
+    module_layout_json = p_module_layout_json,
+    updated_at = now();
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
