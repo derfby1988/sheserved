@@ -1417,30 +1417,62 @@ class _ProfilePageState extends State<ProfilePage> {
     // Derive new user type
     final newUserType = _deriveUserTypeFromProfession(newProfession);
 
+    bool isOwnerRequest = false;
     if (newProfession.requiresVerification) {
       // Show confirmation dialog for verification-required professions
-      final confirmed = await showDialog<bool>(
+      final result = await showDialog<Map<String, dynamic>?>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('เปลี่ยนอาชีพ'),
-          content: Text(
-            'อาชีพ "${newProfession.name}" ต้องผ่านการตรวจสอบคุณสมบัติก่อนใช้งาน\n\n'
-            'หลังจากส่งคำขอ คุณจะต้องรอการอนุมัติจากแอดมิน ระหว่างนี้คุณอาจไม่สามารถใช้ฟีเจอร์บางอย่างที่ต้องการอาชีพนี้ได้\n\n'
-            'คุณต้องการดำเนินการต่อหรือไม่?',
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('เปลี่ยนอาชีพ'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'อาชีพ "${newProfession.name}" ต้องผ่านการตรวจสอบคุณสมบัติก่อนใช้งาน\n\n'
+                  'หลังจากส่งคำขอ คุณจะต้องรอการอนุมัติจากแอดมิน ระหว่างนี้คุณอาจไม่สามารถใช้ฟีเจอร์บางอย่างที่ต้องการอาชีพนี้ได้',
+                ),
+                if (newProfession.category.id == prof.UserCategory.providerId ||
+                    newProfession.id == prof.Profession.clinicProfessionId ||
+                    newProfession.id == prof.Profession.expertProfessionId) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: isOwnerRequest,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            isOwnerRequest = val ?? false;
+                          });
+                        },
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'ต้องการสร้างและจดทะเบียนองค์กรใหม่ (สมัครเป็นผู้ดูแลระบบคนแรก/Owner)',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text('ยกเลิก'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, {'confirmed': true, 'isOwner': isOwnerRequest}),
+                child: const Text('ดำเนินการต่อ'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('ยกเลิก'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('ดำเนินการต่อ'),
-            ),
-          ],
         ),
       );
-      if (confirmed != true) return;
+      if (result == null || result['confirmed'] != true) return;
+      isOwnerRequest = result['isOwner'] ?? false;
     }
 
     setState(() => _isChangingProfession = true);
@@ -1472,7 +1504,9 @@ class _ProfilePageState extends State<ProfilePage> {
           username: _user!.username,
           phone: _user!.phone,
           profileImageUrl: _user!.profileImageUrl,
-          registrationData: {}, // User will fill this in later via profile edit
+          registrationData: {
+            'is_owner_request': isOwnerRequest ? 'true' : 'false',
+          }, // User will fill this in later via profile edit
         );
       }
 

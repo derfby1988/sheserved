@@ -91,6 +91,10 @@ import 'features/erp/presentation/pages/order_success_page.dart';
 import 'features/erp/presentation/pages/employee_list_page.dart';
 import 'features/erp/presentation/pages/gl_entries_page.dart';
 import 'features/erp/presentation/pages/dashboard_analytics_page.dart';
+import 'features/erp/presentation/pages/chart_of_accounts_page.dart';
+import 'features/erp/presentation/pages/accounts_receivable_page.dart';
+import 'features/erp/presentation/pages/accounts_payable_page.dart';
+import 'features/erp/presentation/pages/shift_management_page.dart';
 import 'features/erp/presentation/pages/emr_list_page.dart';
 import 'features/erp/presentation/pages/opd_visit_page.dart';
 import 'features/erp/presentation/pages/prescription_page.dart';
@@ -426,6 +430,38 @@ class SheservedApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => ErpDashboardShell(child: DashboardAnalyticsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/chart-of-accounts') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: ChartOfAccountsPage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/accounts-receivable') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: AccountsReceivablePage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/accounts-payable') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: AccountsPayablePage(professionId: professionId)),
+          );
+        }
+        if (settings.name == '/erp/shifts') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final professionId = args?['professionId'] as String? ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => ErpDashboardShell(child: ShiftManagementPage(professionId: professionId)),
           );
         }
         if (settings.name == '/clinical/emr') {

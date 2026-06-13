@@ -43,6 +43,50 @@ class RegistrationRepository {
         'updated_at': now,
       }).eq('id', application.oderId);
 
+      // 3. Fallback/Local handling: If DB trigger doesn't run, ensure Owner role is bound
+      final isOwnerReq = application.registrationData['is_owner_request'] == 'true' ||
+          application.registrationData['is_owner_request'] == true;
+      
+      if (isOwnerReq) {
+        try {
+          // Find owner role
+          final roleRes = await _client
+              .from('organization_roles')
+              .select('id')
+              .eq('profession_id', application.professionId)
+              .eq('role_name', 'owner')
+              .limit(1);
+          
+          if (roleRes != null && (roleRes as List).isNotEmpty) {
+            final ownerRoleId = roleRes[0]['id'];
+            
+            // Find main branch
+            final branchRes = await _client
+                .from('organization_branches')
+                .select('id')
+                .eq('profession_id', application.professionId)
+                .order('is_main_branch', ascending: false)
+                .limit(1);
+            
+            final branchId = (branchRes != null && (branchRes as List).isNotEmpty)
+                ? branchRes[0]['id']
+                : null;
+            
+            // Insert employee role
+            await _client.from('employee_roles').insert({
+              'profession_id': application.professionId,
+              'branch_id': branchId,
+              'user_id': application.oderId,
+              'role_id': ownerRoleId,
+              'is_active': true,
+            });
+            debugPrint('Successfully assigned Owner role to user: ${application.oderId}');
+          }
+        } catch (e) {
+          debugPrint('Error assigning Owner role in repository: $e (This is expected if Supabase trigger already did it)');
+        }
+      }
+
       debugPrint('Approved application for user: ${application.oderId}');
     } catch (e) {
       debugPrint('RegistrationRepository.approveApplication error: $e');

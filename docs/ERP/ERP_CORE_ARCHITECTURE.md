@@ -128,7 +128,19 @@
 - ✅ Phase 2 (Commerce/Cart/Settlement/Delivery) **COMPLETE** — มีทั้ง migration + Flutter layer ครบถ้วน สามารถเพิ่ม/ลบตะกร้า → checkout → สร้าง order → ชำระเงิน → delivery → ดู vendor contracts ได้
 - ✅ Payment Channels (`payment_channels` + `seed_default_payment_channels` + `PaymentChannelsPage`) + branch_tax_code validation (DB + Flutter) **COMPLETE** — migration รันสำเร็จบน Supabase
 - ✅ Phase 5 (POS Refund + CRM Loyalty Auto-calculation + KPI Export Reports) **COMPLETE** — migration + RPC + Flutter UI ครบถ้วน
-- 🔄 Phase 3 (Finance & Analytics) **IN PROGRESS**
+- 🔄 Phase 3 (Finance & Analytics) **IN PROGRESS** — Database Schema COMPLETE (2026-06-11), Flutter UI ส่วนใหญ่เสร็จ (2026-06-13):
+  - ✅ Database: `standard_chart_of_accounts` (master, read-only), `chart_of_accounts` (profession copy, editable), `gl_entries`, `accounts_receivable`, `accounts_payable`, `employees`, `shifts`, `settlement_ledgers`, `payout_batches`, `dashboard_snapshots`
+  - ✅ Master → Profession Copy: RPC `seed_profession_chart_of_accounts()` + trigger auto-seed on new profession + `standard_account_id` FK + `is_custom` flag
+  - ✅ Flutter UI — `ChartOfAccountsPage` (ผังบัญชี):
+    - Grouped by 5 types (asset/liability/equity/revenue/expense) with section headers & color coding
+    - Search (real-time by code/name) + Type Filter (ChoiceChips) + Custom-only Filter (FilterChip)
+    - Custom account visual: amber bar, amber text, "Custom" badge
+    - CRUD Dialog: create/edit with auto `is_custom = true`
+    - Reset to Standard: per-item revert to master values (only for edited standard accounts)
+    - Delete with Dependency Check: pre-delete validation against GL entries, journal lines, parent accounts, linked products; blocking dialog shows specific items
+  - ✅ Flutter UI: `GlEntriesPage` (filter by date/account + create manual entry), `AccountsReceivablePage` (ลูกหนี้ + status filter + update), `AccountsPayablePage` (เจ้าหนี้ + status filter + update), `EmployeeListPage` (add/edit + salary/commission/active), `ShiftManagementPage` (ตารางเวร CRUD + month selector), `DashboardAnalyticsPage`, `KpiDashboardPage`
+  - ✅ Routes: `/erp/chart-of-accounts`, `/erp/accounts-receivable`, `/erp/accounts-payable`, `/erp/shifts` + Dashboard tiles
+  - ⏳ คงเหลือ: Settlement/Payout UI (รอ Payment Gateway sandbox), Payroll calculation logic
 - ✅ **Inventory / Stock System (Phase 9 Core) — ทำล่วงหน้าเสร็จแล้ว (2026-06-13):**
   - ✅ Database: `inventory_items`, `inventory_lots`, `stocktake_*`, `stock_adjustments`, `inventory_transfers`, `inventory_alerts`, `stock_movements`, `custom_medications` + RLS
   - ✅ Schema Fix (2026-06-13): `stock_movements` + `inventory_lots` รองรับ `custom_medication_id` (แก้ `product_id NOT NULL` blocker)

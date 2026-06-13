@@ -339,6 +339,36 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                 ),
                               ),
                             ),
+                            if (application.registrationData['is_owner_request'] == 'true' ||
+                                application.registrationData['is_owner_request'] == true) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.amber.shade600, width: 0.5),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.stars, size: 10, color: Colors.orange),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      '👑 ขอจดทะเบียน Owner',
+                                      style: TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ],
@@ -564,8 +594,33 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
         );
         _loadApplications(); // Refresh list
 
-        // Seamless Navigation Check
-        if (_usersWithPendingBeneficiary.contains(application.oderId)) {
+        // Owner Request Check & Success Dialog
+        final isOwnerReq = application.registrationData['is_owner_request'] == 'true' ||
+            application.registrationData['is_owner_request'] == true;
+
+        if (isOwnerReq) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.stars, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('อนุมัติ Owner สำเร็จ'),
+                ],
+              ),
+              content: const Text(
+                  'อนุมัติผู้ดูแลระบบ/Owner รายแรกขององค์กรสำเร็จ! ระบบได้เปิดใช้งานสิทธิ์จัดการองค์กรและผูกบทบาท \'Owner\' เรียบร้อยแล้ว'
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('ตกลง'),
+                ),
+              ],
+            ),
+          );
+        } else if (_usersWithPendingBeneficiary.contains(application.oderId)) {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -701,6 +756,48 @@ class ApplicationDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Owner Highlight Alert
+            if (application.registrationData['is_owner_request'] == 'true' ||
+                application.registrationData['is_owner_request'] == true) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.amber.shade300, width: 1),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.stars, color: Colors.orange, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'คำขอสิทธิ์ผู้ดูแลระบบ/Owner รายแรก',
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'ผู้ใช้ท่านนี้ขอจดทะเบียนองค์กรใหม่ในฐานะ Owner คนแรก ระบบจะเปิดใช้งาน Feature Flags และแต่งตั้งสิทธิ์จัดการให้เมื่อทำการอนุมัติ',
+                            style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Profile Card
             Card(
               shape: RoundedRectangleBorder(

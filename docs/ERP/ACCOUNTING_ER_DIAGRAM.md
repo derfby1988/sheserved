@@ -4,6 +4,7 @@
 erDiagram
     professions ||--o{ organization_branches : has
     professions ||--o{ outbox_events : emits
+    professions ||--o{ standard_chart_of_accounts : seeds
     professions ||--o{ chart_of_accounts : owns
     professions ||--o{ journal_entries : records
     professions ||--o{ vat_records : reports
@@ -20,6 +21,8 @@ erDiagram
     chart_of_accounts ||--o{ journal_entry_lines : debited_or_credited
     chart_of_accounts ||--o{ product_account_mappings : mapped_to
     chart_of_accounts ||--o{ chart_of_accounts : parent_of
+
+    standard_chart_of_accounts ||--o{ chart_of_accounts : copied_to
 
     journal_entries ||--o{ journal_entry_lines : contains
     journal_entries ||--o{ vat_records : linked_to
@@ -59,12 +62,24 @@ erDiagram
 |--------|------|-----|-------------|
 | id | UUID | PK | รหัสบัญชี |
 | profession_id | UUID | FK → professions | องค์กร |
+| standard_account_id | UUID | FK → standard_chart_of_accounts | อ้างอิง master (nullable) |
 | branch_id | UUID | FK → organization_branches | สาขา (nullable) |
 | account_code | VARCHAR(20) | UQ | รหัสบัญชี (1111, 4111) |
 | account_name | VARCHAR(255) | | ชื่อบัญชี |
-| account_type | SMALLINT | | 1=Asset 2=Liability 3=Equity 4=Revenue 5=Expense |
+| account_type | TEXT | | asset, liability, equity, revenue, expense |
 | parent_id | UUID | FK → chart_of_accounts | บัญชีแม่ |
 | is_default | BOOLEAN | | บัญชีเริ่มต้น |
+
+### `standard_chart_of_accounts`
+| Column | Type | Key | Description |
+|--------|------|-----|-------------|
+| id | UUID | PK | รหัส master account |
+| account_code | TEXT | UQ | รหัสบัญชีมาตรฐาน |
+| account_name | TEXT | | ชื่อบัญชีมาตรฐาน |
+| account_type | TEXT | | asset, liability, equity, revenue, expense |
+| is_active | BOOLEAN | | เปิดใช้งาน |
+| created_at | TIMESTAMPTZ | | สร้างเมื่อ |
+| updated_at | TIMESTAMPTZ | | แก้ไขเมื่อ |
 
 ### `journal_entries`
 | Column | Type | Key | Description |

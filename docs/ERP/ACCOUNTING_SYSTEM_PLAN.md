@@ -115,8 +115,22 @@ COMMENT ON COLUMN withholding_tax.tax_rate IS 'อัตราภาษีที
 - **Tenant-Specific Mapping:** แต่ละองค์กร (Tenant) สามารถตั้งค่าผูก (Map) รายการสินค้า/บริการ/แพ็กเกจของตนเอง เข้ากับรหัสบัญชีที่ต้องการได้อย่างอิสระ
 - **Smart Recommendation:** เมื่อองค์กรสร้างสินค้าหรือบริการใหม่ ระบบจะทำการวิเคราะห์จาก "หมวดหมู่สินค้า (Category)" และ "ประเภทสินค้า (Type)" เพื่อ **แนะนำผังบัญชีที่ควรจะเป็น** ให้อัตโนมัติ (เช่น ถ้าสร้างหมวด "ยา" ระบบจะแนะนำให้ผูกฝั่งรายรับกับ `4100 รายได้จากการขาย` และฝั่งต้นทุนกับ `5100 ต้นทุนขาย`) เพื่อความสะดวกและลดข้อผิดพลาด
 
-## ข้อมูลตั้งต้นสำหรับผังบัญชีมาตรฐาน (Seed Data - Thai Chart of Accounts)
-เมื่อองค์กรใหม่เปิดใช้งานระบบ จะมีการคัดลอก (Seed) ผังบัญชี 5 หมวดหลักมาตรฐานไทยไปให้เป็นข้อมูลตั้งต้น ซึ่งองค์กรสามารถนำไปใช้ หรือแตกบัญชีย่อยเพิ่มได้เอง:
+## ข้อมูลตั้งต้นสำหรับผังบัญชีมาตรฐาน (Master Chart of Accounts)
+ระบบจะเก็บผังบัญชีมาตรฐานไทยไว้ในตาราง master แยกต่างหาก (`standard_chart_of_accounts`) และเมื่อองค์กร/profession ใหม่ถูกสร้าง ระบบจะคัดลอกข้อมูลจาก master table ไปยัง `chart_of_accounts` ของ profession นั้นโดยอัตโนมัติ (trigger `trg_seed_chart_of_accounts_on_profession_insert`) จากนั้นองค์กรสามารถปรับแก้ เพิ่มเติม หรือแตกบัญชีย่อยได้เอง โดย **ห้ามแก้ไข master table ของ Sheserved**
+
+### สถาปัตยกรรม Master → Profession Copy
+- **`standard_chart_of_accounts`** — ผังบัญชีมาตรฐานไทย (read-only, 40 บัญชี)
+- **`chart_of_accounts`** — ผังบัญชีของแต่ละ profession (seeded from master + editable)
+  - `standard_account_id` — FK อ้างอิงถึง master row (traceability)
+  - `is_custom` — `false` = จาก master, `true` = สร้าง/แก้ไขโดยผู้ใช้
+- **RPC `seed_profession_chart_of_accounts(p_profession_id)`** — คัดลอก master → profession chart (idempotent)
+- **RPC `reset_chart_of_account_to_standard(p_account_id)`** — คืนค่าบัญชีที่แก้ไขกลับไปตาม master (per-item)
+- **RPC `get_chart_of_account_dependencies(p_account_id)`** — ตรวจสอบความสัมพันธ์ก่อนลบ (GL, journal, parent, products)
+- **RPC `delete_chart_of_account(p_account_id)`** — ลบบัญชีที่ไม่มี dependency (safe delete)
+
+> **หมายเหตุ:** `account_type` ใน database เก็บเป็น `smallint` (1=asset, 2=liability, 3=equity, 4=revenue, 5=expense) แต่ Flutter model (`ChartOfAccount.fromJson`) แปลงเป็น `String` ('asset', 'liability', 'equity', 'revenue', 'expense') เสมอ ทำให้ UI ไม่ต้องสนใจ schema mode
+
+### รายการบัญชีมาตรฐาน (40 บัญชี จาก `standard_chart_of_accounts`)
 1. **หมวด 1: สินทรัพย์ (Assets) [รหัส 1XXX]**
    - `1111` เงินสดในมือ (Cash on Hand)
    - `1112` เงินฝากธนาคารออมทรัพย์ (Savings Accounts)
@@ -169,18 +183,26 @@ COMMENT ON COLUMN withholding_tax.tax_rate IS 'อัตราภาษีที
 
 | ไฟล์ | ที่อยู่ | รายละเอียด |
 |------|--------|-----------|
-| **SQL Migration** | `supabase/migrations/20260609180000_create_accounting_core_schema.sql` | Schema หลัก: ตาราง 11 ตาราง + Seed ผังบัญชีไทย 5 หมวด + RLS |
+| **SQL Migration** | `supabase/migrations/20260609180000_create_accounting_core_schema.sql` | Schema หลัก: ตาราง 11 ตาราง + โครงสร้างผังบัญชี |
+| **SQL Migration** | `supabase/migrations/20260613170000_standard_chart_of_accounts_template.sql` | Master chart table (`standard_chart_of_accounts`) + RPC `seed_profession_chart_of_accounts` + RPC `reset_chart_of_account_to_standard` + RPC `get_chart_of_account_dependencies` + RPC `delete_chart_of_account` + `is_custom` flag + `standard_account_id` FK + auto-seed trigger |
 | **ER Diagram** | `docs/ERP/ACCOUNTING_ER_DIAGRAM.md` | Mermaid ER Diagram + รายละเอียดคอลัมน์ทุกตาราง |
 | **Outbox Spec** | `docs/ERP/ACCOUNTING_OUTBOX_SPEC.md` | ตัวอย่าง payload POS→Accounting, Procurement→Accounting, HR→Accounting |
+| **Flutter Model** | `lib/features/erp/data/models/chart_of_account.dart` | `ChartOfAccount` model — รองรับ `smallint`→`String` account_type mapping, `is_custom`, `standard_account_id` |
+| **Flutter Repository** | `lib/features/erp/data/repositories/phase_three_repository.dart` | `PhaseThreeRepository` — CRUD + seed + reset + dependency check + delete + `getChartOfAccountsAccountTypeMode()` |
+| **Flutter Provider** | `lib/features/erp/presentation/providers/phase_three_provider.dart` | `PhaseThreeNotifier` — load/create/update/reset/checkDelete/delete COA + load GL/AR/AP/Employees/Shifts |
+| **Flutter UI** | `lib/features/erp/presentation/pages/chart_of_accounts_page.dart` | `ChartOfAccountsPage` — grouped sliver list, search, filter chips, custom visual, reset/delete dialogs |
 
-### 2. ตารางหลักใน Database (11 ตาราง)
+### 2. ตารางหลักใน Database (12 ตาราง)
 
 - **`organization_branches`** — สาขาขององค์กร (multi-branch support)
 - **`outbox_events`** — Outbox Pattern (event ต้นทางจาก POS/Procurement/HR)
 - **`idempotency_keys`** — กันซ้ำสำหรับ write operation
 - **`exchange_rates`** — อัตราแลกเปลี่ยนสกุลเงิน
 - **`accounting_periods`** — งวดบัญชี (open/closed/locked)
-- **`chart_of_accounts`** — ผังบัญชี 5 หมวด (1XXX-5XXX)
+- **`standard_chart_of_accounts`** — master template ผังบัญชีมาตรฐาน (read-only, 40 บัญชี)
+- **`chart_of_accounts`** — ผังบัญชีของแต่ละ profession (copied from master + custom additions)
+  - `standard_account_id` (UUID, FK) — อ้างอิง master row
+  - `is_custom` (BOOLEAN) — `false`=seeded from master, `true`=user-created/modified
 - **`product_account_mappings`** — ผูกสินค้ากับบัญชี (smart recommendation base)
 - **`journal_entries`** — รายการบัญชี (header)
 - **`journal_entry_lines`** — บรรทัดรายการ (debit/credit double-entry)
@@ -204,56 +226,66 @@ Accounting Worker จะ poll `outbox_events` ทุก 5 วินาที →
 
 ### 4. Flutter Architecture Outline
 
-#### โครงสร้างโฟลเดอร์
+#### โครงสร้างโฟลเดอร์ (Actual — ERP Phase 3)
 ```
-lib/features/accounting/
+lib/features/erp/
 ├── data/
-│   ├── models/ (ChartOfAccount, JournalEntry, JournalEntryLine, VatRecord, TaxForm)
-│   ├── repositories/ (AccountingRepository, JournalRepository, VatRepository)
-│   └── services/ (AccountingService)
-├── domain/
-│   ├── entities/ (ChartOfAccountEntity, JournalEntryEntity, ProfitLossReport)
-│   └── usecases/ (CreateJournalEntry, PostJournalEntry, GetGeneralLedger, GetProfitLossReport)
-├── presentation/
-│   ├── pages/
-│   │   ├── chart_of_accounts_page.dart — ผังบัญชี 5 หมวด (tree view)
-│   │   ├── journal_entry_page.dart — บันทึกรายวัน (debit=credit validation)
-│   │   ├── general_ledger_page.dart — บัญชีแยกประเภท (filter by account/date)
-│   │   ├── profit_loss_report_page.dart — งบกำไรขาดทุน (P&L)
-│   │   ├── vat_record_page.dart — รายการ VAT ขาย/ซื้อ
-│   │   └── tax_form_list_page.dart — ฟอร์มภาษีภ.ง.ด./ภ.พ.30
-│   ├── widgets/
-│   │   ├── account_tree_tile.dart
-│   │   ├── debit_credit_input.dart
-│   │   ├── balance_summary.dart
-│   │   └── journal_entry_card.dart
-│   └── providers/
-│       ├── accounting_provider.dart
-│       ├── journal_provider.dart
-│       └── report_provider.dart
-└── accounting_routes.dart
+│   ├── models/ (ChartOfAccount, GlEntry, AccountsReceivable, AccountsPayable, Employee, Shift, DashboardSnapshot)
+│   └── repositories/ (PhaseThreeRepository)
+└── presentation/
+    ├── pages/
+    │   ├── chart_of_accounts_page.dart — ผังบัญชี 5 หมวด (grouped list + search + filter)
+    │   ├── gl_entries_page.dart — รายการบัญชีแยกประเภท
+    │   ├── accounts_receivable_page.dart — ลูกหนี้การค้า
+    │   ├── accounts_payable_page.dart — เจ้าหนี้การค้า
+    │   ├── employee_list_page.dart — พนักงาน
+    │   └── shift_management_page.dart — ตารางเวร
+    ├── widgets/
+    │   └── glass_card.dart
+    └── providers/
+        └── phase_three_provider.dart
 ```
 
-#### State Management (Provider Pattern)
-- **AccountingProvider** — จัดการผังบัญชี (load, create, update, delete)
-- **JournalProvider** — จัดการรายการบัญชี (draft → posted → reversed)
-- **ReportProvider** — ดึงรายงาน P&L และ General Ledger
+**Chart of Accounts UI (`chart_of_accounts_page.dart`)**
+- **Grouped by Type:** แสดงบัญชีจัดกลุ่มตาม 5 หมวด (สินทรัพย์ → หนี้สิน → ทุน → รายได้ → ค่าใช้จ่าย) พร้อม Section Header แสดงจำนวนบัญชีในแต่ละหมวด
+- **Search:** ช่องค้นหารหัสบัญชีหรือชื่อบัญชีแบบ real-time
+- **Type Filter:** ChoiceChips กรองแสดงเฉพาะหมวดที่เลือก (ทั้งหมด / สินทรัพย์ / หนี้สิน / ทุน / รายได้ / ค่าใช้จ่าย)
+- **Custom-only Filter:** FilterChip "เฉพาะที่สร้าง/แก้ไขเอง" — กรองแสดงเฉพาะ `is_custom = true`
+- **Color Coding:** แต่ละหมวดมีสีประจำตัว (สินทรัพย์=เขียว, หนี้สิน=แดง, ทุน=น้ำเงิน, รายได้=ฟ้า, ค่าใช้จ่าย=ส้ม)
+- **Custom Account Visual:** บัญชีที่สร้าง/แก้ไขเอง (`is_custom = true`) แสดง:
+  - แถบซ้ายสี `amber` (แทนสีหมวดปกติ)
+  - ชื่อบัญชีสี `amber.700`
+  - Badge "Custom" พร้อมพื้นหลัง amber จาง
+- **CRUD Dialog:** แตะที่บัญชีเพื่อแก้ไข หรือกด FAB เพื่อเพิ่มบัญชีใหม่
+  - สร้างใหม่ → `is_custom = true`
+  - แก้ไข → `is_custom = true` (แม้เดิมมาจาก master)
+- **Reset to Standard:** ไอคอน `restore` บน card ของบัญชีที่แก้ไขจาก master (`is_custom = true && standard_account_id != null`) → คืนค่า code/name/type ตาม master → `is_custom = false`
+- **Delete Custom Account:** ไอคอน `delete_outline` (สีแดง) บน card ของบัญชีที่ **สร้างใหม่เองเท่านั้น** (`is_custom = true && standard_account_id == null`) — ไม่แสดงบนบัญชีที่แก้ไขจากมาตรฐาน (มี `standard_account_id`) → ตรวจสอบ dependency (GL entries, journal lines, parent accounts, linked products) → ถ้ามี blocking items แจ้งรายการที่ขัดขวาง → ถ้าสะอาด → ยืนยัน → ลบ
+- **Auto-seed:** โหลดครั้งแรกจะเรียก RPC `seed_profession_chart_of_accounts` เพื่อคัดลอกจาก `standard_chart_of_accounts` อัตโนมัติ
 
-#### Routes
+#### State Management (Riverpod — PhaseThreeProvider)
+- **PhaseThreeNotifier** — รวม state ทุก subdomain ของ Phase 3:
+  - `loadChartOfAccounts()` / `createChartOfAccount()` / `updateChartOfAccount()` / `resetChartOfAccount()` / `checkDeleteChartOfAccount()` / `deleteChartOfAccount()` — ผังบัญชี
+  - `loadGlEntries()` / `createGlEntry()` / `createGlFromOrder()` — รายการบัญชี
+  - `loadAccountsReceivable()` / `updateArStatus()` — ลูกหนี้
+  - `loadAccountsPayable()` / `updateApStatus()` — เจ้าหนี้
+  - `loadEmployees()` / `createEmployee()` / `updateEmployee()` — พนักงาน
+  - `loadShifts()` / `createShift()` / `updateShift()` — ตารางเวร
+  - `loadSnapshots()` / `upsertSnapshot()` — Dashboard analytics
+
+#### Routes (ERP Dashboard → Phase 3 Modules)
 ```
-/accounting/chart-of-accounts
-/accounting/journal-entry
-/accounting/journal-entry/:id
-/accounting/general-ledger
-/accounting/profit-loss
-/accounting/vat-records
-/accounting/tax-forms
-/accounting/tax-forms/:id
+/erp/chart-of-accounts          → ChartOfAccountsPage
+/erp/gl-entries                 → GlEntriesPage
+/erp/accounts-receivable        → AccountsReceivablePage
+/erp/accounts-payable          → AccountsPayablePage
+/erp/employees                 → EmployeeListPage
+/erp/shifts                    → ShiftManagementPage
 ```
 
 ### 5. Phase ต่อไป (Future Work)
 
-- **AR/AP (Phase 2):** ตาราง `accounts_receivable`, `ar_payments`, `accounts_payable`, `ap_payments` + UI ติดตามหนี้
+- **AR/AP UI Polish:** เพิ่มฟีเจอร์ payment matching, aging report, statement export
 - **Withholding Tax (Phase 2):** ตาราง `withholding_tax_records` + ฟอร์ม ภ.ง.ด.3/53
 - **e-Filing Export (Phase 2):** สร้าง XML/JSON payload ตามมาตรฐานกรมสรรพากร
 - **Audit Trail (Phase 3):** ตาราง `transaction_audit_log` บันทึกทุกการแก้ไข
