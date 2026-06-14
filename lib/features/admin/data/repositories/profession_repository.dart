@@ -183,11 +183,19 @@ class ProfessionRepository {
     required UserCategory category,
     String? colorHex,
     bool requiresVerification = true,
+    bool requiresSheservedApproval = false,
     bool isVolunteer = false,
+    bool canPrescribeMedication = false,
+    bool canDispenseMedication = false,
+    bool canManageDrugRisk = false,
+    bool requiresTelemedicineLicense = false,
+    List<String> approvalRequiredLicenseTypes = const [],
+    String? professionCode,
     int displayOrder = 0,
   }) async {
     final now = DateTime.now();
     final data = {
+      'profession_code': professionCode,
       'name': name,
       'name_en': nameEn,
       'description': description,
@@ -198,6 +206,12 @@ class ProfessionRepository {
       'is_active': true,
       'is_volunteer': isVolunteer,
       'requires_verification': requiresVerification,
+      'requires_sheserved_approval': requiresSheservedApproval,
+      'can_prescribe_medication': canPrescribeMedication,
+      'can_dispense_medication': canDispenseMedication,
+      'can_manage_drug_risk': canManageDrugRisk,
+      'requires_telemedicine_license': requiresTelemedicineLicense,
+      'approval_required_license_types': approvalRequiredLicenseTypes,
       'display_order': displayOrder,
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
@@ -211,13 +225,29 @@ class ProfessionRepository {
   /// อัพเดทอาชีพ
   Future<Profession> updateProfession(String id, Map<String, dynamic> data) async {
     data['updated_at'] = DateTime.now().toIso8601String();
-    final response = await _client
-        .from('professions')
-        .update(data)
-        .eq('id', id)
-        .select()
-        .single();
-    return Profession.fromJson(response);
+    try {
+      final response = await _client.rpc(
+        'update_profession_bypass_rls',
+        params: {'p_id': id, 'p_data': data},
+      );
+      if (response == null) {
+        throw Exception('ไม่พบอาชีพที่ต้องการอัปเดต (id: $id)');
+      }
+      return Profession.fromJson(response as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('RPC update failed: $e, falling back to direct update');
+      // Fallback: direct update (for local dev or when RPC not available)
+      final response = await _client
+          .from('professions')
+          .update(data)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+      if (response == null) {
+        throw Exception('ไม่พบอาชีพที่ต้องการอัปเดต (id: $id) — ตรวจสอบ RLS policy');
+      }
+      return Profession.fromJson(response);
+    }
   }
 
   /// ลบอาชีพ (soft delete)
@@ -309,6 +339,11 @@ class ProfessionRepository {
     String? hint,
     required FieldType fieldType,
     bool isRequired = false,
+    bool isLocked = false,
+    bool requiresAttachment = false,
+    String? attachmentGroupKey,
+    bool attachmentRequiredWhenFilled = false,
+    List<String>? visibleWhenProfessionCodes,
     int order = 0,
     String? iconName,
     List<String>? dropdownOptions,
@@ -317,10 +352,16 @@ class ProfessionRepository {
     final data = {
       'profession_id': professionId,
       'field_id': fieldId,
+      'field_key': fieldId,
       'label': label,
       'hint': hint,
       'field_type': fieldType.name,
       'is_required': isRequired,
+      'is_locked': isLocked,
+      'requires_attachment': requiresAttachment,
+      'attachment_group_key': attachmentGroupKey,
+      'attachment_required_when_filled': attachmentRequiredWhenFilled,
+      'visible_when_profession_code': visibleWhenProfessionCodes,
       'field_order': order,
       'icon_name': iconName,
       'dropdown_options': dropdownOptions,

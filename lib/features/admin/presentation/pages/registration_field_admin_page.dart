@@ -352,10 +352,31 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
           children: [
             const SizedBox(height: 4),
             Text(
+              'field_key: ${field.fieldKey ?? field.fieldId}',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textHint,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
               field.fieldType.displayName,
               style: AppTextStyles.caption.copyWith(
                 color: _getFieldTypeColor(field.fieldType),
               ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                if (field.isLocked)
+                  _buildFieldBadge('Locked', AppColors.warning),
+                if (field.requiresAttachment)
+                  _buildFieldBadge('Attachment', Colors.teal),
+                if (field.attachmentRequiredWhenFilled)
+                  _buildFieldBadge('Attach on fill', Colors.deepOrange),
+              ],
             ),
             if (field.hint != null && field.hint!.isNotEmpty) ...[
               const SizedBox(height: 2),
@@ -378,11 +399,19 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
               color: AppColors.primary,
               onPressed: () => _showEditFieldDialog(field),
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              color: AppColors.error,
-              onPressed: () => _confirmDeleteField(field),
-            ),
+            if (!field.isLocked)
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                color: AppColors.error,
+                onPressed: () => _confirmDeleteField(field),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.lock_outline),
+                color: AppColors.warning,
+                onPressed: null,
+                tooltip: 'ฟิลด์นี้ถูกล็อก',
+              ),
             ReorderableDragStartListener(
               index: index,
               child: const Icon(
@@ -391,6 +420,25 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFieldBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Text(
+        label,
+        style: AppTextStyles.caption.copyWith(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -457,7 +505,14 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
               hint: field.hint,
               fieldType: field.fieldType,
               isRequired: field.isRequired,
+              isLocked: field.isLocked,
+              requiresAttachment: field.requiresAttachment,
+              attachmentGroupKey: field.attachmentGroupKey,
+              attachmentRequiredWhenFilled: field.attachmentRequiredWhenFilled,
+              visibleWhenProfessionCodes: field.visibleWhenProfessionCodes,
               order: _fields.length,
+              iconName: field.iconName,
+              dropdownOptions: field.dropdownOptions,
             );
             setState(() {
               _fields.add(newField);
@@ -488,6 +543,14 @@ class _RegistrationFieldAdminPageState extends State<RegistrationFieldAdminPage>
               'hint': updatedField.hint,
               'field_type': updatedField.fieldType.name,
               'is_required': updatedField.isRequired,
+              'field_key': updatedField.fieldKey ?? updatedField.fieldId,
+              'is_locked': updatedField.isLocked,
+              'requires_attachment': updatedField.requiresAttachment,
+              'attachment_group_key': updatedField.attachmentGroupKey,
+              'attachment_required_when_filled': updatedField.attachmentRequiredWhenFilled,
+              'visible_when_profession_code': updatedField.visibleWhenProfessionCodes,
+              'icon_name': updatedField.iconName,
+              'dropdown_options': updatedField.dropdownOptions,
             });
             setState(() {
               final index = _fields.indexWhere((f) => f.id == updatedField.id);
@@ -581,9 +644,14 @@ class FieldEditorDialog extends StatefulWidget {
 class _FieldEditorDialogState extends State<FieldEditorDialog> {
   late TextEditingController _labelController;
   late TextEditingController _hintController;
-  late TextEditingController _fieldIdController;
+  late TextEditingController _fieldKeyController;
+  late TextEditingController _attachmentGroupKeyController;
+  late TextEditingController _visibleProfessionCodesController;
   late FieldType _selectedFieldType;
   late bool _isRequired;
+  late bool _isLocked;
+  late bool _requiresAttachment;
+  late bool _attachmentRequiredWhenFilled;
 
   @override
   void initState() {
@@ -592,18 +660,40 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
         TextEditingController(text: widget.existingField?.label ?? '');
     _hintController =
         TextEditingController(text: widget.existingField?.hint ?? '');
-    _fieldIdController =
-        TextEditingController(text: widget.existingField?.fieldId ?? '');
+    _fieldKeyController = TextEditingController(
+      text: widget.existingField?.fieldKey ?? widget.existingField?.fieldId ?? '',
+    );
+    _attachmentGroupKeyController = TextEditingController(
+      text: widget.existingField?.attachmentGroupKey ?? '',
+    );
+    _visibleProfessionCodesController = TextEditingController(
+      text: widget.existingField?.visibleWhenProfessionCodes?.join(', ') ?? '',
+    );
     _selectedFieldType = widget.existingField?.fieldType ?? FieldType.text;
     _isRequired = widget.existingField?.isRequired ?? false;
+    _isLocked = widget.existingField?.isLocked ?? false;
+    _requiresAttachment = widget.existingField?.requiresAttachment ?? false;
+    _attachmentRequiredWhenFilled =
+        widget.existingField?.attachmentRequiredWhenFilled ?? false;
   }
 
   @override
   void dispose() {
     _labelController.dispose();
     _hintController.dispose();
-    _fieldIdController.dispose();
+    _fieldKeyController.dispose();
+    _attachmentGroupKeyController.dispose();
+    _visibleProfessionCodesController.dispose();
     super.dispose();
+  }
+
+  List<String> _parseProfessionCodes() {
+    return _visibleProfessionCodesController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   @override
@@ -626,9 +716,9 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
                 border: OutlineInputBorder(),
               ),
               onChanged: (value) {
-                // Auto-generate field ID from label
-                if (!isEditing && _fieldIdController.text.isEmpty) {
-                  _fieldIdController.text = value
+                // Auto-generate field key from label
+                if (!isEditing && _fieldKeyController.text.isEmpty) {
+                  _fieldKeyController.text = value
                       .toLowerCase()
                       .replaceAll(RegExp(r'[^a-z0-9]'), '_');
                 }
@@ -636,16 +726,16 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
             ),
             const SizedBox(height: 16),
 
-            // Field ID
+            // Field Key
             TextField(
-              controller: _fieldIdController,
+              controller: _fieldKeyController,
               decoration: const InputDecoration(
-                labelText: 'Field ID *',
-                hintText: 'เช่น email, phone_number',
+                labelText: 'Field Key *',
+                hintText: 'เช่น email, license_number',
                 border: OutlineInputBorder(),
-                helperText: 'ใช้ภาษาอังกฤษ ไม่มีช่องว่าง',
+                helperText: 'ใช้ภาษาอังกฤษ ไม่มีช่องว่าง และจะถูกล็อกเมื่อบันทึก',
               ),
-              enabled: !isEditing, // Can't change ID when editing
+              enabled: !(widget.existingField?.isLocked ?? false),
             ),
             const SizedBox(height: 16),
 
@@ -696,6 +786,63 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
               activeColor: AppColors.primary,
               contentPadding: EdgeInsets.zero,
             ),
+            SwitchListTile(
+              title: const Text('ล็อก Field Key'),
+              subtitle: const Text('แก้ไข field_key ไม่ได้หลังจากบันทึก'),
+              value: _isLocked,
+              onChanged: (value) {
+                setState(() {
+                  _isLocked = value;
+                });
+              },
+              activeColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('ต้องแนบรูปหลักฐาน'),
+              subtitle: const Text('ใช้กับฟิลด์ที่เป็นเลขใบอนุญาตหรือข้อมูลเอกสาร'),
+              value: _requiresAttachment,
+              onChanged: (value) {
+                setState(() {
+                  _requiresAttachment = value;
+                });
+              },
+              activeColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('บังคับแนบเมื่อกรอกฟิลด์นี้'),
+              subtitle: const Text('ถ้าผู้สมัครกรอกข้อมูลในฟิลด์นี้ ต้องแนบรูปก่อน submit'),
+              value: _attachmentRequiredWhenFilled,
+              onChanged: (value) {
+                setState(() {
+                  _attachmentRequiredWhenFilled = value;
+                });
+              },
+              activeColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            TextField(
+              controller: _attachmentGroupKeyController,
+              decoration: const InputDecoration(
+                labelText: 'Attachment Group Key',
+                hintText: 'เช่น medical_council, telemedicine_license',
+                helperText: 'ใช้รวมกลุ่มรูปหลักฐานของฟิลด์นี้',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _visibleProfessionCodesController,
+              decoration: const InputDecoration(
+                labelText: 'Visible When Profession Codes',
+                hintText: 'doctor_gp, doctor_family, pharmacist',
+                helperText: 'คั่นด้วยเครื่องหมายจุลภาค ถ้าว่างจะแสดงกับอาชีพนี้ทุกตัว',
+                border: OutlineInputBorder(),
+              ),
+              minLines: 1,
+              maxLines: 3,
+            ),
           ],
         ),
       ),
@@ -724,22 +871,35 @@ class _FieldEditorDialogState extends State<FieldEditorDialog> {
       return;
     }
 
-    if (_fieldIdController.text.isEmpty) {
+    if (_fieldKeyController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณากรอก Field ID')),
+        const SnackBar(content: Text('กรุณากรอก Field Key')),
       );
       return;
     }
+
+    final normalizedKey = _fieldKeyController.text.trim();
+    final fieldKey = normalizedKey.isEmpty
+        ? _labelController.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')
+        : normalizedKey;
 
     final field = RegistrationFieldConfig(
       id: widget.existingField?.id ??
           DateTime.now().millisecondsSinceEpoch.toString(),
       professionId: widget.professionId,
-      fieldId: _fieldIdController.text,
+      fieldId: fieldKey,
+      fieldKey: fieldKey,
       label: _labelController.text,
       hint: _hintController.text.isNotEmpty ? _hintController.text : null,
       fieldType: _selectedFieldType,
       isRequired: _isRequired,
+      isLocked: _isLocked,
+      requiresAttachment: _requiresAttachment,
+      attachmentGroupKey: _attachmentGroupKeyController.text.trim().isNotEmpty
+          ? _attachmentGroupKeyController.text.trim()
+          : null,
+      attachmentRequiredWhenFilled: _attachmentRequiredWhenFilled,
+      visibleWhenProfessionCodes: _parseProfessionCodes(),
       order: widget.existingField?.order ?? 999,
     );
 

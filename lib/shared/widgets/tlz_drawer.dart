@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 import '../../core/constants/app_colors.dart';
@@ -8,6 +9,9 @@ import '../../services/service_locator.dart';
 import '../../features/consultation/presentation/logic/consultation_guard.dart';
 import '../../features/consultation/presentation/pages/health_program_request_dashboard.dart';
 import '../../features/pharmacy/presentation/pages/pharmacy_products_page.dart';
+import '../../features/pharmacy/presentation/pages/drug_risk_classification_admin_page.dart';
+import '../../features/admin/data/repositories/profession_repository.dart';
+import '../../features/admin/models/profession.dart';
 
 /// Drawer Menu Item Model
 class DrawerMenuItem {
@@ -64,6 +68,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
 
   // Volunteer role check
   bool _isVolunteer = false;
+  bool _canManageDrugRisk = false;
   
   @override
   void initState() {
@@ -77,6 +82,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
     });
 
     _checkVolunteerRole();
+    _checkDrugRiskPermission();
     
     // Initialize animation controller
     _animationController = AnimationController(
@@ -124,6 +130,31 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
       final isVol = await ServiceLocator.instance.videoRepository.isUserVolunteer(user.id);
       if (mounted) {
         setState(() => _isVolunteer = isVol);
+      }
+    }
+  }
+
+  void _checkDrugRiskPermission() async {
+    final user = AuthService.instance.currentUser;
+    if (user != null && user.professionId != null) {
+      try {
+        final repo = ProfessionRepository(Supabase.instance.client);
+        final professions = await repo.getAllProfessions();
+        final profession = professions.firstWhere(
+          (p) => p.id == user.professionId,
+          orElse: () => Profession(
+            id: '',
+            name: '',
+            category: const UserCategory(id: '', name: ''),
+            createdAt: DateTime.parse('0000-01-01'),
+            updatedAt: DateTime.parse('0000-01-01'),
+          ),
+        );
+        if (mounted && profession.id.isNotEmpty) {
+          setState(() => _canManageDrugRisk = profession.canManageDrugRisk);
+        }
+      } catch (e) {
+        debugPrint('Error checking drug risk permission: $e');
       }
     }
   }
@@ -626,6 +657,21 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/admin/pharmacy_filters'),
                               isSubItem: true,
                             ),
+                            if (_canManageDrugRisk)
+                              _buildMenuItem(
+                                context,
+                                title: 'จัดการหมวดหมู่ความเสี่ยงยา',
+                                icon: Icons.warning_amber_outlined,
+                                onTap: () {
+                                  Navigator.of(context).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const DrugRiskClassificationAdminPage(),
+                                    ),
+                                  );
+                                },
+                                isSubItem: true,
+                              ),
                             _buildMenuItem(
                               context,
                               title: 'ควบคุมระบบวิดีโอ',

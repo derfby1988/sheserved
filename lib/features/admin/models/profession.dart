@@ -179,6 +179,7 @@ extension VerificationStatusExtension on VerificationStatus {
 /// Model สำหรับอาชีพ
 class Profession {
   final String id;
+  final String? professionCode;
   final String name;
   final String? nameEn;
   final String? description;
@@ -188,6 +189,12 @@ class Profession {
   final bool isActive;
   final bool isVolunteer; // สามารถเป็นอาสาสมัครลงพื้นที่ช่วยเหลือได้
   final bool requiresVerification; // ต้องตรวจสอบก่อนใช้งาน
+  final bool requiresSheservedApproval; // ต้องผ่านอนุมัติจาก Sheserved
+  final bool canPrescribeMedication; // สามารถสั่งจ่ายยาได้
+  final bool canDispenseMedication; // สามารถจ่ายยาได้
+  final bool canManageDrugRisk; // สามารถจัดการหมวดหมู่ความเสี่ยงยาได้
+  final bool requiresTelemedicineLicense; // ต้องมีใบอนุญาต Telemedicine
+  final List<String> approvalRequiredLicenseTypes; // ประเภทใบอนุญาตที่ต้องแนบ/ตรวจสอบ
   final int displayOrder;
   final int fieldCount; // จำนวน fields (calculated)
   final int memberCount; // จำนวนสมาชิกทั้งหมด (calculated)
@@ -197,6 +204,7 @@ class Profession {
 
   const Profession({
     required this.id,
+    this.professionCode,
     required this.name,
     this.nameEn,
     this.description,
@@ -207,6 +215,12 @@ class Profession {
     this.isActive = true,
     this.isVolunteer = false,
     this.requiresVerification = true,
+    this.requiresSheservedApproval = false,
+    this.canPrescribeMedication = false,
+    this.canDispenseMedication = false,
+    this.canManageDrugRisk = false,
+    this.requiresTelemedicineLicense = false,
+    this.approvalRequiredLicenseTypes = const [],
     this.displayOrder = 0,
     this.fieldCount = 0,
     this.memberCount = 0,
@@ -221,6 +235,18 @@ class Profession {
       '00000000-0000-0000-0000-000000000002';
   static const String clinicProfessionId =
       '00000000-0000-0000-0000-000000000003';
+  static const String doctorGpProfessionId =
+      '00000000-0000-0000-0000-000000000101';
+  static const String doctorFamilyProfessionId =
+      '00000000-0000-0000-0000-000000000102';
+  static const String doctorSpecialistProfessionId =
+      '00000000-0000-0000-0000-000000000103';
+  static const String dentistProfessionId =
+      '00000000-0000-0000-0000-000000000104';
+  static const String pharmacistProfessionId =
+      '00000000-0000-0000-0000-000000000105';
+  static const String telemedicineProviderProfessionId =
+      '00000000-0000-0000-0000-000000000106';
 
   /// ค่าเริ่มต้นสำหรับ Built-in professions
   static List<Profession> get defaultProfessions {
@@ -228,6 +254,7 @@ class Profession {
     return [
       Profession(
         id: consumerProfessionId,
+        professionCode: 'consumer',
         name: 'ผู้ซื้อ/ผู้รับบริการ',
         nameEn: 'Consumer',
         description: 'ผู้ใช้ทั่วไปที่ต้องการซื้อสินค้าหรือรับบริการ',
@@ -238,12 +265,15 @@ class Profession {
         isActive: true,
         isVolunteer: false,
         requiresVerification: false,
+        requiresSheservedApproval: false,
+        canManageDrugRisk: false,
         displayOrder: 0,
         createdAt: now,
         updatedAt: now,
       ),
       Profession(
         id: expertProfessionId,
+        professionCode: 'expert',
         name: 'ผู้เชี่ยวชาญ/ผู้ขาย/ร้านค้า',
         nameEn: 'Expert/Seller',
         description: 'ผู้เชี่ยวชาญ ผู้ขายสินค้า หรือเจ้าของร้านค้า',
@@ -254,12 +284,15 @@ class Profession {
         isActive: true,
         isVolunteer: false,
         requiresVerification: true,
+        requiresSheservedApproval: true,
+        canManageDrugRisk: true,
         displayOrder: 1,
         createdAt: now,
         updatedAt: now,
       ),
       Profession(
         id: clinicProfessionId,
+        professionCode: 'clinic',
         name: 'คลินิก/ศูนย์',
         nameEn: 'Clinic/Center',
         description: 'คลินิก ศูนย์บริการ หรือสถานประกอบการ',
@@ -270,7 +303,134 @@ class Profession {
         isActive: true,
         isVolunteer: false,
         requiresVerification: true,
+        requiresSheservedApproval: true,
+        canManageDrugRisk: true,
         displayOrder: 2,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: doctorGpProfessionId,
+        professionCode: 'doctor_gp',
+        name: 'แพทย์ทั่วไป',
+        nameEn: 'General Practitioner / Family Physician',
+        description: 'แพทย์ที่สามารถตรวจ วินิจฉัย และสั่งจ่ายยาตามขอบเขตวิชาชีพ',
+        iconName: 'medical_services',
+        colorHex: '#1976D2',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['medical_council', 'telemedicine'],
+        displayOrder: 10,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: doctorFamilyProfessionId,
+        professionCode: 'doctor_family',
+        name: 'แพทย์เวชปฏิบัติครอบครัว',
+        nameEn: 'Family Physician',
+        description: 'แพทย์เวชปฏิบัติครอบครัวสำหรับการดูแลแบบปฐมภูมิ',
+        iconName: 'family_restroom',
+        colorHex: '#0288D1',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['medical_council', 'telemedicine'],
+        displayOrder: 11,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: doctorSpecialistProfessionId,
+        professionCode: 'doctor_specialist',
+        name: 'แพทย์เฉพาะทาง',
+        nameEn: 'Specialist Physician',
+        description: 'แพทย์เฉพาะทางที่มีขอบเขตการรักษาเฉพาะสาขา',
+        iconName: 'psychology',
+        colorHex: '#6A1B9A',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['medical_council', 'specialist_license', 'telemedicine'],
+        displayOrder: 12,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: dentistProfessionId,
+        professionCode: 'dentist',
+        name: 'ทันตแพทย์',
+        nameEn: 'Dentist',
+        description: 'ผู้ประกอบวิชาชีพทันตกรรม',
+        iconName: 'mood',
+        colorHex: '#00897B',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['dental_council', 'telemedicine'],
+        displayOrder: 13,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: pharmacistProfessionId,
+        professionCode: 'pharmacist',
+        name: 'เภสัชกร',
+        nameEn: 'Pharmacist',
+        description: 'ผู้ประกอบวิชาชีพเภสัชกรรมสำหรับจ่ายยาและให้คำแนะนำ',
+        iconName: 'local_pharmacy',
+        colorHex: '#7CB342',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canDispenseMedication: true,
+        canManageDrugRisk: true,
+        approvalRequiredLicenseTypes: const ['pharmacy_council'],
+        displayOrder: 14,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: telemedicineProviderProfessionId,
+        professionCode: 'telemedicine_provider',
+        name: 'ผู้ให้บริการ Telemedicine',
+        nameEn: 'Telemedicine Provider',
+        description: 'ผู้ให้บริการที่ผ่านการตรวจสอบสิทธิ์สำหรับการให้บริการทางไกล',
+        iconName: 'video_call',
+        colorHex: '#00ACC1',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['telemedicine'],
+        displayOrder: 15,
         createdAt: now,
         updatedAt: now,
       ),
@@ -280,6 +440,7 @@ class Profession {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'profession_code': professionCode,
       'name': name,
       'name_en': nameEn,
       'description': description,
@@ -289,6 +450,12 @@ class Profession {
       'is_active': isActive,
       'is_volunteer': isVolunteer,
       'requires_verification': requiresVerification,
+      'requires_sheserved_approval': requiresSheservedApproval,
+      'can_prescribe_medication': canPrescribeMedication,
+      'can_dispense_medication': canDispenseMedication,
+      'can_manage_drug_risk': canManageDrugRisk,
+      'requires_telemedicine_license': requiresTelemedicineLicense,
+      'approval_required_license_types': approvalRequiredLicenseTypes,
       'display_order': displayOrder,
       'color_hex': colorHex,
       'created_at': createdAt.toIso8601String(),
@@ -306,6 +473,7 @@ class Profession {
 
     return Profession(
       id: json['id'],
+      professionCode: json['profession_code'],
       name: json['name'],
       nameEn: json['name_en'],
       description: json['description'],
@@ -315,6 +483,14 @@ class Profession {
       isActive: json['is_active'] ?? true,
       isVolunteer: json['is_volunteer'] ?? false,
       requiresVerification: json['requires_verification'] ?? true,
+      requiresSheservedApproval: json['requires_sheserved_approval'] ?? false,
+      canPrescribeMedication: json['can_prescribe_medication'] ?? false,
+      canDispenseMedication: json['can_dispense_medication'] ?? false,
+      canManageDrugRisk: json['can_manage_drug_risk'] ?? false,
+      requiresTelemedicineLicense: json['requires_telemedicine_license'] ?? false,
+      approvalRequiredLicenseTypes: json['approval_required_license_types'] != null
+          ? List<String>.from(json['approval_required_license_types'])
+          : const [],
       displayOrder: json['display_order'] ?? 0,
       colorHex: json['color_hex'],
       fieldCount: json['field_count'] ?? 0,
@@ -330,6 +506,7 @@ class Profession {
 
   Profession copyWith({
     String? id,
+    String? professionCode,
     String? name,
     String? nameEn,
     String? description,
@@ -339,6 +516,12 @@ class Profession {
     bool? isActive,
     bool? isVolunteer,
     bool? requiresVerification,
+    bool? requiresSheservedApproval,
+    bool? canPrescribeMedication,
+    bool? canDispenseMedication,
+    bool? canManageDrugRisk,
+    bool? requiresTelemedicineLicense,
+    List<String>? approvalRequiredLicenseTypes,
     int? displayOrder,
     String? colorHex,
     int? fieldCount,
@@ -348,6 +531,7 @@ class Profession {
   }) {
     return Profession(
       id: id ?? this.id,
+      professionCode: professionCode ?? this.professionCode,
       name: name ?? this.name,
       nameEn: nameEn ?? this.nameEn,
       description: description ?? this.description,
@@ -357,6 +541,15 @@ class Profession {
       isActive: isActive ?? this.isActive,
       isVolunteer: isVolunteer ?? this.isVolunteer,
       requiresVerification: requiresVerification ?? this.requiresVerification,
+      requiresSheservedApproval:
+          requiresSheservedApproval ?? this.requiresSheservedApproval,
+      canPrescribeMedication: canPrescribeMedication ?? this.canPrescribeMedication,
+      canDispenseMedication: canDispenseMedication ?? this.canDispenseMedication,
+      canManageDrugRisk: canManageDrugRisk ?? this.canManageDrugRisk,
+      requiresTelemedicineLicense:
+          requiresTelemedicineLicense ?? this.requiresTelemedicineLicense,
+      approvalRequiredLicenseTypes:
+          approvalRequiredLicenseTypes ?? this.approvalRequiredLicenseTypes,
       displayOrder: displayOrder ?? this.displayOrder,
       colorHex: colorHex ?? this.colorHex,
       fieldCount: fieldCount ?? this.fieldCount,

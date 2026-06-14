@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
@@ -583,7 +584,8 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
   void _approveApplication(RegistrationApplication application) async {
     try {
-      await _repo.approveApplication(application);
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      await _repo.approveApplication(application, reviewedBy: currentUserId);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -705,7 +707,8 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
   void _rejectApplication(RegistrationApplication application, String note) async {
     try {
-      await _repo.rejectApplication(application, note);
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      await _repo.rejectApplication(application, note, reviewedBy: currentUserId);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -730,7 +733,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 }
 
 /// หน้าแสดงรายละเอียดผู้สมัคร
-class ApplicationDetailPage extends StatelessWidget {
+class ApplicationDetailPage extends StatefulWidget {
   final RegistrationApplication application;
   final VoidCallback onApprove;
   final Function(String note) onReject;
@@ -741,6 +744,87 @@ class ApplicationDetailPage extends StatelessWidget {
     required this.onApprove,
     required this.onReject,
   });
+
+  @override
+  State<ApplicationDetailPage> createState() => _ApplicationDetailPageState();
+}
+
+class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
+  List<Map<String, dynamic>> _attachments = [];
+  bool _isLoadingAttachments = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAttachments();
+  }
+
+  Future<void> _loadAttachments() async {
+    try {
+      final repo = ServiceLocator.instance.registrationRepository;
+      final attachments = await repo.getApplicationAttachments(widget.application.id);
+      if (mounted) {
+        setState(() {
+          _attachments = attachments;
+          _isLoadingAttachments = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading attachments: $e');
+      if (mounted) setState(() => _isLoadingAttachments = false);
+    }
+  }
+
+  bool get _requiresCredentialCheck {
+    final profession = widget.application.profession;
+    if (profession == null) return false;
+    return profession.requiresTelemedicineLicense == true ||
+        profession.approvalRequiredLicenseTypes.isNotEmpty;
+  }
+
+  bool _hasAttachmentForRequirement(String requirement) {
+    final normalized = requirement.toLowerCase();
+    return _attachments.any((attachment) {
+      final fieldKey = (attachment['field_key'] as String? ?? '').toLowerCase();
+      final groupKey = (attachment['attachment_group_key'] as String? ?? '').toLowerCase();
+      return fieldKey.contains(normalized) || groupKey.contains(normalized);
+    });
+  }
+
+  List<String> _getMissingCredentialRequirements() {
+    final profession = widget.application.profession;
+    if (profession == null) return [];
+
+    final missing = <String>[];
+    if (profession.requiresTelemedicineLicense == true &&
+        !_hasAttachmentForRequirement('telemedicine')) {
+      missing.add('Telemedicine License');
+    }
+
+    for (final requiredType in profession.approvalRequiredLicenseTypes) {
+      if (!_hasAttachmentForRequirement(requiredType)) {
+        missing.add(requiredType);
+      }
+    }
+
+    return missing;
+  }
+
+  String _buildMissingCredentialReasonText(List<String> missingRequirements) {
+    if (missingRequirements.isEmpty) {
+      return 'เอกสารครบถ้วนแล้ว';
+    }
+    return 'ยังขาดเอกสาร/หลักฐานตามข้อกำหนด: ${missingRequirements.join(', ')}';
+  }
+
+  Future<void> _copyMissingCredentialReason(List<String> missingRequirements) async {
+    final text = _buildMissingCredentialReasonText(missingRequirements);
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('คัดลอกข้อความแจ้งผู้สมัครแล้ว')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -757,8 +841,8 @@ class ApplicationDetailPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Owner Highlight Alert
-            if (application.registrationData['is_owner_request'] == 'true' ||
-                application.registrationData['is_owner_request'] == true) ...[
+            if (widget.application.registrationData['is_owner_request'] == 'true' ||
+                widget.application.registrationData['is_owner_request'] == true) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(16),
@@ -817,8 +901,8 @@ class ApplicationDetailPage extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(
-                          application.firstName.isNotEmpty
-                              ? application.firstName[0].toUpperCase()
+                          widget.application.firstName.isNotEmpty
+                              ? widget.application.firstName[0].toUpperCase()
                               : '?',
                           style: AppTextStyles.heading2.copyWith(
                             color: AppColors.primary,
@@ -828,13 +912,13 @@ class ApplicationDetailPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      application.fullName,
+                      widget.application.fullName,
                       style: AppTextStyles.heading4.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
-                      '@${application.username}',
+                      '@${widget.application.username}',
                       style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -850,7 +934,7 @@ class ApplicationDetailPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        application.profession?.name ?? 'ไม่ระบุ',
+                        widget.application.profession?.name ?? 'ไม่ระบุ',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w600,
@@ -880,9 +964,9 @@ class ApplicationDetailPage extends StatelessWidget {
                       ),
                     ),
                     const Divider(height: 24),
-                    if (application.phone != null)
-                      _buildInfoRow('เบอร์โทร', application.phone!),
-                    ...application.registrationData.entries.map((entry) {
+                    if (widget.application.phone != null)
+                      _buildInfoRow('เบอร์โทร', widget.application.phone!),
+                    ...widget.application.registrationData.entries.map((entry) {
                       if (entry.value == 'uploaded') {
                         return _buildImageRow(entry.key);
                       }
@@ -917,12 +1001,14 @@ class ApplicationDetailPage extends StatelessWidget {
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
-                      children: application.registrationData.entries
-                          .where((e) => e.value == 'uploaded')
-                          .map((e) => _buildImagePreview(context, e.key))
-                          .toList(),
+                      children: _attachments.isNotEmpty
+                          ? _attachments.map((a) => _buildAttachmentPreview(context, a)).toList()
+                          : widget.application.registrationData.entries
+                              .where((e) => e.value == 'uploaded')
+                              .map((e) => _buildImagePreview(context, e.key))
+                              .toList(),
                     ),
-                    if (application.registrationData.entries
+                    if (_attachments.isEmpty && widget.application.registrationData.entries
                         .where((e) => e.value == 'uploaded')
                         .isEmpty)
                       Text(
@@ -935,10 +1021,125 @@ class ApplicationDetailPage extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // License Requirement Status Section
+            if (_requiresCredentialCheck) ...[
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.verified_user, color: AppColors.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'สถานะหลักฐานใบอนุญาต',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'แสดงหลักฐานที่แนบและสถานะข้อกำหนดสำหรับการตัดสินใจของผู้ตรวจสอบ ระบบยังไม่บล็อกการอนุมัติอัตโนมัติในหน้านี้',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      if (widget.application.profession?.requiresTelemedicineLicense == true)
+                        _buildCredentialCheckRow(
+                          'Telemedicine License',
+                          _attachments.any((a) {
+                            final fieldKey = (a['field_key'] as String? ?? '').toLowerCase();
+                            final groupKey = (a['attachment_group_key'] as String? ?? '').toLowerCase();
+                            return fieldKey.contains('telemedicine') || groupKey.contains('telemedicine');
+                          }),
+                        ),
+                      ...(widget.application.profession?.approvalRequiredLicenseTypes ?? []).map((type) {
+                        final hasAttachment = _attachments.any((a) =>
+                          (a['field_key'] as String? ?? '').toLowerCase().contains(type.toLowerCase()) ||
+                          (a['attachment_group_key'] as String? ?? '').toLowerCase().contains(type.toLowerCase())
+                        );
+                        return _buildCredentialCheckRow(type, hasAttachment);
+                      }),
+                      if (_attachments.isEmpty && _isLoadingAttachments)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: LinearProgressIndicator(),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              if (!_isLoadingAttachments && _getMissingCredentialRequirements().isNotEmpty) ...[
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  color: Colors.orange.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
+                            const SizedBox(width: 8),
+                            Text(
+                              'รายการที่ยังขาด',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _buildMissingCredentialReasonText(_getMissingCredentialRequirements()),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ..._getMissingCredentialRequirements().map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _buildCredentialCheckRow(item, false),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _copyMissingCredentialReason(
+                              _getMissingCredentialRequirements(),
+                            ),
+                            icon: const Icon(Icons.copy),
+                            label: const Text('คัดลอกเหตุผล'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ],
 
             // Action Buttons
-            if (application.status == VerificationStatus.pending) ...[
+            if (widget.application.status == VerificationStatus.pending) ...[
               Row(
                 children: [
                   Expanded(
@@ -967,7 +1168,7 @@ class ApplicationDetailPage extends StatelessWidget {
                     child: SizedBox(
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: onApprove,
+                        onPressed: widget.onApprove,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
                           foregroundColor: Colors.white,
@@ -990,6 +1191,93 @@ class ApplicationDetailPage extends StatelessWidget {
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentPreview(BuildContext context, Map<String, dynamic> attachment) {
+    final url = attachment['file_url'] as String?;
+    final fieldKey = attachment['field_key'] as String? ?? 'attachment';
+    return GestureDetector(
+      onTap: () {
+        if (url != null && url.isNotEmpty) {
+          // TODO: Open full image viewer
+        }
+      },
+      child: Container(
+        width: 100,
+        height: 100,
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+          image: url != null && url.isNotEmpty
+              ? DecorationImage(
+                  image: NetworkImage(url),
+                  fit: BoxFit.cover,
+                )
+              : null,
+        ),
+        child: url == null || url.isEmpty
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.image,
+                    color: AppColors.textHint,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatFieldKey(fieldKey),
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textHint,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildCredentialCheckRow(String label, bool hasAttachment) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(
+            hasAttachment ? Icons.check_circle : Icons.warning,
+            color: hasAttachment ? AppColors.success : AppColors.error,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: hasAttachment ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              hasAttachment ? 'แนบแล้ว' : 'ยังไม่แนบ',
+              style: AppTextStyles.caption.copyWith(
+                color: hasAttachment ? AppColors.success : AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1131,7 +1419,7 @@ class ApplicationDetailPage extends StatelessWidget {
                 return;
               }
               Navigator.pop(ctx);
-              onReject(noteController.text);
+              widget.onReject(noteController.text);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,

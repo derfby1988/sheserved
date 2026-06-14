@@ -29,8 +29,8 @@
 ## โมดูลต่างๆ และความสัมพันธ์ (Modules & Relationships)
 
 1. **[POS System](POS System_plan.md)**
-   - **หน้าที่:** จัดการการขายหน้าร้าน (Point of Sale), รับชำระเงิน, ออกใบเสร็จ
-   - **การเชื่อมโยง:** ส่งข้อมูลการขายไปตัดสต๊อกใน *Inventory*, ส่งข้อมูลรายได้ไปที่ *Accounting*, ให้แต้มสะสมใน *CRM*, และมีช่องทาง **API (POS Injection)** เพื่อรับคำสั่งซื้อ (Sales Order) จากตะกร้าสินค้าส่วนกลาง (Global Platform Shopping Cart)
+   - **หน้าที่:** จัดการการขายหน้าร้าน (Point of Sale), รับชำระเงิน, ออกใบเสร็จ, และ **QR Self-Service** (ผู้ใช้สแกน QR ที่โต๊ะ/ป้าย → เข้า Micro-Web/Deep Link → เลือกสินค้า/บริการ → ชำระ PromptPay → ได้ใบเสร็จดิจิทัล)
+   - **การเชื่อมโยง:** ส่งข้อมูลการขายไปตัดสต๊อกใน *Inventory*, ส่งข้อมูลรายได้ไปที่ *Accounting*, ให้แต้มสะสมใน *CRM*, และมีช่องทาง **API (POS Injection)** เพื่อรับคำสั่งซื้อ (Sales Order) จากตะกร้าสินค้าส่วนกลาง (Global Platform Shopping Cart) หรือจาก **QR Self-Service**
 
 2. **[Inventory / Stock System](INVENTORY_SYSTEM_PLAN.md)**
    - **หน้าที่:** จัดการคลังสินค้า, นับสต๊อก, ล็อตสินค้า, วันหมดอายุ

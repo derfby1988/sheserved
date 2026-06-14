@@ -17,6 +17,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../features/consultation/presentation/pages/consultation_note_editor_page.dart';
 import '../../../../features/consultation/presentation/pages/prescription_editor_page.dart';
+import '../../../../features/consultation/presentation/pages/prescription_choice_page.dart';
 import '../widgets/expert_group_status_banner.dart';
 import '../widgets/session_timer_widget.dart';
 
@@ -1004,6 +1005,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                           message: msg,
                           isMe: isMe,
                           otherParticipants: _otherParticipants,
+                          consultationId: _consultationId ?? '',
+                          isProvider: _isProvider,
+                          currentUserId: _currentUser?.id ?? '',
                         );
                       },
                     );
@@ -1176,11 +1180,17 @@ class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
   final List<ChatParticipant> otherParticipants;
+  final String consultationId;
+  final bool isProvider;
+  final String currentUserId;
 
   const _MessageBubble({
     required this.message,
     required this.isMe,
     required this.otherParticipants,
+    required this.consultationId,
+    required this.isProvider,
+    required this.currentUserId,
   });
 
   @override
@@ -1239,6 +1249,32 @@ class _MessageBubble extends StatelessWidget {
                 title: 'ใบสั่งยา',
                 color: Colors.green,
                 isMe: isMe,
+                onTap: () {
+                  final prescriptionId = message.attachmentUrl;
+                  if (prescriptionId == null || prescriptionId.isEmpty) return;
+                  if (isProvider) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => PrescriptionEditorPage(
+                          consultationId: consultationId,
+                          patientId: currentUserId,
+                        ),
+                      ),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (ctx) => PrescriptionChoicePage(
+                          consultationId: consultationId,
+                          patientId: currentUserId,
+                          prescriptionId: prescriptionId,
+                        ),
+                      ),
+                    );
+                  }
+                },
               ),
             if (message.type == 'text' ||
                 (message.type != 'note' &&
@@ -1316,10 +1352,10 @@ class _MessageBubble extends StatelessWidget {
     required String title,
     required Color color,
     required bool isMe,
+    VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: () {
-        // TODO: Open read-only viewer for note/prescription
+      onTap: onTap ?? () {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('เปิดดู $title (ระบบดูข้อมูลกำลังพัฒนา)')),
         );

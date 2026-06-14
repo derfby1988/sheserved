@@ -7,13 +7,21 @@
 
 ## 1. Goals & Scope (ไม่เปลี่ยนแปลง)
 
-**Three POS Modes:**
+**Four POS Modes:**
 
 | Mode | Actor | Context | Key Feature |
 |---|---|---|---|
 | **Mode A: Patient Self-Checkout** | `UserType.consumer` | Online, in-app | Patient เพิ่มสินค้าใส่ตะกร้า, จ่ายออนไลน์, รับใบเสร็จดิจิทัล |
 | **Mode B: Counter POS** | Platform Admin/Staff (`role_level` 1 หรือ 2) | Physical counter, walk-in | Staff เลือก patient ด้วย phone/ชื่อ (บังคับลงทะเบียน), เพิ่มสินค้า, รับเงิน/QR |
 | **Mode C: ERP Dashboard POS** | สมาชิกของ Profession Group ที่ `uses_pos_system = true` | ERP Dashboard | คลินิกคู่ค้าจัดการ catalog, ดู orders, รับชำระเงิน |
+| **Mode D: QR Self-Service** | `UserType.consumer` | Physical (QR at table/kiosk/signage) | Patient สแกน QR → เข้า Micro-Web / Deep Link → เลือกสินค้า/บริการ → ชำระ PromptPay Fixed Amount → ได้ใบเสร็จดิจิทัล |
+
+**Mode D — QR Self-Service Policy**
+- ไม่ต้องลงทะเบียนก่อน (anonymous ได้) แต่หากต้องการเก็บแต้ม/ประวัติ → ระบบจะ prompt ให้ login หลัง checkout
+- Staff สร้าง QR ได้จากระบบ (ระบุโต๊ะ/ห้อง/บริการ) → ระบบ generate QR พร้อม `profession_id` + `branch_id` + `table_id` (optional)
+- QR มีอายุ 24 ชั่วโมง (refresh ได้) หรือจนกว่า Staff จะปิด
+- ชำระผ่าน PromptPay Fixed Amount QR ที่ระบบสร้างอัตโนมัติตามยอดรวม
+- รองรับทั้ง Micro-Web (ไม่ต้องติดตั้งแอพ) และ Deep Link เปิดในแอพ Sheserved
 
 **Walk-in Patient Policy (ตัดสินใจแล้ว: Option A)**
 - บังคับให้ staff กรอก **phone number** ของ walk-in patient ก่อน checkout
@@ -53,7 +61,7 @@ CREATE TABLE IF NOT EXISTS orders (
   profession_id     UUID REFERENCES professions(id),        -- NULL สำหรับ platform orders
   branch_id         UUID REFERENCES organization_branches(id), -- สาขาที่ทำการขาย (Multi-branch)
   pos_mode          TEXT NOT NULL DEFAULT 'patient_self_checkout'
-                      CHECK (pos_mode IN ('patient_self_checkout', 'counter_pos', 'erp_dashboard')),
+                      CHECK (pos_mode IN ('patient_self_checkout', 'counter_pos', 'erp_dashboard', 'qr_self_service')),
   status            TEXT NOT NULL DEFAULT 'pending'
                       CHECK (status IN ('pending', 'paid', 'processing', 'completed', 'cancelled', 'refunded')),
   total_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -123,7 +131,12 @@ CREATE TABLE IF NOT EXISTS unified_payments (
   status            TEXT NOT NULL DEFAULT 'pending'
                       CHECK (status IN ('pending', 'confirmed', 'failed', 'refunded')),
   provider_reference  TEXT,                                 -- reference จาก payment provider
-  qr_payload        TEXT,                                   -- สำหรับ PromptPay QR
+  qr_payload        TEXT,                                   -- สำหรับ PromptPay QR (EMVCo payload)
+  qr_type           TEXT DEFAULT 'fixed'                   -- 'fixed' = ฝังยอดใน QR, 'variable' = ไม่ฝังยอด
+                      CHECK (qr_type IN ('fixed', 'variable')),
+  qr_fixed_amount   DECIMAL(12,2),                         -- ยอดเงินที่ฝังใน QR (NULL ถ้า variable)
+  qr_generated_at   TIMESTAMPTZ,                           -- เวลาสร้าง QR
+  qr_expires_at     TIMESTAMPTZ,                           -- QR หมดอายุ (default 5 นาที)
   confirmed_at      TIMESTAMPTZ,
   confirmed_by      UUID REFERENCES users(id),              -- สำหรับ manual confirmation (Mode B/C)
   failed_reason     TEXT,
@@ -658,6 +671,7 @@ lib/features/pos/
 │       ├── cart_service.dart           (Mode A logic)
 │       ├── counter_pos_service.dart    (Mode B: counter cart + patient lookup)
 │       ├── clinic_pos_service.dart     (Mode C: catalog + orders scoped to profession)
+│       ├── qr_self_service_service.dart ← NEW: Mode D — QR scan → catalog → cart → checkout
 │       ├── checkout_service.dart       (orchestrates order + payment — all modes)
 │       └── unified_payment_service.dart (shared QR builder, mock, cash — ไม่ผูกกับ donation)
 ├── presentation/
@@ -678,6 +692,12 @@ lib/features/pos/
 │   │   │   ├── clinic_pos_page.dart
 │   │   │   ├── clinic_appointments_page.dart
 │   │   │   └── clinic_staff_page.dart
+│   │   ├── mode_d/
+│   │   │   ├── qr_scan_landing_page.dart      ← NEW: หน้าแรกหลังสแกน QR
+│   │   │   ├── qr_catalog_page.dart           ← NEW: แสดงสินค้า/บริการตาม QR context
+│   │   │   ├── qr_cart_page.dart              ← NEW: ตะกร้าสำหรับ QR self-service
+│   │   │   ├── qr_checkout_page.dart          ← NEW: ชำระเงิน PromptPay Fixed Amount
+│   │   │   └── qr_receipt_page.dart           ← NEW: ใบเสร็จดิจิทัลหลังชำระ
 │   │   └── shared/
 │   │       ├── order_history_page.dart
 │   │       ├── receipt_detail_page.dart
@@ -688,6 +708,7 @@ lib/features/pos/
 │   │   ├── cart_item_tile.dart
 │   │   ├── order_summary_card.dart
 │   │   ├── payment_method_selector.dart
+│   │   ├── qr_payment_widget.dart             ← NEW: QR แบบระบุยอดคงที่/ไม่ระบุยอด
 │   │   ├── receipt_widget.dart
 │   │   ├── patient_search_bar.dart
 │   │   ├── walk_in_registration_dialog.dart   ← NEW: Mode B walk-in phone registration
@@ -709,6 +730,10 @@ lib/features/pos/
 │       │   ├── clinic_pos_bloc.dart
 │       │   ├── clinic_pos_event.dart
 │       │   └── clinic_pos_state.dart
+│       ├── qr_self_service/
+│       │   ├── qr_self_service_bloc.dart      ← NEW: Mode D BLoC
+│       │   ├── qr_self_service_event.dart       ← NEW
+│       │   └── qr_self_service_state.dart       ← NEW
 │       └── checkout/
 │           ├── checkout_bloc.dart
 │           ├── checkout_event.dart
@@ -734,6 +759,11 @@ class PosRoutes {
   static const clinicPosPage    = '/pos/clinic/pos';
   static const clinicAppointments = '/pos/clinic/appointments';
   static const clinicStaff      = '/pos/clinic/staff';
+  static const qrScanLanding    = '/pos/qr/landing';      ← NEW: หน้าแรกหลังสแกน QR
+  static const qrCatalog      = '/pos/qr/catalog';      ← NEW: สินค้า/บริการตาม QR
+  static const qrCart         = '/pos/qr/cart';         ← NEW: ตะกร้า QR self-service
+  static const qrCheckout     = '/pos/qr/checkout';     ← NEW: ชำระเงิน QR
+  static const qrReceipt      = '/pos/qr/receipt';      ← NEW: ใบเสร็จ QR
   static const orderHistory     = '/pos/orders';
   static const receiptDetail    = '/pos/receipt';
   static const pendingInvitations = '/pos/invitations';
@@ -877,17 +907,152 @@ StreamBuilder<List<InvitationModel>>(
 
 ## 4. Payment Flow (ปรับ PromptPay เป็น Manual Confirm)
 
-### PromptPay — Manual Confirmation Flow (Phase 1-5)
+### PromptPay — QR Code Payment with Fixed Amount (Phase 1-5)
+
+รองรับทั้ง **QR แบบระบุยอดเงินคงที่** (Fixed Amount) และ **QR แบบให้ผู้จ่ายกรอกยอดเอง** (Variable Amount)
+
+#### Fixed Amount QR Flow (แนะนำสำหรับ Counter POS)
 
 ```
-[Patient/Staff สร้าง Order]
-  → [Generate PromptPay QR (EMVCo format)]
-  → [แสดง QR บนหน้าจอ]
-  → [Patient/Customer สแกน QR และโอนเงิน]
-  → [Staff/Patient อัปโหลด slip หรือ Staff กด "ยืนยันรับเงินแล้ว"]
+[Staff สร้าง Order → ระบบคำนวณ final_amount]
+  → [Generate PromptPay QR (EMVCo format) ฝัง amount = final_amount]
+  → [แสดง QR พร้อมยอดเงินคงที่บนหน้าจอ]
+  → [Patient สแกน QR → แอพธนาคารแสดงยอดคงที่ ไม่ต้องกรอก]
+  → [Patient ยืนยันโอนเงิน]
+  → [Staff ตรวจสอบสลิป/ยอด → กด "ยืนยันรับเงินแล้ว"]
   → [เรียก confirm_unified_payment() พร้อม confirmed_by = staff_id]
   → [Order status → 'paid']
   → [เรียก process_post_purchase_actions(order_id)]
+```
+
+#### Variable Amount QR Flow (สำหรับ Donation / กรณีพิเศษ)
+
+```
+[Staff สร้าง Order หรือเปิด QR ทั่วไป]
+  → [Generate PromptPay QR (EMVCo format) ไม่ฝัง amount]
+  → [แสดง QR บนหน้าจอ]
+  → [Patient สแกน QR → แอพธนาคารให้กรอกยอดเอง]
+  → [Patient กรอกยอดและยืนยันโอน]
+  → [Staff ตรวจสอบสลิป/ยอด → กด "ยืนยันรับเงินแล้ว"]
+  → [เรียก confirm_unified_payment()]
+```
+
+#### Schema — unified_payments เพิ่มฟิลด์สำหรับ Fixed Amount QR
+
+```sql
+ALTER TABLE unified_payments ADD COLUMN IF NOT EXISTS qr_type TEXT DEFAULT 'fixed'
+  CHECK (qr_type IN ('fixed', 'variable'));
+ALTER TABLE unified_payments ADD COLUMN IF NOT EXISTS qr_fixed_amount DECIMAL(12,2);
+ALTER TABLE unified_payments ADD COLUMN IF NOT EXISTS qr_generated_at TIMESTAMPTZ;
+ALTER TABLE unified_payments ADD COLUMN IF NOT EXISTS qr_expires_at TIMESTAMPTZ;
+```
+
+| ฟิลด์ | รายละเอียด |
+|---|---|
+| `qr_type` | `'fixed'` = ฝังยอดใน QR, `'variable'` = ไม่ฝังยอด |
+| `qr_fixed_amount` | ยอดเงินที่ฝังใน QR (NULL ถ้า variable) |
+| `qr_generated_at` | เวลาสร้าง QR |
+| `qr_expires_at` | QR หมดอายุ (default 5 นาที สำหรับ fixed amount) |
+
+#### UnifiedPaymentService — เพิ่ม Methods
+
+```dart
+class UnifiedPaymentService {
+  /// สร้าง PromptPay QR แบบระบุยอดคงที่
+  Future<PaymentResult> generateFixedAmountQr({
+    required String orderId,
+    required Decimal amount,
+    required String promptPayId,      // เลขพร้อมเพย์ของร้าน
+    required String professionName,   // ชื่อร้านที่แสดงในสลิป
+    Duration expiry = const Duration(minutes: 5),
+  }) async {
+    final qrPayload = _buildPromptPayPayload(
+      promptPayId: promptPayId,
+      amount: amount,
+      professionName: professionName,
+    );
+
+    final payment = await _createUnifiedPayment(
+      orderId: orderId,
+      amount: amount,
+      method: 'promptpay',
+      qrPayload: qrPayload,
+      qrType: 'fixed',
+      qrFixedAmount: amount,
+      qrExpiresAt: DateTime.now().add(expiry),
+    );
+
+    return PaymentResult(
+      qrPayload: qrPayload,
+      paymentId: payment.id,
+      expiresAt: payment.qrExpiresAt,
+      amount: amount,
+    );
+  }
+
+  /// สร้าง PromptPay QR แบบไม่ระบุยอด (variable)
+  Future<PaymentResult> generateVariableAmountQr({
+    required String orderId,
+    required String promptPayId,
+    required String professionName,
+  }) async {
+    final qrPayload = _buildPromptPayPayload(
+      promptPayId: promptPayId,
+      professionName: professionName,
+      // amount = null → ไม่ฝังยอดใน QR
+    );
+
+    final payment = await _createUnifiedPayment(
+      orderId: orderId,
+      amount: Decimal.zero, // ยังไม่ทราบยอดจริง
+      method: 'promptpay',
+      qrPayload: qrPayload,
+      qrType: 'variable',
+    );
+
+    return PaymentResult(qrPayload: qrPayload, paymentId: payment.id);
+  }
+
+  /// ตรวจสอบ QR หมดอายุหรือไม่
+  bool isQrExpired(UnifiedPayment payment) {
+    if (payment.qrExpiresAt == null) return false;
+    return DateTime.now().isAfter(payment.qrExpiresAt!);
+  }
+
+  /// สร้าง PromptPay payload ตาม EMVCo standard
+  String _buildPromptPayPayload({
+    required String promptPayId,
+    Decimal? amount,
+    String? professionName,
+  }) {
+    // EMVCo QR สำหรับ PromptPay Thailand
+    // 00: Payload Format Indicator = '01'
+    // 01: Point of Initiation = '11' (static) / '12' (dynamic)
+    // 29/30: Merchant Account Information (PromptPay ID)
+    // 52: Merchant Category Code
+    // 53: Transaction Currency = '764' (THB)
+    // 54: Transaction Amount (optional for variable)
+    // 58: Country Code = 'TH'
+    // 63: CRC16
+    ...
+  }
+}
+```
+
+#### UI — QrPaymentWidget
+
+```dart
+class QrPaymentWidget extends StatelessWidget {
+  final String qrPayload;
+  final Decimal? fixedAmount;
+  final DateTime? expiresAt;
+  final VoidCallback? onRefreshQr;      // สร้าง QR ใหม่ถ้าหมดอายุ
+  final VoidCallback? onConfirmPayment; // Staff กดยืนยันรับเงิน
+
+  // แสดง QR Code ผ่าน qr_flutter package
+  // ถ้า fixedAmount != null → แสดงยอดเงินใหญ่ชัดเจน + นับถอยหลัง expiry
+  // ถ้า fixedAmount == null → แสดงข้อความ "กรุณากรอกยอดเงินในธนาคารแอพ"
+}
 ```
 
 > [!NOTE]

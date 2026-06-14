@@ -6,6 +6,7 @@ import '../../../../config/app_config.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
+import '../../../../shared/widgets/image_upload_field.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../../../admin/models/profession.dart' hide VerificationStatus;
@@ -22,12 +23,30 @@ class RegisterWizardPage extends StatefulWidget {
   State<RegisterWizardPage> createState() => _RegisterWizardPageState();
 }
 
+enum _ValidationIssueType {
+  form,
+  attachment,
+}
+
+class _ValidationIssue {
+  final String message;
+  final _ValidationIssueType type;
+  final int stepIndex;
+
+  const _ValidationIssue({
+    required this.message,
+    required this.type,
+    required this.stepIndex,
+  });
+}
+
 class _RegisterWizardPageState extends State<RegisterWizardPage> {
   int _currentStep = 0;
   final int _totalSteps = 4;
   
   // Dynamic field values storage
   final Map<String, dynamic> _dynamicFieldValues = {};
+  final Map<String, String> _attachmentFieldUrls = {};
   
   // Available professions (loaded dynamically)
   List<Profession> _professions = [];
@@ -968,14 +987,24 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
   
   Widget _buildDynamicImageField(RegistrationFieldConfig field) {
-    final imagePath = _dynamicFieldValues['${field.fieldId}_image'] as String?;
-    
-    return _buildImageUploadField(
+    final fieldKey = _resolveFieldKey(field);
+    final imageUrl = _attachmentFieldUrls[fieldKey];
+    return ImageUploadField(
       label: field.label,
-      imagePath: imagePath,
-      onTap: () => _selectImageForField(field.fieldId),
-      icon: _getIconForFieldType(field.fieldType),
-      required: field.isRequired,
+      bucket: 'registration_evidence',
+      pathPrefix: 'registration/${fieldKey}_',
+      isRequired: field.isRequired || field.requiresAttachment,
+      initialUrl: imageUrl,
+      onUploaded: (url) {
+        setState(() {
+          _attachmentFieldUrls[fieldKey] = url;
+        });
+      },
+      onRemoved: () {
+        setState(() {
+          _attachmentFieldUrls.remove(fieldKey);
+        });
+      },
     );
   }
   
@@ -1005,14 +1034,28 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
 
   
-  void _selectImageForField(String fieldId) {
-    // TODO: Implement image picker
-    _showSnackBar('เลือกรูปภาพจะเปิดใช้งานเร็วๆ นี้');
-    
-    // Simulate image selection
-    setState(() {
-      _dynamicFieldValues['${fieldId}_image'] = 'selected';
-    });
+  String _resolveFieldKey(RegistrationFieldConfig field) {
+    return field.fieldKey ?? field.fieldId;
+  }
+
+  Future<void> _persistAttachments(String applicationId) async {
+    if (_attachmentFieldUrls.isEmpty) return;
+
+    final records = _attachmentFieldUrls.entries.map((entry) {
+      return {
+        'application_id': applicationId,
+        'field_key': entry.key,
+        'attachment_type': 'image',
+        'file_url': entry.value,
+        'mime_type': 'image/jpeg',
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+    }).toList();
+
+    await Supabase.instance.client
+        .from('registration_application_attachments')
+        .upsert(records, onConflict: 'application_id,field_key');
   }
 
   /// Step 4: สรุปข้อมูลและยืนยัน
@@ -1437,7 +1480,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   void _handleNext() async {
-    if (!_validateCurrentStep()) return;
+    if (!await _validateCurrentStep()) return;
 
     setState(() => _isLoading = true);
 
@@ -1517,90 +1560,232 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-  bool _validateCurrentStep() {
+  List<_ValidationIssue> _collectValidationIssuesForCurrentStep() {
+    final issues = <_ValidationIssue>[];
+
     switch (_currentStep) {
       case 0:
         if (_firstNameController.text.isEmpty) {
-          _showSnackBar('กรุณากรอกชื่อ');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณากรอกชื่อ',
+            type: _ValidationIssueType.form,
+            stepIndex: 0,
+          ));
         }
         if (_lastNameController.text.isEmpty) {
-          _showSnackBar('กรุณากรอกนามสกุล');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณากรอกนามสกุล',
+            type: _ValidationIssueType.form,
+            stepIndex: 0,
+          ));
         }
         if (_selectedProfession == null) {
-          _showSnackBar('กรุณาเลือกประเภทการลงทะเบียน');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณาเลือกประเภทการลงทะเบียน',
+            type: _ValidationIssueType.form,
+            stepIndex: 0,
+          ));
         }
-        return true;
+        break;
 
       case 1:
         if (_usernameController.text.isEmpty) {
-          _showSnackBar('กรุณากรอกชื่อผู้ใช้');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณากรอกชื่อผู้ใช้',
+            type: _ValidationIssueType.form,
+            stepIndex: 1,
+          ));
         }
         if (_passwordController.text.isEmpty) {
-          _showSnackBar('กรุณากรอกรหัสผ่าน');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณากรอกรหัสผ่าน',
+            type: _ValidationIssueType.form,
+            stepIndex: 1,
+          ));
         }
         if (_passwordController.text.length < 6) {
-          _showSnackBar('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร',
+            type: _ValidationIssueType.form,
+            stepIndex: 1,
+          ));
         }
         if (_passwordController.text != _confirmPasswordController.text) {
-          _showSnackBar('รหัสผ่านไม่ตรงกัน');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'รหัสผ่านไม่ตรงกัน',
+            type: _ValidationIssueType.form,
+            stepIndex: 1,
+          ));
         }
-        return true;
+        break;
 
       case 2:
         // Validate required dynamic fields
-        for (final field in _professionFields.where((f) => f.isRequired)) {
-          if (field.fieldType == FieldType.image) {
-            final imagePath = _dynamicFieldValues['${field.fieldId}_image'];
-            if (imagePath == null) {
-              _showSnackBar('กรุณาอัพโหลด ${field.label}');
-              return false;
-            }
-          } else {
-            final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+        for (final field in _professionFields) {
+          final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+          if (field.fieldType != FieldType.image && field.isRequired) {
             if (controller == null || controller.text.isEmpty) {
-              _showSnackBar('กรุณากรอก ${field.label}');
-              return false;
+              issues.add(_ValidationIssue(
+                message: 'กรุณากรอก ${field.label}',
+                type: _ValidationIssueType.form,
+                stepIndex: 2,
+              ));
             }
-            
-            // Validate phone format
-            if (field.fieldType == FieldType.phone) {
+
+            if (controller != null && field.fieldType == FieldType.phone) {
               final phone = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
               final phoneRegex = RegExp(r'^0[0-9]{8,9}$');
               if (!phoneRegex.hasMatch(phone)) {
-                _showSnackBar('รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง');
-                return false;
+                issues.add(const _ValidationIssue(
+                  message: 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง',
+                  type: _ValidationIssueType.form,
+                  stepIndex: 2,
+                ));
               }
             }
-            
-            // Validate email format (if provided)
-            if (field.fieldType == FieldType.email && controller.text.isNotEmpty) {
+
+            if (controller != null && field.fieldType == FieldType.email && controller.text.isNotEmpty) {
               final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
               if (!emailRegex.hasMatch(controller.text)) {
-                _showSnackBar('รูปแบบอีเมลไม่ถูกต้อง');
-                return false;
+                issues.add(const _ValidationIssue(
+                  message: 'รูปแบบอีเมลไม่ถูกต้อง',
+                  type: _ValidationIssueType.form,
+                  stepIndex: 2,
+                ));
               }
             }
           }
+
+          final needsAttachment = field.requiresAttachment ||
+              field.attachmentRequiredWhenFilled ||
+              (field.fieldType == FieldType.image && field.isRequired);
+          if (needsAttachment) {
+            final fieldKey = _resolveFieldKey(field);
+            if (!_attachmentFieldUrls.containsKey(fieldKey)) {
+              issues.add(_ValidationIssue(
+                message: 'กรุณาอัปโหลดหลักฐานสำหรับ ${field.label}',
+                type: _ValidationIssueType.attachment,
+                stepIndex: 2,
+              ));
+            }
+          }
         }
-        return true;
+        break;
 
       case 3:
         if (!_acceptTerms) {
-          _showSnackBar('กรุณายอมรับข้อกำหนดการใช้งาน');
-          return false;
+          issues.add(const _ValidationIssue(
+            message: 'กรุณายอมรับข้อกำหนดการใช้งาน',
+            type: _ValidationIssueType.form,
+            stepIndex: 3,
+          ));
         }
-        return true;
+        break;
 
       default:
-        return true;
+        break;
     }
+
+    return issues;
+  }
+
+  Future<void> _showValidationIssuesDialog(List<_ValidationIssue> issues) async {
+    if (issues.isEmpty || !mounted) return;
+
+    final firstFormIssue = issues.cast<_ValidationIssue?>().firstWhere(
+          (issue) => issue?.type == _ValidationIssueType.form,
+          orElse: () => null,
+        );
+    final firstAttachmentIssue = issues.cast<_ValidationIssue?>().firstWhere(
+          (issue) => issue?.type == _ValidationIssueType.attachment,
+          orElse: () => null,
+        );
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ข้อมูลไม่ครบ'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'พบรายการที่ต้องแก้ไขก่อนดำเนินการต่อ',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...issues.map((issue) {
+                final icon = issue.type == _ValidationIssueType.attachment
+                    ? Icons.attachment
+                    : Icons.error_outline;
+                final color = issue.type == _ValidationIssueType.attachment
+                    ? AppColors.warning
+                    : AppColors.error;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(icon, size: 18, color: color),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          issue.message,
+                          style: AppTextStyles.bodySmall.copyWith(color: color),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ปิด'),
+          ),
+          if (firstFormIssue != null)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _currentStep = firstFormIssue.stepIndex;
+                });
+              },
+              icon: const Icon(Icons.edit_outlined),
+              label: Text(
+                firstFormIssue.stepIndex == 2 ? 'ไปกรอกฟอร์มเพิ่มเติม' : 'ไปกรอกฟอร์มที่ขาด',
+              ),
+            ),
+          if (firstAttachmentIssue != null)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _currentStep = firstAttachmentIssue.stepIndex;
+                });
+              },
+              icon: const Icon(Icons.attachment_outlined),
+              label: const Text('ไปแนบเอกสารที่ขาด'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _validateCurrentStep() async {
+    final issues = _collectValidationIssuesForCurrentStep();
+    if (issues.isNotEmpty) {
+      await _showValidationIssuesDialog(issues);
+      return false;
+    }
+
+    return true;
   }
 
   void _handleSubmit() async {
@@ -1711,14 +1896,14 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       // 6. Save dynamic field values
       final Map<String, String> fieldValues = {};
       for (final field in _professionFields) {
+        final fieldKey = _resolveFieldKey(field);
         final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
         if (controller != null && controller.text.isNotEmpty) {
-          fieldValues[field.fieldId] = controller.text;
+          fieldValues[fieldKey] = controller.text;
         }
-        // Handle date fields
         final dateValue = _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
         if (dateValue != null) {
-          fieldValues[field.fieldId] = dateValue.toIso8601String();
+          fieldValues[fieldKey] = dateValue.toIso8601String();
         }
       }
       
@@ -1726,11 +1911,23 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         await userRepo.saveRegistrationData(user.id, fieldValues);
         debugPrint('✅ Registration data saved: ${fieldValues.length} fields');
       }
-      
-      // 7. Update verification status based on profession
+
+      // 7. Create registration application with attachments when verification required
       if (_selectedProfession?.requiresVerification == true) {
+        final profRepo = ProfessionRepository(Supabase.instance.client);
+        final application = await profRepo.createApplication(
+          oderId: user.id,
+          professionId: _selectedProfession!.id,
+          firstName: _firstNameController.text,
+          lastName: _lastNameController.text,
+          username: _usernameController.text,
+          phone: phone,
+          profileImageUrl: user.profileImageUrl,
+          registrationData: fieldValues.isNotEmpty ? fieldValues : {'activated_at': DateTime.now().toIso8601String()},
+        );
+        await _persistAttachments(application.id);
         await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.pending);
-        debugPrint('✅ User set to pending verification');
+        debugPrint('✅ Registration application created: ${application.id}');
       } else {
         await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.verified);
         debugPrint('✅ User verified (no verification required)');

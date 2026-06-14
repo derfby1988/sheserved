@@ -34,6 +34,19 @@ Light mode ของ dashboard ใช้โทน **iOS natural pastel** พร�
 - **Fine-tuned geometry:** spacing 10px (2 columns) / 11px (3+ columns), square radius 30px, capsule radius 999px, tall/hero radius 36px
 - **Relative proportions:** square 0.96, capsule 0.68, tall/hero 1.42
 
+### 1.2 Group Section Glass Behavior
+
+แต่ละกลุ่มโมดูล (`_GroupSection`) ใช้ `GlassCard` หรือไม่ใช้ ขึ้นอยู่กับ `titleAccentColor` (สีชื่อกลุ่ม) ไม่ใช่ `tintColor` (สีพื้นหลัง):
+
+| `titleAccentColor` | `tintColor` | Wrapper | จุด/badge | พื้นหลัง |
+|---|---|---|---|---|---|
+| มีค่า | มีค่า | `GlassCard` + tint | ตามสีที่เลือก | มี pastel overlay |
+| มีค่า | `null` | `GlassCard` (ใส) | ตามสีที่เลือก | ไม่มี pastel overlay |
+| `null` | มีค่า | `Padding` ธรรมดา | เทา default `#94A3B8` | ไม่มี GlassCard |
+| `null` | `null` | `Padding` ธรรมดา | เทา default `#94A3B8` | ไม่มี GlassCard |
+
+> **หลักการ:** การเลือก "ไม่มีสีชื่อกลุ่ม" (`titleAccentColor == null`) จะทำให้ title row ไม่ห่อด้วย `GlassCard` โดยสมบูรณ์ (ไม่มีพื้นหลังแก้วและไม่มีเงา) แต่ยังแสดงจุดวงกลม + badge จำนวน ด้วยสีเทา default
+
 ## 2. ฐานข้อมูล (Opacity ต่อผู้ใช้งาน)
 
 เพิ่ม columns ใน `user_dashboard_themes` (ตารางเดิม):

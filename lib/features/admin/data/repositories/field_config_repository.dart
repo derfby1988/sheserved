@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/registration_field_config.dart';
+import '../../../auth/data/models/user_model.dart' show UserType;
 
 /// Field Config Repository - จัดการ Field Config ใน Database
 class FieldConfigRepository {
@@ -196,6 +197,9 @@ class FieldConfigRepository {
         return const [
           RegistrationFieldConfig(
             id: 'email',
+            professionId: '',
+            fieldId: 'email',
+            fieldKey: 'email',
             label: 'อีเมล',
             hint: 'กรอกอีเมลของคุณ',
             fieldType: FieldType.email,
@@ -205,6 +209,9 @@ class FieldConfigRepository {
           ),
           RegistrationFieldConfig(
             id: 'phone',
+            professionId: '',
+            fieldId: 'phone',
+            fieldKey: 'phone',
             label: 'เบอร์โทร',
             hint: 'กรอกเบอร์โทรศัพท์',
             fieldType: FieldType.phone,
@@ -214,6 +221,9 @@ class FieldConfigRepository {
           ),
           RegistrationFieldConfig(
             id: 'birthday',
+            professionId: '',
+            fieldId: 'birthday',
+            fieldKey: 'birthday',
             label: 'วันเกิด',
             hint: 'เลือกวันเกิด',
             fieldType: FieldType.date,
@@ -227,6 +237,9 @@ class FieldConfigRepository {
         return const [
           RegistrationFieldConfig(
             id: 'profile_image',
+            professionId: '',
+            fieldId: 'profile_image',
+            fieldKey: 'profile_image',
             label: 'รูปโปรไฟล์',
             hint: 'อัพโหลดรูปโปรไฟล์',
             fieldType: FieldType.image,
@@ -236,6 +249,9 @@ class FieldConfigRepository {
           ),
           RegistrationFieldConfig(
             id: 'business_name',
+            professionId: '',
+            fieldId: 'business_name',
+            fieldKey: 'business_name',
             label: 'ชื่อร้าน/ชื่อธุรกิจ',
             hint: 'กรอกชื่อร้านหรือธุรกิจของคุณ',
             fieldType: FieldType.text,

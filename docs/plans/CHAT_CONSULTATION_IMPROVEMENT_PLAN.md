@@ -32,7 +32,7 @@
 ❌ ไม่มี Quick Reply Templates สำหรับแพทย์
 ❌ ไม่มี Medical Note / Summary จากแพทย์
 ❌ ChatRoom ไม่รู้ว่า consultation_id คืออะไร (metadata ว่าง)
-❌ ไม่มี Prescription (ใบสั่งยา) ในระบบแชท
+✅ Prescription (ใบสั่งยา) ในระบบแชท — พร้อม Template + Patient Selection History
 ❌ ไม่มี Follow-up Reminder
 ❌ chat_rooms.participant_ids เป็น array → ไม่ scalable
 ❌ ไม่มี unread_count → ต้อง load message ทุกครั้ง
@@ -171,14 +171,97 @@ CREATE TABLE IF NOT EXISTS prescriptions (
   provider_id     UUID NOT NULL REFERENCES users(id),
   patient_id      UUID NOT NULL REFERENCES users(id),
   room_id         UUID REFERENCES chat_rooms(id),
+
+  -- HIS / Pharmacy Integration
+  profession_id   UUID REFERENCES professions(id),      -- คลินิกที่ออกใบสั่งยา (NULL = platform telemedicine)
+  branch_id       UUID REFERENCES organization_branches(id), -- สาขา (ถ้ามี)
+  source_type     TEXT DEFAULT 'telemedicine'
+                      CHECK (source_type IN ('telemedicine', 'opd', 'walk_in')),
+
+  -- Telemedicine Screening & Consent
+  is_telemedicine_eligible BOOLEAN DEFAULT true,        -- ผ่านการคัดกรอง (screening)
+  consent_given_at  TIMESTAMPTZ,                          -- เวลาผู้ป่วยกด "ยินยอม"
+  consent_version   TEXT DEFAULT 'v1.0',                -- เวอร์ชั่นข้อความยินยอม
+  disclaimer_accepted BOOLEAN DEFAULT false,            -- ยอมรับข้อจำกัด Telemedicine
+
+  -- Delivery / Pharmacy
+  delivery_needed BOOLEAN DEFAULT false,                -- ต้องส่งยาถึงบ้านหรือไม่
+  his_prescription_id UUID,                             -- อ้างอิง prescription ใน HIS (ถ้ามี)
+  pharmacy_status TEXT DEFAULT 'pending'
+                      CHECK (pharmacy_status IN ('pending', 'verified', 'dispensed', 'delivered', 'rejected')),
+
+  -- Template linkage (new)
+  template_id     UUID REFERENCES prescription_templates(id),
+  template_name   TEXT,
+
   medications     JSONB NOT NULL DEFAULT '[]',
   -- [{"name":"Paracetamol","dose":"500mg","frequency":"ทุก 6 ชั่วโมง","duration":"3 วัน","notes":""}]
   notes           TEXT,
   issued_at       TIMESTAMPTZ DEFAULT now(),
   expires_at      TIMESTAMPTZ,
   status          TEXT DEFAULT 'active'
-  -- 'active'|'dispensed'|'cancelled'
+                      CHECK (status IN ('active', 'dispensed', 'cancelled'))
 );
+```
+
+### 6.1 สร้าง `prescription_templates` — ชุดยาที่บันทึกไว้ (ใหม่)
+
+```sql
+CREATE TABLE IF NOT EXISTS prescription_templates (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  profession_id         UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  template_name         TEXT NOT NULL,
+  description           TEXT,
+  medications_snapshot  JSONB NOT NULL DEFAULT '[]',
+  -- [{"name":"Paracetamol","dose":"500mg","frequency":"ทุก 6 ชั่วโมง","duration":"3 วัน","notes":""}]
+  consultation_id       UUID REFERENCES consultation_requests(id),
+  is_shared_with_patient BOOLEAN DEFAULT true,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_prescription_templates_provider ON prescription_templates(provider_id);
+CREATE INDEX idx_prescription_templates_profession ON prescription_templates(profession_id);
+```
+
+### 6.2 สร้าง `prescription_template_items` — รายการยาในชุดยา (ใหม่)
+
+```sql
+CREATE TABLE IF NOT EXISTS prescription_template_items (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id   UUID NOT NULL REFERENCES prescription_templates(id) ON DELETE CASCADE,
+  item_name     TEXT NOT NULL,
+  dosage        TEXT,
+  frequency     TEXT,
+  duration      TEXT,
+  notes         TEXT,
+  sort_order    INT DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_template_items_template ON prescription_template_items(template_id);
+```
+
+### 6.3 สร้าง `prescription_selection_history` — ประวัติการเลือกของผู้ป่วย (ใหม่)
+
+```sql
+CREATE TABLE IF NOT EXISTS prescription_selection_history (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consultation_id   UUID NOT NULL REFERENCES consultation_requests(id) ON DELETE CASCADE,
+  patient_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  template_id       UUID REFERENCES prescription_templates(id),
+  template_name     TEXT,
+  selected_items    JSONB NOT NULL DEFAULT '[]',
+  -- snapshot of medications at the time of selection
+  prescription_id   UUID REFERENCES prescriptions(id),
+  selected_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_selection_history_consultation ON prescription_selection_history(consultation_id);
+CREATE INDEX idx_selection_history_patient ON prescription_selection_history(patient_id);
+CREATE INDEX idx_selection_history_selected_at ON prescription_selection_history(selected_at DESC);
 ```
 
 ### 7. สร้าง `consultation_reviews` — Rating (ใหม่)
@@ -427,6 +510,534 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 ╚═══════════════════════════════╝
 ```
 
+### Prescription Template & Patient Selection Flow (ใหม่ ✅)
+
+```
+[แพทย์ใน PrescriptionEditorPage]
+  → [สร้าง/แก้ไขรายการยา]
+  → [กด "บันทึกชุดยาเป็น Template"]
+      ├─ ระบุชื่อชุดยา (เช่น "ชุดยาไข้หวัดใหญ่")
+      ├─ บันทึกลง prescription_templates + prescription_template_items
+      └─ ผูกกับ profession_id ของแพทย์
+  → [กด "ส่งใบสั่งยา"]
+      ├─ เลือก Template ที่เคยบันทึก (ถ้าต้องการ)
+      ├─ ระบบคัดกรอง Telemedicine Prescription (DrugRiskScreening)
+      ├─ สร้าง prescriptions record พร้อม template_id, template_name
+      └─ ส่ง Prescription Card เข้าห้องแชท
+
+[ผู้ป่วยในแชท แตะ Prescription Card]
+  → [เปิด PrescriptionChoicePage]
+      ├─ แสดงใบสั่งยาปัจจุบัน
+      ├─ แสดงชุดยาที่แพทย์เสนอ (จาก template ที่ผูกไว้)
+      ├─ แสดงประวัติการเลือก (prescription_selection_history)
+      └─ ผู้ป่วยเลือกชุดยา → บันทึกลง prescription_selection_history
+  → [ส่งข้อมูลไปยังห้องยา / HIS]
+```
+
+### Prescription-to-HIS Integration Flow (ใหม่)
+
+```
+[แพทย์ในแชท กด "ออกใบสั่งยา"]
+  → [ระบบคัดกรอง Telemedicine Prescription]
+      ├─ ตรวจสอบยาที่สั่งไม่ใช่ยาควบคุม/ยาอันตราย
+      ├─ ตรวจสอบ patient location (จำกัดจังหวัดถ้าจำเป็น)
+      └─ ถ้าไม่ผ่าน → แจ้งแพทย์ + บล็อคการสั่งยา
+  → [แสดง Consent + Disclaimer ให้ผู้ป่วย]
+      ├─ "ยินยอมรับใบสั่งยาจากการปรึกษาทางไกล"
+      ├─ "ทราบว่าบางกรณีต้องมาตรวจที่คลินิก"
+      └─ ผู้ป่วยกด "ยินยอม" → บันทึก consent_given_at
+  → [สร้าง prescriptions record]
+      ├─ source_type = 'telemedicine'
+      ├─ status = 'active'
+      ├─ pharmacy_status = 'pending'
+      └─ template_id, template_name (ถ้ามี)
+  → [ส่งเข้า HIS Pharmacy Queue]
+      ├─ ถ้ามี profession_id (คลินิกรับงาน) → ส่งเข้าห้องยาของคลินิก
+      ├─ ถ้าไม่มี profession_id → ส่งเข้า Sheserved Central Pharmacy
+      └─ สร้าง delivery_orders (ถ้า delivery_needed = true)
+  → [ห้องยา รับคำสั่งยา]
+      ├─ ตรวจสอบ Allergy + Inventory
+      ├─ อัปเดต pharmacy_status = 'verified' หรือ 'rejected'
+      └─ ถ้า verified → พิมพ์สลากยา + แพ็คยา
+  → [ส่งข้อมูลไป POS รวมในบิล]
+      ├─ สร้าง order_items type = 'pharmacy_product'
+      └─ รอผู้ป่วยชำระเงิน
+  → [ตัดสต๊อก Inventory (FEFO)]
+      └─ อัปเดต pharmacy_status = 'dispensed'
+  → [ถ้า delivery_needed]
+      └─ ส่งต่อ Delivery Core → pharmacy_status = 'delivered'
+```
+
+#### การคัดกรองยาที่ห้ามสั่งผ่าน Telemedicine (Telemedicine Drug Screening)
+
+อ้างอิง `fda_risk_status` จากตาราง `medications` (Thai FDA อย.) ซึ่งมีรหัสดังนี้:
+
+| รหัส | ชื่อภาษาไทย | ชื่อภาษาอังกฤษ | สถานะ Telemedicine |
+|---|---|---|---|
+| `ND` | ยาสามัญประจำบ้าน | Non-Dangerous | ✅ **อนุญาต** — สั่งผ่าน Telemedicine ได้ |
+| `D` | ยาอันตราย | Dangerous | ⚠️ **จำกัด** — ต้องตรวจสอบรายการย่อย (บางชนิดอาจห้าม) |
+| `S` | ยาควบคุมพิเศษ | Special Controlled | ❌ **ห้าม** — ห้ามสั่งผ่าน Telemedicine |
+| `N` | ยาเสพติดให้โทษ | Narcotics | ❌ **ห้าม** — ห้ามสั่งผ่าน Telemedicine |
+| `P` | วัตถุออกฤทธิ์ต่อจิตและประสาท | Psychotropics | ❌ **ห้าม** — ห้ามสั่งผ่าน Telemedicine |
+| `null` | ไม่มีข้อมูล / ยาที่ไม่ได้จดทะเบียน อย. | Unclassified | ⚠️ **ตรวจสอบ** — ใช้ `riskLevel` จาก `unregistered_details` ประเมิน |
+
+**หมายเหตุ:** `custom_medications` (ยาที่องค์กรสร้างเอง) อาจไม่มี `fda_risk_status` → ต้องให้องค์กรกำหนด `custom_risk_level` เอง
+
+#### แหล่งที่มาและกฎหมายอ้างอิง
+
+| รหัส | ชื่อภาษาไทย | ชื่อภาษาอังกฤษ | กฎหมายหลัก | ตัวบท/ประกาศ |
+|---|---|---|---|---|
+| `S` | ยาควบคุมพิเศษ | Special Controlled | พ.ร.บ. ยา พ.ศ. 2510 | ประกาศกระทรวงสาธารณสุข เรื่อง **ยาอันตรายและยาที่ต้องห้าม** + ประกาศ อย. เรื่อง **รายชื่อยาควบคุมพิเศษ** |
+| `N` | ยาเสพติดให้โทษ | Narcotics | พ.ร.บ. ยาเสพติดให้โทษ พ.ศ. 2522 | ประกาศสำนักงานคณะกรรมการอาหารและยา เรื่อง **รายชื่อยาเสพติดให้โทษ** (ประเภท 1-5) |
+| `P` | วัตถุออกฤทธิ์ต่อจิตและประสาท | Psychotropics | พ.ร.บ. วัตถุออกฤทธิ์ต่อจิตและประสาท พ.ศ. 2519 | ประกาศกระทรวงสาธารณสุข เรื่อง **รายชื่อวัตถุออกฤทธิ์ต่อจิตและประสาท** |
+| `D` | ยาอันตราย | Dangerous | พ.ร.บ. ยา พ.ศ. 2510 | ประกาศกระทรวงสาธารณสุข เรื่อง **ยาอันตราย** |
+| `ND` | ยาสามัญประจำบ้าน | Non-Dangerous | พ.ร.บ. ยา พ.ศ. 2510 | ประกาศ อย. เรื่อง **รายชื่อยาสามัญประจำบ้าน** |
+
+##### กฎหมายที่เกี่ยวข้องกับ Telemedicine Prescription
+
+| หัวข้อ | กฎหมาย/ตัวบท | สาระสำคัญ |
+|---|---|---|
+| **Telemedicine ทั่วไป** | ประกาศกระทรวงสาธารณสุข เรื่อง **หลักเกณฑ์ วิธีการ และเงื่อนไขการให้บริการทางการแพทย์โดยใช้เทคโนโลยีสารสนเทศและการสื่อสาร (Telemedicine)** | แพทย์ต้องมีใบอนุญาต Telemedicine, ผู้ป่วยต้องยินยอม, มีข้อจำกัดการตรวจร่างกาย |
+| **ยาที่ห้ามจ่ายผ่าน Telemedicine** | ประกาศ อย. เรื่อง **ยาที่ห้ามจำหน่ายหรือจ่ายโดยวิธีการทางอิเล็กทรอนิกส์** | ห้ามจ่ายยาเสพติด, วัตถุออกฤทธิ์, ยาควบคุมพิเศษ, ยาอันตรายบางชนิดผ่านระบบอิเล็กทรอนิกส์ |
+| **การประกอบวิชาชีพเวชกรรม** | พ.ร.บ. การประกอบวิชาชีพเวชกรรม พ.ศ. 2525 | การสั่งจ่ายยาต้องตรวจร่างกาย/ซักประวัติ (จำกัด Telemedicine) |
+
+##### เหตุผลตามกฎหมายที่ห้าม S/N/P ผ่าน Telemedicine
+
+| ประเภท | เหตุผลตามกฎหมาย |
+|---|---|
+| **S (ยาควบคุมพิเศษ)** | ต้องมีการควบคุมการจ่ายอย่างเข้มงวด ต้องบันทึกสมุดรับ-จ่าย ตาม พ.ร.บ. ยา ม.83 |
+| **N (ยาเสพติดให้โทษ)** | ห้ามจ่ายผ่านระบบอิเล็กทรอนิกส์โดยเด็ดขาด ตาม พ.ร.บ. ยาเสพติดฯ + ประกาศ อย. |
+| **P (วัตถุออกฤทธิ์จิต)** | ห้ามจ่ายผ่านระบบอิเล็กทรอนิกส์ ตาม พ.ร.บ. วัตถุออกฤทธิ์ฯ + ประกาศ อย. |
+
+> ⚠️ **ข้อควรระวัง:** กฎหมาย Telemedicine และรายชื่อยาควบคุมมีการอัปเดตบ่อย ควรตรวจสอบประกาศล่าสุดจาก **อย. (FDA Thailand)** และปรึกษา **ทนายความด้านกฎหมายสาธารณสุข** ก่อน implement จริง
+
+```dart
+/// ผลลัพธ์การตรวจสอบความเสี่ยงของยาแต่ละรายการ (ละเอียด)
+class DrugRiskScreeningResult {
+  final String medicationName;
+  final bool isBlocked;
+  final bool isWarning;
+  final String fdaRiskStatus;
+  final String fdaStatusNameTh;
+  final String? dangerousSubCategory;
+  final String? dangerousSubCategoryName;
+  final String? customRiskLevel;
+  final String? customRiskLevelName;
+  final String blockReason;
+  final String blockCode;
+  final String legalBasis;
+  final String prescriptionCondition;
+  final String pharmacistDispensingRule;
+  final String? requiredLicense;
+  final bool providerHasLicense;
+  final List<String> additionalNotes;
+}
+
+/// บริการตรวจสอบความเสี่ยงยาก่อนสั่งจ่าย
+class DrugRiskScreeningService {
+  /// ตรวจสอบยา 1 รายการ
+  Future<DrugRiskScreeningResult> screenMedication({
+    required String medicationName,
+    String? fdaRiskStatus,
+    String? dangerousSubCategory,
+    String? customRiskLevel,
+    required String providerId,
+    bool isTelemedicine = true,
+  }) async {
+    // 1. ตรวจสอบใบอนุญาต Telemedicine ของแพทย์
+    final hasTelemedicineLicense = await _checkProviderTelemedicineLicense(providerId);
+    if (isTelemedicine && !hasTelemedicineLicense) {
+      return DrugRiskScreeningResult(
+        isBlocked: true,
+        blockReason: 'แพทย์ไม่มีใบอนุญาตให้บริการ Telemedicine',
+        blockCode: 'NO_TELEMED_LICENSE',
+        legalBasis: 'ประกาศกระทรวงสาธารณสุข เรื่องหลักเกณฑ์การให้บริการ Telemedicine พ.ศ. 2565',
+        prescriptionCondition: 'ต้องขอใบอนุญาต Telemedicine จากสภาวิชาชีพก่อน',
+        pharmacistDispensingRule: 'เภสัชกรมีสิทธิ์ปฏิเสธจ่ายยาหากพบว่าใบสั่งยามาจากแพทย์ที่ไม่มีใบอนุญาต',
+        requiredLicense: 'telemedicine',
+        providerHasLicense: false,
+        additionalNotes: [
+          'กรุณาติดต่อสภาวิชาชีพเพื่อขอใบอนุญาต Telemedicine',
+          'หรือให้ผู้ป่วยมาตรวจที่คลินิกแบบ Face-to-Face',
+        ],
+      );
+    }
+
+    // 2. ตรวจสอบ N (Narcotic) และ P (Psychotropic) → ห้ามเด็ดขาด
+    if (fdaRiskStatus == 'N' || fdaRiskStatus == 'P') {
+      return DrugRiskScreeningResult(
+        isBlocked: true,
+        fdaRiskStatus: fdaRiskStatus,
+        blockReason: 'ยา${fdaStatusNameTh} ห้ามสั่งผ่าน Telemedicine โดยเด็ดขาด',
+        blockCode: 'PROHIBITED_FDA_STATUS_$fdaRiskStatus',
+        legalBasis: fdaInfo['legalBasis'] as String,
+        prescriptionCondition: fdaInfo['prescriptionCondition'] as String,
+        pharmacistDispensingRule: fdaInfo['pharmacistRule'] as String,
+        requiredLicense: fdaInfo['requiredLicense'] as String?,
+        providerHasLicense: hasTelemedicineLicense,
+        additionalNotes: [
+          'หากต้องการสั่งยานี้ ผู้ป่วยต้องมาตรวจที่คลินิกแบบ Face-to-Face',
+          'แพทย์ต้องตรวจร่างกายผู้ป่วยโดยตรงก่อนสั่งยา',
+          'เภสัชกรมีสิทธิ์ปฏิเสธจ่ายหากไม่พบใบสั่งยาที่ถูกต้องตามกฎหมาย',
+        ],
+      );
+    }
+
+    // 3. ตรวจสอบ S (Special Controlled)
+    if (fdaRiskStatus == 'S') {
+      return DrugRiskScreeningResult(
+        isBlocked: true,
+        fdaRiskStatus: fdaRiskStatus,
+        blockReason: 'ยาควบคุมพิเศษ ห้ามสั่งผ่าน Telemedicine',
+        blockCode: 'PROHIBITED_FDA_STATUS_S',
+        legalBasis: 'พ.ร.บ.ยา พ.ศ. 2510 มาตรา 80 — ต้องบันทึกการสั่งจ่ายและการจ่าย',
+        prescriptionCondition: 'ต้องมีใบสั่งยา + บันทึกในระบบติดตามการสั่งจ่าย (Prescription Monitoring)',
+        pharmacistDispensingRule: 'เภสัชกรจ่ายได้เฉพาะร้านยาที่มีใบอนุญาตขายยาควบคุมพิเศษ และต้องบันทึกรับ-จ่าย',
+        providerHasLicense: hasTelemedicineLicense,
+        additionalNotes: [
+          'ยาควบคุมพิเศษต้องสั่งจ่ายด้วยตนเองที่คลินิก',
+          'ต้องบันทึกการสั่งจ่ายในระบบติดตาม (Prescription Monitoring)',
+        ],
+      );
+    }
+
+    // 4. ตรวจสอบ D (Dangerous) + subcategory
+    if (fdaRiskStatus == 'D') {
+      if (dangerousSubCategory != null && prohibitedSubcategories.containsKey(dangerousSubCategory)) {
+        final subInfo = prohibitedSubcategories[dangerousSubCategory]!;
+        return DrugRiskScreeningResult(
+          isBlocked: true,
+          dangerousSubCategory: dangerousSubCategory,
+          blockReason: subInfo['reason']!,
+          blockCode: 'PROHIBITED_DANGEROUS_SUBCATEGORY',
+          legalBasis: subInfo['legalBasis']!,
+          prescriptionCondition: 'ต้องตรวจร่างกายผู้ป่วยโดยตรงที่คลินิก',
+          pharmacistDispensingRule: 'เภสัชกรจ่ายได้เฉพาะที่ร้านยาที่มีเภสัชกร และต้องมีใบสั่งยาที่ถูกต้อง',
+          providerHasLicense: hasTelemedicineLicense,
+          additionalNotes: [
+            'หมวดหมู่ ${subInfo['nameTh']} เป็นยาอันตรายประเภทที่ห้ามสั่งผ่าน Telemedicine',
+            'ผู้ป่วยต้องมาตรวจที่คลินิกเพื่อรับการรักษา',
+          ],
+        );
+      }
+      // D ทั่วไปที่ไม่ใช่ prohibited subcategory → warning
+      return DrugRiskScreeningResult(
+        isBlocked: false,
+        isWarning: true,
+        blockReason: 'ยาอันตราย — ต้องระวังในการสั่งจ่าย',
+        blockCode: 'DANGEROUS_DRUG_WARNING',
+        legalBasis: 'พ.ร.บ.ยา พ.ศ. 2510 มาตรา 71 — ยาอันตรายต้องสั่งจ่ายโดยแพทย์เท่านั้น',
+        prescriptionCondition: 'ต้องมีใบสั่งยาจากแพทย์ (Prescription Required)',
+        pharmacistDispensingRule: 'เภสัชกรจ่ายได้เฉพาะที่ร้านยาที่มีเภสัชกรประจำ และต้องมีใบสั่งยา',
+        providerHasLicense: hasTelemedicineLicense,
+        additionalNotes: [
+          'ยาอันตรายต้องมีใบสั่งยาจากแพทย์เท่านั้น',
+          'แนะนำให้ตรวจสอบประวัติแพ้ยาของผู้ป่วยก่อนสั่งจ่าย',
+        ],
+      );
+    }
+
+    // 5. ตรวจสอบ Custom Risk Level (ถ้าไม่มี FDA status)
+    if (customRiskLevel == 'prohibited') {
+      return DrugRiskScreeningResult(
+        isBlocked: true,
+        customRiskLevel: customRiskLevel,
+        blockReason: 'ยานี้ถูกระบุว่า "ห้ามใช้" ในระบบ Custom Risk Level',
+        blockCode: 'PROHIBITED_CUSTOM_RISK',
+        legalBasis: 'องค์กรกำหนดให้ยานี้ห้ามใช้ในระบบ Telemedicine',
+        prescriptionCondition: 'ห้ามสั่งจ่ายยานี้ในทุกกรณี',
+        pharmacistDispensingRule: 'เภสัชกรห้ามจ่ายยานี้',
+        providerHasLicense: hasTelemedicineLicense,
+        additionalNotes: [
+          'ยานี้อาจมีผลข้างเคียงรุนแรงหรือข้อห้ามทางกฎหมาย',
+          'หากต้องการใช้จริง ต้องตรวจร่างกายผู้ป่วยโดยตรงที่คลินิก',
+        ],
+      );
+    }
+
+    if (customRiskLevel == 'high' || customRiskLevel == 'very_high') {
+      return DrugRiskScreeningResult(
+        isBlocked: false,
+        isWarning: true,
+        customRiskLevel: customRiskLevel,
+        blockReason: 'ยามีระดับความเสี่ยงสูง — ต้องระวังในการสั่งจ่าย',
+        blockCode: 'HIGH_RISK_CUSTOM_LEVEL',
+        legalBasis: 'องค์กรกำหนดให้ยานี้อยู่ในระดับความเสี่ยงสูง',
+        prescriptionCondition: 'ต้องมีเหตุผลทางการแพทย์ที่ชัดเจน และแจ้งผู้ป่วยถึงความเสี่ยง',
+        pharmacistDispensingRule: 'เภสัชกรควรตรวจสอบใบสั่งยาและแจ้งเตือนผู้ป่วยถึงความเสี่ยง',
+        providerHasLicense: hasTelemedicineLicense,
+        additionalNotes: [
+          'แนะนำให้ติดตามอาการผู้ป่วยอย่างใกล้ชิด',
+          'หากมีอาการผิดปกติ ให้ผู้ป่วยหยุดยาและปรึกษาแพทย์ทันที',
+        ],
+      );
+    }
+
+    // 6. ND (Non-Dangerous / Household) → อนุญาต
+    return DrugRiskScreeningResult(
+      isBlocked: false,
+      blockCode: 'APPROVED',
+      legalBasis: 'พ.ร.บ.ยา พ.ศ. 2510 มาตรา 12 — ยาที่ไม่อันตรายต่อสุขภาพเมื่อใช้ตามขวด',
+      prescriptionCondition: 'ไม่ต้องมีใบสั่งยา (OTC)',
+      pharmacistDispensingRule: 'เภสัชกรจ่ายได้ที่ร้านยาทั่วไป ไม่ต้องมีใบสั่งยา',
+      providerHasLicense: hasTelemedicineLicense,
+    );
+  }
+}
+```
+
+#### UI — Dialog แสดงผลการตรวจสอบ (PrescriptionRiskDialog)
+
+```dart
+class PrescriptionRiskDialog extends StatelessWidget {
+  final List<DrugRiskScreeningResult> results;
+  
+  // แสดงผลแบบ ExpansionTile ละเอียด:
+  // - รหัส FDA + ชื่อภาษาไทย
+  // - หมวดหมู่ยาอันตรายย่อย (ถ้ามี)
+  // - ระดับความเสี่ยง Custom (ถ้ามี)
+  // - สาเหตุที่ห้าม/เตือน (highlight)
+  // - ฐานทางกฎหมาย (กรอบ indigo)
+  // - เงื่อนไขการสั่งจ่าย (กรอบ deepOrange)
+  // - สิทธิ์จ่ายยาของเภสัชกร (กรอบ cyan)
+  // - ใบอนุญาตที่ต้องมี (green=มี, red=ไม่มี)
+  // - หมายเหตุเพิ่มเติม (bullet points)
+}
+```
+
+#### การตรวจสอบใบอนุญาตแพทย์
+
+```sql
+-- ตาราง provider_profiles (ต้องมีฟิลด์เหล่านี้)
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS license_type TEXT[];
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS is_telemedicine_licensed BOOLEAN DEFAULT false;
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS narcotic_dispensing_licensed BOOLEAN DEFAULT false;
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS psychotropic_dispensing_licensed BOOLEAN DEFAULT false;
+```
+
+**License Types:**
+- `telemedicine` — ใบอนุญาต Telemedicine
+- `narcotic_dispensing` — ใบอนุญาตสั่งจ่ายยาเสพติด
+- `psychotropic_dispensing` — ใบอนุญาตสั่งจ่ายวัตถุออกฤทธิ์
+
+**หมายเหตุ:** ระบบตรวจสอบใบอนุญาตเป็น async เพื่อรองรับการเชื่อมต่อกับระบบตรวจสอบใบประกอบวิชาชีพแพทย์ของสภาวิชาชีพในอนาคต
+
+#### Schema — Drug Risk Classification & Profession Permission
+
+```sql
+-- 1. Profession Permission: สิทธิ์จัดการหมวดหมู่ความเสี่ยงยา
+ALTER TABLE professions
+    ADD COLUMN IF NOT EXISTS can_manage_drug_risk BOOLEAN DEFAULT false;
+
+-- 2. Custom medications risk level
+ALTER TABLE custom_medications ADD COLUMN IF NOT EXISTS custom_risk_level TEXT
+  CHECK (custom_risk_level IN ('low', 'medium', 'high', 'very_high', 'prohibited'));
+
+-- 3. Medications dangerous sub-category
+ALTER TABLE medications ADD COLUMN IF NOT EXISTS dangerous_sub_category TEXT;
+  -- 'hormone_injection', 'chemotherapy', 'abortifacient', 'antibiotic_injection', etc.
+
+-- 4. Master table: หมวดหมู่ยาอันตรายย่อย (พร้อม Soft Delete)
+CREATE TABLE IF NOT EXISTS dangerous_drug_subcategories (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code            TEXT NOT NULL UNIQUE,     -- 'hormone_injection', 'chemotherapy', etc.
+  name_th         TEXT NOT NULL,             -- ชื่อภาษาไทย
+  name_en         TEXT,                      -- ชื่อภาษาอังกฤษ
+  description     TEXT,
+  is_telemedicine_prohibited BOOLEAN DEFAULT false, -- ห้ามสั่งผ่าน Telemedicine?
+  sort_order      INTEGER DEFAULT 0,
+  is_active       BOOLEAN DEFAULT true,
+  deleted_at      TIMESTAMPTZ,               -- Soft delete (NULL = ยังใช้งาน)
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- 5. Master table: ระดับความเสี่ยง Custom Medications (พร้อม Soft Delete)
+CREATE TABLE IF NOT EXISTS custom_risk_levels (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code            TEXT NOT NULL UNIQUE,     -- 'low', 'medium', 'high', 'very_high', 'prohibited'
+  name_th         TEXT NOT NULL,
+  name_en         TEXT,
+  description     TEXT,
+  is_telemedicine_prohibited BOOLEAN DEFAULT false,
+  sort_order      INTEGER DEFAULT 0,
+  is_active       BOOLEAN DEFAULT true,
+  deleted_at      TIMESTAMPTZ,               -- Soft delete
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- 6. Audit log สำหรับการแก้ไข Master Data
+CREATE TABLE IF NOT EXISTS drug_risk_admin_logs (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name      TEXT NOT NULL,             -- 'dangerous_drug_subcategories' | 'custom_risk_levels'
+  record_id       UUID NOT NULL,
+  action          TEXT NOT NULL,             -- 'create' | 'update' | 'soft_delete' | 'reactivate' | 'reset_seed'
+  old_data        JSONB,
+  new_data        JSONB,
+  performed_by    UUID,                      -- user_id (nullable)
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- Seed default values
+INSERT INTO dangerous_drug_subcategories (code, name_th, name_en, is_telemedicine_prohibited, sort_order) VALUES
+  ('hormone_injection', 'ฮอร์โมนฉีด', 'Hormone Injection', true, 1),
+  ('chemotherapy', 'ยาเคมีบำบัด', 'Chemotherapy', true, 2),
+  ('abortifacient', 'ยาขับเลือด/ยาทำแท้ง', 'Abortifacient', true, 3),
+  ('antibiotic_injection', 'ยาปฏิชีวนะฉีด', 'Antibiotic Injection', false, 4),
+  ('contrast_media', 'สารทึบรังสี', 'Contrast Media', false, 5)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO custom_risk_levels (code, name_th, name_en, is_telemedicine_prohibited, sort_order) VALUES
+  ('low', 'ความเสี่ยงต่ำ', 'Low Risk', false, 1),
+  ('medium', 'ความเสี่ยงปานกลาง', 'Medium Risk', false, 2),
+  ('high', 'ความเสี่ยงสูง', 'High Risk', true, 3),
+  ('very_high', 'ความเสี่ยงสูงมาก', 'Very High Risk', true, 4),
+  ('prohibited', 'ห้ามใช้', 'Prohibited', true, 5)
+ON CONFLICT (code) DO NOTHING;
+```
+
+#### RLS Policies (Custom Auth — ไม่ใช้ auth.uid())
+
+```sql
+-- ปิด RLS หรือเปิดแบบ Public สำหรับ master tables (จัดการสิทธิ์ที่ Flutter Layer)
+ALTER TABLE dangerous_drug_subcategories DISABLE ROW LEVEL SECURITY;
+ALTER TABLE custom_risk_levels DISABLE ROW LEVEL SECURITY;
+ALTER TABLE drug_risk_admin_logs DISABLE ROW LEVEL SECURITY;
+
+-- สำหรับ professions UPDATE: เนื่องจาก Custom Auth ไม่มี auth.uid()
+-- แนะนำให้ใช้ RPC bypass หรือเปิด RLS แบบ Public
+CREATE POLICY "Allow all updates on professions" ON public.professions
+  FOR UPDATE USING (true) WITH CHECK (true);
+```
+
+#### RPC Function — Bypass RLS สำหรับ Profession Update
+
+```sql
+CREATE OR REPLACE FUNCTION public.update_profession_bypass_rls(
+    p_id UUID,
+    p_data JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_result professions;
+BEGIN
+    UPDATE professions
+    SET 
+        name = COALESCE(p_data->>'name', name),
+        can_manage_drug_risk = COALESCE((p_data->>'can_manage_drug_risk')::boolean, can_manage_drug_risk),
+        updated_at = NOW()
+    WHERE id = p_id
+    RETURNING * INTO v_result;
+    
+    RETURN to_jsonb(v_result);
+END;
+$$;
+```
+
+#### UI — หน้าจัดการหมวดหมู่ความเสี่ยงยา (Drug Risk Classification Admin)
+
+**เงื่อนไขการเข้าถึง:**
+- Drawer เมนู "จัดการหมวดหมู่ความเสี่ยงยา" แสดงเฉพาะเมื่อ `profession.can_manage_drug_risk == true`
+- ตรวจสอบสิทธิ์ผ่าน `AuthService.instance.currentUser.professionId` → ดึง profession → เช็ค `canManageDrugRisk`
+
+**Profession Editor — Toggle Permission:**
+```dart
+// ใน ProfessionEditorDialog:
+SwitchListTile(
+  title: const Text('จัดการหมวดหมู่ความเสี่ยงยา'),
+  subtitle: const Text('เปิดใช้งานเมนูจัดการ Drug Risk Classification'),
+  value: profession.canManageDrugRisk,
+  onChanged: (v) => setState(() => profession = profession.copyWith(canManageDrugRisk: v)),
+)
+```
+
+```dart
+class DrugRiskClassificationAdminPage extends StatefulWidget {
+  // TabBar 4 แท็บ:
+  //   หมวดยาอันตราย | ระดับความเสี่ยง | ตรวจสอบยา | รายงาน
+  //
+  // ── Tab 1: จัดการหมวดหมู่ยาอันตรายย่อย (dangerous_drug_subcategories) ──
+  //    - แสดงรายการ Card: Avatar + ชื่อ + code + description + status chips + actions
+  //    - FilterChip: "แสดงรายการที่ลบ" (toggle ดู soft-deleted records)
+  //    - Actions: Switch (isActive), Edit, Delete (soft delete)
+  //    - Soft-deleted: แสดง Restore button + strikethrough text + สีเทา
+  //    - FAB: เพิ่มหมวดหมู่ใหม่
+  //    - PopupMenu: รีเซ็ตค่าเริ่มต้น (UPSERT seed data)
+  //
+  // ── Tab 2: จัดการระดับความเสี่ยง (custom_risk_levels) ──
+  //    - Layout เดียวกับ Tab 1
+  //    - CircleAvatar แสดง code (LOW, MEDIUM, HIGH, etc.)
+  //    - สีพื้นหลัง Avatar ตามระดับ: green → yellow → orange → deepOrange → red
+  //
+  // ── Tab 3: ตรวจสอบยา (Placeholder) ──
+  //    - ค้นหายา + แสดงรายการ (ยังไม่ implement เต็มรูปแบบ)
+  //
+  // ── Tab 4: รายงานและ Audit ──
+  //    - แสดง drug_risk_admin_logs ล่าสุด 50 รายการ
+  //    - แต่ละรายการ: icon ตาม action, table_name, record_id, timestamp
+  //    - แบ่งสี: create=green, update=blue, soft_delete=red, reactivate=orange, reset_seed=purple
+}
+```
+
+#### Repository — CRUD with Soft Delete & Audit
+
+```dart
+class DrugRiskClassificationRepository {
+  // Master Data CRUD
+  Future<DangerousDrugSubcategory> createSubcategory(...);
+  Future<DangerousDrugSubcategory> updateSubcategory(...);
+  Future<void> softDeleteSubcategory(String id, String performedBy); // set deleted_at = NOW()
+  Future<void> reactivateSubcategory(String id, String performedBy); // set deleted_at = NULL
+  Future<void> resetSubcategoriesToSeed(String performedBy); // UPSERT default values
+  
+  // Risk Levels CRUD
+  Future<CustomRiskLevel> createRiskLevel(...);
+  Future<CustomRiskLevel> updateRiskLevel(...);
+  Future<void> softDeleteRiskLevel(String id, String performedBy);
+  Future<void> reactivateRiskLevel(String id, String performedBy);
+  Future<void> resetRiskLevelsToSeed(String performedBy);
+  
+  // Query (in-Dart filtering for soft delete — postgrest is_ not available)
+  Future<List<DangerousDrugSubcategory>> getAllSubcategories({bool includeDeleted = false}) {
+    // fetch all → filter deletedAt == null in Dart
+  }
+  
+  // Audit Logs
+  Future<List<Map<String, dynamic>>> getAdminLogs({String? tableName, int limit = 50});
+}
+```
+
+#### Audit Trail
+
+```dart
+// drug_risk_admin_logs บันทึกทุกการเปลี่ยนแปลง master data:
+// - action: 'create' | 'update' | 'soft_delete' | 'reactivate' | 'reset_seed'
+// - old_data / new_data: JSONB snapshot ก่อนและหลัง
+// - performed_by: user_id จาก AuthService.instance.currentUser.id
+```
+
+#### Consent + Disclaimer UI (แสดงให้ผู้ป่วยก่อนรับใบสั่งยา)
+
+```dart
+class TelemedicinePrescriptionConsentDialog extends StatelessWidget {
+  // แสดงก่อนที่ผู้ป่วยจะได้รับ Prescription Card
+  //
+  // ข้อความยินยอม:
+  // "ข้าพเจ้าเข้าใจว่า:
+  //  1. ใบสั่งยานี้มาจากการปรึกษาทางไกล (Telemedicine)
+  //  2. แพทย์อาจไม่สามารถตรวจร่างกายโดยตรงได้
+  //  3. หากอาการไม่ดีขึ้นภายใน 48 ชั่วโมง ควรมาตรวจที่คลินิก
+  //  4. ยาบางชนิดอาจมีผลข้างเคียง หากมีอาการผิดปกติให้หยุดยาและปรึกษาแพทย์"
+  //
+  // [ ] ฉันเข้าใจและยอมรับ
+  // [ยกเลิก]   [ยืนยันรับใบสั่งยา]
+}
+```
+
 ### Post-Consultation Review
 
 ```
@@ -484,6 +1095,9 @@ class ChatMessage {
 class ConsultationSession { ... }
 class ConsultationNote { ... }
 class Prescription { ... }
+class PrescriptionTemplate { ... }
+class PrescriptionTemplateItem { ... }
+class PrescriptionSelectionHistory { ... }
 class ConsultationReview { ... }
 
 // lib/features/chat/data/models/
@@ -507,6 +1121,9 @@ class ChatRoomMember { ... }
 ALTER TABLE chat_room_members DISABLE ROW LEVEL SECURITY;
 ALTER TABLE consultation_notes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE prescriptions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE prescription_templates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE prescription_template_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE prescription_selection_history DISABLE ROW LEVEL SECURITY;
 ALTER TABLE consultation_reviews DISABLE ROW LEVEL SECURITY;
 ALTER TABLE doctor_quick_replies DISABLE ROW LEVEL SECURITY;
 ```
@@ -561,9 +1178,18 @@ supabase.channel('member:$userId')
 - [ ] Quick Reply Templates
 - [ ] Reply to Message
 - [ ] Medical Context Banner ใน Chat Room
+- [ ] Telemedicine Prescription Screening (drug category + license check)
+- [ ] Consent + Disclaimer Dialog สำหรับผู้ป่วย
 
-### Sprint 4 — Completion (สัปดาห์ 7-8)
-- [ ] `prescriptions` + Prescription Card
+### Sprint 4 — Prescription & HIS Integration (สัปดาห์ 7-8)
+- [x] `prescriptions` + Prescription Card (อัปเดต schema ใหม่) — พร้อม `template_id`, `template_name`
+- [x] `prescription_templates` + `prescription_template_items` — ชุดยาที่บันทึกไว้สำหรับผู้สั่งจ่าย
+- [x] `prescription_selection_history` — ประวัติการเลือกชุดยาของผู้ป่วย
+- [x] Prescription Editor — บันทึก/โหลด Template + ส่งใบสั่งยาพร้อม snapshot
+- [x] Prescription Choice Page — ผู้ป่วยเลือกชุดยา + บันทึก history
+- [ ] Prescription-to-HIS bridge (`prescription_orders` table)
+- [ ] ส่งคำสั่งยาเข้า HIS Pharmacy Queue (RPC)
+- [ ] สร้าง `order_items` type `pharmacy_product` ใน POS อัตโนมัติ
 - [ ] `consultation_reviews` + Rating UI
 - [ ] Follow-up Reminder (Push Notification)
 - [ ] PDF Export
@@ -1092,7 +1718,12 @@ supabase.channel('room_experts:$consultationId')
 | `health_program_request_dashboard.dart` | แก้ `_joinRequest()` ให้ตรวจ role ก่อนรับงาน |
 | `ExpertGroupStatusBanner` (ใหม่) | Widget แสดงสถานะการเข้าร่วม |
 | `chat_room_page.dart` / `ExpertChatRoomPage` | เพิ่ม Banner ด้านบน + Realtime subscription |
+| `prescription_editor_page.dart` | เพิ่ม Template save/load + ส่งใบสั่งยา |
+| `prescription_choice_page.dart` (ใหม่) | ผู้ป่วยเลือกชุดยา + ประวัติ |
 | DB: `consultation_room_experts` | สร้างตารางใหม่ |
+| DB: `prescription_templates` | สร้างตารางใหม่ |
+| DB: `prescription_template_items` | สร้างตารางใหม่ |
+| DB: `prescription_selection_history` | สร้างตารางใหม่ |
 
 ---
 
@@ -1573,10 +2204,13 @@ users
   │                    ├── consultation_sessions
   │                    ├── consultation_notes
   │                    ├── prescriptions
+  │                    ├── prescription_selection_history
   │                    └── consultation_reviews
   │
   └── (provider) → consultation_requests (provider_id)
-                       └── doctor_quick_replies (ส่วนตัว)
+                       ├── doctor_quick_replies (ส่วนตัว)
+                       └── prescription_templates
+                            └── prescription_template_items
 ```
 
 ---
@@ -2575,6 +3209,9 @@ Future<void> dismiss(String id) async {
 | Quick Replies + Manage Page | ✅ |
 | Pain Level + Payment Card | ✅ |
 | Message Bubble / Prescription Card / Summary Card | ✅ |
+| Prescription Templates (บันทึก/โหลดชุดยา) | ✅ |
+| Patient Prescription Selection (เลือกชุดยา + ประวัติ) | ✅ |
+| PrescriptionChoicePage (ผู้ป่วยเลือกชุดยา) | ✅ |
 | Provider Status Mismatch (client safety net) | ✅ (แต่เป็นการแก้ปะ) |
 
 ---
@@ -2932,3 +3569,277 @@ Phase 3 (PDPA) → Phase 4 (Follow-up) → Phase 5 (Chat List) → Phase 6 (Repl
 - [ ] ทำทีละ phase, build + smoke test หลังแต่ละ phase
 - [ ] ไม่รวมหลาย phase ใน commit เดียว
 - [ ] ตรวจสอบ dependencies ของ phase ที่จะทำ
+
+---
+
+## 🏛️ Phase 6.5: Profession Approval, Evidence Upload & Permission Matrix
+
+### 🎯 Goal
+
+สร้างระบบกำหนดอาชีพที่ต้องผ่านการอนุมัติจาก Sheserved, กำหนดฟิลด์บังคับในขั้นตอนสมัครอาชีพ, บังคับแนบรูปภาพเมื่อผู้สมัครแจ้งว่ามีใบอนุญาตตามข้อ E, และผูกสิทธิ์สั่งจ่าย/จ่ายยากับใบอนุญาตจริงของผู้ให้บริการ โดย **ไม่กระทบ flow ลงทะเบียนหลักเดิม**
+
+### 🧭 Design Principles
+
+- **Immutable identity first** — `id` ของ profession และ field config ต้องเป็น UUID ที่แก้ไม่ได้
+- **Stable code first** — ให้ใช้ `profession_code` และ `field_key` เป็นรหัสอ้างอิงในโค้ด/UI
+- **Evidence-based verification** — หากมีใบอนุญาตต้องมีรูปหลักฐานแนบเสมอ
+- **Capability-based permission** — สิทธิ์สั่งยา/จ่ายยา/จัดการ drug risk ควรผูกกับ capability ไม่ใช่ชื่ออาชีพอย่างเดียว
+- **Backward compatible** — หากยังไม่มี config ใหม่ ให้ fallback ไปใช้ default fields เดิมใน `RegisterWizardPage`
+
+### 🗃️ Canonical Profession IDs / Codes (Locked)
+
+> หมายเหตุ: `id` เป็น UUID สำหรับ PK และห้ามแก้ไขหลังสร้าง ส่วน `code` เป็นรหัสคงที่ที่ใช้ใน UI, policy และ permission matrix
+
+| Profession | Canonical `code` | Locked `id` / Seed Strategy | Notes |
+|---|---|---|---|
+| ผู้ซื้อ/ผู้รับบริการ | `consumer` | ใช้ `00000000-0000-0000-0000-000000000001` ตามของเดิม | ไม่ต้องอนุมัติ |
+| ผู้เชี่ยวชาญ/ผู้ขาย/ร้านค้า | `expert` | ใช้ `00000000-0000-0000-0000-000000000002` ตามของเดิม | อาจต้องตรวจเอกสารธุรกิจ |
+| คลินิก/ศูนย์ | `clinic` | ใช้ `00000000-0000-0000-0000-000000000003` ตามของเดิม | ต้องมีเอกสารสถานประกอบการ |
+| แพทย์ทั่วไป | `doctor_gp` | Seed ใหม่ด้วย UUID คงที่ใน migration | สามารถเป็นผู้สั่งยาได้เมื่อผ่านการตรวจใบอนุญาต |
+| แพทย์เวชปฏิบัติครอบครัว | `doctor_family` | Seed ใหม่ด้วย UUID คงที่ใน migration | ใช้ permission เดียวกับ GP แต่สามารถมี scope เพิ่ม |
+| แพทย์เฉพาะทาง | `doctor_specialist` | Seed ใหม่ด้วย UUID คงที่ใน migration | ใช้ scope ของสาขาเฉพาะ |
+| ทันตแพทย์ | `dentist` | Seed ใหม่ด้วย UUID คงที่ใน migration | จำกัดตามขอบเขตวิชาชีพ |
+| เภสัชกร | `pharmacist` | Seed ใหม่ด้วย UUID คงที่ใน migration | จ่ายยาได้ แต่ไม่ควรเปิดสิทธิ์สั่งยาโดยดีฟอลต์ |
+| ผู้ให้บริการ Telemedicine | `telemedicine_provider` | Seed ใหม่ด้วย UUID คงที่ใน migration | เป็น role เชิง capability ไม่ใช่อาชีพทางกฎหมาย |
+
+### 🔐 Locked `field_key` Set (First-Create Only)
+
+> หลักการ: `field_key` เป็น identifier ถาวรของฟิลด์ เมื่อสร้างแล้วห้าม rename/overwrite key เดิม ให้แก้เฉพาะ label, hint, validation, order และ visibility
+
+#### กลุ่มข้อมูลพื้นฐาน
+
+| `field_key` | ใช้กับ | Required by default | Lock rule |
+|---|---|---:|---|
+| `full_name` | ทุกอาชีพ | ✅ | ห้ามเปลี่ยน key |
+| `first_name` | ทุกอาชีพ | ✅ | ห้ามเปลี่ยน key |
+| `last_name` | ทุกอาชีพ | ✅ | ห้ามเปลี่ยน key |
+| `username` | ทุกอาชีพ | ✅ | ห้ามเปลี่ยน key |
+| `phone` | ทุกอาชีพ | ✅ | ห้ามเปลี่ยน key |
+| `profile_image` | ทุกอาชีพ | ⛔ | ห้ามเปลี่ยน key |
+| `id_card_image` | ทุกอาชีพที่ต้อง verify | ✅ | ห้ามเปลี่ยน key |
+
+#### กลุ่มข้อมูลใบอนุญาต/การยืนยันตัวตน
+
+| `field_key` | ใช้กับ | Required by default | Lock rule |
+|---|---|---:|---|
+| `license_type` | อาชีพที่มีใบอนุญาต | ✅ | ห้ามเปลี่ยน key |
+| `license_number` | แพทย์/คลินิก/ผู้มี license | ✅ | ห้ามเปลี่ยน key |
+| `license_image` | ทุกกรณีที่ระบุว่ามีใบ | ✅ เมื่อมี license | ห้ามเปลี่ยน key |
+| `telemedicine_license_number` | แพทย์/ผู้ให้บริการออนไลน์ | ✅ เมื่อเปิด Telemedicine | ห้ามเปลี่ยน key |
+| `telemedicine_license_image` | แพทย์/ผู้ให้บริการออนไลน์ | ✅ เมื่อมี telemedicine license | ห้ามเปลี่ยน key |
+| `medical_council_number` | แพทย์ | ✅ เมื่อเป็นแพทย์ | ห้ามเปลี่ยน key |
+| `pharmacy_council_number` | เภสัชกร | ✅ เมื่อเป็นเภสัชกร | ห้ามเปลี่ยน key |
+| `clinic_license_image` | คลินิก/ศูนย์ | ✅ เมื่อเป็นสถานประกอบการ | ห้ามเปลี่ยน key |
+| `business_registration_image` | ร้านค้า/องค์กร | ✅ เมื่อเป็นนิติบุคคล | ห้ามเปลี่ยน key |
+
+#### กลุ่มข้อมูล scope / capability
+
+| `field_key` | ใช้กับ | Required by default | Lock rule |
+|---|---|---:|---|
+| `specialty` | แพทย์/ผู้เชี่ยวชาญ | ⛔ | ห้ามเปลี่ยน key |
+| `scope_of_practice` | ทุกอาชีพที่อนุมัติ | ✅ | ห้ามเปลี่ยน key |
+| `can_prescribe_medication` | capability | ระบบคำนวณ | ห้ามแก้จาก UI ตรง |
+| `can_dispense_medication` | capability | ระบบคำนวณ | ห้ามแก้จาก UI ตรง |
+| `can_manage_drug_risk` | capability | ระบบคำนวณ | ห้ามแก้จาก UI ตรง |
+
+### 📎 Mandatory Image Rule for License Claims (ข้อ E)
+
+หากผู้สมัครเลือกหรือกรอกใบอนุญาตใด ๆ ในกลุ่ม E ต้องแนบรูปภาพหลักฐานอย่างน้อย 1 รูปเสมอ
+
+#### กติกาที่ต้องบังคับ
+
+- ถ้ามี `license_type` ใด ๆ → ต้องมี `license_image`
+- ถ้ามี `telemedicine_license_number` → ต้องมี `telemedicine_license_image`
+- ถ้ามี `medical_council_number` → ต้องมี `license_image` หรือรูปเอกสารยืนยันที่กำหนดใน `license_document_group`
+- ถ้ามีหลายใบอนุญาต → แนะนำให้บังคับ **1 รูปต่อ 1 ใบอนุญาต** เพื่อ audit ง่าย
+- ถ้าระบุว่า “ไม่มีใบอนุญาต” → ฟิลด์ image ที่เกี่ยวข้องไม่ต้องบังคับ
+
+#### แนวทาง UI
+
+- เมื่อผู้สมัครเลือกอาชีพที่มีสิทธิ์สั่งยา / มีข้อกำหนดใบอนุญาต → แสดง block “เอกสารใบอนุญาต” ทันที
+- ถ้ากรอกเลขใบอนุญาตแล้วแต่ยังไม่อัปโหลดรูป → แสดง warning สีส้มและปิดปุ่ม submit
+- ถ้าผู้สมัครแตะ toggle ว่ามีใบ E-ประเภทใดก็ตาม → แสดง `ImageUploadField` ที่บังคับกรอก
+
+### 🗄️ Database Schema (Non-Breaking Extension)
+
+#### 1) `professions`
+
+เพิ่ม capability และ policy flags โดยไม่แก้ PK ที่มีอยู่:
+
+```sql
+ALTER TABLE professions
+  ADD COLUMN IF NOT EXISTS profession_code TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS requires_sheserved_approval BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS can_prescribe_medication BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS can_dispense_medication BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS can_manage_drug_risk BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS requires_telemedicine_license BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS approval_required_license_types TEXT[] DEFAULT '{}';
+```
+
+#### 2) `registration_field_configs` (ของเดิม ไม่เปลี่ยน flow)
+
+แนะนำให้เพิ่มคอลัมน์ใหม่แบบไม่กระทบของเดิม:
+
+```sql
+ALTER TABLE registration_field_configs
+  ADD COLUMN IF NOT EXISTS field_key TEXT,
+  ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS requires_attachment BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS attachment_group_key TEXT,
+  ADD COLUMN IF NOT EXISTS attachment_required_when_filled BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS visible_when_profession_code TEXT[] DEFAULT '{}';
+```
+
+**Backward compatibility:**
+- `field_id` เดิมยังอ่านได้
+- `field_key` ใช้เป็นค่าหลักใหม่
+- ถ้า `field_key` ว่าง ให้ fallback ไปใช้ `field_id`
+
+#### 3) `provider_profiles`
+
+ใช้เก็บ identity และสถานะ verification ของผู้ให้บริการ:
+
+```sql
+CREATE TABLE IF NOT EXISTS provider_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  profession_id UUID REFERENCES professions(id),
+  profession_code TEXT,
+  display_name TEXT,
+  verification_status TEXT DEFAULT 'pending',
+  identity_verified_at TIMESTAMPTZ,
+  telemedicine_license_no TEXT,
+  telemedicine_license_status TEXT DEFAULT 'unverified',
+  telemedicine_license_verified_at TIMESTAMPTZ,
+  telemedicine_license_expires_at TIMESTAMPTZ,
+  license_authority TEXT,
+  practice_scope_json JSONB DEFAULT '{}',
+  is_telemedicine_licensed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### 4) `provider_credentials`
+
+เก็บใบอนุญาตหลายใบต่อผู้ใช้:
+
+```sql
+CREATE TABLE IF NOT EXISTS provider_credentials (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  profession_id UUID REFERENCES professions(id),
+  credential_type TEXT NOT NULL,
+  credential_number TEXT,
+  issuing_authority TEXT,
+  status TEXT DEFAULT 'pending',
+  issued_at DATE,
+  expires_at DATE,
+  verified_at TIMESTAMPTZ,
+  verified_by UUID REFERENCES users(id),
+  document_url TEXT,
+  metadata_json JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### 5) `registration_application_attachments`
+
+ใช้แนบรูป/หลักฐานสำหรับขั้นตอนสมัคร:
+
+```sql
+CREATE TABLE IF NOT EXISTS registration_application_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id UUID NOT NULL REFERENCES registration_applications(id) ON DELETE CASCADE,
+  field_key TEXT NOT NULL,
+  attachment_type TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  mime_type TEXT,
+  file_size_bytes BIGINT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 🔒 RLS / Security Rules
+
+- ผู้สมัคร **INSERT** ใบสมัครและ attachment ของตัวเองได้
+- ผู้สมัคร **UPDATE** ได้เฉพาะ draft/ร่างก่อน submit
+- เมื่อ submit แล้ว field ที่เป็น `is_locked = true` ต้องแก้ไม่ได้
+- Admin ตรวจ/อนุมัติได้เท่านั้นใน `approved/rejected`
+- `provider_profiles.is_telemedicine_licensed` ควรอัปเดตจาก approval flow เท่านั้น ไม่ให้แก้ผ่าน client ตรง ๆ
+
+### 🖼️ Screens / UI Architecture
+
+#### 1) Admin: Profession Approval Page
+
+- รายการอาชีพที่ต้องอนุมัติจาก Sheserved
+- badge แสดง `requires_sheserved_approval`, `requires_telemedicine_license`, `can_prescribe_medication`
+- ปุ่มเข้าไปดูรายละเอียดเอกสารและสถานะ verification
+
+#### 2) Admin: Profession Field Designer
+
+- จัดการ field ของแต่ละอาชีพ
+- drag & drop เพื่อ reorder
+- lock badge สำหรับ field ที่ห้ามเปลี่ยน `field_key`
+- toggle:
+  - required
+  - locked
+  - requires attachment
+  - visible in registration
+
+#### 3) Admin: Approval Review Drawer / Dialog
+
+- แสดงเอกสารแนบทั้งหมด
+- แสดง credential ที่ผู้สมัครกรอก
+- แสดง warning ถ้า evidence image หาย
+- ปุ่ม Approve / Reject พร้อม audit note
+
+#### 4) Register Wizard Page
+
+- Step 1: ข้อมูลพื้นฐาน
+- Step 2: บัญชีผู้ใช้
+- Step 3: Dynamic fields ตาม profession
+- Step 3.1: Evidence block สำหรับใบอนุญาต/รูปแนบ
+- Step 4: ยืนยัน
+
+> หมายเหตุ: ไม่เพิ่ม step ใหม่ใน flow หลักถ้าไม่จำเป็น ให้ evidence block แสดงแบบ conditional ภายใน Step 3 เพื่อไม่กระทบลำดับเดิม
+
+### 🧭 Permission Matrix
+
+| Profession Code | ต้องอนุมัติ Sheserved | ต้องยืนยันตัวตน | ต้องแนบรูปใบอนุญาต | Telemedicine License | สั่งยา | จ่ายยา | จัดการ Drug Risk |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `consumer` | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `expert` | ✅ | ✅ | ขึ้นกับ field config | ❌/✅ ตามประเภท | ❌ โดยดีฟอลต์ | ❌ | ✅ ได้ถ้าถูกกำหนด |
+| `clinic` | ✅ | ✅ | ✅ | ❌/✅ ตามผู้รับผิดชอบ | ❌ โดยตรง | ❌ โดยตรง | ✅ |
+| `doctor_gp` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `doctor_family` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `doctor_specialist` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `dentist` | ✅ | ✅ | ✅ | ✅/ตาม scope | ✅ ตาม scope | ❌ | ✅ |
+| `pharmacist` | ✅ | ✅ | ✅ | ❌/ตาม policy | ❌ โดยดีฟอลต์ | ✅ | ✅ |
+| `telemedicine_provider` | ✅ | ✅ | ✅ | ✅ | ✅/ตาม permission | ✅/ตาม permission | ✅ |
+
+> หมายเหตุ: ช่อง `สั่งยา/จ่ายยา` และ `Telemedicine License` ต้อง finalize ตามกฎหมาย/นโยบายองค์กรก่อนเปิดใช้งานจริง แต่ schema นี้รองรับการเปิด-ปิดแบบ config ได้
+
+### 🔄 Data Flow (ไม่กระทบ Flow หลัก)
+
+1. ผู้สมัครเลือก profession
+2. ระบบโหลด `registration_field_configs` ของ profession นั้น
+3. ถ้า profession มี flag ต้องอนุมัติ → แสดง evidence block และเอกสารที่บังคับ
+4. ถ้าผู้สมัครกรอกใบอนุญาตในกลุ่ม E → บังคับแนบรูปภาพ
+5. ผู้สมัคร submit → สร้าง `registration_applications` + `registration_application_attachments`
+6. Admin review → ตรวจเอกสาร / ใบอนุญาต / capability
+7. อนุมัติแล้วค่อยสร้าง/อัปเดต `provider_profiles` + `provider_credentials`
+8. `RegisterWizardPage` เดิมยัง fallback ไปใช้ default fields ถ้า config ใหม่ยังไม่ถูก seed
+
+### ✅ Acceptance Criteria
+
+- ผู้สมัครที่ระบุว่ามีใบอนุญาตต้องแนบรูปภาพก่อน submit
+- `id` และ `field_key` ของ record ที่ล็อกไว้แก้ไม่ได้หลังสร้างครั้งแรก
+- Admin สามารถกำหนด profession ที่ต้องผ่านการอนุมัติจาก Sheserved ได้
+- ระบบรองรับหลาย profession ที่มีสิทธิ์สั่งยา/จ่ายยาแบบ capability-based
+- Telemedicine license ถูกตรวจจากตารางผู้ให้บริการ/credential ที่ verify แล้ว
+- Flow ลงทะเบียนหลักเดิมยังใช้งานได้ แม้ยังไม่มี config ใหม่สำหรับบาง profession
+
+*Last Updated: 2026-06-14* — ปรับปรุง Prescription Templates + Patient Selection History

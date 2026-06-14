@@ -91,10 +91,16 @@ class RegistrationFieldConfig {
   final String id;
   final String professionId;
   final String fieldId;
+  final String? fieldKey;
   final String label;
   final String? hint;
   final FieldType fieldType;
   final bool isRequired;
+  final bool isLocked;
+  final bool requiresAttachment;
+  final String? attachmentGroupKey;
+  final bool attachmentRequiredWhenFilled;
+  final List<String>? visibleWhenProfessionCodes;
   final int order;
   final String? iconName;
   final List<String>? dropdownOptions; // สำหรับ dropdown
@@ -106,12 +112,18 @@ class RegistrationFieldConfig {
 
   const RegistrationFieldConfig({
     required this.id,
-    required this.professionId,
-    required this.fieldId,
+    this.professionId = '',
+    this.fieldId = '',
+    this.fieldKey,
     required this.label,
     this.hint,
     required this.fieldType,
     this.isRequired = false,
+    this.isLocked = false,
+    this.requiresAttachment = false,
+    this.attachmentGroupKey,
+    this.attachmentRequiredWhenFilled = false,
+    this.visibleWhenProfessionCodes,
     this.order = 0,
     this.iconName,
     this.dropdownOptions,
@@ -126,10 +138,16 @@ class RegistrationFieldConfig {
     String? id,
     String? professionId,
     String? fieldId,
+    String? fieldKey,
     String? label,
     String? hint,
     FieldType? fieldType,
     bool? isRequired,
+    bool? isLocked,
+    bool? requiresAttachment,
+    String? attachmentGroupKey,
+    bool? attachmentRequiredWhenFilled,
+    List<String>? visibleWhenProfessionCodes,
     int? order,
     String? iconName,
     List<String>? dropdownOptions,
@@ -143,10 +161,18 @@ class RegistrationFieldConfig {
       id: id ?? this.id,
       professionId: professionId ?? this.professionId,
       fieldId: fieldId ?? this.fieldId,
+      fieldKey: fieldKey ?? this.fieldKey,
       label: label ?? this.label,
       hint: hint ?? this.hint,
       fieldType: fieldType ?? this.fieldType,
       isRequired: isRequired ?? this.isRequired,
+      isLocked: isLocked ?? this.isLocked,
+      requiresAttachment: requiresAttachment ?? this.requiresAttachment,
+      attachmentGroupKey: attachmentGroupKey ?? this.attachmentGroupKey,
+      attachmentRequiredWhenFilled:
+          attachmentRequiredWhenFilled ?? this.attachmentRequiredWhenFilled,
+      visibleWhenProfessionCodes:
+          visibleWhenProfessionCodes ?? this.visibleWhenProfessionCodes,
       order: order ?? this.order,
       iconName: iconName ?? this.iconName,
       dropdownOptions: dropdownOptions ?? this.dropdownOptions,
@@ -163,10 +189,16 @@ class RegistrationFieldConfig {
       'id': id,
       'profession_id': professionId,
       'field_id': fieldId,
+      'field_key': fieldKey ?? fieldId,
       'label': label,
       'hint': hint,
       'field_type': fieldType.name,
       'is_required': isRequired,
+      'is_locked': isLocked,
+      'requires_attachment': requiresAttachment,
+      'attachment_group_key': attachmentGroupKey,
+      'attachment_required_when_filled': attachmentRequiredWhenFilled,
+      'visible_when_profession_code': visibleWhenProfessionCodes,
       'field_order': order,
       'icon_name': iconName,
       'dropdown_options': dropdownOptions,
@@ -179,14 +211,23 @@ class RegistrationFieldConfig {
   }
 
   factory RegistrationFieldConfig.fromJson(Map<String, dynamic> json) {
+    final visibleCodesRaw = json['visible_when_profession_code'];
     return RegistrationFieldConfig(
       id: json['id'] ?? '',
       professionId: json['profession_id'] ?? '',
       fieldId: json['field_id'] ?? json['id'] ?? '',
+      fieldKey: json['field_key'] ?? json['field_id'] ?? json['id'],
       label: json['label'] ?? '',
       hint: json['hint'],
       fieldType: FieldTypeExtension.fromString(json['field_type'] ?? 'text'),
       isRequired: json['is_required'] ?? false,
+      isLocked: json['is_locked'] ?? false,
+      requiresAttachment: json['requires_attachment'] ?? false,
+      attachmentGroupKey: json['attachment_group_key'],
+      attachmentRequiredWhenFilled: json['attachment_required_when_filled'] ?? false,
+      visibleWhenProfessionCodes: visibleCodesRaw is List
+          ? List<String>.from(visibleCodesRaw)
+          : null,
       order: json['field_order'] ?? json['order'] ?? 0,
       iconName: json['icon_name'],
       dropdownOptions: json['dropdown_options'] != null

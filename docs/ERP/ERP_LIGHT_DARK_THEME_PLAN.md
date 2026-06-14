@@ -144,6 +144,40 @@ $$ LANGUAGE plpgsql;
 - **Custom colors:** ใช้ได้เฉพาะ Light mode (Dark mode ใช้ fixed colors)
 - **Glassmorphism:** ใช้ได้ทั้ง Light และ Dark (opacity/blur sliders ใช้ร่วมกัน)
 
+## Module Group Color Customization
+
+ผู้ใช้สามารถปรับแต่งสีของแต่ละกลุ่มโมดูลผ่าน **Module Layout Settings** (`/erp/settings/modules`) โดยมีตัวเลือกสี 2 ชุดอิสระจากกัน:
+
+### สีพื้นหลังกลุ่ม (`colorHex`)
+- กำหนดสีพื้นหลัง `GlassCard` ของกลุ่ม
+- เลือก "ไม่มีสีพื้นหลังการ์ด" → `tintColor == null` → `GlassCard` ไม่มี pastel overlay (แก้วใส)
+- เก็บใน JSON field `color_hex`
+
+### สีชื่อกลุ่ม (`titleColorHex`)
+- กำหนดสีจุดวงกลม + badge จำนวน ในแถวชื่อกลุ่ม
+- กำหนดว่า title row จะห่อด้วย `GlassCard` หรือไม่:
+  - เลือกสี → `titleAccentColor` มีค่า → ห่อด้วย `GlassCard` (มีพื้นหลัง/เงา)
+  - เลือก "ไม่มีสีชื่อกลุ่ม" → `titleAccentColor == null` → ไม่ห่อ `GlassCard` (ไม่มีพื้นหลัง/เงา) แต่ยังแสดงจุด+badge สีเทา
+- เก็บใน JSON field `title_color_hex`
+
+### JSON Schema (module_layout_json)
+
+```json
+{
+  "groups": [
+    {
+      "id": "sales",
+      "title": "ขายและบริการ",
+      "color_hex": "#BFE7FF",
+      "title_color_hex": "",
+      "module_ids": ["counter_pos", "clinic_pos", ...]
+    }
+  ]
+}
+```
+
+> **หมายเหตุ:** `title_color_hex` ว่าง (`""`) = ไม่มีสีชื่อกลุ่ม → title row ไม่มี GlassCard wrapper
+
 ## สรุป
 
 | ฟีเจอร์ | Light | Dark |

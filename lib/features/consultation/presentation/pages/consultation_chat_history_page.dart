@@ -5,6 +5,9 @@ import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../../../chat/data/models/chat_models.dart';
 import 'package:intl/intl.dart';
+import 'prescription_choice_page.dart';
+import 'prescription_editor_page.dart';
+import 'consultation_note_editor_page.dart';
 
 class ConsultationChatHistoryPage extends StatefulWidget {
   final String consultationId;
@@ -82,39 +85,56 @@ class _ConsultationChatHistoryPageState
         ? Icons.description_outlined
         : Icons.medication_outlined;
 
-    return Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+    return GestureDetector(
+      onTap: () {
+        if (!isNote) {
+          final patientId = _request?.userId ?? '';
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (ctx) => PrescriptionChoicePage(
+                consultationId: widget.consultationId,
+                patientId: patientId,
+                prescriptionId: message.attachmentUrl,
+              ),
+            ),
+          );
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(top: 4, bottom: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'แตะเพื่อดูรายละเอียดข้อมูลการรักษา',
-            style: TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'แตะเพื่อดูรายละเอียดข้อมูลการรักษา',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
       ),
     );
   }

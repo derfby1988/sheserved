@@ -6,6 +6,11 @@ class GlEntry {
   final String accountId;
   final String? orderId;
   final String? paymentTxnId;
+  final String? journalEntryId;
+  final String? journalEntryLineId;
+  final String? documentType;
+  final String? sapTransactionCode;
+  final String? formNumber;
   final double debitAmount;
   final double creditAmount;
   final String? description;
@@ -20,6 +25,11 @@ class GlEntry {
     required this.accountId,
     this.orderId,
     this.paymentTxnId,
+    this.journalEntryId,
+    this.journalEntryLineId,
+    this.documentType,
+    this.sapTransactionCode,
+    this.formNumber,
     this.debitAmount = 0,
     this.creditAmount = 0,
     this.description,
@@ -36,6 +46,11 @@ class GlEntry {
       accountId: json['account_id'] as String,
       orderId: json['order_id'] as String?,
       paymentTxnId: json['payment_txn_id'] as String?,
+      journalEntryId: json['journal_entry_id'] as String?,
+      journalEntryLineId: json['journal_entry_line_id'] as String?,
+      documentType: json['document_type'] as String?,
+      sapTransactionCode: json['sap_transaction_code'] as String?,
+      formNumber: json['form_number'] as String?,
       debitAmount: (json['debit_amount'] as num?)?.toDouble() ?? 0,
       creditAmount: (json['credit_amount'] as num?)?.toDouble() ?? 0,
       description: json['description'] as String?,
@@ -53,6 +68,11 @@ class GlEntry {
       'account_id': accountId,
       'order_id': orderId,
       'payment_txn_id': paymentTxnId,
+      'journal_entry_id': journalEntryId,
+      'journal_entry_line_id': journalEntryLineId,
+      'document_type': documentType,
+      'sap_transaction_code': sapTransactionCode,
+      'form_number': formNumber,
       'debit_amount': debitAmount,
       'credit_amount': creditAmount,
       'description': description,

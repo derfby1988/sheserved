@@ -31,32 +31,61 @@ class DashboardModuleGroupConfig {
   final String id;
   final String title;
   final String colorHex;
+  final String titleColorHex;
   final List<String> moduleIds;
 
   const DashboardModuleGroupConfig({
     required this.id,
     required this.title,
     required this.colorHex,
+    this.titleColorHex = '',
     required this.moduleIds,
   });
 
+  static const String noColorHex = '';
+
+  Color? get tintColor {
+    final clean = colorHex.trim();
+    if (clean.isEmpty || clean.toLowerCase() == 'none') return null;
+    final normalized = clean.replaceFirst('#', '');
+    if (normalized.length == 6) return Color(int.parse('FF$normalized', radix: 16));
+    if (normalized.length == 8) return Color(int.parse(normalized, radix: 16));
+    return null;
+  }
+
+  bool get hasTintColor => tintColor != null;
+
   Color get color {
-    final clean = colorHex.replaceFirst('#', '');
-    if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
-    if (clean.length == 8) return Color(int.parse(clean, radix: 16));
-    return const Color(0xFFBFE7FF);
+    return tintColor ?? const Color(0xFF94A3B8);
+  }
+
+  Color? get titleTintColor {
+    final clean = titleColorHex.trim();
+    if (clean.isEmpty || clean.toLowerCase() == 'none') return null;
+    final normalized = clean.replaceFirst('#', '');
+    if (normalized.length == 6) return Color(int.parse('FF$normalized', radix: 16));
+    if (normalized.length == 8) return Color(int.parse(normalized, radix: 16));
+    return null;
+  }
+
+  Color? get titleColor {
+    final clean = titleColorHex.trim();
+    if (clean.isEmpty || clean.toLowerCase() == 'none') return null;
+    return titleTintColor ?? color;
   }
 
   DashboardModuleGroupConfig copyWith({
     String? id,
     String? title,
     String? colorHex,
+    String? titleColorHex,
     List<String>? moduleIds,
   }) {
     return DashboardModuleGroupConfig(
       id: id ?? this.id,
       title: title ?? this.title,
       colorHex: colorHex ?? this.colorHex,
+      titleColorHex: titleColorHex ?? this.titleColorHex,
       moduleIds: moduleIds ?? this.moduleIds,
     );
   }
@@ -65,6 +94,7 @@ class DashboardModuleGroupConfig {
         'id': id,
         'title': title,
         'color_hex': colorHex,
+        'title_color_hex': titleColorHex,
         'module_ids': moduleIds,
       };
 
@@ -72,7 +102,8 @@ class DashboardModuleGroupConfig {
     return DashboardModuleGroupConfig(
       id: json['id'] as String? ?? '',
       title: json['title'] as String? ?? '',
-      colorHex: json['color_hex'] as String? ?? '#BFE7FF',
+      colorHex: json['color_hex'] as String? ?? noColorHex,
+      titleColorHex: json['title_color_hex'] as String? ?? '',
       moduleIds: (json['module_ids'] as List? ?? []).map((e) => e.toString()).toList(),
     );
   }
@@ -96,6 +127,7 @@ class DashboardModuleLayoutConfig {
         id: 'sales',
         title: 'ขายและบริการ',
         colorHex: '#BFE7FF',
+        titleColorHex: '',
         moduleIds: [
           'counter_pos',
           'clinic_pos',
@@ -110,6 +142,7 @@ class DashboardModuleLayoutConfig {
         id: 'inventory',
         title: 'คลังสินค้า',
         colorHex: '#CFEFBA',
+        titleColorHex: '',
         moduleIds: [
           'inventory_management',
           'inventory_dashboard',
@@ -124,6 +157,7 @@ class DashboardModuleLayoutConfig {
         id: 'procurement',
         title: 'จัดซื้อ',
         colorHex: '#F7C9A9',
+        titleColorHex: '',
         moduleIds: [
           'procurement_management',
           'vendor_contracts',
@@ -134,6 +168,7 @@ class DashboardModuleLayoutConfig {
         id: 'finance',
         title: 'การเงิน',
         colorHex: '#D7D0FF',
+        titleColorHex: '',
         moduleIds: [
           'gl_entries',
           'chart_of_accounts',
@@ -146,6 +181,7 @@ class DashboardModuleLayoutConfig {
         id: 'people',
         title: 'บุคคล',
         colorHex: '#A7D8F5',
+        titleColorHex: '',
         moduleIds: [
           'employees',
           'shifts',
@@ -155,6 +191,7 @@ class DashboardModuleLayoutConfig {
         id: 'crm',
         title: 'ลูกค้าสัมพันธ์',
         colorHex: '#F0E7B4',
+        titleColorHex: '',
         moduleIds: [
           'customers',
         ],
@@ -163,6 +200,7 @@ class DashboardModuleLayoutConfig {
         id: 'clinical',
         title: 'คลินิก',
         colorHex: '#BDEBDB',
+        titleColorHex: '',
         moduleIds: [
           'emr_records',
           'opd_visits',
@@ -175,6 +213,7 @@ class DashboardModuleLayoutConfig {
         id: 'admin',
         title: 'ตั้งค่า',
         colorHex: '#E5F6C8',
+        titleColorHex: '',
         moduleIds: [
           'organization_settings',
           'role_management',
@@ -276,8 +315,16 @@ class DashboardModuleLayoutConfig {
           return group.copyWith(
             title: defaultGroup.title,
             colorHex: defaultGroup.colorHex,
+            titleColorHex: defaultGroup.titleColorHex,
           );
         })
+        .toList();
+    return copyWith(groups: next);
+  }
+
+  DashboardModuleLayoutConfig updateGroupTitleColor(String groupId, String colorHex) {
+    final next = groups
+        .map((group) => group.id == groupId ? group.copyWith(titleColorHex: colorHex) : group)
         .toList();
     return copyWith(groups: next);
   }

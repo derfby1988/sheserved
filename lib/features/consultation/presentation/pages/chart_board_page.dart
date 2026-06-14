@@ -22,6 +22,7 @@ import '../../data/models/consultation_package.dart';
 import '../widgets/package_wheel_selector.dart';
 import '../../../../features/admin/models/profession.dart';
 import 'prescription_editor_page.dart';
+import 'prescription_choice_page.dart';
 import 'consultation_note_editor_page.dart';
 import 'manage_quick_replies_page.dart';
 import '../widgets/timer_badge_widget.dart';
@@ -1626,13 +1627,27 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (prescriptionId == null) return;
     final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
     final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
-    
+
+    if (_isProvider) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (ctx) => PrescriptionEditorPage(
+            consultationId: consultationId,
+            patientId: patientId,
+          ),
+        ),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (ctx) => PrescriptionEditorPage(
+        builder: (ctx) => PrescriptionChoicePage(
           consultationId: consultationId,
           patientId: patientId,
+          prescriptionId: prescriptionId,
         ),
       ),
     );

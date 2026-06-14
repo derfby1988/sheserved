@@ -316,6 +316,16 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                             ),
                             if (profession.requiresVerification)
                               _buildCompactStat(Icons.verified_user, 'ต้องตรวจสอบ', color: AppColors.warning),
+                            if (profession.requiresSheservedApproval)
+                              _buildCompactStat(Icons.fact_check_outlined, 'ต้องอนุมัติ', color: Colors.deepOrange),
+                            if (profession.canPrescribeMedication)
+                              _buildCompactStat(Icons.medication_outlined, 'สั่งยาได้', color: Colors.green),
+                            if (profession.canDispenseMedication)
+                              _buildCompactStat(Icons.local_pharmacy_outlined, 'จ่ายยาได้', color: Colors.green),
+                            if (profession.requiresTelemedicineLicense)
+                              _buildCompactStat(Icons.video_call_outlined, 'Telemedicine', color: Colors.teal),
+                            if (profession.professionCode != null)
+                              _buildCompactStat(Icons.code, profession.professionCode!, color: AppColors.primary),
                           ],
                         ),
                       ],
@@ -586,8 +596,15 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
   late UserCategory _selectedCategory;
   bool _requiresVerification = true;
   bool _isVolunteer = false;
+  bool _canManageDrugRisk = false;
+  bool _requiresSheservedApproval = false;
+  bool _canPrescribeMedication = false;
+  bool _canDispenseMedication = false;
+  bool _requiresTelemedicineLicense = false;
   String _selectedIcon = 'work';
   String _selectedColor = '#71BE0A'; // Default to AppColors.primary
+  late TextEditingController _professionCodeController;
+  late TextEditingController _approvalLicenseTypesController;
   String? _copyFromProfessionId;
   bool _isSaving = false;
   bool get isEditing => widget.existingProfession != null;
@@ -621,6 +638,12 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
         TextEditingController(text: widget.existingProfession?.nameEn ?? '');
     _descriptionController =
         TextEditingController(text: widget.existingProfession?.description ?? '');
+    _professionCodeController = TextEditingController(
+      text: widget.existingProfession?.professionCode ?? '',
+    );
+    _approvalLicenseTypesController = TextEditingController(
+      text: widget.existingProfession?.approvalRequiredLicenseTypes.join(', ') ?? '',
+    );
     
     _selectedCategory = widget.existingProfession?.category ?? 
         const UserCategory(id: 'provider', name: 'ผู้ให้บริการ');
@@ -628,6 +651,11 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
     _requiresVerification =
         widget.existingProfession?.requiresVerification ?? true;
     _isVolunteer = widget.existingProfession?.isVolunteer ?? false;
+    _canManageDrugRisk = widget.existingProfession?.canManageDrugRisk ?? false;
+    _requiresSheservedApproval = widget.existingProfession?.requiresSheservedApproval ?? false;
+    _canPrescribeMedication = widget.existingProfession?.canPrescribeMedication ?? false;
+    _canDispenseMedication = widget.existingProfession?.canDispenseMedication ?? false;
+    _requiresTelemedicineLicense = widget.existingProfession?.requiresTelemedicineLicense ?? false;
     _selectedIcon = widget.existingProfession?.iconName ?? 'work';
     _selectedColor = widget.existingProfession?.colorHex ?? '#71BE0A';
 
@@ -674,7 +702,28 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
     _nameController.dispose();
     _nameEnController.dispose();
     _descriptionController.dispose();
+    _professionCodeController.dispose();
+    _approvalLicenseTypesController.dispose();
     super.dispose();
+  }
+
+  String _generateProfessionCode(String input) {
+    final normalized = input
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return normalized.isEmpty ? 'custom_profession' : normalized;
+  }
+
+  List<String> _parseLicenseTypes() {
+    return _approvalLicenseTypesController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   @override
@@ -712,6 +761,17 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               decoration: const InputDecoration(
                 labelText: 'คำอธิบาย',
                 hintText: 'อธิบายลักษณะอาชีพ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _professionCodeController,
+              enabled: !isEditing || !(widget.existingProfession?.isBuiltIn ?? false),
+              decoration: const InputDecoration(
+                labelText: 'Profession Code *',
+                hintText: 'เช่น doctor_gp, pharmacist',
+                helperText: 'ใช้เป็นรหัสคงที่สำหรับ permission matrix และ policy',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -865,6 +925,54 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               activeThumbColor: AppColors.primary,
               contentPadding: EdgeInsets.zero,
             ),
+            SwitchListTile(
+              title: const Text('ต้องผ่านการอนุมัติจาก Sheserved'),
+              subtitle: const Text('เปิดใช้กับอาชีพที่ต้องมีการคัดกรอง/อนุมัติพิเศษ'),
+              value: _requiresSheservedApproval,
+              onChanged: (value) {
+                setState(() {
+                  _requiresSheservedApproval = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('สามารถสั่งจ่ายยาได้'),
+              subtitle: const Text('ใช้กับอาชีพแพทย์/ทันตแพทย์/สิทธิ์พิเศษอื่นๆ'),
+              value: _canPrescribeMedication,
+              onChanged: (value) {
+                setState(() {
+                  _canPrescribeMedication = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('สามารถจ่ายยาได้'),
+              subtitle: const Text('ใช้กับเภสัชกรหรือผู้มีสิทธิ์จ่ายยาเฉพาะทาง'),
+              value: _canDispenseMedication,
+              onChanged: (value) {
+                setState(() {
+                  _canDispenseMedication = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('ต้องมีใบอนุญาต Telemedicine'),
+              subtitle: const Text('บังคับตรวจสอบเอกสารใบอนุญาตก่อนเปิดสิทธิ์ใช้งาน'),
+              value: _requiresTelemedicineLicense,
+              onChanged: (value) {
+                setState(() {
+                  _requiresTelemedicineLicense = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
             const SizedBox(height: 8),
             SwitchListTile(
               title: const Text('สิทธิอาสาสมัคร (Volunteer Role)'),
@@ -873,6 +981,31 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               onChanged: (value) {
                 setState(() {
                   _isVolunteer = value;
+                });
+              },
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _approvalLicenseTypesController,
+              decoration: const InputDecoration(
+                labelText: 'Required License Types',
+                hintText: 'medical_council, telemedicine, pharmacy_council',
+                helperText: 'คั่นด้วยเครื่องหมายจุลภาค ใช้เป็นรายการใบอนุญาตที่ต้องแนบ/ตรวจสอบ',
+                border: OutlineInputBorder(),
+              ),
+              minLines: 1,
+              maxLines: 3,
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('จัดการหมวดหมู่ความเสี่ยงยา'),
+              subtitle: const Text('อนุญาตให้อาชีพนี้เข้าถึงและจัดการหมวดหมู่ความเสี่ยงของยาได้'),
+              value: _canManageDrugRisk,
+              onChanged: (value) {
+                setState(() {
+                  _canManageDrugRisk = value;
                 });
               },
               activeThumbColor: AppColors.primary,
@@ -970,6 +1103,15 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           'category': _selectedCategory.value,
           'requires_verification': _requiresVerification,
           'is_volunteer': _isVolunteer,
+          'profession_code': _professionCodeController.text.trim().isEmpty
+              ? _generateProfessionCode(name)
+              : _professionCodeController.text.trim(),
+          'requires_sheserved_approval': _requiresSheservedApproval,
+          'can_prescribe_medication': _canPrescribeMedication,
+          'can_dispense_medication': _canDispenseMedication,
+          'can_manage_drug_risk': _canManageDrugRisk,
+          'requires_telemedicine_license': _requiresTelemedicineLicense,
+          'approval_required_license_types': _parseLicenseTypes(),
         });
         widget.onSave(updated);
         if (mounted) {
@@ -992,6 +1134,15 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           category: _selectedCategory,
           requiresVerification: _requiresVerification,
           isVolunteer: _isVolunteer,
+          professionCode: _professionCodeController.text.trim().isEmpty
+              ? _generateProfessionCode(name)
+              : _professionCodeController.text.trim(),
+          requiresSheservedApproval: _requiresSheservedApproval,
+          canPrescribeMedication: _canPrescribeMedication,
+          canDispenseMedication: _canDispenseMedication,
+          canManageDrugRisk: _canManageDrugRisk,
+          requiresTelemedicineLicense: _requiresTelemedicineLicense,
+          approvalRequiredLicenseTypes: _parseLicenseTypes(),
         );
 
         if (_copyFromProfessionId != null) {

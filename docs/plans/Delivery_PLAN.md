@@ -501,6 +501,353 @@ Delivery Core อยู่ใน **ERP Phase 2** (หลังจาก Inventor
 | 2.5 | `delivery_exceptions` | ปานกลาง | รองรับ exception หลัง go-live |
 | 2.6 | `delivery_runs` + `route_stops` | ต่ำ-ปานกลาง | ใช้เมื่อมี batch delivery หลายออเดอร์ |
 | 2.7 | `carrier_configs` + `carrier_tracking_mappings` | ต่ำ | เปิดใช้เมื่อมี 3PL จริงเท่านั้น |
+| 2.8 | **Delivery Provider Selection** | ต่ำ (Phase ท้าย) | องค์กรและลูกค้าเลือกผู้ให้บริการส่งได้ |
+
+---
+
+## การเลือกผู้ให้บริการจัดส่ง (Delivery Provider Selection) — Phase ท้าย
+
+ระบบรองรับ **3 รูปแบบการจัดส่ง** โดยให้ **องค์กร (ERP)** เลือกเปิดใช้รูปแบบใดบ้าง และ **ลูกค้า** เลือกได้ตามรูปแบบที่องค์กรเปิดไว้
+
+### รูปแบบการจัดส่งทั้ง 3 ประเภท
+
+| รูปแบบ | ชื่อ | รายละเอียด | ผู้รับผิดชอบค่าส่ง |
+|---|---|---|---|
+| **A** | **In-House Delivery** (ส่งเอง) | ใช้ไรเดอร์/พนักงานของร้าน/คลินิกเอง (`riders` table) | องค์กรเป็นผู้กำหนดค่าส่ง |
+| **B** | **Sheserved Platform Delivery** | ใช้ fleet กลางของ Sheserved (ไรเดอร์ที่ Sheserved จัดหา คล้าย Grab/LINE MAN) | Sheserved เป็นผู้กำหนดค่าส่ง หักจากยอดขาย |
+| **C** | **Third-Party Provider** (ผู้ให้บริการภายนอก) | เชื่อมต่อ API กับ GrabExpress, LINE MAN, Foodpanda (pandago), ShopeeFood ฯลฯ | ผู้ให้บริการภายนอกเป็นผู้กำหนด |
+
+### สิทธิ์การเลือก
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ERP Dashboard — Organization Settings                      │
+│  [Delivery Settings]                                        │
+│                                                             │
+│  ☑ เปิดใช้ In-House Delivery                               │
+│     └─ ค่าส่ง: [กำหนดเอง / ตามระยะทาง / ฟรี]              │
+│                                                             │
+│  ☑ เปิดใช้ Sheserved Platform Delivery                    │
+│     └─ ค่าส่ง: [ตาม Sheserved rate card]                    │
+│                                                             │
+│  ☑ เปิดใช้ Third-Party Providers                           │
+│     └─ เลือกผู้ให้บริการ:                                   │
+│        ☑ GrabExpress                                        │
+│        ☑ LINE MAN                                           │
+│        ☑ Foodpanda (pandago)                                │
+│        ☐ ShopeeFood                                         │
+│                                                             │
+│  [บันทึกการตั้งค่า]                                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Checkout Page — Customer View                              │
+│  "เลือกวิธีการจัดส่ง:"                                       │
+│                                                             │
+│  ○ ส่งโดยร้าน (In-House) — ฿30                              │
+│  ○ ส่งโดย Sheserved — ฿45                                   │
+│  ○ ส่งโดย GrabExpress — ฿52 (ประมาณ)                       │
+│                                                             │
+│  (แสดงเฉพาะที่องค์กรเปิดใช้ และคำนวณราคา real-time)        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Schema — เพิ่มตารางและฟิลด์
+
+#### 1. `organization_delivery_settings` (ตั้งค่าระดับองค์กร)
+
+```sql
+CREATE TABLE organization_delivery_settings (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id         UUID REFERENCES professions(id) UNIQUE,
+                          -- NULL = ตั้งค่าระดับ Platform (default สำหรับทุกองค์กร)
+                          -- มีค่า = override เฉพาะองค์กรนั้น
+
+  -- In-House (ใช้ได้เฉพาะเมื่อมี profession_id — ต้องมีองค์กร)
+  enable_in_house       BOOLEAN DEFAULT true,
+  in_house_fee_type     TEXT DEFAULT 'custom'
+                            CHECK (in_house_fee_type IN ('custom', 'distance', 'free')),
+  in_house_custom_fee   DECIMAL(12,2) DEFAULT 0,
+
+  -- Sheserved Platform (ใช้ได้แม้ไม่มีองค์กร — เป็น Fleet กลางของ Platform)
+  enable_sheserved      BOOLEAN DEFAULT false,
+
+  -- Third-Party (ใช้ได้แม้ไม่มีองค์กร — เป็น Integration ระดับ Platform)
+  enable_third_party    BOOLEAN DEFAULT false,
+
+  -- ลำดับความชอบ (priority) สำหรับแสดงใน UI
+  provider_priority     TEXT[] DEFAULT ARRAY['in_house', 'sheserved', 'third_party'],
+
+  -- ค่าส่งขั้นต่ำที่ลูกค้าต้องจ่าย (subsidize จากองค์กรได้)
+  minimum_shipping_fee  DECIMAL(12,2) DEFAULT 0,
+  free_shipping_threshold DECIMAL(12,2) DEFAULT NULL, -- ยอดซื้อถึงส่งฟรี
+
+  is_platform_default   BOOLEAN DEFAULT false, -- true = ตั้งค่า default ของ Platform
+
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index สำหรับหา platform default เร็ว
+CREATE UNIQUE INDEX idx_platform_default ON organization_delivery_settings(profession_id, is_platform_default)
+  WHERE profession_id IS NULL;
+```
+
+#### 2. `organization_third_party_carriers` (เปิดใช้ carrier ใดบ้าง)
+
+```sql
+CREATE TABLE organization_third_party_carriers (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profession_id         UUID REFERENCES professions(id),
+                          -- NULL = Platform-level integration (ใช้ได้กับทุกองค์กร)
+                          -- มีค่า = Override ระดับองค์กร (เช่น ใช้ API key ขององค์กรเอง)
+  carrier_code          TEXT NOT NULL
+                            CHECK (carrier_code IN (
+                              'grab_express', 'line_man', 'foodpanda',
+                              'shopee_food', 'kerry', 'flash_express', 'thai_post'
+                            )),
+  is_active             BOOLEAN DEFAULT true,
+  api_key_encrypted     TEXT,        -- ถ้าต้องใช้ API key ขององค์กรเอง (NULL = ใช้ Platform key)
+  contract_rate_json    JSONB DEFAULT '{}', -- rate card ที่ตกลงกับ carrier
+  is_platform_default   BOOLEAN DEFAULT false,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (profession_id, carrier_code)
+);
+```
+
+> **หมายเหตุ:** Model B (Sheserved Platform) และ Model C (Third-Party) ทำงานได้แม้ไม่มี `profession_id` (ไม่มีองค์กรเข้าร่วม) เพราะเป็น **บริการระดับ Platform** ที่ Sheserved เป็นผู้ดูแล fleet/API key เอง ส่วน Model A (In-House) จำเป็นต้องมี `profession_id` เสมอ
+
+#### 3. `delivery_orders` เพิ่มฟิลด์
+
+```sql
+ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS provider_type TEXT DEFAULT 'in_house'
+  CHECK (provider_type IN ('in_house', 'sheserved', 'third_party'));
+ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS carrier_code TEXT;
+  -- NULL = in_house / sheserved, มีค่า = third_party carrier code
+ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS customer_selected_provider BOOLEAN DEFAULT false;
+  -- true = ลูกค้าเป็นผู้เลือก, false = ระบบ auto-assign หรือ default
+ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS provider_fee_estimate DECIMAL(12,2);
+  -- ค่าส่งประมาณการตอน checkout (real-time quote จาก third-party)
+ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS provider_fee_actual DECIMAL(12,2);
+  -- ค่าส่งจริงหลังส่งเสร็จ (อาจต่างจากประมาณการ)
+```
+
+### กลไกการเลือก (Selection Engine)
+
+```dart
+class DeliveryProviderSelector {
+  /// ดึงรายการผู้ให้บริการที่เปิดใช้ พร้อมค่าส่งประมาณการ
+  /// 
+  /// - ถ้ามี professionId (มีองค์กร): ใช้ setting ขององค์กร + fallback ไป Platform default
+  ///   สำหรับ Model B และ C
+  /// - ถ้าไม่มี professionId (ไม่มีองค์กร/สั่งผ่าน Platform โดยตรง): 
+  ///   ใช้ได้แค่ Model B (Sheserved) และ Model C (Third-Party)
+  Future<List<ProviderOption>> getAvailableProviders({
+    String? professionId,      // NULL = ไม่มีองค์กร (Platform direct order)
+    required LatLng origin,
+    required LatLng destination,
+    required Decimal orderAmount,
+    required Decimal packageWeightKg,
+  }) async {
+    final options = <ProviderOption>[];
+
+    // ดึง setting องค์กร (ถ้ามี) และ Platform default (สำหร fallback)
+    final orgSettings = professionId != null
+        ? await _settingsRepo.getSettings(professionId)
+        : null;
+    final platformSettings = await _settingsRepo.getPlatformDefault();
+
+    // A. In-House — ใช้ได้เฉพาะเมื่อมีองค์กรเท่านั้น
+    if (professionId != null && orgSettings?.enableInHouse == true) {
+      final fee = await _calculateInHouseFee(
+        orgSettings!.inHouseFeeType,
+        origin: origin,
+        destination: destination,
+      );
+      options.add(ProviderOption(
+        type: ProviderType.inHouse,
+        name: 'ส่งโดยร้าน',
+        estimatedFee: fee,
+        estimatedMinutes: await _estimateInHouseTime(origin, destination),
+      ));
+    }
+
+    // B. Sheserved Platform — ใช้ได้ทั้งมี/ไม่มีองค์กร
+    // ถ้ามี orgSettings เปิดไว้ → ใช้ org, ไม่มี → fallback ไป platform default
+    final sheservedEnabled = orgSettings?.enableSheserved
+        ?? platformSettings.enableSheserved;
+    if (sheservedEnabled) {
+      final fee = await _sheservedApi.getQuote(
+        origin: origin,
+        destination: destination,
+        weightKg: packageWeightKg,
+      );
+      options.add(ProviderOption(
+        type: ProviderType.sheserved,
+        name: 'ส่งโดย Sheserved',
+        estimatedFee: fee,
+        estimatedMinutes: fee.estimatedMinutes,
+      ));
+    }
+
+    // C. Third-Party — ใช้ได้ทั้งมี/ไม่มีองค์กร
+    // ถ้ามี orgSettings เปิดไว้ → ใช้ org carriers, ไม่มี → ใช้ Platform carriers
+    final thirdPartyEnabled = orgSettings?.enableThirdParty
+        ?? platformSettings.enableThirdParty;
+    if (thirdPartyEnabled) {
+      final carriers = professionId != null
+          ? await _carrierRepo.getActiveCarriersForOrg(professionId)
+          : await _carrierRepo.getPlatformDefaultCarriers();
+
+      for (final carrier in carriers) {
+        final quote = await _thirdPartyAdapters[carrier.code]!.getQuote(
+          origin: origin,
+          destination: destination,
+          weightKg: packageWeightKg,
+          orderAmount: orderAmount,
+        );
+        options.add(ProviderOption(
+          type: ProviderType.thirdParty,
+          name: carrier.displayName,
+          carrierCode: carrier.code,
+          estimatedFee: quote.fee,
+          estimatedMinutes: quote.estimatedMinutes,
+        ));
+      }
+    }
+
+    // จัดลำดับตาม priority (org ถ้ามี, ไม่มี → platform default)
+    final priority = orgSettings?.providerPriority
+        ?? platformSettings.providerPriority;
+    return _sortByPriority(options, priority);
+  }
+
+  /// ตรวจสอบ free shipping threshold
+  /// ถ้ามีองค์กร → ใช้ threshold ขององค์กร, ไม่มี → ใช้ platform default (หรือไม่มี)
+  Decimal? applyFreeShipping(Decimal orderAmount, {
+    OrganizationDeliverySettings? orgSettings,
+    required OrganizationDeliverySettings platformSettings,
+  }) {
+    final threshold = orgSettings?.freeShippingThreshold
+        ?? platformSettings.freeShippingThreshold;
+    if (threshold != null && orderAmount >= threshold) {
+      return Decimal.zero;
+    }
+    return null;
+  }
+}
+```
+
+### การชำระเงินค่าส่ง (Fee Settlement)
+
+| รูปแบบ | มีองค์กร | ไม่มีองค์กร (Platform Direct) | ผู้รับเงิน | การตั้งบัญชี |
+|---|---|---|---|---|
+| **A: In-House** | ✅ ใช้ได้ | ❌ ใช้ไม่ได้ | องค์กร | ไม่ต้อง split — รวมใน revenue ขององค์กร |
+| **B: Sheserved** | ✅ ใช้ได้ | ✅ ใช้ได้ | Sheserved Platform | หักค่าส่งจากยอดขายก่อน payout ให้องค์กร (commission model) หรือเก็บจากลูกค้าโดยตรงถ้าไม่มีองค์กร |
+| **C: Third-Party** | ✅ ใช้ได้ | ✅ ใช้ได้ | Carrier ภายนอก | องค์กรเป็นผู้จ่ายตรง / Sheserved เป็นตัวกลางจ่ายแล้วเก็บจากองค์กร (bill later) หรือเก็บจากลูกค้าโดยตรงถ้าไม่มีองค์กร |
+
+### UI — Organization Delivery Settings Page (สำหรับ Admin ขององค์กร)
+
+```dart
+class OrganizationDeliverySettingsPage extends StatelessWidget {
+  // ── Model A: In-House Delivery ────────────────────────
+  // ✅ แก้ไขได้ — องค์กรกำหนดเอง
+  //    - Toggle เปิด/ปิด
+  //    - Fee type: fixed / distance / free
+  //    - Custom fee amount (ถ้า fixed)
+  //    - Distance tiers (ถ้า distance)
+  //    - Zone polygon (ถ้า zone-based)
+  //
+  // ── Model B: Sheserved Platform Delivery ──────────────
+  // 🔒 อ่านอย่างเดียว — แก้ไขไม่ได้
+  //    - Toggle เปิด/ปิด ใช้งานได้ ✅
+  //    - Rate card แสดงเป็น read-only (Sheserved เป็นผู้กำหนด)
+  //    - แสดง fee estimate sample ตามระยะทาง
+  //
+  // ── Model C: Third-Party Providers ────────────────────
+  // ✅ Toggle เปิด/ปิดได้
+  //    - เลือก carrier ที่องค์กรต้องการใช้
+  //    - ใส่ API key ขององค์กรเอง (ถ้ามี contract ตรงกับ carrier)
+  //    - ถ้าไม่ใส่ API key → ใช้ Platform API key (fallback)
+  //    - Contract rate แสดงเป็น read-only ถ้าใช้ Platform key
+  //
+  // ── ลำดับความชอบ + Free Shipping Threshold ───────────
+  //    - Drag & drop reorder ทุก provider ที่เปิดไว้
+  //    - Free shipping threshold (ยอดซื้อถึงส่งฟรี)
+}
+```
+
+### UI — Platform Admin Delivery Settings Page (สำหรับ Admin ระบบ Sheserved)
+
+```dart
+class PlatformDeliverySettingsPage extends StatelessWidget {
+  // เข้าถึงได้เฉพาะ role_level = 1 (Sheserved Super Admin)
+  //
+  // ── Model B: Sheserved Platform Rate Card ─────────────
+  //    - Base fee (THB)
+  //    - Per km fee
+  //    - Per kg fee
+  //    - Rush hour multiplier
+  //    - Urgency multiplier
+  //    - Zone-based rates (polygon map)
+  //    - บันทึกเป็น `platform_delivery_rate_cards` (versioned)
+  //
+  // ── Model C: Third-Party Platform Defaults ────────────
+  //    - จัดการ Platform API key แต่ละ carrier (encrypted)
+  //    - Platform contract rate (default สำหรับทุกองค์กร)
+  //    - Toggle เปิด/ปิด carrier ระดับ Platform
+  //
+  // ── Organization Override View ────────────────────────
+  //    - ดูรายการองค์กรที่เปิดใช้แต่ละรูปแบบ
+  //    - ดู aggregated usage ต่อรูปแบบ (reporting)
+}
+```
+
+#### Schema — `platform_delivery_rate_cards` (ตั้งค่าระดับ Platform)
+
+```sql
+CREATE TABLE platform_delivery_rate_cards (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_type         TEXT NOT NULL
+                            CHECK (provider_type IN ('sheserved', 'third_party')),
+  carrier_code          TEXT,        -- NULL ถ้า sheserved, มีค่าถ้า third_party
+
+  -- Fee structure
+  base_fee              DECIMAL(12,2) NOT NULL DEFAULT 0,
+  per_km_fee            DECIMAL(12,2) DEFAULT 0,
+  per_kg_fee            DECIMAL(12,2) DEFAULT 0,
+  time_multiplier       DECIMAL(4,2) DEFAULT 1.00,
+  urgency_multiplier    DECIMAL(4,2) DEFAULT 1.00,
+
+  -- Zone-based (optional)
+  zone_json             JSONB DEFAULT NULL, -- { "zones": [{ "name": "กรุงเทพฯ", "polygon": [...], "fee": 30 }] }
+
+  -- Versioning
+  version               INTEGER NOT NULL DEFAULT 1,
+  is_active             BOOLEAN DEFAULT true,
+  effective_from        TIMESTAMPTZ DEFAULT now(),
+  effective_to          TIMESTAMPTZ,
+  created_by            UUID REFERENCES users(id),
+
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now()
+);
+
+-- อนุญาติให้มีได้แค่ 1 active version ต่อ provider_type+carrier_code
+CREATE UNIQUE INDEX idx_platform_rate_active
+  ON platform_delivery_rate_cards(provider_type, carrier_code)
+  WHERE is_active = true;
+```
+
+### UI — Customer Checkout
+
+```dart
+class DeliveryProviderSelectorWidget extends StatelessWidget {
+  // แสดงรายการ provider พร้อมค่าส่งประมาณการ + เวลาถึงประมาณการ
+  // ลูกค้าเลือก 1 รายการ
+  // ถ้ามี free shipping → แสดง badge "ส่งฟรี"
+}
+```
 
 ---
 

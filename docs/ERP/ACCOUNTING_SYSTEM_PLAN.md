@@ -130,9 +130,12 @@
 |------|--------|-----------|
 | **SQL Migration** | `supabase/migrations/20260609180000_create_accounting_core_schema.sql` | Schema หลัก: ตาราง 11 ตาราง + โครงสร้างผังบัญชี |
 | **SQL Migration** | `supabase/migrations/20260613170000_standard_chart_of_accounts_template.sql` | Master chart table (`standard_chart_of_accounts`) + RPC `seed_profession_chart_of_accounts` + RPC `reset_chart_of_account_to_standard` + RPC `get_chart_of_account_dependencies` + RPC `delete_chart_of_account` + `is_custom` flag + `standard_account_id` FK + auto-seed trigger |
+| **SQL Migration** | `supabase/migrations/20260613100000_add_gfmis_document_types.sql` | GFMIS lookup table (40 types) + journal_entries GFMIS fields + gl_entries link fields + updated `general_ledger` view + RPC `resolve_gfmis_document_type` + RPC `create_journal_entry_gfmis` |
 | **ER Diagram** | `docs/ERP/ACCOUNTING_ER_DIAGRAM.md` | Mermaid ER Diagram + รายละเอียดคอลัมน์ทุกตาราง |
 | **Outbox Spec** | `docs/ERP/ACCOUNTING_OUTBOX_SPEC.md` | ตัวอย่าง payload POS→Accounting, Procurement→Accounting, HR→Accounting |
 | **Flutter Model** | `lib/features/erp/data/models/chart_of_account.dart` | `ChartOfAccount` model — รองรับ `smallint`→`String` account_type mapping, `is_custom`, `standard_account_id` |
+| **Flutter Model** | `lib/features/erp/data/models/gfmis_document_type.dart` | `GfmisDocumentType` model — lookup 40 GFMIS document types |
+| **Flutter Model** | `lib/features/erp/data/models/gl_entry.dart` | `GlEntry` model — เพิ่ม `journalEntryId`, `documentType`, `sapTransactionCode`, `formNumber` |
 | **Flutter Repository** | `lib/features/erp/data/repositories/phase_three_repository.dart` | `PhaseThreeRepository` — CRUD + seed + reset + dependency check + delete + `getChartOfAccountsAccountTypeMode()` |
 | **Flutter Provider** | `lib/features/erp/presentation/providers/phase_three_provider.dart` | `PhaseThreeNotifier` — load/create/update/reset/checkDelete/delete COA + load GL/AR/AP/Employees/Shifts |
 | **Flutter UI** | `lib/features/erp/presentation/pages/chart_of_accounts_page.dart` | `ChartOfAccountsPage` — grouped sliver list, search, filter chips, custom visual, reset/delete dialogs |
@@ -155,6 +158,61 @@
 - **`tax_forms`** + **`tax_form_lines`** — ฟอร์มภาษีกรมสรรพากร
 
 `general_ledger` เป็น **View** ที่รวม `journal_entries` + `journal_entry_lines` + `chart_of_accounts` สำหรับบัญชีแยกประเภท
+
+### 2.5 GFMIS Document Types (New GFMIS Thai Integration)
+
+ระบบรองรับ **40 ประเภทเอกสาร** จากมาตรฐาน GFMIS ส่วนราชการ (New GFMIS Thai) ผ่านตาราง lookup `gfmis_document_types`:
+
+| หมวดหมู่ | รหัส | SAP T-Code | แบบฟอร์ม | รายละเอียด |
+|---|---|---|---|---|
+| **Bank Book** | ZBANK | ZBANK | บช.61 | สร้าง/เปลี่ยนแปลงข้อมูลธนาคาร |
+| **General Ledger** | JM | ZGL_JM | บช.01 | บันทึกรับปรุงบัญชีสัดส่วน |
+| **General Ledger** | JR | ZGL_JR | บช.01 | บันทึกรายการบัญชีเงินสด/เทียบเท่า |
+| **General Ledger** | JV | ZGL_JV | บช.01 | บันทึกรายการบัญชีทั่วไป |
+| **General Ledger** | N3 | ZGL_N3 | บช.01 | บันทึกหักล้างส่งเงินฝากเป็นรายได้ |
+| **General Ledger** | PP | Zf_02_PP | บช.01 | บันทึกจ่ายเงินฝากธนาคาร |
+| **General Ledger** | RE | ZRP_RE | บช.01 | บันทึกรับเงินฝากธนาคาร |
+| **Adjustment** | SW | ZFBS1 | บช.02 | บันทึกปรับปรุงค่ารับ/ค่าจ่าย |
+| **Internal Transfer** | N1 | ZGL_N1 | บช.04 | ลูกหนี้ตั้งสต็อกเงินระหว่างกำหนด |
+| **Internal Transfer** | RI-RN, RO, SQ | ZRP_RI..ZFV50_SQ | บช.04 | โอนภายในระหว่างหน่วยงาน |
+| **Special Funds** | N9, JU, G2, G5, G6, G3 | ZPA_FB50_N9..ZF_51_G3 | บช.53-63 | เงินเบิกเหล่าทหาร/TR2W/O |
+| **Revenue/Expense** | JA, JF, J6, J7 | ZDB_JA1..ZGL_J7 | บช.12-57 | รับ/จ่ายเงินยืม ปรับปรุงหมวดรายจ่าย |
+| **Revenue/Payable** | NK, N4-N8, NC | ZGL_NK_TKK..ZGL_NC | บช.50-66 | ผลักดันเงิน/บัญชีผิด |
+| **Stock/Inventory** | JX, JY, JXS, JXM | ZGL_JX, ZGL_JY | บช.05-11 | เอกสารนำเข้างานสต็อก |
+| **Organization** | JP, JO, JXO | ZGL_JP..ZGL_JX | บช.49-60 | ปรับปรุงประเภท/ขยายบัญชี |
+| **Year-end** | J9C1, J9C2 | ZJ9_C01, ZJ9_C02 | บช.67-68 | ปรับบัญชีจากปีเก่า |
+
+#### Schema Integration
+
+```sql
+-- journal_entries เพิ่มฟิลด์ GFMIS
+ALTER TABLE journal_entries
+  ADD COLUMN document_type VARCHAR(10) REFERENCES gfmis_document_types(code),
+  ADD COLUMN sap_transaction_code VARCHAR(20),
+  ADD COLUMN form_number VARCHAR(10),
+  ADD COLUMN gfmis_batch_id VARCHAR(50),
+  ADD COLUMN gfmis_posted BOOLEAN DEFAULT false;
+
+-- gl_entries เชื่อมโยงกับ journal_entries
+ALTER TABLE gl_entries
+  ADD COLUMN journal_entry_id UUID REFERENCES journal_entries(id),
+  ADD COLUMN journal_entry_line_id UUID REFERENCES journal_entry_lines(id),
+  ADD COLUMN document_type VARCHAR(10),
+  ADD COLUMN sap_transaction_code VARCHAR(20),
+  ADD COLUMN form_number VARCHAR(10);
+```
+
+#### RPC Functions
+
+- **`resolve_gfmis_document_type(sap_code)`** — แปลง SAP T-Code → GFMIS document type code
+- **`create_journal_entry_gfmis(...)`** — สร้าง journal entry พร้อม auto-resolve SAP code และ form number จาก document type
+
+#### Flutter Models
+
+| ไฟล์ | รายละเอียด |
+|---|---|
+| `lib/features/erp/data/models/gfmis_document_type.dart` | `GfmisDocumentType` — lookup model รองรับ 40 รหัส |
+| `lib/features/erp/data/models/gl_entry.dart` | เพิ่ม `journalEntryId`, `journalEntryLineId`, `documentType`, `sapTransactionCode`, `formNumber` |
 
 ### 3. Outbox Integration (ระบบเชื่อมโยง)
 
@@ -228,8 +286,111 @@ lib/features/erp/
 /erp/shifts                    → ShiftManagementPage
 ```
 
+### 2.6 GFMIS Reports — 88 รายการ (New GFMIS Thai)
+
+ระบบรองรับรายงานมาตรฐาน GFMIS ส่วนราชการทั้งหมด **88 รายการ** แบ่งเป็น 5 กลุ่ม:
+
+#### A. รายงานพื้นฐาน (15 รายการ — พร้อมใช้ทันที)
+
+| ลำดับ | รายงาน GFMIS | แหล่งข้อมูลในระบบ | สถานะ |
+|---|---|---|---|
+| 1 | ผังบัญชี (NGL_COA) | `chart_of_accounts` | ✅ Ready |
+| 2 | รายงานบัญชีเงินฝากกระทรวงการคลัง (NGL_LST001) | `treasury_deposits` | ⚠️ Phase 2 |
+| 3 | รายชื่อบัญชีเงินฝากธนาคารพาณิชย์ของส่วนราชการ (NGL_LST002) | `treasury_deposits` | ⚠️ Phase 2 |
+| 4 | รายชื่อบัญชีซื้อข้อมูลตามวัตถุประสงค์ (NGL_LST003) | `chart_of_accounts` + mapping | ⚠️ Phase 3 |
+| 5 | รายชื่อบัญชีเงินฝากกระทรวงการคลังแยกตามรหัสหน่วยงาน (NGL_LST004) | `treasury_deposits` | ⚠️ Phase 2 |
+| 6 | รายชื่อกองทุนหมุนเวียน (NGL_LST005) | `special_funds` | ⚠️ Phase 3 |
+| 7 | รายงานแสดงบรรทัดรายการบัญชีแยกประเภททั่วไป-ระดับหน่วยเบิกจ่าย (NGL_Display) | `journal_entries` + `journal_entry_lines` | ✅ Ready |
+| 8 | แสดงเอกสาร (NFI_DISPLAY) | `journal_entries` | ✅ Ready |
+| 9 | แสดงบัญชี (NFI_DISPLAY_L) | `general_ledger` view | ✅ Ready |
+| 10 | แสดงเอกสารทางบัญชี(เอกสารพัก) (NFI_DISPLAY_P) | `journal_entries` (status='draft') | ✅ Ready |
+| 11 | บัญชีแยกประเภททั่วไปยอดคงเหลือ (NFI_FS10N) | `general_ledger` view | ✅ Ready |
+| 12 | รายงานแสดงเอกสารจาก Automatic Post. (NFI_RPT004) | `journal_entries` (source='auto') | ✅ Ready |
+| 13 | รายงานแสดงรหัสระหว่างหน่วยงาน (NFI_RPT005) | `journal_entries` (inter-unit) | ⚠️ Phase 2 |
+| 14 | รายงานแสดงเอกสารพักก่อนผ่านรายการบัญชี (NFI_RPT006) | `journal_entries` (status='draft') | ✅ Ready |
+| 15 | ZFI_GET_DATA (NFI_GET_DATA) | Export RPC | ⚠️ Phase 3 |
+
+#### B. เงินยืม/สภาพคล่อง/บัญชีแผน (21 รายการ)
+
+| ลำดับ | รายงาน | ตารางที่ต้องสร้าง | Phase |
+|---|---|---|---|
+| 16 | บัญชีแผนการเบิกจ่ายงบประมาณเหลือ (NGLF_08) | `liquidity_plans` | 2 |
+| 17 | รายงานบัญชีแผนประเภทบุรณาการระบบ (NFI_DOC_ALL) | `liquidity_plans` | 2 |
+| 18-20 | รายงานเคลื่อนไหวเงินยืม (Y_DEV, ZGL_MVT_MONTH) | `cash_advances` | 2 |
+| 21 | สมุดของระบบงานเบิกจ่าย (NGL_TB_PMT_Load) | `cash_advances` | 2 |
+| 22-23 | รายงานเอกสารยอดเงินฝากคลัง (NFI_LG_AMOUNT) | `treasury_deposits` | 2 |
+| 24 | รายงานเคลื่อนไหวเงินฝากคลัง (NFI_LG_TB) | `treasury_deposits` | 2 |
+| 25-26 | รายงานสถานะเงินหลังประมาณ (NFI_LG_WTH_2GR/3GR) | `budget_status` | 3 |
+| 27-29 | รายงานเสียดอกต่ำกว่าอัตราดอกเบี้ย/สูงกว่า (NGL_RPT501-503) | `deposit_interest_analysis` | 3 |
+| 30-32 | รายงานแผนจัดสรรเงินหมุนเวียน (ZFI_RPT0029-31) | `liquidity_plans` | 2 |
+| 33-36 | รายงานการเคลื่อนไหวเงินฝากคลัง (ZGL_RPT012-018) | `treasury_deposits` | 2 |
+
+#### C. เงินฝากคลัง/ภาษี/เงินสด (24 รายการ)
+
+| ลำดับ | รายงาน | ตารางที่ต้องสร้าง | Phase |
+|---|---|---|---|
+| 37-44 | รายงานเงินฝากคลังตามประเภท/ธนาคาร (ZGL_RPT072, ZGL_05_01, ZGL_05..ZGL_11) | `treasury_deposits` | 2 |
+| 45-48 | รายงานเงินฝากคลังและการรับ-จ่าย/เคลื่อนไหว (ZGL_06..ZGL_14_LG) | `treasury_deposits` + `treasury_transactions` | 2 |
+| 49 | รายงานภาษีมูลค่าเพิ่ม (NGL_RPT015) | `vat_records` | ✅ Ready |
+| 50 | รายงานเงินคงเหลือของบัญชีเงินฝากคลัง (ZGL_14_LG) | `treasury_deposits` | 2 |
+| 51-52 | รายงานการรับ/จ่ายเงินสด (ZGL_R03_108, ZGL_R03_111) | `cash_book` | 2 |
+| 53 | รายงานแสดงสรุปความเคลื่อนไหวของสำหรับส่วนราชการ (ZGL_R01) | `treasury_deposits` | 2 |
+| 54-60 | รายงานแสดงรายการคำนวณภาษี/ยอดคงเหลือ (ZGL_R04..ZGL_R10) | `tax_calculations` | 3 |
+
+#### D. รายงานทั่วไป/Gen File/สรุป (22 รายการ)
+
+| ลำดับ | รายงาน | ตาราง/View | Phase |
+|---|---|---|---|
+| 61-68 | Gen File ต่าง ๆ (ZGL_R11..ZGL_R18) | `gfmis_document_types` + `journal_entries` | 2 |
+| 69 | รายงานความเคลื่อนไหวของบัญชีตามบุคคล (NGL_RPT91) | `journal_entries` + `users` | 2 |
+| 70 | รายงานสรุปรายรับ/จ่าย (NGL_RPT001) | `general_ledger` view | ✅ Ready |
+| 71 | รายงานบัญชีลูกหนี้ (NGL_RPT003) | `accounts_receivable` | ✅ Ready |
+| 72-74 | สมุดเงินสด/รับ/จ่าย (NGL_RPT007-011) | `cash_book` | 2 |
+| 75 | รายงานยุทธิปีงบประมาณ (NFI_RPT0040) | `budget_plans` | 3 |
+| 76 | รายงานแสดงรายละเอียดยอดคงเหลือแยกตามงบประมาณ (NGL_R02) | `budget_status` | 3 |
+| 77 | รายงานสรุปเงินหมุนเวียนประจำวัน (NFI_CASHBAL_CCTR) | `liquidity_plans` | 2 |
+| 78-80 | รายงานแสดงรายได้/ค่าใช้จ่าย (ZRP_R04, ZTMRS0913, ZGL_MVT_MONTH_EX2) | `general_ledger` view | ✅ Ready |
+| 81-82 | งบเผยแพร่ความรู้และระบบราชการ (Z_ALR, ZGL_RPTB01) | `kpi_reports` | 3 |
+
+#### E. Master Data/Consolidation (6 รายการ)
+
+| ลำดับ | รายงาน | ตารางที่ต้องสร้าง | Phase |
+|---|---|---|---|
+| 83 | งบแสดงการเปลี่ยนแปลงสินทรัพย์ส่วนราชการ (NGL_RPTB02) | `asset_register` | 3 |
+| 84-85 | รายงานข้อมูลจัดทำตามการเงินรวม (NGL_FILE_DATA) | `consolidation_data` | 3 |
+| 86 | ตาราง Mapping GL กับ ITEM (NGL_MAP_GL_VS_ITEM) | `gfmis_item_mappings` | 3 |
+| 87 | ตาราง Maintain ITEM กับ BP Code (NGL_MAINTAIN_ITEM) | `gfmis_item_mappings` | 3 |
+| 88 | รายงานแสดงข้อมูลเชื่อมโยงทางการเงินรวมสำหรับกระทรวง (NGL_CONSO_MINISTRY) | `consolidation_rules` | 3 |
+
+### 2.7 Implementation Roadmap for GFMIS Reports
+
+```
+Phase 1 (Ready Now) — 15 รายงาน
+├── ผังบัญชี, บัญชีแยกประเภท, แสดงเอกสาร/บัญชี
+├── ยอดคงเหลือ, เอกสารพัก, VAT
+└── ใช้ข้อมูลจาก: chart_of_accounts, journal_entries, journal_entry_lines, vat_records, general_ledger view
+
+Phase 2 (ต้องสร้าง Module) — 52 รายงาน
+├── เงินยืม/สภาพคล่อง: cash_advances, liquidity_plans
+├── เงินฝากคลัง: treasury_deposits, treasury_transactions
+├── เงินสด: cash_book
+├── Gen File/สรุป: ต้องเพิ่มฟิลด์ใน journal_entries
+└── ลูกหนี้: ใช้ accounts_receivable ที่มีอยู่ + aging logic
+
+Phase 3 (Advanced/Consolidation) — 21 รายงาน
+├── งบประมาณ/ยุทธิปี: budget_plans, budget_status
+├── ภาษีขั้นสูง: tax_calculations
+├── ทรัพย์สิน: asset_register
+├── Master/Consolidation: gfmis_item_mappings, consolidation_rules, consolidation_data
+└── งบเผยแพร่: kpi_reports
+```
+
 ### 5. Phase ต่อไป (Future Work)
 
+- **Phase 2A — Treasury Module:** สร้างตาราง `treasury_deposits`, `cash_advances`, `liquidity_plans`, `cash_book` + RPC สำหรับรายงานกลุ่ม B+C (45 รายการ)
+- **Phase 2B — GFMIS Gen File Reports:** สร้าง RPC/View สำหรับรายงาน Gen File (ZGL_R11-R18) และสรุปรายวัน (7 รายการ)
+- **Phase 3A — Budget & Asset Module:** สร้าง `budget_plans`, `budget_status`, `asset_register` สำหรับรายงานงบประมาณ/ยุทธิปี/ทรัพย์สิน (11 รายการ)
+- **Phase 3B — Consolidation Module:** สร้าง `gfmis_item_mappings`, `consolidation_rules`, `consolidation_data` สำหรับ Master/Consolidation ระดับกระทรวง (6 รายการ)
 - **AR/AP UI Polish:** เพิ่มฟีเจอร์ payment matching, aging report, statement export
 - **AR/AP Accounting Flow (Deferred):** สร้าง AR จาก order ที่ยังไม่ชำระเต็ม และสร้าง AP จาก procurement/PO/received invoice ที่ยังไม่จ่าย โดยให้ Flutter เป็น client layer และให้ server-side/RPC เป็นผู้ตัดสินใจทางบัญชีหลัก
 - **AR/AP Data Source Integration (Deferred):** ผูก flow เข้ากับ `orders`, `unified_payments`, `purchase_orders`, `goods_receipts`, และ supplier invoice เมื่อพร้อมทำงานต่อ

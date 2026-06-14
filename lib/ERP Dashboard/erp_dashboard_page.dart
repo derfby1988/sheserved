@@ -496,13 +496,14 @@ class _DashboardModuleBoard extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 14),
             child: _GroupSection(
               title: entry.group.title,
-              color: entry.group.color,
+              tintColor: entry.group.tintColor,
+              titleAccentColor: entry.group.titleColor,
               count: entry.modules.length,
               child: Wrap(
                 spacing: spacing,
                 runSpacing: spacing,
                 children: entry.modules.map((module) {
-                  final spec = _buildSpec(module, entry.group.color);
+                  final spec = _buildSpec(module, entry.group.tintColor);
                   final span = spec.span.clamp(1, columns);
                   final itemWidth = span == columns ? innerWidth : (tileWidth * span) + (spacing * (span - 1));
                   final itemHeight = tileWidth * spec.heightFactor;
@@ -552,7 +553,7 @@ class _DashboardModuleBoard extends StatelessWidget {
     return sections;
   }
 
-  _DashboardModuleSpec _buildSpec(DashboardModuleDefinition module, Color tintColor) {
+  _DashboardModuleSpec _buildSpec(DashboardModuleDefinition module, Color? tintColor) {
     return _DashboardModuleSpec(
       label: module.label,
       thaiLabel: module.thaiLabel,
@@ -583,58 +584,70 @@ class _DashboardGroupSection {
 
 class _GroupSection extends StatelessWidget {
   final String title;
-  final Color color;
+  final Color? tintColor;
+  final Color? titleAccentColor;
   final int count;
   final Widget child;
 
   const _GroupSection({
     required this.title,
-    required this.color,
+    required this.tintColor,
+    this.titleAccentColor,
     required this.count,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveTitleColor = titleAccentColor ?? const Color(0xFF94A3B8);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: effectiveTitleColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: effectiveTitleColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: effectiveTitleColor),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    );
+
+    if (titleAccentColor == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: content,
+      );
+    }
+
     return GlassCard(
       section: GlassSection.card,
-      tintColor: color,
+      tintColor: tintColor,
       borderRadius: 22,
       padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$count',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
+      child: content,
     );
   }
 }
@@ -647,7 +660,7 @@ class _DashboardModuleSpec {
   final int span;
   final double heightFactor;
   final _ModuleTileVariant variant;
-  final Color tintColor;
+  final Color? tintColor;
 
   const _DashboardModuleSpec({
     required this.label,
@@ -677,8 +690,8 @@ class _ModuleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = theme?.isDarkMode ?? false;
-    final baseTint = isDark ? (theme?.accentColor ?? const Color(0xFFCCFF00)) : spec.tintColor;
-    final iconTint = isDark ? baseTint : Color.lerp(spec.tintColor, Colors.black, 0.18)!;
+    final baseTint = isDark ? (theme?.accentColor ?? const Color(0xFFCCFF00)) : (spec.tintColor ?? const Color(0xFF94A3B8));
+    final iconTint = isDark ? baseTint : Color.lerp(baseTint, Colors.black, 0.18)!;
     final textColor = isDark ? Colors.white : const Color(0xFF1D2733);
     final radius = switch (spec.variant) {
       _ModuleTileVariant.square => 30.0,
@@ -707,23 +720,24 @@ class _ModuleTile extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                Positioned(
-                  right: isCapsule ? -22 : -18,
-                  top: isCapsule ? -18 : -12,
-                  child: Container(
-                    width: isCapsule ? 72 : 58,
-                    height: isCapsule ? 72 : 58,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          spec.tintColor.withOpacity(isDark ? 0.10 : 0.20),
-                          Colors.transparent,
-                        ],
+                if (spec.tintColor != null)
+                  Positioned(
+                    right: isCapsule ? -22 : -18,
+                    top: isCapsule ? -18 : -12,
+                    child: Container(
+                      width: isCapsule ? 72 : 58,
+                      height: isCapsule ? 72 : 58,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            spec.tintColor!.withOpacity(isDark ? 0.10 : 0.20),
+                            Colors.transparent,
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
                 if (isCapsule)
                   Row(
                     children: [

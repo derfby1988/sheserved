@@ -43,8 +43,13 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
     await _saveLayout(next);
   }
 
-  Future<void> _setGroupColor(String groupId, String colorHex) async {
-    final next = _layout.updateGroupColor(groupId, colorHex);
+  Future<void> _setGroupColor(String groupId, String? colorHex) async {
+    final next = _layout.updateGroupColor(groupId, colorHex ?? DashboardModuleGroupConfig.noColorHex);
+    await _saveLayout(next);
+  }
+
+  Future<void> _setGroupTitleColor(String groupId, String? colorHex) async {
+    final next = _layout.updateGroupTitleColor(groupId, colorHex ?? DashboardModuleGroupConfig.noColorHex);
     await _saveLayout(next);
   }
 
@@ -258,7 +263,9 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
   }
 
   Widget _buildGroupCard(DashboardModuleGroupConfig group, BuildContext context) {
-    final color = group.color;
+    final tintColor = group.tintColor;
+    final titleColor = group.titleColor;
+    final cardColor = tintColor ?? const Color(0xFFE7ECF2);
     final modules = group.moduleIds.map((id) => dashboardModuleById(id)).whereType<DashboardModuleDefinition>().toList();
 
     return Padding(
@@ -268,12 +275,18 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
         onAcceptWithDetails: (details) => _moveModule(details.data, group.id),
         builder: (context, candidate, rejected) {
           final highlighted = candidate.isNotEmpty;
+          final tintFill = tintColor != null
+              ? cardColor.withValues(alpha: highlighted ? 0.22 : 0.14)
+              : Colors.white.withValues(alpha: highlighted ? 0.68 : 0.48);
+          final border = tintColor != null
+              ? cardColor.withValues(alpha: highlighted ? 0.75 : 0.42)
+              : Colors.grey.withValues(alpha: highlighted ? 0.40 : 0.25);
           return AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: highlighted ? 0.22 : 0.14),
+              color: tintFill,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: color.withValues(alpha: highlighted ? 0.75 : 0.42), width: 1.2),
+              border: Border.all(color: border, width: 1.2),
             ),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -285,7 +298,7 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
                       Container(
                         width: 12,
                         height: 12,
-                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                        decoration: BoxDecoration(color: titleColor, shape: BoxShape.circle),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -296,11 +309,11 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
                       ),
                       Text(
                         '${modules.length} รายการ',
-                        style: TextStyle(fontSize: 12, color: color),
+                        style: TextStyle(fontSize: 12, color: titleColor),
                       ),
                       const SizedBox(width: 8),
                       PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: color),
+                        icon: Icon(Icons.more_vert, color: titleColor),
                         onSelected: (value) {
                           switch (value) {
                             case 'rename':
@@ -323,29 +336,74 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
                     ],
                   ),
                   const SizedBox(height: 10),
+                  Text('สีพื้นหลังการ์ด', style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _palette.map((paletteColor) {
-                      final hex = _hexFromColor(paletteColor);
-                      final isSelected = _sameColor(group.color, paletteColor);
-                      return GestureDetector(
-                        onTap: () => _setGroupColor(group.id, hex),
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: paletteColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected ? const Color(0xFF1D2733) : Colors.white.withValues(alpha: 0.5),
-                              width: isSelected ? 2.5 : 1,
+                    children: [
+                      FilterChip(
+                        selected: tintColor == null,
+                        onSelected: (_) => _setGroupColor(group.id, DashboardModuleGroupConfig.noColorHex),
+                        label: const Text('ไม่มีสีพื้นหลังการ์ด'),
+                        avatar: const Icon(Icons.do_not_disturb_alt, size: 16),
+                      ),
+                      ..._palette.map((paletteColor) {
+                        final hex = _hexFromColor(paletteColor);
+                        final isSelected = tintColor != null && _sameColor(tintColor, paletteColor);
+                        return GestureDetector(
+                          onTap: () => _setGroupColor(group.id, hex),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: paletteColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF1D2733) : Colors.white.withValues(alpha: 0.5),
+                                width: isSelected ? 2.5 : 1,
+                              ),
                             ),
+                            child: isSelected ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
                           ),
-                          child: isSelected ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
-                        ),
-                      );
-                    }).toList(),
+                        );
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('สีชื่อกลุ่ม', style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilterChip(
+                        selected: group.titleColorHex.isEmpty,
+                        onSelected: (_) => _setGroupTitleColor(group.id, DashboardModuleGroupConfig.noColorHex),
+                        label: const Text('ไม่มีสีชื่อกลุ่ม'),
+                        avatar: const Icon(Icons.do_not_disturb_alt, size: 16),
+                      ),
+                      ..._palette.map((paletteColor) {
+                        final hex = _hexFromColor(paletteColor);
+                        final isSelected = group.titleColorHex.isNotEmpty && titleColor != null && _sameColor(titleColor, paletteColor);
+                        return GestureDetector(
+                          onTap: () => _setGroupTitleColor(group.id, hex),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: paletteColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF1D2733) : Colors.white.withValues(alpha: 0.5),
+                                width: isSelected ? 2.5 : 1,
+                              ),
+                            ),
+                            child: isSelected ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+                          ),
+                        );
+                      }),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   if (modules.isEmpty)
@@ -354,7 +412,7 @@ class _ModuleLayoutSettingsPageState extends ConsumerState<ModuleLayoutSettingsP
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: modules.map((module) => _buildDraggableModuleChip(module, color)).toList(),
+                      children: modules.map((module) => _buildDraggableModuleChip(module, titleColor ?? const Color(0xFF94A3B8))).toList(),
                     ),
                 ],
               ),
