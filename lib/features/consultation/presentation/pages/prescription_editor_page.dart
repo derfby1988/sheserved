@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -9,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
 import '../../../../features/pharmacy/data/services/drug_risk_screening_service.dart';
 import '../../../../features/pharmacy/presentation/widgets/prescription_risk_dialog.dart';
+import '../../../../features/pharmacy/data/models/medication_models.dart';
 import '../../data/repositories/prescription_workflow_repository.dart';
 
 class PrescriptionSection {
@@ -24,6 +26,12 @@ class MedicationItem {
   String frequency;
   String duration;
   String notes;
+  final TextEditingController nameController;
+  final TextEditingController doseController;
+  final TextEditingController frequencyController;
+  final TextEditingController durationController;
+  final TextEditingController notesController;
+  final FocusNode focusNode;
 
   MedicationItem({
     this.name = '',
@@ -31,7 +39,238 @@ class MedicationItem {
     this.frequency = '',
     this.duration = '',
     this.notes = '',
-  });
+  })  : nameController = TextEditingController(text: name),
+        doseController = TextEditingController(text: dose),
+        frequencyController = TextEditingController(text: frequency),
+        durationController = TextEditingController(text: duration),
+        notesController = TextEditingController(text: notes),
+        focusNode = FocusNode();
+
+  void dispose() {
+    nameController.dispose();
+    doseController.dispose();
+    frequencyController.dispose();
+    durationController.dispose();
+    notesController.dispose();
+    focusNode.dispose();
+  }
+}
+
+class _MedicationCardWidget extends StatefulWidget {
+  final MedicationItem item;
+  final bool showDelete;
+  final VoidCallback onDelete;
+
+  const _MedicationCardWidget({
+    required this.item,
+    required this.showDelete,
+    required this.onDelete,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<_MedicationCardWidget> createState() => _MedicationCardWidgetState();
+}
+
+class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
+  List<MedicationModel> _results = [];
+  bool _loading = false;
+  Timer? _timer;
+  int _token = 0;
+  bool _ignoreNextChange = false;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _search(String query) async {
+    if (query.trim().length < 2) {
+      if (mounted) setState(() { _results = []; _loading = false; });
+      return;
+    }
+    final myToken = ++_token;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final results = await ServiceLocator.instance.pharmacyRepository.getMedications(
+        searchQuery: query.trim(),
+        page: 1,
+        pageSize: 10,
+      );
+      if (mounted && _token == myToken) {
+        setState(() { _results = results; _loading = false; });
+      }
+    } catch (e) {
+      debugPrint('[MedicationCard] search error: $e');
+      if (mounted && _token == myToken) setState(() => _loading = false);
+    }
+  }
+
+  void _select(MedicationModel model) {
+    _timer?.cancel();
+    _token++;
+    _ignoreNextChange = true;
+    final item = widget.item;
+    item.name = model.tradeName;
+    item.dose = model.strength ?? '';
+    FocusScope.of(context).unfocus();
+    item.nameController.text = model.tradeName;
+    item.doseController.text = model.strength ?? '';
+    debugPrint('[MedicationCard] selected: name="${model.tradeName}" strength="${model.strength}"');
+    if (mounted) {
+      setState(() {
+        _results = [];
+        _loading = false;
+      });
+    }
+    Future.microtask(() => _ignoreNextChange = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: item.nameController,
+                      focusNode: item.focusNode,
+                      decoration: InputDecoration(
+                        labelText: 'ชื่อยา (Name)',
+                        border: InputBorder.none,
+                        suffixIcon: _loading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
+                      ),
+                      onChanged: (val) {
+                        item.name = val;
+                        if (_ignoreNextChange) return;
+                        _timer?.cancel();
+                        _timer = Timer(
+                          const Duration(milliseconds: 400),
+                          () => _search(val),
+                        );
+                      },
+                    ),
+                    if (_results.isNotEmpty)
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        margin: const EdgeInsets.only(top: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                            itemCount: _results.length,
+                            itemBuilder: (ctx, i) {
+                              final m = _results[i];
+                              final display = (m.genericName != null && m.genericName!.isNotEmpty)
+                                  ? '${m.tradeName} (${m.genericName})'
+                                  : m.tradeName;
+                              return InkWell(
+                                onTap: () => _select(m),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(display, style: const TextStyle(fontSize: 13)),
+                                      if (m.strength != null && m.strength!.isNotEmpty)
+                                        Text(m.strength!, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (widget.showDelete)
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: widget.onDelete,
+                ),
+            ],
+          ),
+          const Divider(),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: item.doseController,
+                  decoration: const InputDecoration(
+                    labelText: 'ขนาด (Dose)',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) => item.dose = val,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: item.frequencyController,
+                  decoration: const InputDecoration(
+                    labelText: 'ความถี่ (Freq)',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) => item.frequency = val,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: item.durationController,
+                  decoration: const InputDecoration(
+                    labelText: 'ระยะเวลา',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) => item.duration = val,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class PrescriptionEditorPage extends StatefulWidget {
@@ -78,6 +317,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
   ]; // Start with 1 empty field
   final TextEditingController _notesController = TextEditingController();
 
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +329,9 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
   void dispose() {
     _templateNameController.dispose();
     _notesController.dispose();
+    for (final med in _medications) {
+      med.dispose();
+    }
     super.dispose();
   }
 
@@ -255,6 +498,9 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
                                 setState(() {
                                   _selectedTemplateId = template['id']?.toString();
                                   _selectedTemplateName = template['template_name']?.toString();
+                                  for (final old in _medications) {
+                                    old.dispose();
+                                  }
                                   _medications
                                     ..clear()
                                     ..addAll(
@@ -357,6 +603,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
 
   void _removeMedication(int index) {
     setState(() {
+      _medications[index].dispose();
       _medications.removeAt(index);
     });
   }
@@ -457,74 +704,11 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         ..._medications.asMap().entries.map((entry) {
           final index = entry.key;
           final med = entry.value;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: med.name,
-                        decoration: const InputDecoration(
-                          labelText: 'ชื่อยา (Name)',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (val) => med.name = val,
-                      ),
-                    ),
-                    if (_medications.length > 1)
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _removeMedication(index),
-                      ),
-                  ],
-                ),
-                const Divider(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: med.dose,
-                        decoration: const InputDecoration(
-                          labelText: 'ขนาด (Dose)',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (val) => med.dose = val,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: med.frequency,
-                        decoration: const InputDecoration(
-                          labelText: 'ความถี่ (Freq)',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (val) => med.frequency = val,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: med.duration,
-                        decoration: const InputDecoration(
-                          labelText: 'ระยะเวลา',
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (val) => med.duration = val,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          return _MedicationCardWidget(
+            key: ValueKey(med),
+            item: med,
+            showDelete: _medications.length > 1,
+            onDelete: () => _removeMedication(index),
           );
         }).toList(),
         if (!_isEditMode)

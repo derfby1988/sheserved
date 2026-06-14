@@ -534,6 +534,27 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
   → [ส่งข้อมูลไปยังห้องยา / HIS]
 ```
 
+#### การค้นหายาจากตารางจริง (Medication Autocomplete — Implemented 2026-06-14)
+
+`PrescriptionEditorPage` รองรับการค้นหายาจากตาราง `medications` แบบ Real-time autocomplete:
+
+**Architecture ที่ถูกต้อง:**
+- แยก `_MedicationCardWidget` เป็น `StatefulWidget` อิสระต่อ card — search state (`_results`, `_loading`, `_timer`, `_token`) อยู่ใน local state ของแต่ละ card ไม่ใช่ parent `_PrescriptionEditorPageState`
+- ใช้ `TextEditingController` สำหรับทุกฟิลด์ (`name`, `dose`, `frequency`, `duration`, `notes`) แทน `initialValue` เพื่อให้ UI อัปเดตแบบ dynamic
+- Debounce search 400ms + request token (`_token`) เพื่อป้องกัน stale async results
+- `_ignoreNextChange` flag ป้องกัน `onChanged` trigger ซ้ำเมื่อ set `controller.text` programmatically
+
+**ข้อมูลที่ populate อัตโนมัติจากตาราง `medications`:**
+| ฟิลด์ใน UI | แหล่งที่มาในฐานข้อมูล |
+|---|---|
+| ชื่อยา (Name) | `medications.trade_name` |
+| ขนาด (Dose) | `medications.strength` |
+
+**ข้อควรระวัง — Data Quality:**
+> หาก `medications.strength` เป็น `null` → ช่อง Dose จะว่างเปล่าหลังเลือกยา ซึ่งเป็น **data issue** ไม่ใช่ code bug ต้องอัปเดตข้อมูลในฐานข้อมูลให้ครบถ้วนก่อนใช้งานจริง
+>
+> **แนะนำ:** ควรมี data validation หรือ seed script ที่เติม `strength` ให้ครบทุกรายการยาใน `medications` ก่อนเปิดใช้ autocomplete ใน production
+
 ### Prescription-to-HIS Integration Flow (ใหม่)
 
 ```
