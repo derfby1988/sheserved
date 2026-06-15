@@ -1515,8 +1515,41 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Sync completion state from DB so the finish/revert buttons and read-only overlay stay correct
       await _loadCompletionStatus();
 
+      // ดึงข้อมูล package เพื่อคำนวณจำนวน expert ที่ถูกต้อง
+      int totalExperts = result['total_count'] as int? ?? 1;
+      final packageId = widget.entry?.packageId ?? widget.request?.packageId;
+      bool usedPackageFallback = false;
+
+      if (packageId != null && packageId.isNotEmpty && totalExperts == 0) {
+        try {
+          final packageResponse = await Supabase.instance.client
+              .from('consultation_packages')
+              .select('expert_groups')
+              .eq('id', packageId)
+              .single();
+          final groups = packageResponse['expert_groups'] as List? ?? [];
+          int packageTotal = 0;
+          for (final group in groups) {
+            if (group is Map) {
+              final max = group['max_experts'] ?? group['maxExperts'] ?? -1;
+              if (max is int && max > 0) {
+                packageTotal += max;
+              } else if (max == -1) {
+                packageTotal += 1;
+              }
+            }
+          }
+          if (packageTotal > 0) {
+            totalExperts = packageTotal;
+            usedPackageFallback = true;
+          }
+        } catch (e) {
+          debugPrint('ChartBoard: Failed to fetch package expert count: $e');
+        }
+      }
+
       if (mounted) {
-        debugPrint('[ChartBoard] _finishJobMultiExpert: setting _hasFinished=true, allFinished=$allFinished');
+        debugPrint('[ChartBoard] _finishJobMultiExpert: totalExperts=$totalExperts, usedPackageFallback=$usedPackageFallback, RPC finished_count=${result['finished_count']}');
         setState(() => _hasFinished = true);
 
         if (allFinished) {
@@ -1531,14 +1564,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           await Future.delayed(const Duration(seconds: 3));
           if (mounted) Navigator.pop(context);
         } else {
-          final finishedCount = result['finished_count'] as int? ?? 0;
-          final totalCount = result['total_count'] as int? ?? 1;
-          final remainingCount = result['remaining_count'] as int? ?? 0;
+          // ถ้าใช้ข้อมูลจาก package (consultation_room_experts ว่าง) ให้นับเราเป็น 1 คนที่จบงานแล้ว
+          // ถ้าใช้ข้อมูลจาก RPC ให้ใช้ค่าจาก RPC
+          final finishedCount = usedPackageFallback ? 1 : (result['finished_count'] as int? ?? 1);
+          final remainingCount = totalExperts - finishedCount;
+          debugPrint('[ChartBoard] _finishJobMultiExpert: finishedCount=$finishedCount, remainingCount=$remainingCount');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 'คุณจบงานแล้ว รอผู้เชี่ยวชาญอีก $remainingCount คน '
-                '($finishedCount / $totalCount)',
+                '($finishedCount / $totalExperts)',
               ),
               backgroundColor: AppColors.info,
               behavior: SnackBarBehavior.floating,

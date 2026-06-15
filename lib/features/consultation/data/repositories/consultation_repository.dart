@@ -828,4 +828,76 @@ class ConsultationRepository {
       return {};
     }
   }
+
+  /// ดึงจำนวน expert ทั้งหมดและจบงานแล้ว สำหรับหลาย consultation พร้อมกัน
+  Future<Map<String, Map<String, int>>> getExpertCompletionCounts(
+    List<String> consultationIds,
+    Map<String, String> consultationToPackageIds,
+  ) async {
+    if (consultationIds.isEmpty) return {};
+    try {
+      // 1. ดึงข้อมูลจาก consultation_room_experts
+      final response = await _client
+          .from('consultation_room_experts')
+          .select('consultation_id, finished_at, provider_id')
+          .inFilter('consultation_id', consultationIds);
+      final list = (response as List).cast<Map<String, dynamic>>();
+      debugPrint('getExpertCompletionCounts raw: $list');
+      final Map<String, Map<String, int>> result = {};
+      for (final row in list) {
+        final cid = row['consultation_id'].toString();
+        result.putIfAbsent(cid, () => {'total': 0, 'finished': 0});
+        result[cid]!['total'] = result[cid]!['total']! + 1;
+        if (row['finished_at'] != null) {
+          result[cid]!['finished'] = result[cid]!['finished']! + 1;
+        }
+      }
+
+      // 2. ถ้า consultation_room_experts ว่าง ให้ดึงจำนวน expert จาก package
+      final packageIds = consultationToPackageIds.values.where((p) => p.isNotEmpty).toSet().toList();
+      if (packageIds.isNotEmpty) {
+        final packageResponse = await _client
+            .from('consultation_packages')
+            .select('id, expert_groups')
+            .inFilter('id', packageIds);
+        final packages = (packageResponse as List).cast<Map<String, dynamic>>();
+        final Map<String, int> packageExpertCounts = {};
+        for (final pkg in packages) {
+          final pid = pkg['id'] as String? ?? '';
+          final groups = pkg['expert_groups'] as List? ?? [];
+          int totalExperts = 0;
+          for (final group in groups) {
+            if (group is Map) {
+              final max = group['max_experts'] ?? group['maxExperts'] ?? -1;
+              if (max is int && max > 0) {
+                totalExperts += max;
+              } else if (max == -1) {
+                totalExperts += 1; // Default to 1 if unlimited
+              }
+            }
+          }
+          packageExpertCounts[pid] = totalExperts;
+        }
+        debugPrint('getExpertCompletionCounts packageExpertCounts: $packageExpertCounts');
+
+        // 3. ใช้จำนวนจาก package ถ้า consultation_room_experts ไม่มีข้อมูล
+        for (final entry in consultationToPackageIds.entries) {
+          final cid = entry.key;
+          final pid = entry.value;
+          if (pid.isNotEmpty && !result.containsKey(cid)) {
+            final totalFromPackage = packageExpertCounts[pid] ?? 0;
+            if (totalFromPackage > 0) {
+              result[cid] = {'total': totalFromPackage, 'finished': 0};
+            }
+          }
+        }
+      }
+
+      debugPrint('getExpertCompletionCounts result: $result');
+      return result;
+    } catch (e) {
+      debugPrint('getExpertCompletionCounts error: $e');
+      return {};
+    }
+  }
 }

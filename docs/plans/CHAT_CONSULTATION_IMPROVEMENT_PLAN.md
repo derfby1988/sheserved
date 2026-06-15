@@ -452,14 +452,15 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 > |---|---|---|---|
 > | 1 | Initial room data loading | เริ่ม timer เมื่อ `started_at != null` | ลบ `_startTimer()` ออก ให้เหลือแค่ set `_remainingSeconds` |
 > | 2 | Room subscription stream | เริ่ม timer เมื่อ `started_at` เปลี่ยน | ลบ `_startTimer()` ออก ให้เหลือแค่ set `_remainingSeconds` |
-> | 3 | Expert status stream | ใช้ `data` (raw DB) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
+> | 3 | Expert status stream | ใช้ `data` (raw DB) แทน `_expertStatuses` (merged) | เปลี่่นไปใช้ `_expertStatuses` หลัง merge |
 > | 4 | `_fetchExpertStatuses()` | ใช้ `mapped` (raw) แทน `_expertStatuses` (merged) | เปลี่ยนไปใช้ `_expertStatuses` หลัง merge |
 > | 5 | `_mergeWithPackageGroups` | จับคู่ role ผิดพลาด (UUID vs Legacy string) ทำให้โชว์ชิปซ้ำซ้อน | ใช้ `findProfessionByNameOrRole` และดัก Keyword ภาษาไทยเพื่อเปรียบเทียบ Role ทั้งแบบ UUID และ Text ให้ตรงกัน |
 > | 6 | `consultation_requests` Stream | ฝั่งผู้ป่วยไม่ยอมรีเฟรชหน้าจอเมื่อหมอกดรับงาน | เพิ่มเงื่อนไข `newStatus != oldStatus` เพื่อสั่ง `_fetchExpertStatuses` ทุกครั้งที่สถานะแชทเปลี่ยนเป็น `in_progress` |
 > | 7 | `findProfessionByNameOrRole` | ไม่สามารถจับคู่อาชีพจากตารางใหม่ได้หากเป็นแพ็คเกจเก่า (Legacy) | เพิ่มตารางแมปคำ (Legacy Map) เช่น `'doctor'` -> `'แพทย์ทั่วไป'` เพื่อให้ดึง ID จาก DB ได้ถูกต้อง |
 > | 8 | `ExpertStatusBanner` | แสดงชื่อชิปตามชื่อหน้ากลุ่ม (เช่น "หมอ") แทนที่จะเป็นชื่ออาชีพจริง | ปรับให้ดึง `prof.name` (เช่น "แพทย์ทั่วไป") มาแสดงเสมอ ทั้งตอนรอคนรับงานและตอนที่มีคนเข้าร่วมแล้ว |
-> | 9 | `health_program_request_dashboard` — การ์ดยังไม่ขึ้นปุ่มเทา `คุณจบงานแล้ว` เมื่อจบงานแล้ว | `_finishedConsultationIds` sync จาก `consultation_room_experts` ล้าหลัง / ไม่ match กับ `consultation_requests.status` | ใช้เงื่อนไขสองชั้น: `e.status == 'completed' \|\| _finishedConsultationIds.contains(e.id)` และส่ง `hasFinished` แบบเดียวกันเข้า `ChartBoardPage` |
+> | 9 | `health_program_request_dashboard` — การ์ดยังไม่ขึ้นปุ่มเทา `คุณจบงานแล้ว` เมื่อจบงานแล้ว | `_finishedConsultationIds` sync จาก `consultation_room_experts` ล้าหลัง / ไม่ match กับ `consultation_requests.status` | ใช้เงื่อนไขสองชั้น: `e.status == 'completed' || _finishedConsultationIds.contains(e.id)` และส่ง `hasFinished` แบบเดียวกันเข้า `ChartBoardPage` |
 > | 10 | `chart_board_page` — ปุ่มไม่เปลี่ยนเป็น `ยกเลิกปิดงาน` และ chat input ไม่กลายเป็น read-only หลังกดจบงาน | `_hasFinished` อิงแค่ `widget.hasFinished` จาก route argument ไม่ได้โหลดจาก DB ใหม่ | เพิ่ม `_loadCompletionStatus()` โหลดจาก `getExpertCompletionStatus` ตอน `initState` และหลัง `finish/revert` RPC ใช้ `ValueKey` บังคับ rebuild `ActionButtonsWidget` และ `ChatInputBarWidget` |
+> | 11 | `health_program_request_dashboard` + `chart_board_page` — จำนวน expert ไม่ถูกต้อง (แสดง "0/2 จบแล้ว" แทน "1/2") | `consultation_room_experts` ว่างเปละสำหรับ consultations เก่า → คำนวณจำนวน expert ผิด | Dashboard: เพิ่ม fallback ดึงจำนวน expert จาก `consultation_packages.expert_groups` ถ้า `consultation_room_experts` ว่าง และเช็ค `e.status == 'completed'` เพื่อนับ user ปัจจุบัน 1 คนที่จบงานแล้ว | ChartBoard snackbar: เพิ่ม fallback เดียวกัน คำนวณ `finishedCount = 1` ถ้าใช้ package fallback (user ปัจจุบันจบงานแล้ว) |
 >
 > **เหตุผล:** `data` / `mapped` จาก `consultation_room_experts` มีเฉพาะ expert ที่เข้าร่วมแล้ว ไม่มี waiting groups จากแพ็คเกจ → ตรวจสอบ `isRequired` ไม่ครบ → timer เริ่มก่อน expert ครบ
 >

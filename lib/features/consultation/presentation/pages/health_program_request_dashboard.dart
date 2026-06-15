@@ -66,6 +66,7 @@ class _HealthProgramRequestDashboardState
   static const int _maxConcurrentJobs = 2; // จำกัดงานพร้อมกันสูงสุด
 
   Set<String> _finishedConsultationIds = {}; // consultation_ids ที่ผู้ใช้จบงานแล้ว
+  Map<String, Map<String, int>> _expertCompletionCounts = {}; // consultation_id → {total, finished}
 
   StreamSubscription? _subscription;
   String? _highlightedId;
@@ -195,6 +196,24 @@ class _HealthProgramRequestDashboardState
       if (raw.length < 15) _hasMoreByTab[tab] = false;
 
       final entries = raw.map(ConsultationEntry.fromMap).toList();
+
+      // โหลดจำนวน expert ที่จบงานแล้วสำหรับทุก consultation ใน batch นี้
+      final entryIds = entries.map((e) => e.id).toList();
+      final consultationToPackageIds = {for (var e in entries) e.id: e.packageId ?? ''};
+      debugPrint('Dashboard: _loadTab fetching expert counts for ${entryIds.length} entries');
+      if (entryIds.isNotEmpty) {
+        try {
+          final counts = await _repo.getExpertCompletionCounts(entryIds, consultationToPackageIds);
+          debugPrint('Dashboard: _loadTab expertCounts=$counts');
+          if (mounted) {
+            setState(() {
+              _expertCompletionCounts.addAll(counts);
+            });
+          }
+        } catch (e) {
+          debugPrint('Dashboard: getExpertCompletionCounts error: $e');
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -1047,6 +1066,7 @@ class _HealthProgramRequestDashboardState
     final myUserId = _currentUser?.id;
     final isMyJob = e.providerId == myUserId;
     final isBusy = e.isAssigned && !isMyJob; // งานถูก provider อื่นรับแล้ว
+    final isFinished = e.status == 'completed' || _finishedConsultationIds.contains(e.id);
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
@@ -1215,6 +1235,11 @@ class _HealthProgramRequestDashboardState
                     '${e.price.toInt()} บาท',
                     AppColors.info,
                   ),
+                  // แสดงจำนวนผู้เชี่ยวชาญที่ยังไม่จบงาน (เฉพาะการ์ดที่ผู้ใช้จบงานแล้ว)
+                  if (isFinished) ...[
+                    const SizedBox(height: 8),
+                    _buildExpertCountRow(e),
+                  ],
                 ],
               ),
             ),
@@ -1646,6 +1671,41 @@ class _HealthProgramRequestDashboardState
         ),
       ],
     );
+  }
+
+  /// แสดงแถวจำนวนผู้เชี่ยวชาญที่ยังไม่จบงาน
+  Widget _buildExpertCountRow(ConsultationEntry e) {
+    final counts = _expertCompletionCounts[e.id];
+
+    // แสดงเฉพาะเมื่อมีข้อมูลจริง (จาก consultation_room_experts หรือ package)
+    if (counts != null && (counts['total'] ?? 0) > 0) {
+      final total = counts['total']!;
+      var finished = counts['finished'] ?? 0;
+
+      // ถ้า consultation_room_experts ว่าง แต่ user ปัจจุบันจบงานแล้ว ให้บวกเข้าไป
+      // user จบงานแล้วถ้าอยู่ใน _finishedConsultationIds หรือ consultation status เป็น completed
+      final currentUserFinished = _finishedConsultationIds.contains(e.id) || e.status == 'completed';
+      if (currentUserFinished && finished == 0) {
+        finished = 1;
+      }
+
+      final remaining = total - finished;
+
+      final value = remaining <= 0
+          ? '$finished/$total จบแล้ว'
+          : '$finished/$total จบแล้ว (รออีก $remaining คน)';
+      final color = remaining <= 0 ? AppColors.success : AppColors.warning;
+
+      return _infoRow(
+        Icons.people_outline,
+        'ผู้เชี่ยวชาญ',
+        value,
+        color,
+      );
+    }
+
+    // ไม่มีข้อมูล → ไม่แสดงอะไร (ป้องกันการแสดงข้อมูลผิด)
+    return const SizedBox.shrink();
   }
 
   Widget _buildEmpty() {
