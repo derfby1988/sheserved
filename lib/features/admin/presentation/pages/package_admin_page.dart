@@ -92,7 +92,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         displayOrder: 0,
         expertGroups: [
           ExpertGroup(id: 'eg_001', name: 'อาจารย์แพทย์', role: 'professor', maxExperts: 1, isRequired: true),
-          ExpertGroup(id: 'eg_002', name: 'แพทย์ผู้ช่วย', role: 'doctor', maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_002', name: 'แพทย์ผู้ช่วย', role: Profession.doctorGpProfessionId, maxExperts: 2, isRequired: false),
         ],
         createdAt: now,
         updatedAt: now,
@@ -122,7 +122,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         isActive: true,
         displayOrder: 2,
         expertGroups: [
-          ExpertGroup(id: 'eg_004', name: 'แพทย์เฉพาะทาง', role: 'specialist', maxExperts: 1, isRequired: true),
+          ExpertGroup(id: 'eg_004', name: 'แพทย์เฉพาะทาง', role: Profession.doctorSpecialistProfessionId, maxExperts: 1, isRequired: true),
         ],
         createdAt: now,
         updatedAt: now,
@@ -137,8 +137,8 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         isActive: true,
         displayOrder: 3,
         expertGroups: [
-          ExpertGroup(id: 'eg_005', name: 'แพทย์ทั่วไป', role: 'doctor', maxExperts: 2, isRequired: false),
-          ExpertGroup(id: 'eg_006', name: 'เภสัชกร', role: 'pharmacist', maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_005', name: 'แพทย์ทั่วไป', role: Profession.doctorGpProfessionId, maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_006', name: 'เภสัชกร', role: Profession.pharmacistProfessionId, maxExperts: 2, isRequired: false),
         ],
         createdAt: now,
         updatedAt: now,
@@ -1059,7 +1059,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     final professionName = widget.professions
         .where((p) => p.id == group.role)
         .map((p) => p.name)
-        .firstOrNull ?? group.role;
+        .firstOrNull ?? _roleDisplayNameForGroup(group.role);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1136,6 +1136,21 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
       case 'specialist': return Icons.biotech_outlined;
       case 'pharmacist': return Icons.medication_outlined;
       default: return Icons.medical_services_outlined;
+    }
+  }
+
+  String _roleDisplayNameForGroup(String role) {
+    switch (role) {
+      case 'professor':
+        return 'อาจารย์แพทย์';
+      case Profession.doctorGpProfessionId:
+        return 'แพทย์ทั่วไป';
+      case Profession.doctorSpecialistProfessionId:
+        return 'แพทย์เฉพาะทาง';
+      case Profession.pharmacistProfessionId:
+        return 'เภสัชกร';
+      default:
+        return role;
     }
   }
 
@@ -1256,13 +1271,27 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                       ),
                     )
                   : DropdownButtonFormField<String>(
-                      value: availableProfessions.any((p) => p.id == role) ? role : availableProfessions.first.id,
+                      value: availableProfessions.any((p) => p.id == role) || role == 'professor'
+                          ? role
+                          : availableProfessions.first.id,
                       decoration: InputDecoration(
                         labelText: 'กลุ่มอาชีพ (จากหน้าจัดการอาชีพ)',
                         prefixIcon: const Icon(Icons.groups_outlined, size: 18),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      items: availableProfessions.map((p) {
+                      items: [
+                        if (!availableProfessions.any((p) => p.id == 'professor' || p.professionCode == 'professor'))
+                          DropdownMenuItem<String>(
+                            value: 'professor',
+                            child: Row(
+                              children: [
+                                Icon(_roleIconForGroup('professor'), size: 18, color: const Color(0xFF0f3460)),
+                                const SizedBox(width: 8),
+                                const Text('อาจารย์แพทย์', style: TextStyle(fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                        ...availableProfessions.map((p) {
                         return DropdownMenuItem<String>(
                           value: p.id,
                           child: Row(
@@ -1288,7 +1317,8 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                             ],
                           ),
                         );
-                      }).toList(),
+                      }),
+                      ].toList(),
                       onChanged: (v) => setDlgState(() => role = v ?? role),
                     ),
               const SizedBox(height: 12),

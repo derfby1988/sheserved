@@ -1,3 +1,20 @@
+import '../../../admin/models/profession.dart';
+
+String _canonicalExpertGroupRole(String? rawRole) {
+  final role = (rawRole ?? '').toLowerCase().trim();
+  if (role.isEmpty) return '';
+  if (role == 'doctor' || role == 'หมอ' || role.contains('แพทย์ทั่วไป')) {
+    return Profession.doctorGpProfessionId;
+  }
+  if (role == 'specialist' || role == 'เฉพาะทาง' || role.contains('แพทย์เฉพาะทาง')) {
+    return Profession.doctorSpecialistProfessionId;
+  }
+  if (role == 'pharmacist' || role == 'เภสัช' || role.contains('เภสัชกร')) {
+    return Profession.pharmacistProfessionId;
+  }
+  return rawRole?.trim() ?? '';
+}
+
 class ConsultationPackage {
   final String id;
   String name;
@@ -113,7 +130,7 @@ class ExpertGroup {
     return ExpertGroup(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      role: json['role'] as String? ?? '',
+      role: _canonicalExpertGroupRole(json['profession_id'] as String? ?? json['role'] as String?),
       maxExperts: parseInt(json['maxExperts'] ?? json['max_experts'] ?? -1),
       isRequired: json['isRequired'] == true || json['is_required'] == true,
       icon: json['icon'] as String? ?? json['group_icon'] as String?,
@@ -123,7 +140,7 @@ class ExpertGroup {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
-    'role': role,
+    'role': _canonicalExpertGroupRole(role),
     'maxExperts': maxExperts,
     'isRequired': isRequired,
     'icon': icon,

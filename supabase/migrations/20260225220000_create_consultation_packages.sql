@@ -74,7 +74,7 @@ VALUES
     'รับผลวิเคราะห์เบื้องต้นจาก Vega AI ก่อนพบอาจารย์หมอ',
     3290.0, true, true, 0,
     '[{"id": "eg_001", "name": "อาจารย์แพทย์", "role": "professor", "maxExperts": 1, "isRequired": true},
-      {"id": "eg_002", "name": "แพทย์ผู้ช่วย", "role": "doctor", "maxExperts": 2, "isRequired": false}]'::jsonb
+      {"id": "eg_002", "name": "แพทย์ผู้ช่วย", "role": "00000000-0000-0000-0000-000000000101", "maxExperts": 2, "isRequired": false}]'::jsonb
   ),
   (
     'pkg_002',
@@ -90,7 +90,7 @@ VALUES
     'หมอเฉพาะทาง',
     'ปรึกษาแพทย์เฉพาะทางตามอาการที่ระบุ',
     799.0, false, true, 2,
-    '[{"id": "eg_004", "name": "แพทย์เฉพาะทาง", "role": "specialist", "maxExperts": 1, "isRequired": true}]'::jsonb
+    '[{"id": "eg_004", "name": "แพทย์เฉพาะทาง", "role": "00000000-0000-0000-0000-000000000103", "maxExperts": 1, "isRequired": true}]'::jsonb
   ),
   (
     'pkg_004',
@@ -98,7 +98,7 @@ VALUES
     'หมอ/เภสัช',
     'ปรึกษาแพทย์ทั่วไปหรือเภสัชกร',
     299.0, false, true, 3,
-    '[{"id": "eg_005", "name": "แพทย์ทั่วไป", "role": "doctor", "maxExperts": 2, "isRequired": false},
-      {"id": "eg_006", "name": "เภสัชกร", "role": "pharmacist", "maxExperts": 2, "isRequired": false}]'::jsonb
+    '[{"id": "eg_005", "name": "แพทย์ทั่วไป", "role": "00000000-0000-0000-0000-000000000101", "maxExperts": 2, "isRequired": false},
+      {"id": "eg_006", "name": "เภสัชกร", "role": "00000000-0000-0000-0000-000000000105", "maxExperts": 2, "isRequired": false}]'::jsonb
   )
 ON CONFLICT (id) DO NOTHING;

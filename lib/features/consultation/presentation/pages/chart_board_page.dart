@@ -104,6 +104,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   // --- Expert Status ---
   List<Map<String, dynamic>> _expertStatuses = [];
+  int _expertStatusesFetchToken = 0;
   StreamSubscription? _expertStatusSub;
   StreamSubscription? _expertAvailabilitySub;
   Map<String, dynamic> _completionStatus = {};
@@ -377,7 +378,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         if (_expertStatuses.isNotEmpty && _selectedPackage != null) {
           final joined = _expertStatuses.where((e) => e['status'] == 'joined').toList();
           final merged = _mergeWithPackageGroups(joined);
-          setState(() => _expertStatuses = merged);
+          _applyExpertStatuses(merged, source: 'loadPackages');
         }
       }
     } catch (e) {
@@ -393,6 +394,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         setState(() => _professions = professions);
       }
       debugPrint('[ChartBoard] _loadProfessions: loaded ${professions.length} professions');
+
+      if (mounted && _selectedPackage != null && _expertStatuses.isNotEmpty) {
+        final joinedExperts = _expertStatuses.where((e) => e['status'] == 'joined').toList();
+        final merged = _mergeWithPackageGroups(joinedExperts);
+        _applyExpertStatuses(merged, source: 'loadProfessions');
+      }
     } catch (e) {
       debugPrint('[ChartBoard] Error loading professions: $e');
     }
@@ -428,6 +435,134 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: packageId=$targetPackageId not found in active packages');
       _selectedPackage = null;
     }
+  }
+
+  Future<void> _ensureSelectedPackageForMerge() async {
+    if (_selectedPackage != null && _selectedPackage!.expertGroups.isNotEmpty) {
+      return;
+    }
+
+    final packageId = _canonicalPackageId();
+    if (packageId == null || packageId.isEmpty) {
+      return;
+    }
+
+    try {
+      final packageResponse = await Supabase.instance.client
+          .from('consultation_packages')
+          .select()
+          .eq('id', packageId)
+          .maybeSingle();
+
+      if (packageResponse == null) {
+        debugPrint('[ChartBoard] _ensureSelectedPackageForMerge: packageId=$packageId not found');
+        return;
+      }
+
+      final fallbackPackage = ConsultationPackage.fromJson(Map<String, dynamic>.from(packageResponse));
+      if (mounted) {
+        setState(() {
+          _selectedPackage = fallbackPackage;
+        });
+      } else {
+        _selectedPackage = fallbackPackage;
+      }
+      debugPrint('[ChartBoard] _ensureSelectedPackageForMerge: loaded package fallback => ${fallbackPackage.name} ($packageId)');
+    } catch (e) {
+      debugPrint('[ChartBoard] _ensureSelectedPackageForMerge error: $e');
+    }
+  }
+
+  bool _hasProviderId(Map<String, dynamic> expert) {
+    final providerId = expert['providerId']?.toString().trim();
+    return providerId != null && providerId.isNotEmpty;
+  }
+
+  bool _canApplyExpertStatuses(List<Map<String, dynamic>> nextStatuses) {
+    if (_expertStatuses.isEmpty) return true;
+
+    final currentProviderIds = _expertStatuses
+        .where(_hasProviderId)
+        .map((e) => e['providerId'].toString())
+        .toSet();
+    if (currentProviderIds.isEmpty) return true;
+
+    final nextProviderIds = nextStatuses
+        .where(_hasProviderId)
+        .map((e) => e['providerId'].toString())
+        .toSet();
+
+    if (nextProviderIds.isEmpty) {
+      debugPrint('[ChartBoard] _canApplyExpertStatuses: skip empty/providerless payload because current providers exist=$currentProviderIds');
+      return false;
+    }
+
+    final missingCurrentProviders = currentProviderIds.difference(nextProviderIds);
+    if (missingCurrentProviders.isNotEmpty) {
+      final nextHasJoined = nextStatuses.any((e) => e['status'] == 'joined');
+      if (!nextHasJoined) {
+        debugPrint('[ChartBoard] _canApplyExpertStatuses: skip payload missing current providers=$missingCurrentProviders');
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  void _applyExpertStatuses(List<Map<String, dynamic>> nextStatuses, {required String source, int? token}) {
+    if (token != null && token != _expertStatusesFetchToken) {
+      debugPrint('[ChartBoard] _applyExpertStatuses($source): skip stale token=$token current=$_expertStatusesFetchToken');
+      return;
+    }
+    if (!mounted) return;
+    if (!_canApplyExpertStatuses(nextStatuses)) return;
+
+    setState(() {
+      _expertStatuses = nextStatuses;
+    });
+    debugPrint('[ChartBoard] _applyExpertStatuses($source): applied ${nextStatuses.length} rows');
+  }
+
+  String _normalizeConsultationRole(String? raw) {
+    final value = (raw ?? '').toLowerCase().trim();
+    if (value.isEmpty) return '';
+    if (value.contains('professor') || value.contains('อาจารย์')) return 'professor';
+    if (value.contains('specialist') || value.contains('เฉพาะทาง')) return 'specialist';
+    if (value.contains('pharmacist') || value.contains('เภสัช')) return 'pharmacist';
+    if (value.contains('nurse') || value.contains('พยาบาล')) return 'nurse';
+    if (value == Profession.doctorGpProfessionId ||
+        value == Profession.doctorFamilyProfessionId ||
+        value == 'doctor_gp' ||
+        value == 'doctor_family') {
+      return 'doctor';
+    }
+    if (value == Profession.doctorSpecialistProfessionId || value == 'doctor_specialist') {
+      return 'specialist';
+    }
+    if (value == Profession.pharmacistProfessionId || value == 'pharmacist') {
+      return 'pharmacist';
+    }
+    if (value.contains('doctor') || value.contains('แพทย์') || value == 'หมอ') return 'doctor';
+    return value;
+  }
+
+  String _consultationMatchKey(String? name, String? role) {
+    final prof = findProfessionByNameOrRole(_professions, name, role);
+    if (prof != null) {
+      return 'profession:${prof.id.toLowerCase().trim()}';
+    }
+
+    final normalizedRole = _normalizeConsultationRole(role);
+    if (normalizedRole.isNotEmpty) {
+      return 'role:$normalizedRole';
+    }
+
+    final normalizedName = (name ?? '').toLowerCase().trim();
+    if (normalizedName.isNotEmpty) {
+      return 'name:$normalizedName';
+    }
+
+    return '';
   }
 
 
@@ -511,6 +646,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               final updated = updatedList.first;
               final newProviderId = updated['provider_id'] as String?;
               final oldProviderId = _consultationData?['provider_id'] as String?;
+              final oldStatus = _consultationData?['status'] as String? ?? 'pending';
               debugPrint('[ChartBoard] consultation_requests realtime update: provider_id=$newProviderId (was $oldProviderId), status=${updated['status']}');
               if (mounted) {
                 setState(() {
@@ -522,7 +658,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               // Re-fetch expert statuses when provider_id or status changes
               final cid = consultationId;
               final newStatus = updated['status'] as String? ?? 'pending';
-              final oldStatus = _consultationData?['status'] as String? ?? 'pending';
               
               if ((newProviderId != oldProviderId || newStatus != oldStatus) && cid != null && cid.isNotEmpty) {
                 debugPrint('[ChartBoard] provider_id or status changed → re-fetching expert statuses');
@@ -593,30 +728,33 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .from('consultation_room_experts')
           .stream(primaryKey: ['id'])
           .eq('consultation_id', consultationId)
-          .listen((data) {
-            if (mounted) {
-              final joined = data.map((e) {
-                final user = e['users'] as Map<String, dynamic>? ?? {};
-                return {
-                  'role': e['expert_group_role'],
-                  'name': e['expert_group_name'],
-                  'status': e['status'],
-                  'providerId': e['provider_id'],
-                  'isRequired': e['is_required'] as bool? ?? false,
-                  'joinedAt': e['joined_at'],
-                  'leftAt': e['left_at'],
-                  'finishedAt': e['finished_at'],
-                  'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
-                  'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-                  'availabilityStatus': user['availability_status'] as String? ?? 'offline',
-                };
-              }).toList();
-              // Merge with package groups to show waiting groups too
-              final merged = _mergeWithPackageGroups(joined);
-              setState(() {
-                _expertStatuses = merged;
-              });
-            }
+          .listen((data) async {
+            if (!mounted) return;
+
+            final joined = data.map((e) {
+              final user = e['users'] as Map<String, dynamic>? ?? {};
+              return {
+                'role': e['expert_group_role'],
+                'name': e['expert_group_name'],
+                'status': e['status'],
+                'providerId': e['provider_id'],
+                'isRequired': e['is_required'] as bool? ?? false,
+                'joinedAt': e['joined_at'],
+                'leftAt': e['left_at'],
+                'finishedAt': e['finished_at'],
+                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
+                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+                'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+              };
+            }).toList();
+
+            await _ensureSelectedPackageForMerge();
+            if (!mounted) return;
+
+            // Merge with package groups to show waiting groups too
+            final merged = _mergeWithPackageGroups(joined);
+            _applyExpertStatuses(merged, source: 'realtime_stream');
+
             // Start timer only when ALL required experts have joined (per improvement plan)
             // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ data (raw DB)
             final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
@@ -684,6 +822,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Future<void> _fetchExpertStatuses(String consultationId) async {
+    final fetchToken = ++_expertStatusesFetchToken;
     try {
       debugPrint('[ChartBoard] _fetchExpertStatuses START for consultationId=$consultationId');
       final data = await Supabase.instance.client
@@ -885,15 +1024,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         }
       }
 
+      await _ensureSelectedPackageForMerge();
+
       // Merge with package expert groups to show waiting groups with grey icons
       final merged = _mergeWithPackageGroups(mapped);
       debugPrint('[ChartBoard] _fetchExpertStatuses merged length=${merged.length} (joined=${mapped.where((e) => e['status'] == 'joined').length}, waiting=${merged.length - mapped.where((e) => e['status'] == 'joined').length})');
 
-      if (mounted) {
-        setState(() {
-          _expertStatuses = merged;
-        });
-      }
+      _applyExpertStatuses(merged, source: 'fetch', token: fetchToken);
 
       // Start timer only when ALL required experts have joined (per improvement plan)
       // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ mapped (raw joined)
@@ -2249,50 +2386,48 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
 
     final merged = <Map<String, dynamic>>[...joinedExperts];
+    final assignedExpertIndexes = <int>{};
 
     for (final group in package.expertGroups) {
-      // Find the corresponding profession for this group to get its legacy role mappings if any
+      // Find the corresponding profession for this group to get its icon/color fallback.
       final prof = findProfessionByNameOrRole(_professions, group.name, group.role);
-      
-      final groupRoleLower = group.role.toLowerCase();
-      final groupNameLower = group.name.toLowerCase();
-      
-      final targetRoles = <String>{
-        groupRoleLower,
-        if (prof != null) prof.id.toLowerCase(),
-        if (prof != null) prof.name.toLowerCase(),
-      };
-      
-      if (groupNameLower.contains('เภสัช')) {
-        targetRoles.add('pharmacist');
-      } else if (groupNameLower.contains('เฉพาะทาง')) {
-        targetRoles.add('specialist');
-      } else if (groupNameLower.contains('อาจารย์')) {
-        targetRoles.add('professor');
-      } else if (groupNameLower.contains('หมอ') || groupNameLower.contains('แพทย์')) {
-        targetRoles.add('doctor');
-      }
-      
-      bool alreadyJoined = false;
+
+      final groupMatchKey = _consultationMatchKey(group.name, group.role);
+      final groupNameLower = group.name.toLowerCase().trim();
+
+      int? matchedIndex;
       for (var i = 0; i < merged.length; i++) {
+        if (assignedExpertIndexes.contains(i)) continue;
+
         final expert = merged[i];
         if (expert['status'] == 'waiting') continue; // only check joined experts
 
-        final expertRole = (expert['role'] as String? ?? '').toLowerCase();
-        final expertName = (expert['name'] as String? ?? '').toLowerCase();
-        
-        if (targetRoles.contains(expertRole) || expertName == groupNameLower) {
-          alreadyJoined = true;
-          
-          // Sync UI properties from the group to the joined expert
-          expert['isRequired'] = expert['isRequired'] == true || group.isRequired;
-          expert['expertGroupIcon'] ??= prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
-          expert['professionColorHex'] ??= prof?.colorHex;
-          expert['expertGroupName'] ??= group.name;
+        final expertNameLower = (expert['name'] as String? ?? '').toLowerCase().trim();
+        final expertGroupNameLower = (expert['expertGroupName'] as String? ?? '').toLowerCase().trim();
+        final expertMatchKey = _consultationMatchKey(
+          expert['name'] as String?,
+          expert['role']?.toString(),
+        );
+
+        final matchesByRole = groupMatchKey.isNotEmpty && expertMatchKey == groupMatchKey;
+        final matchesByName = groupNameLower.isNotEmpty &&
+            (expertNameLower == groupNameLower || expertGroupNameLower == groupNameLower);
+
+        if (matchesByRole || matchesByName) {
+          matchedIndex = i;
+          break;
         }
       }
 
-      if (!alreadyJoined) {
+      if (matchedIndex != null) {
+        assignedExpertIndexes.add(matchedIndex);
+        final expert = merged[matchedIndex];
+        // Sync UI properties from the group to the joined expert
+        expert['isRequired'] = expert['isRequired'] == true || group.isRequired;
+        expert['expertGroupIcon'] ??= prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
+        expert['professionColorHex'] ??= prof?.colorHex;
+        expert['expertGroupName'] ??= group.name;
+      } else {
         final iconName = prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
         merged.add({
           'role': group.role,
