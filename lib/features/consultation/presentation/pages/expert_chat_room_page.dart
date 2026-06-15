@@ -35,11 +35,17 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   bool _isSending = false;
   StreamSubscription? _messagesSub;
 
+  // Expert completion tracking
+  Map<String, dynamic> _completionStatus = {};
+  bool _isCheckingCompletion = false;
+
   @override
   void initState() {
     super.initState();
     _loadMessages();
     _subscribeToMessages();
+    _loadCompletionStatus();
+    _markReentered();
   }
 
   @override
@@ -47,7 +53,32 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     _messagesSub?.cancel();
     _msgController.dispose();
     _scrollController.dispose();
+    _markLeft();
     super.dispose();
+  }
+
+  /// Mark this expert as re-entered the room
+  void _markReentered() {
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null || widget.entry.id.isEmpty) return;
+    final consultRepo = ServiceLocator.instance.consultationRepository;
+    consultRepo.markExpertReentered(widget.entry.id, authUser.id).then((_) {
+      debugPrint('ExpertChat: marked as re-entered');
+    }).catchError((e) {
+      debugPrint('ExpertChat: _markReentered error: $e');
+    });
+  }
+
+  /// Mark this expert as left the room
+  void _markLeft() {
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null || widget.entry.id.isEmpty) return;
+    final consultRepo = ServiceLocator.instance.consultationRepository;
+    consultRepo.markExpertLeft(widget.entry.id, authUser.id).then((_) {
+      debugPrint('ExpertChat: marked as left');
+    }).catchError((e) {
+      debugPrint('ExpertChat: _markLeft error: $e');
+    });
   }
 
   Future<void> _loadMessages() async {
@@ -219,8 +250,29 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     if (mounted) setState(() => _isSending = false);
   }
 
-  // Provider เสร็จงาน → คืนสถานะ online + เปลี่ยน request เป็น completed
+  /// โหลดสถานะการเสร็จงานของ experts ทั้งหมดใน consultation นี้
+  Future<void> _loadCompletionStatus() async {
+    if (widget.entry.id.isEmpty) return;
+    setState(() => _isCheckingCompletion = true);
+    try {
+      final repo = ServiceLocator.instance.consultationRepository;
+      final status = await repo.getExpertCompletionStatus(widget.entry.id);
+      if (mounted) {
+        setState(() {
+          _completionStatus = status;
+          _isCheckingCompletion = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ExpertChat: _loadCompletionStatus error: $e');
+      if (mounted) setState(() => _isCheckingCompletion = false);
+    }
+  }
+
+  // Provider เสร็จงาน → mark expert ตัวเองว่าเสร็จ รอทุกคนเสร็จถึงจะปิด consultation
   Future<void> _finishJob() async {
+    debugPrint('ExpertChat: _finishJob START');
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -255,28 +307,83 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       ),
     );
 
-    if (confirm != true) return;
+    debugPrint('ExpertChat: dialog confirm=$confirm');
+    if (confirm != true) {
+      debugPrint('ExpertChat: user cancelled');
+      return;
+    }
 
     final authUser = AuthService.instance.currentUser;
-    if (authUser == null) return;
+    debugPrint('ExpertChat: authUser=${authUser?.id}');
+    if (authUser == null) {
+      debugPrint('ExpertChat: authUser is null');
+      return;
+    }
 
     final userRepo = UserRepository(Supabase.instance.client);
     final consultRepo = ServiceLocator.instance.consultationRepository;
+    debugPrint('ExpertChat: calling markExpertFinished consultationId=${widget.entry.id} providerId=${authUser.id}');
 
-    // อัปเดต request → completed
-    await consultRepo.updateStatus(widget.entry.id, 'completed');
-    // คืนสถานะ provider → online
-    await userRepo.setAvailabilityStatus(authUser.id, 'online');
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ เสร็จสิ้น! สถานะของคุณกลับเป็นพร้อมรับงานแล้ว'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
+    try {
+      // Mark expert ตัวเองว่าเสร็จ คืนค่าว่าทุกคนเสร็จหรือยัง
+      final result = await consultRepo.markExpertFinished(
+        widget.entry.id,
+        authUser.id,
       );
-      Navigator.pop(context);
+
+      debugPrint('ExpertChat: markExpertFinished result=$result');
+
+      final allFinished = result['all_finished'] as bool? ?? false;
+      final finishedCount = result['finished_count'] as int? ?? 0;
+      final totalCount = result['total_count'] as int? ?? 1;
+      final remainingCount = result['remaining_count'] as int? ?? 0;
+
+      debugPrint('ExpertChat: allFinished=$allFinished finishedCount=$finishedCount totalCount=$totalCount remaining=$remainingCount');
+
+      // คืนสถานะ provider → online (ตัวเองเสร็จแล้ว ไม่ว่าคนอื่นจะเสร็จหรือยัง)
+      await userRepo.setAvailabilityStatus(authUser.id, 'online');
+
+      // Reload completion status
+      await _loadCompletionStatus();
+
+      if (mounted) {
+        if (allFinished) {
+          // ทุกคนเสร็จแล้ว → consultation จบจริง
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ เสร็จสิ้น! ทุกผู้เชี่ยวชาญจบงานแล้ว'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          Navigator.pop(context);
+        } else {
+          // ยังมีคนไม่เสร็จ → แจ้งว่ารอคนอื่น
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'คุณจบงานแล้ว รอผู้เชี่ยวชาญอีก $remainingCount คน '
+                '($finishedCount / $totalCount)',
+              ),
+              backgroundColor: AppColors.info,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e, st) {
+      debugPrint('ExpertChat: _finishJob error: $e');
+      debugPrint('ExpertChat: _finishJob stack: $st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -391,6 +498,12 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   }
 
   Widget _buildBanner() {
+    final totalCount = _completionStatus['total_count'] as int? ?? 0;
+    final finishedCount = _completionStatus['finished_count'] as int? ?? 0;
+    final remainingCount = _completionStatus['remaining_count'] as int? ?? 0;
+    final hasMultipleExperts = totalCount > 1;
+    final allFinished = _completionStatus['all_finished'] as bool? ?? false;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -405,40 +518,102 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.medical_services_outlined,
-            color: AppColors.primary,
-            size: 18,
+          // Patient info row
+          Row(
+            children: [
+              const Icon(
+                Icons.medical_services_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    children: [
+                      TextSpan(
+                        text: widget.entry.patientName,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(text: ' · '),
+                      TextSpan(
+                        text: widget.entry.packageName,
+                        style: const TextStyle(color: AppColors.primary),
+                      ),
+                      const TextSpan(text: ' · '),
+                      TextSpan(
+                        text: widget.entry.bodyArea,
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(fontSize: 12, color: Colors.black87),
+          // Expert completion status (only if multiple experts)
+          if (hasMultipleExperts && !_isCheckingCompletion) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: allFinished
+                    ? const Color(0xFFE8F5E9)
+                    : const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: allFinished
+                      ? const Color(0xFF4CAF50).withOpacity(0.3)
+                      : const Color(0xFFFF9800).withOpacity(0.3),
+                ),
+              ),
+              child: Row(
                 children: [
-                  TextSpan(
-                    text: widget.entry.patientName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  Icon(
+                    allFinished
+                        ? Icons.check_circle_outline
+                        : Icons.pending_actions_outlined,
+                    color: allFinished
+                        ? const Color(0xFF4CAF50)
+                        : const Color(0xFFFF9800),
+                    size: 16,
                   ),
-                  const TextSpan(text: ' · '),
-                  TextSpan(
-                    text: widget.entry.packageName,
-                    style: const TextStyle(color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      allFinished
+                          ? 'ทุกผู้เชี่ยวชาญจบงานแล้ว'
+                          : 'รอผู้เชี่ยวชาญจบงาน: $remainingCount / $totalCount คน',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: allFinished
+                            ? const Color(0xFF2E7D32)
+                            : const Color(0xFFE65100),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  const TextSpan(text: ' · '),
-                  TextSpan(
-                    text: widget.entry.bodyArea,
-                    style: const TextStyle(
-                      color: AppColors.warning,
-                      fontWeight: FontWeight.w500,
+                  Text(
+                    '$finishedCount / $totalCount',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: allFinished
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFFE65100),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

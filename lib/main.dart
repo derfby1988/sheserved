@@ -586,6 +586,7 @@ class SheservedApp extends StatelessWidget {
         if (settings.name == '/chart-board') {
           final args = settings.arguments;
           bool readOnly = false;
+          bool hasFinished = false;
           ConsultationEntry? entry;
           ConsultationRequestModel? request;
 
@@ -593,6 +594,7 @@ class SheservedApp extends StatelessWidget {
             entry = args['entry'] as ConsultationEntry?;
             request = args['request'] as ConsultationRequestModel?;
             readOnly = args['readOnly'] as bool? ?? false;
+            hasFinished = args['hasFinished'] as bool? ?? false;
           } else if (args is ConsultationRequestModel) {
             request = args;
           } else if (args is ConsultationEntry) {
@@ -605,6 +607,7 @@ class SheservedApp extends StatelessWidget {
                 request: request,
                 entry: entry,
                 readOnly: readOnly,
+                hasFinished: hasFinished,
               ),
             );
           }

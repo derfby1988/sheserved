@@ -62,6 +62,10 @@ class _HealthProgramRequestDashboardState
   List<Profession> _professions = []; // อาชีพทั้งหมดจาก admin settings
   bool _isProvider = false;
   String _availabilityStatus = 'online'; // สถานะตัวเอง
+  int _activeJobCount = 0; // จำนวนงานที่กำลังทำอยู่
+  static const int _maxConcurrentJobs = 2; // จำกัดงานพร้อมกันสูงสุด
+
+  Set<String> _finishedConsultationIds = {}; // consultation_ids ที่ผู้ใช้จบงานแล้ว
 
   StreamSubscription? _subscription;
   String? _highlightedId;
@@ -109,6 +113,15 @@ class _HealthProgramRequestDashboardState
           user.professionId != null &&
           user.professionId != '00000000-0000-0000-0000-000000000001';
 
+      // โหลดจำนวนงานที่กำลังทำอยู่ (สำหรับ provider)
+      if (_isProvider) {
+        _activeJobCount = await _repo.getActiveInProgressConsultationCount(user.id);
+      }
+
+      // โหลด consultation_ids ที่ผู้ใช้จบงานแล้ว
+      _finishedConsultationIds = await _repo.getFinishedConsultationIds(user.id);
+      debugPrint('Dashboard: finishedConsultationIds=${_finishedConsultationIds.length}');
+
       // โหลดข้อมูลพื้นฐานขนานกัน
       await Future.wait([
         _userRepo
@@ -124,6 +137,9 @@ class _HealthProgramRequestDashboardState
       ]).timeout(const Duration(seconds: 15));
 
       debugPrint('Dashboard: _init done — _isProvider=$_isProvider, _availabilityStatus=$_availabilityStatus, _myPackageIds=$_myPackageIds');
+
+      // Safety net: ถ้า busy แต่ไม่มีงาน in_progress → reset เป็น online
+      await _fixStaleBusyStatusIfNeeded();
 
       // โหลด counts + หน้าแรกของ active tab
       await _loadCounts();
@@ -238,7 +254,21 @@ class _HealthProgramRequestDashboardState
   void didPopNext() {
     debugPrint('[Dashboard] Returned from another page → refreshing data');
     _loadCounts();
-    _loadTab(_activeTab, refresh: true);
+    if (_isProvider && _currentUser != null) {
+      // โหลด finished IDs ก่อน แล้วค่อย _loadTab เพื่อให้ UI rebuild ด้วยข้อมูลถูกต้อง
+      _repo.getFinishedConsultationIds(_currentUser!.id).then((ids) {
+        if (mounted) {
+          setState(() => _finishedConsultationIds = ids);
+          debugPrint('[Dashboard] didPopNext: _finishedConsultationIds=${_finishedConsultationIds.length}');
+        }
+        _loadTab(_activeTab, refresh: true);
+      });
+      _repo.getActiveInProgressConsultationCount(_currentUser!.id).then((count) {
+        if (mounted) setState(() => _activeJobCount = count);
+      });
+    } else {
+      _loadTab(_activeTab, refresh: true);
+    }
   }
 
   @override
@@ -355,6 +385,36 @@ class _HealthProgramRequestDashboardState
 
     if (confirm != true) return;
 
+    // ตรวจสอบว่ารับงานเต็มโควต้าหรือไม่
+    if (_activeJobCount >= _maxConcurrentJobs) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: AppColors.error),
+                const SizedBox(width: 8),
+                const Text('ไม่สามารถรับงานเพิ่ม'),
+              ],
+            ),
+            content: Text(
+              'คุณกำลังทำงาน $_activeJobCount / $_maxConcurrentJobs งาน\n'
+              'กรุณาจบงานปัจจุบันก่อนรับงานใหม่',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('เข้าใจแล้ว'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       debugPrint('Dashboard: _joinRequest starting for entry=${entry.id}');
       // 1. พยายาม Assign provider เข้า expert group slot (ระบบใหม่ Phase 1)
@@ -405,10 +465,13 @@ class _HealthProgramRequestDashboardState
       debugPrint('Dashboard: updating status to in_progress');
       await _repo.updateStatus(entry.id, 'in_progress');
 
-      // 2. เปลี่ยนสถานะตัวเองเป็น busy
+      // 2. เปลี่ยนสถานะตัวเองเป็น busy + อัปเดตจำนวนงาน
       debugPrint('Dashboard: setting availability to busy');
       await _userRepo.setAvailabilityStatus(user.id, 'busy');
-      if (mounted) setState(() => _availabilityStatus = 'busy');
+      if (mounted) setState(() {
+        _availabilityStatus = 'busy';
+        _activeJobCount++;
+      });
 
       // 3. นำทางเข้าห้องแชท
       debugPrint('Dashboard: navigating to chat');
@@ -426,6 +489,25 @@ class _HealthProgramRequestDashboardState
           ),
         );
       }
+    }
+  }
+
+  // ─── Safety net: ถ้า busy แต่ไม่มีงาน in_progress → reset เป็น online ──────
+  Future<void> _fixStaleBusyStatusIfNeeded() async {
+    if (_availabilityStatus != 'busy' || !_isProvider) return;
+
+    try {
+      final hasActive = await _repo.hasActiveInProgressConsultation(_currentUser!.id);
+      if (!hasActive) {
+        await _userRepo.setAvailabilityStatus(_currentUser!.id, 'online');
+        if (mounted) setState(() {
+          _availabilityStatus = 'online';
+          _activeJobCount = 0;
+        });
+        debugPrint('Dashboard: Auto-reset stale busy → online (no active consultation)');
+      }
+    } catch (e) {
+      debugPrint('Dashboard: _fixStaleBusyStatusIfNeeded error: $e');
     }
   }
 
@@ -777,6 +859,7 @@ class _HealthProgramRequestDashboardState
     final entries = _getFilteredEntries();
     return Column(
       children: [
+        if (_isProvider) _buildActiveJobsBanner(),
         _buildSearchFilter(),
         Expanded(
           child: entries.isEmpty && !_isLoading
@@ -785,6 +868,10 @@ class _HealthProgramRequestDashboardState
                   onRefresh: () async {
                     await _loadCounts();
                     await _loadTab(_activeTab, refresh: true);
+                    if (_isProvider && _currentUser != null) {
+                      final count = await _repo.getActiveInProgressConsultationCount(_currentUser!.id);
+                      if (mounted) setState(() => _activeJobCount = count);
+                    }
                   },
                   color: AppColors.primary,
                   child: ListView.builder(
@@ -804,6 +891,63 @@ class _HealthProgramRequestDashboardState
                 ),
         ),
       ],
+    );
+  }
+
+  /// Banner แจ้งเตือนจำนวนงานที่กำลังทำอยู่
+  Widget _buildActiveJobsBanner() {
+    if (_activeJobCount == 0) return const SizedBox.shrink();
+
+    final isAtLimit = _activeJobCount >= _maxConcurrentJobs;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isAtLimit
+            ? const Color(0xFFFFF3E0)
+            : const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isAtLimit
+              ? const Color(0xFFFF9800).withOpacity(0.5)
+              : const Color(0xFF4CAF50).withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isAtLimit ? Icons.warning_amber_rounded : Icons.work_outline,
+            color: isAtLimit ? const Color(0xFFFF9800) : const Color(0xFF4CAF50),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'งานที่กำลังดำเนินการ: $_activeJobCount / $_maxConcurrentJobs',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isAtLimit ? const Color(0xFFE65100) : const Color(0xFF2E7D32),
+                  ),
+                ),
+                if (isAtLimit)
+                  const Text(
+                    'คุณรับงานเต็มโควต้าแล้ว กรุณาจบงานปัจจุบันก่อนรับงานใหม่',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFE65100),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1098,10 +1242,12 @@ class _HealthProgramRequestDashboardState
         !isMyJob &&
         e.status == 'pending' &&
         !isBusy;
-    debugPrint('Dashboard: _buildActionRow entry=${e.id}, _isProvider=$_isProvider, packageId=${e.packageId}, _myPackageIds=$_myPackageIds, status=${e.status}, isMyJob=$isMyJob, isBusy=$isBusy, isMatching=$isMatching, _availabilityStatus=$_availabilityStatus');
+    final isFinished = e.status == 'completed' || _finishedConsultationIds.contains(e.id);
+    debugPrint('Dashboard: _buildActionRow entry=${e.id}, _finishedIds=$_finishedConsultationIds, contains=${_finishedConsultationIds.contains(e.id)}, status=${e.status}, isFinished=$isFinished, isMyJob=$isMyJob');
 
     if (isMatching) {
-      final canJoin = _availabilityStatus != 'busy';
+      final canJoin = _availabilityStatus != 'busy' && _activeJobCount < _maxConcurrentJobs;
+      final isAtJobLimit = _activeJobCount >= _maxConcurrentJobs;
       return Row(
         children: [
           // ปุ่ม ดูรายละเอียด (เปิดในโหมดดูอย่างเดียว ไม่สามารถดำเนินการได้)
@@ -1155,7 +1301,11 @@ class _HealthProgramRequestDashboardState
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    canJoin ? 'รับงานนี้' : 'คุณไม่ว่าง',
+                    canJoin
+                        ? 'รับงานนี้'
+                        : isAtJobLimit
+                            ? 'รับงานเต็มแล้ว'
+                            : 'คุณไม่ว่าง',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -1179,14 +1329,25 @@ class _HealthProgramRequestDashboardState
       label = 'เข้าห้องแชทผู้ป่วย';
       icon = Icons.chat_bubble_outline;
       onTap = () => _openChat(e);
+    } else if (isFinished) {
+      // Provider จบงานแล้ว แต่ consultation ยังไม่ปิด → ปุ่มเทา
+      label = 'คุณจบงานแล้ว';
+      icon = Icons.check_circle_outline;
+      onTap = () => _openChat(e);
+      btnColor = Colors.grey.shade500;
     } else if (isMyJob) {
       label = 'เข้าห้องแชทผู้ป่วย';
       icon = Icons.chat_bubble_outline;
       onTap = () => _openChat(e);
       btnColor = AppColors.alertGold;
     } else if (e.status == 'pending' && !isBusy) {
-      final canJoin = _availabilityStatus != 'busy';
-      label = canJoin ? 'รับงานนี้' : 'คุณไม่ว่างอยู่';
+      final canJoin = _availabilityStatus != 'busy' && _activeJobCount < _maxConcurrentJobs;
+      final isAtJobLimit = _activeJobCount >= _maxConcurrentJobs;
+      label = canJoin
+          ? 'รับงานนี้'
+          : isAtJobLimit
+              ? 'รับงานเต็มแล้ว'
+              : 'คุณไม่ว่างอยู่';
       icon = canJoin ? Icons.pan_tool_alt_outlined : Icons.do_not_disturb_rounded;
       onTap = canJoin ? () => _joinRequest(e) : null;
       if (!canJoin) btnColor = Colors.grey.shade400;
@@ -1575,12 +1736,14 @@ class _HealthProgramRequestDashboardState
   }
 
   void _openChat(ConsultationEntry entry, {bool readOnly = false}) {
+    final hasFinished = entry.status == 'completed' || _finishedConsultationIds.contains(entry.id);
     Navigator.pushNamed(
       context,
       '/chart-board',
       arguments: {
         'entry': entry,
         'readOnly': readOnly,
+        'hasFinished': hasFinished,
       },
     );
   }

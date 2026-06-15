@@ -597,14 +597,12 @@ class UserRepository {
   // =====================================================
 
   /// อัปเดต last_seen_at ของผู้ใช้ปัจจุบัน (เรียกจาก heartbeat)
+  /// ใช้ RPC (SECURITY DEFINER) เพื่อ bypass RLS เพราะแอปใช้ Custom Auth ไม่ใช่ Supabase Auth
   Future<void> updateLastSeen(String userId) async {
     try {
-      await _client
-          .from('users')
-          .update({'last_seen_at': DateTime.now().toUtc().toIso8601String()})
-          .eq('id', userId);
+      await _client.rpc('update_last_seen', params: {'user_id': userId});
     } catch (e) {
-      debugPrint('updateLastSeen error: \$e');
+      debugPrint('updateLastSeen error: $e');
     }
   }
 
@@ -710,12 +708,13 @@ class UserRepository {
 
   /// อัปเดต availability_status ของผู้ใช้
   /// status: 'online', 'busy', 'offline'
+  /// ใช้ RPC (SECURITY DEFINER) เพื่อ bypass RLS เพราะแอปใช้ Custom Auth ไม่ใช่ Supabase Auth
   Future<void> setAvailabilityStatus(String userId, String status) async {
     try {
-      await _client.from('users').update({
-        'availability_status': status,
-        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', userId);
+      await _client.rpc('update_availability_status', params: {
+        'user_id': userId,
+        'new_status': status,
+      });
       debugPrint('UserRepository: availability_status → $status for $userId');
     } catch (e) {
       debugPrint('setAvailabilityStatus error: $e');

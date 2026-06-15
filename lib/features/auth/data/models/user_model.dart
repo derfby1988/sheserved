@@ -211,6 +211,7 @@ class UserModel {
       lastLoginAt: json['last_login_at'] != null ? DateTime.parse(json['last_login_at']) : null,
       lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
       availabilityStatus: json['availability_status'] ?? 'online',
+
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
       isThaiMhungEnabled: json['is_thai_mhung_enabled'] ?? true,

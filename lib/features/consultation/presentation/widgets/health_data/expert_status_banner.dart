@@ -17,7 +17,7 @@ class ExpertStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     debugPrint('[ExpertStatusBanner] expertStatuses.length=${expertStatuses.length}');
     for (final e in expertStatuses) {
-      debugPrint('[ExpertStatusBanner]   expert name=${e['name']} status=${e['status']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
+      debugPrint('[ExpertStatusBanner]   expert name=${e['name']} status=${e['status']} availability=${e['availabilityStatus']} leftAt=${e['leftAt']} finishedAt=${e['finishedAt']} hasPrescription=${e['hasPrescription']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
     }
     final hasWaitingRequired = expertStatuses.any(
       (e) => (e['isRequired'] == true) && (e['status'] == 'waiting'),
@@ -70,101 +70,213 @@ class ExpertStatusBanner extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: expertStatuses.map((expert) {
-                  final isJoined = expert['status'] == 'joined';
-                  final isRequired = expert['isRequired'] == true;
-                  final avatarUrl = expert['providerAvatarUrl']?.toString();
-                  final iconRaw = expert['expertGroupIcon'];
-                  final prof = findProfessionByNameOrRole(
-                    professions,
-                    expert['name']?.toString(),
-                    expert['role']?.toString(),
-                  );
-                  final categoryIcon = parseExpertGroupIcon(prof?.iconName ?? iconRaw) ??
-                      getDefaultIconForRole(expert['role']);
-                  final profColor = hexToColor(prof?.colorHex);
-
-                  return Container(
-                    margin: const EdgeInsets.only(right: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isJoined
-                          ? (profColor?.withOpacity(0.08) ?? AppColors.primary.withOpacity(0.08))
-                          : (isRequired ? Colors.grey.shade100 : Colors.grey.shade50),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isJoined
-                            ? (profColor?.withOpacity(0.3) ?? AppColors.primary.withOpacity(0.2))
-                            : (isRequired ? Colors.grey.shade300 : Colors.grey.shade200),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isJoined && avatarUrl != null && avatarUrl.isNotEmpty)
-                          CircleAvatar(
-                            radius: 12,
-                            backgroundImage: NetworkImage(avatarUrl),
-                            backgroundColor: Colors.grey.shade200,
-                            onBackgroundImageError: (_, __) {},
-                          )
-                        else if (categoryIcon != null)
-                          Icon(
-                            categoryIcon,
-                            size: 20,
-                            color: isJoined
-                                ? (profColor ?? AppColors.primary)
-                                : (isRequired ? Colors.grey.shade600 : Colors.grey.shade400),
-                          )
-                        else
-                          Icon(
-                            isJoined
-                                ? Icons.check_circle
-                                : (isRequired ? Icons.priority_high : Icons.hourglass_empty),
-                            size: 16,
-                            color: isJoined
-                                ? (profColor ?? AppColors.primary)
-                                : (isRequired ? Colors.grey.shade600 : Colors.grey),
-                          ),
-                        const SizedBox(width: 6),
-                        Builder(
-                          builder: (context) {
-                            String displayName = expert['name']?.toString() ?? '';
-                            final profName = prof?.name;
-                            
-                            if (isJoined) {
-                              final groupName = profName ?? expert['expertGroupName']?.toString();
-                              if (groupName != null && groupName.isNotEmpty && groupName != displayName) {
-                                displayName = '$displayName ($groupName)';
-                              }
-                            } else {
-                              // If waiting, show the profession name (กลุ่มอาชีพ) instead of group name (ชื่อหน้ากลุ่ม)
-                              if (profName != null && profName.isNotEmpty) {
-                                displayName = profName;
-                              }
-                            }
-
-                            if (isRequired) {
-                              displayName += ' *';
-                            }
-                            return Text(
-                              displayName,
-                              style: TextStyle(
-                                color: isJoined
-                                    ? (profColor ?? AppColors.primary)
-                                    : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
-                                fontSize: 12,
-                                fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            );
-                          }
-                        ),
-                      ],
-                    ),
-                  );
+                  return _buildExpertItem(expert);
                 }).toList(),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExpertItem(Map<String, dynamic> expert) {
+    final isJoined = expert['status'] == 'joined';
+    final isRequired = expert['isRequired'] == true;
+    final avatarUrl = expert['providerAvatarUrl']?.toString();
+    final iconRaw = expert['expertGroupIcon'];
+    final prof = findProfessionByNameOrRole(
+      professions,
+      expert['name']?.toString(),
+      expert['role']?.toString(),
+    );
+    final categoryIcon = parseExpertGroupIcon(prof?.iconName ?? iconRaw) ??
+        getDefaultIconForRole(expert['role']);
+    final profColor = hexToColor(prof?.colorHex);
+
+    String displayName = expert['name']?.toString() ?? '';
+    final profName = prof?.name;
+    final availability = expert['availabilityStatus'] as String? ?? 'offline';
+    final leftAt = expert['leftAt'];
+    final finishedAt = expert['finishedAt'];
+    final hasPrescription = expert['hasPrescription'] == true;
+
+    if (isJoined) {
+      final groupName = profName ?? expert['expertGroupName']?.toString();
+      if (groupName != null && groupName.isNotEmpty && groupName != displayName) {
+        displayName = '$displayName ($groupName)';
+      }
+    } else {
+      if (profName != null && profName.isNotEmpty) {
+        displayName = profName;
+      }
+    }
+
+    // Status determination — แสดงเฉพาะ 4 สถานะ: จบงาน(ฟ้า), ออกห้อง(เหลือง), ออฟไลน์(เทา), จ่ายยา(ชมพู)
+    final bool showStatusOverlay;
+    final Color overlayColor;
+    final IconData? overlayIcon;
+    final String? overlayText;
+    final bool isPrescriptionStatus;
+    if (finishedAt != null) {
+      showStatusOverlay = true;
+      overlayColor = const Color(0xFF29B6F6); // ฟ้าอ่อน
+      overlayIcon = Icons.check_circle;
+      overlayText = 'จบงาน';
+      isPrescriptionStatus = false;
+    } else if (leftAt != null) {
+      showStatusOverlay = true;
+      overlayColor = const Color(0xFFFFCA28); // เหลือง
+      overlayIcon = Icons.exit_to_app;
+      overlayText = 'ออกจากห้อง';
+      isPrescriptionStatus = false;
+    } else if (hasPrescription) {
+      showStatusOverlay = true;
+      overlayColor = const Color(0xFFF06292); // ชมพู
+      overlayIcon = Icons.medication_liquid;
+      overlayText = 'จ่ายยา';
+      isPrescriptionStatus = true;
+    } else if (availability == 'offline') {
+      showStatusOverlay = true;
+      overlayColor = Colors.grey;
+      overlayIcon = Icons.circle;
+      overlayText = 'ออฟไลน์';
+      isPrescriptionStatus = false;
+    } else {
+      showStatusOverlay = false;
+      overlayColor = Colors.transparent;
+      overlayIcon = null;
+      overlayText = null;
+      isPrescriptionStatus = false;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(right: 14),
+      width: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Avatar with colored filter overlay + status badge
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // Main avatar
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isJoined
+                        ? (profColor?.withOpacity(0.4) ?? AppColors.primary.withOpacity(0.3))
+                        : Colors.grey.shade300,
+                    width: 2,
+                  ),
+                ),
+                child: ClipOval(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Base image
+                      isJoined && avatarUrl != null && avatarUrl.isNotEmpty
+                          ? Image.network(
+                              avatarUrl,
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
+                            )
+                          : _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
+                      // Colored transparent filter overlay (เฉพาะ 3 สถานะ)
+                      if (showStatusOverlay)
+                        Container(
+                          color: overlayColor.withOpacity(0.35),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              // Status badge overlay (bottom-right) — เฉพาะ 3 สถานะ
+              if (isJoined && showStatusOverlay && overlayIcon != null)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: overlayColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          overlayIcon,
+                          size: 8,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          overlayText!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // Prescription เป็นสถานะหลัก (ชมพู) แสดงที่ badge มุมขวาล่างแล้ว
+              // ไม่ต้อง badge ซ้ำที่มุมขวาบน
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Name
+          Text(
+            displayName,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isJoined
+                  ? (profColor ?? AppColors.primary)
+                  : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
+              fontSize: 11,
+              fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
+              height: 1.2,
+            ),
+          ),
+          if (isRequired) ...[
+            const SizedBox(height: 2),
+            Text(
+              'จำเป็น',
+              style: TextStyle(
+                color: Colors.orange.shade700,
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _fallbackAvatar(IconData? icon, Color? profColor, bool isJoined, bool isRequired) {
+    return Container(
+      width: 56,
+      height: 56,
+      color: isJoined
+          ? (profColor?.withOpacity(0.1) ?? AppColors.primary.withOpacity(0.1))
+          : Colors.grey.shade100,
+      child: Icon(
+        icon ?? Icons.person_outline,
+        size: 24,
+        color: isJoined
+            ? (profColor ?? AppColors.primary)
+            : (isRequired ? Colors.grey.shade600 : Colors.grey.shade400),
       ),
     );
   }

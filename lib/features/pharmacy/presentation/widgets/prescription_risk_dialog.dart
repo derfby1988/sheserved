@@ -6,18 +6,29 @@ class PrescriptionRiskDialog extends StatelessWidget {
   final List<DrugRiskScreeningResult> results;
   final VoidCallback? onProceed;
   final VoidCallback? onCancel;
+  final VoidCallback? onNavigateToUpload;
 
   const PrescriptionRiskDialog({
     super.key,
     required this.results,
     this.onProceed,
     this.onCancel,
+    this.onNavigateToUpload,
   });
 
   bool get hasBlocked => results.any((r) => r.isBlocked);
   bool get hasWarnings => results.any((r) => r.isWarning);
   int get blockedCount => results.where((r) => r.isBlocked).length;
   int get warningCount => results.where((r) => r.isWarning).length;
+
+  bool get hasMissingLicense => results.any(
+    (r) => r.requiredLicense != null && !r.providerHasLicense,
+  );
+  List<String> get missingLicenses => results
+      .where((r) => r.requiredLicense != null && !r.providerHasLicense)
+      .map((r) => r.requiredLicense!)
+      .toSet()
+      .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +50,15 @@ class PrescriptionRiskDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (hasMissingLicense && onNavigateToUpload != null)
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(false);
+              onNavigateToUpload!();
+            },
+            icon: const Icon(Icons.upload_file),
+            label: const Text('อัปโหลดใบอนุญาต'),
+          ),
         TextButton(
           onPressed: onCancel ?? () => Navigator.of(context).pop(false),
           child: const Text('ยกเลิก'),
@@ -134,7 +154,9 @@ class PrescriptionRiskDialog extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'กรุณาลบรายการที่ถูกบล็อกออกจากใบสั่งยา หรือให้ผู้ป่วยมาตรวจที่คลินิกแบบ Face-to-Face',
+              hasMissingLicense
+                  ? 'แพทย์ยังไม่มีใบอนุญาตที่จำเป็น กรุณาอัปโหลดเอกสารก่อนสั่งจ่าย หรือให้ผู้ป่วยมาตรวจที่คลินิกแบบ Face-to-Face'
+                  : 'กรุณาลบรายการที่ถูกบล็อกออกจากใบสั่งยา หรือให้ผู้ป่วยมาตรวจที่คลินิกแบบ Face-to-Face',
               style: TextStyle(color: Colors.red.shade700, fontSize: 12),
             ),
           ],

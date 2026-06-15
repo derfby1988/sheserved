@@ -656,4 +656,176 @@ class ConsultationRepository {
         .stream(primaryKey: ['id'])
         .asyncMap((_) => getActiveRecipientCount());
   }
+
+  /// ตรวจสอบว่า provider มี consultation ที่ in_progress อยู่หรือไม่
+  /// ใช้สำหรับ safety net: ถ้า busy แต่ไม่มีงาน → reset เป็น online
+  Future<bool> hasActiveInProgressConsultation(String providerId) async {
+    try {
+      final response = await _client
+          .from('consultation_requests')
+          .select('id')
+          .eq('provider_id', providerId)
+          .eq('status', 'in_progress')
+          .limit(1);
+      return (response as List).isNotEmpty;
+    } catch (e) {
+      debugPrint('hasActiveInProgressConsultation error: $e');
+      return false;
+    }
+  }
+
+  /// นับจำนวน consultation ที่ provider กำลังทำอยู่ (in_progress)
+  /// ใช้สำหรับแสดง banner + จำกัดจำนวนงานพร้อมกัน
+  Future<int> getActiveInProgressConsultationCount(String providerId) async {
+    try {
+      final response = await _client
+          .from('consultation_requests')
+          .select('id')
+          .eq('provider_id', providerId)
+          .eq('status', 'in_progress')
+          .count(CountOption.exact);
+      return response.count ?? 0;
+    } catch (e) {
+      debugPrint('getActiveInProgressConsultationCount error: $e');
+      return 0;
+    }
+  }
+
+  /// ดึงรายการ consultation ที่ provider กำลังทำอยู่ (in_progress)
+  /// ใช้สำหรับแสดงรายละเอียดใน banner
+  Future<List<Map<String, dynamic>>> getActiveInProgressConsultations(
+    String providerId,
+  ) async {
+    try {
+      final response = await _client
+          .from('consultation_requests')
+          .select('id, package_name, patient:user_id (first_name, last_name), created_at')
+          .eq('provider_id', providerId)
+          .eq('status', 'in_progress')
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('getActiveInProgressConsultations error: $e');
+      return [];
+    }
+  }
+
+  /// Mark expert ว่าเสร็จงานแล้ว คืนค่าว่าทุกคนเสร็จหรือยัง
+  /// ใช้ RPC mark_expert_finished (SECURITY DEFINER)
+  Future<Map<String, dynamic>> markExpertFinished(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'mark_expert_finished',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('markExpertFinished error: $e');
+      rethrow;
+    }
+  }
+
+  /// ดึงสถานะการเสร็จงานของ experts ทั้งหมดใน consultation
+  Future<Map<String, dynamic>> getExpertCompletionStatus(
+    String consultationId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'get_expert_completion_status',
+        params: {'p_consultation_id': consultationId},
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getExpertCompletionStatus error: $e');
+      return {
+        'total_count': 0,
+        'finished_count': 0,
+        'remaining_count': 0,
+        'all_finished': false,
+        'experts': [],
+      };
+    }
+  }
+
+  /// บันทึกว่า expert ออกจากห้องแชท (ไปหน้าอื่น)
+  Future<Map<String, dynamic>> markExpertLeft(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'mark_expert_left',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('markExpertLeft error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// บันทึกว่า expert กลับเข้าห้องแชท
+  Future<Map<String, dynamic>> markExpertReentered(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'mark_expert_reentered',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('markExpertReentered error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// ยกเลิกสถานะจบงานของ expert (revert finished_at)
+  Future<Map<String, dynamic>> markExpertReverted(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'mark_expert_reverted',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('markExpertReverted error: $e');
+      rethrow;
+    }
+  }
+
+  /// ดึงรายการ consultation_id ที่ expert จบงานแล้ว
+  Future<Set<String>> getFinishedConsultationIds(String providerId) async {
+    try {
+      final response = await _client
+          .from('consultation_room_experts')
+          .select('consultation_id')
+          .eq('provider_id', providerId)
+          .not('finished_at', 'is', null);
+      final list = (response as List).cast<Map<String, dynamic>>();
+      return list.map((e) => e['consultation_id'].toString()).toSet();
+    } catch (e) {
+      debugPrint('getFinishedConsultationIds error: $e');
+      return {};
+    }
+  }
 }

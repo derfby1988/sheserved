@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/service_locator.dart';
@@ -60,11 +61,13 @@ class _MedicationCardWidget extends StatefulWidget {
   final MedicationItem item;
   final bool showDelete;
   final VoidCallback onDelete;
+  final VoidCallback? onChanged;
 
   const _MedicationCardWidget({
     required this.item,
     required this.showDelete,
     required this.onDelete,
+    this.onChanged,
     Key? key,
   }) : super(key: key);
 
@@ -117,6 +120,7 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
     FocusScope.of(context).unfocus();
     item.nameController.text = model.tradeName;
     item.doseController.text = model.strength ?? '';
+    widget.onChanged?.call();
     debugPrint('[MedicationCard] selected: name="${model.tradeName}" strength="${model.strength}"');
     if (mounted) {
       setState(() {
@@ -166,6 +170,7 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                       ),
                       onChanged: (val) {
                         item.name = val;
+                        widget.onChanged?.call();
                         if (_ignoreNextChange) return;
                         _timer?.cancel();
                         _timer = Timer(
@@ -240,7 +245,10 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                     labelText: 'ขนาด (Dose)',
                     border: InputBorder.none,
                   ),
-                  onChanged: (val) => item.dose = val,
+                  onChanged: (val) {
+                    item.dose = val;
+                    widget.onChanged?.call();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -251,7 +259,10 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                     labelText: 'ความถี่ (Freq)',
                     border: InputBorder.none,
                   ),
-                  onChanged: (val) => item.frequency = val,
+                  onChanged: (val) {
+                    item.frequency = val;
+                    widget.onChanged?.call();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -262,7 +273,10 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                     labelText: 'ระยะเวลา',
                     border: InputBorder.none,
                   ),
-                  onChanged: (val) => item.duration = val,
+                  onChanged: (val) {
+                    item.duration = val;
+                    widget.onChanged?.call();
+                  },
                 ),
               ),
             ],
@@ -317,12 +331,16 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
   ]; // Start with 1 empty field
   final TextEditingController _notesController = TextEditingController();
 
+  String get _draftKey => 'prescription_draft_${widget.consultationId}';
+  Timer? _draftSaveTimer;
+  DateTime? _draftLastSavedAt;
 
   @override
   void initState() {
     super.initState();
     _loadLayoutPreference();
     _loadSavedTemplates();
+    _loadDraft();
   }
 
   @override
@@ -332,7 +350,86 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
     for (final med in _medications) {
       med.dispose();
     }
+    _draftSaveTimer?.cancel();
     super.dispose();
+  }
+
+  void _scheduleDraftSave() {
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 800), _saveDraft);
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draft = {
+        'medications': _medications.map((m) => {
+          'name': m.name,
+          'dose': m.dose,
+          'frequency': m.frequency,
+          'duration': m.duration,
+          'notes': m.notes,
+        }).toList(),
+        'general_notes': _notesController.text,
+        'template_id': _selectedTemplateId,
+        'template_name': _selectedTemplateName,
+        'saved_at': DateTime.now().toIso8601String(),
+      };
+      await prefs.setString(_draftKey, jsonEncode(draft));
+      _draftLastSavedAt = DateTime.now();
+      debugPrint('[PrescriptionEditor] Draft saved for ${widget.consultationId}');
+    } catch (e) {
+      debugPrint('[PrescriptionEditor] Draft save error: $e');
+    }
+  }
+
+  Future<void> _loadDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_draftKey);
+      if (jsonStr == null) return;
+      final draft = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      final meds = (draft['medications'] as List?)?.cast<Map<String, dynamic>>();
+      if (meds != null && meds.isNotEmpty) {
+        for (final med in _medications) {
+          med.dispose();
+        }
+        _medications.clear();
+        for (final m in meds) {
+          final item = MedicationItem(
+            name: m['name'] ?? '',
+            dose: m['dose'] ?? '',
+            frequency: m['frequency'] ?? '',
+            duration: m['duration'] ?? '',
+            notes: m['notes'] ?? '',
+          );
+          _medications.add(item);
+        }
+      }
+
+      final notes = draft['general_notes'] as String? ?? '';
+      _notesController.text = notes;
+
+      _selectedTemplateId = draft['template_id'] as String?;
+      _selectedTemplateName = draft['template_name'] as String?;
+
+      setState(() {});
+      debugPrint('[PrescriptionEditor] Draft loaded for ${widget.consultationId}');
+    } catch (e) {
+      debugPrint('[PrescriptionEditor] Draft load error: $e');
+    }
+  }
+
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftKey);
+      _draftLastSavedAt = null;
+      debugPrint('[PrescriptionEditor] Draft cleared for ${widget.consultationId}');
+    } catch (e) {
+      debugPrint('[PrescriptionEditor] Draft clear error: $e');
+    }
   }
 
   List<Map<String, dynamic>> _buildMedicationSnapshot() {
@@ -599,6 +696,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
     setState(() {
       _medications.add(MedicationItem());
     });
+    _scheduleDraftSave();
   }
 
   void _removeMedication(int index) {
@@ -606,9 +704,11 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
       _medications[index].dispose();
       _medications.removeAt(index);
     });
+    _scheduleDraftSave();
   }
 
   Future<void> _submitPrescription() async {
+    _draftSaveTimer?.cancel(); // Cancel any pending draft save before submit
     try {
       final userId = AuthService.instance.currentUser?.id;
       if (userId == null) return;
@@ -646,6 +746,11 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         barrierDismissible: false,
         builder: (_) => PrescriptionRiskDialog(
           results: screenResults,
+          onNavigateToUpload: () {
+            // Navigate to ProfilePage so provider can upload missing license
+            // After upload, provider should return to this prescription editor
+            Navigator.pushNamed(context, '/profile');
+          },
         ),
       );
 
@@ -682,6 +787,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         createdAt: DateTime.now(),
       );
       await chatRepo.sendMessage(msg);
+      await _clearDraft();
 
       if (mounted) {
         Navigator.pop(context);
@@ -709,6 +815,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
             item: med,
             showDelete: _medications.length > 1,
             onDelete: () => _removeMedication(index),
+            onChanged: _scheduleDraftSave,
           );
         }).toList(),
         if (!_isEditMode)
@@ -759,6 +866,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
     return TextField(
       controller: _notesController,
       maxLines: 3,
+      onChanged: (_) => _scheduleDraftSave(),
       decoration: InputDecoration(
         hintText: 'คำแนะนำการทานยาเพิ่มเติม...',
         filled: true,
@@ -772,13 +880,47 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
     );
   }
 
+  bool get _hasUnsavedChanges {
+    return _medications.any((m) => m.name.trim().isNotEmpty) ||
+        _notesController.text.trim().isNotEmpty ||
+        _selectedTemplateId != null;
+  }
+
+  Future<bool> _showExitConfirmationDialog() async {
+    if (!_hasUnsavedChanges) return true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ยืนยันการออก'),
+        content: const Text('ข้อมูลใบสั่งยายังไม่ได้บันทึก หากออกไปตอนนี้ข้อมูลจะสูญหาย ต้องการออกหรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('อยู่ต่อ'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('ออกโดยไม่บันทึก'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
+    return WillPopScope(
+      onWillPop: _showExitConfirmationDialog,
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
@@ -866,11 +1008,13 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
                                   color: Colors.grey,
                                 ),
                               ),
-                            Text(
-                              section.label,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            Expanded(
+                              child: Text(
+                                section.label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
                             ),
                           ],
@@ -925,6 +1069,6 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
             ),
         ],
       ),
-    );
+    ),);
   }
 }

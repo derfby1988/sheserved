@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../features/auth/data/repositories/user_repository.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_entry.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
@@ -51,12 +52,14 @@ class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
   final ConsultationEntry? entry; // For active consultations
   final bool readOnly; // true = ดูอย่างเดียว ไม่สามารถดำเนินการได้
+  final bool hasFinished; // true = provider จบงานแล้ว แต่ consultation ยังไม่ปิด
 
   const ChartBoardPage({
     super.key,
     this.request,
     this.entry,
     this.readOnly = false,
+    this.hasFinished = false,
   });
 
   @override
@@ -88,6 +91,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isHeaderExpanded = true;
   bool _isProvider = false;
   bool _hasSubmitted = false; // true = ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
+  bool _hasFinished = false; // true = provider จบงานแล้ว (multi-expert tracking)
 
   StreamSubscription? _messagesSub;
   List<ConsultationPackage> _availablePackages = [];
@@ -101,6 +105,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // --- Expert Status ---
   List<Map<String, dynamic>> _expertStatuses = [];
   StreamSubscription? _expertStatusSub;
+  StreamSubscription? _expertAvailabilitySub;
+  Map<String, dynamic> _completionStatus = {};
+  bool _isCheckingCompletion = false;
 
   // --- Professions (for accurate icons/colors from admin settings) ---
   List<Profession> _professions = [];
@@ -131,6 +138,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     // Auto-detect initial state
     // NOTE: Don't set _isConsultationActive here — let _initChat determine
     // from real payment_status to avoid hiding the pain selector prematurely.
+    _hasFinished = widget.hasFinished;
     if (widget.entry != null) {
       _isHeaderExpanded = false;
       _selectedPain = widget.entry!.symptomsChart['pain_level']?.toString();
@@ -162,6 +170,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _initChat();
+    _loadCompletionStatus();
     _loadPackages();
     _loadProfessions();
     _professionsRefreshController = ProfessionsRefreshController(onRefresh: _loadProfessions);
@@ -173,6 +182,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   void _startTimer() {
     debugPrint('[ChartBoard] _startTimer called, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
     _timerController.start();
+  }
+
+  /// โหลดสถานะการเสร็จงานของ experts ทั้งหมดใน consultation นี้
+  Future<void> _loadCompletionStatus() async {
+    final consultationId = widget.entry?.id ?? widget.request?.id ?? _activeConsultationId;
+    if (consultationId == null || consultationId.isEmpty) return;
+
+    setState(() => _isCheckingCompletion = true);
+    try {
+      final repo = ServiceLocator.instance.consultationRepository;
+      final status = await repo.getExpertCompletionStatus(consultationId);
+      final currentUserId = _currentUser?.id;
+      final experts = (status['experts'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      final hasCurrentUserFinished = currentUserId != null && experts.any((expert) {
+        return expert['provider_id']?.toString() == currentUserId &&
+            expert['is_finished'] == true;
+      });
+
+      if (mounted) {
+        setState(() {
+          _completionStatus = status;
+          _hasFinished = widget.hasFinished || _hasFinished || hasCurrentUserFinished;
+          _isCheckingCompletion = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ChartBoard: _loadCompletionStatus error: $e');
+      if (mounted) setState(() => _isCheckingCompletion = false);
+    }
   }
 
   Future<void> _onSessionExpired() async {
@@ -557,15 +595,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .eq('consultation_id', consultationId)
           .listen((data) {
             if (mounted) {
-              final joined = data.map((e) => {
-                'role': e['expert_group_role'],
-                'name': e['expert_group_name'],
-                'status': e['status'],
-                'providerId': e['provider_id'],
-                'isRequired': e['is_required'] as bool? ?? false,
-                'joinedAt': e['joined_at'],
-                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
-                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+              final joined = data.map((e) {
+                final user = e['users'] as Map<String, dynamic>? ?? {};
+                return {
+                  'role': e['expert_group_role'],
+                  'name': e['expert_group_name'],
+                  'status': e['status'],
+                  'providerId': e['provider_id'],
+                  'isRequired': e['is_required'] as bool? ?? false,
+                  'joinedAt': e['joined_at'],
+                  'leftAt': e['left_at'],
+                  'finishedAt': e['finished_at'],
+                  'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
+                  'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+                  'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+                };
               }).toList();
               // Merge with package groups to show waiting groups too
               final merged = _mergeWithPackageGroups(joined);
@@ -585,6 +629,32 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
               debugPrint('[ChartBoard] >>> Starting timer from stream (all required joined)');
               _startTimer();
+            }
+          });
+
+      // 3.5 Subscribe to Users availability_status changes for joined experts
+      _expertAvailabilitySub = supabase
+          .from('users')
+          .stream(primaryKey: ['id'])
+          .listen((userChanges) {
+            debugPrint('[ChartBoard] users stream triggered: ${userChanges.length} changes');
+            final joinedProviderIds = _expertStatuses
+                .where((e) => e['status'] == 'joined' && e['providerId'] != null)
+                .map((e) => e['providerId'] as String)
+                .toSet();
+            if (joinedProviderIds.isEmpty) return;
+            
+            bool shouldRefresh = false;
+            for (final change in userChanges) {
+              final changedUserId = change['id'] as String?;
+              if (changedUserId != null && joinedProviderIds.contains(changedUserId)) {
+                shouldRefresh = true;
+                break;
+              }
+            }
+            if (shouldRefresh && consultationId != null) {
+              debugPrint('[ChartBoard] Provider availability changed → re-fetching expert statuses');
+              _fetchExpertStatuses(consultationId);
             }
           });
 
@@ -618,7 +688,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       debugPrint('[ChartBoard] _fetchExpertStatuses START for consultationId=$consultationId');
       final data = await Supabase.instance.client
           .from('consultation_room_experts')
-          .select()
+          .select('*, users!inner(availability_status, first_name, last_name, profile_image_url)')
           .eq('consultation_id', consultationId);
 
       debugPrint('[ChartBoard] _fetchExpertStatuses rows=${(data as List).length}');
@@ -626,16 +696,24 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         debugPrint('[ChartBoard] expert raw row: $row');
       }
 
-      List<Map<String, dynamic>> mapped = (data as List).map((e) => {
-        'role': e['expert_group_role'],
-        'name': e['expert_group_name'],
-        'status': e['status'],
-        'providerId': e['provider_id'],
-        'isRequired': e['is_required'] as bool? ?? false,
-        'joinedAt': e['joined_at'],
-        'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
-        'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+      final userData = (data as List).map((e) {
+        final user = e['users'] as Map<String, dynamic>? ?? {};
+        return {
+          'role': e['expert_group_role'],
+          'name': e['expert_group_name'],
+          'status': e['status'],
+          'providerId': e['provider_id'],
+          'isRequired': e['is_required'] as bool? ?? false,
+          'joinedAt': e['joined_at'],
+          'leftAt': e['left_at'],
+          'finishedAt': e['finished_at'],
+          'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
+          'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+          'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+        };
       }).toList();
+
+      List<Map<String, dynamic>> mapped = List.from(userData);
 
       // Fallback 0: ensure rows exist from package data (trigger safety net)
       if (mapped.isEmpty && _consultationData?['package_id'] != null) {
@@ -653,15 +731,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             .eq('consultation_id', consultationId);
         if ((refreshed as List).isNotEmpty) {
           debugPrint('[ChartBoard] ensureRoomExperts succeeded, re-query got ${refreshed.length} rows');
-          mapped = (refreshed as List).map((e) => {
-            'role': e['expert_group_role'],
-            'name': e['expert_group_name'],
-            'status': e['status'],
-            'providerId': e['provider_id'],
-            'isRequired': e['is_required'] as bool? ?? false,
-            'joinedAt': e['joined_at'],
-            'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'],
-            'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+          mapped = (refreshed as List).map((e) {
+            final user = e['users'] as Map<String, dynamic>? ?? {};
+            return {
+              'role': e['expert_group_role'],
+              'name': e['expert_group_name'],
+              'status': e['status'],
+              'providerId': e['provider_id'],
+              'isRequired': e['is_required'] as bool? ?? false,
+              'joinedAt': e['joined_at'],
+              'leftAt': e['left_at'],
+              'finishedAt': e['finished_at'],
+              'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
+              'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+              'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+            };
           }).toList();
         }
       }
@@ -695,6 +779,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             'joinedAt': e['joined_at'],
             'providerAvatarUrl': user['profile_image_url'],
             'expertGroupIcon': null,
+            'availabilityStatus': user['availability_status'] as String? ?? 'offline',
           };
         }).toList();
 
@@ -707,7 +792,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final providerId = _consultationData!['provider_id'] as String;
         final user = await Supabase.instance.client
             .from('users')
-            .select('first_name, last_name, profile_image_url, profession_id')
+            .select('first_name, last_name, profile_image_url, profession_id, availability_status')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -748,6 +833,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             'joinedAt': _consultationData!['updated_at'],
             'providerAvatarUrl': user['profile_image_url'],
             'expertGroupIcon': null,
+            'availabilityStatus': user['availability_status'] as String? ?? 'offline',
           }];
         }
       }
@@ -773,6 +859,29 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             mapped.first['providerId'] = providerId;
             mapped.first['joinedAt'] = _consultationData!['updated_at'] ?? DateTime.now().toIso8601String();
           }
+        }
+      }
+
+      // Query prescriptions for each joined expert
+      final joinedProviderIds = mapped
+          .where((e) => e['providerId'] != null)
+          .map((e) => e['providerId'] as String)
+          .toList();
+      if (joinedProviderIds.isNotEmpty) {
+        try {
+          final prescriptions = await Supabase.instance.client
+              .from('prescriptions')
+              .select('provider_id')
+              .eq('consultation_id', consultationId);
+          final prescriberIds = (prescriptions as List)
+              .map((p) => p['provider_id'] as String?)
+              .where((id) => id != null)
+              .toSet();
+          for (final expert in mapped) {
+            expert['hasPrescription'] = prescriberIds.contains(expert['providerId']);
+          }
+        } catch (e) {
+          debugPrint('[ChartBoard] prescription query error: $e');
         }
       }
 
@@ -1171,6 +1280,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _audioRecorder.dispose();
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
+    _expertAvailabilitySub?.cancel();
     _roomSub?.cancel();
     _consultationSub?.cancel();
     disposeHealthPermission();
@@ -1184,8 +1294,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   @override
   Widget build(BuildContext context) {
+    final isProviderActive = _isProvider && (_consultationData?['status'] == 'in_progress');
+
     return PopScope(
-      canPop: !_hasSubmitted,
+      canPop: !_hasSubmitted && !isProviderActive,
       onPopInvokedWithResult: (didPop, result) {
         if (_hasSubmitted && !didPop) {
           // ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
@@ -1196,6 +1308,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             (route) => route.isFirst,
             arguments: {'tabIndex': 2}, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
           );
+        }
+        if (isProviderActive && !didPop) {
+          // Provider กด system back → trigger ผ่าน leading button แทน
+          // (leading button จัดการ dialog ยืนยันเอง)
         }
       },
       child: GestureDetector(
@@ -1217,7 +1333,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             titleSpacing: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
-              onPressed: () {
+              onPressed: () async {
                 if (_hasSubmitted) {
                   // หลังส่งคำรักษาแล้ว → ไปหน้า profile/history แทน analyze-body
                   Navigator.pushNamedAndRemoveUntil(
@@ -1226,9 +1342,40 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     (route) => route.isFirst,
                     arguments: {'tabIndex': 2},
                   );
-                } else {
-                  Navigator.pop(context);
+                  return;
                 }
+
+                // Provider ใน consultation ที่กำลังดำเนินอยู่ → ยืนยันก่อนออก
+                final isActive = _isProvider && (_consultationData?['status'] == 'in_progress');
+                if (isActive) {
+                  final shouldLeave = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('ยืนยันการออกจากห้องแชท'),
+                      content: const Text(
+                        'การปรึกษายังดำเนินอยู่ หากออกไปตอนนี้ สามารถกลับเข้ามาห้องแชทนี้ได้ผ่านเมนู "ประวัติการปรึกษา"\n\n'
+                        'คำแนะนำ: หากต้องการอัปโหลดเอกสารเพิ่มเติม กรุณาใช้ปุ่มใน dialog แจ้งเตือนแทนการออกจากหน้านี้',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('อยู่ต่อ'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('ออกจากห้องแชท'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (shouldLeave != true) return;
+                }
+
+                if (mounted) Navigator.pop(context);
               },
             ),
           title: Row(
@@ -1334,19 +1481,145 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              // Logic to finish job
-              final consultationId = widget.entry?.id;
-              if (consultationId != null) {
-                final repo = ServiceLocator.instance.consultationRepository;
-                await repo.updateStatus(consultationId, 'completed');
-                if (mounted) Navigator.pop(context);
-              }
+              await _finishJobMultiExpert();
             },
             child: const Text('ยืนยัน'),
           ),
         ],
       ),
     );
+  }
+
+  /// จบงานแบบ multi-expert: mark ตัวเองเสร็จ รอคนอื่น
+  Future<void> _finishJobMultiExpert() async {
+    final authUser = _currentUser;
+    if (authUser == null) return;
+
+    final consultationId = widget.entry?.id ?? widget.request?.id;
+    if (consultationId == null || consultationId.isEmpty) return;
+
+    final consultRepo = ServiceLocator.instance.consultationRepository;
+    final userRepo = UserRepository(Supabase.instance.client);
+
+    try {
+      final result = await consultRepo.markExpertFinished(
+        consultationId,
+        authUser.id,
+      );
+
+      final allFinished = result['all_finished'] as bool? ?? false;
+
+      // คืนสถานะ provider → online
+      await userRepo.setAvailabilityStatus(authUser.id, 'online');
+
+      // Sync completion state from DB so the finish/revert buttons and read-only overlay stay correct
+      await _loadCompletionStatus();
+
+      if (mounted) {
+        debugPrint('[ChartBoard] _finishJobMultiExpert: setting _hasFinished=true, allFinished=$allFinished');
+        setState(() => _hasFinished = true);
+
+        if (allFinished) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ เสร็จสิ้น! ทุกผู้เชี่ยวชาญจบงานแล้ว'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          await Future.delayed(const Duration(seconds: 3));
+          if (mounted) Navigator.pop(context);
+        } else {
+          final finishedCount = result['finished_count'] as int? ?? 0;
+          final totalCount = result['total_count'] as int? ?? 1;
+          final remainingCount = result['remaining_count'] as int? ?? 0;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'คุณจบงานแล้ว รอผู้เชี่ยวชาญอีก $remainingCount คน '
+                '($finishedCount / $totalCount)',
+              ),
+              backgroundColor: AppColors.info,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('ChartBoard: _finishJobMultiExpert error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  /// ยกเลิกสถานะจบงาน (revert)
+  void _showRevertDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ยกเลิกจบงาน?'),
+        content: const Text('คุณต้องการกลับมาทำงานในห้องแชทนี้ต่อใช่หรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _revertFinish();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF9800)),
+            child: const Text('ยืนยัน'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _revertFinish() async {
+    final authUser = _currentUser;
+    if (authUser == null) return;
+
+    final consultationId = widget.entry?.id ?? widget.request?.id;
+    if (consultationId == null || consultationId.isEmpty) return;
+
+    final consultRepo = ServiceLocator.instance.consultationRepository;
+
+    try {
+      await consultRepo.markExpertReverted(consultationId, authUser.id);
+      await _loadCompletionStatus();
+      if (mounted) {
+        setState(() => _hasFinished = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ยกเลิกจบงานแล้ว คุณสามารถแชทต่อได้'),
+            backgroundColor: AppColors.info,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('ChartBoard: _revertFinish error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildMessagesList() {
@@ -1498,14 +1771,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget _buildChatInput() {
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
-    debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive _consultationData=$_consultationData');
+    final readOnly = widget.readOnly || _hasFinished;
+    debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive readOnly=$readOnly _consultationData=$_consultationData');
     return ChatInputBarWidget(
+      key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
       controller: _msgController,
       isProvider: _isProvider,
       isChatActive: isChatActive,
       isSending: _isSendingNotifier,
       isRecording: _isRecordingNotifier,
-      readOnly: widget.readOnly,
+      readOnly: readOnly,
+      readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
       onSend: _sendMessage,
       onStartRecording: _startRecording,
       onStopRecording: _stopRecording,
@@ -1692,10 +1968,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildActionButtons() {
+    debugPrint('[ChartBoard] _buildActionButtons: _isProvider=$_isProvider, _hasFinished=$_hasFinished, readOnly=${widget.readOnly}');
     return ActionButtonsWidget(
+      key: ValueKey('action-buttons-${widget.readOnly}-$_hasFinished'),
       isProvider: _isProvider,
-      readOnly: widget.readOnly,
+      readOnly: widget.readOnly || _hasFinished,
+      hasFinished: _hasFinished,
       onFinishPressed: _showFinishDialog,
+      onRevertPressed: _showRevertDialog,
       onVideoCallPressed: _startVideoCall,
       onInfoPressed: _showConsultationDetails,
     );

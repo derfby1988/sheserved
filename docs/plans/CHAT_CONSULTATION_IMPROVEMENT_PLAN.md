@@ -458,6 +458,8 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 > | 6 | `consultation_requests` Stream | ฝั่งผู้ป่วยไม่ยอมรีเฟรชหน้าจอเมื่อหมอกดรับงาน | เพิ่มเงื่อนไข `newStatus != oldStatus` เพื่อสั่ง `_fetchExpertStatuses` ทุกครั้งที่สถานะแชทเปลี่ยนเป็น `in_progress` |
 > | 7 | `findProfessionByNameOrRole` | ไม่สามารถจับคู่อาชีพจากตารางใหม่ได้หากเป็นแพ็คเกจเก่า (Legacy) | เพิ่มตารางแมปคำ (Legacy Map) เช่น `'doctor'` -> `'แพทย์ทั่วไป'` เพื่อให้ดึง ID จาก DB ได้ถูกต้อง |
 > | 8 | `ExpertStatusBanner` | แสดงชื่อชิปตามชื่อหน้ากลุ่ม (เช่น "หมอ") แทนที่จะเป็นชื่ออาชีพจริง | ปรับให้ดึง `prof.name` (เช่น "แพทย์ทั่วไป") มาแสดงเสมอ ทั้งตอนรอคนรับงานและตอนที่มีคนเข้าร่วมแล้ว |
+> | 9 | `health_program_request_dashboard` — การ์ดยังไม่ขึ้นปุ่มเทา `คุณจบงานแล้ว` เมื่อจบงานแล้ว | `_finishedConsultationIds` sync จาก `consultation_room_experts` ล้าหลัง / ไม่ match กับ `consultation_requests.status` | ใช้เงื่อนไขสองชั้น: `e.status == 'completed' \|\| _finishedConsultationIds.contains(e.id)` และส่ง `hasFinished` แบบเดียวกันเข้า `ChartBoardPage` |
+> | 10 | `chart_board_page` — ปุ่มไม่เปลี่ยนเป็น `ยกเลิกปิดงาน` และ chat input ไม่กลายเป็น read-only หลังกดจบงาน | `_hasFinished` อิงแค่ `widget.hasFinished` จาก route argument ไม่ได้โหลดจาก DB ใหม่ | เพิ่ม `_loadCompletionStatus()` โหลดจาก `getExpertCompletionStatus` ตอน `initState` และหลัง `finish/revert` RPC ใช้ `ValueKey` บังคับ rebuild `ActionButtonsWidget` และ `ChatInputBarWidget` |
 >
 > **เหตุผล:** `data` / `mapped` จาก `consultation_room_experts` มีเฉพาะ expert ที่เข้าร่วมแล้ว ไม่มี waiting groups จากแพ็คเกจ → ตรวจสอบ `isRequired` ไม่ครบ → timer เริ่มก่อน expert ครบ
 >
@@ -554,6 +556,58 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 > หาก `medications.strength` เป็น `null` → ช่อง Dose จะว่างเปล่าหลังเลือกยา ซึ่งเป็น **data issue** ไม่ใช่ code bug ต้องอัปเดตข้อมูลในฐานข้อมูลให้ครบถ้วนก่อนใช้งานจริง
 >
 > **แนะนำ:** ควรมี data validation หรือ seed script ที่เติม `strength` ให้ครบทุกรายการยาใน `medications` ก่อนเปิดใช้ autocomplete ใน production
+
+#### การยืนยันก่อนออกจากหน้า (Exit Confirmation — Implemented 2026-06-14)
+
+**`PrescriptionEditorPage`:**
+- ใช้ `WillPopScope` + `_hasUnsavedChanges` เช็คก่อนออก
+- หากมีข้อมูลยา/notes/template ที่ยังไม่บันทึก → แสดง dialog ยืนยัน
+- ตัวเลือก: "อยู่ต่อ" / "ออกโดยไม่บันทึก"
+
+**`ChartBoardPage` (ห้องแชท):**
+- Provider ใน consultation `in_progress` → กด back ต้องยืนยันก่อนออก
+- Dialog แจ้งว่าสามารถกลับเข้าห้องแชทเดิมได้ผ่าน "ประวัติการปรึกษา"
+- แนะนำ: หากต้องการอัปโหลดเอกสารเพิ่มเติม ให้ใช้ปุ่มใน dialog แจ้งเตือนแทนการออกจากหน้าแชท
+
+#### การนำทางไปอัปโหลดเอกสารเมื่อขาดใบอนุญาต (Missing License Navigation — Implemented 2026-06-14)
+
+**`PrescriptionRiskDialog` เมื่อ `providerHasLicense == false`:**
+- แสดงปุ่ม "อัปโหลดใบอนุญาต" ใน dialog actions
+- กดแล้ว `Navigator.pop(false)` + trigger `onNavigateToUpload` callback
+- `PrescriptionEditorPage` ส่ง callback ที่ `Navigator.pushNamed(context, '/profile')`
+- Provider ไปที่หน้า Profile → อัปโหลดเอกสาร → กด back กลับมาที่ PrescriptionEditorPage เดิม
+- สามารถกด "บันทึก & ส่งใบสั่งยา" อีกครั้งเพื่อ re-screen (ตรวจสอบ license ใหม่)
+
+**Flow:**
+```
+[แพทย์กด "บันทึก & ส่งใบสั่งยา"]
+  → [DrugRiskScreening] ตรวจสอบ license
+      ├─ มีใบอนุญาต → ผ่าน → ส่งใบสั่งยา
+      └─ ไม่มีใบอนุญาต → PrescriptionRiskDialog แสดง "ห้ามสั่งจ่าย"
+          ├─ กด "อัปโหลดใบอนุญาต" → push /profile
+          │     → อัปโหลดเอกสารเสร็จ → pop กลับ
+          │     → กด "บันทึก & ส่ง" อีกครั้ง → re-screen → ผ่าน
+          └─ กด "ยกเลิก" → กลับไปแก้ไขใบสั่งยา
+```
+
+#### การบันทึก Draft ชั่วคราว (Local Draft Persistence — Implemented 2026-06-14)
+
+**`PrescriptionEditorPage` ใช้ `SharedPreferences` เก็บ draft JSON:**
+- Key: `prescription_draft_<consultationId>` (แยก draft ต่อ consultation)
+- Auto-save: debounce 800ms หลังจากทุกการเปลี่ยนแปลง (medication name/dose/freq/duration, notes, add/remove card)
+- `_saveDraft()`: serialize `_medications` + `_notesController.text` + `template_id/name` → JSON → `prefs.setString()`
+- `_loadDraft()`: เรียกใน `initState` หลังโหลด templates → หากมี draft ใน storage → restore เข้า state
+- `_clearDraft()`: ลบออกจาก storage หลัง submit สำเร็จ (หลัง `chatRepo.sendMessage`)
+
+**`_MedicationCardWidget` ส่ง `onChanged` callback ขึ้นไป parent:**
+- ทุก `TextFormField` (`name`, `dose`, `frequency`, `duration`) → `widget.onChanged?.call()`
+- `_select()` (เลือกจาก dropdown) → `widget.onChanged?.call()`
+- Parent (`_PrescriptionEditorPageState`) รับ callback แล้วเรียก `_scheduleDraftSave()`
+
+**ข้อควรระวัง:**
+> - Draft อยู่บนเครื่องผู้ใช้ (device-local) → ไม่ sync ข้ามอุปกรณ์
+> - ต้องมีการ clear draft อย่างเด็ดขาดหลัง submit สำเร็จ มิฉะนั้นเปิดหน้าใหม่จะยังเห็น draft เก่า
+> - `_submitPrescription()` ต้อง cancel `_draftSaveTimer` ก่อน submit เพื่อป้องกัน race condition
 
 ### Prescription-to-HIS Integration Flow (ใหม่)
 
@@ -3174,6 +3228,148 @@ Future<void> dismiss(String id) async {
 -- Query: .not('dismissed_by_user_ids', 'cs', '{userId}')
 -- Update: fetch → append → update (ป้องกัน race condition)
 ```
+
+#### 9️⃣ Best Practice: อย่าเปลี่ยน `availability_status` เป็น `offline` ตอน logout (2026-06-15)
+**ปัญหา:** `PresenceService.stop()` เรียก `setAvailabilityStatus(userId, 'offline')` ตอน logout → user ที่ตั้ง `busy` ไว้ กลับมา login ใหม่ได้ `offline` แทน
+
+**สาเหตุ:** Logout ไม่ใช่ user action ที่เลือกสถานะ — เป็นแค่การออกจาก session แต่ user ยังต้องการคงสถานะ `online` หรือ `busy` ที่เลือกไว้
+
+**❌ ห้ามทำ:**
+```dart
+// ผิด — reset สถานะที่ user เลือกไว้
+Future<void> stop() async {
+  await repo.setAvailabilityStatus(userId, 'offline'); // ❌ อย่าทำ
+}
+```
+
+**✅ ต้องทำ:**
+```dart
+// ถูก — หยุด heartbeat อย่างเดียว ไม่แตะ availability_status
+Future<void> stop() async {
+  _heartbeatTimer?.cancel();
+  _heartbeatTimer = null;
+  _isRunning = false;
+  _currentUserId = null;
+  _lastKnownUserId = null;
+}
+```
+
+**หลักการ:** `availability_status` เปลี่ยนได้โดย user action เท่านั้น (toggle / join consultation / finish consultation) — ไม่ใช่โดย logout
+
+**ไฟล์ที่เกี่ยวข้อง:**
+- `lib/services/presence_service.dart` — `stop()` ไม่เรียก `setAvailabilityStatus()`
+- `lib/services/auth_service.dart` — `logout()` → `await PresenceService.instance.stop()` แค่หยุด heartbeat
+
+#### 🔟 Safety Net: Auto-reset stale `busy` status (2026-06-15)
+**ปัญหา:** ถ้า app crash / force quit ขณะ provider ทำงาน (`busy`) → สถานะค้าง `busy` ใน DB ตลอด → provider login ใหม่ก็ยัง `busy` แต่ไม่มีงานทำ
+
+**รากเหง้า:**
+1. **App crash ขณะ consultation** — `availability_status` เป็น `busy` แต่ consultation ไม่ได้จบปกติ (ไม่มี code คืนสถานะ)
+2. **Session timeout ฝั่ง server** — เวลาหมดแต่ไม่มี mechanism reset provider status
+
+**แก้ไข — 2 ชั้น:**
+
+**ชั้นที่ 1: Login Safety Check (`AuthService.login`)**
+```dart
+Future<void> login(UserModel user) async {
+  _currentUser = user;
+  // ถ้า busy แต่ไม่มี consultation in_progress → reset เป็น online
+  unawaited(_fixStaleBusyStatusIfNeeded(user));
+  ...
+}
+```
+- ทำงานทุกครั้งที่ login
+- Query `consultation_requests` หา `provider_id = user.id` + `status = 'in_progress'`
+- ถ้าไม่มี → `setAvailabilityStatus(user.id, 'online')` + update `_currentUser`
+
+**ชั้นที่ 2: Dashboard Safety Check (`HealthProgramRequestDashboard._init`)**
+```dart
+Future<void> _init() async {
+  ...
+  await _fixStaleBusyStatusIfNeeded(); // หลังโหลด availability_status
+  ...
+}
+```
+- ทำงานทุกครั้งที่ provider เปิด Dashboard
+- จับกรณีที่ app ไม่ได้ logout/login แต่ provider เปิดหน้า Dashboard ใหม่
+
+**ไฟล์ที่เกี่ยวข้อง:**
+- `lib/features/consultation/data/repositories/consultation_repository.dart` — `hasActiveInProgressConsultation()`
+- `lib/services/auth_service.dart` — `_fixStaleBusyStatusIfNeeded()`
+- `lib/features/consultation/presentation/pages/health_program_request_dashboard.dart` — `_fixStaleBusyStatusIfNeeded()`
+
+**หมายเหตุ:** ถ้าต้องการ robust ขึ้นอีก → ควรเพิ่ม **server-side cron job** (Supabase pg_cron หรือ websocket-server worker) ที่ตรวจสอบ consultation ที่หมดเวลาแล้วแต่ provider ยัง `busy` อยู่ → auto-reset
+
+---
+
+#### 1️⃣1️⃣ Expert Room Status Tracking — สถานะผู้เชี่ยวชาญในห้องแชท (2026-06-15)
+
+**ปัญหา:** `ExpertStatusBanner` แสดงแค่สถานะ online/busy/offline ทั่วไปของ user ไม่สามารถบ่งบอกได้ว่า expert อยู่ในห้องแชทนี้หรือไม่
+
+**ฟีเจอร์ที่ implement:**
+
+**1. DB Schema — `consultation_room_experts`**
+```sql
+-- finished_at: จบงานแล้ว
+-- left_at: ออกจากห้องแชทนี้ (ไปหน้าอื่นในแอพ)
+ALTER TABLE public.consultation_room_experts
+ADD COLUMN finished_at TIMESTAMPTZ,
+ADD COLUMN left_at TIMESTAMPTZ;
+```
+
+**2. RPC Functions**
+- `mark_expert_finished(consultation_id, provider_id)` — mark expert ตัวเองเสร็จ + check ว่าทุกคนเสร็จหรือยัง → ถ้าครบจะเปลี่ยน `consultation_requests.status` เป็น `completed`
+- `mark_expert_left(consultation_id, provider_id)` — บันทึกว่าออกจากห้อง (dispose chat page)
+- `mark_expert_reentered(consultation_id, provider_id)` — เคลียร์ `left_at` (เข้าห้องใหม่)
+- `get_expert_completion_status(consultation_id)` — ดึงสถานะเสร็จงานของทุก expert
+
+**3. Flutter — `ExpertChatRoomPage`**
+```dart
+@override
+void initState() {
+  _markReentered(); // เคลียร์ left_at
+}
+
+@override
+void dispose() {
+  _markLeft(); // บันทึก left_at
+}
+
+Future<void> _finishJob() async {
+  final result = await consultRepo.markExpertFinished(id, providerId);
+  if (result['all_finished']) {
+    // ทุกคนเสร็จ → consultation จบจริง
+  } else {
+    // ตัวเองเสร็จแต่รอคนอื่น → อยู่ในห้องต่อได้
+  }
+}
+```
+
+**4. Flutter — `ExpertStatusBanner` แสดงสถานะบน Avatar**
+
+| สถานะ | สี Filter (35% opacity) | Badge มุมขวาล่าง | สถานะย่อย |
+|-------|----------------------|----------------|-----------|
+| จบงาน | ฟ้าอ่อน `#29B6F6` | ✅ `จบงาน` | — |
+| ออกจากห้อง | เหลือง `#FFCA28` | 🚪 `ออกจากห้อง` | — |
+| ออฟไลน์ | เทา `Colors.grey` | ● `ออฟไลน์` | — |
+| จ่ายยา | ชมพู `#F06292` | 💊 `จ่ายยา` | overlay บนรูป |
+| ในห้อง (online) | — (ไม่มี filter) | — (ไม่มี badge) | รูปปกติ |
+
+**Priority การตัดสินใจแสดงสถานะ:**
+1. `finished_at != null` → จบงาน (ฟ้า)
+2. `left_at != null` → ออกจากห้อง (เหลือง)
+3. `hasPrescription == true` → จ่ายยา (ชมพู)
+4. `availability == 'offline'` → ออฟไลน์ (เทา)
+5. อื่น ๆ → ไม่แสดง badge (ในห้องปกติ)
+
+**ไฟล์ที่เกี่ยวข้อง:**
+- `supabase/migrations/20260615084000_add_expert_completion_tracking.sql`
+- `lib/features/consultation/data/repositories/consultation_repository.dart` — `markExpertFinished/Left/Reentered`
+- `lib/features/consultation/presentation/pages/expert_chat_room_page.dart` — `_markLeft/_markReentered/_finishJob`
+- `lib/features/consultation/presentation/pages/chart_board_page.dart` — `_fetchExpertStatuses` (query `left_at`, `finished_at`, prescriptions)
+- `lib/features/consultation/presentation/widgets/health_data/expert_status_banner.dart` — UI avatar + badge + filter overlay
+
+**หมายเหตุ:** สถานะ "ในห้อง" (online แต่ไม่มี left_at) ไม่แสดง badge — เป็น default state ที่เห็นรูปโปรไฟล์ปกติ
 
 ### ⏰ ควรทำเมื่อไหร่
 
