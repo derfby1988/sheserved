@@ -109,6 +109,8 @@ class UserModel {
   final bool isThaiMhungEnabled; // ความสมัครใจในการรับแจ้งเหตุไทยมุง
   final int alertRadius; // รัศมีการแจ้งเตือน (เมตร)
   final bool isVolunteer; // สิทธิจิตอาสา (ดึงมาจาก Profession)
+  /// กำหนดว่าหมวดหมู่นี้เข้าสู่หน้ากระดานรับงาน (Dashboard) ได้หรือไม่
+  final bool isConsultationProvider;
   /// รัศมีการรับแจ้งเตือนให้ทาง (เมตร) ค่าเริ่มต้น 1,000 ม.
   final int yieldWayRadius;
   /// ความสมัครใจในการรับแจ้งเตือนให้ทาง
@@ -148,6 +150,7 @@ class UserModel {
     this.isThaiMhungEnabled = true,
     this.alertRadius = 500,
     this.isVolunteer = false,
+    this.isConsultationProvider = false,
     this.yieldWayRadius = 1000,
     this.isYieldWayEnabled = false,
     this.unblurredProfessionIds = const [],
@@ -182,6 +185,7 @@ class UserModel {
       'yield_way_radius': yieldWayRadius,
       'is_yield_way_enabled': isYieldWayEnabled,
       'unblurred_profession_ids': unblurredProfessionIds,
+      'is_consultation_provider': isConsultationProvider,
       // is_volunteer can be stored in metadata or handled during fetch
     };
   }
@@ -217,12 +221,31 @@ class UserModel {
       isThaiMhungEnabled: json['is_thai_mhung_enabled'] ?? true,
       alertRadius: json['alert_radius'] ?? 500,
       isVolunteer: json['is_volunteer'] ?? (json['professions']?['is_volunteer'] ?? false),
+      isConsultationProvider: _computeIsConsultationProvider(json),
       yieldWayRadius: json['yield_way_radius'] ?? 1000,
       isYieldWayEnabled: json['is_yield_way_enabled'] ?? false,
       unblurredProfessionIds: json['unblurred_profession_ids'] != null
           ? List<String>.from(json['unblurred_profession_ids'])
           : [],
     );
+  }
+
+  /// คำนวณ isConsultationProvider จาก profession_id
+  /// Fallback: ถ้ามี profession_id ที่ไม่ใช่ consumer → ถือว่าเป็น provider
+  static bool _computeIsConsultationProvider(Map<String, dynamic> json) {
+    // 1. ถ้ามีค่าจาก DB (เช่น professions.is_consultation_provider หรือ user_categories)
+    if (json['is_consultation_provider'] != null) {
+      return json['is_consultation_provider'] == true;
+    }
+    if (json['professions']?['is_consultation_provider'] != null) {
+      return json['professions']['is_consultation_provider'] == true;
+    }
+
+    // 2. Fallback: ใช้ profession_id ตรวจสอบ
+    final professionId = json['profession_id']?.toString();
+    if (professionId == null || professionId.isEmpty) return false;
+    const consumerId = '00000000-0000-0000-0000-000000000001';
+    return professionId != consumerId;
   }
 
   UserModel copyWith({
@@ -246,6 +269,7 @@ class UserModel {
     bool? isThaiMhungEnabled,
     int? alertRadius,
     bool? isVolunteer,
+    bool? isConsultationProvider,
     int? yieldWayRadius,
     bool? isYieldWayEnabled,
     List<String>? unblurredProfessionIds,
@@ -271,6 +295,7 @@ class UserModel {
       isThaiMhungEnabled: isThaiMhungEnabled ?? this.isThaiMhungEnabled,
       alertRadius: alertRadius ?? this.alertRadius,
       isVolunteer: isVolunteer ?? this.isVolunteer,
+      isConsultationProvider: isConsultationProvider ?? this.isConsultationProvider,
       yieldWayRadius: yieldWayRadius ?? this.yieldWayRadius,
       isYieldWayEnabled: isYieldWayEnabled ?? this.isYieldWayEnabled,
       unblurredProfessionIds: unblurredProfessionIds ?? this.unblurredProfessionIds,

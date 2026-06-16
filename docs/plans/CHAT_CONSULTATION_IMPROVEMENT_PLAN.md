@@ -4080,3 +4080,81 @@ CREATE TABLE IF NOT EXISTS registration_application_attachments (
 - Flow ลงทะเบียนหลักเดิมยังใช้งานได้ แม้ยังไม่มี config ใหม่สำหรับบาง profession
 
 *Last Updated: 2026-06-14* — ปรับปรุง Prescription Templates + Patient Selection History
+
+---
+
+## 🔄 Auto-Refresh Profile History after Chat Room (2026-06-16)
+
+### ปัญหา
+เมื่อผู้ใช้กดเข้าห้องแชทจากแถบ "ประวัติให้บริการ" หน้า Profile → จบงาน → กดย้อนกลับ การ์ดในหน้าประวัติไม่อัปเดตสถานะ (ยังแสดง `pending`/`in_progress` แทนที่จะเป็น `completed`)
+
+### สาเหตุ
+- `ProviderHistoryPage` ถูกฝัง (`isEmbedded: true`) ภายใน `ProfilePage` ผ่าน `SliverList`
+- `RouteAware.didPopNext()` บน `ProviderHistoryPage` **ไม่ทำงาน** เพราะไม่ใช่ top-level route — `ModalRoute` ที่ active คือ `ProfilePage` ไม่ใช่ `ProviderHistoryPage`
+- ดังนั้นการกลับจาก `/chart-board` → `ProfilePage` ไม่มี callback ให้ `ProviderHistoryPage` รีเฟรชข้อมูล
+
+### วิธีแก้ไข
+
+#### 1. ใช้ `RouteAware` บน `ProfilePage` (parent route)
+`ProfilePage` subscribe `dashboardRouteObserver` และรับ `didPopNext()` เมื่อกลับมาจากหน้าลูก:
+
+```dart
+class _ProfilePageState extends State<ProfilePage> with RouteAware {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    dashboardRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    dashboardRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // ถ้าอยู่แถบประวัติ → สั่งรีเฟรช
+    if (_selectedTabIndex == historyTabIndex) {
+      _historyPageKey.currentState?.loadHistory();
+    }
+  }
+}
+```
+
+#### 2. ใช้ `GlobalKey` เข้าถึง `ProviderHistoryPageState` จากภายนอก
+สร้าง `GlobalKey` ใน `ProfilePage` แล้วส่ง `key` เข้า `ProviderHistoryPage`:
+
+```dart
+// ProfilePage
+final GlobalKey<ProviderHistoryPageState> _historyPageKey =
+    GlobalKey<ProviderHistoryPageState>();
+
+// ตอนสร้าง widget
+ProviderHistoryPage(
+  key: _historyPageKey,
+  isEmbedded: true,
+)
+```
+
+#### 3. ทำ `ProviderHistoryPageState` เป็น public class
+- เปลี่ยนชื่อจาก `_ProviderHistoryPageState` → `ProviderHistoryPageState`
+- ทำ `loadHistory()` เป็น public method (`_loadHistory` → `loadHistory`)
+- อัปเดต `createState()` → `ProviderHistoryPageState()`
+
+### Files ที่แก้ไข
+| File | การเปลี่ยนแปลง |
+|---|---|
+| `profile_page.dart` | เพิ่ม `RouteAware`, `GlobalKey<ProviderHistoryPageState>`, `didPopNext()` |
+| `provider_history_page.dart` | ทำ `ProviderHistoryPageState` public, `loadHistory()` public, `RouteAware` mixin |
+
+### Lesson Learned
+- `RouteAware.didPopNext()` ทำงานเฉพาะบน widget ที่เป็น **top-level route** เท่านั้น
+- Widget ที่ฝัง (`isEmbedded`) ภายใน route อื่นต้องใช้ **communication pattern** ผ่าน parent:
+  - `GlobalKey` + direct method call
+  - `InheritedWidget` / `Provider`
+  - `ValueNotifier` / `Stream`
+  - `EventBus`
+- ถ้าต้องการให้หลายหน้ารีเฟรชพร้อมกัน → ใช้ `Provider`/`Bloc` กับ stream จาก repository แทนการพึ่ง `RouteAware` แยกต่อหน้า
+
+*Last Updated: 2026-06-16* — แก้ไขปัญหาการ์ดประวัติไม่อัปเดตหลังกลับจากห้องแชท

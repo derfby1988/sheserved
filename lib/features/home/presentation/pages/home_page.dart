@@ -2254,13 +2254,14 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 
-  /// แสดง HomeErpCard ถ้าผู้ใช้มี profession_id (องค์กร)
+  /// แสดง HomeErpCard ถ้าผู้ใช้เปิดสิทธิ์เข้า ERP Dashboard (isConsultationProvider)
   /// มิฉะนั้นแสดง HomePharmacyCard (ผู้บริโภคทั่วไป)
   Widget _buildPharmacyOrErpCard() {
     final user = AuthService.instance.currentUser;
-    final hasProfession = user?.professionId != null && user!.professionId!.isNotEmpty;
+    // เช็ค toggle isConsultationProvider จาก profession (ตาม dialog แก้ไขหมวดหมู่)
+    final showErp = user?.isConsultationProvider ?? false;
 
-    if (hasProfession) {
+    if (showErp) {
       return HomeErpCard(
         key: _pharmacyKey,
         onEnterTap: () => Navigator.of(context).pushNamed('/erp'),
