@@ -5,8 +5,9 @@ import '../features/erp/presentation/providers/organization_settings_provider.da
 import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
 import '../features/admin/models/organization_settings.dart';
 import '../services/auth_service.dart';
+import 'erp_mini_sidebar.dart';
 
-/// ERP Dashboard Shell — consistent Drawer + AppBar + Branch Selector
+/// ERP Dashboard Shell — Collapsible Mini Sidebar + AppBar + Branch Selector
 /// for all ERP sub-pages. Child pages render inside the body without
 /// their own Scaffold/AppBar.
 class ErpDashboardShell extends ConsumerStatefulWidget {
@@ -19,6 +20,8 @@ class ErpDashboardShell extends ConsumerStatefulWidget {
 }
 
 class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
+  bool _isSidebarExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,24 +89,27 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
           ),
         ],
       ),
-      drawer: _ErpDrawer(
-        onRouteSelected: (route) {
-          Navigator.of(context).pop(); // close drawer
-          if (route != null) {
-            Navigator.of(context).pushNamed(route);
-          }
-        },
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: bgColors,
-            stops: isDark ? null : const [0.0, 0.5, 1.0],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      drawer: null,
+      body: Row(
+        children: [
+          ErpMiniSidebar(
+            isExpanded: _isSidebarExpanded,
+            onToggle: () => setState(() => _isSidebarExpanded = !_isSidebarExpanded),
           ),
-        ),
-        child: widget.child,
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: bgColors,
+                  stops: isDark ? null : const [0.0, 0.5, 1.0],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: widget.child,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -223,308 +229,3 @@ class _BranchSelector extends StatelessWidget {
   }
 }
 
-/// ERP Drawer with module navigation (uses theme colors)
-class _ErpDrawer extends ConsumerWidget {
-  final void Function(String? route)? onRouteSelected;
-
-  const _ErpDrawer({this.onRouteSelected});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = ref.watch(dashboardThemeProvider).theme;
-    final primaryColor = theme?.primaryColor ?? const Color(0xFF00695C);
-    final isDark = theme?.isDarkMode ?? false;
-    final activeColor = isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3);
-    final inactiveColor = isDark ? Colors.white.withOpacity(0.55) : const Color(0xFF6B7A8A);
-    final currentRoute = ModalRoute.of(context)?.settings.name ?? '/erp/dashboard';
-
-    return Drawer(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [primaryColor, const Color(0xFF0F0F0F)]
-                : [const Color(0xFFF8FDFF), const Color(0xFFEAF8F0), const Color(0xFFF4EAFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withOpacity(0.06) : Colors.white.withOpacity(0.72),
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: isDark ? Colors.white.withOpacity(0.12) : Colors.white.withOpacity(0.9),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFF4F8FF),
-                      ),
-                      child: Icon(Icons.local_pharmacy, color: isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3), size: 28),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Sheserved ERP',
-                        style: GoogleFonts.inter(
-                          color: isDark ? Colors.white : const Color(0xFF1D2733),
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Menu items
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                  children: [
-                  _DrawerItem(
-                    icon: Icons.home,
-                    label: 'หน้าหลัก',
-                    route: '/erp/dashboard',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.point_of_sale,
-                    label: 'POS Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.inventory_2,
-                    label: 'Inventory Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.shopping_bag,
-                    label: 'Procurement Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.account_balance,
-                    label: 'Accounting Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.people_alt,
-                    label: 'HR Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.contact_support,
-                    label: 'CRM Management',
-                    route: null,
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.analytics,
-                    label: 'KPI / Analytics',
-                    route: '/kpi/dashboard',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Divider(color: isDark ? Colors.white24 : Colors.black12, height: 1),
-                  ),
-                  // Theme & Glassmorphism Settings
-                  _DrawerItem(
-                    icon: Icons.color_lens,
-                    label: 'ธีมสี Dashboard',
-                    route: '/erp/settings/theme',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.blur_on,
-                    label: 'ความโปร่งใส (Glass)',
-                    route: '/erp/settings/glass',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  _DrawerItem(
-                    icon: Icons.business,
-                    label: 'ตั้งค่าองค์กร',
-                    route: '/erp/settings',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: onRouteSelected,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Divider(color: isDark ? Colors.white24 : Colors.black12, height: 1),
-                  ),
-                  _DrawerItem(
-                    icon: Icons.logout,
-                    label: 'กลับหน้า Home',
-                    route: '/home',
-                    currentRoute: currentRoute,
-                    activeColor: activeColor,
-                    inactiveColor: inactiveColor,
-                    isDark: isDark,
-                    onTap: (route) {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pushReplacementNamed('/home');
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  }
-}
-
-class _DrawerItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String? route;
-  final String currentRoute;
-  final Color activeColor;
-  final Color inactiveColor;
-  final bool isDark;
-  final void Function(String? route)? onTap;
-
-  const _DrawerItem({
-    required this.icon,
-    required this.label,
-    this.route,
-    required this.currentRoute,
-    required this.activeColor,
-    required this.inactiveColor,
-    required this.isDark,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDisabled = route == null;
-    final isSelected = route != null && currentRoute == route;
-    final labelColor = isDisabled
-        ? inactiveColor.withOpacity(isDark ? 0.45 : 0.55)
-        : isSelected
-            ? (isDark ? const Color(0xFFCCFF00) : activeColor)
-            : (isDark ? Colors.white : const Color(0xFF1D2733));
-    final leadingColor = isDisabled
-        ? inactiveColor.withOpacity(isDark ? 0.35 : 0.45)
-        : isSelected
-            ? (isDark ? const Color(0xFFCCFF00) : activeColor)
-            : labelColor;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: isDisabled ? null : () => onTap?.call(route),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? (isDark ? const Color(0xFF1A1A1A) : Colors.white.withOpacity(0.88))
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(18),
-              border: isSelected
-                  ? Border.all(
-                      color: isDark
-                          ? const Color(0xFFCCFF00).withOpacity(0.28)
-                          : activeColor.withOpacity(0.18),
-                    )
-                  : null,
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: leadingColor, size: 22),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      color: labelColor,
-                      fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (isSelected)
-                  Icon(
-                    Icons.chevron_right,
-                    color: isDark ? const Color(0xFFCCFF00) : activeColor,
-                    size: 18,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
