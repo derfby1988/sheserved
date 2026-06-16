@@ -9,6 +9,7 @@ class ConsultationEntry {
   final Map<String, dynamic> symptomsChart;
   final String status;
   final DateTime requestedAt;
+  final DateTime updatedAt;
   final String roomId;
   final String? providerId; // ผู้ให้บริการที่รับงานแล้ว
   final String patientId; // ไอดีผู้ป่วย (User ID)
@@ -24,6 +25,7 @@ class ConsultationEntry {
     this.symptomsChart = const {},
     required this.status,
     required this.requestedAt,
+    required this.updatedAt,
     required this.roomId,
     this.providerId,
     required this.patientId,
@@ -87,6 +89,9 @@ class ConsultationEntry {
       status: map['status'] as String? ?? 'pending',
       requestedAt:
           DateTime.tryParse(map['created_at']?.toString() ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(map['updated_at']?.toString() ?? '') ??
           DateTime.now(),
       roomId: roomId,
       providerId: map['provider_id'] as String?,

@@ -244,8 +244,10 @@ class ConsultationRepository {
         query = query.inFilter('package_id', packageIds);
       }
 
+      // แถบ completed เรียงตาม updated_at (เวลาจบงาน) แทน created_at
+      final orderColumn = (status == 'completed') ? 'updated_at' : 'created_at';
       final response = await query
-          .order('created_at', ascending: false)
+          .order(orderColumn, ascending: false)
           .range(page * pageSize, (page + 1) * pageSize - 1)
           .timeout(const Duration(seconds: 10));
 

@@ -326,6 +326,11 @@ class _HealthProgramRequestDashboardState
       });
     }
 
+    // แถบ 'completed': งานที่จบล่าสุดขึ้นก่อน (เรียงตาม updatedAt)
+    if (_activeTab == 'completed') {
+      result.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    }
+
     return result;
   }
 
@@ -582,25 +587,31 @@ class _HealthProgramRequestDashboardState
       extendBody: true,
       backgroundColor: AppColors.background,
       drawer: const TlzDrawer(),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is UserScrollNotification) {
-            if (notification.direction == ScrollDirection.reverse) {
-              if (_isNavBarVisible) {
-                setState(() => _isNavBarVisible = false);
-              }
-            } else if (notification.direction == ScrollDirection.forward) {
-              if (!_isNavBarVisible) {
-                setState(() => _isNavBarVisible = true);
-              }
-            }
-          }
-          return false;
-        },
-        child: NestedScrollView(
-          headerSliverBuilder: (ctx, _) => [_buildAppBar()],
-          body: _isLoading ? _buildLoading() : _buildBody(),
-        ),
+      body: Column(
+        children: [
+          // Fixed top bar (search + back button) — not scrollable
+          _buildFixedTopBar(),
+          // Scrollable content
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is UserScrollNotification) {
+                  if (notification.direction == ScrollDirection.reverse) {
+                    if (_isNavBarVisible) {
+                      setState(() => _isNavBarVisible = false);
+                    }
+                  } else if (notification.direction == ScrollDirection.forward) {
+                    if (!_isNavBarVisible) {
+                      setState(() => _isNavBarVisible = true);
+                    }
+                  }
+                }
+                return false;
+              },
+              child: _isLoading ? _buildLoading() : _buildBody(),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: TlzBottomNavigationBar(
         isVisible: _isNavBarVisible,
@@ -621,191 +632,182 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  // ─── Sliver App Bar ────
-  SliverAppBar _buildAppBar() {
-    return SliverAppBar(
-      expandedHeight: _isProvider ? 300 : 250,
-      pinned: true,
-      stretch: true,
-      backgroundColor: AppColors.primary,
-      automaticallyImplyLeading: false,
-      // ── Standard Top Bar — ไม่มี actions พิเศษอีกต่อไป ──
-      title: TlzAppTopBar.onPrimary(
-        searchHintText: 'ค้นหาคำร้องขอ...',
-        notificationCount: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-            size: 20,
+  // ─── Fixed Top Bar (Search + Back) — not part of scrollable ───
+  Widget _buildFixedTopBar() {
+    return Container(
+      color: AppColors.primary,
+      child: SafeArea(
+        bottom: false,
+        child: TlzAppTopBar.onPrimary(
+          searchHintText: 'ค้นหาคำร้องขอ...',
+          notificationCount: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
-          onPressed: () => Navigator.pop(context),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
         ),
       ),
-      flexibleSpace: FlexibleSpaceBar(
-        titlePadding: EdgeInsets.zero,
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.primary, Color(0xFF5A9B08), Color(0xFF437A05)],
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              _isProvider ? 135 : 125,
-              16,
-              16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // ── Provider info row: ข้อความ + ปุ่มสถานะ + ปุ่ม Refresh ──
-                if (_isProvider) ...[
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.filter_list_rounded,
-                        color: Colors.white70,
-                        size: 13,
+    );
+  }
+
+  // ─── Gradient Header (part of scrollable content) ────
+  Widget _buildHeaderContent() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.primary, Color(0xFF5A9B08), Color(0xFF437A05)],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Provider info row: ข้อความ + ปุ่มสถานะ + ปุ่ม Refresh ──
+            if (_isProvider) ...[
+              Row(
+                children: [
+                  const Icon(
+                    Icons.filter_list_rounded,
+                    color: Colors.white70,
+                    size: 13,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 11,
                       ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          'แสดงเฉพาะแพ็คเกจกลุ่มอาชีพของคุณ',
+                    ),
+                  ),
+                  AvailabilityToggleButton(
+                    status: _availabilityStatus,
+                    onToggle: _toggleAvailability,
+                  ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () async {
+                      await _loadCounts();
+                      await _loadTab(_activeTab, refresh: true);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.refresh_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            // ── Stat chips ──
+            Row(
+              children: [
+                _statChip(
+                  'ทั้งหมด',
+                  _total,
+                  Icons.list_alt,
+                  Colors.white,
+                  onTap: () => _switchTab('all'),
+                  isActive: _activeTab == 'all',
+                ),
+                const SizedBox(width: 8),
+                _statChip(
+                  'รอดำเนินการ',
+                  _pending,
+                  Icons.pending_outlined,
+                  AppColors.warning,
+                  onTap: () => _switchTab('pending'),
+                  isActive: _activeTab == 'pending',
+                ),
+                const SizedBox(width: 8),
+                _statChip(
+                  'กำลังดำเนินการ',
+                  _inProgress,
+                  Icons.forum_outlined,
+                  AppColors.info,
+                  onTap: () => _switchTab('in_progress'),
+                  isActive: _activeTab == 'in_progress',
+                ),
+                const SizedBox(width: 8),
+                _statChip(
+                  'เสร็จสิ้น',
+                  _completed,
+                  Icons.check_circle_outline,
+                  AppColors.success,
+                  onTap: () => _switchTab('completed'),
+                  isActive: _activeTab == 'completed',
+                ),
+              ],
+            ),
+            if (_isProvider) ...[
+              const SizedBox(height: 8),
+              AvailabilityBanner(status: _availabilityStatus),
+            ],
+            if (!_isProvider) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: () async {
+                    await _loadCounts();
+                    await _loadTab(_activeTab, refresh: true);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.refresh_rounded,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'รีเฟรช',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
+                            color: Colors.white.withOpacity(0.9),
                             fontSize: 11,
                           ),
                         ),
-                      ),
-                      // ปุ่มสถานะ (ว่าง/ไม่ว่าง)
-                      AvailabilityToggleButton(
-                        status: _availabilityStatus,
-                        onToggle: _toggleAvailability,
-                      ),
-                      const SizedBox(width: 6),
-                      // ปุ่ม Refresh
-                      GestureDetector(
-                        onTap: () async {
-                          await _loadCounts();
-                          await _loadTab(_activeTab, refresh: true);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.refresh_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                ],
-                // ── Stat chips (กดได้เพื่อกรองรายการ) ──
-                Row(
-                  children: [
-                    _statChip(
-                      'ทั้งหมด',
-                      _total,
-                      Icons.list_alt,
-                      Colors.white,
-                      onTap: () => _switchTab('all'),
-                      isActive: _activeTab == 'all',
-                    ),
-                    const SizedBox(width: 8),
-                    _statChip(
-                      'รอดำเนินการ',
-                      _pending,
-                      Icons.pending_outlined,
-                      AppColors.warning,
-                      onTap: () => _switchTab('pending'),
-                      isActive: _activeTab == 'pending',
-                    ),
-                    const SizedBox(width: 8),
-                    _statChip(
-                      'กำลังดำเนินการ',
-                      _inProgress,
-                      Icons.forum_outlined,
-                      AppColors.info,
-                      onTap: () => _switchTab('in_progress'),
-                      isActive: _activeTab == 'in_progress',
-                    ),
-                    const SizedBox(width: 8),
-                    _statChip(
-                      'เสร็จสิ้น',
-                      _completed,
-                      Icons.check_circle_outline,
-                      AppColors.success,
-                      onTap: () => _switchTab('completed'),
-                      isActive: _activeTab == 'completed',
-                    ),
-                  ],
                 ),
-                if (_isProvider) ...[
-                  const SizedBox(height: 8),
-                  AvailabilityBanner(status: _availabilityStatus),
-                ],
-                // ── Refresh สำหรับ non-provider ──
-                if (!_isProvider) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: () async {
-                        await _loadCounts();
-                        await _loadTab(_activeTab, refresh: true);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.refresh_rounded,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'รีเฟรช',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.9),
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -876,40 +878,74 @@ class _HealthProgramRequestDashboardState
 
   Widget _buildBody() {
     final entries = _getFilteredEntries();
-    return Column(
-      children: [
-        if (_isProvider) _buildActiveJobsBanner(),
-        _buildSearchFilter(),
-        Expanded(
-          child: entries.isEmpty && !_isLoading
-              ? _buildEmpty()
-              : RefreshIndicator(
-                  onRefresh: () async {
-                    await _loadCounts();
-                    await _loadTab(_activeTab, refresh: true);
-                    if (_isProvider && _currentUser != null) {
-                      final count = await _repo.getActiveInProgressConsultationCount(_currentUser!.id);
-                      if (mounted) setState(() => _activeJobCount = count);
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadCounts();
+        await _loadTab(_activeTab, refresh: true);
+        if (_isProvider && _currentUser != null) {
+          final count = await _repo.getActiveInProgressConsultationCount(_currentUser!.id);
+          if (mounted) setState(() => _activeJobCount = count);
+        }
+      },
+      color: AppColors.primary,
+      child: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          // ── Gradient Header with Stat Chips + Availability Banner (scrolls away) ──
+          SliverToBoxAdapter(child: _buildHeaderContent()),
+
+          // ── Active Jobs Banner (scrolls away) ──
+          if (_isProvider)
+            SliverToBoxAdapter(child: _buildActiveJobsBanner()),
+
+          // ── Search Bar (scrolls away) ──
+          SliverToBoxAdapter(
+            child: Container(
+              color: AppColors.background,
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+              child: _buildSearchBarOnly(),
+            ),
+          ),
+
+          // ── Status Tabs (sticky when reaching top) ──
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StatusTabsHeaderDelegate(
+              child: Container(
+                color: AppColors.background,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: _buildStatusTabsOnly(),
+              ),
+            ),
+          ),
+
+          // ── Cards ──
+          if (entries.isEmpty && !_isLoading)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmpty(),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (ctx, i) {
+                    if (i == entries.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
                     }
+                    return _buildCard(entries[i], i);
                   },
-                  color: AppColors.primary,
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                    itemCount: entries.length + (_isLoading ? 1 : 0),
-                    itemBuilder: (ctx, i) {
-                      if (i == entries.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      return _buildCard(entries[i], i);
-                    },
-                  ),
+                  childCount: entries.length + (_isLoading ? 1 : 0),
                 ),
-        ),
-      ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -970,94 +1006,85 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  Widget _buildSearchFilter() {
+  Widget _buildSearchBarOnly() {
     return Container(
-      color: AppColors.background,
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-      child: Column(
-        children: [
-          // Search bar
-          Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        onChanged: (v) => setState(() => _searchQuery = v),
+        style: const TextStyle(fontSize: 14, color: Colors.black87),
+        decoration: InputDecoration(
+          hintText: 'ค้นหาผู้ป่วย แพ็คเกจ บริเวณอาการ...',
+          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+          prefixIcon: const Icon(
+            Icons.search,
+            color: AppColors.primary,
+            size: 20,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusTabsOnly() {
+    return SizedBox(
+      height: 32,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _tabs.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (ctx, i) {
+          final tab = _tabs[i];
+          final active = _activeTab == tab['value'];
+          return GestureDetector(
+            onTap: () => _switchTab(tab['value']!),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: active
+                      ? AppColors.primary
+                      : Colors.grey.shade300,
                 ),
-              ],
-            ),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v),
-              style: const TextStyle(fontSize: 14, color: Colors.black87),
-              decoration: InputDecoration(
-                hintText: 'ค้นหาผู้ป่วย แพ็คเกจ บริเวณอาการ...',
-                hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: AppColors.primary,
-                  size: 20,
+                boxShadow: active
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : [],
+              ),
+              child: Text(
+                tab['label']!,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : Colors.grey.shade600,
                 ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          // Status tabs
-          SizedBox(
-            height: 32,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _tabs.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (ctx, i) {
-                final tab = _tabs[i];
-                final active = _activeTab == tab['value'];
-                return GestureDetector(
-                  onTap: () => _switchTab(tab['value']!),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: active ? AppColors.primary : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: active
-                            ? AppColors.primary
-                            : Colors.grey.shade300,
-                      ),
-                      boxShadow: active
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.3),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : [],
-                    ),
-                    child: Text(
-                      tab['label']!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: active ? Colors.white : Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1820,3 +1847,25 @@ class _HealthProgramRequestDashboardState
   }
 }
 
+// ─── SliverPersistentHeaderDelegate สำหรับ Status Tabs (sticky) ───
+class _StatusTabsHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+
+  _StatusTabsHeaderDelegate({required this.child});
+
+  @override
+  double get minExtent => 44; // 32 (tab height) + 4 (top padding) + 8 (bottom padding)
+
+  @override
+  double get maxExtent => 44;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _StatusTabsHeaderDelegate oldDelegate) {
+    return oldDelegate.child != child;
+  }
+}
