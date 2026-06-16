@@ -755,6 +755,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             final merged = _mergeWithPackageGroups(joined);
             _applyExpertStatuses(merged, source: 'realtime_stream');
 
+            // Sync _hasFinished if current user's finished_at changed in the stream
+            final currentUserId = _currentUser?.id;
+            if (currentUserId != null) {
+              bool isFinishedInStream = false;
+              for (final e in joined) {
+                if (e['providerId']?.toString() == currentUserId && e['finishedAt'] != null) {
+                  isFinishedInStream = true;
+                  break;
+                }
+              }
+              if (isFinishedInStream != _hasFinished) {
+                await _loadCompletionStatus();
+              }
+            }
+
             // Start timer only when ALL required experts have joined (per improvement plan)
             // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ data (raw DB)
             final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
@@ -886,6 +901,40 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               'availabilityStatus': user['availability_status'] as String? ?? 'offline',
             };
           }).toList();
+        }
+
+        // If still empty, provider may be assigned in consultation_data but not synced to room_experts (legacy consultation)
+        if (mapped.isEmpty && _consultationData?['provider_id'] != null) {
+          final providerId = _consultationData!['provider_id'] as String;
+          debugPrint('[ChartBoard] consultation_room_experts still empty after ensure — calling syncProviderToRoomExperts for provider=$providerId');
+          await repo.syncProviderToRoomExperts(
+            consultationId: consultationId,
+            providerId: providerId,
+          );
+          // Re-query after sync
+          final synced = await Supabase.instance.client
+              .from('consultation_room_experts')
+              .select()
+              .eq('consultation_id', consultationId);
+          if ((synced as List).isNotEmpty) {
+            debugPrint('[ChartBoard] syncProviderToRoomExperts succeeded, re-query got ${synced.length} rows');
+            mapped = (synced as List).map((e) {
+              final user = e['users'] as Map<String, dynamic>? ?? {};
+              return {
+                'role': e['expert_group_role'],
+                'name': e['expert_group_name'],
+                'status': e['status'],
+                'providerId': e['provider_id'],
+                'isRequired': e['is_required'] as bool? ?? false,
+                'joinedAt': e['joined_at'],
+                'leftAt': e['left_at'],
+                'finishedAt': e['finished_at'],
+                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
+                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
+                'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+              };
+            }).toList();
+          }
         }
       }
 
@@ -1639,10 +1688,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final userRepo = UserRepository(Supabase.instance.client);
 
     try {
-      final result = await consultRepo.markExpertFinished(
+      var result = await consultRepo.markExpertFinished(
         consultationId,
         authUser.id,
       );
+      // If no rows found, provider is not synced to consultation_room_experts yet (legacy consultation)
+      // Sync provider first, then retry markExpertFinished
+      var totalExperts = result['total_count'] as int? ?? 0;
+      if (totalExperts == 0) {
+        await consultRepo.syncProviderToRoomExperts(
+          consultationId: consultationId,
+          providerId: authUser.id,
+        );
+        // Retry markExpertFinished after sync
+        result = await consultRepo.markExpertFinished(
+          consultationId,
+          authUser.id,
+        );
+        totalExperts = result['total_count'] as int? ?? 0;
+      }
 
       final allFinished = result['all_finished'] as bool? ?? false;
 
@@ -1651,9 +1715,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Sync completion state from DB so the finish/revert buttons and read-only overlay stay correct
       await _loadCompletionStatus();
+      debugPrint('[ChartBoard] _finishJobMultiExpert: after _loadCompletionStatus _hasFinished=$_hasFinished');
 
       // ดึงข้อมูล package เพื่อคำนวณจำนวน expert ที่ถูกต้อง
-      int totalExperts = result['total_count'] as int? ?? 1;
       final packageId = widget.entry?.packageId ?? widget.request?.packageId;
       bool usedPackageFallback = false;
 
