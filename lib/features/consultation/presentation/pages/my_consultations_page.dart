@@ -145,21 +145,17 @@ class _MyConsultationsPageState extends State<MyConsultationsPage> {
       shadowColor: Colors.black12,
       child: InkWell(
         onTap: () {
-          if (req.status == 'completed' || req.status == 'cancelled') {
-            // ไปหน้า read-only chat history
-            Navigator.pushNamed(
-              context,
-              '/consultation-history-chat',
-              arguments: req.id,
-            );
-          } else {
-            // เคสที่ยังดำเนินอยู่/รอผู้เชี่ยวชาญ → เปิด unified consultation room
-            Navigator.pushNamed(
-              context,
-              '/chart-board',
-              arguments: req,
-            );
-          }
+          final isFinished = req.status == 'completed';
+          final isReadOnly = req.status == 'completed' || req.status == 'cancelled';
+          Navigator.pushNamed(
+            context,
+            '/chart-board',
+            arguments: {
+              'request': req,
+              'readOnly': isReadOnly,
+              'hasFinished': isFinished,
+            },
+          );
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(

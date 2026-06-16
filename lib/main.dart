@@ -173,6 +173,7 @@ class SheservedApp extends StatelessWidget {
     return MaterialApp(
       title: 'Sheserved',
       debugShowCheckedModeBanner: false,
+      showPerformanceOverlay: false,
       scrollBehavior: AppScrollBehavior(),
       navigatorObservers: [dashboardRouteObserver],
       theme: AppTheme.lightTheme,

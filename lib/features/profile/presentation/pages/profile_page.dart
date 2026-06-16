@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import '../../../../features/consultation/presentation/pages/my_consultations_page.dart';
 import '../../../../features/consultation/presentation/pages/provider_history_page.dart';
+import '../../../../features/consultation/presentation/pages/health_program_request_dashboard.dart'
+    show dashboardRouteObserver;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -43,12 +45,14 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage> with RouteAware {
   late final ProfileRepository _repository;
   late final DonationRepository _donationRepository;
   late final EmergencyDeadManRepository _deadManRepo;
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _dynamicValues = {};
+  final GlobalKey<ProviderHistoryPageState> _historyPageKey =
+      GlobalKey<ProviderHistoryPageState>();
 
   UserModel? _user;
   prof.Profession? _profession;
@@ -108,6 +112,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    dashboardRouteObserver.subscribe(this, ModalRoute.of(context)!);
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map<String, dynamic>) {
       if (args['tabIndex'] != null && _selectedTabIndex != args['tabIndex']) {
@@ -268,11 +273,25 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   void dispose() {
+    dashboardRouteObserver.unsubscribe(this);
     _tabScrollController.dispose();
     for (var controller in _controllers.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    debugPrint('[ProfilePage] didPopNext → refreshing history if on history tab');
+    final bool isConsumer =
+        _user?.professionId == null ||
+        _user?.professionId == '00000000-0000-0000-0000-000000000001';
+    final int baseTabCount = _canApproveDonation ? 3 : 2;
+    final int historyTabIndex = baseTabCount;
+    if (_selectedTabIndex == historyTabIndex) {
+      _historyPageKey.currentState?.loadHistory();
+    }
   }
 
   @override
@@ -542,9 +561,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final bool isProvider = !isConsumer;
     final int baseTabCount = _canApproveDonation ? 3 : 2;
     final int historyTabIndex = baseTabCount;
-    final int totalTabCount = baseTabCount + 1;
-    // ถ้ามี Tab เยอะ ให้แบ่งความกว้างแบบเกินหน้าจอเพื่อให้เลื่อนได้
-    final double tabWidth = MediaQuery.of(context).size.width / (totalTabCount > 3 ? 3.2 : totalTabCount);
 
     return CustomScrollView(
       slivers: [
@@ -577,68 +593,50 @@ class _ProfilePageState extends State<ProfilePage> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    SizedBox(
-                      width: tabWidth,
-                      child: _buildTabItem(
-                        icon: Icons.person_outline,
-                        text: _profession?.name ?? 'โปรไฟล์',
-                        isActive: _selectedTabIndex == 0,
-                        activeColor: AppColors.primary,
-                        onTap: () => setState(() => _selectedTabIndex = 0),
-                      ),
+                    _buildTabItem(
+                      icon: Icons.person_outline,
+                      text: _profession?.name ?? 'โปรไฟล์',
+                      isActive: _selectedTabIndex == 0,
+                      activeColor: AppColors.primary,
+                      onTap: () => setState(() => _selectedTabIndex = 0),
                     ),
-                    SizedBox(
-                      width: tabWidth,
-                      child: _buildTabItem(
-                        icon: Icons.volunteer_activism_outlined,
-                        text: 'จิตอาสา',
-                        isActive: _selectedTabIndex == 1,
-                        activeColor: const Color(0xFFF5A623),
-                        onTap: () => setState(() => _selectedTabIndex = 1),
-                      ),
+                    _buildTabItem(
+                      icon: Icons.volunteer_activism_outlined,
+                      text: 'จิตอาสา',
+                      isActive: _selectedTabIndex == 1,
+                      activeColor: const Color(0xFFF5A623),
+                      onTap: () => setState(() => _selectedTabIndex = 1),
                     ),
                     if (_canApproveDonation)
-                      SizedBox(
-                        width: tabWidth,
-                        child: _buildTabItem(
-                          icon: Icons.admin_panel_settings_outlined,
-                          text: 'อนุมัติบริจาค',
-                          isActive: _selectedTabIndex == 2,
-                          activeColor: Colors.teal,
-                          onTap: () => setState(() => _selectedTabIndex = 2),
-                        ),
+                      _buildTabItem(
+                        icon: Icons.admin_panel_settings_outlined,
+                        text: 'อนุมัติบริจาค',
+                        isActive: _selectedTabIndex == 2,
+                        activeColor: Colors.teal,
+                        onTap: () => setState(() => _selectedTabIndex = 2),
                       ),
                     if (isConsumer)
-                      SizedBox(
-                        width: tabWidth,
-                        child: _buildTabItem(
-                          icon: Icons.medical_services_outlined,
-                          text: 'ประวัติปรึกษา',
-                          isActive: _selectedTabIndex == historyTabIndex,
-                          activeColor: AppColors.primary,
-                          onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
-                        ),
+                      _buildTabItem(
+                        icon: Icons.medical_services_outlined,
+                        text: 'ประวัติปรึกษา',
+                        isActive: _selectedTabIndex == historyTabIndex,
+                        activeColor: AppColors.primary,
+                        onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
                       ),
                     if (isProvider) ...[
-                      SizedBox(
-                        width: tabWidth,
-                        child: _buildTabItem(
-                          icon: Icons.edit_note,
-                          text: 'จัดการ Quick Replies',
-                          isActive: false,
-                          activeColor: Colors.purple,
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ManageQuickRepliesPage())),
-                        ),
+                      _buildTabItem(
+                        icon: Icons.edit_note,
+                        text: 'จัดการ Quick Replies',
+                        isActive: false,
+                        activeColor: Colors.purple,
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ManageQuickRepliesPage())),
                       ),
-                      SizedBox(
-                        width: tabWidth,
-                        child: _buildTabItem(
-                          icon: Icons.history_edu_outlined,
-                          text: 'ประวัติให้บริการ',
-                          isActive: _selectedTabIndex == historyTabIndex,
-                          activeColor: Colors.green,
-                          onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
-                        ),
+                      _buildTabItem(
+                        icon: Icons.history_edu_outlined,
+                        text: 'ประวัติให้บริการ',
+                        isActive: _selectedTabIndex == historyTabIndex,
+                        activeColor: Colors.green,
+                        onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
                       ),
                     ],
                   ],
@@ -683,7 +681,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   height: MediaQuery.of(context).size.height - 120,
                   child: isConsumer
                       ? const MyConsultationsPage(isEmbedded: true)
-                      : const ProviderHistoryPage(isEmbedded: true),
+                      : ProviderHistoryPage(
+                          key: _historyPageKey,
+                          isEmbedded: true,
+                        ),
                 ),
               ],
               if (_isEditing && _selectedTabIndex == 0) ...[
@@ -787,6 +788,7 @@ class _ProfilePageState extends State<ProfilePage> {
       onTap: onTap,
       child: Container(
         height: 49,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -796,6 +798,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 18, color: isActive ? activeColor : Colors.grey),

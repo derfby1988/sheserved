@@ -4,6 +4,7 @@ import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
 import 'package:intl/intl.dart';
+import 'health_program_request_dashboard.dart' show dashboardRouteObserver;
 
 class ProviderHistoryPage extends StatefulWidget {
   final bool isEmbedded;
@@ -11,26 +12,54 @@ class ProviderHistoryPage extends StatefulWidget {
   const ProviderHistoryPage({super.key, this.isEmbedded = false});
 
   @override
-  State<ProviderHistoryPage> createState() => _ProviderHistoryPageState();
+  State<ProviderHistoryPage> createState() => ProviderHistoryPageState();
 }
 
-class _ProviderHistoryPageState extends State<ProviderHistoryPage> {
+class ProviderHistoryPageState extends State<ProviderHistoryPage>
+    with RouteAware {
   bool _isLoading = true;
   List<ConsultationRequestModel> _requests = [];
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    loadHistory();
   }
 
-  Future<void> _loadHistory() async {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    dashboardRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    dashboardRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    debugPrint('[ProviderHistory] Returned from chat → refreshing');
+    loadHistory();
+  }
+
+  Future<void> loadHistory() async {
     try {
       final userId = AuthService.instance.currentUser?.id;
       if (userId == null) return;
 
       final repo = ServiceLocator.instance.consultationRepository;
       final history = await repo.getProviderHistory(userId);
+
+      // จัดเรียง: งานที่ยังค้าง (pending/in_progress) ขึ้นก่อน แล้วเรียงตามวันใหม่ → เก่า
+      history.sort((a, b) {
+        final aActive = a.status == 'pending' || a.status == 'in_progress';
+        final bActive = b.status == 'pending' || b.status == 'in_progress';
+        if (aActive && !bActive) return -1;
+        if (!aActive && bActive) return 1;
+        return b.createdAt.compareTo(a.createdAt); // ใหม่ → เก่า
+      });
 
       if (mounted) {
         setState(() {
@@ -84,7 +113,7 @@ class _ProviderHistoryPageState extends State<ProviderHistoryPage> {
         : _requests.isEmpty
             ? _buildEmptyState()
             : RefreshIndicator(
-                onRefresh: _loadHistory,
+                onRefresh: loadHistory,
                 child: Scrollbar(
                   thumbVisibility: true,
                   thickness: 6.0,
@@ -148,19 +177,17 @@ class _ProviderHistoryPageState extends State<ProviderHistoryPage> {
       shadowColor: Colors.black12,
       child: InkWell(
         onTap: () {
-          if (req.status == 'completed' || req.status == 'cancelled') {
-            Navigator.pushNamed(
-              context,
-              '/consultation-history-chat',
-              arguments: req.id,
-            );
-          } else {
-            Navigator.pushNamed(
-              context,
-              '/chart-board',
-              arguments: req,
-            );
-          }
+          final isFinished = req.status == 'completed';
+          final isReadOnly = req.status == 'completed' || req.status == 'cancelled';
+          Navigator.pushNamed(
+            context,
+            '/chart-board',
+            arguments: {
+              'request': req,
+              'readOnly': isReadOnly,
+              'hasFinished': isFinished,
+            },
+          );
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
