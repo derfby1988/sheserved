@@ -25,11 +25,15 @@ class BodyRegionRepository {
     }
   }
 
-  Future<BodyRegionModel> createRegion(BodyRegionModel region, {File? image2dFile, File? model3dFile}) async {
+  Future<BodyRegionModel> createRegion(BodyRegionModel region, {File? iconImageFile, File? image2dFile, File? model3dFile}) async {
     try {
+      String? iconImageUrl;
       String? image2dUrl;
       String? model3dUrl;
 
+      if (iconImageFile != null) {
+        iconImageUrl = await uploadFile(region.id, iconImageFile, 'icon');
+      }
       if (image2dFile != null) {
         image2dUrl = await uploadFile(region.id, image2dFile, '2d');
       }
@@ -38,6 +42,7 @@ class BodyRegionRepository {
       }
 
       final data = region.toJson();
+      if (iconImageUrl != null) data['icon_image_url'] = iconImageUrl;
       if (image2dUrl != null) data['image_2d_url'] = image2dUrl;
       if (model3dUrl != null) data['model_3d_url'] = model3dUrl;
 
@@ -49,10 +54,19 @@ class BodyRegionRepository {
     }
   }
 
-  Future<BodyRegionModel> updateRegion(String id, BodyRegionModel region, {File? image2dFile, File? model3dFile, bool delete2d = false, bool delete3d = false}) async {
+  Future<BodyRegionModel> updateRegion(String id, BodyRegionModel region, {File? iconImageFile, File? image2dFile, File? model3dFile, bool deleteIcon = false, bool delete2d = false, bool delete3d = false}) async {
     try {
+      String? iconImageUrl = region.iconImageUrl;
       String? image2dUrl = region.image2dUrl;
       String? model3dUrl = region.model3dUrl;
+
+      if (deleteIcon && iconImageUrl != null) {
+        await _deleteFileFromUrl(iconImageUrl);
+        iconImageUrl = null;
+      } else if (iconImageFile != null) {
+        if (iconImageUrl != null) await _deleteFileFromUrl(iconImageUrl);
+        iconImageUrl = await uploadFile(id, iconImageFile, 'icon');
+      }
 
       if (delete2d && image2dUrl != null) {
         await _deleteFileFromUrl(image2dUrl);
@@ -71,6 +85,7 @@ class BodyRegionRepository {
       }
 
       final data = region.toJson();
+      data['icon_image_url'] = iconImageUrl;
       data['image_2d_url'] = image2dUrl;
       data['model_3d_url'] = model3dUrl;
       data['updated_at'] = DateTime.now().toIso8601String();
@@ -86,6 +101,7 @@ class BodyRegionRepository {
   Future<void> deleteRegion(String id) async {
     try {
       final region = await _client.from(_tableName).select().eq('id', id).single();
+      if (region['icon_image_url'] != null) await _deleteFileFromUrl(region['icon_image_url']);
       if (region['image_2d_url'] != null) await _deleteFileFromUrl(region['image_2d_url']);
       if (region['model_3d_url'] != null) await _deleteFileFromUrl(region['model_3d_url']);
       

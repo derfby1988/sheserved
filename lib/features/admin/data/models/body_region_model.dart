@@ -7,6 +7,7 @@ class BodyRegionModel {
   final String? iconName;
   final bool hasSides;
   final String gender;
+  final String? iconImageUrl; // Custom icon image URL (PNG)
   final String? image2dUrl;
   final String? model3dUrl;
   final String? colorHex; // New field for custom color
@@ -23,6 +24,7 @@ class BodyRegionModel {
     this.iconName,
     this.hasSides = false,
     this.gender = 'both',
+    this.iconImageUrl,
     this.image2dUrl,
     this.model3dUrl,
     this.colorHex,
@@ -56,6 +58,7 @@ class BodyRegionModel {
       iconName: json['icon_name'] as String?,
       hasSides: json['has_sides'] == true,
       gender: json['gender'] as String? ?? 'both',
+      iconImageUrl: json['icon_image_url'] as String?,
       image2dUrl: json['image_2d_url'] as String?,
       model3dUrl: json['model_3d_url'] as String?,
       colorHex: json['color_hex'] as String?,
@@ -75,6 +78,7 @@ class BodyRegionModel {
       'icon_name': iconName,
       'has_sides': hasSides,
       'gender': gender,
+      'icon_image_url': iconImageUrl,
       'image_2d_url': image2dUrl,
       'model_3d_url': model3dUrl,
       'color_hex': colorHex,
@@ -91,6 +95,7 @@ class BodyRegionModel {
     String? iconName,
     bool? hasSides,
     String? gender,
+    String? iconImageUrl,
     String? image2dUrl,
     String? model3dUrl,
     String? colorHex,
@@ -107,6 +112,7 @@ class BodyRegionModel {
       iconName: iconName ?? this.iconName,
       hasSides: hasSides ?? this.hasSides,
       gender: gender ?? this.gender,
+      iconImageUrl: iconImageUrl ?? this.iconImageUrl,
       image2dUrl: image2dUrl ?? this.image2dUrl,
       model3dUrl: model3dUrl ?? this.model3dUrl,
       colorHex: colorHex ?? this.colorHex,

@@ -10,6 +10,40 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../../../shared/widgets/widgets.dart';
 
+/// Map Material icon name string → IconData
+IconData? _iconNameToIconData(String? name) {
+  switch (name) {
+    case 'face': return Icons.face;
+    case 'face_retouching_natural': return Icons.face_retouching_natural;
+    case 'remove_red_eye_outlined': return Icons.remove_red_eye_outlined;
+    case 'hearing_outlined': return Icons.hearing_outlined;
+    case 'record_voice_over_outlined': return Icons.record_voice_over_outlined;
+    case 'compress': return Icons.compress;
+    case 'accessibility_new': return Icons.accessibility_new;
+    case 'horizontal_rule': return Icons.horizontal_rule;
+    case 'monitor_heart_outlined': return Icons.monitor_heart_outlined;
+    case 'fitness_center': return Icons.fitness_center;
+    case 'favorite_border': return Icons.favorite_border;
+    case 'restaurant_menu': return Icons.restaurant_menu;
+    case 'adjust': return Icons.adjust;
+    case 'radio_button_checked': return Icons.radio_button_checked;
+    case 'pan_tool_alt_outlined': return Icons.pan_tool_alt_outlined;
+    case 'water_drop_outlined': return Icons.water_drop_outlined;
+    case 'watch_outlined': return Icons.watch_outlined;
+    case 'trip_origin': return Icons.trip_origin;
+    case 'back_hand_outlined': return Icons.back_hand_outlined;
+    case 'directions_walk': return Icons.directions_walk;
+    case 'directions_run': return Icons.directions_run;
+    case 'lens_outlined': return Icons.lens_outlined;
+    case 'linear_scale': return Icons.linear_scale;
+    case 'align_vertical_bottom': return Icons.align_vertical_bottom;
+    case 'radio_button_unchecked': return Icons.radio_button_unchecked;
+    case 'run_circle_outlined': return Icons.run_circle_outlined;
+    case 'linear_scale_outlined': return Icons.linear_scale_outlined;
+    default: return null;
+  }
+}
+
 class BodyRegionAdminPage extends StatefulWidget {
   const BodyRegionAdminPage({super.key});
 
@@ -325,29 +359,57 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
                         ),
                       ),
                     ),
-                    // All Points
+                    // All Points — show Material icon or custom image
                     ..._regions.map((region) {
+                      final left = constraints.maxWidth * region.xRatio - 14;
+                      final top = constraints.maxHeight * region.yRatio - 14;
+                      final iconData = _iconNameToIconData(region.iconName);
                       return Positioned(
-                        left: constraints.maxWidth * region.xRatio - 4,
-                        top: constraints.maxHeight * region.yRatio - 4,
+                        left: left,
+                        top: top,
                         child: Tooltip(
                           message: region.nameTh,
                           child: GestureDetector(
                             onTap: () => _showEditor(region),
                             child: Container(
-                              width: 8,
-                              height: 8,
+                              width: 28,
+                              height: 28,
                               decoration: BoxDecoration(
-                                color: _getRegionColor(region),
+                                color: Colors.white,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1),
+                                border: Border.all(
+                                  color: _getRegionColor(region),
+                                  width: 2,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 2,
+                                    blurRadius: 4,
+                                    spreadRadius: 1,
                                   )
                                 ],
                               ),
+                              child: region.iconImageUrl != null && region.iconImageUrl!.isNotEmpty
+                                ? ClipOval(
+                                    child: Image.network(
+                                      region.iconImageUrl!,
+                                      width: 24,
+                                      height: 24,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        iconData ?? Icons.circle,
+                                        size: 16,
+                                        color: _getRegionColor(region),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Icon(
+                                      iconData ?? Icons.circle,
+                                      size: 16,
+                                      color: _getRegionColor(region),
+                                    ),
+                                  ),
                             ),
                           ),
                         ),
@@ -399,6 +461,7 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
   String _gender = 'both';
   String? _colorHex;
 
+  File? _iconImageFile;
   File? _image2dFile;
   File? _model3dFile;
   bool _isSaving = false;
@@ -453,11 +516,19 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
     }
   }
 
+  Future<void> _pickIconImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() => _iconImageFile = File(pickedFile.path));
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isSaving = true);
-    
+
     try {
       final model = BodyRegionModel(
         id: _idCtrl.text.trim(),
@@ -470,20 +541,23 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
         gender: _gender,
         colorHex: _colorHex,
         displayOrder: int.tryParse(_displayOrderCtrl.text.trim()) ?? 0,
+        iconImageUrl: widget.region?.iconImageUrl,
         image2dUrl: widget.region?.image2dUrl,
         model3dUrl: widget.region?.model3dUrl,
       );
 
       if (isEditing) {
         await widget.repository.updateRegion(
-          widget.region!.id, 
+          widget.region!.id,
           model,
+          iconImageFile: _iconImageFile,
           image2dFile: _image2dFile,
           model3dFile: _model3dFile,
         );
       } else {
         await widget.repository.createRegion(
           model,
+          iconImageFile: _iconImageFile,
           image2dFile: _image2dFile,
           model3dFile: _model3dFile,
         );
@@ -553,6 +627,85 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                   const SizedBox(height: 16),
                   _buildColorPicker(),
                   
+                  const SizedBox(height: 32),
+                  _buildSectionHeader('ไอคอนสำหรับแผนที่ร่างกาย'),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _iconNameCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'ชื่อ Material Icon (เช่น face, hearing_outlined)',
+                            border: OutlineInputBorder(),
+                            helperText: 'ใช้ fallback ถ้าไม่มีรูปไอคอน',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Icon preview
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: _colorHex != null
+                              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                              : AppColors.primary.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: _iconImageFile != null
+                            ? ClipOval(
+                                child: Image.file(
+                                  _iconImageFile!,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : widget.region?.iconImageUrl != null
+                                ? ClipOval(
+                                    child: Image.network(
+                                      widget.region!.iconImageUrl!,
+                                      width: 48,
+                                      height: 48,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                        size: 24,
+                                        color: _colorHex != null
+                                            ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                            : AppColors.primary,
+                                      ),
+                                    ),
+                                  )
+                                : Icon(
+                                    _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                    size: 24,
+                                    color: _colorHex != null
+                                        ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                        : AppColors.primary,
+                                  ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.broken_image_outlined),
+                      title: const Text('รูปไอคอน (PNG สี่เหลี่ยม หรือวงกลม)'),
+                      subtitle: Text(
+                        _iconImageFile != null
+                            ? 'เลือกไฟล์แล้ว'
+                            : (widget.region?.iconImageUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์'),
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: _pickIconImage,
+                        child: const Text('เลือกไฟล์'),
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 32),
                   _buildSectionHeader('ตำแหน่งและการแสดงผล'),
                   const SizedBox(height: 16),
@@ -791,22 +944,58 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                         ),
                       ),
                     ),
-                    // Pointer Dot
+                    // Pointer Dot with icon preview
                     Positioned(
-                      left: constraints.maxWidth * _xRatio - 10,
-                      top: constraints.maxHeight * _yRatio - 10,
+                      left: constraints.maxWidth * _xRatio - 14,
+                      top: constraints.maxHeight * _yRatio - 14,
                       child: Container(
-                        width: 20,
-                        height: 20,
+                        width: 28,
+                        height: 28,
                         decoration: BoxDecoration(
-                          color: _colorHex != null 
-                              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                              : AppColors.primary,
+                          color: Colors.white,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6)],
+                          border: Border.all(
+                            color: _colorHex != null
+                                ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                : AppColors.primary,
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6, spreadRadius: 1),
+                          ],
                         ),
-                        child: const Icon(Icons.touch_app, size: 12, color: Colors.white),
+                        child: _iconImageFile != null
+                          ? ClipOval(
+                              child: Image.file(
+                                _iconImageFile!,
+                                width: 24,
+                                height: 24,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : widget.region?.iconImageUrl != null
+                              ? ClipOval(
+                                  child: Image.network(
+                                    widget.region!.iconImageUrl!,
+                                    width: 24,
+                                    height: 24,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
+                                      size: 16,
+                                      color: _colorHex != null
+                                          ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                          : AppColors.primary,
+                                    ),
+                                  ),
+                                )
+                              : Icon(
+                                  _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
+                                  size: 16,
+                                  color: _colorHex != null
+                                      ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                      : AppColors.primary,
+                                ),
                       ),
                     ),
                   ],
