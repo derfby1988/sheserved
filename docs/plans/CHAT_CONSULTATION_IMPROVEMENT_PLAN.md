@@ -4394,6 +4394,8 @@ Counter โหลดจาก DB
 | **Counter drift** — client count ไม่ตรงกับ DB ถ้ามี realtime delay | ปานกลาง | นับจาก optimistic update บน client แต่ sync กับ DB query เป็นระยะ |
 | **Hive migration** — เพิ่ม `@HiveField(10)` ต้องไม่ชน index เดิม | ต่ำ | ตรวจสอบ index 0-9 ถูกใช้หมดแล้ว |
 | **Provider ตอบกลับไม่มี body_part** — counter ไม่นับฝั่ง provider | ต่ำ | ออกแบบให้ counter นับเฉพาะ patient messages (ตาม requirement) |
+| **Patient side: BodyMapChatBar missing** — `widget.request` ส่ง `List<SymptomPoint>` แต่ `collectFromSymptoms` เช็ค `is Map<String,dynamic>` ทำให้ skip หมด → chips ว่าง → `SizedBox.shrink()` | สูง | แปลง `List<SymptomPoint>` → `List<Map>` ก่อนส่งเข้า `collectFromSymptoms` (`body_map_chat_controller.dart`) |
+| **BodyMapChatBar wrong position** — วางเหนือ `Expanded(messages)` ทำให้ปรากฏด้านบนแทนที่จะอยู่เหนือ input (ตาม mockup) | ปานกลาง | ย้าย `_buildBodyMapSummary()` มาไว้เหนือ `_buildChatInput()` ใน `chart_board_page.dart` |
 
 ---
 

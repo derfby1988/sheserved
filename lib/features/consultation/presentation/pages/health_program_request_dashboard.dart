@@ -14,7 +14,7 @@ import '../../data/repositories/consultation_repository.dart';
 import '../../data/models/consultation_entry.dart';
 import '../../../admin/models/profession.dart';
 import '../../../../shared/widgets/widgets.dart';
-import 'expert_chat_room_page.dart';
+// NOTE: expert_chat_room_page.dart is deprecated; use ChartBoardPage via /chart-board
 import '../widgets/dashboard/availability_toggle_button.dart';
 import '../widgets/dashboard/availability_banner.dart';
 

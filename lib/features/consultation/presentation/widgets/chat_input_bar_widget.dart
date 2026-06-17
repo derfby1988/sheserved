@@ -17,7 +17,7 @@ class ChatInputBarWidget extends StatelessWidget {
   final VoidCallback onShowAttachmentMenu;
   final VoidCallback? onShowQuickReplies;
   final ValueChanged<String>? onTextChanged;
-  final String? activeBodyPart;
+  final String? activeBodyPartIconName;
   final VoidCallback? onClearBodyPart;
 
   const ChatInputBarWidget({
@@ -36,7 +36,7 @@ class ChatInputBarWidget extends StatelessWidget {
     required this.onShowAttachmentMenu,
     this.onShowQuickReplies,
     this.onTextChanged,
-    this.activeBodyPart,
+    this.activeBodyPartIconName,
     this.onClearBodyPart,
   });
 
@@ -150,38 +150,14 @@ class ChatInputBarWidget extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        if (activeBodyPart != null) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.orange.shade200),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  activeBodyPart!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade800,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                GestureDetector(
-                                  onTap: onClearBodyPart,
-                                  child: Icon(
-                                    Icons.close,
-                                    size: 14,
-                                    color: Colors.orange.shade800,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        if (activeBodyPartIconName != null) ...[
+                          _bodyPartIcon(activeBodyPartIconName!),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: onClearBodyPart,
+                            child: Icon(Icons.close, size: 14, color: Colors.orange.shade700),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                         ],
                         Expanded(
                           child: TextField(
@@ -332,5 +308,41 @@ class ChatInputBarWidget extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  /// Convert Material icon name string → Icon widget
+  Widget _bodyPartIcon(String iconName) {
+    IconData? iconData;
+    switch (iconName) {
+      case 'face': iconData = Icons.face; break;
+      case 'face_retouching_natural': iconData = Icons.face_retouching_natural; break;
+      case 'remove_red_eye_outlined': iconData = Icons.remove_red_eye_outlined; break;
+      case 'hearing_outlined': iconData = Icons.hearing_outlined; break;
+      case 'record_voice_over_outlined': iconData = Icons.record_voice_over_outlined; break;
+      case 'compress': iconData = Icons.compress; break;
+      case 'accessibility_new': iconData = Icons.accessibility_new; break;
+      case 'horizontal_rule': iconData = Icons.horizontal_rule; break;
+      case 'monitor_heart_outlined': iconData = Icons.monitor_heart_outlined; break;
+      case 'fitness_center': iconData = Icons.fitness_center; break;
+      case 'favorite_border': iconData = Icons.favorite_border; break;
+      case 'restaurant_menu': iconData = Icons.restaurant_menu; break;
+      case 'adjust': iconData = Icons.adjust; break;
+      case 'radio_button_checked': iconData = Icons.radio_button_checked; break;
+      case 'pan_tool_alt_outlined': iconData = Icons.pan_tool_alt_outlined; break;
+      case 'water_drop_outlined': iconData = Icons.water_drop_outlined; break;
+      case 'watch_outlined': iconData = Icons.watch_outlined; break;
+      case 'trip_origin': iconData = Icons.trip_origin; break;
+      case 'back_hand_outlined': iconData = Icons.back_hand_outlined; break;
+      case 'directions_walk': iconData = Icons.directions_walk; break;
+      case 'directions_run': iconData = Icons.directions_run; break;
+      case 'lens_outlined': iconData = Icons.lens_outlined; break;
+      case 'linear_scale': iconData = Icons.linear_scale; break;
+      case 'align_vertical_bottom': iconData = Icons.align_vertical_bottom; break;
+      case 'radio_button_unchecked': iconData = Icons.radio_button_unchecked; break;
+      case 'run_circle_outlined': iconData = Icons.run_circle_outlined; break;
+      case 'linear_scale_outlined': iconData = Icons.linear_scale_outlined; break;
+    }
+    if (iconData == null) return const SizedBox.shrink();
+    return Icon(iconData, size: 18, color: Colors.orange.shade700);
   }
 }

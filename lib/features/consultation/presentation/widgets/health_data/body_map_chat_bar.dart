@@ -1,5 +1,39 @@
 import 'package:flutter/material.dart';
 
+/// Map Material icon name string → IconData
+IconData? _iconNameToIconData(String? name) {
+  switch (name) {
+    case 'face': return Icons.face;
+    case 'face_retouching_natural': return Icons.face_retouching_natural;
+    case 'remove_red_eye_outlined': return Icons.remove_red_eye_outlined;
+    case 'hearing_outlined': return Icons.hearing_outlined;
+    case 'record_voice_over_outlined': return Icons.record_voice_over_outlined;
+    case 'compress': return Icons.compress;
+    case 'accessibility_new': return Icons.accessibility_new;
+    case 'horizontal_rule': return Icons.horizontal_rule;
+    case 'monitor_heart_outlined': return Icons.monitor_heart_outlined;
+    case 'fitness_center': return Icons.fitness_center;
+    case 'favorite_border': return Icons.favorite_border;
+    case 'restaurant_menu': return Icons.restaurant_menu;
+    case 'adjust': return Icons.adjust;
+    case 'radio_button_checked': return Icons.radio_button_checked;
+    case 'pan_tool_alt_outlined': return Icons.pan_tool_alt_outlined;
+    case 'water_drop_outlined': return Icons.water_drop_outlined;
+    case 'watch_outlined': return Icons.watch_outlined;
+    case 'trip_origin': return Icons.trip_origin;
+    case 'back_hand_outlined': return Icons.back_hand_outlined;
+    case 'directions_walk': return Icons.directions_walk;
+    case 'directions_run': return Icons.directions_run;
+    case 'lens_outlined': return Icons.lens_outlined;
+    case 'linear_scale': return Icons.linear_scale;
+    case 'align_vertical_bottom': return Icons.align_vertical_bottom;
+    case 'radio_button_unchecked': return Icons.radio_button_unchecked;
+    case 'run_circle_outlined': return Icons.run_circle_outlined;
+    case 'linear_scale_outlined': return Icons.linear_scale_outlined;
+    default: return null;
+  }
+}
+
 class BodyMapChatBar extends StatelessWidget {
   final List<BodyPartChipData> bodyParts;
   final Map<String, int> patientMessageCount;
@@ -52,6 +86,7 @@ class BodyMapChatBar extends StatelessWidget {
               count: count,
               isActive: isActive,
               onTap: () => onBodyPartSelected(part.key),
+              iconName: part.iconName,
             ),
           );
         },
@@ -65,7 +100,9 @@ class BodyMapChatBar extends StatelessWidget {
     required int? count,
     required bool isActive,
     required VoidCallback onTap,
+    String? iconName,
   }) {
+    final iconData = _iconNameToIconData(iconName);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -91,6 +128,10 @@ class BodyMapChatBar extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (iconData != null) ...[
+              Icon(iconData, size: 16, color: isActive ? Colors.white : Colors.orange.shade700),
+              const SizedBox(width: 4),
+            ],
             Text(
               label,
               style: TextStyle(
@@ -127,9 +168,11 @@ class BodyMapChatBar extends StatelessWidget {
 class BodyPartChipData {
   final String key;
   final String label;
+  final String? iconName; // Material icon name (e.g. 'lens_outlined')
 
   const BodyPartChipData({
     required this.key,
     required this.label,
+    this.iconName,
   });
 }

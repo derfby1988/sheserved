@@ -8,6 +8,7 @@ import '../widgets/health_data/body_map_chat_bar.dart';
 class BodyMapChatController {
   String? activeBodyPart;
   String? activeBodyPartLabel;
+  String? activeBodyPartIconName; // Material icon name for input prefix
   final Map<String, int> bodyPartMessageCount = {};
   final List<BodyPartChipData> bodyPartChips = [];
   final TextEditingController msgController;
@@ -17,6 +18,7 @@ class BodyMapChatController {
   void clear() {
     activeBodyPart = null;
     activeBodyPartLabel = null;
+    activeBodyPartIconName = null;
     bodyPartMessageCount.clear();
     bodyPartChips.clear();
   }
@@ -29,11 +31,11 @@ class BodyMapChatController {
     bodyPartChips.clear();
     final seenKeys = <String>{};
 
-    void addChip(String key, String label) {
+    void addChip(String key, String label, {String? iconName}) {
       final normalizedKey = key.toLowerCase().trim();
       if (normalizedKey.isEmpty || seenKeys.contains(normalizedKey)) return;
       seenKeys.add(normalizedKey);
-      bodyPartChips.add(BodyPartChipData(key: normalizedKey, label: label));
+      bodyPartChips.add(BodyPartChipData(key: normalizedKey, label: label, iconName: iconName));
     }
 
     void collectFromSymptoms(List<dynamic>? symptoms) {
@@ -41,14 +43,22 @@ class BodyMapChatController {
         if (s is Map<String, dynamic>) {
           final regionId = s['region_id']?.toString().trim() ?? '';
           final label = s['display_label']?.toString().trim() ?? '';
+          final iconName = s['icon_name']?.toString().trim();
           if (regionId.isNotEmpty && label.isNotEmpty) {
-            addChip(regionId, label);
+            addChip(regionId, label, iconName: iconName);
           }
         }
       }
     }
 
-    collectFromSymptoms(request?.symptoms);
+    // Convert SymptomPoint list to raw maps for unified processing
+    final requestSymptoms = request?.symptoms.map((s) => {
+      'region_id': s.regionId,
+      'display_label': s.displayLabel,
+      'icon_name': s.iconName,
+    }).toList();
+    collectFromSymptoms(requestSymptoms);
+    collectFromSymptoms(entry?.symptoms);
     collectFromSymptoms(consultationData?['symptoms']);
 
     void collectFromBodyArea(Map<String, dynamic>? bodyArea) {
@@ -125,38 +135,20 @@ class BodyMapChatController {
     activeBodyPart = key;
     if (key == null) {
       activeBodyPartLabel = null;
-      _stripPrefix();
+      activeBodyPartIconName = null;
     } else {
       final chip = bodyPartChips.firstWhere(
         (c) => c.key == key,
         orElse: () => BodyPartChipData(key: key, label: key),
       );
       activeBodyPartLabel = chip.label;
-      _applyPrefix(chip.label);
+      activeBodyPartIconName = chip.iconName;
     }
   }
 
   void clearBodyPart() {
     activeBodyPart = null;
     activeBodyPartLabel = null;
-    _stripPrefix();
-  }
-
-  void _applyPrefix(String label) {
-    final prefix = '$label: ';
-    final currentText = msgController.text;
-    if (currentText.contains(': ')) {
-      final idx = currentText.indexOf(': ');
-      msgController.text = prefix + currentText.substring(idx + 2);
-    } else {
-      msgController.text = prefix + currentText;
-    }
-  }
-
-  void _stripPrefix() {
-    final text = msgController.text;
-    if (text.contains(': ')) {
-      msgController.text = text.substring(text.indexOf(': ') + 2);
-    }
+    activeBodyPartIconName = null;
   }
 }

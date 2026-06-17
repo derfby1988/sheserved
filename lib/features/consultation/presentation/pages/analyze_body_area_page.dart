@@ -14,6 +14,7 @@ class _BodyRegion {
   final double yRatio; // 0.0 = top, 1.0 = bottom (position on body silhouette)
   final double xRatio; // 0.0 = left, 1.0 = right (horizontal position on body)
   final IconData icon;
+  final String iconName; // Material icon name string for DB storage (e.g. 'lens_outlined')
 
   const _BodyRegion({
     required this.id,
@@ -22,6 +23,7 @@ class _BodyRegion {
     required this.yRatio,
     this.xRatio = 0.5, // Default to center
     required this.icon,
+    required this.iconName,
   });
 }
 
@@ -33,6 +35,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.04,
     xRatio: 0.50,
     icon: Icons.face,
+    iconName: 'face',
   ),
   _BodyRegion(
     id: 'forehead',
@@ -41,6 +44,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.07,
     xRatio: 0.50,
     icon: Icons.face_retouching_natural,
+    iconName: 'face_retouching_natural',
   ),
   _BodyRegion(
     id: 'eyes',
@@ -49,6 +53,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.09,
     xRatio: 0.50,
     icon: Icons.remove_red_eye_outlined,
+    iconName: 'remove_red_eye_outlined',
   ),
   _BodyRegion(
     id: 'nose_ears',
@@ -57,6 +62,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.11,
     xRatio: 0.50,
     icon: Icons.hearing_outlined,
+    iconName: 'hearing_outlined',
   ),
   _BodyRegion(
     id: 'mouth_jaw',
@@ -65,6 +71,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.13,
     xRatio: 0.50,
     icon: Icons.record_voice_over_outlined,
+    iconName: 'record_voice_over_outlined',
   ),
   _BodyRegion(
     id: 'neck',
@@ -73,6 +80,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.17,
     xRatio: 0.50,
     icon: Icons.compress,
+    iconName: 'compress',
   ),
   _BodyRegion(
     id: 'shoulder',
@@ -81,6 +89,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.22,
     xRatio: 0.38,
     icon: Icons.accessibility_new,
+    iconName: 'accessibility_new',
   ),
   _BodyRegion(
     id: 'collarbone',
@@ -89,6 +98,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.25,
     xRatio: 0.42,
     icon: Icons.horizontal_rule,
+    iconName: 'horizontal_rule',
   ),
   _BodyRegion(
     id: 'upper_chest',
@@ -97,6 +107,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.29,
     xRatio: 0.50,
     icon: Icons.monitor_heart_outlined,
+    iconName: 'monitor_heart_outlined',
   ),
   _BodyRegion(
     id: 'upper_arm',
@@ -105,6 +116,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.33,
     xRatio: 0.28,
     icon: Icons.fitness_center,
+    iconName: 'fitness_center',
   ),
   _BodyRegion(
     id: 'lower_chest',
@@ -113,6 +125,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.36,
     xRatio: 0.50,
     icon: Icons.favorite_border,
+    iconName: 'favorite_border',
   ),
   _BodyRegion(
     id: 'upper_abd',
@@ -121,6 +134,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.40,
     xRatio: 0.50,
     icon: Icons.restaurant_menu,
+    iconName: 'restaurant_menu',
   ),
   _BodyRegion(
     id: 'elbow',
@@ -129,6 +143,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.44,
     xRatio: 0.22,
     icon: Icons.adjust,
+    iconName: 'adjust',
   ),
   _BodyRegion(
     id: 'middle_abd',
@@ -137,6 +152,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.47,
     xRatio: 0.50,
     icon: Icons.radio_button_checked,
+    iconName: 'radio_button_checked',
   ),
   _BodyRegion(
     id: 'lower_arm',
@@ -145,6 +161,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.50,
     xRatio: 0.20,
     icon: Icons.pan_tool_alt_outlined,
+    iconName: 'pan_tool_alt_outlined',
   ),
   _BodyRegion(
     id: 'lower_abd',
@@ -153,6 +170,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.53,
     xRatio: 0.50,
     icon: Icons.water_drop_outlined,
+    iconName: 'water_drop_outlined',
   ),
   _BodyRegion(
     id: 'wrist',
@@ -161,6 +179,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.56,
     xRatio: 0.18,
     icon: Icons.watch_outlined,
+    iconName: 'watch_outlined',
   ),
   _BodyRegion(
     id: 'pelvis',
@@ -169,6 +188,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.59,
     xRatio: 0.50,
     icon: Icons.trip_origin,
+    iconName: 'trip_origin',
   ),
   _BodyRegion(
     id: 'hand',
@@ -177,6 +197,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.62,
     xRatio: 0.15,
     icon: Icons.back_hand_outlined,
+    iconName: 'back_hand_outlined',
   ),
   _BodyRegion(
     id: 'upper_thigh',
@@ -185,6 +206,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.66,
     xRatio: 0.40,
     icon: Icons.directions_walk,
+    iconName: 'directions_walk',
   ),
   _BodyRegion(
     id: 'mid_thigh',
@@ -193,6 +215,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.71,
     xRatio: 0.38,
     icon: Icons.directions_run,
+    iconName: 'directions_run',
   ),
   _BodyRegion(
     id: 'knee',
@@ -201,6 +224,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.77,
     xRatio: 0.42,
     icon: Icons.lens_outlined,
+    iconName: 'lens_outlined',
   ),
   _BodyRegion(
     id: 'upper_shin',
@@ -209,6 +233,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.83,
     xRatio: 0.42,
     icon: Icons.linear_scale,
+    iconName: 'linear_scale',
   ),
   _BodyRegion(
     id: 'lower_shin',
@@ -217,6 +242,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.88,
     xRatio: 0.42,
     icon: Icons.align_vertical_bottom,
+    iconName: 'align_vertical_bottom',
   ),
   _BodyRegion(
     id: 'ankle',
@@ -225,6 +251,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.93,
     xRatio: 0.42,
     icon: Icons.radio_button_unchecked,
+    iconName: 'radio_button_unchecked',
   ),
   _BodyRegion(
     id: 'foot',
@@ -233,6 +260,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.96,
     xRatio: 0.42,
     icon: Icons.run_circle_outlined,
+    iconName: 'run_circle_outlined',
   ),
   _BodyRegion(
     id: 'toes',
@@ -241,6 +269,7 @@ List<_BodyRegion> _bodyRegions = [
     yRatio: 0.99,
     xRatio: 0.42,
     icon: Icons.linear_scale_outlined,
+    iconName: 'linear_scale_outlined',
   ),
 ];
 
@@ -491,7 +520,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   if (r.gender == 'both') return true;
                   return r.gender == _gender;
                 })
-                .map(
+                .map<_BodyRegion>(
                   (r) => _BodyRegion(
                     id: r.id,
                     nameTh: r.nameTh,
@@ -499,6 +528,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                     yRatio: r.yRatio,
                     xRatio: r.xRatio,
                     icon: _getIconData(r.iconName),
+                    iconName: r.iconName ?? '',
                   ),
                 )
                 .toList();
@@ -665,6 +695,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
             side: p.side.labelEn.toLowerCase(),
             symptom: p.symptom,
             displayLabel: p.displayLabel,
+            iconName: p.region.iconName,
           ),
         )
         .toList();

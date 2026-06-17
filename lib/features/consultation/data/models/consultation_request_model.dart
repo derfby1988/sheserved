@@ -111,6 +111,7 @@ class SymptomPoint {
   final String side;
   final String symptom;
   final String displayLabel;
+  final String? iconName; // Material icon name from body_regions (e.g. 'lens_outlined')
 
   SymptomPoint({
     this.id,
@@ -118,6 +119,7 @@ class SymptomPoint {
     required this.side,
     required this.symptom,
     required this.displayLabel,
+    this.iconName,
   });
 
   factory SymptomPoint.fromJson(Map<String, dynamic> json) {
@@ -127,6 +129,7 @@ class SymptomPoint {
       side: json['side'] ?? '',
       symptom: json['symptom'] ?? '',
       displayLabel: json['display_label'] ?? '',
+      iconName: json['icon_name'],
     );
   }
 
@@ -137,6 +140,7 @@ class SymptomPoint {
       'side': side,
       'symptom': symptom,
       'display_label': displayLabel,
+      'icon_name': iconName,
     };
   }
 }

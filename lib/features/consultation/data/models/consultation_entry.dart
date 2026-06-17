@@ -7,6 +7,7 @@ class ConsultationEntry {
   final double price;
   final String bodyArea;
   final Map<String, dynamic> symptomsChart;
+  final List<Map<String, dynamic>> symptoms; // Raw symptoms including icon_name
   final String status;
   final DateTime requestedAt;
   final DateTime updatedAt;
@@ -23,6 +24,7 @@ class ConsultationEntry {
     required this.price,
     required this.bodyArea,
     this.symptomsChart = const {},
+    this.symptoms = const [],
     required this.status,
     required this.requestedAt,
     required this.updatedAt,
@@ -39,11 +41,15 @@ class ConsultationEntry {
         ? 'ผู้ป่วยไม่ระบุชื่อ'
         : '$firstName $lastName'.trim();
 
-    final symptomsList = (map['symptoms'] as List?)
-        ?.map((e) => e['display_label'] as String?)
+    final symptomsRaw = (map['symptoms'] as List?)
+        ?.cast<Map<String, dynamic>>()
+        .toList() ?? [];
+
+    final symptomsList = symptomsRaw
+        .map((e) => e['display_label'] as String?)
         .where((e) => e != null)
         .cast<String>()
-        .toList() ?? [];
+        .toList();
 
     final symptomsChart = map['symptoms_chart'] as Map<String, dynamic>? ?? {};
 
@@ -86,6 +92,7 @@ class ConsultationEntry {
       price: parseDouble(map['price']),
       bodyArea: bodyArea,
       symptomsChart: map['symptoms_chart'] as Map<String, dynamic>? ?? {},
+      symptoms: symptomsRaw,
       status: map['status'] as String? ?? 'pending',
       requestedAt:
           DateTime.tryParse(map['created_at']?.toString() ?? '') ??

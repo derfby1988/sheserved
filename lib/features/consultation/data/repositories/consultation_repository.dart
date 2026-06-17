@@ -41,6 +41,7 @@ class ConsultationRepository {
               'side': s.side,
               'symptom': s.symptom,
               'display_label': s.displayLabel,
+              'icon_name': s.iconName,
             },
           )
           .toList(),

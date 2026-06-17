@@ -141,7 +141,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final professionId = _currentUser?.professionId;
     _isProvider = professionId != null && 
                   professionId != '00000000-0000-0000-0000-000000000001';
-    
+
     // Auto-detect initial state
     // NOTE: Don't set _isConsultationActive here — let _initChat determine
     // from real payment_status to avoid hiding the pain selector prematurely.
@@ -1645,7 +1645,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               expertStatuses: _expertStatuses,
               professions: _professions,
             ),
-            _buildBodyMapSummary(),
             Expanded(
               child: Container(
                 decoration: const BoxDecoration(
@@ -1674,6 +1673,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   ),
                 ],
               ),
+            _buildBodyMapSummary(),
             _buildChatInput(),
           ],
         ),
@@ -2038,7 +2038,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
     final readOnly = widget.readOnly || _hasFinished;
-    debugPrint('[ChartBoard] _buildChatInput: _isProvider=$_isProvider status=$status isChatActive=$isChatActive readOnly=$readOnly _consultationData=$_consultationData');
     return ChatInputBarWidget(
       key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
       controller: _msgController,
@@ -2055,7 +2054,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       onShowAttachmentMenu: _showAttachmentMenu,
       onShowQuickReplies: _showQuickRepliesBottomSheet,
       onTextChanged: (_) => setState(() {}),
-      activeBodyPart: _bodyMapChatController.activeBodyPartLabel,
+      activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
       onClearBodyPart: () {
         setState(() => _bodyMapChatController.clearBodyPart());
       },
