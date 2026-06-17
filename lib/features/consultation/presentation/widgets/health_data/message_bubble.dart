@@ -5,12 +5,15 @@ import '../../../../chat/data/models/chat_models.dart';
 import '../mini_voice_player.dart';
 import 'prescription_card.dart';
 import 'summary_card.dart';
+import 'body_map_chat_bar.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
   final VoidCallback? onViewPrescription;
   final VoidCallback? onViewSummary;
+  final bool hideBodyPart;
+  final String? bodyPartIconName;
 
   const MessageBubble({
     super.key,
@@ -18,6 +21,8 @@ class MessageBubble extends StatelessWidget {
     required this.isMe,
     this.onViewPrescription,
     this.onViewSummary,
+    this.hideBodyPart = false,
+    this.bodyPartIconName,
   });
 
   @override
@@ -110,33 +115,30 @@ class MessageBubble extends StatelessWidget {
                       ),
                     ),
                   const SizedBox(height: 3),
-                  Text(
-                    '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: isMe
-                          ? Colors.white.withOpacity(0.7)
-                          : Colors.grey.shade500,
-                    ),
-                  ),
-                  if (message.bodyPart != null) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isMe ? Colors.orange.shade100 : Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        message.bodyPart!,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (message.bodyPart != null && !hideBodyPart) ...[
+                        Icon(
+                          iconNameToIconData(bodyPartIconName) ?? Icons.circle,
+                          size: 9,
+                          color: isMe
+                              ? Colors.white.withOpacity(0.7)
+                              : Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
                         style: TextStyle(
-                          fontSize: 10,
-                          color: isMe ? Colors.orange.shade800 : Colors.grey.shade700,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 9,
+                          color: isMe
+                              ? Colors.white.withOpacity(0.7)
+                              : Colors.grey.shade500,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ],
               ),
             ),

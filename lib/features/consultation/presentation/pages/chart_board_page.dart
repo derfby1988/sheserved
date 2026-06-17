@@ -133,6 +133,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // --- BodyMap Chat Selector (Phase 6.6) ---
   late final BodyMapChatController _bodyMapChatController;
 
+  // Keyboard visibility for hiding banners
+  bool _isKeyboardVisible = false;
+
   @override
   void initState() {
     super.initState();
@@ -183,6 +186,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _professionsRefreshController = ProfessionsRefreshController(onRefresh: _loadProfessions);
     _professionsRefreshController.start();
     WidgetsBinding.instance.addObserver(this);
+    // Detect initial keyboard state
+    _isKeyboardVisible = WidgetsBinding.instance.window.viewInsets.bottom > 0;
     initHealthPermission();
   }
 
@@ -1483,6 +1488,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final bottomInset = WidgetsBinding.instance.window.viewInsets.bottom;
+    final isVisible = bottomInset > 0;
+    if (_isKeyboardVisible != isVisible && mounted) {
+      setState(() => _isKeyboardVisible = isVisible);
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _professionsRefreshController.dispose();
@@ -1635,15 +1650,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
         body: Column(
           children: [
-            // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว)
+            // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว + ซ่อนเมื่อเปิดแป้นพิมพ์)
             if (_isProvider && !widget.readOnly && permissionRequest != null)
-              HealthPermissionStatusBanner(
-                request: permissionRequest!,
-                onViewData: openGrantedDataSheet,
+              AnimatedOpacity(
+                opacity: _isKeyboardVisible ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: _isKeyboardVisible ? const SizedBox.shrink() : HealthPermissionStatusBanner(
+                  request: permissionRequest!,
+                  onViewData: openGrantedDataSheet,
+                ),
               ),
-            ExpertStatusBanner(
-              expertStatuses: _expertStatuses,
-              professions: _professions,
+            AnimatedOpacity(
+              opacity: _isKeyboardVisible ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              child: _isKeyboardVisible ? const SizedBox.shrink() : ExpertStatusBanner(
+                expertStatuses: _expertStatuses,
+                professions: _professions,
+              ),
             ),
             Expanded(
               child: Container(
@@ -1911,7 +1934,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           );
         }
 
-        final messages = _messagesNotifier.value;
+        final activePart = _bodyMapChatController.activeBodyPart;
+        final allMessages = _messagesNotifier.value;
+        final messages = activePart == null
+            ? allMessages
+            : allMessages.where((m) => m.bodyPart?.toLowerCase().trim() == activePart).toList();
         return FadeTransition(
           opacity: _fadeAnimation,
           child: SlideTransition(
@@ -1927,6 +1954,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 return MessageBubble(
                   message: msg,
                   isMe: isMe,
+                  hideBodyPart: activePart != null,
+                  bodyPartIconName: _bodyMapChatController.resolveBodyPartIconName(msg.bodyPart),
                   onViewPrescription: () => _viewPrescriptionDetails(msg.attachmentUrl),
                   onViewSummary: () => _viewSummaryDetails(msg.attachmentUrl),
                 );
@@ -2038,26 +2067,29 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
     final readOnly = widget.readOnly || _hasFinished;
-    return ChatInputBarWidget(
-      key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
-      controller: _msgController,
-      isProvider: _isProvider,
-      isChatActive: isChatActive,
-      isSending: _isSendingNotifier,
-      isRecording: _isRecordingNotifier,
-      readOnly: readOnly,
-      readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
-      onSend: _sendMessage,
-      onStartRecording: _startRecording,
-      onStopRecording: _stopRecording,
-      onPickImage: _pickAndSendImage,
-      onShowAttachmentMenu: _showAttachmentMenu,
-      onShowQuickReplies: _showQuickRepliesBottomSheet,
-      onTextChanged: (_) => setState(() {}),
-      activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
-      onClearBodyPart: () {
-        setState(() => _bodyMapChatController.clearBodyPart());
-      },
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: ChatInputBarWidget(
+        key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
+        controller: _msgController,
+        isProvider: _isProvider,
+        isChatActive: isChatActive,
+        isSending: _isSendingNotifier,
+        isRecording: _isRecordingNotifier,
+        readOnly: readOnly,
+        readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
+        onSend: _sendMessage,
+        onStartRecording: _startRecording,
+        onStopRecording: _stopRecording,
+        onPickImage: _pickAndSendImage,
+        onShowAttachmentMenu: _showAttachmentMenu,
+        onShowQuickReplies: _showQuickRepliesBottomSheet,
+        onTextChanged: (_) => setState(() {}),
+        activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
+        onClearBodyPart: () {
+          setState(() => _bodyMapChatController.clearBodyPart());
+        },
+      ),
     );
   }
 

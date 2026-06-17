@@ -25,7 +25,7 @@ class ExpertStatusBanner extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
@@ -37,10 +37,10 @@ class ExpertStatusBanner extends StatelessWidget {
             children: [
               Icon(
                 hasWaitingRequired ? Icons.info_outline : Icons.groups_outlined,
-                size: 16,
+                size: 14,
                 color: hasWaitingRequired ? Colors.orange : Colors.grey,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 hasWaitingRequired
                     ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา'
@@ -49,13 +49,13 @@ class ExpertStatusBanner extends StatelessWidget {
                   color: hasWaitingRequired
                       ? Colors.orange.shade800
                       : Colors.grey.shade600,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           if (expertStatuses.isEmpty)
             Text(
               'ยังไม่มีข้อมูลผู้เชี่ยวชาญสำหรับเซสชั่นนี้ (debug: empty)',
@@ -69,6 +69,7 @@ class ExpertStatusBanner extends StatelessWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: expertStatuses.map((expert) {
                   return _buildExpertItem(expert);
                 }).toList(),
@@ -100,12 +101,11 @@ class ExpertStatusBanner extends StatelessWidget {
     final finishedAt = expert['finishedAt'];
     final hasPrescription = expert['hasPrescription'] == true;
 
+    String? groupName;
     if (isJoined) {
-      final groupName = profName ?? expert['expertGroupName']?.toString();
-      if (groupName != null && groupName.isNotEmpty && groupName != displayName) {
-        displayName = '$displayName ($groupName)';
-      }
+      groupName = profName ?? expert['expertGroupName']?.toString();
     } else {
+      groupName = expert['expertGroupName']?.toString() ?? profName;
       if (profName != null && profName.isNotEmpty) {
         displayName = profName;
       }
@@ -150,26 +150,46 @@ class ExpertStatusBanner extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(right: 14),
-      width: 72,
+      margin: const EdgeInsets.only(right: 10),
+      width: 60,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          // Name — hide if non-joined and would duplicate the profession below
+          if (isJoined || groupName == null || displayName != groupName)
+            Text(
+              displayName,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isJoined
+                    ? (profColor ?? AppColors.primary)
+                    : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
+                fontSize: 10,
+                fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
+                height: 1.2,
+              ),
+            )
+          else
+            const SizedBox.shrink(),
+          const SizedBox(height: 2),
           // Avatar with colored filter overlay + status badge
           Stack(
             alignment: Alignment.center,
             children: [
               // Main avatar
               Container(
-                width: 56,
-                height: 56,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isJoined
                         ? (profColor?.withOpacity(0.4) ?? AppColors.primary.withOpacity(0.3))
                         : Colors.grey.shade300,
-                    width: 2,
+                    width: 1.5,
                   ),
                 ),
                 child: ClipOval(
@@ -180,8 +200,8 @@ class ExpertStatusBanner extends StatelessWidget {
                       isJoined && avatarUrl != null && avatarUrl.isNotEmpty
                           ? Image.network(
                               avatarUrl,
-                              width: 56,
-                              height: 56,
+                              width: 44,
+                              height: 44,
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
                             )
@@ -195,32 +215,47 @@ class ExpertStatusBanner extends StatelessWidget {
                   ),
                 ),
               ),
+              // Required indicator (*) — top-right corner
+              if (isRequired)
+                const Positioned(
+                  top: -1,
+                  right: -1,
+                  child: Text(
+                    '*',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
               // Status badge overlay (bottom-right) — เฉพาะ 3 สถานะ
               if (isJoined && showStatusOverlay && overlayIcon != null)
                 Positioned(
                   bottom: 0,
                   right: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
                       color: overlayColor,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white, width: 1),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           overlayIcon,
-                          size: 8,
+                          size: 7,
                           color: Colors.white,
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: 1),
                         Text(
                           overlayText!,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 8,
+                            fontSize: 7,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -228,34 +263,21 @@ class ExpertStatusBanner extends StatelessWidget {
                     ),
                   ),
                 ),
-              // Prescription เป็นสถานะหลัก (ชมพู) แสดงที่ badge มุมขวาล่างแล้ว
-              // ไม่ต้อง badge ซ้ำที่มุมขวาบน
             ],
           ),
-          const SizedBox(height: 6),
-          // Name
-          Text(
-            displayName,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: isJoined
-                  ? (profColor ?? AppColors.primary)
-                  : (isRequired ? Colors.grey.shade700 : Colors.grey.shade600),
-              fontSize: 11,
-              fontWeight: isJoined || isRequired ? FontWeight.bold : FontWeight.normal,
-              height: 1.2,
-            ),
-          ),
-          if (isRequired) ...[
+          if (groupName != null && groupName.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(
-              'จำเป็น',
+              groupName,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              softWrap: false,
               style: TextStyle(
-                color: Colors.orange.shade700,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+                fontSize: 7,
+                fontWeight: FontWeight.w500,
+                height: 1.0,
               ),
             ),
           ],
@@ -266,14 +288,14 @@ class ExpertStatusBanner extends StatelessWidget {
 
   Widget _fallbackAvatar(IconData? icon, Color? profColor, bool isJoined, bool isRequired) {
     return Container(
-      width: 56,
-      height: 56,
+      width: 44,
+      height: 44,
       color: isJoined
           ? (profColor?.withOpacity(0.1) ?? AppColors.primary.withOpacity(0.1))
           : Colors.grey.shade100,
       child: Icon(
         icon ?? Icons.person_outline,
-        size: 24,
+        size: 20,
         color: isJoined
             ? (profColor ?? AppColors.primary)
             : (isRequired ? Colors.grey.shade600 : Colors.grey.shade400),

@@ -33,7 +33,12 @@ class BodyMapChatController {
 
     void addChip(String key, String label, {String? iconName}) {
       final normalizedKey = key.toLowerCase().trim();
+      final normalizedLabel = label.toLowerCase().trim();
       if (normalizedKey.isEmpty || seenKeys.contains(normalizedKey)) return;
+      // Also prevent duplicate labels from different data sources (e.g. region_id vs bodyArea key)
+      for (final existing in bodyPartChips) {
+        if (existing.label.toLowerCase().trim() == normalizedLabel) return;
+      }
       seenKeys.add(normalizedKey);
       bodyPartChips.add(BodyPartChipData(key: normalizedKey, label: label, iconName: iconName));
     }
@@ -144,6 +149,15 @@ class BodyMapChatController {
       activeBodyPartLabel = chip.label;
       activeBodyPartIconName = chip.iconName;
     }
+  }
+
+  String? resolveBodyPartIconName(String? bodyPartKey) {
+    if (bodyPartKey == null) return null;
+    final normalized = bodyPartKey.toLowerCase().trim();
+    for (final chip in bodyPartChips) {
+      if (chip.key == normalized) return chip.iconName;
+    }
+    return null;
   }
 
   void clearBodyPart() {

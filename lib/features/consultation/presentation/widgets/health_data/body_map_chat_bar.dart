@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Map Material icon name string → IconData
-IconData? _iconNameToIconData(String? name) {
+IconData? iconNameToIconData(String? name) {
   switch (name) {
     case 'face': return Icons.face;
     case 'face_retouching_natural': return Icons.face_retouching_natural;
@@ -52,44 +52,50 @@ class BodyMapChatBar extends StatelessWidget {
   Widget build(BuildContext context) {
     if (bodyParts.isEmpty) return const SizedBox.shrink();
 
+    final isOverviewActive = activeBodyPart == null;
     return Container(
-      height: 52,
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: bodyParts.length + 1, // +1 for "ภาพรวม" clear chip
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            // "ภาพรวม" clear filter chip
-            final isActive = activeBodyPart == null;
-            return _buildChip(
-              context,
-              label: 'ภาพรวม',
-              count: null,
-              isActive: isActive,
-              onTap: () => onBodyPartSelected(null),
-            );
-          }
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Fixed "ภาพรวม" chip — always visible, never scrolls
+          _buildChip(
+            context,
+            label: 'ภาพรวม',
+            count: null,
+            isActive: isOverviewActive,
+            onTap: () => onBodyPartSelected(null),
+          ),
+          const SizedBox(width: 8),
+          // Scrollable body part pills
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: bodyParts.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final part = bodyParts[index];
+                final count = patientMessageCount[part.key] ?? 0;
+                final isActive = activeBodyPart == part.key;
 
-          final part = bodyParts[index - 1];
-          final count = patientMessageCount[part.key] ?? 0;
-          final isActive = activeBodyPart == part.key;
-
-          return Semantics(
-            label: 'พูดคุยเกี่ยวกับ${part.label}, จำนวนข้อความ $count',
-            selected: isActive,
-            button: true,
-            child: _buildChip(
-              context,
-              label: part.label,
-              count: count,
-              isActive: isActive,
-              onTap: () => onBodyPartSelected(part.key),
-              iconName: part.iconName,
+                return Semantics(
+                  label: 'พูดคุยเกี่ยวกับ${part.label}, จำนวนข้อความ $count',
+                  selected: isActive,
+                  button: true,
+                  child: _buildChip(
+                    context,
+                    label: part.label,
+                    count: count,
+                    isActive: isActive,
+                    onTap: () => onBodyPartSelected(part.key),
+                    iconName: part.iconName,
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -102,13 +108,15 @@ class BodyMapChatBar extends StatelessWidget {
     required VoidCallback onTap,
     String? iconName,
   }) {
-    final iconData = _iconNameToIconData(iconName);
+    final iconData = iconNameToIconData(iconName);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        constraints: const BoxConstraints(minHeight: 22, maxHeight: 22),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: isActive ? Colors.orange : Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -127,23 +135,27 @@ class BodyMapChatBar extends StatelessWidget {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (iconData != null) ...[
-              Icon(iconData, size: 16, color: isActive ? Colors.white : Colors.orange.shade700),
-              const SizedBox(width: 4),
+              Icon(iconData, size: 10, color: isActive ? Colors.white : Colors.orange.shade700),
+              const SizedBox(width: 3),
             ],
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
+                height: 1.0,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                 color: isActive ? Colors.white : Colors.black87,
               ),
             ),
             if (count != null && count > 0) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                height: 14,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
                   color: isActive ? Colors.white : Colors.orange,
                   borderRadius: BorderRadius.circular(10),
@@ -151,7 +163,8 @@ class BodyMapChatBar extends StatelessWidget {
                 child: Text(
                   '$count',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 9,
+                    height: 1.0,
                     fontWeight: FontWeight.bold,
                     color: isActive ? Colors.orange : Colors.white,
                   ),
