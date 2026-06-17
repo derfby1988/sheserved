@@ -4158,3 +4158,334 @@ ProviderHistoryPage(
 - ถ้าต้องการให้หลายหน้ารีเฟรชพร้อมกัน → ใช้ `Provider`/`Bloc` กับ stream จาก repository แทนการพึ่ง `RouteAware` แยกต่อหน้า
 
 *Last Updated: 2026-06-16* — แก้ไขปัญหาการ์ดประวัติไม่อัปเดตหลังกลับจากห้องแชท
+
+---
+
+## 🩺 Phase 6.6: BodyMap Chat Selector (🔄 ค้าง — Pending)
+
+> **วันที่บันทึก:** 17 มิถุนายน 2569  
+> **สถานะ:** Pending / รอ implement  
+> **ที่มา:** ปรับปรุง UX การสนทนาแชทให้แยกตามอวัยวะ (body part) เพื่อให้ผู้ป่วยสื่อสารอาการได้ชัดเจนและเก็บประวัติแยกตามส่วนร่างกาย
+
+### 🎯 Goal
+
+เปลี่ยน `BodyMapSummaryWidget` (การ์ดสรุปอาการที่กินพื้นที่มาก) ให้เป็น **แถบเลือกอวัยวะแบบเลื่อน (BodyMapChatBar)** ที่:
+1. แสดงอวัยวะที่มีอาการเป็น **chip เลื่อนซ้ายขวาได้**
+2. **แตะ chip** → ใส่ prefix (`หัว: `) ลง chat input พร้อม focus
+3. **นับจำนวนข้อความ** ที่ส่งเกี่ยวกับแต่ละอวัยวะ (counter badge)
+4. **เก็บ `body_part` ลง DB** เพื่อแยกประวัติการสนทนาตามส่วนร่างกาย
+
+---
+
+### 📐 UI Design
+
+#### Collapsed (default) — แถบ chip เลื่อนได้
+```
+┌─────────────────────────────────────────────────────┐
+│ [←] [🧠หัว¹] [👤คอ] [🦴หลัง] [💪แขน] [🦵ขา] →   │
+│     ↑ horizontal scroll  + counter badge            │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Active State — เมื่อแตะ chip
+```
+┌─────────────────────────────────────────────────────┐
+│ [🧠หัว²] [👤คอ] [🦴หลัง] ...                      │
+│  ↑ active (สีส้ม + elevation)                     │
+└─────────────────────────────────────────────────────┘
+         ↓ แตะ
+Input: "หัว: ████████████████"  ← prefix อัตโนมัติ
+```
+
+#### Clear / ภาพรวม
+```
+[✕ ภาพรวม] [🧠หัว²] [👤คอ¹] ...
+   ↑ กดเพื่อล้าง prefix → สนทนาทั่วไป (ไม่ระบุอวัยวะ)
+```
+
+---
+
+### 🗄️ Database Schema (Supabase)
+
+#### 1) แก้ไข `chat_messages`
+
+```sql
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS body_part TEXT;
+
+-- Index สำหรับ query counter + filter
+CREATE INDEX IF NOT EXISTS idx_chat_messages_body_part ON chat_messages(body_part);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_room_body_part ON chat_messages(room_id, body_part, sender_id);
+```
+
+**Nullable:** `body_part` เป็น `NULL` ได้ (สำหรับข้อความทั่วไปที่ไม่ระบุอวัยวะ)
+
+#### 2) Migration Timing & Rollback Plan
+
+**Migration Timing:**
+- รัน migration ตอน **off-peak** (เช่น 02:00 - 04:00 น.) ที่ user น้อย
+- หรือรัน **วันเสาร์/อาทิตย์** ที่ traffic ต่ำ
+- แจ้ง user ล่วงหน้าว่าจะมี maintenance ถ้าจำเป็น
+- ถ้า `chat_messages` มีข้อมูล > 100,000 แถว → ควรใช้ `CONCURRENTLY` หรือทำเป็น migration แยก
+
+**Rollback Plan:**
+```sql
+-- Rollback SQL (ถ้า migration มีปัญหา)
+ALTER TABLE chat_messages DROP COLUMN body_part;
+
+-- หรือถ้ามี data ใน body_part แล้ว → backup ก่อน
+CREATE TABLE chat_messages_backup AS SELECT * FROM chat_messages;
+ALTER TABLE chat_messages DROP COLUMN body_part;
+```
+
+**Pre-migration Checklist:**
+- [ ] Backup ตาราง `chat_messages` ก่อน migration
+- [ ] Test migration บน staging environment ก่อน
+- [ ] เตรียม rollback SQL ไว้
+- [ ] ตรวจสอบว่าไม่มี migration อื่นที่กำลังรันพร้อมกัน
+
+---
+
+### 🏗️ Flutter Architecture
+
+#### State Variables (ใน `_ChartBoardPageState`)
+
+```dart
+String? _activeBodyPart;        // 'head', 'neck', etc. หรือ null
+String? _activeBodyPartLabel;   // 'หัว', 'คอ', etc.
+Map<String, int> _bodyPartMessageCount = {};  // counter ฝั่ง patient
+```
+
+#### Flow การทำงาน
+
+| การกระทำ | ผลลัพธ์ | Input | Counter |
+|---|---|---|---|
+| แตะ `[🧠หัว]` | Active = หัว | `หัว: ` | — |
+| พิมพ์ + ส่ง | bodyPart = หัว | clear | หัว (1) |
+| แตะ `[👤คอ]` | Active = คอ → **รีเซต prefix อัตโนมัติ** | `คอ: ` | หัว (1) |
+| พิมพ์ + ส่ง | bodyPart = คอ | clear | หัว (1), คอ (1) |
+| แตะ `[✕ ภาพรวม]` | Active = null | clear | หัว (1), คอ (1) |
+| พิมพ์ + ส่ง | bodyPart = null | clear | หัว (1), คอ (1), ไม่ระบุ (1) |
+
+---
+
+### 🧩 Widgets ที่ต้องสร้าง/แก้ไข
+
+#### 1. `BodyMapChatBar` (สร้างใหม่)
+
+| Property | Type | รายละเอียด |
+|---|---|---|
+| `bodyParts` | `List<String>` | รายการอวัยวะจาก `symptoms.body_areas` |
+| `patientMessageCount` | `Map<String, int>` | จำนวนข้อความต่ออวัยวะ (ฝั่ง patient) |
+| `activeBodyPart` | `String?` | อวัยวะที่กำลัง active |
+| `onBodyPartSelected` | `ValueChanged<String?>` | callback เมื่อแตะ chip |
+
+**Visual:**
+- ความสูงคงที่ `52dp`
+- `ListView.horizontal` + `scrollbars: false`
+- Chip active = สีส้ม + `elevation: 2`
+- Chip inactive = สีขาว + ขอบเทา
+- Counter badge = วงกลมเล็กสีส้ม/ขาว มุมขวาบน chip
+
+**Accessibility (Screen Reader):**
+```dart
+Semantics(
+  label: 'พูดคุยเกี่ยวกับ$label, จำนวนข้อความ $count',
+  selected: isActive,
+  button: true,
+  child: _BodyPartChip(...),
+)
+```
+
+**Edge Case: Body Parts ว่าง**
+- ถ้า `bodyParts.isEmpty` → ซ่อน `BodyMapChatBar` ทั้งหมด (`if (bodyParts.isNotEmpty)`)
+- หรือแสดง fallback: "ยังไม่มีข้อมูลอาการจาก Body Map" (optional)
+
+#### 2. `ChatMessage` Model (แก้ไข)
+
+```dart
+@HiveField(10)
+final String? bodyPart;
+
+factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+  // ... existing fields ...
+  bodyPart: json['body_part'],
+);
+
+Map<String, dynamic> toJson() => {
+  // ... existing fields ...
+  'body_part': bodyPart,
+};
+```
+
+#### 3. `ChatInputBarWidget` (แก้ไข)
+
+- เพิ่ม `activeBodyPart` parameter
+- แสดง **tag สีส้ม** หน้า TextField เมื่อมี active part
+- Tag มีปุ่ม `×` เพื่อ clear (เทียบเท่ากด "ภาพรวม")
+
+#### 4. `MessageBubble` (แก้ไข)
+
+- ถ้า `message.bodyPart != null` → แสดง **pill tag** ใต้ bubble (เช่น `[หัว]`)
+- สี tag: patient = ส้มอ่อน, provider = เทาอ่อน
+
+---
+
+### 📡 Data Flow
+
+```
+Patient แตะ chip "หัว"
+  → _activeBodyPart = 'head'
+  → _msgController.text = 'หัว: '
+  → Focus input + open keyboard
+
+Patient ส่งข้อความ
+  → _sendMessage() อ่าน _activeBodyPart
+  → ChatMessage(bodyPart: 'head', content: "หัว: ปวดมากค่ะ")
+  → _chatRepository.sendMessage(message)
+  → Supabase insert chat_messages (body_part = 'head')
+  → _bodyPartMessageCount['head'] += 1 (UI counter อัปเดต)
+
+Provider เห็นใน chat thread
+  → MessageBubble แสดง tag [หัว] ใต้ bubble
+
+Counter โหลดจาก DB
+  → SELECT body_part, COUNT(*) FROM chat_messages
+     WHERE room_id = ? AND sender_id = ? AND body_part IS NOT NULL
+     GROUP BY body_part
+```
+
+---
+
+### 🛠️ Implementation Steps
+
+| ลำดับ | งาน | ไฟล์ | ความยาก |
+|-------|-----|------|---------|
+| 1 | Migration DB: เพิ่ม `body_part` ใน `chat_messages` | `supabase/migrations/...` | ง่าย |
+| 2 | แก้ `ChatMessage` model: เพิ่ม `bodyPart` field + HiveField | `chat_models.dart` | ง่าย |
+| 3 | สร้าง `BodyMapChatBar` widget | `body_map_chat_bar.dart` | ปานกลาง |
+| 4 | แก้ `ChatInputBarWidget`: แสดง active body part tag + ปุ่ม clear | `chat_input_bar_widget.dart` | ง่าย |
+| 5 | แก้ `MessageBubble`: แสดง body part tag บนข้อความ | `message_bubble.dart` | ง่าย |
+| 6 | แก้ `ChartBoardPage`: integrate BodyMapChatBar + state + _sendMessage | `chart_board_page.dart` | ปานกลาง |
+| 7 | แก้ `ChatRepository`: sendMessage ส่ง `body_part` ไป DB | `chat_repository.dart` | ง่าย |
+| 8 | Sync realtime: ดึง `body_part` จาก Supabase stream | `chart_board_page.dart` | ปานกลาง |
+| 9 | Query counter: นับข้อความตาม `body_part` ฝั่ง patient | `chart_board_page.dart` | ปานกลาง |
+
+---
+
+### ✅ Acceptance Criteria
+
+- [ ] แถบ chip แสดงอวัยวะที่มีอาการจาก body map เลื่อนซ้ายขวาได้
+- [ ] แตะ chip → input เปลี่ยนเป็น prefix (`หัว: `) พร้อม focus + keyboard
+- [ ] แตะ chip ใหม่ → prefix รีเซตเป็นอวัยวะใหม่ทันที
+- [ ] แตะ "ภาพรวม" → clear prefix → สนทนาทั่วไป (bodyPart = null)
+- [ ] Counter badge แสดงจำนวนข้อความที่ส่งต่ออวัยวะ (ฝั่ง patient)
+- [ ] ข้อความที่ส่งมี `body_part` บันทึกลง DB ถูกต้อง
+- [ ] MessageBubble แสดง tag อวัยวะใต้ข้อความ
+- [ ] Counter persist ข้าม session (โหลดจาก DB)
+- [ ] ไม่มี gesture conflict กับ chat list scroll (แนวตั้ง vs แนวนอน)
+
+---
+
+### ⚠️ Risks & Mitigations
+
+| ปัญหา | ระดับ | แก้ไข |
+|-------|-------|-------|
+| **Gesture conflict** — horizontal scroll bar ซ้อนกับ vertical chat list | สูง | ใช้ `ScrollConfiguration` + แยกแกน (ListView แนวนอนใน Column แนวตั้ง ไม่ conflict) |
+| **Counter drift** — client count ไม่ตรงกับ DB ถ้ามี realtime delay | ปานกลาง | นับจาก optimistic update บน client แต่ sync กับ DB query เป็นระยะ |
+| **Hive migration** — เพิ่ม `@HiveField(10)` ต้องไม่ชน index เดิม | ต่ำ | ตรวจสอบ index 0-9 ถูกใช้หมดแล้ว |
+| **Provider ตอบกลับไม่มี body_part** — counter ไม่นับฝั่ง provider | ต่ำ | ออกแบบให้ counter นับเฉพาะ patient messages (ตาม requirement) |
+
+---
+
+### 📎 Dependencies
+
+- **Body Map data** — ต้องมี `symptoms.body_areas` จาก `consultation_requests` (มีอยู่แล้ว)
+- **ChatMessage model** — ต้อง backward compatible (bodyPart nullable)
+- **Phase 6.1 fixes** — ควรเสร็จก่อนเพื่อไม่ conflict กับ `chart_board_page.dart`
+
+---
+
+### 📊 Analytics & Tracking (Optional)
+
+เพื่อติดตามว่าผู้ใช้ใช้ฟีเจอร์นี้จริงไหม และประเมินประสิทธิภาพ
+
+**Events ที่ควร track:**
+
+```dart
+// เมื่อแตะ chip
+analytics.logEvent(
+  name: 'body_part_selected',
+  parameters: {
+    'part': 'head',
+    'active': true,
+  },
+);
+
+// เมื่อส่งข้อความ
+analytics.logEvent(
+  name: 'message_sent',
+  parameters: {
+    'has_body_part': true,
+    'body_part': 'head',
+  },
+);
+
+// เมื่อกด "ภาพรวม" (clear)
+analytics.logEvent(
+  name: 'body_part_cleared',
+  parameters: {},
+);
+```
+
+**Metrics ที่ควรติดตาม:**
+- อัตราการใช้ body part selector (% ของการสนทนาที่มี body parts)
+- อวัยวะที่ถูกเลือกบ่อยที่สุด
+- อัตราการส่งข้อความที่มี body_part vs ไม่มี
+
+---
+
+### 🛠️ Troubleshooting — Kotlin Version Conflict (Post-Implementation)
+
+**ปัญหา:** `flutter run` ล้มเหลวด้วย error
+```
+Module was compiled with an incompatible version of Kotlin.
+The binary version of its metadata is 2.3.0, expected version is 2.1.0.
+```
+
+**สาเหตุ:** `google_maps_flutter_android:2.19.10` ใช้ Kotlin **2.3.20** (produce metadata 2.3.0) แต่ project ล็อก Kotlin ไว้ที่ 2.1.0
+
+**ไฟล์ที่แก้ไข:**
+
+1. `android/settings.gradle.kts`
+```kotlin
+id("org.jetbrains.kotlin.android") version "2.3.20" apply false
+```
+
+2. `android/build.gradle.kts` (resolutionStrategy)
+```kotlin
+if (requested.group == "org.jetbrains.kotlin") {
+    useVersion("2.3.20")
+}
+```
+
+3. `android/app/build.gradle.kts` (stdlib + compilerOptions)
+```kotlin
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+```
+
+**หมายเหตุ:** `kotlinOptions { jvmTarget }` ถูก deprecated ใน Kotlin 2.3 ต้องย้ายเป็น `kotlin { compilerOptions { jvmTarget = JVM_17 } }`
+
+---
+
+*Last Updated: 2026-06-17* — บันทึกเป็น Phase ค้างจากเซสชัน UX analysis

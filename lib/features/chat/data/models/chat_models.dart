@@ -121,6 +121,8 @@ class ChatMessage {
   final String? attachmentType;
   @HiveField(9)
   final Map<String, DateTime> readBy; // userId -> timestamp
+  @HiveField(10)
+  final String? bodyPart;
 
   ChatMessage({
     required this.id,
@@ -133,6 +135,7 @@ class ChatMessage {
     this.attachmentUrl,
     this.attachmentType,
     this.readBy = const {},
+    this.bodyPart,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -153,6 +156,7 @@ class ChatMessage {
             (k, v) => MapEntry(k, DateTime.parse(v)),
           ) ??
           {},
+      bodyPart: json['body_part'],
     );
   }
 
@@ -168,6 +172,7 @@ class ChatMessage {
       'attachment_url': attachmentUrl,
       'attachment_type': attachmentType,
       'read_by': readBy.map((k, v) => MapEntry(k, v.toIso8601String())),
+      'body_part': bodyPart,
     };
   }
 
@@ -182,6 +187,7 @@ class ChatMessage {
     String? attachmentUrl,
     String? attachmentType,
     Map<String, DateTime>? readBy,
+    String? bodyPart,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -194,6 +200,7 @@ class ChatMessage {
       attachmentUrl: attachmentUrl ?? this.attachmentUrl,
       attachmentType: attachmentType ?? this.attachmentType,
       readBy: readBy ?? this.readBy,
+      bodyPart: bodyPart ?? this.bodyPart,
     );
   }
 }

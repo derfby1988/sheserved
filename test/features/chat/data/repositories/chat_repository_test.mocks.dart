@@ -817,6 +817,27 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get emergencyHealthSensorAlertStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#emergencyHealthSensorAlertStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get emergencyHealthDeadManReminderStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#emergencyHealthDeadManReminderStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#emergencyHealthDeadManTriggeredStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   void setEnabled(bool? enabled) => super.noSuchMethod(
         Invocation.method(
           #setEnabled,
@@ -1025,6 +1046,54 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
         ),
         returnValueForMissingStub: null,
       );
+
+  @override
+  _i3.Future<Map<String, dynamic>?> createEmergencyHealthReleaseSession({
+    required String? patientId,
+    required String? incidentId,
+    String? videoId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #createEmergencyHealthReleaseSession,
+          [],
+          {
+            #patientId: patientId,
+            #incidentId: incidentId,
+            #videoId: videoId,
+          },
+        ),
+        returnValue: _i3.Future<Map<String, dynamic>?>.value(),
+      ) as _i3.Future<Map<String, dynamic>?>);
+
+  @override
+  _i3.Future<Map<String, dynamic>?> getIncidentHealthData({
+    required String? incidentId,
+    required String? responderId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getIncidentHealthData,
+          [],
+          {
+            #incidentId: incidentId,
+            #responderId: responderId,
+          },
+        ),
+        returnValue: _i3.Future<Map<String, dynamic>?>.value(),
+      ) as _i3.Future<Map<String, dynamic>?>);
+
+  @override
+  _i3.Future<Map<String, dynamic>?> revokeEmergencyHealthSessions(
+          {required String? patientId}) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #revokeEmergencyHealthSessions,
+          [],
+          {#patientId: patientId},
+        ),
+        returnValue: _i3.Future<Map<String, dynamic>?>.value(),
+      ) as _i3.Future<Map<String, dynamic>?>);
 
   @override
   void sendRescueStatusUpdate({
@@ -1361,6 +1430,24 @@ class MockPostgrestQueryBuilder<T> extends _i1.Mock
           ),
         ),
       ) as _i2.PostgrestFilterBuilder<int>);
+
+  @override
+  _i2.PostgrestQueryBuilder<T> retry({required bool? enabled}) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #retry,
+          [],
+          {#enabled: enabled},
+        ),
+        returnValue: _FakePostgrestQueryBuilder_9<T>(
+          this,
+          Invocation.method(
+            #retry,
+            [],
+            {#enabled: enabled},
+          ),
+        ),
+      ) as _i2.PostgrestQueryBuilder<T>);
 
   @override
   _i2.PostgrestQueryBuilder<T> setHeader(
@@ -2362,6 +2449,24 @@ class MockPostgrestFilterBuilder<T> extends _i1.Mock
               column,
               value,
             ],
+          ),
+        ),
+      ) as _i2.PostgrestFilterBuilder<T>);
+
+  @override
+  _i2.PostgrestFilterBuilder<T> retry({required bool? enabled}) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #retry,
+          [],
+          {#enabled: enabled},
+        ),
+        returnValue: _FakePostgrestFilterBuilder_7<T>(
+          this,
+          Invocation.method(
+            #retry,
+            [],
+            {#enabled: enabled},
           ),
         ),
       ) as _i2.PostgrestFilterBuilder<T>);

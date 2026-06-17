@@ -33,6 +33,7 @@ import '../widgets/chat_input_bar_widget.dart';
 import '../widgets/mini_voice_player.dart';
 import '../controllers/session_timer_controller.dart';
 import '../controllers/professions_refresh_controller.dart';
+import '../controllers/body_map_chat_controller.dart';
 import '../utils/timer_formatter.dart';
 import '../utils/chart_metric_helpers.dart';
 import '../utils/body_area_formatter.dart';
@@ -42,6 +43,7 @@ import '../widgets/health_data/expert_status_banner.dart';
 import '../widgets/health_data/health_permission_status_banner.dart';
 import '../widgets/health_data/pain_level_selector.dart';
 import '../widgets/health_data/payment_card.dart';
+import '../widgets/health_data/body_map_chat_bar.dart';
 import '../widgets/health_data/prescription_card.dart';
 import '../widgets/health_data/summary_card.dart';
 import '../widgets/health_data/message_bubble.dart';
@@ -128,9 +130,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   String? _selectedPain;
 
+  // --- BodyMap Chat Selector (Phase 6.6) ---
+  late final BodyMapChatController _bodyMapChatController;
+
   @override
   void initState() {
     super.initState();
+    _bodyMapChatController = BodyMapChatController(msgController: _msgController);
     // Robust provider check (matches Dashboard logic)
     final professionId = _currentUser?.professionId;
     _isProvider = professionId != null && 
@@ -818,11 +824,22 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _messagesNotifier.value = messages;
         _isChatLoadingNotifier.value = false;
 
+        // Load body part message counts (Phase 6.6)
+        await _bodyMapChatController.loadMessageCounts(
+          roomId: roomId,
+          currentUserId: currentUserId,
+        );
+
         // Subscribe to messages
         _messagesSub = _chatRepository.streamMessages(roomId).listen((updatedMessages) {
           if (mounted) {
             _messagesNotifier.value = updatedMessages;
             _scrollToBottom();
+            // Refresh body part counts on new messages (Phase 6.6)
+            _bodyMapChatController.loadMessageCounts(
+              roomId: roomId,
+              currentUserId: currentUserId,
+            );
           }
         });
 
@@ -1196,7 +1213,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       createdAt: DateTime.now(),
       type: 'text',
       status: MessageStatus.sent,
+      bodyPart: _bodyMapChatController.activeBodyPart,
     );
+
+    // Optimistic counter update
+    final activePart = _bodyMapChatController.activeBodyPart;
+    if (activePart != null) {
+      setState(() {
+        _bodyMapChatController.bodyPartMessageCount[activePart] =
+            (_bodyMapChatController.bodyPartMessageCount[activePart] ?? 0) + 1;
+      });
+    }
 
     _msgController.clear();
     // Optimistic update — show immediately
@@ -1619,12 +1646,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               professions: _professions,
             ),
             _buildBodyMapSummary(),
-            // Pain level selector for patients before payment/activation
-            if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
-              PainLevelSelector(
-                selectedPain: _selectedPain,
-                onSelected: (pain) => setState(() => _selectedPain = pain),
-              ),
             Expanded(
               child: Container(
                 decoration: const BoxDecoration(
@@ -1637,12 +1658,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 child: _buildMessagesList(),
               ),
             ),
-            // Payment card for patients before payment/activation
+            // Pain level selector + Payment card for patients before payment/activation
             if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
-              PaymentCard(
-                isReady: _selectedPain != null,
-                price: (widget.entry?.price ?? widget.request?.price ?? 0).toInt(),
-                onSubmit: _submitConsultationRequest,
+              Column(
+                children: [
+                  PainLevelSelector(
+                    selectedPain: _selectedPain,
+                    onSelected: (pain) => setState(() => _selectedPain = pain),
+                  ),
+                  const SizedBox(height: 8),
+                  PaymentCard(
+                    isReady: _selectedPain != null,
+                    price: (widget.entry?.price ?? widget.request?.price ?? 0).toInt(),
+                    onSubmit: _submitConsultationRequest,
+                  ),
+                ],
               ),
             _buildChatInput(),
           ],
@@ -2025,6 +2055,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       onShowAttachmentMenu: _showAttachmentMenu,
       onShowQuickReplies: _showQuickRepliesBottomSheet,
       onTextChanged: (_) => setState(() {}),
+      activeBodyPart: _bodyMapChatController.activeBodyPartLabel,
+      onClearBodyPart: () {
+        setState(() => _bodyMapChatController.clearBodyPart());
+      },
     );
   }
 
@@ -2511,18 +2545,24 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return merged;
   }
 
+  // Phase 6.6: BodyMapChatBar via controller
   Widget _buildBodyMapSummary() {
-    return BodyMapSummaryWidget(
-      bodyAreaText: resolveBodyAreaText(
-        requestSymptoms: widget.request?.symptoms,
-        requestBodyArea: widget.request?.bodyArea,
-        requestSymptomsChart: widget.request?.symptomsChart,
-        entryBodyArea: widget.entry?.bodyArea,
-        entrySymptomsChart: widget.entry?.symptomsChart,
-        consultDataSymptoms: _consultationData?['symptoms'],
-        consultDataBodyArea: _consultationData?['body_area'],
-        consultDataSymptomsChart: _consultationData?['symptoms_chart'],
-      ),
+    _bodyMapChatController.resolveBodyPartChips(
+      request: widget.request,
+      entry: widget.entry,
+      consultationData: _consultationData,
+    );
+    if (_bodyMapChatController.bodyPartChips.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return BodyMapChatBar(
+      bodyParts: _bodyMapChatController.bodyPartChips,
+      patientMessageCount: _bodyMapChatController.bodyPartMessageCount,
+      activeBodyPart: _bodyMapChatController.activeBodyPart,
+      onBodyPartSelected: (key) {
+        setState(() => _bodyMapChatController.onChipSelected(key));
+        FocusScope.of(context).requestFocus(FocusNode());
+      },
     );
   }
 

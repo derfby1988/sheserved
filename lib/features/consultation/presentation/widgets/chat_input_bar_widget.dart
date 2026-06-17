@@ -17,6 +17,8 @@ class ChatInputBarWidget extends StatelessWidget {
   final VoidCallback onShowAttachmentMenu;
   final VoidCallback? onShowQuickReplies;
   final ValueChanged<String>? onTextChanged;
+  final String? activeBodyPart;
+  final VoidCallback? onClearBodyPart;
 
   const ChatInputBarWidget({
     super.key,
@@ -34,6 +36,8 @@ class ChatInputBarWidget extends StatelessWidget {
     required this.onShowAttachmentMenu,
     this.onShowQuickReplies,
     this.onTextChanged,
+    this.activeBodyPart,
+    this.onClearBodyPart,
   });
 
   @override
@@ -135,7 +139,7 @@ class ChatInputBarWidget extends StatelessWidget {
                 Expanded(
                   child: Container(
                     height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(22),
@@ -144,7 +148,43 @@ class ChatInputBarWidget extends StatelessWidget {
                         width: 1.5,
                       ),
                     ),
-                    child: TextField(
+                    child: Row(
+                      children: [
+                        if (activeBodyPart != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.orange.shade200),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  activeBodyPart!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                GestureDetector(
+                                  onTap: onClearBodyPart,
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 14,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: TextField(
                       controller: controller,
                       style: const TextStyle(color: Colors.black87, fontSize: 14),
                       decoration: InputDecoration(
@@ -159,6 +199,9 @@ class ChatInputBarWidget extends StatelessWidget {
                       ),
                       onChanged: onTextChanged,
                       onSubmitted: (_) => onSend(),
+                    ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

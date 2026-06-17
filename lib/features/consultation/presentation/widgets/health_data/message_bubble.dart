@@ -119,6 +119,24 @@ class MessageBubble extends StatelessWidget {
                           : Colors.grey.shade500,
                     ),
                   ),
+                  if (message.bodyPart != null) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isMe ? Colors.orange.shade100 : Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        message.bodyPart!,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isMe ? Colors.orange.shade800 : Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

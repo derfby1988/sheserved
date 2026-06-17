@@ -15,8 +15,8 @@ android {
             force("androidx.browser:browser:1.8.0")
             force("androidx.core:core:1.15.0")
             force("androidx.core:core-ktx:1.15.0")
-            force("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
-            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21")
+            force("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
         }
     }
 
@@ -25,8 +25,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
 
     defaultConfig {

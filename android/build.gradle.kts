@@ -36,7 +36,7 @@ subprojects {
     configurations.all {
         resolutionStrategy.eachDependency {
             if (requested.group == "org.jetbrains.kotlin") {
-                useVersion("2.1.0")
+                useVersion("2.3.20")
             }
             if (requested.name == "guava") {
                 useVersion("33.0.0-android")
