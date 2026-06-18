@@ -752,12 +752,12 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
               child: TextField(
                 controller: _msgController,
                 style: const TextStyle(color: Colors.black87, fontSize: 14),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'ให้คำแนะนำด้านสุขภาพ...',
-                  hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+                  hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 13),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _sendMessage(),

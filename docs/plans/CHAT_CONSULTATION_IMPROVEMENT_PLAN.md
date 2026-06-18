@@ -4161,7 +4161,7 @@ ProviderHistoryPage(
 
 ---
 
-## 🩺 Phase 6.6: BodyMap Chat Selector (🔄 ค้าง — Pending)
+## 🩺 Phase 6.6: BodyMap Chat Selector 
 
 > **วันที่บันทึก:** 17 มิถุนายน 2569  
 > **สถานะ:** Pending / รอ implement  
@@ -4490,4 +4490,205 @@ kotlin {
 
 ---
 
-*Last Updated: 2026-06-17* — บันทึกเป็น Phase ค้างจากเซสชัน UX analysis
+## ✅ Phase 6.7: Required Questions (คำถามบังคับ) (🚀 ใช้งานได้)
+
+> **วันที่บันทึก:** 18 มิถุนายน 2569
+> **สถานะ:** ✅ Implemented / ใช้งานได้
+> **ที่มา:** เซสชัน UX analysis — ให้ expert สามารถส่ง "คำถามบังคับ" ที่ผู้ป่วยต้องตอบก่อนจะแชทต่อได้
+
+### 🎯 Goal
+
+Expert สามารถระบุก่อนกดส่งข้อความว่าเป็นคำถามบังคับ เมื่อส่งแล้วจะปรากฏเป็นปุ่มลอยฝั่ง patient สีแดง/ทอง/เขียวตามสถานะ หากมีคำถามค้างสีแดง/ทอง patient ถูก block การแชทจนกว่าจะตอบ
+
+### 📊 UX Flow
+
+```
+[Expert] เปิด toggle "คำถามบังคับ" → พิมพ์คำถาม → ส่ง
+                ↓
+[Patient] ปุ่มลอยสีแดง (*) ปรากฏชิดขวาด้านบน _buildMessagesList (ใหม่สุดอยู่ซ้ายสุด)
+                ↓
+[Patient] แตะปุ่มแดง → Overlay คำถาม + แป้นพิมพ์ (prefix SOS icon)
+                ↓
+[Patient] ตอบ → ส่ง → คำตอบแสดง inline ใน bubble คำถามบังคับ → ปุ่มเปลี่ยนเขียว → แชทกลับมาใช้ได้
+```
+
+### 🗄️ Database Schema
+
+เพิ่มฟิลด์ใน `chat_messages` (ตารางเดิม):
+
+```sql
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS
+  is_required        BOOLEAN DEFAULT false,
+  required_status    TEXT DEFAULT null,   -- 'unread' | 'reading' | 'answered'
+  required_answer    TEXT,
+  required_answered_at TIMESTAMPTZ,
+  required_owner_id  UUID;               -- expert ที่เป็นผู้ส่ง/แก้ไขคำถามล่าสุด
+
+-- ตารางเก็บประวัติการแก้ไขคำถามบังคับ
+CREATE TABLE IF NOT EXISTS required_question_edits (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id         UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  previous_content   TEXT NOT NULL,
+  edited_by          UUID NOT NULL REFERENCES users(id),
+  edited_at          TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 🎨 UI ฝั่ง Expert
+
+- **Toggle switch** ก่อนปุ่มส่ง: "คำถามบังคับ"
+- Expert สามารถเลือก **body_part** จาก `BodyMapChatBar` ก่อนส่งคำถาม (เช่นเดียวกับการส่งข้อความปกติ) — ค่า `body_part` จะถูกบันทึกลง message
+- เมื่อเปิด toggle → `sendMessage` ส่ง `type='required_question'`, `is_required=true`, `required_status='unread'`, พร้อม `bodyPart` ที่ expert เลือก (หรือ `null` ถ้าเลือก "ภาพรวม")
+- Expert ยังแชทได้ปกติตลอด (ไม่ถูก block)
+
+### 🎨 UI ฝั่ง Patient (ChartBoard)
+
+#### 1. Floating Buttons (ปุ่มลอย)
+
+- ดึงข้อความที่ `is_required==true` (รวมทุกสถานะ)
+- แสดงเป็นแถว `Row` ใน `SingleChildScrollView` เลื่อนซ้ายขวาได้ + `Scrollbar`
+- `_requiredQuestions.reversed` — ปุ่มล่าสุดอยู่ซ้ายสุด (visible area) ปุ่มเก่าอยู่ขวา (scroll ไปดู)
+- ใช้ `ScrollController` เพื่อควบคุมการเลื่อนอัตโนมัติไปยังปุ่มล่าสุด
+- **สีปุ่ม + ไอคอน:**
+  - `unread` → 🔴 แดง + **รูปโปรไฟล์ expert** (คนที่ถาม) + water ripple animation
+  - `reading` → 🟠 ทอง + **แอนิเมชันจุด ...** (typing indicator)
+  - `answered` → 🟢 เขียว + **รูปโปรไฟล์ผู้ป่วย**
+- **ปุ่มไม่หายไปไหน** — เปลี่ยนสีเท่านั้นตามสถานะ
+
+> ⚠️ **Known Issue — Patient Avatar in Floating Buttons:**
+> - **สาเหตุ:** `widget.entry?.patientAvatar` เป็น null ในบางกรณี (ข้อมูลผู้ป่วยโหลดไม่ครบ หรือ entry ไม่มี avatar)
+> - **ผล:** ปุ่มลอยสีเขียว (answered) ฝั่งผู้ป่วยไม่แสดงรูปโปรไฟล์ กลายเป็น fallback icon (`Icons.check`)
+> - **แก้ไข:** ใช้ fallback chain: `widget.entry?.patientAvatar ?? _currentUser?.profileImageUrl` ใน `_buildRequiredQuestionFloatingButtons`
+> - **ไฟล์:** `lib/features/consultation/presentation/pages/chart_board_page.dart` (line ~3009)
+
+> ⚠️ **Known Issue — Floating Buttons Auto-Scroll ไม่ทำงาน:**
+> - **สาเหตุ:** การใช้ `SingleChildScrollView(reverse: true)` ร่วมกับ `_requiredQuestions.reversed` และการคำนวณ scroll position (`maxScrollExtent` / `jumpTo(0)`) ทำให้ตำแหน่งปุ่มล่าสุดไม่ชัดเจน — layout engine ของ Flutter จัดการ coordinate ใน mode `reverse` แตกต่างจากปกติ ทำให้ scroll ไปผิดทิศทางหรือไม่ถึงปุ่มจริง
+> - **ผล:** เมื่อ expert ส่งคำถามบังคับใหม่ ปุ่มลอยไม่ auto-scroll ไปโฟกัสที่ปุ่มสีแดงล่าสุด
+> - **แก้ไข:**
+>   1. เอา `reverse: true` ออกจาก `SingleChildScrollView`
+>   2. เก็บการเรียง `reversed` ไว้ที่ `_requiredQuestions.reversed` เท่านั้น
+>   3. ใช้ `ScrollController.animateTo(minScrollExtent)` หลัง `addPostFrameCallback` — `minScrollExtent` คือด้านซ้ายสุดซึ่งเป็นตำแหน่งปุ่มล่าสุดเสมอ
+>   4. ตรวจจับคำถามใหม่ด้วย `currentCount > previousCount` (ไม่ใช่แค่เช็ค unread status)
+> - **ไฟล์:** `lib/features/consultation/presentation/pages/chart_board_page.dart` (`_onMessagesChanged`, `_buildRequiredQuestionFloatingButtons`)
+> - **บทเรียน:** หลีกเลี่ยงการผสม `reverse: true` กับการคำนวณ scroll position เอง — ใช้ `minScrollExtent` หรือ `maxScrollExtent` ตาม layout จริงดีกว่า
+
+- **Patient แตะปุ่ม:** เปิด overlay + เปลี่ยน `required_status='reading'` + เปิดแป้นพิมพ์
+- **Auto-scroll ไปปุ่มล่าสุด:** เมื่อมีคำถามบังคับใหม่ (`unread`) เข้ามา → `_onMessagesChanged` ตรวจจับ (`currentCount > previousCount && hasUnreadNow`) → ใช้ `ScrollController.animateTo(minScrollExtent)` หลัง `addPostFrameCallback` เพื่อเลื่อนไปด้านซ้ายสุดที่เป็นตำแหน่งปุ่มล่าสุด
+- **Auto-open คำถามเดียว:** หากมีคำถามค้างเพียง 1 คำถาม → overlay เปิดอัตโนมัติเลย (ไม่ต้องให้ผู้ป่วยกดปุ่มลอย) แต่หากมีมากกว่า 1 คำถาม → ผู้ป่วยเลือกกดตามปกติ
+  - **ข้อยกเว้นสำคัญ (Phase 6.7):** หากผู้ป่วย **กำลังพิมพ์อยู่** (`_msgController.text.isNotEmpty`) หรือ **แป้นพิมพ์เปิดอยู่** (`_isKeyboardVisible == true`) → **ไม่เปิด overlay อัตโนมัติ** (รอให้ผู้ป่วยปิดแป้นพิมพ์หรือส่งข้อความเสร็จก่อน)
+- **Expert แตะปุ่มแดง/ทอง:** คำถามปรากฏในช่องกรอกข้อความแชท (สีเทา + เบลอ) + ปุ่มลอยสีส้ม "แก้ไขคำถาม" ด้านบน
+- **Expert แตะปุ่มเขียว (answered):** ไม่สามารถแก้ไข — แทนที่จะ scroll messages list ไปยังตำแหน่งคำถามและคำตอบนั้น
+
+#### 2. Required Question Overlay
+
+Widget overlay แสดงในตำแหน่งเดียวกับ `[PainLevelSelector + PaymentCard]` (เหนือ `_buildMessagesList`):
+- แสดงคำถามเต็มข้อความ + icon expert (`Icons.warning_amber` = SOS)
+- ช่องกรอกตอบ (TextField) มี prefix `Icons.warning_amber`
+- ปุ่ม X ปิด overlay → ยกเลิกการตอบ (status กลับเป็น `unread`)
+- กดส่ง → คำตอบแสดง **inline** ภายใน bubble คำถามบังคับเดิม (`required_answer`, `required_answered_at`, `required_status='answered'`) — ไม่สร้างข้อความแยกซ้ำ
+
+#### 3. Block UI (BackdropFilter)
+
+เมื่อมีคำถามค้าง (`required_status` เป็น `unread` หรือ `reading`):
+
+**เงื่อนไขก่อน Block:**
+- **กำลังพิมพ์ (`_msgController.text.isNotEmpty`) หรือ แป้นพิมพ์เปิด (`_isKeyboardVisible == true`)** → **ไม่ block ทันที**
+  - ตั้ง `Timer` 2 วินาที debounce → แต่ **ยังไม่ set `_isBlocked = true` ทันที**
+  - Timer จะ trigger ก็ต่อเมื่อแป้นพิมพ์ปิดแล้ว (`!_isKeyboardVisible`)
+- **แป้นพิมพ์ปิดลง (`didChangeMetrics()`)** → เรียก `_checkShouldBlock()` → ถ้ายังมีคำถามค้าง → block ทันที
+- **หากผู้ป่วยกำลังพิมพ์แล้ว expert ส่งคำถามบังคับ** → ไม่ block/ไม่ force overlay — รอให้ผู้ป่วยส่งข้อความปกติเสร็จ หรือปิดแป้นพิมพ์ก่อน
+
+**การทำงานของ `_checkShouldBlock()`:**
+1. นับคำถามค้าง (`pending`) → ถ้าไม่มี → `_isBlocked = false`
+2. ถ้ามีคำถามค้าง:
+   - `isTyping || _isKeyboardVisible` → ตั้ง timer 2 วิ แต่ **ยังไม่ block**
+   - ไม่พิมพ์ + แป้นพิมพ์ปิด → `_isBlocked = true` + auto-open overlay (ถ้ามี 1 คำถาม)
+3. `_onMessagesChanged` รับ realtime update → อัปเดต `_requiredQuestions` → เรียก `_checkShouldBlock()`
+4. `_onPatientTyping()` (listener บน `_msgController`) → ถ้ามีคำถามค้าง → cancel timer → ตั้ง timer ใหม่ 2 วิ → รอ re-check
+
+**การ Block:**
+- ครอบ `_buildMessagesList` ด้วย `BackdropFilter(blur)`
+- **ปุ่มลอย (Floating Buttons) ต้องอยู่ layer สูงกว่า BackdropFilter** — ใช้ `Stack` + `Positioned` โดยปุ่มลอยอยู่นอก scope ของ `BackdropFilter` เพื่อให้ patient ยังแตะได้
+- ปิด/ซ่อน `ChatInputBarWidget` (แทนที่ด้วย label "กรุณาตอบคำถามบังคับก่อน")
+- overlay สามารถแตะปุ่มลอยเพื่อเปิดคำถามได้ (หรือ auto-open ถ้ามี 1 คำถาม)
+
+#### 4. BodyMapChatBar ขณะมีคำถามค้าง
+
+- `_buildBodyMapSummary()` / `BodyMapChatBar` **ยังแสดงอยู่** (อยู่นอก scope ของ `BackdropFilter`)
+- **Patient ไม่สามารถแตะเลือก/เปลี่ยนอวัยวะได้** — ปิดการโต้ตอบ (disable tap)
+- แสดง pill ตาม `bodyPart` ที่ **expert เลือกไว้** ตอนสร้างคำถาม:
+  - ถ้า expert เลือก "ภาพรวม" → แสดง pill "ภาพรวม" อย่างเดียว
+  - ถ้า expert เลือกอวัยวะเฉพาะ → แสดง pill นั้นอย่างเดียว (ซ่อนอวัยวะอื่น)
+- **Auto-tag bodyPart:** เกิดตั้งแต่ก่อน expert กดส่งคำถามแล้ว — เมื่อ patient ตอบคำถาม คำตอบจะได้ `bodyPart` ค่าเดียวกับคำถามโดยอัตโนมัติ (ตอนส่งเข้า chat)
+
+### 🎨 Required Question Message Bubble
+
+- แสดง **เต็มพื้นที่แนวนอน** (ใช้ `Expanded` ใน `Row` ของ messages list)
+- **ไม่มีสีพื้นหลัง** (`Colors.transparent`) — แสดงข้อความบนพื้นหลัง chat ปกติ
+- **ขอบสีเขียว** (`Colors.green.shade600` + `withOpacity(0.5)`) — หนา 1.5px
+- ข้อความคำถาม **ชิดซ้าย/ขวาสุด** ตามฝั่ง (`isMe`) ด้วย `textAlign`
+- **ไม่แสดง label** หรือ icon ใดๆ — ดีไซน์ minimal แยกด้วยขอบสีเขียวอย่างเดียว
+- หากมีระบุ `bodyPart`: แสดง **ไอคอนอวัยวะ inline** หน้าข้อความคำถาม (ตามด้วยข้อความ)
+- **เวลาคำถามต่อท้ายข้อความ** inline (fontSize 9, สีเดียวกับข้อความ) — อยู่บรรทัดเดียวกับคำถาม
+- **รูปโปรไฟล์ expert** แสดงหน้า bubble (เฉพาะคำถามบังคับจากฝั่งตรงข้าม) — ข้อความปกติไม่แสดงไอคอน/รูปใดๆ
+- หากมีคำตอบ: แสดงกล่องเขียว (`Colors.green.shade50`) inline ชิดฝั่งตรงข้ามกับคำถาม
+  - แสดงเฉพาะข้อความตอบ (ไม่มี `Icons.check_circle` หรือคำว่า "ตอบ:")
+  - เวลาตอบสีเทา (`Colors.grey.shade500`) fontSize 9 ต่อท้ายข้อความตอบ (ไม่มีวงเล็บ)
+
+### 🔄 Realtime Status Sync
+
+ใช้ Supabase realtime stream:
+- Patient แตะปุ่ม → อัปเดต `required_status='reading'` → expert เห็นสีเปลี่ยนเป็นทอง
+- Patient ตอบ → อัปเดต `required_answer`, `required_answered_at`, `required_status='answered'` → ปุ่มเปลี่ยนเป็นสีเขียว (ไม่หาย ทุกคนแตะดูได้)
+
+### 📐 Messages List Sorting
+
+ใน `_buildMessagesList` ทุกข้อความถูก sort ก่อนแสดง:
+- **คำถามบังคับที่มีคำตอบ** → ใช้ `requiredAnsweredAt` เป็น sort key (เพื่อให้คำถามที่ตอบล่าสุดอยู่ล่างสุด)
+- **ข้อความอื่น / คำถามที่ยังไม่ตอบ** → ใช้ `createdAt`
+
+### 🎨 UI ฝั่ง Expert — แก้ไขคำถาม
+
+- **Expert Edit Flow:**
+  1. Expert แตะปุ่มลอยที่มีสถานะ `unread` (แดง)
+  2. คำถามปรากฏในช่องกรอกข้อความแชท (สีเทา + เบลอ)
+  3. ปุ่มลอยสีส้ม "แก้ไขคำถาม" ปรากฏด้านบน
+  4. Expert แก้ไขข้อความ → กดส่ง
+- เมื่อ expert แก้ไขและกดส่ง → `required_owner_id` เปลี่ยนเป็น expert คนนั้น บันทึกประวัติใน `required_question_edits`
+- **กรณีคำถามที่สถานะเปลี่ยนแล้ว (ผู้ป่วยแตะ/ตอบไปแล้ว):**
+  - ยังให้ส่งได้และถือว่าเป็นคำถามใหม่แบบปกติ (สร้าง message ใหม่ + ปุ่มลอยใหม่)
+  - **ปุ่มเก่าไม่หายไปไหน** — การเปลี่ยนสียังขึ้นอยู่กับสถานะฝั่งผู้ป่วยเหมือนเดิม (เช่น ถ้า patient ตอบแล้ว ปุ่มเก่าเป็นเขียว ค้างเขียว)
+- **กรณีคำถามสีแดง (ยังไม่ถูกแตะ):**
+  - แก้ไขแล้วส่ง → แทนที่คำถามเดิม (ไม่สร้างปุ่มใหม่) แต่เปลี่ยน `required_owner_id` และบันทึกประวัติ
+
+### 🎨 UI แสดงประวัติการแก้ไข (Optional)
+
+- เมื่อ expert หรือ patient แตะดูคำถามใน overlay → แสดง "ประวัติการแก้ไข" ถ้ามี:
+  - แสดงรายการจาก `required_question_edits` ตามลำดับเวลา
+  - แสดงชื่อ expert ที่แก้ไข + เวลา + ข้อความเดิม (ก่อนแก้)
+- สามารถซ่อน/แสดงได้ด้วยปุ่ม "ดูประวัติ" ใน overlay
+
+### 🛠️ Files ที่แก้ไขหลัก
+
+- `lib/features/chat/data/models/chat_models.dart` — model + enum `RequiredStatus`
+- `lib/features/chat/data/repositories/chat_repository.dart` — CRUD required fields + edit history
+- `lib/features/consultation/presentation/pages/expert_chat_room_page.dart` — toggle + send + edit
+- `lib/features/consultation/presentation/pages/chart_board_page.dart` — floating buttons + overlay + block + typing check
+- `lib/features/consultation/presentation/widgets/health_data/message_bubble.dart` — render required question
+- `lib/features/consultation/presentation/widgets/health_data/body_map_chat_bar.dart` — disable tap ขณะคำถามค้าง
+
+### ⚠️ Risks & Edge Cases
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| มีคำถามบังคับหลายข้อพร้อมกัน | ปุ่มลอยเต็มจอ | จำกัด max 3 ปุ่ม + scrollable |
+| Patient ปิด app ระหว่างตอบ | status ค้างที่ 'reading' | ใช้ `onDispose` reset เป็น 'unread' |
+| Expert ส่งคำถามซ้ำ | ปุ่มซ้อนกัน | deduplicate โดย message_id |
+| Expert แก้ไขคำถามที่สถานะเปลี่ยนแล้ว | ถือเป็นคำถามใหม่ ไม่แทนที่ปุ่มเดิม | สร้าง message ใหม่ + ปุ่มลอยใหม่ ปุ่มเก่าค้างตามสถานะฝั่งผู้ป่วย |
+| Expert แก้ไขคำถามสีแดง | เจ้าของคำถามเปลี่ยนเป็น expert ที่แก้ไขล่าสุด | บันทึกประวัติใน `required_question_edits` แทนที่คำถามเดิม |
+| Patient กำลังพิมพ์คำตอบแล้ว expert แก้ไขคำถาม | คำตอบที่พิมพ์อยู่อาจไม่ตรงกับคำถามใหม่ | แจ้งเตือน expert ว่า patient กำลังตอบอยู่ หรือยอมให้ patient ส่งคำตอบเดิมได้ |
+| Backward compatibility | ข้อความเก่าไม่มี required fields | default `is_required=false` |
+
+---
+
+*Last Updated: 2026-06-18* — Phase 6.7 implement ครบแล้ว

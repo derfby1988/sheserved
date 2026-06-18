@@ -133,6 +133,22 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // --- BodyMap Chat Selector (Phase 6.6) ---
   late final BodyMapChatController _bodyMapChatController;
 
+  // --- Required Questions (Phase 6.7) ---
+  List<ChatMessage> _requiredQuestions = [];
+  ChatMessage? _activeRequiredQuestion;
+  bool _showRequiredOverlay = false;
+  final TextEditingController _requiredAnswerController = TextEditingController();
+  final FocusNode _requiredAnswerFocus = FocusNode();
+  Timer? _typingTimer;
+  DateTime? _lastTypingTime;
+  DateTime? _lastManualCloseTime;
+  bool _isBlocked = false;
+  ScrollController? _floatingButtonsScrollController;
+
+  // Expert-side required question state
+  bool _isRequiredToggle = false;
+  String? _editingQuestionId;
+
   // Keyboard visibility for hiding banners
   bool _isKeyboardVisible = false;
 
@@ -161,6 +177,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _isRecordingNotifier = ValueNotifier(false);
     _isSendingNotifier = ValueNotifier(false);
     _timerController = SessionTimerController(onExpired: _onSessionExpired);
+
+    // Scroll controller for floating buttons (horizontal scroll + scrollbar)
+    _floatingButtonsScrollController = ScrollController();
+
+    // Listen for messages to detect required questions
+    _messagesNotifier.addListener(_onMessagesChanged);
+
+    // Track typing to delay block UI
+    _msgController.addListener(_onPatientTyping);
 
     _fadeController = AnimationController(
       vsync: this,
@@ -1210,6 +1235,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     final roomId = _consultationRoomId ?? 'consultation_demo';
 
+    // ─── Expert: Required Question ─────────────────────────────
+    if (_isProvider && _isRequiredToggle) {
+      await _sendRequiredQuestion(text, roomId);
+      if (mounted) _isSendingNotifier.value = false;
+      return;
+    }
+
+    // ─── Expert: Edit Required Question ──────────────────────────
+    if (_isProvider && _editingQuestionId != null) {
+      await _editRequiredQuestion(text);
+      if (mounted) _isSendingNotifier.value = false;
+      return;
+    }
+
+    // ─── Normal message ────────────────────────────────────────
     final message = ChatMessage(
       id: const Uuid().v4(),
       roomId: roomId,
@@ -1243,6 +1283,77 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
 
     if (mounted) _isSendingNotifier.value = false;
+  }
+
+  /// Expert sends a new required question
+  Future<void> _sendRequiredQuestion(String text, String roomId) async {
+    final message = ChatMessage(
+      id: const Uuid().v4(),
+      roomId: roomId,
+      senderId: _currentUser?.id ?? 'expert',
+      content: text,
+      createdAt: DateTime.now(),
+      type: 'required_question',
+      status: MessageStatus.sent,
+      isRequired: true,
+      requiredStatus: RequiredStatus.unread,
+      requiredOwnerId: _currentUser?.id,
+      bodyPart: _bodyMapChatController.activeBodyPart,
+    );
+
+    _msgController.clear();
+    _messagesNotifier.value = [..._messagesNotifier.value, message];
+    _scrollToBottom();
+
+    try {
+      await _chatRepository.sendMessage(message);
+      if (mounted) {
+        setState(() {
+          _isRequiredToggle = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Send required question error: $e');
+    }
+  }
+
+  /// Expert edits an existing required question
+  Future<void> _editRequiredQuestion(String text) async {
+    if (_editingQuestionId == null) return;
+
+    final existing = _requiredQuestions.firstWhere(
+      (q) => q.id == _editingQuestionId,
+      orElse: () => ChatMessage(
+        id: '',
+        roomId: '',
+        senderId: '',
+        content: '',
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    if (existing.id.isEmpty) {
+      setState(() => _editingQuestionId = null);
+      return;
+    }
+
+    // If patient has already seen it (status != unread), create new question
+    if (existing.requiredStatus != RequiredStatus.unread) {
+      await _sendRequiredQuestion(text, existing.roomId);
+      setState(() => _editingQuestionId = null);
+      return;
+    }
+
+    // Otherwise edit in-place
+    try {
+      await _chatRepository.editRequiredQuestion(_editingQuestionId!, text, _currentUser?.id ?? '');
+      _msgController.clear();
+      if (mounted) {
+        setState(() => _editingQuestionId = null);
+      }
+    } catch (e) {
+      debugPrint('Edit required question error: $e');
+    }
   }
 
   Future<void> _sendSpecialMessage(String type, String content) async {
@@ -1494,6 +1605,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final isVisible = bottomInset > 0;
     if (_isKeyboardVisible != isVisible && mounted) {
       setState(() => _isKeyboardVisible = isVisible);
+      // Phase 6.7: When keyboard closes, re-evaluate if patient should be blocked
+      if (!isVisible && !_isProvider) {
+        _checkShouldBlock();
+      }
     }
   }
 
@@ -1506,12 +1621,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _msgController.dispose();
     _scrollController.dispose();
     _audioRecorder.dispose();
+    _msgController.removeListener(_onPatientTyping);
+    _floatingButtonsScrollController?.dispose();
+    _requiredAnswerController.dispose();
+    _requiredAnswerFocus.dispose();
+    _typingTimer?.cancel();
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
     _expertAvailabilitySub?.cancel();
     _roomSub?.cancel();
     _consultationSub?.cancel();
     disposeHealthPermission();
+    _messagesNotifier.removeListener(_onMessagesChanged);
     _messagesNotifier.dispose();
     _isChatLoadingNotifier.dispose();
     _isRecordingNotifier.dispose();
@@ -1677,7 +1798,33 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     topRight: Radius.circular(30),
                   ),
                 ),
-                child: _buildMessagesList(),
+                child: Stack(
+                  children: [
+                    // 1. Messages list (always at bottom)
+                    _buildMessagesList(),
+
+                    // 2. Blur overlay on top of messages when blocked
+                    if (_isBlocked && !_isProvider)
+                      Positioned.fill(
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                            child: Container(
+                              color: Colors.white.withOpacity(0.25),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // 3. Floating required question buttons (above blur)
+                    if (_requiredQuestions.isNotEmpty)
+                      _buildRequiredQuestionFloatingButtons(),
+
+                    // 4. Required question answer overlay (topmost)
+                    if (!_isProvider)
+                      _buildRequiredQuestionOverlay(),
+                  ],
+                ),
               ),
             ),
             // Pain level selector + Payment card for patients before payment/activation
@@ -1697,7 +1844,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ],
               ),
             _buildBodyMapSummary(),
-            _buildChatInput(),
+            if (_isBlocked && !_isProvider)
+              _buildBlockedInput()
+            else
+              _buildChatInput(),
           ],
         ),
       ),
@@ -1936,9 +2086,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
         final activePart = _bodyMapChatController.activeBodyPart;
         final allMessages = _messagesNotifier.value;
+        // Sort: required questions with answers use answer time; others use creation time
+        final sortedMessages = [...allMessages]..sort((a, b) {
+          final aTime = a.type == 'required_question' && a.requiredAnsweredAt != null
+              ? a.requiredAnsweredAt!
+              : a.createdAt;
+          final bTime = b.type == 'required_question' && b.requiredAnsweredAt != null
+              ? b.requiredAnsweredAt!
+              : b.createdAt;
+          return aTime.compareTo(bTime);
+        });
         final messages = activePart == null
-            ? allMessages
-            : allMessages.where((m) => m.bodyPart?.toLowerCase().trim() == activePart).toList();
+            ? sortedMessages
+            : sortedMessages.where((m) => m.bodyPart?.toLowerCase().trim() == activePart).toList();
         return FadeTransition(
           opacity: _fadeAnimation,
           child: SlideTransition(
@@ -1951,11 +2111,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 if (messages.isEmpty) return const SizedBox.shrink();
                 final msg = messages[index];
                 final isMe = msg.senderId == (_currentUser?.id ?? 'demo_user');
+                final senderAvatarUrl = _expertStatuses
+                    .firstWhere(
+                      (e) => e['providerId'] == msg.senderId,
+                      orElse: () => {},
+                    )['providerAvatarUrl']
+                    ?.toString();
                 return MessageBubble(
                   message: msg,
                   isMe: isMe,
                   hideBodyPart: activePart != null,
                   bodyPartIconName: _bodyMapChatController.resolveBodyPartIconName(msg.bodyPart),
+                  senderAvatarUrl: senderAvatarUrl,
                   onViewPrescription: () => _viewPrescriptionDetails(msg.attachmentUrl),
                   onViewSummary: () => _viewSummaryDetails(msg.attachmentUrl),
                 );
@@ -2069,26 +2236,106 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final readOnly = widget.readOnly || _hasFinished;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: ChatInputBarWidget(
-        key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
-        controller: _msgController,
-        isProvider: _isProvider,
-        isChatActive: isChatActive,
-        isSending: _isSendingNotifier,
-        isRecording: _isRecordingNotifier,
-        readOnly: readOnly,
-        readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
-        onSend: _sendMessage,
-        onStartRecording: _startRecording,
-        onStopRecording: _stopRecording,
-        onPickImage: _pickAndSendImage,
-        onShowAttachmentMenu: _showAttachmentMenu,
-        onShowQuickReplies: _showQuickRepliesBottomSheet,
-        onTextChanged: (_) => setState(() {}),
-        activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
-        onClearBodyPart: () {
-          setState(() => _bodyMapChatController.clearBodyPart());
-        },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Expert: Required question toggle
+          if (_isProvider && _editingQuestionId == null) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, left: 12, right: 12),
+              child: Row(
+                children: [
+                  Switch(
+                    value: _isRequiredToggle,
+                    onChanged: (v) => setState(() => _isRequiredToggle = v),
+                    activeColor: AppColors.primary,
+                  ),
+                  Text(
+                    'คำถามบังคับ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _isRequiredToggle ? AppColors.primary : Colors.grey,
+                    ),
+                  ),
+                  if (_isRequiredToggle)
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'จำเป็น',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          // Expert: Editing mode banner
+          if (_isProvider && _editingQuestionId != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 6, left: 12, right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.edit, size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'แก้ไขคำถาม',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _editingQuestionId = null;
+                      _msgController.clear();
+                    }),
+                    child: Icon(Icons.close, size: 16, color: Colors.orange.shade700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          ChatInputBarWidget(
+            key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
+            controller: _msgController,
+            isProvider: _isProvider,
+            isChatActive: isChatActive,
+            isSending: _isSendingNotifier,
+            isRecording: _isRecordingNotifier,
+            readOnly: readOnly,
+            readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
+            onSend: _sendMessage,
+            onStartRecording: _startRecording,
+            onStopRecording: _stopRecording,
+            onPickImage: _pickAndSendImage,
+            onShowAttachmentMenu: _showAttachmentMenu,
+            onShowQuickReplies: _showQuickRepliesBottomSheet,
+            onTextChanged: (_) => setState(() {}),
+            activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
+            onClearBodyPart: () {
+              setState(() => _bodyMapChatController.clearBodyPart());
+            },
+            isRequiredMode: _isProvider && _isRequiredToggle,
+            isEditingMode: _isProvider && _editingQuestionId != null,
+          ),
+        ],
       ),
     );
   }
@@ -2576,6 +2823,498 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return merged;
   }
 
+  // =====================================================
+  // Required Questions (Phase 6.7)
+  // =====================================================
+
+  /// Called whenever messages change — detects required questions and updates block state
+  void _onMessagesChanged() {
+    final messages = _messagesNotifier.value;
+    final required = messages.where((m) => m.isRequired).toList();
+    if (!mounted) return;
+
+    // Detect new question to auto-scroll to latest button
+    final previousCount = _requiredQuestions.length;
+    final currentCount = required.length;
+    final hasNewQuestion = currentCount > previousCount;
+
+    final hasUnreadNow = required.any((q) => q.requiredStatus == RequiredStatus.unread);
+    final isNewUnread = hasNewQuestion && hasUnreadNow;
+
+    setState(() {
+      _requiredQuestions = required;
+    });
+
+    // Scroll to latest unread button after rebuild.
+    if (isNewUnread && _floatingButtonsScrollController != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _floatingButtonsScrollController?.hasClients != true) return;
+
+        final target = _floatingButtonsScrollController!.position.minScrollExtent;
+        if ((_floatingButtonsScrollController!.offset - target).abs() > 1.0) {
+          debugPrint('[FloatingButtons] animateTo(minScrollExtent) called, currentOffset=${_floatingButtonsScrollController!.offset}, target=$target, itemCount=${_requiredQuestions.length}');
+          _floatingButtonsScrollController!.animateTo(
+            target,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+          debugPrint('[FloatingButtons] animateTo(minScrollExtent) scheduled');
+        }
+      });
+    }
+
+    // Patient side: check if should block
+    if (!_isProvider) {
+      _checkShouldBlock();
+    }
+  }
+
+  /// Track patient typing to delay block UI
+  void _onPatientTyping() {
+    if (_isProvider) return;
+    final pending = _requiredQuestions.where(
+      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
+    ).toList();
+    if (pending.isEmpty) return;
+
+    // Patient is typing — temporarily unblock
+    if (_isBlocked) {
+      setState(() => _isBlocked = false);
+    }
+
+    // Set timer to re-block after 2 seconds of inactivity
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) _checkShouldBlock();
+    });
+  }
+
+  /// Check if patient should be blocked (has pending required questions)
+  void _checkShouldBlock() {
+    final pending = _requiredQuestions.where(
+      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
+    ).toList();
+
+    if (pending.isEmpty) {
+      if (mounted) setState(() => _isBlocked = false);
+      return;
+    }
+
+    // Check if patient is currently typing
+    final isTyping = _msgController.text.isNotEmpty;
+    final hasFocus = _msgController.text.isNotEmpty; // Simplified check
+
+    if (isTyping || _isKeyboardVisible) {
+      // Phase 6.7: Do NOT force block/overlay while patient is typing
+      // or keyboard is visible. Wait for patient to finish.
+      _typingTimer?.cancel();
+      _typingTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted && !_isKeyboardVisible) {
+          setState(() => _isBlocked = true);
+        }
+      });
+    } else {
+      if (mounted) setState(() => _isBlocked = true);
+    }
+
+    // Auto-open overlay if only 1 pending question (patient side, not already open)
+    // Phase 6.7: MUST NOT force overlay when patient is typing or keyboard is visible
+    final justClosed = _lastManualCloseTime != null &&
+        DateTime.now().difference(_lastManualCloseTime!).inSeconds < 2;
+    if (!_isProvider &&
+        pending.length == 1 &&
+        !_showRequiredOverlay &&
+        _activeRequiredQuestion == null &&
+        !justClosed &&
+        !isTyping &&
+        !_isKeyboardVisible) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _onPatientTapRequiredQuestion(pending.first);
+      });
+    }
+  }
+
+  /// Patient taps a floating required question button
+  void _onPatientTapRequiredQuestion(ChatMessage question) async {
+    if (_isProvider) return; // Only patient side
+
+    setState(() {
+      _activeRequiredQuestion = question;
+      _showRequiredOverlay = true;
+    });
+
+    // Update status to reading
+    await _chatRepository.updateRequiredStatus(question.id, RequiredStatus.reading);
+
+    // Open keyboard
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) FocusScope.of(context).requestFocus(_requiredAnswerFocus);
+    });
+  }
+
+  /// Patient cancels answering
+  void _onPatientCancelAnswer() async {
+    if (_activeRequiredQuestion != null) {
+      await _chatRepository.updateRequiredStatus(
+        _activeRequiredQuestion!.id,
+        RequiredStatus.unread,
+      );
+    }
+    setState(() {
+      _showRequiredOverlay = false;
+      _activeRequiredQuestion = null;
+      _requiredAnswerController.clear();
+      _lastManualCloseTime = DateTime.now();
+    });
+  }
+
+  /// Patient submits answer
+  Future<void> _onPatientSubmitAnswer() async {
+    if (_activeRequiredQuestion == null) return;
+    final answer = _requiredAnswerController.text.trim();
+    if (answer.isEmpty) return;
+
+    final question = _activeRequiredQuestion!;
+
+    // Submit required answer (answer is shown inline inside the required question bubble)
+    await _chatRepository.submitRequiredAnswer(
+      question.id,
+      answer,
+      question.bodyPart ?? '',
+    );
+
+    if (mounted) {
+      setState(() {
+        _showRequiredOverlay = false;
+        _activeRequiredQuestion = null;
+        _requiredAnswerController.clear();
+        _lastManualCloseTime = DateTime.now();
+      });
+      // _checkShouldBlock() is NOT called here — realtime stream updates
+      // _requiredQuestions via _onMessagesChanged, which then re-checks block state
+      // Calling it here would race with local state still having old pending data
+    }
+  }
+
+  /// Build floating required question buttons (above messages area)
+  Widget _buildRequiredQuestionFloatingButtons() {
+    return Positioned(
+      top: 8,
+      right: 8,
+      left: 8,
+      child: Scrollbar(
+        controller: _floatingButtonsScrollController,
+        thumbVisibility: false,
+        child: SingleChildScrollView(
+          controller: _floatingButtonsScrollController,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: _requiredQuestions.reversed.map((q) {
+          Color bgColor;
+          switch (q.requiredStatus) {
+            case RequiredStatus.unread:
+              bgColor = Colors.red.shade600;
+              break;
+            case RequiredStatus.reading:
+              bgColor = const Color(0xFFFFB300);
+              break;
+            case RequiredStatus.answered:
+              bgColor = Colors.green.shade600;
+              break;
+            default:
+              bgColor = Colors.grey.shade400;
+          }
+          final isUnread = q.requiredStatus == RequiredStatus.unread;
+          Widget button = GestureDetector(
+            onTap: () {
+              // Green (answered) buttons: scroll to question+answer in messages
+              if (q.requiredStatus == RequiredStatus.answered) {
+                _scrollToQuestion(q);
+                return;
+              }
+              if (_isProvider) {
+                _onExpertTapQuestion(q);
+              } else {
+                _onPatientTapRequiredQuestion(q);
+              }
+            },
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: isUnread
+                    // Red: expert profile image (who asked the question)
+                    ? _buildAvatar(
+                        imageUrl: _expertStatuses
+                            .firstWhere(
+                              (e) => e['providerId'] == q.requiredOwnerId,
+                              orElse: () => {},
+                            )['providerAvatarUrl']
+                            ?.toString(),
+                        fallbackIcon: Icons.warning_amber,
+                      )
+                    : (q.requiredStatus == RequiredStatus.reading
+                        // Amber: typing dots animation
+                        ? _TypingDots(color: Colors.white)
+                        // Green: patient profile image
+                        : _buildAvatar(
+                            imageUrl: widget.entry?.patientAvatar ?? _currentUser?.profileImageUrl,
+                            fallbackIcon: Icons.check,
+                          )),
+              ),
+            ),
+          );
+
+          // Ripple animation for unread (red) buttons
+          if (isUnread) {
+            button = _buildRippleWrapper(button);
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: button,
+          );
+        }).toList(),
+      ),
+    ),
+  ),
+);
+  }
+
+  /// Water ripple effect behind a floating button
+  Widget _buildRippleWrapper(Widget child) {
+    return SizedBox(
+      width: 60,
+      height: 60,
+      child: Center(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            _RippleRing(delay: 0.0, color: Colors.red.shade600),
+            _RippleRing(delay: 0.6, color: Colors.red.shade600),
+            _RippleRing(delay: 1.2, color: Colors.red.shade600),
+            SizedBox(width: 36, height: 36, child: child),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Small circular avatar for floating buttons (profile image or fallback icon)
+  Widget _buildAvatar({String? imageUrl, required IconData fallbackIcon}) {
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: 16,
+        backgroundColor: Colors.transparent,
+        backgroundImage: CachedNetworkImageProvider(imageUrl),
+      );
+    }
+    return Icon(fallbackIcon, color: Colors.white, size: 18);
+  }
+
+  /// Blocked input message (shown when patient has pending required questions)
+  Widget _buildBlockedInput() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        border: Border(
+          top: BorderSide(color: Colors.red.shade100),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.warning_amber, color: Colors.red.shade400, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            'กรุณาตอบคำถามบังคับก่อน',
+            style: TextStyle(
+              color: Colors.red.shade600,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build the required question answer overlay
+  Widget _buildRequiredQuestionOverlay() {
+    if (!_showRequiredOverlay || _activeRequiredQuestion == null) {
+      return const SizedBox.shrink();
+    }
+
+    final question = _activeRequiredQuestion!;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header with question and close button
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber, color: Colors.red, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'คำถามบังคับ',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          question.content,
+                          style: const TextStyle(fontSize: 15, color: Colors.black87),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _onPatientCancelAnswer,
+                    child: const Icon(Icons.close, color: Colors.grey, size: 22),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Answer input with SOS prefix
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F7F5),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _requiredAnswerController,
+                        focusNode: _requiredAnswerFocus,
+                        decoration: const InputDecoration(
+                          hintText: 'พิมพ์คำตอบ...',
+                          hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onSubmitted: (_) => _onPatientSubmitAnswer(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Submit button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _onPatientSubmitAnswer,
+                  icon: const Icon(Icons.send_rounded, size: 18),
+                  label: const Text('ส่งคำตอบ'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Expert taps a required question button to edit it
+  void _onExpertTapQuestion(ChatMessage question) {
+    if (!_isProvider) return;
+
+    setState(() {
+      _editingQuestionId = question.id;
+      _msgController.text = question.content;
+      _isRequiredToggle = false;
+    });
+
+    // Move cursor to end
+    _msgController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _msgController.text.length),
+    );
+  }
+
+  /// Scroll messages list to show the given required question
+  void _scrollToQuestion(ChatMessage question) {
+    // Clear body part filter so the question is visible in the list
+    if (_bodyMapChatController.activeBodyPart != null) {
+      setState(() => _bodyMapChatController.onChipSelected(null));
+    }
+
+    // Find the question's index in the full messages list
+    final allMessages = _messagesNotifier.value;
+    final index = allMessages.indexWhere((m) => m.id == question.id);
+    if (index == -1) return;
+
+    // Scroll to the message after rebuild
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final targetOffset = (index * 70.0).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   // Phase 6.6: BodyMapChatBar via controller
   Widget _buildBodyMapSummary() {
     _bodyMapChatController.resolveBodyPartChips(
@@ -2586,10 +3325,119 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (_bodyMapChatController.bodyPartChips.isEmpty) {
       return const SizedBox.shrink();
     }
+    // Check if patient has pending required questions
+    final hasPendingRequired = !_isProvider && _requiredQuestions.any(
+      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
+    );
+
+    // Hide pills if patient hasn't selected a floating button yet
+    if (hasPendingRequired && _activeRequiredQuestion == null && !_showRequiredOverlay) {
+      return const SizedBox.shrink();
+    }
+
+    // When patient is answering a required question, show only that question's body part pill
+    final activeQuestion = _activeRequiredQuestion;
+    if (hasPendingRequired && _showRequiredOverlay && activeQuestion != null) {
+      final bodyPart = activeQuestion.bodyPart;
+      // If question has a specific body part, show only that pill
+      if (bodyPart != null && bodyPart.isNotEmpty) {
+        final chip = _bodyMapChatController.bodyPartChips.firstWhere(
+          (c) => c.key == bodyPart.toLowerCase().trim(),
+          orElse: () => BodyPartChipData(key: bodyPart, label: bodyPart),
+        );
+        return Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Container(
+                constraints: const BoxConstraints(minHeight: 22, maxHeight: 22),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.orange),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orange.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (iconNameToIconData(chip.iconName) != null) ...[
+                      Icon(iconNameToIconData(chip.iconName), size: 10, color: Colors.white),
+                      const SizedBox(width: 3),
+                    ],
+                    Text(
+                      chip.label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.0,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      // Question has no body part (general/overview) — show 'ภาพรวม' pill
+      return Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Container(
+              constraints: const BoxConstraints(minHeight: 22, maxHeight: 22),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.orange),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orange.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.list_alt, size: 10, color: Colors.white),
+                  SizedBox(width: 3),
+                  Text(
+                    'ภาพรวม',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.0,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return BodyMapChatBar(
       bodyParts: _bodyMapChatController.bodyPartChips,
       patientMessageCount: _bodyMapChatController.bodyPartMessageCount,
       activeBodyPart: _bodyMapChatController.activeBodyPart,
+      disabled: hasPendingRequired,
       onBodyPartSelected: (key) {
         setState(() => _bodyMapChatController.onChipSelected(key));
         FocusScope.of(context).requestFocus(FocusNode());
@@ -2597,4 +3445,133 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+}
+
+/// Animated ripple ring for floating button water ripple effect
+class _RippleRing extends StatefulWidget {
+  final double delay;
+  final Color color;
+
+  const _RippleRing({required this.delay, required this.color});
+
+  @override
+  State<_RippleRing> createState() => _RippleRingState();
+}
+
+class _RippleRingState extends State<_RippleRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = _controller.value;
+        final cycle = 1.8; // seconds per ripple cycle
+        // Phase 0→1: ring starts small/visible and expands/fades
+        final phase = ((value * cycle + widget.delay) % cycle) / cycle;
+
+        return Container(
+          width: 36 + (phase * 24),
+          height: 36 + (phase * 24),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.color.withOpacity((1 - phase) * 0.35),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Animated typing dots (…) for "patient is typing" indicator
+class _TypingDots extends StatefulWidget {
+  final Color color;
+  const _TypingDots({required this.color});
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Dot(delay: 0.0, t: t, color: widget.color),
+            const SizedBox(width: 2),
+            _Dot(delay: 0.33, t: t, color: widget.color),
+            const SizedBox(width: 2),
+            _Dot(delay: 0.66, t: t, color: widget.color),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  final double delay;
+  final double t;
+  final Color color;
+
+  const _Dot({required this.delay, required this.t, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = ((t + delay) % 1.0);
+    final opacity = phase < 0.5 ? 0.3 + (phase * 2 * 0.7) : 1.0 - ((phase - 0.5) * 2 * 0.7);
+    final scale = 0.6 + (opacity * 0.4);
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 4,
+        height: 4,
+        decoration: BoxDecoration(
+          color: color.withOpacity(opacity.clamp(0.3, 1.0)),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
 }

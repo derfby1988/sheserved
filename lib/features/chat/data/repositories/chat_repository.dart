@@ -271,4 +271,145 @@ class ChatRepository {
         .where((data) => data['roomId'] == roomId && data['userId'] != myUserId)
         .map((data) => data['isTyping'] as bool);
   }
+
+  // =====================================================
+  // REQUIRED QUESTIONS
+  // =====================================================
+
+  /// Get all required questions for a room
+  Future<List<ChatMessage>> getRequiredQuestions(String roomId) async {
+    try {
+      final response = await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('room_id', roomId)
+          .eq('is_required', true)
+          .order('created_at', ascending: true);
+      
+      final messages = (response as List).map((json) => ChatMessage.fromJson(json)).toList();
+      return messages;
+    } catch (e) {
+      debugPrint('ChatRepository: Error fetching required questions: $e');
+      return [];
+    }
+  }
+
+  /// Update required status of a message (unread -> reading -> answered)
+  Future<bool> updateRequiredStatus(String messageId, RequiredStatus status) async {
+    try {
+      await _supabase.from('chat_messages').update({
+        'required_status': status.name,
+      }).eq('id', messageId);
+      return true;
+    } catch (e) {
+      debugPrint('ChatRepository: Error updating required status: $e');
+      return false;
+    }
+  }
+
+  /// Submit answer for a required question and send as regular message
+  Future<bool> submitRequiredAnswer(String messageId, String answer, String bodyPart, {String? type = 'text'}) async {
+    try {
+      // 1. Update the required question with answer
+      final response = await _supabase.from('chat_messages').update({
+        'required_answer': answer,
+        'required_answered_at': DateTime.now().toIso8601String(),
+        'required_status': RequiredStatus.answered.name,
+      }).eq('id', messageId).select().single();
+
+      final updated = ChatMessage.fromJson(response);
+      await _messageBox.put(messageId, updated);
+
+      return true;
+    } catch (e) {
+      debugPrint('ChatRepository: Error submitting required answer: $e');
+      return false;
+    }
+  }
+
+  /// Edit a required question (red status) - update owner and save history
+  Future<bool> editRequiredQuestion(String messageId, String newContent, String editorId) async {
+    try {
+      // 1. Get current message
+      final currentMsg = _messageBox.get(messageId);
+      if (currentMsg == null) {
+        debugPrint('ChatRepository: Message not found for edit');
+        return false;
+      }
+
+      // 2. Save edit history
+      await _supabase.from('required_question_edits').insert({
+        'message_id': messageId,
+        'previous_content': currentMsg.content,
+        'edited_by': editorId,
+        'edited_at': DateTime.now().toIso8601String(),
+      });
+
+      // 3. Update message content and owner
+      final response = await _supabase.from('chat_messages').update({
+        'content': newContent,
+        'required_owner_id': editorId,
+      }).eq('id', messageId).select().single();
+
+      final updated = ChatMessage.fromJson(response);
+      await _messageBox.put(messageId, updated);
+
+      return true;
+    } catch (e) {
+      debugPrint('ChatRepository: Error editing required question: $e');
+      return false;
+    }
+  }
+
+  /// Create a new required question when editing an already-touched one
+  Future<ChatMessage?> createNewRequiredQuestion(ChatMessage original, String newContent, String editorId) async {
+    try {
+      // 1. Save edit history for original
+      await _supabase.from('required_question_edits').insert({
+        'message_id': original.id,
+        'previous_content': original.content,
+        'edited_by': editorId,
+        'edited_at': DateTime.now().toIso8601String(),
+      });
+
+      // 2. Create new message
+      final newMessage = ChatMessage(
+        id: '${DateTime.now().millisecondsSinceEpoch}_${editorId}',
+        roomId: original.roomId,
+        senderId: editorId,
+        content: newContent,
+        createdAt: DateTime.now(),
+        type: 'required_question',
+        isRequired: true,
+        requiredStatus: RequiredStatus.unread,
+        bodyPart: original.bodyPart,
+        requiredOwnerId: editorId,
+      );
+
+      final response = await _supabase.from('chat_messages').insert(newMessage.toJson()).select().single();
+      final sentMessage = ChatMessage.fromJson(response);
+      await _messageBox.put(sentMessage.id, sentMessage);
+
+      return sentMessage;
+    } catch (e) {
+      debugPrint('ChatRepository: Error creating new required question: $e');
+      return null;
+    }
+  }
+
+  /// Get edit history for a required question
+  Future<List<Map<String, dynamic>>> getRequiredQuestionEdits(String messageId) async {
+    try {
+      final response = await _supabase
+          .from('required_question_edits')
+          .select('previous_content, edited_by, edited_at, users(first_name, last_name)')
+          .eq('message_id', messageId)
+          .order('edited_at', ascending: true);
+      
+      return (response as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('ChatRepository: Error fetching edit history: $e');
+      return [];
+    }
+  }
 }

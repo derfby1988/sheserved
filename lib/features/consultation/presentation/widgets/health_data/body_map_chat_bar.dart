@@ -39,6 +39,7 @@ class BodyMapChatBar extends StatelessWidget {
   final Map<String, int> patientMessageCount;
   final String? activeBodyPart;
   final ValueChanged<String?> onBodyPartSelected;
+  final bool disabled; // true = disable tap interaction (e.g. when required question pending)
 
   const BodyMapChatBar({
     super.key,
@@ -46,6 +47,7 @@ class BodyMapChatBar extends StatelessWidget {
     required this.patientMessageCount,
     this.activeBodyPart,
     required this.onBodyPartSelected,
+    this.disabled = false,
   });
 
   @override
@@ -65,7 +67,7 @@ class BodyMapChatBar extends StatelessWidget {
             label: 'ภาพรวม',
             count: null,
             isActive: isOverviewActive,
-            onTap: () => onBodyPartSelected(null),
+            onTap: disabled ? null : () => onBodyPartSelected(null),
           ),
           const SizedBox(width: 8),
           // Scrollable body part pills
@@ -88,7 +90,7 @@ class BodyMapChatBar extends StatelessWidget {
                     label: part.label,
                     count: count,
                     isActive: isActive,
-                    onTap: () => onBodyPartSelected(part.key),
+                    onTap: disabled ? null : () => onBodyPartSelected(part.key),
                     iconName: part.iconName,
                   ),
                 );
@@ -105,7 +107,7 @@ class BodyMapChatBar extends StatelessWidget {
     required String label,
     required int? count,
     required bool isActive,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     String? iconName,
   }) {
     final iconData = iconNameToIconData(iconName);

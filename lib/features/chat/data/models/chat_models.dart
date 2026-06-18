@@ -99,6 +99,16 @@ enum MessageStatus {
   read 
 }
 
+@HiveType(typeId: 4)
+enum RequiredStatus { 
+  @HiveField(0)
+  unread, 
+  @HiveField(1)
+  reading, 
+  @HiveField(2)
+  answered 
+}
+
 @HiveType(typeId: 2)
 class ChatMessage {
   @HiveField(0)
@@ -123,6 +133,16 @@ class ChatMessage {
   final Map<String, DateTime> readBy; // userId -> timestamp
   @HiveField(10)
   final String? bodyPart;
+  @HiveField(11)
+  final bool isRequired;
+  @HiveField(12)
+  final RequiredStatus? requiredStatus;
+  @HiveField(13)
+  final String? requiredAnswer;
+  @HiveField(14)
+  final DateTime? requiredAnsweredAt;
+  @HiveField(15)
+  final String? requiredOwnerId;
 
   ChatMessage({
     required this.id,
@@ -136,6 +156,11 @@ class ChatMessage {
     this.attachmentType,
     this.readBy = const {},
     this.bodyPart,
+    this.isRequired = false,
+    this.requiredStatus,
+    this.requiredAnswer,
+    this.requiredAnsweredAt,
+    this.requiredOwnerId,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -157,6 +182,18 @@ class ChatMessage {
           ) ??
           {},
       bodyPart: json['body_part'],
+      isRequired: json['is_required'] ?? false,
+      requiredStatus: json['required_status'] != null
+          ? RequiredStatus.values.firstWhere(
+              (e) => e.name == json['required_status'],
+              orElse: () => RequiredStatus.unread,
+            )
+          : null,
+      requiredAnswer: json['required_answer'],
+      requiredAnsweredAt: json['required_answered_at'] != null
+          ? DateTime.parse(json['required_answered_at'])
+          : null,
+      requiredOwnerId: json['required_owner_id'],
     );
   }
 
@@ -173,6 +210,11 @@ class ChatMessage {
       'attachment_type': attachmentType,
       'read_by': readBy.map((k, v) => MapEntry(k, v.toIso8601String())),
       'body_part': bodyPart,
+      'is_required': isRequired,
+      'required_status': requiredStatus?.name,
+      'required_answer': requiredAnswer,
+      'required_answered_at': requiredAnsweredAt?.toIso8601String(),
+      'required_owner_id': requiredOwnerId,
     };
   }
 
@@ -188,6 +230,11 @@ class ChatMessage {
     String? attachmentType,
     Map<String, DateTime>? readBy,
     String? bodyPart,
+    bool? isRequired,
+    RequiredStatus? requiredStatus,
+    String? requiredAnswer,
+    DateTime? requiredAnsweredAt,
+    String? requiredOwnerId,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -201,6 +248,11 @@ class ChatMessage {
       attachmentType: attachmentType ?? this.attachmentType,
       readBy: readBy ?? this.readBy,
       bodyPart: bodyPart ?? this.bodyPart,
+      isRequired: isRequired ?? this.isRequired,
+      requiredStatus: requiredStatus ?? this.requiredStatus,
+      requiredAnswer: requiredAnswer ?? this.requiredAnswer,
+      requiredAnsweredAt: requiredAnsweredAt ?? this.requiredAnsweredAt,
+      requiredOwnerId: requiredOwnerId ?? this.requiredOwnerId,
     );
   }
 }

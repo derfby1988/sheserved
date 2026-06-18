@@ -19,6 +19,8 @@ class ChatInputBarWidget extends StatelessWidget {
   final ValueChanged<String>? onTextChanged;
   final String? activeBodyPartIconName;
   final VoidCallback? onClearBodyPart;
+  final bool isRequiredMode;
+  final bool isEditingMode;
 
   const ChatInputBarWidget({
     super.key,
@@ -38,6 +40,8 @@ class ChatInputBarWidget extends StatelessWidget {
     this.onTextChanged,
     this.activeBodyPartIconName,
     this.onClearBodyPart,
+    this.isRequiredMode = false,
+    this.isEditingMode = false,
   });
 
   @override
@@ -105,6 +109,22 @@ class ChatInputBarWidget extends StatelessWidget {
       );
     }
 
+    // Determine colors and hint based on mode
+    final inputBorderColor = isEditingMode
+        ? Colors.orange.shade200
+        : isRequiredMode
+            ? Colors.red.shade200
+            : const Color(0xFF4A8B2C).withOpacity(0.3);
+    final inputBgColor = isEditingMode ? Colors.grey.shade100 : Colors.white;
+    final inputTextColor = isEditingMode ? Colors.grey.shade500 : Colors.black87;
+    final hintText = isEditingMode
+        ? 'แก้ไขคำถาม...'
+        : isRequiredMode
+            ? 'พิมพ์คำถามบังคับ...'
+            : 'ถามผู้เชี่ยวชาญ...';
+    final sendIcon = isRequiredMode ? Icons.warning_amber : Icons.send_rounded;
+    final sendBgColor = isRequiredMode ? Colors.red.shade600 : const Color(0xFF4A8B2C);
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -141,10 +161,10 @@ class ChatInputBarWidget extends StatelessWidget {
                     height: 44,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: inputBgColor,
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
-                        color: const Color(0xFF4A8B2C).withOpacity(0.3),
+                        color: inputBorderColor,
                         width: 1.5,
                       ),
                     ),
@@ -161,27 +181,28 @@ class ChatInputBarWidget extends StatelessWidget {
                         ],
                         Expanded(
                           child: TextField(
-                      controller: controller,
-                      style: const TextStyle(color: Colors.black87, fontSize: 14),
-                      decoration: InputDecoration(
-                        hintText: 'ถามผู้เชี่ยวชาญ...',
-                        hintStyle: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        errorBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        filled: true,
-                        fillColor: Colors.transparent,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onChanged: onTextChanged,
-                      onSubmitted: (_) => onSend(),
-                    ),
+                            controller: controller,
+                            enabled: !isEditingMode,
+                            style: TextStyle(color: inputTextColor, fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: hintText,
+                              hintStyle: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 14,
+                              ),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onChanged: onTextChanged,
+                            onSubmitted: (_) => onSend(),
+                          ),
                         ),
                       ],
                     ),
@@ -199,9 +220,9 @@ class ChatInputBarWidget extends StatelessWidget {
                       child: hasText
                           ? buildActionButton(
                               key: const ValueKey('send'),
-                              icon: Icons.send_rounded,
+                              icon: sendIcon,
                               color: Colors.white,
-                              bgColor: const Color(0xFF4A8B2C),
+                              bgColor: sendBgColor,
                               onTap: onSend,
                               isLoading: sending,
                             )
