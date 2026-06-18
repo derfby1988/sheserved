@@ -4,12 +4,25 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/consultation_request_model.dart';
+import '../models/profession_package_rule.dart';
 import 'package:sheserved/config/app_config.dart';
 
 class ConsultationRepository {
   final SupabaseClient _client;
 
   ConsultationRepository(this._client);
+
+  bool _isMissingMinGeneralMessagesColumn(Object error) {
+    final message = error.toString();
+    return message.contains('min_general_messages') &&
+        (message.contains('PGRST204') || message.contains('Could not find the'));
+  }
+
+  Map<String, dynamic> _withoutMinGeneralMessages(Map<String, dynamic> data) {
+    final sanitized = Map<String, dynamic>.from(data);
+    sanitized.remove('min_general_messages');
+    return sanitized;
+  }
 
   /// Create a new consultation request with child symptoms
   Future<ConsultationRequestModel> createRequest({
@@ -902,5 +915,195 @@ class ConsultationRepository {
       debugPrint('getExpertCompletionCounts error: $e');
       return {};
     }
+  }
+
+  // ─── Phase 6.8: Expert Completion Rules ─────────────────────────────────────
+
+  /// ดึง rules ของ profession ใน package
+  Future<ProfessionPackageRule?> getProfessionPackageRules(
+    String packageId,
+    String professionId,
+  ) async {
+    try {
+      final response = await _client
+          .from('profession_package_rules')
+          .select()
+          .eq('package_id', packageId)
+          .eq('profession_id', professionId)
+          .maybeSingle();
+      
+      if (response == null) return null;
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    } catch (e) {
+      debugPrint('getProfessionPackageRules error: $e');
+      return null;
+    }
+  }
+
+  /// ดึง rules ทั้งหมดของ package (ทุก profession)
+  Future<List<ProfessionPackageRule>> getProfessionPackageRulesByPackage(
+    String packageId,
+  ) async {
+    try {
+      final response = await _client
+          .from('profession_package_rules')
+          .select()
+          .eq('package_id', packageId);
+      
+      return (response as List)
+          .map((e) => ProfessionPackageRule.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      debugPrint('getProfessionPackageRulesByPackage error: $e');
+      return [];
+    }
+  }
+
+  /// ตรวจสอบว่า expert สามารถจบงานได้หรือไม่ (RPC)
+  Future<Map<String, dynamic>> canExpertFinishJob(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'can_expert_finish_job',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      debugPrint('canExpertFinishJob error: $e');
+      return {'can_finish': true, 'missing_requirements': []};
+    }
+  }
+
+  /// ดึงสถานะการทำงานของ expert รายบุคคล (RPC)
+  Future<Map<String, dynamic>> getMyCompletionStatus(
+    String consultationId,
+    String providerId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'get_expert_completion_status',
+        params: {
+          'p_consultation_id': consultationId,
+          'p_provider_id': providerId,
+        },
+      );
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      debugPrint('getMyCompletionStatus error: $e');
+      return {
+        'can_finish': true,
+        'progress': 100,
+        'prescription_count': 0,
+        'approved_count': 0,
+        'question_count': 0,
+        'answered_count': 0,
+        'unanswered_count': 0,
+        'has_video_call': false,
+        'has_assessment': false,
+        'general_message_count': 0,
+      };
+    }
+  }
+
+  /// สร้าง profession package rule
+  Future<ProfessionPackageRule> createProfessionPackageRule(
+    ProfessionPackageRule rule,
+  ) async {
+    final data = rule.toJson();
+    try {
+      final response = await _client
+          .from('profession_package_rules')
+          .insert(data)
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    } catch (e) {
+      if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
+      debugPrint('Retrying profession rule insert without min_general_messages due to schema mismatch: $e');
+      final response = await _client
+          .from('profession_package_rules')
+          .insert(_withoutMinGeneralMessages(data))
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    }
+  }
+
+  /// Upsert profession package rule by package_id + profession_id
+  Future<ProfessionPackageRule> upsertProfessionPackageRule(
+    ProfessionPackageRule rule,
+  ) async {
+    final data = rule.toJson();
+    try {
+      final response = await _client
+          .from('profession_package_rules')
+          .upsert(
+            data,
+            onConflict: 'package_id,profession_id',
+          )
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    } catch (e) {
+      if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
+      debugPrint('Retrying profession rule upsert without min_general_messages due to schema mismatch: $e');
+      final response = await _client
+          .from('profession_package_rules')
+          .upsert(
+            _withoutMinGeneralMessages(data),
+            onConflict: 'package_id,profession_id',
+          )
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    }
+  }
+
+  /// ลบ profession package rules ทั้ง package
+  Future<void> deleteProfessionPackageRulesByPackage(String packageId) async {
+    await _client
+        .from('profession_package_rules')
+        .delete()
+        .eq('package_id', packageId);
+  }
+
+  /// อัปเดต profession package rule
+  Future<ProfessionPackageRule> updateProfessionPackageRule(
+    String ruleId,
+    Map<String, dynamic> data,
+  ) async {
+    data['updated_at'] = DateTime.now().toIso8601String();
+    try {
+      final response = await _client
+          .from('profession_package_rules')
+          .update(data)
+          .eq('id', ruleId)
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    } catch (e) {
+      if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
+      debugPrint('Retrying profession rule update without min_general_messages due to schema mismatch: $e');
+      final response = await _client
+          .from('profession_package_rules')
+          .update(_withoutMinGeneralMessages(data))
+          .eq('id', ruleId)
+          .select()
+          .single();
+      return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
+    }
+  }
+
+  /// ลบ profession package rule
+  Future<void> deleteProfessionPackageRule(String ruleId) async {
+    await _client
+        .from('profession_package_rules')
+        .delete()
+        .eq('id', ruleId);
   }
 }

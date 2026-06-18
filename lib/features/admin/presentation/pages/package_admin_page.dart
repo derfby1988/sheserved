@@ -5,8 +5,28 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../admin/models/profession.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
 import '../../../consultation/data/models/consultation_package.dart';
+import '../../../consultation/data/models/profession_package_rule.dart';
+import '../../../../services/service_locator.dart';
 import '../../../../shared/widgets/tlz_drawer.dart';
 import '../../../../shared/widgets/tlz_hamburger_menu.dart';
+
+List<ProfessionPackageRule> _normalizeProfessionRules(
+  List<ProfessionPackageRule> rules,
+) {
+  final byProfession = <String, ProfessionPackageRule>{};
+  for (final rule in rules) {
+    byProfession[rule.professionId] = rule;
+  }
+  return byProfession.values.toList();
+}
+
+String _professionIdForGroupRole(String role, List<Profession> availableProfessions) {
+  if (role == 'professor') {
+    final professor = availableProfessions.where((p) => p.professionCode == 'professor').toList();
+    return professor.isNotEmpty ? professor.first.id : Profession.professorProfessionId;
+  }
+  return role;
+}
 
 // ─── Package Admin Page ───────────────────────────────────────────────────────
 
@@ -578,6 +598,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
   IconData _roleIcon(String role) {
     switch (role) {
       case 'professor': return Icons.workspace_premium;
+      case Profession.professorProfessionId: return Icons.workspace_premium;
       case 'specialist': return Icons.biotech_outlined;
       case 'pharmacist': return Icons.medication_outlined;
       default: return Icons.medical_services_outlined;
@@ -693,17 +714,36 @@ class _PackageAdminPageState extends State<PackageAdminPage>
     await _loadProfessions();
     
     if (!mounted) return;
+    
+    // Load existing profession rules
+    List<ProfessionPackageRule> existingRules = [];
+    if (existing != null) {
+      try {
+        existingRules = await ServiceLocator.instance.consultationRepository
+            .getProfessionPackageRulesByPackage(existing.id);
+      } catch (e) {
+        debugPrint('Failed to load profession rules: $e');
+      }
+    }
+    
+    if (!mounted) return;
 
-    showModalBottomSheet(
+    final result = await showModalBottomSheet<List<ProfessionPackageRule>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => PackageEditorSheet(
         existing: existing,
         professions: _providerProfessions,
-        onSave: (pkg) async {
-          // Upsert to Supabase
+        existingRules: existingRules,
+        onSave: (pkg, rules) async {
+          debugPrint(
+            '[PackageAdminPage] onSave start: packageId=${pkg.id}, existing=${existing?.id ?? 'new'}, expertGroups=${pkg.expertGroups.length}, rules=${rules.length}',
+          );
+          var hasError = false;
+          // 1. Upsert package
           try {
+            debugPrint('[PackageAdminPage] step 1: upsert consultation_packages start (id=${pkg.id})');
             final data = pkg.toJson();
             if (existing == null) {
               data['created_at'] = pkg.createdAt.toIso8601String();
@@ -711,9 +751,65 @@ class _PackageAdminPageState extends State<PackageAdminPage>
             await Supabase.instance.client
                 .from('consultation_packages')
                 .upsert(data);
+            debugPrint('[PackageAdminPage] step 1: upsert consultation_packages done (id=${pkg.id})');
           } catch (e) {
-            debugPrint('Failed to upsert package to Supabase (table may not exist): $e');
+            debugPrint('Failed to upsert package to Supabase: $e');
+            hasError = true;
           }
+          
+          // 2. Save profession rules: clear package rules and upsert current state
+          try {
+            final repo = ServiceLocator.instance.consultationRepository;
+            try {
+              debugPrint('[PackageAdminPage] step 2a: delete profession_package_rules start (packageId=${pkg.id})');
+              await repo.deleteProfessionPackageRulesByPackage(pkg.id);
+              debugPrint('[PackageAdminPage] step 2a: delete profession_package_rules done (packageId=${pkg.id})');
+            } catch (e) {
+              debugPrint('Failed to clear old profession rules before upsert: $e');
+            }
+
+            final uniqueRules = _normalizeProfessionRules(rules);
+            debugPrint('[PackageAdminPage] step 2b: normalized rules count=${uniqueRules.length}');
+            for (final rule in uniqueRules) {
+              final newRule = ProfessionPackageRule(
+                id: rule.id.isNotEmpty ? rule.id : '',
+                packageId: pkg.id,
+                professionId: rule.professionId,
+                canPrescribe: rule.canPrescribe,
+                mustPrescribe: rule.mustPrescribe,
+                requiresPrescriptionApproval: rule.requiresPrescriptionApproval,
+                minPrescriptionItems: rule.minPrescriptionItems,
+                canSetRequiredQuestions: rule.canSetRequiredQuestions,
+                minRequiredQuestions: rule.minRequiredQuestions,
+                mustAnswerAllQuestions: rule.mustAnswerAllQuestions,
+                requiresVideoCall: rule.requiresVideoCall,
+                requiresHealthAssessment: rule.requiresHealthAssessment,
+                minGeneralMessages: rule.minGeneralMessages,
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              );
+              debugPrint(
+                '[PackageAdminPage] step 2b: upsert rule start packageId=${newRule.packageId}, professionId=${newRule.professionId}, ruleId=${newRule.id.isEmpty ? 'AUTO' : newRule.id}, '
+                'mustPrescribe=${newRule.mustPrescribe}, minRequiredQuestions=${newRule.minRequiredQuestions}, mustAnswerAllQuestions=${newRule.mustAnswerAllQuestions}, '
+                'requiresVideoCall=${newRule.requiresVideoCall}, requiresHealthAssessment=${newRule.requiresHealthAssessment}, minGeneralMessages=${newRule.minGeneralMessages}',
+              );
+              await repo.upsertProfessionPackageRule(newRule);
+              debugPrint('[PackageAdminPage] step 2b: upsert rule done professionId=${newRule.professionId}');
+            }
+            // Reload rules from DB to verify save succeeded
+            debugPrint('[PackageAdminPage] step 2c: verify re-read rules start (packageId=${pkg.id})');
+            await repo.getProfessionPackageRulesByPackage(pkg.id);
+            debugPrint('[PackageAdminPage] step 2c: verify re-read rules done (packageId=${pkg.id})');
+          } catch (e) {
+            debugPrint('Failed to save profession rules: $e');
+            hasError = true;
+          }
+
+          if (hasError) {
+            debugPrint('[PackageAdminPage] onSave failed: packageId=${pkg.id}');
+            throw Exception('บันทึกแพ็คเกจหรือกฎการจบงานไม่สำเร็จ');
+          }
+          
           // Update local list regardless
           if (mounted) {
             setState(() {
@@ -725,9 +821,18 @@ class _PackageAdminPageState extends State<PackageAdminPage>
               }
             });
           }
+          
+          // Bottom sheet will be popped by _save() after await completes
         },
       ),
     );
+    
+    // Update the sheet's profession rules state with reloaded data
+    if (result != null && mounted) {
+      setState(() {
+        // This will trigger the sheet to reload with updated rules on next open
+      });
+    }
   }
 }
 
@@ -735,14 +840,16 @@ class _PackageAdminPageState extends State<PackageAdminPage>
 
 class PackageEditorSheet extends StatefulWidget {
   final ConsultationPackage? existing;
-  final Function(ConsultationPackage) onSave;
+  final Future<void> Function(ConsultationPackage, List<ProfessionPackageRule>) onSave;
   final List<Profession> professions; // Real profession list from DB
+  final List<ProfessionPackageRule> existingRules;
 
   const PackageEditorSheet({
     super.key,
     this.existing,
     required this.onSave,
     this.professions = const [],
+    this.existingRules = const [],
   });
 
   @override
@@ -759,6 +866,20 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   late List<ExpertGroup> _expertGroups;
   late TextEditingController _sessionMinsCtrl;
   late TextEditingController _expireMinsCtrl;
+  
+  // Phase 6.8: Completion rules
+  late bool _requiresPrescription;
+  late bool _requiresPrescriptionApproval;
+  late TextEditingController _minRequiredQuestionsCtrl;
+  late bool _requiresAllQuestionsAnswered;
+  late bool _requiresVideoCall;
+  late bool _requiresHealthAssessment;
+  late TextEditingController _minGeneralMessagesCtrl;
+  bool _isSaving = false;
+  String? _saveError;
+  
+  // Phase 6.8: Profession rules
+  late List<ProfessionPackageRule> _professionRules;
 
   @override
   void initState() {
@@ -773,6 +894,18 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     _expertGroups = List.from(pkg?.expertGroups ?? []);
     _sessionMinsCtrl = TextEditingController(text: pkg != null ? pkg.sessionMinutes.toString() : '15');
     _expireMinsCtrl = TextEditingController(text: pkg != null ? pkg.expireMinutes.toString() : '120');
+    
+    // Phase 6.8 init
+    _requiresPrescription = pkg?.requiresPrescription ?? false;
+    _requiresPrescriptionApproval = pkg?.requiresPrescriptionApproval ?? false;
+    _minRequiredQuestionsCtrl = TextEditingController(text: pkg != null ? pkg.minRequiredQuestions.toString() : '0');
+    _requiresAllQuestionsAnswered = pkg?.requiresAllQuestionsAnswered ?? true;
+    _requiresVideoCall = pkg?.requiresVideoCall ?? false;
+    _requiresHealthAssessment = pkg?.requiresHealthAssessment ?? false;
+    _minGeneralMessagesCtrl = TextEditingController(text: pkg != null ? pkg.minGeneralMessages.toString() : '0');
+    
+    // Phase 6.8: Load existing profession rules
+    _professionRules = _normalizeProfessionRules(widget.existingRules);
   }
 
   @override
@@ -780,7 +913,17 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     _nameCtrl.dispose(); _shortNameCtrl.dispose();
     _descCtrl.dispose(); _priceCtrl.dispose();
     _sessionMinsCtrl.dispose(); _expireMinsCtrl.dispose();
+    _minRequiredQuestionsCtrl.dispose();
+    _minGeneralMessagesCtrl.dispose();
     super.dispose();
+  }
+
+  List<ProfessionPackageRule> _normalizeProfessionRules(List<ProfessionPackageRule> rules) {
+    final byProfession = <String, ProfessionPackageRule>{};
+    for (final rule in rules) {
+      byProfession[rule.professionId] = rule;
+    }
+    return byProfession.values.toList();
   }
 
   @override
@@ -1025,6 +1168,26 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                   const SizedBox(height: 32),
 
                   // ── Save Button ──────────────────────────────────────────
+                  if (_saveError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        _saveError!,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
                   ElevatedButton(
                     onPressed: _save,
                     style: ElevatedButton.styleFrom(
@@ -1037,9 +1200,19 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(isEditing ? Icons.save_outlined : Icons.add_circle_outline, size: 20),
+                        if (_isSaving)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        else
+                          Icon(isEditing ? Icons.save_outlined : Icons.add_circle_outline, size: 20),
                         const SizedBox(width: 8),
-                        Text(isEditing ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างแพ็คเกจใหม่', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          _isSaving ? 'กำลังบันทึก...' : (isEditing ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างแพ็คเกจใหม่'),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                       ],
                     ),
                   ),
@@ -1133,6 +1306,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   IconData _roleIconForGroup(String role) {
     switch (role) {
       case 'professor': return Icons.workspace_premium;
+      case Profession.professorProfessionId: return Icons.workspace_premium;
       case 'specialist': return Icons.biotech_outlined;
       case 'pharmacist': return Icons.medication_outlined;
       default: return Icons.medical_services_outlined;
@@ -1142,6 +1316,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   String _roleDisplayNameForGroup(String role) {
     switch (role) {
       case 'professor':
+      case Profession.professorProfessionId:
         return 'อาจารย์แพทย์';
       case Profession.doctorGpProfessionId:
         return 'แพทย์ทั่วไป';
@@ -1209,8 +1384,31 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     final availableProfessions = widget.professions;
     String role = existing?.role ?? 
         (availableProfessions.isNotEmpty ? availableProfessions.first.id : '');
+    final previousRuleProfessionId = existing != null ? _professionIdForGroupRole(existing.role, availableProfessions) : null;
     int maxExperts = existing?.maxExperts ?? 1;
     bool isRequired = existing?.isRequired ?? false;
+
+    debugPrint(
+      '[PackageEditorSheet] group dialog open: editIdx=$editIdx, existingRole=${existing?.role ?? 'new'}, initialRole=$role, '
+      'previousRuleProfessionId=$previousRuleProfessionId, availableProfessions=${availableProfessions.length}',
+    );
+
+    // Phase 6.8: Load existing profession rule for this group
+    ProfessionPackageRule existingRule = _professionRules.firstWhere(
+      (r) => r.professionId == _professionIdForGroupRole(role, availableProfessions),
+      orElse: () => ProfessionPackageRule(
+        id: '', packageId: widget.existing?.id ?? '', professionId: _professionIdForGroupRole(role, availableProfessions),
+        mustPrescribe: false, minRequiredQuestions: 0, mustAnswerAllQuestions: false,
+        requiresVideoCall: false, requiresHealthAssessment: false, minGeneralMessages: 0,
+        createdAt: DateTime.now(), updatedAt: DateTime.now(),
+      ),
+    );
+    bool mustPrescribe = existingRule.mustPrescribe;
+    int minRequiredQuestions = existingRule.minRequiredQuestions;
+    bool mustAnswerAllQuestions = existingRule.mustAnswerAllQuestions;
+    bool requiresVideoCall = existingRule.requiresVideoCall;
+    bool requiresHealthAssessment = existingRule.requiresHealthAssessment;
+    int minGeneralMessages = existingRule.minGeneralMessages;
 
     showDialog(
       context: context,
@@ -1271,21 +1469,19 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                       ),
                     )
                   : DropdownButtonFormField<String>(
-                      value: availableProfessions.any((p) => p.id == role) || role == 'professor'
-                          ? role
-                          : availableProfessions.first.id,
+                      value: _professionIdForGroupRole(role, availableProfessions),
                       decoration: InputDecoration(
                         labelText: 'กลุ่มอาชีพ (จากหน้าจัดการอาชีพ)',
                         prefixIcon: const Icon(Icons.groups_outlined, size: 18),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       items: [
-                        if (!availableProfessions.any((p) => p.id == 'professor' || p.professionCode == 'professor'))
+                        if (!availableProfessions.any((p) => p.professionCode == 'professor'))
                           DropdownMenuItem<String>(
-                            value: 'professor',
+                            value: Profession.professorProfessionId,
                             child: Row(
                               children: [
-                                Icon(_roleIconForGroup('professor'), size: 18, color: const Color(0xFF0f3460)),
+                                Icon(_roleIconForGroup(Profession.professorProfessionId), size: 18, color: const Color(0xFF0f3460)),
                                 const SizedBox(width: 8),
                                 const Text('อาจารย์แพทย์', style: TextStyle(fontSize: 13)),
                               ],
@@ -1319,7 +1515,30 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                         );
                       }),
                       ].toList(),
-                      onChanged: (v) => setDlgState(() => role = v ?? role),
+                      onChanged: (v) {
+                        if (v != null && v != _professionIdForGroupRole(role, availableProfessions)) {
+                          setDlgState(() {
+                            role = v == _professionIdForGroupRole('professor', availableProfessions) ? 'professor' : v;
+                            // Reload rule for new profession
+                            final selectedRuleProfessionId = _professionIdForGroupRole(role, availableProfessions);
+                            existingRule = _professionRules.firstWhere(
+                              (r) => r.professionId == selectedRuleProfessionId,
+                              orElse: () => ProfessionPackageRule(
+                                id: '', packageId: widget.existing?.id ?? '', professionId: selectedRuleProfessionId,
+                                mustPrescribe: false, minRequiredQuestions: 0, mustAnswerAllQuestions: false,
+                                requiresVideoCall: false, requiresHealthAssessment: false, minGeneralMessages: 0,
+                                createdAt: DateTime.now(), updatedAt: DateTime.now(),
+                              ),
+                            );
+                            mustPrescribe = existingRule.mustPrescribe;
+                            minRequiredQuestions = existingRule.minRequiredQuestions;
+                            mustAnswerAllQuestions = existingRule.mustAnswerAllQuestions;
+                            requiresVideoCall = existingRule.requiresVideoCall;
+                            requiresHealthAssessment = existingRule.requiresHealthAssessment;
+                            minGeneralMessages = existingRule.minGeneralMessages;
+                          });
+                        }
+                      },
                     ),
               const SizedBox(height: 12),
               Row(
@@ -1345,6 +1564,101 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                   activeColor: Colors.orange,
                   contentPadding: EdgeInsets.zero,
                 ),
+                const Divider(height: 24),
+                const Text('กฎการจบงานของกลุ่มนี้', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  value: mustPrescribe,
+                  onChanged: (v) => setDlgState(() => mustPrescribe = v),
+                  title: const Text('ต้องออกใบสั่งยา', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: minRequiredQuestions > 0,
+                  onChanged: (v) => setDlgState(() => minRequiredQuestions = v ? 1 : 0),
+                  title: const Text('ต้องตั้งคำถามบังคับ', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                if (minRequiredQuestions > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, bottom: 8),
+                    child: Row(
+                      children: [
+                        const Text('ขั้นต่ำ:', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 70,
+                          child: TextFormField(
+                            initialValue: minRequiredQuestions.toString(),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            decoration: const InputDecoration(
+                              suffixText: 'ข้อ',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (v) => minRequiredQuestions = int.tryParse(v) ?? 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                SwitchListTile(
+                  value: mustAnswerAllQuestions,
+                  onChanged: (v) => setDlgState(() => mustAnswerAllQuestions = v),
+                  title: const Text('ต้องตรวจสอบคำตอบครบ', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: requiresVideoCall,
+                  onChanged: (v) => setDlgState(() => requiresVideoCall = v),
+                  title: const Text('ต้องทำ video call', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: requiresHealthAssessment,
+                  onChanged: (v) => setDlgState(() => requiresHealthAssessment = v),
+                  title: const Text('ต้องทำ health assessment', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
+                  value: minGeneralMessages > 0,
+                  onChanged: (v) => setDlgState(() => minGeneralMessages = v ? 3 : 0),
+                  title: const Text('ต้องร่วมสนทนาทั่วไป', style: TextStyle(fontSize: 13)),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                if (minGeneralMessages > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, bottom: 8),
+                    child: Row(
+                      children: [
+                        const Text('ขั้นต่ำ:', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 70,
+                          child: TextFormField(
+                            initialValue: minGeneralMessages.toString(),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            decoration: const InputDecoration(
+                              suffixText: 'ข้อความ',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (v) => minGeneralMessages = int.tryParse(v) ?? 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
             actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1355,6 +1669,13 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
               ),
               ElevatedButton(
                 onPressed: !isNameValid ? null : () {
+                  final selectedRuleProfessionId = _professionIdForGroupRole(role, availableProfessions);
+                  debugPrint(
+                    '[PackageEditorSheet] group dialog save: editIdx=$editIdx, groupName=${nameCtrl.text.trim()}, '
+                    'role=$role, selectedRuleProfessionId=$selectedRuleProfessionId, previousRuleProfessionId=$previousRuleProfessionId, '
+                    'maxExperts=$maxExperts, isRequired=$isRequired, mustPrescribe=$mustPrescribe, minRequiredQuestions=$minRequiredQuestions, '
+                    'mustAnswerAllQuestions=$mustAnswerAllQuestions, requiresVideoCall=$requiresVideoCall, requiresHealthAssessment=$requiresHealthAssessment, minGeneralMessages=$minGeneralMessages',
+                  );
                   final g = ExpertGroup(
                     id: existing?.id ?? 'eg_${DateTime.now().millisecondsSinceEpoch}',
                     name: nameCtrl.text.trim(),
@@ -1362,9 +1683,29 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                     maxExperts: maxExperts,
                     isRequired: isRequired,
                   );
+                  // Sync profession rule for this group
+                  final rule = ProfessionPackageRule(
+                    id: existingRule.id,
+                    packageId: widget.existing?.id ?? '',
+                    professionId: selectedRuleProfessionId,
+                    mustPrescribe: mustPrescribe,
+                    minRequiredQuestions: minRequiredQuestions,
+                    mustAnswerAllQuestions: mustAnswerAllQuestions,
+                    requiresVideoCall: requiresVideoCall,
+                    requiresHealthAssessment: requiresHealthAssessment,
+                    minGeneralMessages: minGeneralMessages,
+                    createdAt: existingRule.createdAt,
+                    updatedAt: DateTime.now(),
+                  );
                   setState(() {
                     if (editIdx == null) _expertGroups.add(g);
                     else _expertGroups[editIdx] = g;
+                    final nextRules = _professionRules
+                        .where((r) => r.professionId != selectedRuleProfessionId && r.professionId != previousRuleProfessionId)
+                        .toList();
+                    nextRules.add(rule);
+                    _professionRules = _normalizeProfessionRules(nextRules);
+                    debugPrint('[PackageEditorSheet] group dialog save state updated: expertGroups=${_expertGroups.length}, rules=${_professionRules.length}');
                   });
                   Navigator.pop(ctx);
                 },
@@ -1386,13 +1727,24 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   );
 }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_isSaving) return;
     if (_nameCtrl.text.isEmpty || _priceCtrl.text.isEmpty || _shortNameCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กรุณากรอกข้อมูลที่จำเป็นให้ครบ'), backgroundColor: Colors.orange),
       );
       return;
     }
+
+    setState(() {
+      _isSaving = true;
+      _saveError = null;
+    });
+
+    debugPrint(
+      '[PackageEditorSheet] _save start: isEditing=${widget.existing != null}, name=${_nameCtrl.text.trim()}, shortName=${_shortNameCtrl.text.trim()}, '
+      'price=${_priceCtrl.text}, expertGroups=${_expertGroups.length}, rules=${_professionRules.length}',
+    );
 
     final now = DateTime.now();
     final pkg = ConsultationPackage(
@@ -1407,18 +1759,50 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
       displayOrder: widget.existing?.displayOrder ?? 999,
       sessionMinutes: int.tryParse(_sessionMinsCtrl.text) ?? 15,
       expireMinutes: int.tryParse(_expireMinsCtrl.text) ?? 120,
+      requiresPrescription: _requiresPrescription,
+      requiresPrescriptionApproval: _requiresPrescriptionApproval,
+      minRequiredQuestions: int.tryParse(_minRequiredQuestionsCtrl.text) ?? 0,
+      requiresAllQuestionsAnswered: _requiresAllQuestionsAnswered,
+      requiresVideoCall: _requiresVideoCall,
+      requiresHealthAssessment: _requiresHealthAssessment,
+      minGeneralMessages: int.tryParse(_minGeneralMessagesCtrl.text) ?? 0,
       createdAt: widget.existing?.createdAt ?? now,
       updatedAt: now,
     );
 
-    widget.onSave(pkg);
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${widget.existing == null ? "สร้าง" : "แก้ไข"}แพ็คเกจ "${pkg.shortName}" สำเร็จ'),
-        backgroundColor: AppColors.success,
-      ),
-    );
+    try {
+      debugPrint('[PackageEditorSheet] _save before onSave: packageId=${pkg.id}, normalizedRules=${_normalizeProfessionRules(_professionRules).length}');
+      await widget.onSave(pkg, _normalizeProfessionRules(_professionRules));
+      debugPrint('[PackageEditorSheet] _save after onSave success: packageId=${pkg.id}');
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${widget.existing == null ? "สร้าง" : "แก้ไข"}แพ็คเกจ "${pkg.shortName}" สำเร็จ'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[PackageEditorSheet] _save caught error: $e');
+      if (mounted) {
+        setState(() {
+          _saveError = 'บันทึกไม่สำเร็จ: $e';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('บันทึกไม่สำเร็จ: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 }
 

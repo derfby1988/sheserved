@@ -27,6 +27,16 @@ class ConsultationPackage {
   int displayOrder;
   int sessionMinutes;
   int expireMinutes;
+  
+  // Phase 6.8: Completion rules
+  bool requiresPrescription;
+  bool requiresPrescriptionApproval;
+  int minRequiredQuestions;
+  bool requiresAllQuestionsAnswered;
+  bool requiresVideoCall;
+  bool requiresHealthAssessment;
+  int minGeneralMessages;
+  
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -42,6 +52,13 @@ class ConsultationPackage {
     this.displayOrder = 0,
     this.sessionMinutes = 15,
     this.expireMinutes = 120,
+    this.requiresPrescription = false,
+    this.requiresPrescriptionApproval = false,
+    this.minRequiredQuestions = 0,
+    this.requiresAllQuestionsAnswered = true,
+    this.requiresVideoCall = false,
+    this.requiresHealthAssessment = false,
+    this.minGeneralMessages = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -80,6 +97,13 @@ class ConsultationPackage {
       displayOrder: parseInt(json['display_order']),
       sessionMinutes: parseInt(json['session_minutes']) != 0 ? parseInt(json['session_minutes']) : 15,
       expireMinutes: parseInt(json['expire_minutes']) != 0 ? parseInt(json['expire_minutes']) : 120,
+      requiresPrescription: json['requires_prescription'] as bool? ?? false,
+      requiresPrescriptionApproval: json['requires_prescription_approval'] as bool? ?? false,
+      minRequiredQuestions: parseInt(json['min_required_questions']),
+      requiresAllQuestionsAnswered: json['requires_all_questions_answered'] as bool? ?? true,
+      requiresVideoCall: json['requires_video_call'] as bool? ?? false,
+      requiresHealthAssessment: json['requires_health_assessment'] as bool? ?? false,
+      minGeneralMessages: parseInt(json['min_general_messages']),
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : DateTime.now(),
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : DateTime.now(),
     );
@@ -97,6 +121,13 @@ class ConsultationPackage {
     'display_order': displayOrder,
     'session_minutes': sessionMinutes,
     'expire_minutes': expireMinutes,
+    'requires_prescription': requiresPrescription,
+    'requires_prescription_approval': requiresPrescriptionApproval,
+    'min_required_questions': minRequiredQuestions,
+    'requires_all_questions_answered': requiresAllQuestionsAnswered,
+    'requires_video_call': requiresVideoCall,
+    'requires_health_assessment': requiresHealthAssessment,
+    'min_general_messages': minGeneralMessages,
     'updated_at': updatedAt.toIso8601String(),
   };
 }

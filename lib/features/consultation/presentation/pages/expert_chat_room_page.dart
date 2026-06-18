@@ -10,6 +10,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../chat/data/models/chat_models.dart';
 import '../../data/repositories/consultation_repository.dart';
 import '../../../../shared/widgets/widgets.dart';
+import '../widgets/completion_checklist.dart';
+import '../widgets/finish_job_warning_dialog.dart';
+import '../../data/models/expert_completion_status.dart';
 
 // ─── Model: Rich consultation entry with patient info ─────────────────────────
 import '../../data/models/consultation_entry.dart';
@@ -38,6 +41,10 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
   // Expert completion tracking
   Map<String, dynamic> _completionStatus = {};
   bool _isCheckingCompletion = false;
+  
+  // Phase 6.8: Completion rules
+  ExpertCompletionStatus? _expertCompletionStatus;
+  bool _isCheckingExpertCompletion = false;
 
   @override
   void initState() {
@@ -269,9 +276,60 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     }
   }
 
+  /// Phase 6.8: โหลดสถานะการทำงานของ expert (completion rules)
+  Future<void> _loadExpertCompletionStatus() async {
+    if (widget.entry.id.isEmpty) return;
+    setState(() => _isCheckingExpertCompletion = true);
+    try {
+      final authUser = AuthService.instance.currentUser;
+      if (authUser == null) return;
+      
+      final repo = ServiceLocator.instance.consultationRepository;
+      final result = await repo.getMyCompletionStatus(widget.entry.id, authUser.id);
+      
+      if (mounted) {
+        setState(() {
+          _expertCompletionStatus = ExpertCompletionStatus.fromJson(result);
+          _isCheckingExpertCompletion = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ExpertChat: _loadExpertCompletionStatus error: $e');
+      if (mounted) setState(() => _isCheckingExpertCompletion = false);
+    }
+  }
+
   // Provider เสร็จงาน → mark expert ตัวเองว่าเสร็จ รอทุกคนเสร็จถึงจะปิด consultation
   Future<void> _finishJob() async {
     debugPrint('ExpertChat: _finishJob START');
+
+    final authUser = AuthService.instance.currentUser;
+    if (authUser == null) {
+      debugPrint('ExpertChat: authUser is null');
+      return;
+    }
+
+    // Phase 6.8: ตรวจสอบเงื่อนไขการปิดงานก่อน
+    await _loadExpertCompletionStatus();
+    
+    if (_expertCompletionStatus != null && !_expertCompletionStatus!.canFinish) {
+      // ยังไม่ครบเงื่อนไข → แสดง warning dialog
+      final override = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => FinishJobWarningDialog(
+          missingRequirements: _expertCompletionStatus!.missingRequirements,
+          onOverride: () {
+            // จบงานโดยไม่สนใจ (log ไว้สำหรับ audit)
+            debugPrint('ExpertChat: overriding completion rules');
+          },
+        ),
+      );
+      
+      if (override != true) {
+        debugPrint('ExpertChat: user cancelled after seeing requirements');
+        return;
+      }
+    }
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -310,13 +368,6 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
     debugPrint('ExpertChat: dialog confirm=$confirm');
     if (confirm != true) {
       debugPrint('ExpertChat: user cancelled');
-      return;
-    }
-
-    final authUser = AuthService.instance.currentUser;
-    debugPrint('ExpertChat: authUser=${authUser?.id}');
-    if (authUser == null) {
-      debugPrint('ExpertChat: authUser is null');
       return;
     }
 
@@ -473,6 +524,13 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         children: [
           // Patient info banner
           _buildBanner(),
+          
+          // Phase 6.8: Expert completion checklist
+          if (_expertCompletionStatus != null)
+            CompletionChecklist(
+              status: _expertCompletionStatus!,
+              onClose: () => setState(() => _expertCompletionStatus = null),
+            ),
 
           // Messages
           Expanded(

@@ -235,6 +235,8 @@ class Profession {
       '00000000-0000-0000-0000-000000000002';
   static const String clinicProfessionId =
       '00000000-0000-0000-0000-000000000003';
+  static const String professorProfessionId =
+      '00000000-0000-0000-0000-000000000107';
   static const String doctorGpProfessionId =
       '00000000-0000-0000-0000-000000000101';
   static const String doctorFamilyProfessionId =
@@ -306,6 +308,27 @@ class Profession {
         requiresSheservedApproval: true,
         canManageDrugRisk: true,
         displayOrder: 2,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Profession(
+        id: professorProfessionId,
+        professionCode: 'professor',
+        name: 'อาจารย์แพทย์',
+        nameEn: 'Professor Physician',
+        description: 'แพทย์อาวุโส/อาจารย์แพทย์สำหรับการปรึกษาและให้คำแนะนำ',
+        iconName: 'workspace_premium',
+        colorHex: '#7E57C2',
+        category: UserCategory.provider,
+        isBuiltIn: true,
+        isActive: true,
+        requiresVerification: true,
+        requiresSheservedApproval: true,
+        canPrescribeMedication: true,
+        canManageDrugRisk: true,
+        requiresTelemedicineLicense: true,
+        approvalRequiredLicenseTypes: const ['medical_council', 'telemedicine'],
+        displayOrder: 9,
         createdAt: now,
         updatedAt: now,
       ),

@@ -4691,4 +4691,535 @@ Widget overlay แสดงในตำแหน่งเดียวกับ `
 
 ---
 
-*Last Updated: 2026-06-18* — Phase 6.7 implement ครบแล้ว
+## ✅ Phase 6.8: Expert Completion Rules (เงื่อนไขการปิดงานของ Expert) (📋 แผน)
+
+> **วันที่บันทึก:** 18 มิถุนายน 2569
+> **สถานะ:** ✅ Implemented / ใช้งานได้
+> **ที่มา:** ต้องการให้แต่ละแพ็กเก็จมีเงื่อนไขการปิดงานที่แตกต่างกัน และแต่ละอาชีพมีข้อบังคับที่แตกต่างกันในแพ็กเก็จเดียวกัน
+
+### 🎯 Goal
+
+กำหนดเงื่อนไขการปิดงานของ expert แบบยืดหยุ่น โดย:
+- **Package** กำหนดกรอบว่าต้องทำอะไรบ้าง (ใบสั่งยา, คำถามบังคับ, video call, health assessment)
+- **Profession** กำหนดว่าอาชีพไหนรับผิดชอบ action ไหนใน package นี้
+- **Expert** ไม่สามารถกด "จบงาน" จนกว่าจะครบตามเงื่อนไขที่กำหนด
+
+### 📊 UX Flow
+
+```
+[Admin แก้ไขแพ็กเก็จ]
+  → [ตั้งค่า "เงื่อนไขการปิดงาน"]
+      ├─ [✓] ต้องออกใบสั่งยา
+      ├─ [✓] ต้องตั้งคำถามบังคับขั้นต่ำ 2 ข้อ
+      └─ [✓] ทุกคำถามต้องมีคำตอบครบ
+  → [ตั้งค่า "กฎต่ออาชีพ"]
+      ├─ แพทย์: [✓] ต้องออกใบสั่งยา, [✓] ตั้งคำถามขั้นต่ำ 2 ข้อ
+      └─ พยาบาล: [✓] ตั้งคำถามขั้นต่ำ 1 ข้อ, [✓] ต้องทำ health assessment
+
+[Expert เข้าห้องแชท]
+  → [แสดง Checklist สถานะการทำงาน]
+      ├─ ออกใบสั่งยา: ❌ ยังไม่ทำ
+      ├─ คำถามบังคับ: ⚠️ ครบ (2/2)
+      └─ คำตอบครบ: ✅ ครบ (2/2)
+  → [Expert ทำงานตามกฎ]
+      ├─ ออกใบสั่งยา → Checklist อัปเดตเป็น ✅
+      └─ ตั้งคำถามบังคับ → Checklist อัปเดตเป็น ✅
+  → [Expert กด "จบงาน"]
+      ├─ ระบบตรวจสอบเงื่อนไข
+      ├─ ถ้าครบ → จบงานสำเร็จ
+      └─ ถ้าไม่ครบ → แสดง dialog warning รายการที่ขาด
+```
+
+### 🗄️ Database Schema
+
+#### 1. แก้ไขตาราง `consultation_packages`
+
+เพิ่ม fields กำหนดกรอบของ package:
+
+```sql
+ALTER TABLE consultation_packages ADD COLUMN
+  requires_prescription BOOLEAN DEFAULT false,
+  requires_prescription_approval BOOLEAN DEFAULT false,
+  min_required_questions INT DEFAULT 0,
+  requires_all_questions_answered BOOLEAN DEFAULT true,
+  requires_video_call BOOLEAN DEFAULT false,
+  requires_health_assessment BOOLEAN DEFAULT false;
+```
+
+#### 2. สร้างตารางใหม่ `profession_package_rules`
+
+ผูก profession + package กับกฎโดยละเอียด:
+
+```sql
+CREATE TABLE profession_package_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  package_id UUID NOT NULL REFERENCES consultation_packages(id) ON DELETE CASCADE,
+  profession_id UUID NOT NULL REFERENCES professions(id) ON DELETE CASCADE,
+  
+  -- กฎเกี่ยวกับใบสั่งยา
+  can_prescribe BOOLEAN DEFAULT false,
+  must_prescribe BOOLEAN DEFAULT false,
+  requires_prescription_approval BOOLEAN DEFAULT false,
+  min_prescription_items INT DEFAULT 0,
+  
+  -- กฎเกี่ยวกับคำถามบังคับ
+  can_set_required_questions BOOLEAN DEFAULT true,
+  min_required_questions INT DEFAULT 0,
+  must_answer_all_questions BOOLEAN DEFAULT false,
+  
+  -- กฎเกี่ยวกับ video call
+  requires_video_call BOOLEAN DEFAULT false,
+  
+  -- กฎเกี่ยวกับ health assessment
+  requires_health_assessment BOOLEAN DEFAULT false,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE(package_id, profession_id)
+);
+
+CREATE INDEX idx_ppr_package ON profession_package_rules(package_id);
+CREATE INDEX idx_ppr_profession ON profession_package_rules(profession_id);
+```
+
+#### 3. เพิ่ม fields ใน `consultation_room_experts` (ถ้าจำเป็น)
+
+สำหรับติดตามว่า expert ทำ video call หรือ health assessment หรือยัง:
+
+```sql
+ALTER TABLE consultation_room_experts ADD COLUMN
+  has_video_call BOOLEAN DEFAULT false,
+  has_assessment BOOLEAN DEFAULT false;
+```
+
+### 🎨 UI ฝั่ง Admin (หน้าแก้ไขแพ็กเก็จ)
+
+#### 1. Section "เงื่อนไขการปิดงาน"
+
+```
+┌─────────────────────────────────────────────┐
+│  📋 เงื่อนไขการปิดงาน                    │
+├─────────────────────────────────────────────┤
+│                                             │
+│  [✓] ต้องออกใบสั่งยา                      │
+│    └─ [ ] ต้องได้รับการอนุมัติ            │
+│                                             │
+│  [✓] ต้องตั้งคำถามบังคับ                 │
+│    └─ ขั้นต่ำ [ 2 ] คำถาม                │
+│                                             │
+│  [✓] ทุกคำถามต้องมีคำตอบครบ              │
+│                                             │
+│  [ ] ต้องทำ video call                     │
+│                                             │
+│  [ ] ต้องทำ health assessment              │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+#### 2. Section "กฎต่ออาชีพ (Profession Rules)"
+
+```
+┌─────────────────────────────────────────────┐
+│  👥 กฎต่ออาชีพ (Profession Rules)          │
+├─────────────────────────────────────────────┤
+│                                             │
+│  🩺 แพทย์ (Doctor)                         │
+│  ├─ [✓] ออกใบสั่งยาได้                    │
+│  ├─ [✓] ต้องออกใบสั่งยา                  │
+│  ├─ [ ] ต้องได้รับการอนุมัติ             │
+│  ├─ ขั้นต่ำ [ 1 ] รายการยา               │
+│  ├─ [✓] ตั้งคำถามบังคับได้               │
+│  ├─ ขั้นต่ำ [ 2 ] คำถาม                   │
+│  ├─ [✓] ตรวจสอบว่าทุกคำถามมีคำตอบครบ    │
+│  ├─ [ ] ต้องทำ video call                 │
+│  └─ [ ] ต้องทำ health assessment          │
+│                                             │
+│  👩‍⚕️ พยาบาล (Nurse)                        │
+│  ├─ [ ] ออกใบสั่งยาได้                    │
+│  ├─ [ ] ต้องออกใบสั่งยา                  │
+│  ├─ [✓] ตั้งคำถามบังคับได้               │
+│  ├─ ขั้นต่ำ [ 1 ] คำถาม                   │
+│  ├─ [✓] ตรวจสอบว่าทุกคำถามมีคำตอบครบ    │
+│  └─ [✓] ต้องทำ health assessment          │
+│                                             │
+│  [+ เพิ่มอาชีพอื่น...]                       │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+### 🎨 UI ฝั่ง Expert (หน้าแชท)
+
+#### 1. Checklist สถานะการทำงาน
+
+แสดงใน `ExpertStatusBanner` หรือส่วน header:
+
+```
+┌─────────────────────────────────────┐
+│  📋 สถานะการทำงาน                  │
+├─────────────────────────────────────┤
+│                                     │
+│  ออกใบสั่งยา: ✅ ครบ (1/1)         │
+│  คำถามบังคับ: ⚠️ ครบ (2/2)         │
+│  คำตอบครบ: ✅ ครบ (2/2)             │
+│  Video call: ❌ ยังไม่ทำ            │
+│  Health assessment: ✅ ครบ            │
+│                                     │
+│  ความคืบหน้า: 80%                 │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+#### 2. Dialog Warning เมื่อกด "จบงาน" ยังไม่ครบ
+
+```
+┌─────────────────────────────────────┐
+│  ⚠️ ยังไม่สามารถจบงานได้          │
+├─────────────────────────────────────┤
+│                                     │
+│  คุณยังไม่ครบตามเงื่อนไข:            │
+│                                     │
+│  • ต้องออกใบสั่งยา                 │
+│  • ต้องตั้งคำถามบังคับขั้นต่ำ 2 ข้อ  │
+│  • มีคำถามบังคับที่ยังไม่ได้ตอบ 1 ข้อ │
+│                                     │
+│  [กลับไปทำงานต่อ] [จบงานโดยไม่สนใจ] │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+### 🔄 Logic การตรวจสอบเงื่อนไขการปิดงาน
+
+#### 1. Flutter Logic (`canExpertFinishJob`)
+
+```dart
+Future<Map<String, dynamic>> canExpertFinishJob(
+  String consultationId,
+  String providerId,
+) async {
+  final consultation = await repo.getConsultation(consultationId);
+  final packageId = consultation.packageId;
+  final provider = await userRepo.getUser(providerId);
+  final professionId = provider.professionId;
+  
+  // 1. ดึง rules ของ profession นี้ใน package นี้
+  final rules = await repo.getProfessionPackageRules(packageId, professionId);
+  
+  // 2. ถ้าไม่มี rules = ไม่มีข้อบังคับ
+  if (rules == null) {
+    return { 'can_finish': true, 'missing_requirements': [] };
+  }
+  
+  final List<String> missingRequirements = [];
+  
+  // 3. เช็คใบสั่งยา
+  if (rules.mustPrescribe) {
+    final prescriptions = await repo.getPrescriptions(consultationId, providerId);
+    if (prescriptions.isEmpty) {
+      missingRequirements.add('ต้องออกใบสั่งยา');
+    } else if (rules.minPrescriptionItems > 0 && prescriptions.length < rules.minPrescriptionItems) {
+      missingRequirements.add('ต้องออกยาขั้นต่ำ ${rules.minPrescriptionItems} รายการ (ปัจจุบัน ${prescriptions.length})');
+    }
+    
+    if (rules.requiresPrescriptionApproval) {
+      final approved = prescriptions.every((p) => p.isApproved);
+      if (!approved) {
+        missingRequirements.add('ใบสั่งยาต้องได้รับการอนุมัติ');
+      }
+    }
+  }
+  
+  // 4. เช็คคำถามบังคับ
+  if (rules.minRequiredQuestions > 0) {
+    final requiredQuestions = await repo.getRequiredQuestions(consultationId, providerId);
+    if (requiredQuestions.length < rules.minRequiredQuestions) {
+      missingRequirements.add('ต้องตั้งคำถามบังคับขั้นต่ำ ${rules.minRequiredQuestions} ข้อ (ปัจจุบัน ${requiredQuestions.length})');
+    }
+  }
+  
+  if (rules.mustAnswerAllQuestions) {
+    final unanswered = await repo.getUnansweredRequiredQuestions(consultationId);
+    if (unanswered.isNotEmpty) {
+      missingRequirements.add('มีคำถามบังคับที่ยังไม่ได้ตอบ ${unanswered.length} ข้อ');
+    }
+  }
+  
+  // 5. เช็ค video call
+  if (rules.requiresVideoCall) {
+    final hasVideoCall = await repo.hasVideoCall(consultationId, providerId);
+    if (!hasVideoCall) {
+      missingRequirements.add('ต้องทำ video call');
+    }
+  }
+  
+  // 6. เช็ค health assessment
+  if (rules.requiresHealthAssessment) {
+    final hasAssessment = await repo.hasHealthAssessment(consultationId, providerId);
+    if (!hasAssessment) {
+      missingRequirements.add('ต้องทำ health assessment');
+    }
+  }
+  
+  return {
+    'can_finish': missingRequirements.isEmpty,
+    'missing_requirements': missingRequirements,
+  };
+}
+```
+
+#### 2. RPC Function (`can_expert_finish_job`)
+
+```sql
+CREATE OR REPLACE FUNCTION can_expert_finish_job(
+  p_consultation_id UUID,
+  p_provider_id UUID
+)
+RETURNS JSON AS $$
+DECLARE
+  v_package_id UUID;
+  v_profession_id UUID;
+  v_rules RECORD;
+  v_missing JSONB := '[]'::JSONB;
+  v_prescription_count INT;
+  v_question_count INT;
+  v_unanswered_count INT;
+  v_has_video_call BOOLEAN;
+  v_has_assessment BOOLEAN;
+BEGIN
+  -- ดึง package_id และ profession_id
+  SELECT package_id INTO v_package_id
+  FROM consultation_requests
+  WHERE id = p_consultation_id;
+  
+  SELECT profession_id INTO v_profession_id
+  FROM users
+  WHERE id = p_provider_id;
+  
+  -- ดึง rules
+  SELECT * INTO v_rules
+  FROM get_profession_package_rules(v_package_id, v_profession_id);
+  
+  -- ถ้าไม่มี rules = ไม่มีข้อบังคับ
+  IF NOT FOUND THEN
+    RETURN json_build_object('can_finish', true, 'missing_requirements', '[]');
+  END IF;
+  
+  -- เช็คใบสั่งยา
+  IF v_rules.must_prescribe THEN
+    SELECT COUNT(*) INTO v_prescription_count
+    FROM prescriptions
+    WHERE consultation_id = p_consultation_id AND provider_id = p_provider_id;
+    
+    IF v_prescription_count = 0 THEN
+      v_missing := v_missing || to_jsonb('ต้องออกใบสั่งยา');
+    ELSIF v_rules.min_prescription_items > 0 AND v_prescription_count < v_rules.min_prescription_items THEN
+      v_missing := v_missing || to_jsonb(
+        'ต้องออกยาขั้นต่ำ ' || v_rules.min_prescription_items || ' รายการ (ปัจจุบัน ' || v_prescription_count || ')'
+      );
+    END IF;
+    
+    IF v_rules.requires_prescription_approval THEN
+      SELECT COUNT(*) INTO v_prescription_count
+      FROM prescriptions
+      WHERE consultation_id = p_consultation_id 
+        AND provider_id = p_provider_id 
+        AND is_approved = true;
+      
+      IF v_prescription_count = 0 THEN
+        v_missing := v_missing || to_jsonb('ใบสั่งยาต้องได้รับการอนุมัติ');
+      END IF;
+    END IF;
+  END IF;
+  
+  -- เช็คคำถามบังคับ
+  IF v_rules.min_required_questions > 0 THEN
+    SELECT COUNT(*) INTO v_question_count
+    FROM chat_messages
+    WHERE consultation_id = p_consultation_id 
+      AND is_required = true 
+      AND required_owner_id = p_provider_id;
+    
+    IF v_question_count < v_rules.min_required_questions THEN
+      v_missing := v_missing || to_jsonb(
+        'ต้องตั้งคำถามบังคับขั้นต่ำ ' || v_rules.min_required_questions || ' ข้อ (ปัจจุบัน ' || v_question_count || ')'
+      );
+    END IF;
+  END IF;
+  
+  IF v_rules.must_answer_all_questions THEN
+    SELECT COUNT(*) INTO v_unanswered_count
+    FROM chat_messages
+    WHERE consultation_id = p_consultation_id 
+      AND is_required = true 
+      AND required_status != 'answered';
+    
+    IF v_unanswered_count > 0 THEN
+      v_missing := v_missing || to_jsonb(
+        'มีคำถามบังคับที่ยังไม่ได้ตอบ ' || v_unanswered_count || ' ข้อ'
+      );
+    END IF;
+  END IF;
+  
+  -- เช็ค video call
+  IF v_rules.requires_video_call THEN
+    SELECT COALESCE(bool_or(has_video_call), false) INTO v_has_video_call
+    FROM consultation_room_experts
+    WHERE consultation_id = p_consultation_id AND provider_id = p_provider_id;
+    
+    IF NOT v_has_video_call THEN
+      v_missing := v_missing || to_jsonb('ต้องทำ video call');
+    END IF;
+  END IF;
+  
+  -- เช็ค health assessment
+  IF v_rules.requires_health_assessment THEN
+    SELECT COALESCE(bool_or(has_assessment), false) INTO v_has_assessment
+    FROM consultation_room_experts
+    WHERE consultation_id = p_consultation_id AND provider_id = p_provider_id;
+    
+    IF NOT v_has_assessment THEN
+      v_missing := v_missing || to_jsonb('ต้องทำ health assessment');
+    END IF;
+  END IF;
+  
+  RETURN json_build_object(
+    'can_finish', jsonb_array_length(v_missing) = 0,
+    'missing_requirements', v_missing
+  );
+END;
+$$ LANGUAGE plpgsql;
+```
+
+### 🛠️ Files ที่แก้ไขหลัก
+
+#### Database Migrations
+- `supabase/migrations/20260618XXXXXX_add_completion_rules.sql` — เพิ่ม fields ใน `consultation_packages` + สร้าง `profession_package_rules`
+
+#### Backend (Supabase)
+- `supabase/functions/get_profession_package_rules.sql` — RPC ดึง rules
+- `supabase/functions/can_expert_finish_job.sql` — RPC ตรวจสอบเงื่อนไข
+
+#### Flutter Models
+- `lib/features/consultation/data/models/profession_package_rule.dart` — Model สำหรับ rules
+- `lib/features/consultation/data/models/completion_status.dart` — Model สำหรับสถานะการทำงาน
+
+#### Flutter Repository
+- `lib/features/consultation/data/repositories/consultation_repository.dart` — เพิ่ม methods:
+  - `getProfessionPackageRules(packageId, professionId)`
+  - `canExpertFinishJob(consultationId, providerId)`
+  - `getExpertCompletionStatus(consultationId, providerId)`
+  - `createProfessionPackageRule(rule)`
+  - `updateProfessionPackageRule(ruleId, rule)`
+  - `deleteProfessionPackageRule(ruleId)`
+
+#### Flutter UI (Admin)
+- `lib/features/admin/presentation/pages/package_admin_page.dart` — เพิ่ม section "เงื่อนไขการปิดงาน" ใน `PackageEditorSheet`
+
+#### Flutter UI (Expert)
+- `lib/features/consultation/presentation/pages/expert_chat_room_page.dart` — เพิ่ม checklist สถานะการทำงาน + logic ตรวจสอบก่อน finish
+- `lib/features/consultation/data/models/profession_package_rule.dart` — Model สำหรับ profession package rules
+- `lib/features/consultation/data/models/expert_completion_status.dart` — Model สำหรับสถานะการทำงาน
+- `lib/features/consultation/presentation/widgets/completion_checklist.dart` — Widget แสดง checklist
+- `lib/features/consultation/presentation/widgets/finish_job_warning_dialog.dart` — Dialog warning เมื่อกด finish ยังไม่ครบ
+
+### ⚠️ Risks & Edge Cases
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Package rules เปลี่ยนหลัง consultation เริ่ม | ความสม่ำเสมอเสีย | Snapshot rules ลง `consultation_requests` ตอนเริ่ม → ใช้ rules ตอนเริ่มเสมอ |
+| Expert ออกจากห้องแล้วกลับมา | สถานะการทำงานหาย | สถานะ (prescriptions, questions) ยังคงอยู่ใน DB → ไม่ต้องทำซ้ำ |
+| มีหลาย expert ใน consultation เดียวกัน | เช็คผิดคน | เช็คแยกต่อคนตาม `provider_id` และ `profession_id` |
+| Profession ไม่มี rules ใน package | ไม่สามารถจบงานได้ | Default = ไม่มีข้อบังคับ (สามารถจบงานได้) |
+| Expert ออกใบสั่งยาแต่ยังไม่ได้รับอนุมัติ | จบงานไม่ได้แม้ทำครบ | ถ้า `requires_prescription_approval = true` → ยังจบงานไม่ได้ |
+| Patient ยังไม่ตอบคำถามบังคับ | Expert จบงานไม่ได้ | ถ้า `must_answer_all_questions = true` → expert ยังจบงานไม่ได้ |
+| Expert ต้องการจบงานโดยไม่สนใจ rules | ธุรกิจหยุดชะงัก | เพิ่มปุ่ม "จบงานโดยไม่สนใจ" พร้อม warning + log audit trail |
+| Backward compatibility | แพ็กเก็จเก่าไม่มี rules | Default ทุกอย่างเป็น false/0 → แพ็กเก็จเก่ายังใช้ได้ |
+
+### 📐 Implementation Order
+
+1. **Database Schema** — Migration เพิ่ม fields + ตารางใหม่
+2. **RPC Functions** — `get_profession_package_rules`, `can_expert_finish_job`
+3. **Flutter Models** — `ProfessionPackageRule`, `CompletionStatus`
+4. **Repository** — Methods สำหรับ CRUD rules + ตรวจสอบเงื่อนไข
+5. **Admin UI** — Section "เงื่อนไขการปิดงาน" + "กฎต่ออาชีพ"
+6. **Expert UI** — Checklist สถานะการทำงาน + Dialog warning
+7. **Integration** — เชื่อมกับปุ่ม "จบงาน" ใน `ExpertChatRoomPage`
+8. **Testing** — Test ทุก scenario (ครบ/ไม่ครบ, override, multi-expert)
+
+### 🔥 Lessons Learned: ปัญหา RLS + Schema Cache ที่เจอระหว่างพัฒนา
+
+> **วันที่บันทึก:** 18 มิถุนายน 2569  
+> **ปัญหา:** บันทึก Profession Package Rules ไม่สำเร็จ — dialog ค้าง / save ล้ม  
+> **สถานะ:** แก้ไขแล้ว
+
+#### 1. อาการที่เจอ
+- กด "บันทึก" ใน Package Editor → dialog ไม่ปิด → snackbar แดง: `บันทึกไม่สำเร็จ`
+- แต่ `consultation_packages` upsert ผ่าน (package row ถูกบันทึก)
+- ล้มตอน `upsert`/`insert` ตาราง `profession_package_rules`
+- **error ที่เจอมี 2 ระยะ:**
+  1. **Schema cache stale:** `Could not find the 'min_general_messages' column ... in the schema cache` (PostgREST ยังไม่เห็นคอลัมน์ใหม่)
+  2. **RLS violation:** `new row violates row-level security policy for table "profession_package_rules"` (code 42501)
+
+#### 2. Root Cause
+| ปัญหา | สาเหตุ | ผลกระทบ |
+|-------|--------|---------|
+| Schema cache stale | PostgREST cache ไม่ refresh อัตโนมัติหลัง migration | Client ส่งคอลัมน์ใหม่ → backend reject ว่าไม่มีคอลัมน์ |
+| RLS policy แคบ | Policy `TO authenticated` ล็อกไว้ แต่ admin flow ใน app อาจวิ่งผ่าน public/anonymous | Upsert/insert/delete ถูก block |
+| Retry logic ไม่ครอบ RLS | Repo มี retry แค่ schema mismatch แต่ไม่ handle RLS | Error ล้ม silent → dialog ค้าง |
+| Debug log ไม่มี | ไม่มี `debugPrint` ตาม save path | หา root cause ยาก ต้องเดาทาง |
+
+#### 3. วิธีแก้ที่ทำ
+**A. ฝั่ง Database (Migration)**
+```sql
+-- 1. บังคับ reload PostgREST schema cache ทุก migration ที่แก้ schema
+NOTIFY pgrst, 'reload schema';
+
+-- 2. เปลี่ยน RLS policy จาก authenticated → public (ช่วงพัฒนา)
+-- หรือเพิ่ม policy สำหรับ admin role ที่ชัดเจน
+DROP POLICY IF EXISTS "Manage profession_package_rules for all" ON profession_package_rules;
+CREATE POLICY "Manage profession_package_rules for all"
+ON profession_package_rules FOR ALL
+TO public
+USING (true)
+WITH CHECK (true);
+```
+
+**B. ฝั่ง Flutter (Repository + UI)**
+```dart
+// 1. เพิ่ม retry สำหรับ schema mismatch + log ชัดเจน
+Future<void> upsertProfessionPackageRule(rule) async {
+  try {
+    // attempt with full data
+  } catch (e) {
+    if (isSchemaMismatch(e)) {
+      debugPrint('Retrying without min_general_messages due to schema mismatch: $e');
+      // retry without the new column
+    } else {
+      rethrow; // RLS หรือ error อื่น ต้อง throw ให้ UI จับ
+    }
+  }
+}
+
+// 2. เพิ่ม debugPrint ทุก step ของ save path
+// [PackageAdminPage] onSave start
+// [PackageAdminPage] step 1: upsert consultation_packages
+// [PackageAdminPage] step 2a: delete profession_package_rules
+// [PackageAdminPage] step 2b: upsert rule ...
+// [PackageAdminPage] step 2c: verify re-read
+```
+
+**C. ฝั่ง UI (Package Editor)**
+- แสดง error inline (red banner) แทนที่จะ silent fail
+- ไม่ปิด dialog ถ้า save ล้ม
+- กดบันทึกได้อีกครั้งหลังแก้ปัญหา
+
+#### 4. Checklist ป้องกันไม่ให้เกิดซ้ำ
+- [ ] ทุก migration ที่เพิ่มคอลัมน์/ตารางใหม่ ต้องมี `NOTIFY pgrst, 'reload schema';`
+- [ ] ทุกตารางที่ enable RLS ต้องมี policy สำหรับ write (INSERT/UPDATE/DELETE) ที่ชัดเจน
+- [ ] ถ้าใช้ `TO authenticated` ต้องแน่ใจว่า app client มี session ตลอด save flow
+- [ ] Repo methods ที่คุยกับ table ที่มี RLS ต้องมี error handling + retry ที่ครอบทั้ง schema mismatch และ RLS
+- [ ] ใส่ `debugPrint` ทุก critical step ของ save/update flow เพื่อ trace ได้เร็ว
+
+---
+
+*Last Updated: 2026-06-18* — Phase 6.8 implement ครบแล้ว
