@@ -5289,6 +5289,8 @@ NOTIFY pgrst, 'reload schema';
 | **อย่า fallback ซ่อน error** | ถ้า RPC ล้ม → แสดง error ใน UI ไม่ใช่ fake success (100%) |
 | **Test บน cloud DB จริง** | Local DB อาจมี schema ต่างจาก cloud ที่ใช้งานจริง |
 | **RPC return type ต้องตรงกับ Flutter** | ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object (key-value) ไม่ใช่ array เปล่า |
+| **Dashboard UX: availability ต้อง drive default tab** | Provider `busy` → auto เปิดแถบ `in_progress` + scroll highlight งานของตัวเอง; `online` → default `pending` |
+| **Login UX: keyboard action button ต้อง support submit** | ฟิลด์สุดท้าย (password) → `TextInputAction.done` + `onSubmitted` → `_handleLogin()` โดย guard `_isLoading`; ฟิลด์ก่อน (username) → `TextInputAction.next` + `nextFocus()` |
 
 #### 5. Checklist ป้องกันไม่ให้เกิดซ้ำ (รวมทั้ง 2 กรณี)
 - [ ] ทุก migration ที่เพิ่มคอลัมน์/ตารางใหม่ ต้องมี `NOTIFY pgrst, 'reload schema';`
@@ -5300,7 +5302,9 @@ NOTIFY pgrst, 'reload schema';
 - [ ] **room_id ต้องมี single source of truth** — ใช้ helper function `_get_room_id_for_consultation()` ทุกที่ที่ต้องการ room_id
 - [ ] **Test RPC บน cloud DB จริง** — ไม่ใช่แค่ local DB
 - [ ] **RPC return type ต้องตรงกับ Flutter expectation** — ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object มี key-value ไม่ใช่ array เปล่า ๆ (ต้อง test ด้วย `SELECT rpc_name(...)` ก่อนเขียน Flutter)
+- [ ] **Dashboard UX: availability ต้อง drive default tab** — Provider `busy` → auto เปิดแถบ `in_progress` + scroll highlight งานของตัวเอง; `online` → default `pending`; ต้องมี guard clause ทุกกรณีเพื่อป้องกัน error
+- [ ] **Login UX: keyboard action button ต้อง support submit** — ฟิลด์สุดท้าย → `TextInputAction.done` + `onSubmitted` ที่ guard `_isLoading`; ฟิลด์ก่อนหน้า → `TextInputAction.next` + `nextFocus()`; ไม่ควร auto-submit จาก `onChanged` หรือ `onEditingComplete`
 
 ---
 
-*Last Updated: 2026-06-19* — Phase 6.8: เพิ่ม can_finish realtime ใน ExpertStatusBanner + แก้ RPC return type mismatch
+*Last Updated: 2026-06-19* — Phase 6.9: Provider Dashboard auto-switch tab + scroll focus ตาม availability status

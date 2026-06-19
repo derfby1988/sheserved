@@ -228,6 +228,10 @@ class _LoginPageState extends State<LoginPage>
                                         prefixIcon:
                                             Icons.person_outline_rounded,
                                         keyboardType: TextInputType.text,
+                                        textInputAction: TextInputAction.next,
+                                        onSubmitted: (_) {
+                                          FocusScope.of(context).nextFocus();
+                                        },
                                       ),
                                       const SizedBox(height: 16),
 
@@ -239,6 +243,11 @@ class _LoginPageState extends State<LoginPage>
                                         hintText: '••••••••',
                                         prefixIcon: Icons.lock_outline_rounded,
                                         obscureText: _obscurePassword,
+                                        textInputAction: TextInputAction.done,
+                                        onSubmitted: (_) {
+                                          if (_isLoading) return;
+                                          _handleLogin();
+                                        },
                                         suffixIcon: IconButton(
                                           onPressed: () {
                                             setState(() {
@@ -460,6 +469,8 @@ class _LoginPageState extends State<LoginPage>
     required String hintText,
     required IconData prefixIcon,
     TextInputType? keyboardType,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
     bool obscureText = false,
     Widget? suffixIcon,
   }) {
@@ -479,6 +490,8 @@ class _LoginPageState extends State<LoginPage>
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        onSubmitted: onSubmitted,
         obscureText: obscureText,
         style: AppTextStyles.bodyMedium.copyWith(
           color: AppColors.textPrimary,

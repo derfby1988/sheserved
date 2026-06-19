@@ -72,6 +72,7 @@ class _HealthProgramRequestDashboardState
   String? _highlightedId;
   final Map<String, GlobalKey> _cardKeys = {};
   final ScrollController _scrollController = ScrollController();
+  bool _autoScrolledOnInit = false;
 
   static const _tabs = [
     {'value': 'all', 'label': 'ทั้งหมด'},
@@ -142,9 +143,21 @@ class _HealthProgramRequestDashboardState
       // Safety net: ถ้า busy แต่ไม่มีงาน in_progress → reset เป็น online
       await _fixStaleBusyStatusIfNeeded();
 
+      // ถ้า provider ไม่ว่าง → เปลี่ยนไปแถบ 'in_progress' และ focus งานของตัวเอง
+      if (_isProvider && _availabilityStatus == 'busy') {
+        debugPrint('Dashboard: provider is busy → switching to in_progress tab');
+        _activeTab = 'in_progress';
+      }
+
       // โหลด counts + หน้าแรกของ active tab
       await _loadCounts();
       await _loadTab(_activeTab);
+
+      // ถ้า busy และอยู่แถบ in_progress → highlight + scroll ไปงานล่าสุดของตัวเอง
+      if (_isProvider && _availabilityStatus == 'busy' && _activeTab == 'in_progress') {
+        _highlightAndScrollToMyJob();
+      }
+
       _subscribeToChanges();
 
       // ตั้งค่า scroll listener สำหรับ load more
@@ -240,9 +253,66 @@ class _HealthProgramRequestDashboardState
 
   /// เปลี่ยน tab → โหลด tab นั้น (ถ้ายังไม่มีข้อมูล)
   Future<void> _switchTab(String tab) async {
+    // ล้าง highlight เมื่อ user เปลี่ยน tab เอง
+    if (_highlightedId != null) {
+      _highlightedId = null;
+      _autoScrolledOnInit = false;
+    }
     setState(() => _activeTab = tab);
     if (_entriesByTab[tab]?.isEmpty ?? true) {
       await _loadTab(tab);
+    }
+  }
+
+  /// Highlight + scroll ไปที่งาน in_progress ล่าสุดของตัวเอง
+  void _highlightAndScrollToMyJob() {
+    final myId = _currentUser?.id;
+    if (myId == null) return;
+
+    final entries = _entriesByTab['in_progress'] ?? [];
+    if (entries.isEmpty) return;
+
+    // หางานของตัวเองที่ requestedAt ล่าสุด
+    final myJobs = entries.where((e) => e.providerId == myId).toList();
+    if (myJobs.isEmpty) return;
+
+    myJobs.sort((a, b) => b.requestedAt.compareTo(a.requestedAt));
+    final target = myJobs.first;
+
+    _highlightedId = target.id;
+    _cardKeys[target.id] = GlobalKey();
+    _autoScrolledOnInit = false;
+
+    if (mounted) setState(() {});
+
+    // Scroll หลัง frame render เสร็จ
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToHighlightedCard();
+    });
+  }
+
+  void _scrollToHighlightedCard() {
+    if (_autoScrolledOnInit) return;
+    final key = _cardKeys[_highlightedId];
+    if (key == null) return;
+
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null) return;
+
+    final position = box.localToGlobal(Offset.zero).dy;
+    final scrollViewPosition = _scrollController.position.pixels;
+    final targetOffset = scrollViewPosition + position - 220; // offset ให้เห็นบริบทรอบ ๆ
+
+    if (targetOffset > 0 && mounted) {
+      _scrollController.animateTo(
+        targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+      _autoScrolledOnInit = true;
     }
   }
 
@@ -1095,7 +1165,11 @@ class _HealthProgramRequestDashboardState
     final isBusy = e.isAssigned && !isMyJob; // งานถูก provider อื่นรับแล้ว
     final isFinished = e.status == 'completed' || _finishedConsultationIds.contains(e.id);
 
+    final isHighlighted = e.id == _highlightedId;
+    final cardKey = _cardKeys[e.id] ??= GlobalKey();
+
     return TweenAnimationBuilder<double>(
+      key: cardKey,
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 300 + index * 60),
       curve: Curves.easeOut,
@@ -1111,21 +1185,31 @@ class _HealthProgramRequestDashboardState
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: isMyJob
-              ? Border.all(
-                  color: AppColors.primary.withOpacity(0.5),
-                  width: 1.5,
-                )
-              : null,
+          border: isHighlighted
+              ? Border.all(color: AppColors.primary, width: 2.5)
+              : isMyJob
+                  ? Border.all(
+                      color: AppColors.primary.withOpacity(0.5),
+                      width: 1.5,
+                    )
+                  : null,
           boxShadow: [
-            BoxShadow(
-              color: isMyJob
-                  ? AppColors.primary.withOpacity(0.12)
-                  : Colors.black.withOpacity(0.07),
-              blurRadius: 12,
-              spreadRadius: isMyJob ? 2 : 0,
-              offset: const Offset(0, 4),
-            ),
+            if (isHighlighted)
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.35),
+                blurRadius: 20,
+                spreadRadius: 3,
+                offset: const Offset(0, 4),
+              )
+            else
+              BoxShadow(
+                color: isMyJob
+                    ? AppColors.primary.withOpacity(0.12)
+                    : Colors.black.withOpacity(0.07),
+                blurRadius: 12,
+                spreadRadius: isMyJob ? 2 : 0,
+                offset: const Offset(0, 4),
+              ),
           ],
         ),
         child: Column(

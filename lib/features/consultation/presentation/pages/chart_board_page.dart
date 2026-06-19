@@ -2446,8 +2446,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final status = _consultationData?['status'] as String? ?? 'pending';
     final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
     final readOnly = widget.readOnly || _hasFinished;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: EdgeInsets.only(top: 8, bottom: 8 + safeBottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -3354,8 +3355,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   /// Blocked input message (shown when patient has pending required questions)
   Widget _buildBlockedInput() {
+    final safeBottom = MediaQuery.of(context).padding.bottom;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      padding: EdgeInsets.only(top: 16, bottom: 16 + safeBottom, left: 20, right: 20),
       decoration: BoxDecoration(
         color: Colors.red.shade50,
         border: Border(
