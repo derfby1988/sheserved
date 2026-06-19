@@ -36,6 +36,7 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_svg: ^2.0.9
   shimmer: ^3.0.0
+  sleek_circular_slider: ^2.0.1
   image_picker: ^1.1.2
   flutter_image_compress: ^2.4.0
   

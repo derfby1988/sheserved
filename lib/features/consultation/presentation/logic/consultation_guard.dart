@@ -1,32 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/service_locator.dart';
-import '../../../auth/data/models/user_model.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
 
 class ConsultationGuard {
-  /// Entry point to start consultation
+  static bool _isNavigating = false; // Guard: ป้องกัน double-tap ระหว่างตรวจสอบ
+
+  /// Entry point to start consultation — navigate ทันทีโดยไม่แสดง loading dialog
   static Future<void> startConsultation(BuildContext context) async {
+    if (_isNavigating) return; // ป้องกันกดซ้ำขณะกำลังตรวจสอบ
+    _isNavigating = true;
+
     final user = ServiceLocator.instance.currentUser;
     final userRepo = ServiceLocator.instance.userRepository;
     final professionRepo = ProfessionRepository(Supabase.instance.client);
 
     if (user == null) {
       // 1. Not logged in -> Go to Login page
-      Navigator.pushNamed(
-        context,
-        '/login',
-        arguments: {'redirect': '/package-healthcare'},
-      );
+      if (context.mounted) {
+        Navigator.pushNamed(
+          context,
+          '/login',
+          arguments: {'redirect': '/package-healthcare'},
+        );
+      }
+      _isNavigating = false;
       return;
     }
-
-    // Show loading indicator if it takes time
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
 
     try {
       final localUser = await userRepo.getUserById(user.id);
@@ -43,16 +43,12 @@ class ConsultationGuard {
         }
       }
 
-      // Close loading dialog
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
-
       if (isProvider) {
         // 3. เป็นผู้ให้บริการ -> นำทางไปหน้า Dashboard
         if (context.mounted) {
           Navigator.pushNamed(context, '/health-program-requests');
         }
+        _isNavigating = false;
         return;
       }
 
@@ -69,6 +65,7 @@ class ConsultationGuard {
             arguments: {'redirect': '/package-healthcare'},
           );
         }
+        _isNavigating = false;
         return;
       }
 
@@ -77,13 +74,13 @@ class ConsultationGuard {
         Navigator.pushNamed(context, '/package-healthcare');
       }
     } catch (e) {
-      // Close loading dialog on error
       if (context.mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
       }
+    } finally {
+      _isNavigating = false;
     }
   }
 }

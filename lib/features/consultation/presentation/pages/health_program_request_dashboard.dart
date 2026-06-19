@@ -4,6 +4,8 @@ import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:sleek_circular_slider/sleek_circular_slider.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -73,6 +75,9 @@ class _HealthProgramRequestDashboardState
   final Map<String, GlobalKey> _cardKeys = {};
   final ScrollController _scrollController = ScrollController();
   bool _autoScrolledOnInit = false;
+  bool _isInitializing = false;
+  bool _showSkeleton = false;   // UI: แสดง skeleton ทั้งหน้าเฉพาะตอน init ครั้งแรก
+  DateTime? _lastRefreshAt; // debounce: ป้องกัน refresh ซ้อนภายใน 2 วินาที
 
   static const _tabs = [
     {'value': 'all', 'label': 'ทั้งหมด'},
@@ -103,12 +108,29 @@ class _HealthProgramRequestDashboardState
     super.dispose();
   }
 
+  /// Guard: ป้องกัน refresh ซ้อนภายใน debounce window (2 วินาที)
+  bool _shouldRefresh() {
+    if (_lastRefreshAt == null) return true;
+    final elapsed = DateTime.now().difference(_lastRefreshAt!);
+    if (elapsed.inSeconds < 2) {
+      debugPrint('Dashboard: debounce skipped — last refresh ${elapsed.inMilliseconds}ms ago');
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _init() async {
+    // Guard: ป้องกันเรียกซ้ำขณะกำลัง init
+    if (_isInitializing) return;
+
     final user = _currentUser;
     if (user == null) return;
 
+    _isInitializing = true;
+    _showSkeleton = true;
+    bool initSuccess = false;
     try {
-      debugPrint('Dashboard: Initializing for user ${user.id}');
+      debugPrint('Dashboard: ▶️ _init() START for user ${user.id}');
 
       // ตรวจว่าเป็น provider หรือเปล่า
       _isProvider =
@@ -150,25 +172,41 @@ class _HealthProgramRequestDashboardState
       }
 
       // โหลด counts + หน้าแรกของ active tab
+      debugPrint('Dashboard: _init → calling _loadCounts + _loadTab');
       await _loadCounts();
       await _loadTab(_activeTab);
+      _lastRefreshAt = DateTime.now();
+      debugPrint('Dashboard: _init → _loadCounts + _loadTab DONE');
 
       // ถ้า busy และอยู่แถบ in_progress → highlight + scroll ไปงานล่าสุดของตัวเอง
       if (_isProvider && _availabilityStatus == 'busy' && _activeTab == 'in_progress') {
         _highlightAndScrollToMyJob();
       }
 
-      _subscribeToChanges();
-
-      // ตั้งค่า scroll listener สำหรับ load more
-      _scrollController.addListener(_onScroll);
+      initSuccess = true;
     } catch (e) {
       debugPrint('Dashboard init error: $e');
+    } finally {
+      _isInitializing = false;
+      _showSkeleton = false;
+    }
+
+    // เริ่ม subscription + scroll listener เฉพาะเมื่อ init สำเร็จ
+    if (mounted && initSuccess) {
+      debugPrint('Dashboard: _init() DONE — subscribing to changes');
+      _subscribeToChanges();
+      _scrollController.addListener(_onScroll);
+    } else {
+      debugPrint('Dashboard: _init() DONE — initSuccess=$initSuccess, mounted=$mounted, skipping subscription');
     }
   }
 
   /// โหลดจำนวนรายการต่อ status (สำหรับ stat chips)
   Future<void> _loadCounts() async {
+    // Trace: หาว่าเรียกมาจากที่ไหน
+    final stack = StackTrace.current.toString().split('\n');
+    final caller = stack.length > 2 ? stack[2].trim() : 'unknown';
+    debugPrint('Dashboard: _loadCounts() CALLED from: $caller');
     try {
       final counts = await _repo.getStatusCounts(
         packageIds: (_isProvider && _myPackageIds.isNotEmpty)
@@ -183,6 +221,10 @@ class _HealthProgramRequestDashboardState
 
   /// โหลดข้อมูลเฉพาะ tab ที่เลือก (pagination)
   Future<void> _loadTab(String tab, {bool refresh = false}) async {
+    // Trace: หาว่าเรียกมาจากที่ไหน
+    final stack = StackTrace.current.toString().split('\n');
+    final caller = stack.length > 2 ? stack[2].trim() : 'unknown';
+    debugPrint('Dashboard: _loadTab(tab=$tab, refresh=$refresh) CALLED from: $caller');
     if (_isLoading) return;
 
     if (refresh) {
@@ -317,14 +359,31 @@ class _HealthProgramRequestDashboardState
   }
 
   void _subscribeToChanges() {
+    bool isFirstEvent = true; // ข้าม event แรกที่มาจาก initial subscription snapshot
     final stream = (_isProvider && _myPackageIds.isNotEmpty)
         ? _repo.watchRequestsForProfession(_myPackageIds)
         : _repo.watchAllRequestsWithUserInfo();
 
-    _subscription = stream.listen((_) async {
-      // Realtime มา → reload counts + reload active tab
+    _subscription = stream.listen((event) async {
+      // Guard 1: skip ถ้ากำลัง init
+      if (_isInitializing) return;
+      // Guard 2: mounted check
+      if (!mounted) return;
+      // Guard 3: ข้าม event แรกที่อาจเป็น initial snapshot จาก Supabase
+      if (isFirstEvent) {
+        isFirstEvent = false;
+        debugPrint('Dashboard: realtime FIRST event skipped (initial snapshot)');
+        return;
+      }
+      // Guard 4: debounce — อย่า refresh ถ้าเพิ่ง refresh ไปเมื่อกี้
+      if (!_shouldRefresh()) return;
+
+      debugPrint('Dashboard: realtime UPDATE event → refreshing data');
       await _loadCounts();
+      if (!mounted) return;
       await _loadTab(_activeTab, refresh: true);
+      _lastRefreshAt = DateTime.now();
+      debugPrint('Dashboard: realtime refresh DONE');
     });
   }
 
@@ -332,15 +391,24 @@ class _HealthProgramRequestDashboardState
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Guard: skip ถ้ากำลัง init
+      if (_isInitializing) return;
+      // Guard: debounce
+      if (!_shouldRefresh()) return;
       debugPrint('[Dashboard] App resumed → refreshing data');
       _loadCounts();
       _loadTab(_activeTab, refresh: true);
+      _lastRefreshAt = DateTime.now();
     }
   }
 
   // ── Route Observer (กลับมาจากหน้าอื่น เช่น ห้องแชท) ───────────────────────
   @override
   void didPopNext() {
+    // Guard: skip ถ้ากำลัง init
+    if (_isInitializing) return;
+    // Guard: debounce
+    if (!_shouldRefresh()) return;
     debugPrint('[Dashboard] Returned from another page → refreshing data');
     _loadCounts();
     if (_isProvider && _currentUser != null) {
@@ -351,12 +419,14 @@ class _HealthProgramRequestDashboardState
           debugPrint('[Dashboard] didPopNext: _finishedConsultationIds=${_finishedConsultationIds.length}');
         }
         _loadTab(_activeTab, refresh: true);
+        _lastRefreshAt = DateTime.now();
       });
       _repo.getActiveInProgressConsultationCount(_currentUser!.id).then((count) {
         if (mounted) setState(() => _activeJobCount = count);
       });
     } else {
       _loadTab(_activeTab, refresh: true);
+      _lastRefreshAt = DateTime.now();
     }
   }
 
@@ -935,18 +1005,101 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  Widget _buildLoading() => const Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        CircularProgressIndicator(color: AppColors.primary),
-        SizedBox(height: 16),
-        Text('กำลังโหลดรายการ...', style: TextStyle(color: Colors.grey)),
-      ],
-    ),
-  );
+  Widget _buildLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header skeleton
+              Container(
+                width: double.infinity,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Search bar skeleton
+              Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Tabs skeleton
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Card skeletons
+              ...List.generate(4, (_) => _buildSkeletonCard()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        height: 140,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
 
   Widget _buildBody() {
+    // ถ้ากำลัง init ครั้งแรก → แสดง skeleton ทั้งหน้า ไม่ต้องแสดง empty state
+    if (_showSkeleton) {
+      return _buildLoading();
+    }
+
     final entries = _getFilteredEntries();
 
     return RefreshIndicator(
@@ -1678,11 +1831,25 @@ class _HealthProgramRequestDashboardState
             ? CachedNetworkImage(
                 imageUrl: e.patientAvatar!,
                 fit: BoxFit.cover,
-                placeholder: (context, url) => const Center(
+                placeholder: (context, url) => Center(
                   child: SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: SleekCircularSlider(
+                      appearance: CircularSliderAppearance(
+                        size: 20,
+                        spinnerMode: true,
+                        customWidths: CustomSliderWidths(
+                          progressBarWidth: 2,
+                          trackWidth: 2,
+                        ),
+                        customColors: CustomSliderColors(
+                          progressBarColor: AppColors.primary,
+                          trackColor: Colors.grey.shade300,
+                          hideShadow: true,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey),

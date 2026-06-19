@@ -5291,6 +5291,8 @@ NOTIFY pgrst, 'reload schema';
 | **RPC return type ต้องตรงกับ Flutter** | ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object (key-value) ไม่ใช่ array เปล่า |
 | **Dashboard UX: availability ต้อง drive default tab** | Provider `busy` → auto เปิดแถบ `in_progress` + scroll highlight งานของตัวเอง; `online` → default `pending` |
 | **Login UX: keyboard action button ต้อง support submit** | ฟิลด์สุดท้าย (password) → `TextInputAction.done` + `onSubmitted` → `_handleLogin()` โดย guard `_isLoading`; ฟิลด์ก่อน (username) → `TextInputAction.next` + `nextFocus()` |
+| **Dashboard: ป้องกัน double refetch ระหว่าง init** | ใช้ `_isInitializing` flag + `try-finally` เพื่อ block realtime subscription และ lifecycle events ระหว่าง initialization; ย้าย `_subscribeToChanges()` ออกนอก try block หลัง flag reset; เพิ่ม re-entrant guard (`if (_isInitializing) return`) ที่ต้น `_init()`; ใช้ `initSuccess` flag เพื่อ subscribe เฉพาะเมื่อ init สำเร็จ; เพิ่ม `_shouldRefresh()` debounce (2 วินาที) ที่ทุกช่องทาง refresh; ข้าม `isFirstEvent` แรกของ realtime stream ที่อาจเป็น initial snapshot; ใส่ `debugPrint` ทุก critical path เพื่อ trace ได้ |
+| **Dashboard Loading UX: แยก `_showSkeleton` ออกจาก `_isInitializing`** | ห้ามใช้ `_isInitializing` ควบคุม UI skeleton — ต้องแยก `_showSkeleton` (UI-only) ออกจาก `_isInitializing` (data-guard); `_showSkeleton` set ใน `_init()` ก่อนโหลดข้อมูล และ reset ใน `finally` block; ใช้แสดง skeleton ทั้งหน้าเฉพาะ init ครั้งแรก; tab switch / pull-to-refresh / realtime update ใช้ inline loading (`_isLoading`) ไม่ใช่ skeleton; ป้องกัน flash empty state ก่อนข้อมูลมา |
 
 #### 5. Checklist ป้องกันไม่ให้เกิดซ้ำ (รวมทั้ง 2 กรณี)
 - [ ] ทุก migration ที่เพิ่มคอลัมน์/ตารางใหม่ ต้องมี `NOTIFY pgrst, 'reload schema';`
@@ -5304,7 +5306,9 @@ NOTIFY pgrst, 'reload schema';
 - [ ] **RPC return type ต้องตรงกับ Flutter expectation** — ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object มี key-value ไม่ใช่ array เปล่า ๆ (ต้อง test ด้วย `SELECT rpc_name(...)` ก่อนเขียน Flutter)
 - [ ] **Dashboard UX: availability ต้อง drive default tab** — Provider `busy` → auto เปิดแถบ `in_progress` + scroll highlight งานของตัวเอง; `online` → default `pending`; ต้องมี guard clause ทุกกรณีเพื่อป้องกัน error
 - [ ] **Login UX: keyboard action button ต้อง support submit** — ฟิลด์สุดท้าย → `TextInputAction.done` + `onSubmitted` ที่ guard `_isLoading`; ฟิลด์ก่อนหน้า → `TextInputAction.next` + `nextFocus()`; ไม่ควร auto-submit จาก `onChanged` หรือ `onEditingComplete`
+- [ ] **Dashboard: ป้องกัน double refetch ระหว่าง init** — ใช้ `_isInitializing` flag + `try-finally` block; ย้าย `_subscribeToChanges()` ออกนอก try block หลัง flag reset; เพิ่ม guard ใน `_subscribeToChanges()`, `didPopNext()`, `didChangeAppLifecycleState()`; เพิ่ม re-entrant guard (`if (_isInitializing) return`) ที่ต้น `_init()`; ใช้ `initSuccess` flag เพื่อ subscribe เฉพาะเมื่อ init สำเร็จ; เพิ่ม `_shouldRefresh()` debounce (2 วินาที) ที่ทุกช่องทาง refresh; ข้าม `isFirstEvent` แรกของ realtime stream ที่อาจเป็น initial snapshot; ใส่ `debugPrint` ทุก critical path
+- [ ] **Dashboard Loading UX: แยก `_showSkeleton` ออกจาก `_isInitializing`** — `_isInitializing` = data-guard (ห้ามเรียกซ้ำ, block subscription); `_showSkeleton` = UI-only (แสดง skeleton ทั้งหน้า); set `_showSkeleton = true` ก่อนโหลดข้อมูลใน `_init()`; reset `_showSkeleton = false` ใน `finally` block; ใน `_buildBody()` ถ้า `_showSkeleton` แสดง `_buildLoading()` ก่อนเช็ค `entries.isEmpty`; tab switch / pull-to-refresh / realtime update ใช้ `_isLoading` (inline) ไม่ใช่ `_showSkeleton`; ป้องกัน skeleton ไม่หาย: ต้อง reset ใน `catch` หรือ `finally` เสมอ; ป้องกัน skeleton กระพริบ: ไม่ setState ใน `_loadTab()` ระหว่าง `_showSkeleton` เปิดอยู่
 
 ---
 
-*Last Updated: 2026-06-19* — Phase 6.9: Provider Dashboard auto-switch tab + scroll focus ตาม availability status
+*Last Updated: 2026-06-19* — Phase 6.10: Dashboard skeleton loading + double refetch guards + navigation UX

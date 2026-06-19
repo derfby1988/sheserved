@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -40,7 +39,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   
-  bool _isInitialLoading = true; // Flag for skeleton loader
+  // ไม่มี loading state — navigate ทันทีเมื่อแตะ ให้หน้าปลายทางจัดการ loading เอง
 
   // Scale animation for tactile feedback
   late AnimationController _scaleController;
@@ -154,15 +153,10 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
         setState(() {
           _count = providerCount;
           _updateRatio(providerCount, recipientCount);
-          _isInitialLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isInitialLoading = false;
-        });
-      }
+      debugPrint('HomeConsultationWidget: _loadInitialData error: $e');
     }
   }
 
@@ -315,11 +309,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                     final recipients = recipientSnapshot.data ?? 0;
                                     final providerMap = providerSnapshot.data ?? {};
                                     
-                                    // Show skeleton if it's the very first load and we have no data yet
-                                    if (_isInitialLoading && !providerSnapshot.hasData) {
-                                      return _buildSkeleton(baseSize, isMini);
-                                    }
-                                    
+                                    // ไม่มี skeleton loading — แสดงข้อมูลที่มี (หรือ 0) ทันที
                                     if (providerSnapshot.hasData) {
                                       // debugPrint('HomeConsultationWidget: Stream update - providers: $providers, recipients: $recipients');
                                     }
@@ -346,9 +336,7 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
                                 );
                               }
                             )
-                          : _isInitialLoading && widget.useRealtime // Modified: Show skeleton if initial loading and using realtime
-                            ? _buildSkeleton(baseSize, isMini)
-                            : isMini
+                          : isMini
                               ? _buildMiniContent(_count, baseSize)
                               : _buildMainContent(_count, baseSize),
                       ],
@@ -580,60 +568,6 @@ class _HomeConsultationWidgetState extends State<HomeConsultationWidget>
           ),
         ),
       ],
-    );
-  }
-
-  /// Skeleton Loading Widget
-  Widget _buildSkeleton(double baseSize, bool isMini) {
-    return Shimmer.fromColors(
-      baseColor: AppColors.primary.withOpacity(0.05),
-      highlightColor: AppColors.backgroundWhite,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Icon Placeholder
-          Container(
-            width: 56 * (baseSize / 280),
-            height: 56 * (baseSize / 280),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-          if (!isMini) ...[
-            SizedBox(height: 16 * (baseSize / 280)),
-            // Status Placeholder
-            Container(
-              width: 100 * (baseSize / 280),
-              height: 12 * (baseSize / 280),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            SizedBox(height: 12 * (baseSize / 280)),
-            // Title Placeholder
-            Container(
-              width: 80 * (baseSize / 280),
-              height: 18 * (baseSize / 280),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            SizedBox(height: 8 * (baseSize / 280)),
-            // Subtitle Placeholder
-            Container(
-              width: 120 * (baseSize / 280),
-              height: 12 * (baseSize / 280),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 
