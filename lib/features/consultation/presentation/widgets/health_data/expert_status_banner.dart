@@ -6,11 +6,13 @@ import '../../utils/expert_status_helpers.dart';
 class ExpertStatusBanner extends StatelessWidget {
   final List<Map<String, dynamic>> expertStatuses;
   final List<Profession> professions;
+  final void Function(String providerId)? onAvatarTap;
 
   const ExpertStatusBanner({
     super.key,
     required this.expertStatuses,
     required this.professions,
+    this.onAvatarTap,
   });
 
   @override
@@ -149,6 +151,9 @@ class ExpertStatusBanner extends StatelessWidget {
       isPrescriptionStatus = false;
     }
 
+    final providerId = expert['providerId']?.toString();
+    final isCurrentUserTap = isJoined && onAvatarTap != null && providerId != null && providerId.isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.only(right: 10),
       width: 60,
@@ -180,38 +185,41 @@ class ExpertStatusBanner extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               // Main avatar
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isJoined
-                        ? (profColor?.withOpacity(0.4) ?? AppColors.primary.withOpacity(0.3))
-                        : Colors.grey.shade300,
-                    width: 1.5,
+              GestureDetector(
+                onTap: isCurrentUserTap ? () => onAvatarTap!(providerId!) : null,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isJoined
+                          ? (profColor?.withOpacity(0.4) ?? AppColors.primary.withOpacity(0.3))
+                          : Colors.grey.shade300,
+                      width: 1.5,
+                    ),
                   ),
-                ),
-                child: ClipOval(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Base image
-                      isJoined && avatarUrl != null && avatarUrl.isNotEmpty
-                          ? Image.network(
-                              avatarUrl,
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
-                            )
-                          : _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
-                      // Colored transparent filter overlay (เฉพาะ 3 สถานะ)
-                      if (showStatusOverlay)
-                        Container(
-                          color: overlayColor.withOpacity(0.35),
-                        ),
-                    ],
+                  child: ClipOval(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Base image
+                        isJoined && avatarUrl != null && avatarUrl.isNotEmpty
+                            ? Image.network(
+                                avatarUrl,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
+                              )
+                            : _fallbackAvatar(categoryIcon, profColor, isJoined, isRequired),
+                        // Colored transparent filter overlay (เฉพาะ 3 สถานะ)
+                        if (showStatusOverlay)
+                          Container(
+                            color: overlayColor.withOpacity(0.35),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

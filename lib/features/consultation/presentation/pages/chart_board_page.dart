@@ -49,6 +49,10 @@ import '../widgets/health_data/summary_card.dart';
 import '../widgets/health_data/message_bubble.dart';
 import '../widgets/health_data/health_data_error_view.dart';
 import '../widgets/health_data/granted_health_sections.dart';
+import '../../data/models/expert_completion_status.dart';
+import '../../data/models/profession_package_rule.dart';
+import '../widgets/completion_checklist.dart';
+import '../widgets/finish_job_warning_dialog.dart';
 
 class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
@@ -116,6 +120,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   List<Profession> _professions = [];
   late final ProfessionsRefreshController _professionsRefreshController;
   Map<String, dynamic>? _consultationData;
+
+  // Phase 6.8: Expert completion rules status
+  ExpertCompletionStatus? _expertCompletionStatus;
+  ProfessionPackageRule? _professionPackageRule;
+  bool _isCheckingExpertCompletion = false;
 
   // --- Room Status ---
   StreamSubscription? _roomSub;
@@ -206,6 +215,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     _initChat();
     _loadCompletionStatus();
+    if (_isProvider) _loadExpertCompletionStatus();
     _loadPackages();
     _loadProfessions();
     _professionsRefreshController = ProfessionsRefreshController(onRefresh: _loadProfessions);
@@ -247,6 +257,43 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     } catch (e) {
       debugPrint('ChartBoard: _loadCompletionStatus error: $e');
       if (mounted) setState(() => _isCheckingCompletion = false);
+    }
+  }
+
+  /// Phase 6.8: โหลดสถานะการทำงานของ expert (completion rules)
+  Future<void> _loadExpertCompletionStatus() async {
+    final consultationId = widget.entry?.id ?? widget.request?.id;
+    if (consultationId == null || consultationId.isEmpty) return;
+    final authUser = _currentUser;
+    if (authUser == null) return;
+
+    final packageId = _canonicalPackageId();
+    final professionId = authUser.professionId;
+
+    setState(() => _isCheckingExpertCompletion = true);
+    try {
+      final repo = ServiceLocator.instance.consultationRepository;
+      final result = await repo.getMyCompletionStatus(consultationId, authUser.id);
+
+      // Load profession package rules to know which conditions are actually required
+      ProfessionPackageRule? rule;
+      if (packageId != null && packageId.isNotEmpty && professionId != null && professionId.isNotEmpty) {
+        try {
+          rule = await repo.getProfessionPackageRules(packageId, professionId);
+        } catch (e) {
+          // Silently ignore - checklist will show all items as fallback
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _expertCompletionStatus = ExpertCompletionStatus.fromJson(result);
+          _professionPackageRule = rule;
+          _isCheckingExpertCompletion = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isCheckingExpertCompletion = false);
     }
   }
 
@@ -1282,7 +1329,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Keep message shown even if send fails (offline mode)
     }
 
-    if (mounted) _isSendingNotifier.value = false;
+    if (mounted) {
+      _isSendingNotifier.value = false;
+      if (_isProvider) _loadExpertCompletionStatus();
+    }
   }
 
   /// Expert sends a new required question
@@ -1311,6 +1361,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         setState(() {
           _isRequiredToggle = false;
         });
+        if (_isProvider) _loadExpertCompletionStatus();
       }
     } catch (e) {
       debugPrint('Send required question error: $e');
@@ -1540,7 +1591,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           status: MessageStatus.sent,
         );
         await _chatRepository.sendMessage(message);
-        if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
+        if (mounted) {
+          _messagesNotifier.value = [..._messagesNotifier.value, message];
+          if (_isProvider) _loadExpertCompletionStatus();
+        }
         _scrollToBottom();
       }
     }
@@ -1787,6 +1841,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               child: _isKeyboardVisible ? const SizedBox.shrink() : ExpertStatusBanner(
                 expertStatuses: _expertStatuses,
                 professions: _professions,
+                onAvatarTap: (providerId) {
+                  if (_isProvider && _currentUser?.id == providerId && _expertCompletionStatus != null) {
+                    _showCompletionChecklistDialog();
+                  }
+                },
               ),
             ),
             Expanded(
@@ -1856,7 +1915,77 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  void _showFinishDialog() {
+  void _showCompletionChecklistDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        backgroundColor: Colors.white,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                child: SingleChildScrollView(
+                  child: CompletionChecklist(
+                    status: _expertCompletionStatus!,
+                    rule: _professionPackageRule,
+                    onClose: () => Navigator.pop(ctx),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: -12,
+              right: -12,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFinishDialog() async {
+    // Phase 6.8: Check completion rules from profession_package_rules before finishing
+    if (_isProvider) {
+      await _loadExpertCompletionStatus();
+    }
+
+    if (_expertCompletionStatus != null && !_expertCompletionStatus!.canFinish) {
+      final override = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => FinishJobWarningDialog(
+          missingRequirements: _expertCompletionStatus!.missingRequirements,
+          onOverride: () {},
+        ),
+      );
+      if (override != true) return;
+    }
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2447,13 +2576,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
   }
 
-  void _viewPrescriptionDetails(String? prescriptionId) {
+  Future<void> _viewPrescriptionDetails(String? prescriptionId) async {
     if (prescriptionId == null) return;
     final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
     final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
 
     if (_isProvider) {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (ctx) => PrescriptionEditorPage(
@@ -2462,6 +2591,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
         ),
       );
+      if (mounted) _loadExpertCompletionStatus();
       return;
     }
 
@@ -2610,9 +2740,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
 
 
-  void _startVideoCall() {
+  Future<void> _startVideoCall() async {
     final roomId = widget.entry?.roomId ?? 'consult_${widget.request?.id}';
-    Navigator.pushNamed(
+    await Navigator.pushNamed(
       context,
       '/live-vdo',
       arguments: {
@@ -2621,6 +2751,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         'otherParticipantName': widget.entry?.patientName ?? 'Patient',
       },
     );
+    if (mounted && _isProvider) _loadExpertCompletionStatus();
   }
 
   void _showConsultationDetails() {
@@ -2990,6 +3121,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _requiredAnswerController.clear();
         _lastManualCloseTime = DateTime.now();
       });
+      if (_isProvider) _loadExpertCompletionStatus();
       // _checkShouldBlock() is NOT called here — realtime stream updates
       // _requiredQuestions via _onMessagesChanged, which then re-checks block state
       // Calling it here would race with local state still having old pending data

@@ -737,13 +737,9 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         professions: _providerProfessions,
         existingRules: existingRules,
         onSave: (pkg, rules) async {
-          debugPrint(
-            '[PackageAdminPage] onSave start: packageId=${pkg.id}, existing=${existing?.id ?? 'new'}, expertGroups=${pkg.expertGroups.length}, rules=${rules.length}',
-          );
           var hasError = false;
           // 1. Upsert package
           try {
-            debugPrint('[PackageAdminPage] step 1: upsert consultation_packages start (id=${pkg.id})');
             final data = pkg.toJson();
             if (existing == null) {
               data['created_at'] = pkg.createdAt.toIso8601String();
@@ -751,7 +747,6 @@ class _PackageAdminPageState extends State<PackageAdminPage>
             await Supabase.instance.client
                 .from('consultation_packages')
                 .upsert(data);
-            debugPrint('[PackageAdminPage] step 1: upsert consultation_packages done (id=${pkg.id})');
           } catch (e) {
             debugPrint('Failed to upsert package to Supabase: $e');
             hasError = true;
@@ -761,15 +756,12 @@ class _PackageAdminPageState extends State<PackageAdminPage>
           try {
             final repo = ServiceLocator.instance.consultationRepository;
             try {
-              debugPrint('[PackageAdminPage] step 2a: delete profession_package_rules start (packageId=${pkg.id})');
               await repo.deleteProfessionPackageRulesByPackage(pkg.id);
-              debugPrint('[PackageAdminPage] step 2a: delete profession_package_rules done (packageId=${pkg.id})');
             } catch (e) {
               debugPrint('Failed to clear old profession rules before upsert: $e');
             }
 
             final uniqueRules = _normalizeProfessionRules(rules);
-            debugPrint('[PackageAdminPage] step 2b: normalized rules count=${uniqueRules.length}');
             for (final rule in uniqueRules) {
               final newRule = ProfessionPackageRule(
                 id: rule.id.isNotEmpty ? rule.id : '',
@@ -788,25 +780,16 @@ class _PackageAdminPageState extends State<PackageAdminPage>
                 createdAt: DateTime.now(),
                 updatedAt: DateTime.now(),
               );
-              debugPrint(
-                '[PackageAdminPage] step 2b: upsert rule start packageId=${newRule.packageId}, professionId=${newRule.professionId}, ruleId=${newRule.id.isEmpty ? 'AUTO' : newRule.id}, '
-                'mustPrescribe=${newRule.mustPrescribe}, minRequiredQuestions=${newRule.minRequiredQuestions}, mustAnswerAllQuestions=${newRule.mustAnswerAllQuestions}, '
-                'requiresVideoCall=${newRule.requiresVideoCall}, requiresHealthAssessment=${newRule.requiresHealthAssessment}, minGeneralMessages=${newRule.minGeneralMessages}',
-              );
               await repo.upsertProfessionPackageRule(newRule);
-              debugPrint('[PackageAdminPage] step 2b: upsert rule done professionId=${newRule.professionId}');
             }
             // Reload rules from DB to verify save succeeded
-            debugPrint('[PackageAdminPage] step 2c: verify re-read rules start (packageId=${pkg.id})');
             await repo.getProfessionPackageRulesByPackage(pkg.id);
-            debugPrint('[PackageAdminPage] step 2c: verify re-read rules done (packageId=${pkg.id})');
           } catch (e) {
             debugPrint('Failed to save profession rules: $e');
             hasError = true;
           }
 
           if (hasError) {
-            debugPrint('[PackageAdminPage] onSave failed: packageId=${pkg.id}');
             throw Exception('บันทึกแพ็คเกจหรือกฎการจบงานไม่สำเร็จ');
           }
           
@@ -1388,11 +1371,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     int maxExperts = existing?.maxExperts ?? 1;
     bool isRequired = existing?.isRequired ?? false;
 
-    debugPrint(
-      '[PackageEditorSheet] group dialog open: editIdx=$editIdx, existingRole=${existing?.role ?? 'new'}, initialRole=$role, '
-      'previousRuleProfessionId=$previousRuleProfessionId, availableProfessions=${availableProfessions.length}',
-    );
-
     // Phase 6.8: Load existing profession rule for this group
     ProfessionPackageRule existingRule = _professionRules.firstWhere(
       (r) => r.professionId == _professionIdForGroupRole(role, availableProfessions),
@@ -1670,12 +1648,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
               ElevatedButton(
                 onPressed: !isNameValid ? null : () {
                   final selectedRuleProfessionId = _professionIdForGroupRole(role, availableProfessions);
-                  debugPrint(
-                    '[PackageEditorSheet] group dialog save: editIdx=$editIdx, groupName=${nameCtrl.text.trim()}, '
-                    'role=$role, selectedRuleProfessionId=$selectedRuleProfessionId, previousRuleProfessionId=$previousRuleProfessionId, '
-                    'maxExperts=$maxExperts, isRequired=$isRequired, mustPrescribe=$mustPrescribe, minRequiredQuestions=$minRequiredQuestions, '
-                    'mustAnswerAllQuestions=$mustAnswerAllQuestions, requiresVideoCall=$requiresVideoCall, requiresHealthAssessment=$requiresHealthAssessment, minGeneralMessages=$minGeneralMessages',
-                  );
                   final g = ExpertGroup(
                     id: existing?.id ?? 'eg_${DateTime.now().millisecondsSinceEpoch}',
                     name: nameCtrl.text.trim(),
@@ -1705,7 +1677,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                         .toList();
                     nextRules.add(rule);
                     _professionRules = _normalizeProfessionRules(nextRules);
-                    debugPrint('[PackageEditorSheet] group dialog save state updated: expertGroups=${_expertGroups.length}, rules=${_professionRules.length}');
                   });
                   Navigator.pop(ctx);
                 },
@@ -1741,11 +1712,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
       _saveError = null;
     });
 
-    debugPrint(
-      '[PackageEditorSheet] _save start: isEditing=${widget.existing != null}, name=${_nameCtrl.text.trim()}, shortName=${_shortNameCtrl.text.trim()}, '
-      'price=${_priceCtrl.text}, expertGroups=${_expertGroups.length}, rules=${_professionRules.length}',
-    );
-
     final now = DateTime.now();
     final pkg = ConsultationPackage(
       id: widget.existing?.id ?? 'pkg_${now.millisecondsSinceEpoch}',
@@ -1771,9 +1737,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
     );
 
     try {
-      debugPrint('[PackageEditorSheet] _save before onSave: packageId=${pkg.id}, normalizedRules=${_normalizeProfessionRules(_professionRules).length}');
       await widget.onSave(pkg, _normalizeProfessionRules(_professionRules));
-      debugPrint('[PackageEditorSheet] _save after onSave success: packageId=${pkg.id}');
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1784,7 +1748,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
         );
       }
     } catch (e) {
-      debugPrint('[PackageEditorSheet] _save caught error: $e');
       if (mounted) {
         setState(() {
           _saveError = 'บันทึกไม่สำเร็จ: $e';

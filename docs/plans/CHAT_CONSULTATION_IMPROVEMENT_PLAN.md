@@ -5208,6 +5208,87 @@ Future<void> upsertProfessionPackageRule(rule) async {
 // [PackageAdminPage] step 2c: verify re-read
 ```
 
+### 🔥 Lessons Learned: RPC Functions อ้างอิง Columns ที่ไม่มีอยู่จริง + Room ID Mismatch
+
+> **วันที่บันทึก:** 19 มิถุนายน 2569
+> **ปัญหา:** Completion checklist แสดงจำนวนผิด (เสมอ 100% / ผ่านแล้ว 0) แม้มีคำถามบังคับในห้องแชท
+> **สถานะ:** แก้ไขแล้ว
+
+#### 1. อาการที่เจอ
+- Dialog checklist แสดง `100%` + `ครบเงื่อนไขการปิดงาน` ตลอดเวลา
+- `คำถามบังคับ` แสดง `ผ่านแล้ว 0` ทั้งๆ ที่มีคำถามบังคับในห้องแชทจริง
+- `คำตอบครบ` แสดง `0/0` ไม่ว่าจะมีคำตอบหรือไม่
+- กด tap avatar เปิด dialog → จำนวนไม่เปลี่ยนแปลงตามการส่งข้อความ
+
+#### 2. Root Cause
+
+**ปัญหาที่ 1: RPC functions อ้างอิง columns ที่ไม่มีอยู่จริง**
+
+| Column ที่อ้างอิง | Table | สถานะจริง | ผลกระทบ |
+|-------------------|-------|----------|---------|
+| `chat_messages.consultation_id` | `chat_messages` | ❌ ไม่มี column นี้ | RPC ล้ม → fallback `question_count = 0` |
+| `profession_package_rules.min_general_messages` | `profession_package_rules` | ❌ ไม่มี (migration สร้าง table ลืมเพิ่ม) | RPC ล้ม → schema cache error |
+| `prescriptions.is_approved` | `prescriptions` | ❌ ไม่มี (table เก่ามีแค่ `status`) | RPC ล้ม → column not found |
+
+**ปัญหาที่ 2: `room_id` ไม่ตรงกันระหว่าง Flutter กับ Database**
+
+| แหล่งที่มา | ค่า `room_id` | ผล |
+|-----------|-------------|-----|
+| Flutter (`chat_service.dart`) | `'consult_' + consultation_id` | ใช้สร้าง/อ่าน `chat_messages` |
+| Database (`consultation_requests.room_id`) | `NULL` หรือค่าอื่น | RPC ดึงจากตรงนี้ → ไม่ตรงกับ Flutter → query ไม่เจอข้อความ |
+
+**ปัญหาที่ 3: Schema cache stale**
+- แม้ apply migration แล้ว แต่ PostgREST ยัง cache schema เก่า
+- `NOTIFY pgrst, 'reload schema'` ต้องรันหลังทุก migration ที่แก้ schema
+
+#### 3. วิธีแก้ที่ทำ
+
+**A. ฝั่ง Database (Migration)**
+
+```sql
+-- 1. เพิ่ม columns ที่หายไป
+ALTER TABLE public.profession_package_rules
+ADD COLUMN IF NOT EXISTS min_general_messages INT DEFAULT 0;
+
+ALTER TABLE public.prescriptions
+ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT false;
+
+-- 2. สร้าง helper function หา room_id แบบมี fallback
+CREATE OR REPLACE FUNCTION public._get_room_id_for_consultation(p_consultation_id UUID)
+RETURNS TEXT AS $$
+DECLARE
+  v_room_id TEXT;
+BEGIN
+  SELECT cr.room_id INTO v_room_id FROM public.consultation_requests cr WHERE cr.id = p_consultation_id;
+  IF v_room_id IS NULL OR v_room_id = '' THEN
+    SELECT croom.id INTO v_room_id FROM public.chat_rooms croom WHERE croom.consultation_id = p_consultation_id LIMIT 1;
+  END IF;
+  IF v_room_id IS NULL OR v_room_id = '' THEN
+    v_room_id := 'consult_' || p_consultation_id::text;
+  END IF;
+  RETURN v_room_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. แก้ RPC functions ใช้ room_id จาก helper + ใช้ room_id แทน consultation_id ใน chat_messages
+-- 4. บังคับ reload schema cache ทุกครั้ง
+NOTIFY pgrst, 'reload schema';
+```
+
+**B. ฝั่ง Flutter**
+- เพิ่ม fallback ใน UI: ถ้า RPC ล้ม → แสดง error ชัดเจน ไม่ใช่ fake progress 100%
+- ตรวจสอบ `room_id` format ให้สอดคล้องกันระหว่าง Flutter กับ DB
+
+#### 4. บทเรียนสำคัญ
+
+| บทเรียน | วิธีป้องกัน |
+|---------|-----------|
+| **ตรวจสอบ column ก่อนเขียน RPC** | ใช้ `\d table_name` ใน psql ตรวจสอบ schema ก่อน reference |
+| **room_id ต้องมี single source of truth** | ใช้ helper function `_get_room_id_for_consultation()` ทุกที่ที่ต้องการ room_id |
+| **Migration ต้องมี `NOTIFY pgrst`** | บังคับ reload schema cache ท้ายทุก migration |
+| **อย่า fallback ซ่อน error** | ถ้า RPC ล้ม → แสดง error ใน UI ไม่ใช่ fake success (100%) |
+| **Test บน cloud DB จริง** | Local DB อาจมี schema ต่างจาก cloud ที่ใช้งานจริง |
+
 **C. ฝั่ง UI (Package Editor)**
 - แสดง error inline (red banner) แทนที่จะ silent fail
 - ไม่ปิด dialog ถ้า save ล้ม

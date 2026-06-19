@@ -1024,7 +1024,6 @@ class ConsultationRepository {
       return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
     } catch (e) {
       if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
-      debugPrint('Retrying profession rule insert without min_general_messages due to schema mismatch: $e');
       final response = await _client
           .from('profession_package_rules')
           .insert(_withoutMinGeneralMessages(data))
@@ -1051,7 +1050,6 @@ class ConsultationRepository {
       return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
     } catch (e) {
       if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
-      debugPrint('Retrying profession rule upsert without min_general_messages due to schema mismatch: $e');
       final response = await _client
           .from('profession_package_rules')
           .upsert(
@@ -1088,7 +1086,6 @@ class ConsultationRepository {
       return ProfessionPackageRule.fromJson(Map<String, dynamic>.from(response));
     } catch (e) {
       if (!_isMissingMinGeneralMessagesColumn(e)) rethrow;
-      debugPrint('Retrying profession rule update without min_general_messages due to schema mismatch: $e');
       final response = await _client
           .from('profession_package_rules')
           .update(_withoutMinGeneralMessages(data))
