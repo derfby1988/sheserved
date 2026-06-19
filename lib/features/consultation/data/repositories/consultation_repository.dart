@@ -747,6 +747,22 @@ class ConsultationRepository {
     }
   }
 
+  /// ดึง can_finish ของทุก expert ใน consultation (สำหรับแสดงใน ExpertStatusBanner)
+  Future<Map<String, dynamic>> getAllExpertsCanFinish(
+    String consultationId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'get_all_experts_can_finish',
+        params: {'p_consultation_id': consultationId},
+      );
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getAllExpertsCanFinish error: $e');
+      return {'experts': []};
+    }
+  }
+
   /// ดึงสถานะการเสร็จงานของ experts ทั้งหมดใน consultation
   Future<Map<String, dynamic>> getExpertCompletionStatus(
     String consultationId,

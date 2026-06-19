@@ -125,6 +125,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   ExpertCompletionStatus? _expertCompletionStatus;
   ProfessionPackageRule? _professionPackageRule;
   bool _isCheckingExpertCompletion = false;
+  Timer? _canFinishRefreshTimer; // debounce refresh banner when patient answers
 
   // --- Room Status ---
   StreamSubscription? _roomSub;
@@ -294,6 +295,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     } catch (e) {
       if (mounted) setState(() => _isCheckingExpertCompletion = false);
+    }
+
+    // Refresh can_finish for ALL experts in banner so everyone sees realtime updates
+    await _refreshCanFinishForBanner(consultationId);
+  }
+
+  /// Phase 6.8: รีเฟรช can_finish ของทุก expert ใน banner (เบา ไม่ต้อง query ใหม่หมด)
+  Future<void> _refreshCanFinishForBanner(String consultationId) async {
+    try {
+      final repo = ServiceLocator.instance.consultationRepository;
+      final result = await repo.getAllExpertsCanFinish(consultationId);
+      final experts = (result['experts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      if (mounted && _expertStatuses.isNotEmpty) {
+        setState(() {
+          for (final expert in _expertStatuses) {
+            final pid = expert['providerId']?.toString();
+            if (pid == null || pid.isEmpty) continue;
+            final match = experts.firstWhere(
+              (e) => e['provider_id']?.toString() == pid,
+              orElse: () => <String, dynamic>{},
+            );
+            if (match.isNotEmpty) {
+              expert['canFinish'] = match['can_finish'] == true;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[_refreshCanFinishForBanner] error: $e');
     }
   }
 
@@ -1167,6 +1197,29 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         }
       }
 
+      // Phase 6.8: Fetch can_finish status for ALL experts to show in banner
+      try {
+        final repo = ServiceLocator.instance.consultationRepository;
+        final canFinishResult = await repo.getAllExpertsCanFinish(consultationId);
+        final canFinishExperts = (canFinishResult['experts'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+        final canFinishMap = <String, bool>{};
+        for (final cf in canFinishExperts) {
+          final pid = cf['provider_id']?.toString();
+          if (pid != null && pid.isNotEmpty) {
+            canFinishMap[pid] = cf['can_finish'] == true;
+          }
+        }
+        for (final expert in mapped) {
+          final pid = expert['providerId']?.toString();
+          if (pid != null && pid.isNotEmpty) {
+            expert['canFinish'] = canFinishMap[pid] ?? false;
+          }
+        }
+        debugPrint('[ChartBoard] can_finish loaded for ${canFinishMap.length} experts');
+      } catch (e) {
+        debugPrint('[ChartBoard] getAllExpertsCanFinish error: $e');
+      }
+
       await _ensureSelectedPackageForMerge();
 
       // Merge with package expert groups to show waiting groups with grey icons
@@ -1680,6 +1733,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _requiredAnswerController.dispose();
     _requiredAnswerFocus.dispose();
     _typingTimer?.cancel();
+    _canFinishRefreshTimer?.cancel();
     _messagesSub?.cancel();
     _expertStatusSub?.cancel();
     _expertAvailabilitySub?.cancel();
@@ -1915,54 +1969,83 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  void _showCompletionChecklistDialog() {
+  Future<void> _showCompletionChecklistDialog() async {
+    // Refresh completion status before showing dialog
+    await _loadExpertCompletionStatus();
+    if (_expertCompletionStatus == null) return;
+
+    if (!mounted) return;
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        backgroundColor: Colors.white,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 360),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-                child: SingleChildScrollView(
-                  child: CompletionChecklist(
-                    status: _expertCompletionStatus!,
-                    rule: _professionPackageRule,
-                    onClose: () => Navigator.pop(ctx),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: -12,
-              right: -12,
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          // Auto-refresh every 2 seconds while dialog is open
+          final refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+            await _loadExpertCompletionStatus();
+            if (mounted && _expertCompletionStatus != null) {
+              setDlgState(() {});
+            }
+          });
+
+          return WillPopScope(
+            onWillPop: () async {
+              refreshTimer.cancel();
+              return true;
+            },
+            child: Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              backgroundColor: Colors.white,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 360),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                      child: SingleChildScrollView(
+                        child: CompletionChecklist(
+                          status: _expertCompletionStatus!,
+                          rule: _professionPackageRule,
+                          onClose: () {
+                            refreshTimer.cancel();
+                            Navigator.pop(ctx);
+                          },
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
+                  ),
+                  Positioned(
+                    top: -12,
+                    right: -12,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          refreshTimer.cancel();
+                          Navigator.pop(ctx);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -2997,6 +3080,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     // Patient side: check if should block
     if (!_isProvider) {
       _checkShouldBlock();
+    }
+
+    // Provider side: debounced refresh can_finish when messages change
+    // (e.g. patient answers required questions → banner indicator should update)
+    if (_isProvider) {
+      _canFinishRefreshTimer?.cancel();
+      _canFinishRefreshTimer = Timer(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        final cid = widget.entry?.id ?? widget.request?.id;
+        if (cid != null && cid.isNotEmpty) {
+          _refreshCanFinishForBanner(cid);
+        }
+      });
     }
   }
 

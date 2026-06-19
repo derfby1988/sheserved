@@ -1407,9 +1407,10 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                   Text(editIdx == null ? 'เพิ่มกลุ่มผู้เชี่ยวชาญ' : 'แก้ไขกลุ่ม'),
                 ],
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   TextFormField(
                     controller: nameCtrl,
                     autofocus: editIdx == null,
@@ -1620,7 +1621,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                         const Text('ขั้นต่ำ:', style: TextStyle(fontSize: 12)),
                         const SizedBox(width: 8),
                         SizedBox(
-                          width: 70,
+                          width: 110,
                           child: TextFormField(
                             initialValue: minGeneralMessages.toString(),
                             keyboardType: TextInputType.number,
@@ -1639,6 +1640,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                   ),
               ],
             ),
+          ),
             actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               TextButton(

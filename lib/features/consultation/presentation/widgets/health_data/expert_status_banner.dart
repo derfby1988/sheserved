@@ -19,7 +19,7 @@ class ExpertStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     debugPrint('[ExpertStatusBanner] expertStatuses.length=${expertStatuses.length}');
     for (final e in expertStatuses) {
-      debugPrint('[ExpertStatusBanner]   expert name=${e['name']} status=${e['status']} availability=${e['availabilityStatus']} leftAt=${e['leftAt']} finishedAt=${e['finishedAt']} hasPrescription=${e['hasPrescription']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
+      debugPrint('[ExpertStatusBanner]   expert name=${e['name']} status=${e['status']} canFinish=${e['canFinish']} availability=${e['availabilityStatus']} leftAt=${e['leftAt']} finishedAt=${e['finishedAt']} hasPrescription=${e['hasPrescription']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
     }
     final hasWaitingRequired = expertStatuses.any(
       (e) => (e['isRequired'] == true) && (e['status'] == 'waiting'),
@@ -85,6 +85,7 @@ class ExpertStatusBanner extends StatelessWidget {
   Widget _buildExpertItem(Map<String, dynamic> expert) {
     final isJoined = expert['status'] == 'joined';
     final isRequired = expert['isRequired'] == true;
+    final canFinish = expert['canFinish'] == true;
     final avatarUrl = expert['providerAvatarUrl']?.toString();
     final iconRaw = expert['expertGroupIcon'];
     final prof = findProfessionByNameOrRole(
@@ -223,18 +224,31 @@ class ExpertStatusBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              // Required indicator (*) — top-right corner
+              // Required indicator: green check when canFinish, else red *
               if (isRequired)
-                const Positioned(
-                  top: -1,
-                  right: -1,
-                  child: Text(
-                    '*',
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      height: 1.0,
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: canFinish ? const Color(0xFF4CAF50) : Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Center(
+                      child: canFinish
+                          ? const Icon(Icons.check, size: 9, color: Colors.white)
+                          : const Text(
+                              '*',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                height: 1.0,
+                              ),
+                            ),
                     ),
                   ),
                 ),

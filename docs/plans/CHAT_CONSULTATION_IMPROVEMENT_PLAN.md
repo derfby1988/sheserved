@@ -5288,19 +5288,19 @@ NOTIFY pgrst, 'reload schema';
 | **Migration ต้องมี `NOTIFY pgrst`** | บังคับ reload schema cache ท้ายทุก migration |
 | **อย่า fallback ซ่อน error** | ถ้า RPC ล้ม → แสดง error ใน UI ไม่ใช่ fake success (100%) |
 | **Test บน cloud DB จริง** | Local DB อาจมี schema ต่างจาก cloud ที่ใช้งานจริง |
+| **RPC return type ต้องตรงกับ Flutter** | ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object (key-value) ไม่ใช่ array เปล่า |
 
-**C. ฝั่ง UI (Package Editor)**
-- แสดง error inline (red banner) แทนที่จะ silent fail
-- ไม่ปิด dialog ถ้า save ล้ม
-- กดบันทึกได้อีกครั้งหลังแก้ปัญหา
-
-#### 4. Checklist ป้องกันไม่ให้เกิดซ้ำ
+#### 5. Checklist ป้องกันไม่ให้เกิดซ้ำ (รวมทั้ง 2 กรณี)
 - [ ] ทุก migration ที่เพิ่มคอลัมน์/ตารางใหม่ ต้องมี `NOTIFY pgrst, 'reload schema';`
 - [ ] ทุกตารางที่ enable RLS ต้องมี policy สำหรับ write (INSERT/UPDATE/DELETE) ที่ชัดเจน
 - [ ] ถ้าใช้ `TO authenticated` ต้องแน่ใจว่า app client มี session ตลอด save flow
 - [ ] Repo methods ที่คุยกับ table ที่มี RLS ต้องมี error handling + retry ที่ครอบทั้ง schema mismatch และ RLS
 - [ ] ใส่ `debugPrint` ทุก critical step ของ save/update flow เพื่อ trace ได้เร็ว
+- [ ] **ตรวจสอบ column ก่อนเขียน RPC** — ใช้ `\d table_name` ใน psql ตรวจสอบ schema ก่อน reference
+- [ ] **room_id ต้องมี single source of truth** — ใช้ helper function `_get_room_id_for_consultation()` ทุกที่ที่ต้องการ room_id
+- [ ] **Test RPC บน cloud DB จริง** — ไม่ใช่แค่ local DB
+- [ ] **RPC return type ต้องตรงกับ Flutter expectation** — ถ้า Flutter `cast<Map<String, dynamic>>` → RPC ต้องคืน object มี key-value ไม่ใช่ array เปล่า ๆ (ต้อง test ด้วย `SELECT rpc_name(...)` ก่อนเขียน Flutter)
 
 ---
 
-*Last Updated: 2026-06-18* — Phase 6.8 implement ครบแล้ว
+*Last Updated: 2026-06-19* — Phase 6.8: เพิ่ม can_finish realtime ใน ExpertStatusBanner + แก้ RPC return type mismatch
