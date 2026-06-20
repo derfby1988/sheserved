@@ -139,7 +139,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
     setState(() => _isSendingThaiMhungPhotos = true);
 
     final loadingText = _isThaiMhungReporting
-        ? 'กำลังอัปโหลดและปกป้องสิทธิ์ส่วนบุคคล...\n(เบลอใบหน้า อาจใช้เวลาสักครู่)'
+        ? 'กำลังอัปโหลด...'
         : 'กำลังอัปโหลดรูปภาพเหตุฉุกเฉิน...';
 
     showDialog(
@@ -161,37 +161,63 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       final userId = AuthService.instance.userId;
       if (userId == null) throw Exception("User not logged in");
       List<File> filesToUpload = _capturedPhotos.map((x) => File(x.path)).toList();
-      final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(
-        userId: userId, 
-        photoFiles: filesToUpload, 
-        gpsTracks: _recordedGpsTracks, 
-        categoryId: categoryId, 
+      final uploadResult = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(
+        userId: userId,
+        photoFiles: filesToUpload,
+        gpsTracks: _recordedGpsTracks,
+        categoryId: categoryId,
         isThaiMhung: _isThaiMhungReporting,
         incidentId: _isThaiMhungReporting ? _currentVideoId : null,
       );
+      final videoId = uploadResult?['videoId']?.toString();
       final ws = WebSocketService();
       ws.sendEmergencyAlert(
-        userId: userId, 
-        categoryId: categoryId ?? 'thai_mhung', 
-        videoId: videoId, 
-        type: 'photo', 
+        userId: userId,
+        categoryId: categoryId ?? 'thai_mhung',
+        videoId: videoId,
+        type: 'photo',
         isThaiMhungEnabled: true,
-        incidentId: _currentVideoId, // ✅ เชื่อมโยงกับเหตุการณ์หลัก
+        incidentId: _currentVideoId,
       );
       if (!mounted) return;
       Navigator.pop(context);
       final successText = _isThaiMhungReporting
-          ? 'ส่งภาพไทยมุงสำเร็จ กำลังแสดงในแกลลอรี่...'
+          ? 'ส่งภาพไทยมุงสำเร็จ กำลังปกป้องสิทธิ์ส่วนบุคคล...'
           : 'อัปโหลดรูปภาพฉุกเฉินสำเร็จ';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(successText), backgroundColor: Colors.green));
-      setState(() { 
-        _capturedPhotos.clear(); 
-        _recordedGpsTracks.clear(); 
-        _selectedTab = 0; 
+      setState(() {
+        _capturedPhotos.clear();
+        _recordedGpsTracks.clear();
+        _selectedTab = 0;
         _isThaiMhungReporting = false;
         _isSendingThaiMhungPhotos = false;
       });
-      // ✅ โหลดข้อมูลภาพแกลลอรี่ใหม่ทันทีหลังอัปโหลด
+      // Phase 6.12: Immediately add placeholder photos with blurStatus='blurring'
+      final photoIds = uploadResult?['photoIds'] as List<dynamic>?;
+      final photoUrls = uploadResult?['photo_urls'] as List<dynamic>?;
+      debugPrint('[ThaiMhung Upload] photoIds: $photoIds');
+      debugPrint('[ThaiMhung Upload] photoUrls: $photoUrls');
+      if (photoIds != null && photoUrls != null && photoIds.length == photoUrls.length) {
+        setState(() {
+          for (int i = 0; i < photoIds.length; i++) {
+            final photoId = photoIds[i].toString();
+            final photoUrl = photoUrls[i].toString();
+            if (photoId.isNotEmpty && photoUrl.isNotEmpty) {
+              final normalizedUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(photoUrl);
+              debugPrint('[ThaiMhung Upload] Adding placeholder: id=$photoId, url=$normalizedUrl, blurStatus=blurring');
+              _thaiMhungPhotos.insert(0, ThaiMhungPhoto(
+                id: photoId,
+                url: normalizedUrl,
+                userName: userId,
+                blurStatus: 'blurring',
+              ));
+            }
+          }
+          debugPrint('[ThaiMhung Upload] Total photos in gallery after insertion: ${_thaiMhungPhotos.length}');
+        });
+      } else {
+        debugPrint('[ThaiMhung Upload] photoIds or photoUrls is null or length mismatch');
+      }
       _loadGalleryPhotos();
     } catch (e) {
       if (!mounted) return;

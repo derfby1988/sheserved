@@ -112,7 +112,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   StreamSubscription? _emergencyHealthSensorAlertSub;
   StreamSubscription? _emergencyHealthDeadManReminderSub;
   StreamSubscription? _emergencyHealthDeadManTriggeredSub;
-  
+  StreamSubscription? _photoBlurSub;
+  StreamSubscription? _thaiMhungPhotoSub;
+
   double? _deviceHeading;
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
@@ -243,6 +245,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _emergencyHealthSensorAlertSub?.cancel();
     _emergencyHealthDeadManReminderSub?.cancel();
     _emergencyHealthDeadManTriggeredSub?.cancel();
+    _photoBlurSub?.cancel();
+    _thaiMhungPhotoSub?.cancel();
     _countdownTimer?.cancel();
     _durationTimer?.cancel();
     if (_gpsTimer != null) _gpsTimer!.cancel();

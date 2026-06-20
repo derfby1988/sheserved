@@ -12,11 +12,16 @@ const thumbnailQueue = require('../services/thumbnail-queue');
 const watermarkService = require('../services/watermark-service');
 const {
     strictRateLimiter,
+    rateLimiter,
     idempotencyMiddleware,
     duplicateCheckMiddleware,
     cacheAside,
+    invalidateCachePattern,
     TTL,
 } = require('../middleware');
+
+// ✅ Upload endpoints: 30 req/min — ลดกว่า strict แต่ยังป้องกัน abuse
+const uploadRateLimiter = rateLimiter({ maxRequests: 30, windowSec: 60, keyPrefix: 'rate:upload' });
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
@@ -78,7 +83,7 @@ module.exports = (pool) => {
     });
 
     // Upload video
-    router.post('/upload', idempotencyMiddleware, strictRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
+    router.post('/upload', idempotencyMiddleware, uploadRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
         try {
             const { userId, title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
             const file = req.file;
@@ -148,7 +153,7 @@ module.exports = (pool) => {
     // Upload multiple photos
     // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
     // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
-    router.post('/upload-photos', idempotencyMiddleware, strictRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
+    router.post('/upload-photos', idempotencyMiddleware, uploadRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
         try {
             const userIdFromRequest = req.body.userId;
             const files = req.files;
@@ -205,68 +210,29 @@ module.exports = (pool) => {
             }
 
             const photoUrls = [];
+            const originalPaths = []; // Phase 6.12: เก็บ path ต้นฉบับเพื่อ blur แบบ background
             const localApiUrl = process.env.LOCAL_API_URL || 'http://localhost:3000';
             
             for (const file of files) {
                 const newPath = path.join(reportDir, file.filename);
                 // Move file from root destDir to reportDir
                 fs.renameSync(file.path, newPath);
+                originalPaths.push(newPath);
 
-                // ✅ Thai Mhung Face Blur: เบลอเฉพาะใบหน้าก่อน broadcast
-                // สร้างชื่อไฟล์ output แยกต่างหาก เช่น uuid_anon.jpg
-                let finalFilePath = newPath;
-                if (isThaiMhung) {
-                    const ext = path.extname(file.filename);
-                    const anonFilename = `${path.basename(file.filename, ext)}_anon${ext}`;
-                    const anonPath = path.join(reportDir, anonFilename);
-                    const blurResult = await faceBlurService.blurFacesInImage(newPath, anonPath);
-                    if (blurResult.success) {
-                        finalFilePath = anonPath;
-                        // ✅ ลบไฟล์ต้นฉบับหลังเบลอสำเร็จ เพื่อปกป้อง Privacy
-                        try { fs.unlinkSync(newPath); } catch (_) {}
-                    }
-                    // ถ้าล้มเหลว → ใช้ต้นฉบับตามเดิม (blurResult.outputPath = newPath)
-                    finalFilePath = blurResult.outputPath;
-                }
-
-                // ✅ Watermark (Sharp): ประทับลายน้ำหลังเบลอ ทันทีเพื่อให้ภาพที่เก็บและ Broadcast มีลายน้ำ
-                if (watermarkConfig) {
-                    const ext = path.extname(finalFilePath);
-                    const wmFilename = `${path.basename(finalFilePath, ext)}_wm${ext}`;
-                    const wmPath = path.join(reportDir, wmFilename);
-                    
-                    const wmResult = await watermarkService.applyImageWatermark(
-                        finalFilePath, 
-                        wmPath, 
-                        watermarkConfig, 
-                        incidentId || videoId, 
-                        userId || userIdFromRequest
-                    );
-                    
-                    if (wmResult.success) {
-                        // ลบไฟล์เก่า
-                        if (finalFilePath !== newPath) {
-                            try { fs.unlinkSync(finalFilePath); } catch (_) {}
-                        }
-                        finalFilePath = wmPath;
-                    }
-                }
-
-                // Construct URL correctly
-                const finalFilename = path.basename(finalFilePath);
+                // Phase 6.12: ยังไม่ blur/watermark ตอนนี้ — ทำ background หลัง respond
+                const finalFilename = path.basename(newPath);
                 let relativePath;
                 if (isThaiMhung && incidentId) {
                     relativePath = `${incidentId}/thaimhung/${videoId}/${finalFilename}`;
                 } else {
                     relativePath = `${videoId}/${finalFilename}`;
                 }
+                const url = `${localApiUrl}/temp/videos/${relativePath}`;
+                photoUrls.push(url);
                 
-                // ✅ ใช้ full URL เพื่อให้ Client แสดงผลได้ทันที
-                photoUrls.push(`${localApiUrl}/temp/videos/${relativePath}`);
-                
-                // เก็บ local path เพื่อใช้ทำ Thumbnail
+                // เก็บ local path เพื่อใช้ทำ Thumbnail (ใช้ original ก่อน blur)
                 if (!req.localFilePaths) req.localFilePaths = [];
-                req.localFilePaths.push(finalFilePath);
+                req.localFilePaths.push(newPath);
             }
 
             // ✅ Set first photo as bunny_url for basic preview support
@@ -374,31 +340,142 @@ module.exports = (pool) => {
                 }
             }
 
-            // 4. Mark as Ready डायरेक्टली
+            // 4. Mark as Ready ทันที
             await pool.query('UPDATE videos SET status = $1, progress = 100 WHERE id = $2', ['ready', videoId]);
             socketService.sendStatus(userId || userIdFromRequest, videoId, 'ready', { progress: 100 });
 
-            // 5. ✅ Broadcast ภาพใหม่ไปยังทุก Client ในห้อง Incident
+            // Phase 6.12: Insert thai_mhung_photos with blur_status='blurring' and respond immediately
+            const thaiMhungPhotoIds = [];
+            console.log(`[ThaiMhung] isThaiMhung=${isThaiMhung}, incidentId=${incidentId}, videoId=${videoId}`);
             if (isThaiMhung && incidentId) {
                 const latestTrack = gpsTracks ? (() => { try { const t = JSON.parse(gpsTracks); return Array.isArray(t) && t.length > 0 ? t[t.length - 1] : null; } catch(e) { return null; } })() : null;
                 for (const url of photoUrls) {
-                    socketService.broadcastNewThaiMhungPhoto(incidentId, {
-                        photo_url: url,
-                        user_id: userId || userIdFromRequest,
-                        latitude: latestTrack ? latestTrack.latitude : null,
-                        longitude: latestTrack ? latestTrack.longitude : null,
-                        created_at: new Date().toISOString(),
-                        video_id: incidentId,
-                    });
+                    try {
+                        // ✅ Insert with incidentId (not videoId) so gallery query can find it
+                        console.log(`[ThaiMhung] Inserting photo: incidentId=${incidentId}, url=${url}`);
+                        const photoRes = await pool.query(
+                            `INSERT INTO thai_mhung_photos (video_id, user_id, photo_url, latitude, longitude, blur_status)
+                             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+                            [incidentId, userId || userIdFromRequest, url, latestTrack ? latestTrack.latitude : null, latestTrack ? latestTrack.longitude : null, 'blurring']
+                        );
+                        const photoId = photoRes.rows[0].id;
+                        thaiMhungPhotoIds.push(photoId);
+                        console.log(`[ThaiMhung] Inserted photo id=${photoId} for incidentId=${incidentId}`);
+                        socketService.broadcastNewThaiMhungPhoto(incidentId, {
+                            photo_url: url,
+                            user_id: userId || userIdFromRequest,
+                            latitude: latestTrack ? latestTrack.latitude : null,
+                            longitude: latestTrack ? latestTrack.longitude : null,
+                            created_at: new Date().toISOString(),
+                            video_id: incidentId,
+                            blur_status: 'blurring',
+                            photo_id: photoId,
+                        });
+                    } catch (insertErr) {
+                        console.error('[ThaiMhung] Failed to insert thai_mhung_photos:', insertErr);
+                    }
                 }
+                // ✅ Invalidate gallery cache so fresh data appears immediately
+                invalidateCachePattern(`video:gallery:${incidentId}:*`);
             }
 
+            // 5. ✅ Respond immediately — ไม่รอ blur/watermark
             res.json({
                 message: `${modeName} photos upload successful (${files.length}/${quota})`,
                 video: { ...videoRecord, photo_urls: photoUrls },
                 photo_urls: photoUrls,
-                incidentId: incidentId
+                incidentId: incidentId,
+                status: isThaiMhung ? 'blurring' : 'ready',
+                photoIds: thaiMhungPhotoIds,
             });
+
+            // Phase 6.12: Background blur + watermark (fire-and-forget)
+            if (isThaiMhung && incidentId && originalPaths.length > 0) {
+                (async () => {
+                    const blurredUrls = [];
+                    for (let i = 0; i < originalPaths.length; i++) {
+                        const originalPath = originalPaths[i];
+                        const photoId = thaiMhungPhotoIds[i];
+                        if (!photoId) continue;
+
+                        let finalFilePath = originalPath;
+
+                        // 1. Face Blur
+                        const ext = path.extname(originalPath);
+                        const anonFilename = `${path.basename(originalPath, ext)}_anon${ext}`;
+                        const anonPath = path.join(reportDir, anonFilename);
+                        const blurResult = await faceBlurService.blurFacesInImage(originalPath, anonPath);
+                        if (blurResult.success) {
+                            finalFilePath = anonPath;
+                            try { fs.unlinkSync(originalPath); } catch (_) {}
+                        } else {
+                            finalFilePath = blurResult.outputPath || originalPath;
+                        }
+
+                        // 2. Watermark
+                        if (watermarkConfig) {
+                            const wmFilename = `${path.basename(finalFilePath, ext)}_wm${ext}`;
+                            const wmPath = path.join(reportDir, wmFilename);
+                            const wmResult = await watermarkService.applyImageWatermark(
+                                finalFilePath, wmPath, watermarkConfig, incidentId || videoId, userId || userIdFromRequest
+                            );
+                            if (wmResult.success) {
+                                if (finalFilePath !== originalPath) {
+                                    try { fs.unlinkSync(finalFilePath); } catch (_) {}
+                                }
+                                finalFilePath = wmPath;
+                            }
+                        }
+
+                        // 3. Build blurred URL
+                        const finalFilename = path.basename(finalFilePath);
+                        let relativePath;
+                        if (isThaiMhung && incidentId) {
+                            relativePath = `${incidentId}/thaimhung/${videoId}/${finalFilename}`;
+                        } else {
+                            relativePath = `${videoId}/${finalFilename}`;
+                        }
+                        const blurredUrl = `${localApiUrl}/temp/videos/${relativePath}`;
+                        blurredUrls.push(blurredUrl);
+
+                        // 4. Update thai_mhung_photos
+                        try {
+                            await pool.query(
+                                `UPDATE thai_mhung_photos SET photo_url = $1, blur_status = $2 WHERE id = $3`,
+                                [blurredUrl, 'completed', photoId]
+                            );
+                        } catch (updateErr) {
+                            console.error('[ThaiMhung] Failed to update photo_url after blur:', updateErr);
+                        }
+
+                        // 5. Broadcast blur complete
+                        socketService.broadcastPhotoBlurComplete(incidentId, {
+                            photoId: photoId,
+                            url: blurredUrl,
+                            blurStatus: 'completed',
+                        });
+                    }
+
+                    // 6. Update videos.photo_urls with blurred URLs
+                    if (blurredUrls.length > 0) {
+                        try {
+                            await pool.query(
+                                `UPDATE videos SET photo_urls = $1::jsonb WHERE id = $2`,
+                                [JSON.stringify(blurredUrls), videoId]
+                            );
+                        } catch (updateErr) {
+                            console.error('[ThaiMhung] Failed to update videos.photo_urls after blur:', updateErr);
+                        }
+                    }
+
+                    // ✅ Invalidate gallery cache so blurred URLs appear
+                    if (incidentId) {
+                        invalidateCachePattern(`video:gallery:${incidentId}:*`);
+                    }
+                })().catch(err => {
+                    console.error('[ThaiMhung] Background blur error:', err);
+                });
+            }
         } catch (error) {
             console.error('Upload Error:', error);
             res.status(500).json({ error: 'Failed to upload photos' });
@@ -507,42 +584,37 @@ module.exports = (pool) => {
         }
     });
     // Get gallery photos for a specific incident with pagination
+    // Phase 6.12: Query thai_mhung_photos directly to get blur_status for async face blur
     router.get('/:id/gallery', async (req, res) => {
         try {
             const { id } = req.params;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 20;
             const cacheKey = `video:gallery:${id}:${page}:${limit}`;
+            console.log(`[Gallery] Querying gallery for video_id=${id}, page=${page}, limit=${limit}`);
 
             const data = await cacheAside(cacheKey, async () => {
                 const offset = (page - 1) * limit;
                 const result = await pool.query(
-                    `SELECT id, photo_urls, created_at, user_id 
-                     FROM videos 
-                     WHERE type = $1 AND incident_id = $2 
-                     ORDER BY created_at DESC 
-                     LIMIT $3 OFFSET $4`,
-                    ['thai_mhung_photo', id, limit, offset]
+                    `SELECT id, photo_url, created_at, user_id, blur_status, latitude, longitude
+                     FROM thai_mhung_photos
+                     WHERE video_id = $1
+                     ORDER BY created_at DESC
+                     LIMIT $2 OFFSET $3`,
+                    [id, limit, offset]
                 );
 
-                const finalPhotos = [];
-                for (const row of result.rows) {
-                    let urls = [];
-                    if (Array.isArray(row.photo_urls)) urls = row.photo_urls;
-                    else if (typeof row.photo_urls === 'string') {
-                        try { urls = JSON.parse(row.photo_urls); } catch(e) {}
-                    }
-
-                    for (let i = 0; i < urls.length; i++) {
-                        finalPhotos.push({
-                            id: `${row.id}_${i}`,
-                            photo_url: urls[i],
-                            created_at: row.created_at,
-                            user_id: row.user_id
-                        });
-                    }
-                }
-                return finalPhotos;
+                const mapped = result.rows.map(row => ({
+                    id: row.id,
+                    photo_url: row.photo_url,
+                    created_at: row.created_at,
+                    user_id: row.user_id,
+                    blur_status: row.blur_status,
+                    latitude: row.latitude,
+                    longitude: row.longitude,
+                }));
+                console.log(`[Gallery] Returning ${mapped.length} photos for incident ${id}:`, mapped.map(p => ({ id: p.id, blur_status: p.blur_status })));
+                return mapped;
             }, TTL.DEFAULT);
 
             res.json(data);

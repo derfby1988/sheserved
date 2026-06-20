@@ -138,6 +138,21 @@ function broadcastEmergencyHealthDeadManTriggered(userId, payload) {
     });
 }
 
+/**
+ * Broadcast photo blur completion to all viewers in the incident room
+ * Phase 6.12: Async Thai Mhung Face Blur — Gallery refreshes when blur completes
+ * @param {string} incidentId
+ * @param {object} data - { photoId, url, blurStatus }
+ */
+function broadcastPhotoBlurComplete(incidentId, data) {
+    if (!io) return;
+    console.log(`[ThaiMhung] Broadcasting blur-complete for photo ${data.photoId} in incident ${incidentId}`);
+    io.to(`video-${incidentId}`).emit('photo-blur-complete', {
+        incidentId,
+        ...data,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
@@ -150,6 +165,7 @@ module.exports = {
     broadcastEmergencyHealthSensorAlert,
     broadcastEmergencyHealthDeadManReminder,
     broadcastEmergencyHealthDeadManTriggered,
+    broadcastPhotoBlurComplete,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

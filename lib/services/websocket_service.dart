@@ -39,6 +39,8 @@ class WebSocketService {
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   final _donationStatusController = StreamController<Map<String, dynamic>>.broadcast();
   final _thaiMhungPhotoController = StreamController<Map<String, dynamic>>.broadcast();
+  // Phase 6.12: Async Thai Mhung Face Blur completion event
+  final _photoBlurCompleteController = StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Yield Way] Stream สำหรับรับการแจ้งเตือนให้ทาง
   final _yieldWayAlertController = StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Thumbnail] Stream สำหรับ Thumbnail อัปเดตแบบ Real-time (Recommendation #7)
@@ -75,6 +77,8 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get donationStatusStream => _donationStatusController.stream;
   /// ภาพไทยมุงใหม่เข้ามาแบบ Real-time ผ่าน WebSocket
   Stream<Map<String, dynamic>> get thaiMhungPhotoStream => _thaiMhungPhotoController.stream;
+  /// Phase 6.12: รับ event เมื่อ face blur เสร็จสิ้น (background async processing)
+  Stream<Map<String, dynamic>> get photoBlurCompleteStream => _photoBlurCompleteController.stream;
   /// ✅ [Yield Way] การแจ้งเตือนให้ทางแบบ Real-time
   Stream<Map<String, dynamic>> get yieldWayAlertStream => _yieldWayAlertController.stream;
   /// ✅ [Thumbnail] Thumbnail URL อัปเดตแบบ Real-time — TrendingPanel ใช้เพื่อรีเฟรชรูปพื้นหลังการ์ด (Recommendation #7)
@@ -255,6 +259,12 @@ class WebSocketService {
       _socket!.on('new-thaimhung-photo', (data) {
         debugPrint('WebSocket: new-thaimhung-photo received: $data');
         _thaiMhungPhotoController.add(Map<String, dynamic>.from(data));
+      });
+
+      // Phase 6.12: Photo Blur Complete Event
+      _socket!.on('photo-blur-complete', (data) {
+        debugPrint('WebSocket: photo-blur-complete received: $data');
+        _photoBlurCompleteController.add(Map<String, dynamic>.from(data));
       });
 
       // ✅ [Yield Way] รับการแจ้งเตือนให้ทางจาก Server (คัดกรองแล้วโดย route-based filter)

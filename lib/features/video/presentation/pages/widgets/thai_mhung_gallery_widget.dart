@@ -7,8 +7,14 @@ class ThaiMhungPhoto {
   final String id;
   final String url;
   final String? userName;
+  final String blurStatus; // 'blurring' | 'completed' | 'failed'
 
-  ThaiMhungPhoto({required this.id, required this.url, this.userName});
+  ThaiMhungPhoto({
+    required this.id,
+    required this.url,
+    this.userName,
+    this.blurStatus = 'completed',
+  });
 }
 
 class ThaiMhungGalleryWidget extends StatefulWidget {
@@ -105,10 +111,20 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
 
                 ...visible.map((item) {
                   final isSelected = item.originalIndex == _currentPage;
+                  final isBlurring = item.photo.blurStatus == 'blurring';
                   final imageUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(item.photo.url);
                   return Expanded(
                     child: GestureDetector(
                       onTap: () {
+                        if (isBlurring) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          return;
+                        }
                         if (isSelected) {
                           widget.onPhotoTap(item.photo);
                         } else {
@@ -136,29 +152,51 @@ class _ThaiMhungGalleryWidgetState extends State<ThaiMhungGalleryWidget> {
                             child: Stack(
                               children: [
                                 Positioned.fill(
-                                  // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
-                                  child: CachedNetworkImage(
-                                    imageUrl: imageUrl,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (context, url, error) => Container(
-                                      color: Colors.grey[900],
-                                      child: const Icon(Icons.broken_image, color: Colors.white24),
+                                  child: isBlurring
+                                    ? Container(
+                                        color: Colors.grey[800],
+                                        child: const Center(
+                                          child: Icon(Icons.face_retouching_off, color: Colors.grey, size: 24),
+                                        ),
+                                      )
+                                    : CachedNetworkImage(
+                                        imageUrl: imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (context, url, error) => Container(
+                                          color: Colors.grey[900],
+                                          child: const Icon(Icons.broken_image, color: Colors.white24),
+                                        ),
+                                      ),
+                                ),
+                                if (isBlurring)
+                                  Positioned(
+                                    top: 3,
+                                    left: 3,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.withOpacity(0.9),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'กำลังปกป้อง...',
+                                        style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold),
+                                      ),
                                     ),
                                   ),
-                                ),
-                                // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
-                                Positioned(
-                                  bottom: 3,
-                                  right: 3,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
+                                if (!isBlurring)
+                                  Positioned(
+                                    bottom: 3,
+                                    right: 3,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
                                     ),
-                                    child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
                                   ),
-                                ),
                               ],
                             ),
                           ),

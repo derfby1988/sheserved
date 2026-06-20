@@ -116,11 +116,66 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (_currentVideoId != null) {
       _loadResponders();
       _loadGalleryPhotos();
+      _subscribeToPhotoBlurComplete();
+      _subscribeToNewThaiMhungPhotos();
     }
+  }
+
+  /// Phase 6.12: รับ event เมื่อ background face blur เสร็จ → รีเฟรช gallery
+  void _subscribeToPhotoBlurComplete() {
+    _photoBlurSub?.cancel();
+    _photoBlurSub = WebSocketService().photoBlurCompleteStream.listen((data) {
+      final incidentId = data['incidentId']?.toString() ?? data['incident_id']?.toString() ?? '';
+      if (incidentId != _currentVideoId) return;
+      final photoId = data['photoId']?.toString() ?? data['photo_id']?.toString() ?? '';
+      final url = data['url']?.toString() ?? '';
+      if (photoId.isEmpty || url.isEmpty) return;
+      if (mounted) {
+        setState(() {
+          final idx = _thaiMhungPhotos.indexWhere((p) => p.id == photoId);
+          if (idx >= 0) {
+            _thaiMhungPhotos[idx] = ThaiMhungPhoto(
+              id: _thaiMhungPhotos[idx].id,
+              url: url,
+              userName: _thaiMhungPhotos[idx].userName,
+              blurStatus: 'completed',
+            );
+          }
+        });
+      }
+    });
+  }
+
+  /// Phase 6.12: รับ event ภาพไทยมุงใหม่เข้ามาแบบ Real-time → เพิ่มเข้า gallery ทันที
+  void _subscribeToNewThaiMhungPhotos() {
+    _thaiMhungPhotoSub?.cancel();
+    _thaiMhungPhotoSub = WebSocketService().thaiMhungPhotoStream.listen((data) {
+      final incidentId = data['incidentId']?.toString() ?? data['video_id']?.toString() ?? '';
+      if (incidentId != _currentVideoId) return;
+      final photoId = data['photoId']?.toString() ?? data['photo_id']?.toString() ?? '';
+      final photoUrl = data['photo_url']?.toString() ?? '';
+      final userId = data['user_id']?.toString();
+      if (photoId.isEmpty || photoUrl.isEmpty) return;
+      if (mounted) {
+        setState(() {
+          // Avoid duplicate
+          if (_thaiMhungPhotos.any((p) => p.id == photoId)) return;
+          final normalizedUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(photoUrl);
+          _thaiMhungPhotos.insert(0, ThaiMhungPhoto(
+            id: photoId,
+            url: normalizedUrl,
+            userName: userId,
+            blurStatus: 'blurring',
+          ));
+        });
+      }
+    });
   }
 
   Future<void> _loadGalleryPhotos() async {
     if (_currentVideoId == null) return;
+    _subscribeToPhotoBlurComplete();
+    _subscribeToNewThaiMhungPhotos();
     try {
       _galleryPage = 1;
       _hasMoreGallery = true;
@@ -133,13 +188,24 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             id: e['id']?.toString() ?? '',
             url: e['photo_url']?.toString() ?? '',
             userName: e['user_id']?.toString(),
+            blurStatus: e['blur_status']?.toString() ?? 'completed',
           ))
-          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty)
+          .where((p) => p.id.isNotEmpty)
           .toList();
         
         debugPrint('[Gallery] Valid photos after filter: ${photos.length}');
-        setState(() { 
-          _thaiMhungPhotos = photos; 
+        for (var p in photos) {
+          debugPrint('[Gallery] API photo: id=${p.id}, blurStatus=${p.blurStatus}');
+        }
+        setState(() {
+          // Phase 6.12: Merge API results with local blurring photos not yet in DB
+          final apiIds = photos.map((p) => p.id).toSet();
+          final localBlurring = _thaiMhungPhotos
+            .where((p) => p.blurStatus == 'blurring' && !apiIds.contains(p.id))
+            .toList();
+          debugPrint('[Gallery] Local blurring photos to preserve: ${localBlurring.length}');
+          _thaiMhungPhotos = [...localBlurring, ...photos];
+          debugPrint('[Gallery] Final merged count: ${_thaiMhungPhotos.length}');
           if (photos.length < 20) _hasMoreGallery = false;
         });
       }
@@ -161,12 +227,16 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             id: e['id']?.toString() ?? '',
             url: e['photo_url']?.toString() ?? '',
             userName: e['user_id']?.toString(),
+            blurStatus: e['blur_status']?.toString() ?? 'completed',
           ))
-          .where((p) => p.url.isNotEmpty && p.id.isNotEmpty)
+          .where((p) => p.id.isNotEmpty)
           .toList();
         
-        setState(() { 
-          _thaiMhungPhotos.addAll(photos);
+        setState(() {
+          // Phase 6.12: Deduplicate when loading more pages
+          final existingIds = _thaiMhungPhotos.map((p) => p.id).toSet();
+          final newPhotos = photos.where((p) => !existingIds.contains(p.id)).toList();
+          _thaiMhungPhotos.addAll(newPhotos);
           _isLoadingMoreGallery = false;
           if (photos.length < 20) _hasMoreGallery = false;
         });
@@ -485,7 +555,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   void _switchVideo(String newVideoId) {
     if (_currentVideoId != null) WebSocketService().leaveVideoRoom(_currentVideoId!);
-    _interactionSub?.cancel(); _supabaseInteractionSub?.unsubscribe(); _progressSub?.cancel(); _rescueIncomingSub?.cancel(); _videoStatusSub?.cancel(); _emergencySub?.cancel();
+    _interactionSub?.cancel(); _supabaseInteractionSub?.unsubscribe(); _progressSub?.cancel(); _rescueIncomingSub?.cancel(); _videoStatusSub?.cancel(); _emergencySub?.cancel(); _photoBlurSub?.cancel(); _thaiMhungPhotoSub?.cancel();
     _videoPlayerController?.removeListener(_syncGpsWithVideo); _videoPlayerController?.dispose(); _videoPlayerController = null;
     _chewieController?.dispose(); _chewieController = null;
     setState(() {
@@ -774,8 +844,37 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
     try {
       List<File> files = _capturedPhotos.map((x) => File(x.path)).toList();
-      final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(userId: userId, photoFiles: files, gpsTracks: _recordedGpsTracks, categoryId: _selectedEmergencyCategoryId);
-      if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งข้อมูลไทยมุงสำเร็จ ขอบคุณที่ร่วมช่วยสังคม!'), backgroundColor: Colors.green)); setState(() { _capturedPhotos.clear(); _selectedTab = 0; _isThaiMhungReporting = false; }); _loadGalleryPhotos(); }
+      final uploadResult = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(userId: userId, photoFiles: files, gpsTracks: _recordedGpsTracks, categoryId: _selectedEmergencyCategoryId);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งข้อมูลไทยมุงสำเร็จ กำลังปกป้องสิทธิ์ส่วนบุคคล...'), backgroundColor: Colors.green));
+        setState(() {
+          _capturedPhotos.clear();
+          _selectedTab = 0;
+          _isThaiMhungReporting = false;
+        });
+        // Phase 6.12: Immediately add placeholder photos with blurStatus='blurring'
+        final photoIds = uploadResult?['photoIds'] as List<dynamic>?;
+        final photoUrls = uploadResult?['photo_urls'] as List<dynamic>?;
+        if (photoIds != null && photoUrls != null && photoIds.length == photoUrls.length) {
+          setState(() {
+            for (int i = 0; i < photoIds.length; i++) {
+              final photoId = photoIds[i].toString();
+              final photoUrl = photoUrls[i].toString();
+              if (photoId.isNotEmpty && photoUrl.isNotEmpty) {
+                final normalizedUrl = ServiceLocator.instance.videoRepository.ensureFullUrl(photoUrl);
+                _thaiMhungPhotos.insert(0, ThaiMhungPhoto(
+                  id: photoId,
+                  url: normalizedUrl,
+                  userName: userId,
+                  blurStatus: 'blurring',
+                ));
+              }
+            }
+          });
+        }
+        _loadGalleryPhotos();
+      }
     } catch (_) { if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาดในการส่งข้อมูล'))); } }
   }
 
@@ -850,6 +949,15 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   void _showPhotoDetail(ThaiMhungPhoto photo) {
+    if (photo.blurStatus == 'blurring') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     showDialog(context: context, builder: (context) => Dialog(backgroundColor: Colors.transparent, insetPadding: const EdgeInsets.all(10), child: Column(mainAxisSize: MainAxisSize.min, children: [Align(alignment: Alignment.topRight, child: IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 30), onPressed: () => Navigator.pop(context))), ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(photo.url, fit: BoxFit.contain)), if (photo.userName != null) Padding(padding: const EdgeInsets.all(8.0), child: Text('โดย: ${photo.userName}', style: const TextStyle(color: Colors.white70, fontSize: 14))) ])));
   }
 

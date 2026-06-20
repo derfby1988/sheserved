@@ -21,7 +21,7 @@
 const { redis, isHealthy }                         = require('./redis-client');
 const { rateLimiter, defaultRateLimiter, strictRateLimiter, authRateLimiter } = require('./rate-limiter');
 const { idempotencyMiddleware, checkDuplicate, clearDuplicate, duplicateCheckMiddleware } = require('./idempotency');
-const { cacheAside, invalidateCache, invalidateCacheMany, getSession, setSession, deleteSession, getDonationTotal, TTL } = require('./cache-aside');
+const { cacheAside, invalidateCache, invalidateCacheMany, invalidateCachePattern, getSession, setSession, deleteSession, getDonationTotal, TTL } = require('./cache-aside');
 
 module.exports = {
   // Redis Client
@@ -44,6 +44,7 @@ module.exports = {
   cacheAside,
   invalidateCache,
   invalidateCacheMany,
+  invalidateCachePattern,
   getSession,
   setSession,
   deleteSession,

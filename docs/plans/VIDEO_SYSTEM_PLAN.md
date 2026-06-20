@@ -2409,15 +2409,28 @@ user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 
 ---
 
-### 🔄 Phase 6.12: Async Thai Mhung Face Blur + Gallery Blocking (Pending — ทำบนเครื่องหลัก)
+### 🔄 Phase 6.12: Async Thai Mhung Face Blur + Gallery Blocking (✅ เสร็จสมบูรณ์)
 
-> **สถานะ**: Flutter ส่วนฝั่งผู้ส่ง (Sender) ✅ เสร็จบนเครื่องลอง | Backend + Flutter Gallery ❌ รอทำบนเครื่องหลัก
+> **สถานะ**: ✅ เสร็จสมบูรณ์บนเครื่องหลัก
 > *Last Updated: 2026-06-20*
 
-#### 1. ปัญหาปัจจุบัน
-- ผู้ส่งภาพไทยมุงต้องรอ dialog loading จนกว่า Python `deface` จะเบลอใบหน้าเสร็จ (Sync Processing)
-- หากรอนาน ผู้ใช้อาจเข้าใจผิดว่าภาพยังไม่ถูกส่ง → กดส่งซ้ำ
-- ภาพใหม่ไม่ปรากฏใน Gallery จนกว่า backend จะประมวลผลเสร็จทั้งหมด
+#### 1. ปัญหาปัจจุบัน (แก้ไขแล้ว)
+- ✅ ผู้ส่งภาพไทยมุงต้องรอ dialog loading จนกว่า Python `deface` จะเบลอใบหน้าเสร็จ (Sync Processing) → **แก้ไข: Backend ตอบกลับทันที**
+- ✅ หากรอนาน ผู้ใช้อาจเข้าใจผิดว่าภาพยังไม่ถูกส่ง → กดส่งซ้ำ → **แก้ไข: เปลี่ยน loading text และ success message**
+- ✅ ภาพใหม่ไม่ปรากฏใน Gallery จนกว่า backend จะประมวลผลเสร็จทั้งหมด → **แก้ไข: Immediate placeholder insertion + cache invalidation**
+
+#### 1.1 สาเหตุหลักที่พบระหว่างการทำ (Root Cause Analysis)
+
+**ปัญหา:** Gallery ส่งคืน 0 รูปแม้ว่า insert สำเร็จ
+
+**สาเหตุ:**
+- Insert `thai_mhung_photos` ใช้ `videoId` (UUID ของ video record ใหม่)
+- Gallery query ใช้ `incidentId` (UUID ของ incident หลัก)
+- ทั้งสองค่าไม่ตรงกัน → WHERE clause ไม่เจอข้อมูล → ส่งคืน 0 รูป
+
+**วิธีแก้ไข:**
+- เปลี่ยน insert ให้ใช้ `incidentId` แทน `videoId` ใน `websocket-server/routes/video.js:359`
+- เพิ่ม logs เพื่อตรวจสอบค่าที่ใช้ insert และ query
 
 #### 2. เป้าหมาย
 - Backend ตอบกลับทันทีหลังอัปโหลด (ไม่รอ blur)

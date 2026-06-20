@@ -77,6 +77,7 @@ class VideoRepository {
                'photo_url': url,
                'created_at': v['created_at'],
                'user_id': v['user_id'],
+               'blur_status': v['blur_status'] ?? 'completed',
              });
           }
         }
@@ -102,6 +103,7 @@ class VideoRepository {
               finalPhotos.add({
                 ...v,
                 'photo_url': _ensureFullUrl(v['photo_url']?.toString() ?? ''),
+                'blur_status': v['blur_status'] ?? 'completed',
               });
             }
           }
@@ -532,7 +534,8 @@ class VideoRepository {
   /// อัปโหลดภาพถ่ายแจ้งเหตุฉุกเฉินพร้อมพิกัด GPS
   /// ต้องส่ง [userId] เข้ามาเสมอตาม auth_data_guidelines.md
   /// [isThaiMhung] = true ใช้ quota 3 รูป, false ใช้ quota 5 รูป
-  Future<String?> uploadEmergencyPhotos({
+  /// Returns: { videoId, photoIds, photoUrls, status, incidentId } for Phase 6.12 async blur
+  Future<Map<String, dynamic>?> uploadEmergencyPhotos({
     required String userId,
     required List<File> photoFiles,
     required List<Map<String, dynamic>> gpsTracks,
@@ -585,27 +588,14 @@ class VideoRepository {
     final data = jsonDecode(respStr);
     final String? vId = data['video']?['id']?.toString() ?? data['id']?.toString();
     
-    // ดักจับและประมวลผลรูปภาพสำหรับระบบ Thai Mhung §3
-    if (isThaiMhung && vId != null) {
-      final List<dynamic> urls = data['photo_urls'] ?? (data['video'] != null ? data['video']['photo_urls'] : null) ?? data['urls'] ?? [];
-      if (urls.isNotEmpty) {
-        for (var url in urls) {
-          try {
-            await _client.from('thai_mhung_photos').insert({
-              'video_id': incidentId ?? vId,
-              'user_id': userId,
-              'photo_url': url.toString(),
-              'latitude': gpsTracks.isNotEmpty ? gpsTracks.last['latitude'] : null,
-              'longitude': gpsTracks.isNotEmpty ? gpsTracks.last['longitude'] : null,
-            });
-          } catch (e) {
-            debugPrint('VideoRepository: Error dual-writing to thai_mhung_photos: $e');
-          }
-        }
-      }
-    }
-    
-    return vId;
+    // Phase 6.12: Return full response for async blur UI
+    return {
+      'videoId': vId,
+      'photoIds': data['photoIds'] as List<dynamic>?,
+      'photoUrls': data['photo_urls'] as List<dynamic>?,
+      'status': data['status']?.toString(),
+      'incidentId': data['incidentId']?.toString(),
+    };
   }
 
   /// ดึงพิกัดล่าสุดของ Live/วิดีโอ ที่กำลังออนไลน์หรือประมวลผลเสร็จแล้ว

@@ -151,6 +151,22 @@ async function invalidateCacheMany(...keys) {
   }
 }
 
+/**
+ * ลบ Cache ตาม Redis key pattern (e.g. video:gallery:${id}:*)
+ * ใช้สำหรับ invalidate หลาย page ของ pagination cache
+ */
+async function invalidateCachePattern(pattern) {
+  try {
+    const keys = await redis.keys(pattern);
+    if (keys.length > 0) {
+      await redis.del(...keys);
+      console.log(`[Cache] 🗑️  Pattern invalidated: ${pattern} (${keys.length} keys)`);
+    }
+  } catch (err) {
+    console.warn(`[Cache] ⚠️  Pattern invalidate error (${pattern}):`, err.message);
+  }
+}
+
 // ──────────────────────────────────────────────────────────────
 // 3. Session Helper (Sliding Expiration)
 // ──────────────────────────────────────────────────────────────
@@ -235,6 +251,7 @@ module.exports = {
   cacheAside,
   invalidateCache,
   invalidateCacheMany,
+  invalidateCachePattern,
   // Session
   getSession,
   setSession,

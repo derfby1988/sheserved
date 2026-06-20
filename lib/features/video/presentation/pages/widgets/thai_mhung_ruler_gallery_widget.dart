@@ -12,13 +12,15 @@ class ThaiMhungRulerPhoto {
   final DateTime createdAt;
   final double? latitude;
   final double? longitude;
+  final String blurStatus; // 'blurring' | 'completed' | 'failed'
 
   ThaiMhungRulerPhoto({
-    required this.id, 
-    required this.photoUrl, 
+    required this.id,
+    required this.photoUrl,
     required this.createdAt,
     this.latitude,
     this.longitude,
+    this.blurStatus = 'completed',
   });
 
   factory ThaiMhungRulerPhoto.fromJson(Map<String, dynamic> json) {
@@ -27,11 +29,12 @@ class ThaiMhungRulerPhoto {
     return ThaiMhungRulerPhoto(
       id: json['id']?.toString() ?? '',
       photoUrl: url,
-      createdAt: json['created_at'] != null 
-          ? DateTime.parse(json['created_at']) 
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
           : DateTime.now(),
       latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
       longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
+      blurStatus: json['blur_status']?.toString() ?? 'completed',
     );
   }
 }
@@ -63,6 +66,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
   bool _isLoading = true;
   RealtimeChannel? _subscription;
   StreamSubscription? _wsPhotoSub;
+  StreamSubscription? _wsBlurSub;
   Timer? _pollTimer;
   int _currentIndex = 0;
   int _currentPage = 1;
@@ -78,6 +82,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
     _fetchPhotos();
     _subscribeToNewPhotos();
     _subscribeToWebSocketPhotos();
+    _subscribeToBlurComplete();
     _startPolling();
 
     // Listen for scrolling to the end to fetch more
@@ -169,6 +174,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
         createdAt: data['created_at'] != null ? DateTime.tryParse(data['created_at']) ?? DateTime.now() : DateTime.now(),
         latitude: data['latitude'] != null ? double.tryParse(data['latitude'].toString()) : null,
         longitude: data['longitude'] != null ? double.tryParse(data['longitude'].toString()) : null,
+        blurStatus: data['blur_status']?.toString() ?? 'completed',
       );
 
       if (mounted) {
@@ -192,6 +198,36 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
               });
             }
           });
+        });
+      }
+    });
+  }
+
+  /// Phase 6.12: รับ event เมื่อ background face blur เสร็จสิ้น → อัปเดตรูปใน gallery
+  void _subscribeToBlurComplete() {
+    _wsBlurSub = WebSocketService().photoBlurCompleteStream.listen((data) {
+      final incidentId = data['incidentId']?.toString() ?? data['incident_id']?.toString() ?? '';
+      if (incidentId != widget.videoId) return;
+
+      final photoId = data['photoId']?.toString() ?? data['photo_id']?.toString() ?? '';
+      final url = ServiceLocator.instance.videoRepository.ensureFullUrl(
+        data['url']?.toString() ?? '',
+      );
+      if (photoId.isEmpty || url.isEmpty) return;
+
+      if (mounted) {
+        setState(() {
+          final idx = _photos.indexWhere((p) => p.id == photoId);
+          if (idx >= 0) {
+            _photos[idx] = ThaiMhungRulerPhoto(
+              id: _photos[idx].id,
+              photoUrl: url,
+              createdAt: _photos[idx].createdAt,
+              latitude: _photos[idx].latitude,
+              longitude: _photos[idx].longitude,
+              blurStatus: 'completed',
+            );
+          }
         });
       }
     });
@@ -316,6 +352,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
       Supabase.instance.client.removeChannel(_subscription!);
     }
     _wsPhotoSub?.cancel();
+    _wsBlurSub?.cancel();
     _pollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -334,6 +371,16 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
 
   void showLightbox(int initialIndex) {
     if (!mounted || _photos.isEmpty) return;
+    final photo = _photos[initialIndex];
+    if (photo.blurStatus == 'blurring') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     
     // ประกาศ PageController เพื่อให้ PageView เริ่มต้นที่รูปที่กด
     final PageController pageController = PageController(initialPage: initialIndex);
@@ -517,8 +564,18 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                 final isSelected = index == _currentIndex;
                 final isNew = _newItemIds.contains(photo.id);
 
+                final isBlurring = photo.blurStatus == 'blurring';
                 return GestureDetector(
                   onTap: () {
+                    if (isBlurring) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return;
+                    }
                     if (isSelected) {
                       if (widget.onPhotoTap != null) {
                         widget.onPhotoTap!(index, photo.photoUrl);
@@ -555,30 +612,51 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // ✅ แสดงภาพตรงๆ: ใบหน้าถูกเบลอโดย Server (deface) มาแล้ว
-                          // ไม่ต้องเบลอซ้ำทั้งภาพ — เพื่อให้เห็นรายละเอียดเหตุการณ์ได้ชัดเจน
-                          CachedNetworkImage(
-                            imageUrl: photo.photoUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(color: Colors.black12),
-                            errorWidget: (context, url, error) => Container(
-                              color: Colors.grey[900],
-                              child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
-                            ),
-                          ),
-                          // 🛡️ Badge แจ้งว่าใบหน้าถูกปกป้องโดย Server-side Face Blur
-                          Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(4),
+                          isBlurring
+                            ? Container(
+                                color: Colors.grey[850],
+                                child: const Center(
+                                  child: Icon(Icons.face_retouching_off, color: Colors.grey, size: 20),
+                                ),
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: photo.photoUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(color: Colors.black12),
+                                errorWidget: (context, url, error) => Container(
+                                  color: Colors.grey[900],
+                                  child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
+                                ),
                               ),
-                              child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
+                          if (isBlurring)
+                            Positioned(
+                              top: 2,
+                              left: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'กำลังปกป้อง...',
+                                  style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             ),
-                          ),
+                          if (!isBlurring)
+                            Positioned(
+                              bottom: 2,
+                              right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Icon(Icons.face_retouching_off, color: Colors.white70, size: 10),
+                              ),
+                            ),
                           if (isNew)
                             Positioned(
                               top: 2,
