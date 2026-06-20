@@ -1,3 +1,14 @@
+/// Parse datetime string from backend as UTC (backend stores UTC but may omit 'Z')
+DateTime _parseUtcDateTime(dynamic value) {
+  final str = value?.toString() ?? '';
+  if (str.isEmpty) return DateTime.now().toUtc();
+  // Force UTC if no timezone suffix present
+  final utcStr = str.endsWith('Z') || str.contains(RegExp(r'[+-]\d{2}:\d{2}$'))
+      ? str
+      : '${str}Z';
+  return DateTime.parse(utcStr);
+}
+
 class ConsultationEntry {
   final String id;
   final String patientName;
@@ -94,12 +105,8 @@ class ConsultationEntry {
       symptomsChart: map['symptoms_chart'] as Map<String, dynamic>? ?? {},
       symptoms: symptomsRaw,
       status: map['status'] as String? ?? 'pending',
-      requestedAt:
-          DateTime.tryParse(map['created_at']?.toString() ?? '') ??
-          DateTime.now(),
-      updatedAt:
-          DateTime.tryParse(map['updated_at']?.toString() ?? '') ??
-          DateTime.now(),
+      requestedAt: _parseUtcDateTime(map['created_at']),
+      updatedAt: _parseUtcDateTime(map['updated_at']),
       roomId: roomId,
       providerId: map['provider_id'] as String?,
       patientId: map['user_id'] as String? ?? user['id'] as String? ?? '',

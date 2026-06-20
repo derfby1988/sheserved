@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:sleek_circular_slider/sleek_circular_slider.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../config/app_config.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../features/auth/data/repositories/user_repository.dart';
@@ -1388,7 +1389,9 @@ class _HealthProgramRequestDashboardState
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          DateFormat('d MMM yyyy  HH:mm').format(e.requestedAt),
+                          DateFormat('d MMM yyyy HH:mm').format(
+                            AppConfig.toThailand(e.requestedAt),
+                          ),
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade500,

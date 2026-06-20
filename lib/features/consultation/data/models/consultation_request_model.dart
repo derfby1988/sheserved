@@ -1,3 +1,13 @@
+/// Parse datetime string from backend as UTC (backend stores UTC but may omit 'Z')
+DateTime _parseUtcDateTime(dynamic value) {
+  final str = value?.toString() ?? '';
+  if (str.isEmpty) return DateTime.now().toUtc();
+  final utcStr = str.endsWith('Z') || str.contains(RegExp(r'[+-]\d{2}:\d{2}$'))
+      ? str
+      : '${str}Z';
+  return DateTime.parse(utcStr);
+}
+
 class ConsultationRequestModel {
   final String id;
   final String userId;
@@ -40,12 +50,12 @@ class ConsultationRequestModel {
       bodyArea: json['body_area'] ?? {},
       symptomsChart: json['symptoms_chart'] ?? {},
       status: json['status'] ?? 'pending',
-      createdAt: json['created_at'] != null 
-          ? DateTime.parse(json['created_at']) 
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null 
-          ? DateTime.parse(json['updated_at']) 
-          : DateTime.now(),
+      createdAt: json['created_at'] != null
+          ? _parseUtcDateTime(json['created_at'])
+          : DateTime.now().toUtc(),
+      updatedAt: json['updated_at'] != null
+          ? _parseUtcDateTime(json['updated_at'])
+          : DateTime.now().toUtc(),
       symptoms: (json['symptoms'] as List?)
               ?.map((e) => SymptomPoint.fromJson(e))
               .toList() ??
