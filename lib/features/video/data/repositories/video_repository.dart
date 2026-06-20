@@ -37,7 +37,7 @@ class VideoRepository {
       final url = type != null 
           ? '${AppConfig.localApiUrl}/api/videos?type=$type' 
           : '${AppConfig.localApiUrl}/api/videos';
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => Video.fromJson(json)).toList();
@@ -67,7 +67,7 @@ class VideoRepository {
       try {
         final response = await http
             .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gallery?page=$page&limit=$limit'))
-            .timeout(const Duration(seconds: 3));
+            .timeout(const Duration(seconds: 10));
         if (response.statusCode == 200) {
           final List data = jsonDecode(response.body);
           for (final v in data) {
@@ -121,7 +121,7 @@ class VideoRepository {
   Future<List<Video>> getEmergencyVideos({int page = 1, int limit = 20}) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit')).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit')).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => Video.fromJson(json)).toList();
@@ -157,7 +157,7 @@ class VideoRepository {
   Future<Video?> getVideoById(String id) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id')).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id')).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return Video.fromJson(jsonDecode(response.body));
       }
@@ -178,7 +178,7 @@ class VideoRepository {
   Future<List<VideoGpsTrack>> getGpsTracks(String videoId) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gps-tracks')).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gps-tracks')).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => VideoGpsTrack.fromJson(json)).toList();
@@ -335,7 +335,7 @@ class VideoRepository {
           url,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(interaction.toJson()),
-        ).timeout(const Duration(seconds: 3));
+        ).timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           debugPrint('VideoRepository: Recorded interaction locally');
@@ -358,7 +358,7 @@ class VideoRepository {
       try {
         final response = await http
             .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/interactions'))
-            .timeout(const Duration(seconds: 3));
+            .timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -434,7 +434,7 @@ class VideoRepository {
     try {
       final response = await http
           .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/status?userId=$userId'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return data['liked'] as bool? ?? false;
@@ -451,7 +451,7 @@ class VideoRepository {
     try {
       final response = await http
           .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/trend'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();

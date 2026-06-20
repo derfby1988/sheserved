@@ -28,6 +28,7 @@ class IncidentReportWidget extends StatelessWidget {
   final VoidCallback? onBackTap; // ✅ Added Back button callback
   final bool isThaiMhungMode;
   final int maxPhotos;
+  final bool isSendingPhotos;
 
   const IncidentReportWidget({
     super.key,
@@ -55,6 +56,7 @@ class IncidentReportWidget extends StatelessWidget {
     this.onBackTap, // ✅ Back button
     this.isThaiMhungMode = false,
     this.maxPhotos = 3,
+    this.isSendingPhotos = false,
   });
 
   @override
@@ -183,7 +185,7 @@ class IncidentReportWidget extends StatelessWidget {
                       ),
                     Row(
                       children: [
-                        if (capturedPhotos.length < maxPhotos)
+                        if (capturedPhotos.length < maxPhotos && !isSendingPhotos)
                           Expanded(
                             flex: 1,
                             child: GestureDetector(
@@ -191,29 +193,42 @@ class IncidentReportWidget extends StatelessWidget {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 18),
                                 decoration: BoxDecoration(
-                                  color: Colors.white, 
-                                  borderRadius: BorderRadius.circular(16), 
-                                  border: Border.all(color: Colors.red, width: 2), 
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.red, width: 2),
                                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))]
                                 ),
                                 child: const Center(child: Icon(Icons.camera_alt, color: Colors.red, size: 30)),
                               ),
                             ),
                           ),
-                        if (capturedPhotos.isNotEmpty) ...[
-                          if (capturedPhotos.length < maxPhotos) const SizedBox(width: 12),
+                        if (capturedPhotos.isNotEmpty || isSendingPhotos) ...[
+                          if (capturedPhotos.length < maxPhotos && !isSendingPhotos) const SizedBox(width: 12),
                           Expanded(
-                            flex: capturedPhotos.length >= maxPhotos ? 1 : 2,
+                            flex: (capturedPhotos.length >= maxPhotos || isSendingPhotos) ? 1 : 2,
                             child: GestureDetector(
-                              onTap: onSendPhotos,
+                              onTap: isSendingPhotos ? null : onSendPhotos,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 18),
                                 decoration: BoxDecoration(
-                                  gradient: capturedPhotos.length >= maxPhotos ? const LinearGradient(colors: [Color(0xFF34C759), Color(0xFF28A745)]) : const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)]),
+                                  gradient: isSendingPhotos
+                                    ? const LinearGradient(colors: [Colors.grey, Colors.black54])
+                                    : (capturedPhotos.length >= maxPhotos ? const LinearGradient(colors: [Color(0xFF34C759), Color(0xFF28A745)]) : const LinearGradient(colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)])),
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))],
                                 ),
-                                child: const Center(child: Text('ส่งรูปภาพ', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
+                                child: Center(
+                                  child: isSendingPhotos
+                                    ? const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                                          SizedBox(width: 8),
+                                          Text('กำลังส่ง...', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                                        ],
+                                      )
+                                    : const Text('ส่งรูปภาพ', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+                                ),
                               ),
                             ),
                           ),

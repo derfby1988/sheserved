@@ -242,8 +242,15 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           if (videos.length < 20) _hasMoreTrending = false;
         }); 
       }
-    } catch (_) { 
-      if (mounted) setState(() => _isLoadingTrending = false); 
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingTrending = false);
+        ErrorHandler.showErrorSnackBar(
+          context,
+          e,
+          onRetry: _loadTrendingVideos,
+        );
+      }
     }
   }
 

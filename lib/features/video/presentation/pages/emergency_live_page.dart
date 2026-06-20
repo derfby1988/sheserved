@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import '../../../../services/location_tracking_service.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/error_handler.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import 'widgets/yield_way_map_dialog.dart';
 import '../../../../config/sync_config.dart';
@@ -141,6 +142,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   
   bool _isPhotoMode = false;
   bool _isThaiMhungReporting = false;
+  bool _isSendingThaiMhungPhotos = false;
   final List<XFile> _capturedPhotos = [];
   List<ThaiMhungPhoto> _thaiMhungPhotos = []; int _galleryPage = 1; bool _hasMoreGallery = true; bool _isLoadingMoreGallery = false; ScrollController _galleryScrollController = ScrollController();
   final List<LatLng> _routePoints = [];
@@ -763,6 +765,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             _isUiVisible = true;
           }),
           isThaiMhungMode: true,
+          isSendingPhotos: _isSendingThaiMhungPhotos,
         );
       } else {
       return LiveViewWidget(
@@ -849,6 +852,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             _isThaiMhungReporting = false;
             _isUiVisible = true;
           }),
+          isSendingPhotos: _isSendingThaiMhungPhotos,
         ),
       );
     }

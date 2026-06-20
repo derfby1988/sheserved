@@ -2406,3 +2406,190 @@ user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
     - หากพบว่าจำนวนรูปภาพใน DB มากกว่าใน UI (โดยไม่ได้รับ Event จากข้อ 1 และ 2)
     - ระบบจะทำการดึงข้อมูลใหม่ (Fetch) และแทรกภาพลงบนสุด + เลื่อน Scroll + แสดงเอฟเฟกต์แผนที่ ให้โดยอัตโนมัติ
 - **เป้าหมาย**: รับประกัน 100% ว่าเจ้าหน้าที่ศูนย์ควบคุมจะเห็นภาพล่าสุดจากพื้นที่ "ภายในไม่เกิน 5 วินาที" แม้ระบบคลาวด์จะล่มหรือเน็ตเวิร์คแกว่งก็ตาม
+
+---
+
+### 🔄 Phase 6.12: Async Thai Mhung Face Blur + Gallery Blocking (Pending — ทำบนเครื่องหลัก)
+
+> **สถานะ**: Flutter ส่วนฝั่งผู้ส่ง (Sender) ✅ เสร็จบนเครื่องลอง | Backend + Flutter Gallery ❌ รอทำบนเครื่องหลัก
+> *Last Updated: 2026-06-20*
+
+#### 1. ปัญหาปัจจุบัน
+- ผู้ส่งภาพไทยมุงต้องรอ dialog loading จนกว่า Python `deface` จะเบลอใบหน้าเสร็จ (Sync Processing)
+- หากรอนาน ผู้ใช้อาจเข้าใจผิดว่าภาพยังไม่ถูกส่ง → กดส่งซ้ำ
+- ภาพใหม่ไม่ปรากฏใน Gallery จนกว่า backend จะประมวลผลเสร็จทั้งหมด
+
+#### 2. เป้าหมาย
+- Backend ตอบกลับทันทีหลังอัปโหลด (ไม่รอ blur)
+- Gallery แสดงภาพพร้อม badge "กำลังปกป้องสิทธิ์ส่วนบุคคล..."
+- บล็อกการเปิดภาพเต็ม (lightbox) ขณะกำลังเบลอ → แสดง SnackBar แจ้งเตือน
+- ป้องกัน PDPA: ไม่มีใบหน้าที่ไม่เบลอปรากฏบน UI เด็ดขาด
+
+#### 3. สถาปัตย์ (Architecture)
+
+```
+ผู้ใช้กดส่ง → อัปโหลดรูปต้นฉบับ
+         ↓
+Backend: รับรูป → บันทึก DB (photo_url = null หรือ status = 'blurring')
+         ↓
+Backend: ตอบกลับทันที "ได้รับแล้ว" → Flutter ปิด dialog
+         ↓
+Gallery: แสดง placeholder + badge "กำลังเบลอ..."
+         ↓
+Backend: ส่งให้ Python deface (background/async) → เสร็จแล้วอัปเดต DB
+         ↓
+Backend: broadcast 'photo-blur-complete' (WebSocket/Realtime)
+         ↓
+Gallery: รับ event → แสดงรูปจริง + badge "ปกป้องสิทธิ์แล้ว"
+```
+
+#### 4. ขั้นตอน Backend (ทำบนเครื่องหลัก)
+
+**4.1 แก้ไข `websocket-server/routes/video.js`**
+
+```javascript
+// ใน endpoint upload-photos (ประมาณบรรทัด 210)
+// เปลี่ยนจาก:
+const blurResult = await faceBlurService.blurFacesInImage(newPath, anonPath);
+
+// เป็น:
+// 1. ตอบกลับ client ทันที
+res.json({ success: true, photoId, status: 'blurring' });
+
+// 2. สั่ง blur แบบ background
+faceBlurService.blurFacesInImage(newPath, anonPath)
+  .then(result => {
+    if (result.success) {
+      // อัปเดต DB: photo_url = anonPath, blur_status = 'completed'
+      pool.query('UPDATE thai_mhung_photos SET photo_url = $1, blur_status = $2 WHERE id = $3', [anonPath, 'completed', photoId]);
+      // Broadcast
+      socketService.emit('photo-blur-complete', { photoId, url: anonPath });
+    }
+  })
+  .catch(err => {
+    console.error('[Blur] Background error:', err);
+  });
+```
+
+**4.2 เพิ่ม column ใน DB**
+
+```sql
+ALTER TABLE thai_mhung_photos ADD COLUMN blur_status VARCHAR(20) DEFAULT 'blurring';
+-- ค่าที่เป็นไปได้: 'blurring' | 'completed' | 'failed'
+```
+
+**4.3 แก้ไข `websocket-server/services/face-blur-service.js`**
+
+- ตรวจสอบว่า function `blurFacesInImage` รองรับการเรียกแบบ fire-and-forget ได้
+- เพิ่ม error logging เมื่อ blur ล้มเหลว
+
+**4.4 Restart Backend**
+
+```bash
+cd websocket-server
+npm run dev
+```
+
+#### 5. ขั้นตอน Flutter Gallery (ทำบนเครื่องหลัก)
+
+**5.1 เพิ่ม field ใน `ThaiMhungPhoto` model**
+
+```dart
+// lib/features/video/presentation/pages/widgets/thai_mhung_gallery_widget.dart
+class ThaiMhungPhoto {
+  final String id;
+  final String? photoUrl;
+  final DateTime createdAt;
+  final String? userId;
+  final String blurStatus; // 'blurring' | 'completed' | 'failed'
+  
+  ThaiMhungPhoto({
+    required this.id,
+    this.photoUrl,
+    required this.createdAt,
+    this.userId,
+    this.blurStatus = 'completed',
+  });
+}
+```
+
+**5.2 แก้ `thai_mhung_gallery_widget.dart`**
+
+```dart
+// ใน itemBuilder
+GestureDetector(
+  onTap: () {
+    if (photo.blurStatus == 'blurring') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    _openLightbox(photo);
+  },
+  child: Stack(
+    children: [
+      photo.blurStatus == 'blurring'
+        ? Container(
+            color: Colors.grey[300],
+            child: const Center(child: Icon(Icons.face_retouching_off, color: Colors.grey)),
+          )
+        : CachedNetworkImage(imageUrl: photo.photoUrl!),
+      if (photo.blurStatus == 'blurring')
+        Positioned(
+          top: 4, left: 4,
+          child: Chip(
+            label: const Text('กำลังปกป้อง...', style: TextStyle(fontSize: 10)),
+            backgroundColor: Colors.orange.withOpacity(0.9),
+          ),
+        ),
+    ],
+  ),
+)
+```
+
+**5.3 แก้ `thai_mhung_ruler_gallery_widget.dart`** (หากใช้)
+
+ทำเช่นเดียวกับข้อ 5.2 — บล็อก tap + แสดง badge
+
+**5.4 รับ WebSocket Event**
+
+```dart
+// ใน initState หรือตรงจุด subscribe WebSocket
+WebSocketService().on('photo-blur-complete', (data) {
+  setState(() {
+    final photo = _thaiMhungPhotos.firstWhere((p) => p.id == data['photoId']);
+    photo.blurStatus = 'completed';
+    photo.photoUrl = data['url'];
+  });
+});
+```
+
+#### 6. ขั้นตอน Flutter Sender (✅ เสร็จแล้วบนเครื่องลอง)
+
+ส่วนนี้ทำแล้ว — ไม่ต้องแก้เพิ่ม:
+- `_isSendingThaiMhungPhotos` state + guard clause + SnackBlock
+- Dialog text: *"กำลังอัปโหลดและปกป้องสิทธิ์ส่วนบุคคล... (เบลอใบหน้า อาจใช้เวลาสักครู่)"*
+- ปิดปุ่มถ่าย/ส่งขณะกำลังส่ง
+
+#### 7. การทดสอบบนเครื่องหลัก
+
+1. **Backend**: อัปโหลดรูปไทยมุง → ตรวจสอบ log ว่าตอบกลับทันที + Python ทำงาน background
+2. **DB**: `SELECT blur_status FROM thai_mhung_photos ORDER BY created_at DESC LIMIT 1;`
+3. **Flutter**: รูปขึ้นใน gallery พร้อม badge สีส้ม → รอ ~5-15 วินาที → badge เปลี่ยนเป็นรูปจริง
+4. **PDPA Test**: กดที่รูปที่ยังมี badge "กำลังปกป้อง..." → ต้องเห็น SnackBar สีส้ม ไม่เปิด lightbox
+
+#### 8. ความปลอดภัยทางกฎหมาย (PDPA)
+
+| สถานะ | ที่เก็บ | แสดงบน UI | กดดูได้ |
+|-------|--------|-----------|---------|
+| ต้นฉบับ (original) | Server disk | ❌ ไม่แสดง | ❌ |
+| กำลังเบลอ (blurring) | Server disk | ✅ placeholder | ❌ บล็อก |
+| เบลอแล้ว (completed) | Server disk / DB | ✅ แสดงรูป | ✅ |
+
+> **หลักการ**: รูปต้นฉบับที่มีใบหน้าชัดเจนต้องอยู่บน Server เท่านั้น ไม่มีวิธีใดที่ Client จะเข้าถึงได้โดยตรง
+
+---

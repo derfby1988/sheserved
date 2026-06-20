@@ -124,10 +124,38 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
 
   Future<void> _sendPhotos() async {
     if (_capturedPhotos.isEmpty) return;
+    if (_isSendingThaiMhungPhotos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ภาพกำลังถูกปกป้องสิทธิ์ส่วนบุคคล กรุณารอสักครู่'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     String? categoryId = _isThaiMhungReporting ? _currentVideo?.categoryId : _selectedEmergencyCategoryId;
     if (categoryId == null && !_isThaiMhungReporting) return;
 
-    showDialog(context: context, barrierDismissible: false, builder: (context) => const AlertDialog(content: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text('กำลังอัปโหลดรูปภาพเหตุฉุกเฉิน...')])));
+    setState(() => _isSendingThaiMhungPhotos = true);
+
+    final loadingText = _isThaiMhungReporting
+        ? 'กำลังอัปโหลดและปกป้องสิทธิ์ส่วนบุคคล...\n(เบลอใบหน้า อาจใช้เวลาสักครู่)'
+        : 'กำลังอัปโหลดรูปภาพเหตุฉุกเฉิน...';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(loadingText, textAlign: TextAlign.center),
+          ],
+        ),
+      ),
+    );
 
     try {
       final userId = AuthService.instance.userId;
@@ -152,12 +180,16 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       );
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปโหลดรูปภาพฉุกเฉินสำเร็จ'), backgroundColor: Colors.green));
+      final successText = _isThaiMhungReporting
+          ? 'ส่งภาพไทยมุงสำเร็จ กำลังแสดงในแกลลอรี่...'
+          : 'อัปโหลดรูปภาพฉุกเฉินสำเร็จ';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(successText), backgroundColor: Colors.green));
       setState(() { 
         _capturedPhotos.clear(); 
         _recordedGpsTracks.clear(); 
         _selectedTab = 0; 
-        _isThaiMhungReporting = false; // กลับสู่หน้า Emergency หลัก
+        _isThaiMhungReporting = false;
+        _isSendingThaiMhungPhotos = false;
       });
       // ✅ โหลดข้อมูลภาพแกลลอรี่ใหม่ทันทีหลังอัปโหลด
       _loadGalleryPhotos();
@@ -165,6 +197,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+      setState(() => _isSendingThaiMhungPhotos = false);
     }
   }
 
