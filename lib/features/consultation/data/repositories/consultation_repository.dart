@@ -60,18 +60,25 @@ class ConsultationRepository {
           .toList(),
     };
 
-    final response = await http.post(
-      Uri.parse('${AppConfig.localApiUrl}/api/consultations/requests'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'x-user-id': userId,
-        if (authToken != null) 'Authorization': 'Bearer $authToken',
-        'x-idempotency-key':
-            'consultation-${sha256.convert(utf8.encode(jsonEncode(data))).toString()}',
-      },
-      body: jsonEncode(data),
-    );
+    final response = await http
+        .post(
+          Uri.parse('${AppConfig.localApiUrl}/api/consultations/requests'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'x-user-id': userId,
+            if (authToken != null) 'Authorization': 'Bearer $authToken',
+            'x-idempotency-key':
+                'consultation-${sha256.convert(utf8.encode(jsonEncode(data))).toString()}',
+          },
+          body: jsonEncode(data),
+        )
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('การเชื่อมต่อใช้เวลานานเกินไป (timeout)');
+          },
+        );
 
     if (response.statusCode != 202 &&
         response.statusCode != 200 &&

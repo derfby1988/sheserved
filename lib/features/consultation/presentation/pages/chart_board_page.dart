@@ -13,6 +13,7 @@ import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/error_handler.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../features/auth/data/repositories/user_repository.dart';
@@ -2564,10 +2565,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       return;
     }
 
-    // Show loading
+    // Show loading (useRootNavigator: true เพื่อให้ pop แน่ใจว่าปิด dialog ที่ถูก)
     showDialog(
       context: context,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (_) =>
           const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
@@ -2649,12 +2651,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('เกิดข้อผิดพลาด: $e'),
-            backgroundColor: AppColors.error,
-          ),
+        ErrorHandler.dismissLoadingDialog(context);
+        ErrorHandler.showErrorSnackBar(
+          context,
+          e,
+          onRetry: _submitConsultationRequest,
         );
       }
     }
