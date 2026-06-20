@@ -311,28 +311,33 @@ static const String mainMachineIp = '192.168.X.X:8080'; // ← เปลี่�
 ```
 > **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize URL เก่าให้ชี้ไปที่ Caddy endpoint นี้เสมอ
 
-#### ขั้นตอนที่ 3 — อัปเดต Server Environment
+#### ขั้นตอนที่ 3 — อัปเดต Server Environment (สำคัญมาก)
 ```bash
 # websocket-server/.env
 LOCAL_API_URL=http://192.168.X.X:8080  # ← เปลี่ยนตรงนี้
 ```
+> **⚠️ ทำไมต้องทำ**: Backend ใช้ `LOCAL_API_URL` นี้ generate URL ในทุก field (`thumbnail_url`, `bunny_url`, `photo_urls`) ตอน upload/save ลง DB — ถ้าไม่เปลี่ยน backend จะยังใส่ IP เก่าใน DB ถึงแม้ Flutter จะแก้ `mainMachineIp` แล้วก็ตาม
 
-#### ขั้นตอนที่ 4 — Restart Node.js Server + Start Caddy
+#### ขั้นตอนที่ 4 — Restart Node.js Server (เพื่อโหลด `.env` ใหม่) + Start Caddy
 ```bash
 cd websocket-server
+# ต้อง restart เพื่อให้ Node.js อ่าน LOCAL_API_URL ใหม่
 npm run dev
 
 # terminal อีกอันสำหรับ reverse proxy
 ./start-caddy.sh
 ```
 > ตรวจสอบ log ให้แน่ใจว่า Node.js รันที่ `:3000` และ Caddy รันที่ `:8080`
+> **หมายเหตุ**: แค่แก้ `.env` ไม่พอ — ต้อง **restart Node.js** เพื่อโหลดค่าใหม่เข้า process
 
-#### ขั้นตอนที่ 5 — ทดสอบ (Optional)
+#### ขั้นตอนที่ 5 — ทดสอบ (Mandatory)
 ```bash
 # จาก device อื่นในวง
-curl http://192.168.X.X:8080/api/videos/emergency/list
-# ต้องได้ JSON response ไม่ใช่ connection refused
+curl http://192.168.X.X:8080/api/videos/emergency/list | python3 -m json.tool
 ```
+> **ต้องตรวจสอบ**: ใน JSON response ทุก `thumbnail_url`, `bunny_url`, `photo_urls` ต้องขึ้นต้นด้วย `http://192.168.X.X:8080/` ไม่ใช่ IP เก่า (`192.168.1.xxx`, `172.20.xxx` ฯลฯ)
+> 
+> ถ้าเจอ IP เก่า → แสดงว่า Backend ยังใช้ `LOCAL_API_URL` เดิม → กลับไปทำขั้นตอนที่ 3-4 ใหม่
 
 ---
 
@@ -345,7 +350,9 @@ curl http://192.168.X.X:8080/api/videos/emergency/list
 | `websocket-server/start-caddy.sh` | Caddy startup script | ใช้ `Caddyfile.dev` สำหรับ Phase 1 (`:8080`) |
 | `websocket-server/Caddyfile.dev` | Caddy dev config | bind port `8080` โดยไม่ต้อง sudo |
 
-> **ไม่ต้องแก้**: DB records, ไฟล์ thumbnail ที่มีอยู่ — `_normalizeLocalUrl()` จัดการให้อัตโนมัติ
+> **ไม่ต้องแก้**: DB records เก่า — `_normalizeLocalUrl()` ใน Flutter จัดการแก้ URL ที่ดึงมาจาก DB ให้ชี้ไป IP ปัจจุบันได้
+> 
+> **แต่**: `_normalizeLocalUrl()` เป็น **fallback ชั่วคราว** สำหรับข้อมูลเก่าเท่านั้น — ถ้า backend ยัง generate URL ใหม่ด้วย IP เก่า (เพราะ `LOCAL_API_URL` ผิด) ข้อมูลใหม่ที่ upload จะมี URL ผิดถาวร
 
 ---
 
