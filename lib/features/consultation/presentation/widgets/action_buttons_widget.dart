@@ -23,7 +23,6 @@ class ActionButtonsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[ActionButtonsWidget] build: isProvider=$isProvider, hasFinished=$hasFinished, readOnly=$readOnly');
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

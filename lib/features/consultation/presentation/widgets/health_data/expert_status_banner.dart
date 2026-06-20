@@ -17,10 +17,6 @@ class ExpertStatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[ExpertStatusBanner] expertStatuses.length=${expertStatuses.length}');
-    for (final e in expertStatuses) {
-      debugPrint('[ExpertStatusBanner]   expert name=${e['name']} status=${e['status']} canFinish=${e['canFinish']} availability=${e['availabilityStatus']} leftAt=${e['leftAt']} finishedAt=${e['finishedAt']} hasPrescription=${e['hasPrescription']} avatar=${e['providerAvatarUrl']} icon=${e['expertGroupIcon']}');
-    }
     final hasWaitingRequired = expertStatuses.any(
       (e) => (e['isRequired'] == true) && (e['status'] == 'waiting'),
     );

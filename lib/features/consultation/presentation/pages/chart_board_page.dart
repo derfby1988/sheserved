@@ -229,7 +229,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   void _startTimer() {
-    debugPrint('[ChartBoard] _startTimer called, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
     _timerController.start();
   }
 
@@ -507,8 +506,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       if (mounted) {
         setState(() => _professions = professions);
       }
-      debugPrint('[ChartBoard] _loadProfessions: loaded ${professions.length} professions');
-
       if (mounted && _selectedPackage != null && _expertStatuses.isNotEmpty) {
         final joinedExperts = _expertStatuses.where((e) => e['status'] == 'joined').toList();
         final merged = _mergeWithPackageGroups(joinedExperts);
@@ -535,18 +532,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   void _syncSelectedPackageFromConsultation() {
     final targetPackageId = _canonicalPackageId();
     if (targetPackageId == null) {
-      debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: no canonical packageId yet');
       return;
     }
 
     final matched = _availablePackages.where((p) => p.id == targetPackageId).toList();
     if (matched.isNotEmpty) {
-      if (_selectedPackage?.id != matched.first.id) {
-        debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: selected package => ${matched.first.name} ($targetPackageId)');
-      }
       _selectedPackage = matched.first;
     } else {
-      debugPrint('[ChartBoard] _syncSelectedPackageFromConsultation: packageId=$targetPackageId not found in active packages');
       _selectedPackage = null;
     }
   }
@@ -569,7 +561,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .maybeSingle();
 
       if (packageResponse == null) {
-        debugPrint('[ChartBoard] _ensureSelectedPackageForMerge: packageId=$packageId not found');
         return;
       }
 
@@ -581,7 +572,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       } else {
         _selectedPackage = fallbackPackage;
       }
-      debugPrint('[ChartBoard] _ensureSelectedPackageForMerge: loaded package fallback => ${fallbackPackage.name} ($packageId)');
     } catch (e) {
       debugPrint('[ChartBoard] _ensureSelectedPackageForMerge error: $e');
     }
@@ -607,7 +597,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         .toSet();
 
     if (nextProviderIds.isEmpty) {
-      debugPrint('[ChartBoard] _canApplyExpertStatuses: skip empty/providerless payload because current providers exist=$currentProviderIds');
       return false;
     }
 
@@ -615,7 +604,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (missingCurrentProviders.isNotEmpty) {
       final nextHasJoined = nextStatuses.any((e) => e['status'] == 'joined');
       if (!nextHasJoined) {
-        debugPrint('[ChartBoard] _canApplyExpertStatuses: skip payload missing current providers=$missingCurrentProviders');
         return false;
       }
     }
@@ -625,7 +613,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   void _applyExpertStatuses(List<Map<String, dynamic>> nextStatuses, {required String source, int? token}) {
     if (token != null && token != _expertStatusesFetchToken) {
-      debugPrint('[ChartBoard] _applyExpertStatuses($source): skip stale token=$token current=$_expertStatusesFetchToken');
       return;
     }
     if (!mounted) return;
@@ -634,7 +621,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     setState(() {
       _expertStatuses = nextStatuses;
     });
-    debugPrint('[ChartBoard] _applyExpertStatuses($source): applied ${nextStatuses.length} rows');
   }
 
   String _normalizeConsultationRole(String? raw) {
@@ -761,7 +747,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               final newProviderId = updated['provider_id'] as String?;
               final oldProviderId = _consultationData?['provider_id'] as String?;
               final oldStatus = _consultationData?['status'] as String? ?? 'pending';
-              debugPrint('[ChartBoard] consultation_requests realtime update: provider_id=$newProviderId (was $oldProviderId), status=${updated['status']}');
               if (mounted) {
                 setState(() {
                   _consultationData = updated;
@@ -774,7 +759,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               final newStatus = updated['status'] as String? ?? 'pending';
               
               if ((newProviderId != oldProviderId || newStatus != oldStatus) && cid != null && cid.isNotEmpty) {
-                debugPrint('[ChartBoard] provider_id or status changed → re-fetching expert statuses');
                 _fetchExpertStatuses(cid);
               }
             });
@@ -836,7 +820,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       // 3. Subscribe to Expert Statuses (Priority 2)
-      debugPrint('[ChartBoard] _initChat about to call _fetchExpertStatuses with consultationId=$consultationId');
       _fetchExpertStatuses(consultationId);
       _expertStatusSub = supabase
           .from('consultation_room_experts')
@@ -892,9 +875,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             // Fallback: if no required experts defined yet, start when ANY expert joins
             final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
             final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-            debugPrint('[ChartBoard] stream _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
             if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
-              debugPrint('[ChartBoard] >>> Starting timer from stream (all required joined)');
               _startTimer();
             }
           });
@@ -904,7 +885,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .from('users')
           .stream(primaryKey: ['id'])
           .listen((userChanges) {
-            debugPrint('[ChartBoard] users stream triggered: ${userChanges.length} changes');
             final joinedProviderIds = _expertStatuses
                 .where((e) => e['status'] == 'joined' && e['providerId'] != null)
                 .map((e) => e['providerId'] as String)
@@ -920,7 +900,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               }
             }
             if (shouldRefresh && consultationId != null) {
-              debugPrint('[ChartBoard] Provider availability changed → re-fetching expert statuses');
               _fetchExpertStatuses(consultationId);
             }
           });
@@ -964,15 +943,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Future<void> _fetchExpertStatuses(String consultationId) async {
     final fetchToken = ++_expertStatusesFetchToken;
     try {
-      debugPrint('[ChartBoard] _fetchExpertStatuses START for consultationId=$consultationId');
       final data = await Supabase.instance.client
           .from('consultation_room_experts')
           .select('*, users!inner(availability_status, first_name, last_name, profile_image_url)')
           .eq('consultation_id', consultationId);
 
-      debugPrint('[ChartBoard] _fetchExpertStatuses rows=${(data as List).length}');
       for (final row in data) {
-        debugPrint('[ChartBoard] expert raw row: $row');
+        // row processing
       }
 
       final userData = (data as List).map((e) {
@@ -996,7 +973,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Fallback 0: ensure rows exist from package data (trigger safety net)
       if (mapped.isEmpty && _consultationData?['package_id'] != null) {
-        debugPrint('[ChartBoard] consultation_room_experts empty — calling ensureRoomExperts');
         final repo = ServiceLocator.instance.consultationRepository;
         await repo.ensureRoomExperts(
           consultationId: consultationId,
@@ -1009,7 +985,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             .select()
             .eq('consultation_id', consultationId);
         if ((refreshed as List).isNotEmpty) {
-          debugPrint('[ChartBoard] ensureRoomExperts succeeded, re-query got ${refreshed.length} rows');
           mapped = (refreshed as List).map((e) {
             final user = e['users'] as Map<String, dynamic>? ?? {};
             return {
@@ -1031,7 +1006,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         // If still empty, provider may be assigned in consultation_data but not synced to room_experts (legacy consultation)
         if (mapped.isEmpty && _consultationData?['provider_id'] != null) {
           final providerId = _consultationData!['provider_id'] as String;
-          debugPrint('[ChartBoard] consultation_room_experts still empty after ensure — calling syncProviderToRoomExperts for provider=$providerId');
           await repo.syncProviderToRoomExperts(
             consultationId: consultationId,
             providerId: providerId,
@@ -1042,7 +1016,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               .select()
               .eq('consultation_id', consultationId);
           if ((synced as List).isNotEmpty) {
-            debugPrint('[ChartBoard] syncProviderToRoomExperts succeeded, re-query got ${synced.length} rows');
             mapped = (synced as List).map((e) {
               final user = e['users'] as Map<String, dynamic>? ?? {};
               return {
@@ -1065,7 +1038,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Fallback 1: query chat_room_members + users
       if (mapped.isEmpty) {
-        debugPrint('[ChartBoard] consultation_room_experts empty — falling back to chat_room_members');
         final roomId = 'consult_$consultationId';
         final members = await Supabase.instance.client
             .from('chat_room_members')
@@ -1073,9 +1045,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             .eq('room_id', roomId)
             .eq('role', 'doctor');
 
-        debugPrint('[ChartBoard] fallback chat_room_members rows=${(members as List).length}');
         for (final row in members) {
-          debugPrint('[ChartBoard] fallback raw row: $row');
+          // row processing
         }
 
         final fallback = (members as List).map((e) {
@@ -1101,15 +1072,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Fallback 2: if still empty, use provider_id from consultation_data directly
       if (mapped.isEmpty && _consultationData?['provider_id'] != null) {
-        debugPrint('[ChartBoard] chat_room_members also empty — falling back to provider_id from consultation_data');
         final providerId = _consultationData!['provider_id'] as String;
         final user = await Supabase.instance.client
             .from('users')
             .select('first_name, last_name, profile_image_url, profession_id, availability_status')
             .eq('id', providerId)
             .maybeSingle();
-
-        debugPrint('[ChartBoard] provider query result: $user');
 
         if (user != null) {
           final firstName = user['first_name'] as String? ?? '';
@@ -1156,7 +1124,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final providerId = _consultationData!['provider_id'] as String;
         final hasJoined = mapped.any((e) => e['status'] == 'joined');
         if (!hasJoined) {
-          debugPrint('[ChartBoard] SAFETY NET: provider_id=$providerId set but no joined expert — forcing joined');
           bool found = false;
           for (final expert in mapped) {
             if (expert['providerId'] == providerId) {
@@ -1216,7 +1183,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             expert['canFinish'] = canFinishMap[pid] ?? false;
           }
         }
-        debugPrint('[ChartBoard] can_finish loaded for ${canFinishMap.length} experts');
       } catch (e) {
         debugPrint('[ChartBoard] getAllExpertsCanFinish error: $e');
       }
@@ -1225,8 +1191,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Merge with package expert groups to show waiting groups with grey icons
       final merged = _mergeWithPackageGroups(mapped);
-      debugPrint('[ChartBoard] _fetchExpertStatuses merged length=${merged.length} (joined=${mapped.where((e) => e['status'] == 'joined').length}, waiting=${merged.length - mapped.where((e) => e['status'] == 'joined').length})');
-
       _applyExpertStatuses(merged, source: 'fetch', token: fetchToken);
 
       // Start timer only when ALL required experts have joined (per improvement plan)
@@ -1237,9 +1201,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Fallback: if no required experts defined yet, start when ANY expert joins
       final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
       final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-      debugPrint('[ChartBoard] initial fetch _expertStatuses.length=${_expertStatuses.length}, required=${requiredExperts.length}, allRequiredJoined=$allRequiredJoined, anyJoined=$anyJoined, _isTimerRunning=${_timerController.isRunning.value}, remaining=${_timerController.remainingSeconds.value}');
       if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
-        debugPrint('[ChartBoard] >>> Starting timer from initial fetch (all required joined)');
         _startTimer();
       }
     } catch (e, st) {
@@ -1279,7 +1241,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               'updated_at': DateTime.now().toIso8601String(),
             })
             .timeout(const Duration(seconds: 5));
-        debugPrint('ChartBoardPage: Created consultation room: $roomId');
       } else {
         final participants = List<String>.from(existing['participant_ids'] ?? []);
         var shouldUpdate = false;
@@ -1303,9 +1264,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               .update(updates)
               .eq('id', roomId)
               .timeout(const Duration(seconds: 5));
-          debugPrint('ChartBoardPage: Updated consultation room $roomId with participants=$participants');
-        } else {
-          debugPrint('ChartBoardPage: Room already exists: $roomId');
         }
       }
     } catch (e) {
@@ -2131,7 +2089,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Sync completion state from DB so the finish/revert buttons and read-only overlay stay correct
       await _loadCompletionStatus();
-      debugPrint('[ChartBoard] _finishJobMultiExpert: after _loadCompletionStatus _hasFinished=$_hasFinished');
 
       // ดึงข้อมูล package เพื่อคำนวณจำนวน expert ที่ถูกต้อง
       final packageId = widget.entry?.packageId ?? widget.request?.packageId;
@@ -2166,7 +2123,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       if (mounted) {
-        debugPrint('[ChartBoard] _finishJobMultiExpert: totalExperts=$totalExperts, usedPackageFallback=$usedPackageFallback, RPC finished_count=${result['finished_count']}');
         setState(() => _hasFinished = true);
 
         if (allFinished) {
@@ -2185,7 +2141,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           // ถ้าใช้ข้อมูลจาก RPC ให้ใช้ค่าจาก RPC
           final finishedCount = usedPackageFallback ? 1 : (result['finished_count'] as int? ?? 1);
           final remainingCount = totalExperts - finishedCount;
-          debugPrint('[ChartBoard] _finishJobMultiExpert: finishedCount=$finishedCount, remainingCount=$remainingCount');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -2599,9 +2554,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         });
       } else if (widget.request != null) {
         // Create new consultation request (provider should see it as pending)
-        debugPrint(
-          'ChartBoard: creating consultation request packageId=${widget.request!.packageId}, packageName=${widget.request!.packageName}, status=pending',
-        );
         final newRequest = await repo.createRequest(
           userId: currentUserId,
           packageId: widget.request!.packageId,
@@ -2731,7 +2683,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Widget _buildActionButtons() {
-    debugPrint('[ChartBoard] _buildActionButtons: _isProvider=$_isProvider, _hasFinished=$_hasFinished, readOnly=${widget.readOnly}');
     return ActionButtonsWidget(
       key: ValueKey('action-buttons-${widget.readOnly}-$_hasFinished'),
       isProvider: _isProvider,
@@ -2971,9 +2922,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     List<Map<String, dynamic>> joinedExperts,
   ) {
     final package = _selectedPackage;
-    debugPrint('[ChartBoard] _mergeWithPackageGroups: joined=${joinedExperts.length}, package=${package?.name}, expertGroups=${package?.expertGroups.length}');
     if (package == null || package.expertGroups.isEmpty) {
-      debugPrint('[ChartBoard] _mergeWithPackageGroups: SKIP (no package or no groups)');
       return joinedExperts;
     }
 
@@ -3035,7 +2984,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     }
 
-    debugPrint('[ChartBoard] _mergeWithPackageGroups: merged=${merged.length} (added ${merged.length - joinedExperts.length} waiting groups)');
     return merged;
   }
 
@@ -3068,13 +3016,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
         final target = _floatingButtonsScrollController!.position.minScrollExtent;
         if ((_floatingButtonsScrollController!.offset - target).abs() > 1.0) {
-          debugPrint('[FloatingButtons] animateTo(minScrollExtent) called, currentOffset=${_floatingButtonsScrollController!.offset}, target=$target, itemCount=${_requiredQuestions.length}');
           _floatingButtonsScrollController!.animateTo(
             target,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
           );
-          debugPrint('[FloatingButtons] animateTo(minScrollExtent) scheduled');
         }
       });
     }
