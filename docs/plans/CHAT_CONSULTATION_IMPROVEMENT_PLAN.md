@@ -2940,12 +2940,19 @@ final Map<String, bool> _hasMoreByTab = {
 };
 final Map<String, List<ConsultationEntry>> _entriesByTab = {};
 
+// แยก state ระหว่าง refresh (ข้อมูลใหม่) vs load-more (ข้อมูลเพิ่ม)
+bool _isLoading = false;        // true = กำลัง load-more (scroll ลง)
+bool _isRefreshing = false;      // true = กำลัง refresh (pull-to-refresh / auto-refresh)
+
 // โหลดเฉพาะ tab ที่เลือก
 Future<void> _loadTab(String tab, {bool refresh = false}) async {
+  if (_isLoading || _isRefreshing) return;  // ป้องกันซ้อน
+
   if (refresh) {
     _pageByTab[tab] = 0;
     _hasMoreByTab[tab] = true;
-    _entriesByTab[tab] = [];
+    // ⚠️ ไม่ clear entries ตรงนี้ — ให้ข้อมูลเก่ายังแสดงอยู่จนกว่าจะโหลดใหม่เสร็จ
+    // ป้องกัน CustomScrollView maxScrollExtent → 0 → scroll jump ไปด้านบน
   }
 
   final page = _pageByTab[tab]!;
@@ -2958,7 +2965,12 @@ Future<void> _loadTab(String tab, {bool refresh = false}) async {
   if (raw.length < 15) _hasMoreByTab[tab] = false;
 
   final entries = raw.map(ConsultationEntry.fromMap).toList();
-  _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];
+
+  if (refresh) {
+    _entriesByTab[tab] = entries;                    // replace ข้อมูลใหม่
+  } else {
+    _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];  // append ข้อมูลเพิ่ม
+  }
   _pageByTab[tab] = page + 1;
 }
 
@@ -2967,7 +2979,7 @@ void _onScroll() {
   if (_scrollController.position.pixels >=
       _scrollController.position.maxScrollExtent - 200) {
     final tab = _filterStatus;
-    if (!_isLoading && _hasMoreByTab[tab]!) {
+    if (!_isLoading && !_isRefreshing && _hasMoreByTab[tab]!) {
       _loadTab(tab);
     }
   }
@@ -3000,6 +3012,7 @@ void _onScroll() {
 | | ✅ แก้ `RefreshIndicator` → `_loadTab(tab, refresh: true)` + `_loadCounts()` |
 | | ✅ **Default tab = `pending`** — เปิด Dashboard มาที่แถบ "รอดำเนินการ" |
 | | ✅ **Pin My Jobs** — แถบ `in_progress` เรียงงานของตัวเอง (`provider_id == myId`) ขึ้นด้านบน |
+| | ✅ **แก้ BUG: Scroll Jump on Refresh** — แยก `_isRefreshing` / `_isLoading`, ไม่ clear entries ก่อนโหลด |
 | `chart_board_page.dart` | ✅ **เพิ่ม** `readOnly` parameter — โหมดดูอย่างเดียว ป้องกันการดำเนินการ |
 | | ✅ **เพิ่ม** `_hasSubmitted` flag + `PopScope` — หลังส่งคำรักษา back ไปหน้า profile/ประวัติปรึกษา |
 | `main.dart` | ✅ **แก้** route `/chart-board` รองรับ `Map<String, dynamic>` arguments (`entry`, `readOnly`) |
@@ -3034,6 +3047,72 @@ void _onScroll() {
 - กด "ดูรายละเอียด" → เปิด `ChartBoardPage(readOnly: true)`
 - Overlay สีเทาบังช่อง input พร้อมข้อความ "โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม"
 - ซ่อนปุ่ม "จบงาน" และ "วิดีโอคอล" ใน action bar
+
+---
+
+## 🐛 Known Issue & Fix: Scroll Jump on Refresh (Fixed 2026-06-22)
+
+### ปัญหา
+
+เมื่อมีการ refresh (pull-to-refresh / auto-refresh / realtime update) ขณะที่ผู้ใช้ scroll ลงมาดูการ์ดจำนวนมาก → หน้าจอ jump กลับไปด้านบนเอง
+
+### Root Cause
+
+`CustomScrollView` ใช้ `SliverList` → ต้องรู้ `childCount` เพื่อคำนวณ `maxScrollExtent`
+
+```dart
+// ❌ ผิด: clear entries ก่อนโหลด
+if (refresh) {
+  _entriesByTab[tab] = [];   // childCount → 0
+}
+```
+
+พอ `entries` ว่าง → `childCount = 0` → `maxScrollExtent = 0` → Flutter clamp scroll position ไปที่ `0` (ด้านบนสุด)
+
+### แนวทางที่ใช้แก้ (ไม่ restore position)
+
+**หลักการ:** ไม่ clear entries ก่อนโหลด + แยก `_isRefreshing` / `_isLoading`
+
+```dart
+// ✅ ถูกต้อง: ไม่ clear entries ก่อนโหลด
+if (refresh) {
+  _pageByTab[tab] = 0;
+  _hasMoreByTab[tab] = true;
+  // ไม่ clear entries — ข้อมูลเก่ายังแสดง → maxScrollExtent ไม่เปลี่ยน
+}
+```
+
+```dart
+// ✅ ถูกต้อง: แยก state
+if (refresh) {
+  _isRefreshing = true;
+} else {
+  _isLoading = true;
+}
+```
+
+```dart
+// ✅ ถูกต้อง: replace หลังโหลดเสร็จ
+if (refresh) {
+  _entriesByTab[tab] = entries;           // replace
+} else {
+  _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];  // append
+}
+```
+
+### สิ่งที่ห้ามทำ
+
+| วิธี | ผล | สถานะ |
+|---|---|---|
+| `_entriesByTab[tab] = []` ก่อนโหลด | `maxScrollExtent` → 0 → jump | ❌ ผิด |
+| `jumpTo(savedScrollPosition)` หลังโหลด | ข้อมูลใหม่ลำดับ/จำนวนต่างกัน → position ไม่ตรง | ❌ ผิด |
+| `_isLoading` ควบคุมทุกสถานการณ์ | skeleton ทั้งหน้าตอน refresh → ซ่อนการ์ดทั้งหมด | ❌ ผิด |
+
+### บทเรียน
+
+> ใน `CustomScrollView` + `SliverList` ต้องรักษา `childCount` ให้มีค่าพอสมควรระหว่าง refresh — ไม่ใช่ `0` — เพื่อป้องกัน scroll position reset.
+>
+> แยก state ระหว่าง `refresh` (ข้อมูลใหม่แทนที่) กับ `load-more` (ข้อมูลเพิ่ม) เพื่อควบคุม UI indicator ได้ถูกต้อง.
 - แสดง subtitle "ห้องปรึกษา (โหมดดูอย่างเดียว)" ใน AppBar
 - ซ่อน Health Data Permission Banner (provider ไม่ควรขอข้อมูลขณะ preview)
 - ผู้ใช้ยังดูข้อความแชท, ดูสถานะผู้เชี่ยวชาญ, และดูรายละเอียดผู้ป่วยได้ตามปกติ

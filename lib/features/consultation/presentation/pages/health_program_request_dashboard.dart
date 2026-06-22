@@ -57,7 +57,8 @@ class _HealthProgramRequestDashboardState
     'all': 0, 'pending': 0, 'in_progress': 0, 'completed': 0
   };
   String _activeTab = 'pending';
-  bool _isLoading = false;
+  bool _isLoading = false;        // true = กำลัง load-more (scroll ลง)
+  bool _isRefreshing = false;      // true = กำลัง refresh (pull-to-refresh / auto-refresh)
   String _searchQuery = '';
   bool _isNavBarVisible = true;
 
@@ -226,17 +227,24 @@ class _HealthProgramRequestDashboardState
     final stack = StackTrace.current.toString().split('\n');
     final caller = stack.length > 2 ? stack[2].trim() : 'unknown';
     debugPrint('Dashboard: _loadTab(tab=$tab, refresh=$refresh) CALLED from: $caller');
-    if (_isLoading) return;
+    if (_isLoading || _isRefreshing) return;
 
     if (refresh) {
       _pageByTab[tab] = 0;
       _hasMoreByTab[tab] = true;
-      _entriesByTab[tab] = [];
+      // ไม่ clear entries ตรงนี้ — ให้ข้อมูลเก่ายังแสดงอยู่จนกว่าจะโหลดใหม่เสร็จ
+      // จึงไม่เกิด scroll jump ไปด้านบน
     }
 
     if (!_hasMoreByTab[tab]!) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      if (refresh) {
+        _isRefreshing = true;
+      } else {
+        _isLoading = true;
+      }
+    });
 
     try {
       final page = _pageByTab[tab]!;
@@ -273,14 +281,22 @@ class _HealthProgramRequestDashboardState
 
       if (mounted) {
         setState(() {
-          _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];
+          if (refresh) {
+            _entriesByTab[tab] = entries;
+          } else {
+            _entriesByTab[tab] = [...?_entriesByTab[tab], ...entries];
+          }
           _pageByTab[tab] = page + 1;
           _isLoading = false;
+          _isRefreshing = false;
         });
       }
     } catch (e) {
       debugPrint('Dashboard _loadTab error: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() {
+        _isLoading = false;
+        _isRefreshing = false;
+      });
     }
   }
 
@@ -288,7 +304,7 @@ class _HealthProgramRequestDashboardState
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      if (!_isLoading && _hasMoreByTab[_activeTab]!) {
+      if (!_isLoading && !_isRefreshing && _hasMoreByTab[_activeTab]!) {
         _loadTab(_activeTab);
       }
     }
@@ -749,7 +765,7 @@ class _HealthProgramRequestDashboardState
                 }
                 return false;
               },
-              child: _isLoading ? _buildLoading() : _buildBody(),
+              child: _showSkeleton ? _buildLoading() : _buildBody(),
             ),
           ),
         ],
@@ -1145,7 +1161,7 @@ class _HealthProgramRequestDashboardState
           ),
 
           // ── Cards ──
-          if (entries.isEmpty && !_isLoading)
+          if (entries.isEmpty && !_isLoading && !_isRefreshing)
             SliverFillRemaining(
               hasScrollBody: false,
               child: _buildEmpty(),
@@ -1164,7 +1180,7 @@ class _HealthProgramRequestDashboardState
                     }
                     return _buildCard(entries[i], i);
                   },
-                  childCount: entries.length + (_isLoading ? 1 : 0),
+                  childCount: entries.length + (_isLoading && !_isRefreshing ? 1 : 0),
                 ),
               ),
             ),
