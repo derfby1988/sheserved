@@ -137,15 +137,15 @@ class ChatInputBarWidget extends StatelessWidget {
               children: [
                 if (isProvider) ...[
                   buildInputIconButton(
-                    icon: Icons.bolt,
-                    tooltip: 'ข้อความด่วน',
-                    onTap: onShowQuickReplies ?? () {},
-                  ),
-                  const SizedBox(width: 4),
-                  buildInputIconButton(
                     icon: Icons.attach_file,
                     tooltip: 'เครื่องมือแพทย์',
                     onTap: onShowAttachmentMenu,
+                  ),
+                  const SizedBox(width: 4),
+                  buildInputIconButton(
+                    icon: Icons.bolt,
+                    tooltip: 'ข้อความด่วน',
+                    onTap: onShowQuickReplies ?? () {},
                   ),
                   const SizedBox(width: 4),
                 ] else ...[

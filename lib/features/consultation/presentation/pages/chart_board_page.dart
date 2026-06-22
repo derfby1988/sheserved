@@ -1746,6 +1746,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           appBar: AppBar(
             backgroundColor: Colors.white,
             elevation: 0,
+            centerTitle: false,
             titleSpacing: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
@@ -1796,8 +1797,28 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             ),
           title: Row(
             children: [
-              Flexible(child: FittedBox(child: _buildTimerBadge())),
-              const SizedBox(width: 8),
+              // Patient avatar
+              if (widget.entry?.patientAvatar != null && widget.entry!.patientAvatar!.isNotEmpty)
+                CircleAvatar(
+                  radius: 16,
+                  backgroundImage: NetworkImage(widget.entry!.patientAvatar!),
+                  backgroundColor: Colors.grey.shade200,
+                )
+              else
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFF4A8B2C).withOpacity(0.15),
+                  child: Text(
+                    (widget.entry?.patientName ?? 'U').substring(0, 1),
+                    style: const TextStyle(
+                      color: Color(0xFF4A8B2C),
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              // Name + subtitle
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1838,6 +1859,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
         body: Column(
           children: [
+            AnimatedOpacity(
+              opacity: _isKeyboardVisible ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              child: _isKeyboardVisible ? const SizedBox.shrink() : Align(
+                alignment: Alignment.centerRight,
+                child: ExpertStatusBanner(
+                  expertStatuses: _expertStatuses,
+                  professions: _professions,
+                  timerBadge: _buildTimerBadge(),
+                  onAvatarTap: (providerId) {
+                    if (_isProvider && _currentUser?.id == providerId && _expertCompletionStatus != null) {
+                      _showCompletionChecklistDialog();
+                    }
+                  },
+                ),
+              ),
+            ),
             // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว + ซ่อนเมื่อเปิดแป้นพิมพ์)
             if (_isProvider && !widget.readOnly && permissionRequest != null)
               AnimatedOpacity(
@@ -1848,19 +1886,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   onViewData: openGrantedDataSheet,
                 ),
               ),
-            AnimatedOpacity(
-              opacity: _isKeyboardVisible ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 200),
-              child: _isKeyboardVisible ? const SizedBox.shrink() : ExpertStatusBanner(
-                expertStatuses: _expertStatuses,
-                professions: _professions,
-                onAvatarTap: (providerId) {
-                  if (_isProvider && _currentUser?.id == providerId && _expertCompletionStatus != null) {
-                    _showCompletionChecklistDialog();
-                  }
-                },
-              ),
-            ),
             Expanded(
               child: Container(
                 decoration: const BoxDecoration(
@@ -2688,6 +2713,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       isProvider: _isProvider,
       readOnly: widget.readOnly || _hasFinished,
       hasFinished: _hasFinished,
+      requiresVideoCall: _selectedPackage?.requiresVideoCall ?? false,
       onFinishPressed: _showFinishDialog,
       onRevertPressed: _showRevertDialog,
       onVideoCallPressed: _startVideoCall,

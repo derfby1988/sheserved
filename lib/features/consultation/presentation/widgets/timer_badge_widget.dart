@@ -31,19 +31,22 @@ class TimerBadgeWidget extends StatelessWidget {
             ? Colors.orange
             : (isLowTime ? Colors.red : AppColors.primary);
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: isWaiting
-                ? Colors.orange.shade50
-                : (isLowTime ? Colors.red.shade50 : badgeColor.withOpacity(0.1)),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
+        return Tooltip(
+          message: isWaiting ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา' : '',
+          waitDuration: isWaiting ? const Duration(milliseconds: 300) : Duration.zero,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
               color: isWaiting
-                  ? Colors.orange.withOpacity(0.3)
-                  : (isLowTime ? Colors.red.withOpacity(0.3) : badgeColor.withOpacity(0.3)),
+                  ? Colors.orange.shade50
+                  : (isLowTime ? Colors.red.shade50 : badgeColor.withOpacity(0.1)),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isWaiting
+                    ? Colors.orange.withOpacity(0.3)
+                    : (isLowTime ? Colors.red.withOpacity(0.3) : badgeColor.withOpacity(0.3)),
+              ),
             ),
-          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -79,8 +82,8 @@ class TimerBadgeWidget extends StatelessWidget {
               ),
             ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 }

@@ -5,6 +5,7 @@ class ActionButtonsWidget extends StatelessWidget {
   final bool isProvider;
   final bool readOnly;
   final bool hasFinished;
+  final bool requiresVideoCall;
   final VoidCallback onFinishPressed;
   final VoidCallback onRevertPressed;
   final VoidCallback onVideoCallPressed;
@@ -15,6 +16,7 @@ class ActionButtonsWidget extends StatelessWidget {
     required this.isProvider,
     required this.readOnly,
     this.hasFinished = false,
+    this.requiresVideoCall = false,
     required this.onFinishPressed,
     required this.onRevertPressed,
     required this.onVideoCallPressed,
@@ -26,6 +28,15 @@ class ActionButtonsWidget extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        IconButton(
+          icon: const Icon(Icons.info_outline, color: Colors.grey),
+          onPressed: onInfoPressed,
+        ),
+        if (requiresVideoCall && !readOnly && !hasFinished)
+          IconButton(
+            icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
+            onPressed: onVideoCallPressed,
+          ),
         if (isProvider && hasFinished)
           TextButton.icon(
             onPressed: onRevertPressed,
@@ -38,15 +49,6 @@ class ActionButtonsWidget extends StatelessWidget {
             icon: const Icon(Icons.done_all, color: AppColors.primary, size: 18),
             label: const Text('จบงาน', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
           ),
-        if (!readOnly && !hasFinished)
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined, color: AppColors.primary),
-            onPressed: onVideoCallPressed,
-          ),
-        IconButton(
-          icon: const Icon(Icons.info_outline, color: Colors.grey),
-          onPressed: onInfoPressed,
-        ),
         const SizedBox(width: 4),
       ],
     );

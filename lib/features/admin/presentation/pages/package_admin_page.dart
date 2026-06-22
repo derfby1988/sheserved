@@ -1069,6 +1069,23 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                             child: Icon(Icons.auto_awesome, color: _includesAI ? Colors.white : Colors.grey, size: 20),
                           ),
                           activeColor: const Color(0xFF7B2FF7),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        SwitchListTile(
+                          value: _requiresVideoCall,
+                          onChanged: (v) => setState(() => _requiresVideoCall = v),
+                          title: const Text('อนุญาตให้ใช้วิดีโอคอล', style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: const Text('แสดงไอคอนวิดีโอคอลในห้องปรึกษา', style: TextStyle(fontSize: 12)),
+                          secondary: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: _requiresVideoCall ? const Color(0xFF4A8B2C).withOpacity(0.1) : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.videocam_outlined, color: _requiresVideoCall ? const Color(0xFF4A8B2C) : Colors.grey, size: 20),
+                          ),
+                          activeColor: const Color(0xFF4A8B2C),
                           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(16))),
                         ),
                       ],
@@ -1595,7 +1612,7 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                 SwitchListTile(
                   value: requiresVideoCall,
                   onChanged: (v) => setDlgState(() => requiresVideoCall = v),
-                  title: const Text('ต้องทำ video call', style: TextStyle(fontSize: 13)),
+                  title: const Text('อนุญาตให้ใช้วิดีโอคอล', style: TextStyle(fontSize: 13)),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

@@ -7,12 +7,14 @@ class ExpertStatusBanner extends StatelessWidget {
   final List<Map<String, dynamic>> expertStatuses;
   final List<Profession> professions;
   final void Function(String providerId)? onAvatarTap;
+  final Widget? timerBadge;
 
   const ExpertStatusBanner({
     super.key,
     required this.expertStatuses,
     required this.professions,
     this.onAvatarTap,
+    this.timerBadge,
   });
 
   @override
@@ -22,35 +24,39 @@ class ExpertStatusBanner extends StatelessWidget {
     );
 
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Row(
             children: [
-              Icon(
-                hasWaitingRequired ? Icons.info_outline : Icons.groups_outlined,
-                size: 14,
-                color: hasWaitingRequired ? Colors.orange : Colors.grey,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                hasWaitingRequired
-                    ? 'รอผู้เชี่ยวชาญที่จำเป็นเข้าร่วมเพื่อเริ่มนับเวลา'
-                    : 'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
-                style: TextStyle(
-                  color: hasWaitingRequired
-                      ? Colors.orange.shade800
-                      : Colors.grey.shade600,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+              if (!hasWaitingRequired) ...[
+                Icon(
+                  Icons.groups_outlined,
+                  size: 14,
+                  color: Colors.grey,
                 ),
-              ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'ทีมผู้เชี่ยวชาญในเซสชั่นนี้',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              if (timerBadge != null) ...[
+                const SizedBox(width: 8),
+                timerBadge!,
+              ],
             ],
           ),
           const SizedBox(height: 6),
