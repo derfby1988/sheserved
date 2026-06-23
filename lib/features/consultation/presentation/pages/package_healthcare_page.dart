@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_package.dart';
 import '../../../../services/service_locator.dart';
-import '../../../admin/data/repositories/profession_repository.dart';
 
 class PackageHealthCarePage extends StatefulWidget {
   const PackageHealthCarePage({super.key});
@@ -24,7 +23,6 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
   String _gender = 'unknown';
   late FixedExtentScrollController _scrollController;
   double _scrollOffset = 0.0; // To track fractional scroll
-  int? _pressedDetailIndex; // Track index of detail being long-pressed
 
   /// ดึงข้อมูลแพ็คเกจจริงจาก Supabase
   Future<void> _loadLivePackages() async {
@@ -373,11 +371,15 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                   builder: (context, constraints) {
                     final width = constraints.maxWidth;
                     final height = constraints.maxHeight;
-                    final wheelRadius = width * 0.75;
+                    final wheelRadius = width * 0.78;
                     final centerX =
-                        -width * 0.35; // Center off-screen to the left
+                        -width * 0.42; // Center off-screen to the left
                     final centerY = height * 0.5;
-                    final slices = 10; // 10% of circle each (10 cake slices)
+                    // DYNAMIC: one slice per real package (no hardcoded 10).
+                    // This keeps the wheel proportional to the actual number
+                    // of packages managed in the system and prevents the
+                    // labels from repeating.
+                    final slices = _packages.length;
                     final spacingAngle = (math.pi * 2) / slices;
 
                     return Stack(
@@ -423,181 +425,47 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
                           _buildCurvedLabel(
                             context: context,
                             index: i,
-                            name: _packages[i % _packages.length]['short'],
+                            name: _packages[i]['short'],
                             centerX: centerX,
                             centerY: centerY,
-                            radius: wheelRadius - 38,
+                            radius: wheelRadius - 40,
+                            slices: slices,
                           ),
 
-                        // 3. CURVED RULER PICKER (Price & Unit)
-                        ...() {
-                          final priceRadius =
-                              width * 1.05; // Positioned along the outer arc
-                          final deltaAngle = 0.18; // Angle between price items
-
-                          return [
-                            // Ghost Price (Above)
-                            if (_selectedIndex > 0)
-                              _buildCurvedPrice(
-                                centerX: centerX,
-                                centerY: centerY,
-                                radius: priceRadius,
-                                angle: -deltaAngle,
-                                opacity: 0.2,
-                                fontSize: 24,
-                                text: _packages[_selectedIndex - 1]['price']
-                                    .toStringAsFixed(0),
-                              ),
-
-                            // Main Selected Price
-                            _buildCurvedPrice(
-                              centerX: centerX,
-                              centerY: centerY,
-                              radius: priceRadius,
-                              angle: 0.0,
-                              opacity: 1.0,
-                              fontSize: 56,
-                              isMain: true,
-                              text: (selectedPackage['price'] as double)
-                                  .toStringAsFixed(0),
+                        // Selection pointer: fixed marker at angle 0 (right of
+                        // the wheel) showing exactly which slice is selected.
+                        Positioned(
+                          left: centerX + wheelRadius - 6,
+                          top: centerY - 6,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _themeColor,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _themeColor.withOpacity(0.5),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
                             ),
+                          ),
+                        ),
 
-                            // Ghost Price (Below)
-                            if (_selectedIndex < _packages.length - 1)
-                              _buildCurvedPrice(
-                                centerX: centerX,
-                                centerY: centerY,
-                                radius: priceRadius,
-                                angle: deltaAngle,
-                                opacity: 0.2,
-                                fontSize: 24,
-                                text: _packages[_selectedIndex + 1]['price']
-                                    .toStringAsFixed(0),
-                              ),
-
-                            // Unit "บาท"
-                            _buildCurvedPrice(
-                              centerX: centerX,
-                              centerY: centerY,
-                              radius: priceRadius,
-                              angle: deltaAngle * 0.45,
-                              opacity: 0.6,
-                              fontSize: 18,
-                              text: 'บาท',
-                              isUnit: true,
-                            ),
-
-                            // Package details (Aligned along bottom curve)
-                            ...(selectedPackage['details'] as List<String>)
-                                .asMap()
-                                .entries
-                                .map((entry) {
-                                  final i = entry.key;
-                                  final detail = entry.value;
-                                  final detailAngle = 0.4 + (i * 0.07);
-                                  final detailRadius = priceRadius - 40;
-
-                                  final x =
-                                      centerX +
-                                      detailRadius * math.cos(detailAngle);
-                                  final y =
-                                      centerY +
-                                      detailRadius * math.sin(detailAngle);
-
-                                  final isPressed = _pressedDetailIndex == i;
-
-                                  return Positioned(
-                                    left:
-                                        x - 120, // Wider for truncation budget
-                                    top:
-                                        y -
-                                        (isPressed
-                                            ? 40
-                                            : 10), // Adjust top if expanded
-                                    child: Transform.rotate(
-                                      angle: detailAngle,
-                                      child: GestureDetector(
-                                        onLongPressStart: (_) => setState(
-                                          () => _pressedDetailIndex = i,
-                                        ),
-                                        onLongPressEnd: (_) => setState(
-                                          () => _pressedDetailIndex = null,
-                                        ),
-                                        child: AnimatedContainer(
-                                          duration: const Duration(
-                                            milliseconds: 200,
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isPressed
-                                                ? Colors.white.withOpacity(0.9)
-                                                : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            boxShadow: isPressed
-                                                ? [
-                                                    BoxShadow(
-                                                      color: Colors.black
-                                                          .withOpacity(0.1),
-                                                      blurRadius: 10,
-                                                      spreadRadius: 2,
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                          constraints: BoxConstraints(
-                                            maxWidth: isPressed
-                                                ? 220
-                                                : 180, // Allow more width if expanded
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children: [
-                                              Flexible(
-                                                child: Text(
-                                                  detail,
-                                                  style: TextStyle(
-                                                    fontSize: isPressed
-                                                        ? 14
-                                                        : 12,
-                                                    color: isPressed
-                                                        ? Colors.black
-                                                        : Colors.grey,
-                                                    fontWeight: isPressed
-                                                        ? FontWeight.w700
-                                                        : FontWeight.w600,
-                                                    height: 1.2,
-                                                  ),
-                                                  maxLines: isPressed
-                                                      ? 10
-                                                      : 1, // Multi-line when floating
-                                                  overflow: isPressed
-                                                      ? TextOverflow.visible
-                                                      : TextOverflow.ellipsis,
-                                                  textAlign: TextAlign.right,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Icon(
-                                                Icons.check_circle_outline,
-                                                size: isPressed ? 16 : 14,
-                                                color: _themeColor,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                          ];
-                        }(),
+                        // 3. INFO PANEL (Price + details) — fixed on the right,
+                        // synced to the selected slice via _selectedIndex so it
+                        // can never drift from the wheel. Details are rendered
+                        // as vertical glass cards (not along the arc) so they
+                        // never overlap regardless of package/detail count.
+                        Positioned(
+                          right: 12,
+                          top: 0,
+                          bottom: 0,
+                          width: width * 0.52,
+                          child: _buildInfoPanel(selectedPackage),
+                        ),
 
                         // 4. Invisible ListWheelScrollView for Physics/Gestures (LOOPING)
                         Positioned(
@@ -693,14 +561,15 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
     required double centerX,
     required double centerY,
     required double radius,
+    required int slices,
   }) {
-    // 10 cake slices (fixed 10 slots)
-    final slices = 10;
+    // DYNAMIC slices = number of packages. Single source of truth
+    // (_scrollOffset) drives both the wheel rotation and these labels, so the
+    // selected label always sits exactly at the pointer (angle 0).
     final spacingAngle = (math.pi * 2) / slices;
     final currentOffset = _scrollOffset % slices;
 
-    // Relative angle: item's slot center.
-    // If spokes are at 0, 36, 72, ... we put label at midpoint (+ spacingAngle/2)
+    // Relative angle: distance of this slice from the pointer (angle 0).
     double angle = (index - currentOffset) * spacingAngle;
 
     // IMPORTANT: Wrap angle to keep items looping on the circle [-PI, PI]
@@ -768,37 +637,140 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
     );
   }
 
-  Widget _buildCurvedPrice({
-    required double centerX,
-    required double centerY,
-    required double radius,
-    required double angle,
-    required double opacity,
-    required double fontSize,
-    required String text,
-    bool isMain = false,
-    bool isUnit = false,
-  }) {
-    final x = centerX + radius * math.cos(angle);
-    final y = centerY + radius * math.sin(angle);
+  /// Right-side info panel: package name, big synced price, and detail glass
+  /// cards stacked vertically. Driven by _selectedIndex so it can never drift
+  /// from the wheel and the cards never overlap (no arc math).
+  Widget _buildInfoPanel(Map<String, dynamic> pkg) {
+    final price = (pkg['price'] as double).toStringAsFixed(0);
+    final details = (pkg['details'] as List<String>);
+    final useAI = pkg['useAI'] == true;
 
-    return Positioned(
-      left: x - (isMain ? 120 : 80),
-      top: y - (isMain ? 30 : 15),
-      child: Transform.rotate(
-        angle: angle,
-        child: Opacity(
-          opacity: opacity,
-          child: Text(
-            text,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          pkg['short']?.toString() ?? '',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _themeColor,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  price,
+                  style: TextStyle(
+                    fontSize: 56,
+                    fontWeight: FontWeight.w900,
+                    color: _themeColor,
+                    height: 1.0,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'บาท',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ),
+          ],
+        ),
+        if (useAI) ...[const SizedBox(height: 8), _buildAiBadge()],
+        const SizedBox(height: 16),
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final d in details) _buildDetailCard(d),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _themeColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _themeColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome, size: 14, color: _themeColor),
+          const SizedBox(width: 4),
+          Text(
+            'Vega AI',
             style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: isMain ? FontWeight.w900 : FontWeight.bold,
-              color: isUnit ? Colors.grey : _themeColor,
-              fontFeatures: isMain
-                  ? const [FontFeature.tabularFigures()]
-                  : null,
-              height: 1.0,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _themeColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A real frosted-glass card (BackdropFilter blur) for a single detail line.
+  Widget _buildDetailCard(String detail) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.45),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.6)),
+              boxShadow: [
+                BoxShadow(
+                  color: _themeColor.withOpacity(0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle, size: 16, color: _themeColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    detail,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF333333),
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -824,31 +796,41 @@ class _CurvedTextPainter extends CustomPainter {
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     final chars = text.split('');
 
-    // We want the text centered around the tangent point
-    // Rough estimate of total angle the text takes
-    double totalAngle = (text.length * (style.fontSize ?? 14) * 0.8) / radius;
-    double currentAngle = -totalAngle / 2;
-
-    for (var char in chars) {
+    // Pre-measure each glyph so arc placement matches exactly and the whole
+    // string is centered on the tangent point (angle 0). This fixes the old
+    // estimate (length * fontSize * 0.8) that made text drift off-center.
+    final widths = <double>[];
+    double totalWidth = 0;
+    for (final char in chars) {
       textPainter.text = TextSpan(text: char, style: style);
       textPainter.layout();
+      widths.add(textPainter.width);
+      totalWidth += textPainter.width;
+    }
 
-      // Position for this char
-      final x = radius * math.cos(currentAngle);
-      final y = radius * math.sin(currentAngle);
+    final totalAngle = totalWidth / radius;
+    double cursor = -totalAngle / 2; // left edge of the centered string
+
+    for (var i = 0; i < chars.length; i++) {
+      final w = widths[i];
+      final angle = cursor + (w / radius) / 2; // center of this glyph
+
+      textPainter.text = TextSpan(text: chars[i], style: style);
+      textPainter.layout();
+
+      final x = radius * math.cos(angle);
+      final y = radius * math.sin(angle);
 
       canvas.save();
-      // Move to position, minus the radius since we are painting at the rim
       canvas.translate(size.width / 2 + (x - radius), size.height / 2 + y);
-      canvas.rotate(currentAngle + math.pi / 2); // Rotate char to face center
+      canvas.rotate(angle + math.pi / 2); // Rotate char to face center
       textPainter.paint(
         canvas,
         Offset(-textPainter.width / 2, -textPainter.height / 2),
       );
       canvas.restore();
 
-      // Move to next char angle - use exact width to match measurement logic
-      currentAngle += (textPainter.width) / radius;
+      cursor += w / radius;
     }
   }
 
