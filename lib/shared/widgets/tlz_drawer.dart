@@ -73,7 +73,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    
+
     _scrollController = ScrollController();
     _scrollController.addListener(() {
       setState(() {
@@ -83,7 +83,10 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
 
     _checkVolunteerRole();
     _checkDrugRiskPermission();
-    
+
+    // Listen to AuthService so drawer rebuilds when user logs in/out or role changes
+    AuthService.instance.addListener(_onAuthChanged);
+
     // Initialize animation controller
     _animationController = AnimationController(
       vsync: this,
@@ -111,9 +114,15 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   
   @override
   void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Rebuild drawer when AuthService notifies (login/logout/role change)
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
   
   void _closeDrawer() {

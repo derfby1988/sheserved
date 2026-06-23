@@ -77,7 +77,7 @@ class GroupRoleRepository {
           .from('user_group_roles')
           .select('''
             role_level,
-            users:user_id (id, email, first_name, last_name, profile_image_url)
+            users:user_id (id, email, first_name, last_name, profile_image_url, role)
           ''')
           .eq('profession_id', professionId)
           .timeout(const Duration(seconds: 7));
@@ -100,7 +100,7 @@ class GroupRoleRepository {
       // 2. Fallback/Complement: fetch from users table directly
       final primaryResponse = await _client
           .from('users')
-          .select('id, email, first_name, last_name, profile_image_url')
+          .select('id, email, first_name, last_name, profile_image_url, role')
           .eq('profession_id', professionId)
           .timeout(const Duration(seconds: 7));
           
@@ -121,5 +121,60 @@ class GroupRoleRepository {
 
     members.sort((a, b) => (a['first_name'] ?? '').toString().compareTo((b['first_name'] ?? '').toString()));
     return members;
+  }
+
+  /// ตั้ง/ยกเลิกสิทธิ์ Admin ระดับระบบ (users.role)
+  /// [isAdmin] true → role = 'admin', false → role = 'consumer'
+  /// บันทึก audit trail อัตโนมัติ
+  Future<void> setSystemAdminRole(String userId, bool isAdmin, {String? changedByUserId, String? reason}) async {
+    // 1. Read old role first
+    final oldRoleResponse = await _client
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+    final oldRole = oldRoleResponse?['role']?.toString();
+
+    final newRole = isAdmin ? 'admin' : 'consumer';
+    final now = DateTime.now().toIso8601String();
+
+    // 2. Update role
+    await _client.from('users').update({
+      'role': newRole,
+      'updated_at': now,
+    }).eq('id', userId);
+
+    // 3. Log to audit trail
+    try {
+      await _client.from('user_role_history').insert({
+        'user_id': userId,
+        'old_role': oldRole,
+        'new_role': newRole,
+        'changed_by': changedByUserId,
+        'reason': reason ?? (isAdmin ? 'ตั้งเป็น Admin ระบบ' : 'ยกเลิกสิทธิ์ Admin ระบบ'),
+        'source': 'admin_ui',
+      });
+    } catch (e) {
+      debugPrint('Audit trail insert failed (non-critical): $e');
+    }
+  }
+
+  /// ดึงประวัติการเปลี่ยน role ของ user
+  Future<List<Map<String, dynamic>>> getRoleHistory(String userId) async {
+    try {
+      final response = await _client
+          .from('user_role_history')
+          .select('''
+            id, old_role, new_role, changed_by, changed_at, reason, source,
+            changer:changed_by(first_name, last_name)
+          ''')
+          .eq('user_id', userId)
+          .order('changed_at', ascending: false)
+          .limit(50);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('getRoleHistory failed: $e');
+      return [];
+    }
   }
 }
