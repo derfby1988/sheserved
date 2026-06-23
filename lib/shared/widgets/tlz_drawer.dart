@@ -383,7 +383,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               underlineText: 'ปรึกษา',
                               onTap: () {
                                 Navigator.pop(context); // close drawer first
-                                ConsultationGuard.startConsultation(context);
+                                ConsultationGuard.startConsultationForPatient(context);
                               },
                               isSubItem: true,
                             ),

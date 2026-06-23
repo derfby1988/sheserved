@@ -5,6 +5,7 @@ import '../../../admin/data/repositories/profession_repository.dart';
 
 class ConsultationGuard {
   static bool _isNavigating = false; // Guard: ป้องกัน double-tap ระหว่างตรวจสอบ
+  static bool _isNavigatingPatient = false; // Guard: ป้องกัน double-tap สำหรับ patient flow
 
   /// Entry point to start consultation — navigate ทันทีโดยไม่แสดง loading dialog
   static Future<void> startConsultation(BuildContext context) async {
@@ -81,6 +82,70 @@ class ConsultationGuard {
       }
     } finally {
       _isNavigating = false;
+    }
+  }
+
+  /// Entry point for patient consultation — skip provider check, always treat as consumer
+  static Future<void> startConsultationForPatient(BuildContext context) async {
+    if (_isNavigatingPatient) return; // ป้องกันกดซ้ำขณะกำลังตรวจสอบ
+    _isNavigatingPatient = true;
+
+    final user = ServiceLocator.instance.currentUser;
+    final userRepo = ServiceLocator.instance.userRepository;
+
+    if (user == null) {
+      // 1. Not logged in -> Go to Login page
+      if (context.mounted) {
+        Navigator.pushNamed(
+          context,
+          '/login',
+          arguments: {
+            'redirect': '/package-healthcare',
+            'args': {'skipProviderCheck': true},
+          },
+        );
+      }
+      _isNavigatingPatient = false;
+      return;
+    }
+
+    try {
+      // 2. ตรวจสอบ Health Info (skip provider check)
+      final profile = await userRepo.getConsumerProfile(user.id);
+      if (profile == null ||
+          profile.healthInfo == null ||
+          profile.healthInfo!.isEmpty) {
+        // No health info, redirect to Health Data Entry
+        if (context.mounted) {
+          Navigator.pushNamed(
+            context,
+            '/health-data-entry',
+            arguments: {
+              'redirect': '/package-healthcare',
+              'args': {'skipProviderCheck': true},
+            },
+          );
+        }
+        _isNavigatingPatient = false;
+        return;
+      }
+
+      // 3. ข้อมูลครบถ้วน -> ไปหน้า Package Selection
+      if (context.mounted) {
+        Navigator.pushNamed(
+          context,
+          '/package-healthcare',
+          arguments: {'skipProviderCheck': true},
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      }
+    } finally {
+      _isNavigatingPatient = false;
     }
   }
 }

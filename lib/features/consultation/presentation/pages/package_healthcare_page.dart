@@ -187,25 +187,32 @@ class _PackageHealthCarePageState extends State<PackageHealthCarePage> {
         );
         return;
       }
-      
+
+      // Check if skipProviderCheck flag is set (for patient flow from drawer)
+      final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      final skipProviderCheck = args?['skipProviderCheck'] == true;
+
       // ✅ เพิ่มการตรวจสอบว่า user เป็น provider หรือไม่
       // ถ้าย้อนกลับมาหลังจาก login (redirected) จะได้ไม่หลุดไปหน้าสุขภาพ
-      try {
-        final localUser = await ServiceLocator.instance.userRepository.getUserById(user.id);
-        if (localUser != null && localUser.professionId != null) {
-          final professionRepo = ServiceLocator.instance.professionRepository;
-          final profession = await professionRepo.getProfessionById(localUser.professionId!);
-          
-          if (profession != null && profession.category.isConsultationProvider) {
-            if (mounted) {
-              // เป็นผู้ให้บริการ -> เด้งไป Dashboard ทันที แทนที่จะโชว์หน้า Package หรือกรอกข้อมูลสุขภาพ
-              Navigator.pushReplacementNamed(context, '/health-program-requests');
+      // แต่ถ้า skipProviderCheck == true จะไม่ redirect provider ไป Dashboard
+      if (!skipProviderCheck) {
+        try {
+          final localUser = await ServiceLocator.instance.userRepository.getUserById(user.id);
+          if (localUser != null && localUser.professionId != null) {
+            final professionRepo = ServiceLocator.instance.professionRepository;
+            final profession = await professionRepo.getProfessionById(localUser.professionId!);
+
+            if (profession != null && profession.category.isConsultationProvider) {
+              if (mounted) {
+                // เป็นผู้ให้บริการ -> เด้งไป Dashboard ทันที แทนที่จะโชว์หน้า Package หรือกรอกข้อมูลสุขภาพ
+                Navigator.pushReplacementNamed(context, '/health-program-requests');
+              }
+              return;
             }
-            return;
           }
+        } catch (e) {
+          debugPrint('PackageHealthCarePage Provider Check Error: $e');
         }
-      } catch (e) {
-        debugPrint('PackageHealthCarePage Provider Check Error: $e');
       }
 
       setState(() => _isLoading = false);
