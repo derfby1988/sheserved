@@ -24,9 +24,15 @@ class AuthService extends ChangeNotifier {
   
   /// Get current user's phone number
   String? get userPhone => _currentUser?.phone;
-  
+
   /// Check if user is logged in
   bool get isLoggedIn => _currentUser != null;
+
+  /// Check if current user is admin
+  bool get isAdmin => _currentUser?.isAdmin ?? false;
+
+  /// Check if current user is provider
+  bool get isProvider => _currentUser?.isProvider ?? false;
   
   /// Login user (set current user) - auto starts presence heartbeat
   Future<void> login(UserModel user) async {

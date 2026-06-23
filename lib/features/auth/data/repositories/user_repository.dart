@@ -77,7 +77,7 @@ class UserRepository {
   Future<UserModel?> getUserById(String id) async {
     try {
       final response =
-          await _client.from('users').select('*, professions(is_volunteer)').eq('id', id).single();
+          await _client.from('users').select('*, professions(is_volunteer), role').eq('id', id).single();
       var user = UserModel.fromJson(response);
       
       if (user.professionId == null) {

@@ -22,6 +22,7 @@ const { redis, isHealthy }                         = require('./redis-client');
 const { rateLimiter, defaultRateLimiter, strictRateLimiter, authRateLimiter } = require('./rate-limiter');
 const { idempotencyMiddleware, checkDuplicate, clearDuplicate, duplicateCheckMiddleware } = require('./idempotency');
 const { cacheAside, invalidateCache, invalidateCacheMany, invalidateCachePattern, getSession, setSession, deleteSession, getDonationTotal, TTL } = require('./cache-aside');
+const { verifyToken, requireRole, requireAuth } = require('./auth');
 
 module.exports = {
   // Redis Client
@@ -50,4 +51,9 @@ module.exports = {
   deleteSession,
   getDonationTotal,
   TTL,
+
+  // Auth & RBAC (Phase 1 — Route Security)
+  verifyToken,
+  requireRole,
+  requireAuth,
 };

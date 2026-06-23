@@ -6,6 +6,9 @@ import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/guards/auth_guard_widget.dart';
+import 'core/observers/route_logger_observer.dart';
+import 'core/pages/not_found_page.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'core/layout/main_app_layout.dart';
@@ -175,7 +178,10 @@ class SheservedApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: false,
       scrollBehavior: AppScrollBehavior(),
-      navigatorObservers: [dashboardRouteObserver],
+      navigatorObservers: [
+        dashboardRouteObserver,
+        RouteLoggerObserver(),
+      ],
       theme: AppTheme.lightTheme,
       localizationsDelegates: [
         GlobalMaterialLocalizations.delegate,
@@ -197,28 +203,28 @@ class SheservedApp extends StatelessWidget {
         '/test': (context) => const TestWebSocketWidget(),
         '/home': (context) => const MainAppLayout(),
 
-        '/admin/professions': (context) => const ProfessionAdminPage(),
-        '/admin/applications': (context) => const ApplicationReviewPage(),
-        '/admin/body_regions': (context) => const BodyRegionAdminPage(),
+        '/admin/professions': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ProfessionAdminPage()),
+        '/admin/applications': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ApplicationReviewPage()),
+        '/admin/body_regions': (context) => const AuthGuardWidget(requiredRole: 'admin', child: BodyRegionAdminPage()),
         '/settings/sync': (context) => const SyncSettingsPage(),
         '/chat-list': (context) => const ChatListPage(),
         '/chat-contacts': (context) => ContactListPage(),
-        '/health-program-requests': (context) => const HealthProgramRequestDashboard(),
-        '/admin/packages': (context) => const PackageAdminPage(),
-        '/admin/user-categories': (context) => const UserCategoryAdminPage(),
-        '/admin/system-monitor': (context) => const SystemMonitorPage(),
+        '/health-program-requests': (context) => const AuthGuardWidget(requiredRole: 'provider', child: HealthProgramRequestDashboard()),
+        '/admin/packages': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PackageAdminPage()),
+        '/admin/user-categories': (context) => const AuthGuardWidget(requiredRole: 'admin', child: UserCategoryAdminPage()),
+        '/admin/system-monitor': (context) => const AuthGuardWidget(requiredRole: 'admin', child: SystemMonitorPage()),
         '/donate': (context) => const DonationDashboardPage(),
-        '/admin/donations': (context) => const DonationAdminPage(),
-        '/admin/pharmacy_filters': (context) => const PharmacyFiltersAdminPage(),
-        '/admin/video-control': (context) => const VideoAdminPage(),
-        '/admin/watermark': (context) => const WatermarkManagementPage(),
-        '/admin/platform-settings': (context) => const PlatformSettingsPage(),
+        '/admin/donations': (context) => const AuthGuardWidget(requiredRole: 'admin', child: DonationAdminPage()),
+        '/admin/pharmacy_filters': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PharmacyFiltersAdminPage()),
+        '/admin/video-control': (context) => const AuthGuardWidget(requiredRole: 'admin', child: VideoAdminPage()),
+        '/admin/watermark': (context) => const AuthGuardWidget(requiredRole: 'admin', child: WatermarkManagementPage()),
+        '/admin/platform-settings': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PlatformSettingsPage()),
         
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),
         '/my-consultations': (context) => const MyConsultationsPage(),
-        '/provider-history': (context) => const ProviderHistoryPage(),
+        '/provider-history': (context) => const AuthGuardWidget(requiredRole: 'provider', child: ProviderHistoryPage()),
         '/kpi/dashboard': (context) => const KpiDashboardPage(),
         '/kpi/target/form': (context) => const KpiTargetFormPage(),
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
@@ -641,7 +647,10 @@ class SheservedApp extends StatelessWidget {
         if (settings.name == '/admin/registration-fields') {
           final profession = settings.arguments as Profession?;
           return MaterialPageRoute(
-            builder: (context) => RegistrationFieldAdminPage(profession: profession),
+            builder: (context) => AuthGuardWidget(
+              requiredRole: 'admin',
+              child: RegistrationFieldAdminPage(profession: profession),
+            ),
           );
         }
 
@@ -653,6 +662,12 @@ class SheservedApp extends StatelessWidget {
         }
 
         return null;
+      },
+      onUnknownRoute: (settings) {
+        debugPrint('Security: Unknown route accessed: ${settings.name}');
+        return MaterialPageRoute(
+          builder: (context) => NotFoundPage(route: settings.name ?? 'unknown'),
+        );
       },
     );
   }

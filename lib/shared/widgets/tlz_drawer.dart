@@ -579,21 +579,22 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                           const Divider(color: AppColors.divider),
                           const SizedBox(height: 16),
                           
-                          // Section 5: Admin
-                          _buildGroupHeader(
-                            context,
-                            title: 'ผู้ดูแลระบบ',
-                            isExpanded: _expandedGroups['admin']!,
-                            onTap: () => setState(() => _expandedGroups['admin'] = !_expandedGroups['admin']!),
-                          ),
-                          if (_expandedGroups['admin']!) ...[
-                            _buildMenuItem(
+                          // Section 5: Admin — แสดงเฉพาะ admin
+                          if (AuthService.instance.isAdmin) ...[
+                            _buildGroupHeader(
                               context,
-                              title: 'จัดการอาชีพ',
-                              icon: Icons.admin_panel_settings,
-                              onTap: () => _navigateTo(context, '/admin/professions'),
-                              isSubItem: true,
+                              title: 'ผู้ดูแลระบบ',
+                              isExpanded: _expandedGroups['admin']!,
+                              onTap: () => setState(() => _expandedGroups['admin'] = !_expandedGroups['admin']!),
                             ),
+                            if (_expandedGroups['admin']!) ...[
+                            _buildMenuItem(
+                                context,
+                                title: 'จัดการอาชีพ',
+                                icon: Icons.admin_panel_settings,
+                                onTap: () => _navigateTo(context, '/admin/professions'),
+                                isSubItem: true,
+                              ),
                             _buildMenuItem(
                               context,
                               title: 'จัดการหมวดหมู่ผู้ใช้',
@@ -695,6 +696,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                             ),
                           ],
                             const SizedBox(height: 32),
+                          ],
                           ],
                         ),
                       ),
@@ -850,15 +852,22 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
   }
 
   void _navigateTo(BuildContext context, String route, {Object? arguments}) {
-    // Route ที่ต้อง Login ก่อนเข้า
-    final protectedRoutes = ['/emergency-live', '/profile'];
+    // ดัก Auth ล่วงหน้าจาก source — ขยายครอบทุก sensitive route
+    bool _isProtectedRoute(String r) {
+      return r.startsWith('/admin/') ||
+             r.startsWith('/erp/') ||
+             r == '/emergency-live' ||
+             r == '/profile' ||
+             r == '/health-program-requests' ||
+             r == '/provider-history';
+    }
 
     // เริ่ม animation ปิด drawer ก่อน navigate
     _animationController.forward().then((_) {
       Navigator.of(context).pop(); // Close drawer first
-      
+
       // ดัก Auth ล่วงหน้าจาก source
-      if (protectedRoutes.contains(route) && !AuthService.instance.isLoggedIn) {
+      if (_isProtectedRoute(route) && !AuthService.instance.isLoggedIn) {
         Navigator.pushNamed(
           context,
           '/login',

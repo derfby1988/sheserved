@@ -41,6 +41,29 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Route-level guard: all ERP routes require provider role
+    final user = AuthService.instance.currentUser;
+    if (user == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!user.isProvider) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      });
+      return const Scaffold(
+        body: Center(
+          child: Text('ไม่มีสิทธิ์เข้าถึง', style: TextStyle(fontSize: 18)),
+        ),
+      );
+    }
+
     final orgState = ref.watch(organizationSettingsProvider);
     final theme = ref.watch(dashboardThemeProvider).theme;
     final isDark = theme?.isDarkMode ?? false;

@@ -789,24 +789,27 @@ class _HealthProgramRequestDashboardState
     );
   }
 
-  // ─── Fixed Top Bar (Search + Back) — not part of scrollable ───
+  // ─── Fixed Top Bar — not part of scrollable ───
   Widget _buildFixedTopBar() {
     return Container(
       color: AppColors.primary,
       child: SafeArea(
         bottom: false,
-        child: TlzAppTopBar.onPrimary(
-          searchHintText: 'ค้นหาคำร้องขอ...',
-          notificationCount: 0,
-          leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.white,
-              size: 20,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: TlzAppTopBar.onPrimary(
+            searchHintText: 'ค้นหาคำร้องขอ...',
+            notificationCount: 0,
+            leading: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              onPressed: () => Navigator.pop(context),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-            onPressed: () => Navigator.pop(context),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
           ),
         ),
       ),

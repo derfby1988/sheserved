@@ -290,7 +290,7 @@ class SyncService {
       tableName: 'users',
       fetchFromSource: () async {
         final response = await client.from('users').select(
-            'id, profession_id, first_name, last_name, username, password_hash, verification_status, is_active, created_at, updated_at');
+            'id, profession_id, first_name, last_name, username, password_hash, verification_status, is_active, role, created_at, updated_at');
         return List<Map<String, dynamic>>.from(response);
       },
       saveToTarget: (data) => _saveToLocal('users', data),

@@ -18,6 +18,7 @@ const {
     cacheAside,
     invalidateCachePattern,
     TTL,
+    requireAuth,
 } = require('../middleware');
 
 // ✅ Upload endpoints: 30 req/min — ลดกว่า strict แต่ยังป้องกัน abuse
@@ -83,7 +84,7 @@ module.exports = (pool) => {
     });
 
     // Upload video
-    router.post('/upload', idempotencyMiddleware, uploadRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
+    router.post('/upload', requireAuth, idempotencyMiddleware, uploadRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
         try {
             const { userId, title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
             const file = req.file;
@@ -153,7 +154,7 @@ module.exports = (pool) => {
     // Upload multiple photos
     // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
     // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
-    router.post('/upload-photos', idempotencyMiddleware, uploadRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
+    router.post('/upload-photos', requireAuth, idempotencyMiddleware, uploadRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
         try {
             const userIdFromRequest = req.body.userId;
             const files = req.files;
@@ -529,7 +530,7 @@ module.exports = (pool) => {
     });
 
     // Accept incident
-    router.post('/:id/accept', strictRateLimiter, duplicateCheckMiddleware('accept-incident', 10), async (req, res) => {
+    router.post('/:id/accept', requireAuth, strictRateLimiter, duplicateCheckMiddleware('accept-incident', 10), async (req, res) => {
         try {
             const { id } = req.params;
             const { responderId, latitude, longitude } = req.body;
@@ -692,7 +693,7 @@ module.exports = (pool) => {
     });
 
     // ✅ [Support Analytics] Record interaction — DB Toggle for 'like', normal INSERT for others
-    router.post('/:id/interactions', strictRateLimiter, duplicateCheckMiddleware('video-interaction', 3), async (req, res) => {
+    router.post('/:id/interactions', requireAuth, strictRateLimiter, duplicateCheckMiddleware('video-interaction', 3), async (req, res) => {
         try {
             const { id } = req.params;
             const { user_id, type, value } = req.body;

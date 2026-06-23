@@ -42,6 +42,9 @@ const videoRoutes = require('./routes/video');
 const adminRoutes = require('./routes/admin');
 const consultationRoutes = require('./routes/consultation');
 const { shutdown: shutdownConsultationQueue } = require('./services/consultation-queue');
+
+// Phase 1 — Route Security Middleware
+const { verifyToken, requireRole, requireAuth } = require('./middleware/auth');
 const donationQueueService = require('./services/donation-queue');
 
 // Escrow Services
@@ -61,16 +64,94 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration
-const io = new Server(server, {
-  cors: {
-    origin: '*', // Change this to your Flutter app URL in production
-    methods: ['GET', 'POST'],
-    credentials: true,
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*')) {
+      console.warn('[Security] CORS is set to "*" — restrict ALLOWED_ORIGINS in production');
+      return callback(null, true);
+    }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS blocked: origin ${origin} not in ALLOWED_ORIGINS`));
   },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  credentials: true,
+};
+
+const io = new Server(server, {
+  cors: corsOptions,
 });
 
 // Initialize Socket Service
 socketService.init(io);
+
+// ── Phase 1 — Socket.IO Connection-Level Auth ──
+// Verifies identity on every new WebSocket connection before any events are handled.
+// The client must provide { auth: { token: '...' } } or x-user-id header.
+io.use(async (socket, next) => {
+  try {
+    // 1. Extract identity from handshake
+    let userId = socket.handshake.auth?.token
+      || socket.handshake.headers?.['x-user-id'];
+
+    // 2. Try Bearer token payload (unsigned decode, same as HTTP middleware)
+    if (!userId && socket.handshake.headers?.authorization) {
+      const authHeader = socket.handshake.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        const token = authHeader.slice(7);
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
+            const claims = JSON.parse(payload);
+            if (claims.sub) userId = claims.sub;
+          }
+        } catch (_) {
+          // malformed token
+        }
+      }
+    }
+
+    // 3. Verify against DB (if pool available)
+    if (pool && userId) {
+      const result = await pool.query(
+        'SELECT id, is_active, role FROM users WHERE id = $1',
+        [userId]
+      );
+      if (result.rows.length === 0) {
+        return next(new Error('Authentication failed: User not found'));
+      }
+      const userRow = result.rows[0];
+      if (!userRow.is_active) {
+        return next(new Error('Authentication failed: User is inactive'));
+      }
+      socket.user = {
+        id: userRow.id,
+        role: userRow.role || 'consumer',
+      };
+      socket.userId = userRow.id;
+      socket.userRole = userRow.role || 'consumer';
+    } else if (!userId) {
+      // Anonymous connections allowed for public features (video viewing, etc.)
+      socket.user = null;
+      socket.userId = null;
+      socket.userRole = null;
+    }
+
+    next();
+  } catch (err) {
+    console.error('[SocketAuth] Connection auth error:', err.message);
+    next(new Error('Internal server error during authentication'));
+  }
+});
 
 // Database configuration (optional - can work without database)
 let pool = null;
@@ -142,7 +223,7 @@ const {
 } = require('./middleware');
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // ✅ Rate Limiter: ใช้กับ API ทั้งหมด (60 req/min per IP)
@@ -191,8 +272,13 @@ app.use('/uploads/watermarks', express.static(watermarksUploadDir));
 const thumbnailQueue = require('./services/thumbnail-queue');
 app.use('/api/consultations', consultationRoutes());
 if (pool) {
-  app.use('/api/videos', videoRoutes(pool));
+  // Phase 1 — Route Security: verify identity before protected routes
+  app.use('/api/admin', verifyToken(pool));
   app.use('/api/admin', adminRoutes(pool));
+
+  // Write endpoints on videos require auth; reads remain open
+  app.use('/api/videos', verifyToken(pool));
+  app.use('/api/videos', videoRoutes(pool));
 }
 
 // Phase 2: Health Check Endpoint for BullMQ Queues
@@ -346,6 +432,14 @@ io.on('connection', (socket) => {
   // User connected event
   socket.on('user-connected', async (data) => {
     const { userId, isThaiMhungEnabled, isYieldWayEnabled, yieldWayRadius, latitude, longitude } = data;
+
+    // Defense-in-depth: if connection-level auth resolved a user, the event userId must match
+    if (socket.userId && socket.userId !== userId) {
+      console.warn(`[SocketAuth] user-connected mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+      socket.emit('error', { message: 'User identity mismatch' });
+      return;
+    }
+
     // ✅ [Yield Way] เก็บข้อมูลครบถ้วนสำหรับการคัดกรองใน _broadcastYieldWayAlerts
     connectedUsers.set(userId, {
       socketId: socket.id,
@@ -371,6 +465,13 @@ io.on('connection', (socket) => {
   // Location update event
   socket.on('location-update', async (data) => {
     const { userId, latitude, longitude, timestamp, accuracy, speed, heading } = data;
+
+    // Defense-in-depth: validate userId matches pre-authenticated socket user
+    if (socket.userId && socket.userId !== userId) {
+      console.warn(`[SocketAuth] location-update mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+      socket.emit('error', { message: 'User identity mismatch' });
+      return;
+    }
 
     // ✅ [Yield Way] อัพเดตตำแหน่งใน connectedUsers เพื่อใช้คัดกรองแบบ Real-time
     if (userId && connectedUsers.has(userId)) {
@@ -568,6 +669,14 @@ io.on('connection', (socket) => {
   socket.on('video-interaction', async (data) => {
     // ✅ รองรับ requestId เพื่อแยกยอดบริจาคตามคำร้องแต่ละใบในวิดีโอเดียวกัน
     const { videoId, userId, type, value, requestId } = data;
+
+    // Defense-in-depth: validate userId matches pre-authenticated socket user
+    if (socket.userId && socket.userId !== userId) {
+      console.warn(`[SocketAuth] video-interaction mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+      socket.emit('error', { message: 'User identity mismatch' });
+      return;
+    }
+
     console.log(`[Video ${videoId}] Interaction from ${userId}: ${type} (${value}) requestId=${requestId}`);
 
     if (pool && videoId && userId) {
@@ -680,7 +789,15 @@ io.on('connection', (socket) => {
 
   // ✅ [Yield Way] รับ Route Polyline ของจิตอาสา — บันทึกลง DB เพื่อใช้คัดกรองผู้รับแจ้งเตือน
   socket.on('volunteer-route', async (data) => {
-    const { videoId, responseId, encodedPolyline, fromLat, fromLng, toLat, toLng } = data;
+    const { videoId, responseId, encodedPolyline, fromLat, fromLng, toLat, toLng, userId } = data;
+
+    // Defense-in-depth: validate userId matches pre-authenticated socket user
+    if (socket.userId && socket.userId !== userId) {
+      console.warn(`[SocketAuth] volunteer-route mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+      socket.emit('error', { message: 'User identity mismatch' });
+      return;
+    }
+
     console.log(`[Yield Way] Volunteer route received for video ${videoId}, response ${responseId}`);
 
     if (pool && responseId && encodedPolyline) {

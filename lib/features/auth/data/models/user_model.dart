@@ -119,6 +119,9 @@ class UserModel {
   /// เช่น ['uuid-หมอ', 'uuid-พยาบาล'] → ช่างภาพและสถาปนิกจะยังเห็นแบบเบลออยู่
   final List<String> unblurredProfessionIds;
 
+  /// Role for route-level access control: consumer | provider | admin
+  final String role;
+
   /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา
   bool get isOnline {
     if (lastSeenAt == null) return false;
@@ -127,6 +130,15 @@ class UserModel {
 
   /// ตรวจสอบความเป็นอาสาสมัครเพื่อกรองการแจ้งเตือน
   bool get isProfessionalResponder => isVolunteer;
+
+  /// ตรวจสอบ role ว่าเป็น admin หรือไม่
+  bool get isAdmin => role == 'admin';
+
+  /// ตรวจสอบ role ว่าเป็น provider หรือไม่
+  bool get isProvider => role == 'provider' || isConsultationProvider;
+
+  /// ตรวจสอบ role ที่ต้องการ (single หรือ multiple)
+  bool hasRole(String requiredRole) => role == requiredRole;
 
   const UserModel({
     required this.id,
@@ -154,6 +166,7 @@ class UserModel {
     this.yieldWayRadius = 1000,
     this.isYieldWayEnabled = false,
     this.unblurredProfessionIds = const [],
+    this.role = 'consumer',
   });
 
   String get fullName => '$firstName $lastName';
@@ -186,6 +199,7 @@ class UserModel {
       'is_yield_way_enabled': isYieldWayEnabled,
       'unblurred_profession_ids': unblurredProfessionIds,
       'is_consultation_provider': isConsultationProvider,
+      'role': role,
       // is_volunteer can be stored in metadata or handled during fetch
     };
   }
@@ -222,6 +236,7 @@ class UserModel {
       alertRadius: json['alert_radius'] ?? 500,
       isVolunteer: json['is_volunteer'] ?? (json['professions']?['is_volunteer'] ?? false),
       isConsultationProvider: _computeIsConsultationProvider(json),
+      role: json['role']?.toString() ?? 'consumer',
       yieldWayRadius: json['yield_way_radius'] ?? 1000,
       isYieldWayEnabled: json['is_yield_way_enabled'] ?? false,
       unblurredProfessionIds: json['unblurred_profession_ids'] != null
@@ -273,6 +288,7 @@ class UserModel {
     int? yieldWayRadius,
     bool? isYieldWayEnabled,
     List<String>? unblurredProfessionIds,
+    String? role,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -299,6 +315,7 @@ class UserModel {
       yieldWayRadius: yieldWayRadius ?? this.yieldWayRadius,
       isYieldWayEnabled: isYieldWayEnabled ?? this.isYieldWayEnabled,
       unblurredProfessionIds: unblurredProfessionIds ?? this.unblurredProfessionIds,
+      role: role ?? this.role,
     );
   }
 }
