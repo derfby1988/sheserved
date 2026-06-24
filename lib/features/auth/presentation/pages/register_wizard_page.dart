@@ -1908,8 +1908,14 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       }
       
       if (fieldValues.isNotEmpty) {
-        await userRepo.saveRegistrationData(user.id, fieldValues);
-        debugPrint('✅ Registration data saved: ${fieldValues.length} fields');
+        final registrationDataSaved = await userRepo.saveRegistrationDataSafe(user.id, fieldValues);
+        if (registrationDataSaved) {
+          debugPrint('✅ Registration data saved: ${fieldValues.length} fields');
+        } else {
+          debugPrint(
+            '⚠️ Registration data skipped for now (likely RLS not ready): ${fieldValues.length} fields',
+          );
+        }
       }
 
       // 7. Create registration application with attachments when verification required

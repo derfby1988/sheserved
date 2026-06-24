@@ -52,11 +52,7 @@ class _DonationApproverSettingsWidgetState
     try {
       // 1. โหลด 3 อย่างแบบ parallel โดยแยก type ให้ชัดเจน
       final catsFuture = widget.repository.getCategories();
-      final regFuture = Supabase.instance.client
-          .from('user_approver_settings')
-          .select()
-          .eq('user_id', widget.userId!)
-          .withConverter<List<dynamic>>((data) => data);
+      final regFuture = widget.repository.getUserApproverSettings(widget.userId!);
       final userFuture = Supabase.instance.client
           .from('users')
           .select('profession_id')
@@ -123,15 +119,11 @@ class _DonationApproverSettingsWidgetState
   Future<void> _saveCategorySetting(String categoryId, bool isEnabled) async {
     if (widget.userId == null) return;
     try {
-      await Supabase.instance.client.from('user_approver_settings').upsert(
-        {
-          'user_id': widget.userId,
-          'category_id': categoryId,
-          'is_enabled': isEnabled,
-          'radius_meters': _approvalRadius,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        onConflict: 'user_id,category_id',
+      await widget.repository.upsertUserApproverSetting(
+        userId: widget.userId!,
+        categoryId: categoryId,
+        isEnabled: isEnabled,
+        radiusMeters: _approvalRadius,
       );
     } catch (e) {
       debugPrint('DonationApproverSettingsWidget: Error saving setting: $e');
@@ -151,10 +143,7 @@ class _DonationApproverSettingsWidgetState
         };
       }).toList();
 
-      await Supabase.instance.client.from('user_approver_settings').upsert(
-        updates,
-        onConflict: 'user_id,category_id',
-      );
+      await widget.repository.upsertUserApproverSettings(updates);
     } catch (e) {
       debugPrint('DonationApproverSettingsWidget: Error saving radius: $e');
     }

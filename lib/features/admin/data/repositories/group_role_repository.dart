@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sheserved/core/constants/user_roles.dart';
 
 class GroupRoleRepository {
   final SupabaseClient _client;
@@ -135,7 +136,7 @@ class GroupRoleRepository {
         .maybeSingle();
     final oldRole = oldRoleResponse?['role']?.toString();
 
-    final newRole = isAdmin ? 'admin' : 'consumer';
+    final newRole = isAdmin ? UserRole.admin.value : UserRole.consumer.value;
     final now = DateTime.now().toIso8601String();
 
     // 2. Update role

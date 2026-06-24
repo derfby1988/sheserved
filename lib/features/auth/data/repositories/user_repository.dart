@@ -578,6 +578,36 @@ class UserRepository {
     );
   }
 
+  bool _isRlsDeniedForRegistrationData(Object error) {
+    final message = error.toString();
+    return message.contains('user_registration_data') &&
+        (message.contains('42501') ||
+            message.contains('row-level security') ||
+            message.contains('violates row-level security'));
+  }
+
+  /// บันทึกข้อมูลลงทะเบียนแบบ dynamic อย่างปลอดภัย
+  /// ถ้า RLS ของตารางยังไม่พร้อม จะไม่ทำให้ flow หลักล้ม
+  Future<bool> saveRegistrationDataSafe(
+      String userId, Map<String, String> fieldValues) async {
+    if (fieldValues.isEmpty) return false;
+
+    try {
+      await saveRegistrationData(userId, fieldValues);
+      debugPrint('UserRepository: ✓ Registration data saved to Supabase');
+      return true;
+    } catch (e) {
+      if (_isRlsDeniedForRegistrationData(e)) {
+        debugPrint(
+            'UserRepository: ⚠️ Registration data skipped due to RLS for user=$userId fields=${fieldValues.length}');
+        return false;
+      }
+
+      debugPrint('UserRepository: ❌ Registration data save error: $e');
+      rethrow;
+    }
+  }
+
   /// ดึงข้อมูลลงทะเบียนของผู้ใช้
   Future<Map<String, String>> getRegistrationData(String userId) async {
     final response = await _client

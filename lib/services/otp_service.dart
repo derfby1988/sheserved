@@ -17,13 +17,19 @@ class OtpService {
   static const int otpExpiryMinutes = 5;
   static const int maxRetries = 3;
 
+  void _log(String message) {
+    debugPrint('[OTP] $message');
+  }
+
   /// ส่ง OTP ไปยังเบอร์โทร
   /// Returns: true ถ้าส่งสำเร็จ
   Future<OtpResult> sendOtp(String phoneNumber) async {
     // Normalize phone number
     final normalizedPhone = _normalizePhoneNumber(phoneNumber);
+    _log('sendOtp called phone=$normalizedPhone consoleMode=${AppConfig.useConsoleOtp}');
     
     if (!_isValidThaiPhone(normalizedPhone)) {
+      _log('sendOtp rejected: invalid phone format');
       return OtpResult(
         success: false,
         message: 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง',
@@ -32,6 +38,7 @@ class OtpService {
 
     // Check rate limiting
     if (_isRateLimited(normalizedPhone)) {
+      _log('sendOtp rejected: rate limited');
       return OtpResult(
         success: false,
         message: 'ส่ง OTP บ่อยเกินไป กรุณารอสักครู่',
@@ -41,6 +48,7 @@ class OtpService {
     // Generate OTP
     final otp = _generateOtp();
     final expiresAt = DateTime.now().add(const Duration(minutes: otpExpiryMinutes));
+    _log('generated OTP for $normalizedPhone expiresAt=$expiresAt');
 
     // Store OTP
     _otpStorage[normalizedPhone] = _OtpData(
@@ -61,6 +69,7 @@ class OtpService {
       );
     } else {
       // Production Mode - ส่ง SMS จริงผ่าน Supabase
+      _log('sending real SMS for $normalizedPhone');
       return await _sendRealSms(normalizedPhone, otp);
     }
   }
@@ -68,10 +77,12 @@ class OtpService {
   /// ยืนยัน OTP
   Future<OtpResult> verifyOtp(String phoneNumber, String enteredOtp) async {
     final normalizedPhone = _normalizePhoneNumber(phoneNumber);
+    _log('verifyOtp called phone=$normalizedPhone enteredLength=${enteredOtp.length}');
     
     final otpData = _otpStorage[normalizedPhone];
     
     if (otpData == null) {
+      _log('verifyOtp failed: otp not found');
       return OtpResult(
         success: false,
         message: 'ไม่พบรหัส OTP กรุณาขอรหัสใหม่',
@@ -81,6 +92,7 @@ class OtpService {
     // Check expiry
     if (DateTime.now().isAfter(otpData.expiresAt)) {
       _otpStorage.remove(normalizedPhone);
+      _log('verifyOtp failed: otp expired');
       return OtpResult(
         success: false,
         message: 'รหัส OTP หมดอายุ กรุณาขอรหัสใหม่',
@@ -90,6 +102,7 @@ class OtpService {
     // Check attempts
     if (otpData.attempts >= maxRetries) {
       _otpStorage.remove(normalizedPhone);
+      _log('verifyOtp failed: max retries reached');
       return OtpResult(
         success: false,
         message: 'ใส่รหัสผิดเกินจำนวนครั้งที่กำหนด กรุณาขอรหัสใหม่',
@@ -99,10 +112,7 @@ class OtpService {
     // Verify OTP
     if (otpData.otp == enteredOtp) {
       _otpStorage.remove(normalizedPhone);
-      debugPrint('══════════════════════════════════════════');
-      debugPrint('✅ OTP VERIFIED SUCCESSFULLY');
-      debugPrint('   Phone: $normalizedPhone');
-      debugPrint('══════════════════════════════════════════');
+      _log('verifyOtp success for $normalizedPhone');
       return OtpResult(
         success: true,
         message: 'ยืนยันเบอร์โทรศัพท์สำเร็จ',
@@ -117,6 +127,7 @@ class OtpService {
       );
       
       final remainingAttempts = maxRetries - otpData.attempts - 1;
+      _log('verifyOtp failed: wrong code remainingAttempts=$remainingAttempts');
       return OtpResult(
         success: false,
         message: 'รหัส OTP ไม่ถูกต้อง (เหลืออีก $remainingAttempts ครั้ง)',
@@ -127,6 +138,7 @@ class OtpService {
   /// ขอส่ง OTP ใหม่
   Future<OtpResult> resendOtp(String phoneNumber) async {
     final normalizedPhone = _normalizePhoneNumber(phoneNumber);
+    _log('resendOtp called phone=$normalizedPhone');
     
     // Check cooldown (60 seconds)
     final existingOtp = _otpStorage[normalizedPhone];
@@ -134,6 +146,7 @@ class OtpService {
       final secondsSinceCreated = DateTime.now().difference(existingOtp.createdAt).inSeconds;
       if (secondsSinceCreated < 60) {
         final waitTime = 60 - secondsSinceCreated;
+        _log('resendOtp rejected: cooldown active waitTime=$waitTime');
         return OtpResult(
           success: false,
           message: 'กรุณารอ $waitTime วินาที ก่อนขอรหัสใหม่',
@@ -181,11 +194,12 @@ class OtpService {
   }
 
   bool _isValidThaiPhone(String phone) {
-    // Thai mobile: 08x, 09x, 06x (10 digits)
-    // Thai landline: 02x, 03x, etc. (9 digits)
-    final mobileRegex = RegExp(r'^0[689][0-9]{8}$');
-    final landlineRegex = RegExp(r'^0[2-7][0-9]{7}$');
-    return mobileRegex.hasMatch(phone) || landlineRegex.hasMatch(phone);
+    // Development-friendly validation:
+    // Accept any Thai-style phone number starting with 0 and having 9-10 digits.
+    // This matches the existing registration form validation and avoids blocking
+    // valid test numbers such as 0778430244 during development.
+    final devFriendlyRegex = RegExp(r'^0[0-9]{8,9}$');
+    return devFriendlyRegex.hasMatch(phone);
   }
 
   bool _isRateLimited(String phone) {
@@ -209,19 +223,19 @@ class OtpService {
   void _printOtpToConsole(String phone, String otp, DateTime expiresAt) {
     final expiresIn = expiresAt.difference(DateTime.now()).inMinutes;
     
-    print('');
-    print('╔══════════════════════════════════════════╗');
-    print('║       📱 OTP VERIFICATION (Console)      ║');
-    print('╠══════════════════════════════════════════╣');
-    print('║  Phone: $phone');
-    print('║  ┌─────────────────────────────────────┐ ║');
-    print('║  │         OTP Code: $otp            │ ║');
-    print('║  └─────────────────────────────────────┘ ║');
-    print('║  Expires in: $expiresIn minutes');
-    print('║                                          ║');
-    print('║  ⚠️  Console Mode - ไม่ส่ง SMS จริง      ║');
-    print('╚══════════════════════════════════════════╝');
-    print('');
+    debugPrint('');
+    debugPrint('[OTP] ╔══════════════════════════════════════════╗');
+    debugPrint('[OTP] ║       📱 OTP VERIFICATION (Console)      ║');
+    debugPrint('[OTP] ╠══════════════════════════════════════════╣');
+    debugPrint('[OTP] ║  Phone: $phone');
+    debugPrint('[OTP] ║  ┌─────────────────────────────────────┐ ║');
+    debugPrint('[OTP] ║  │         OTP Code: $otp            │ ║');
+    debugPrint('[OTP] ║  └─────────────────────────────────────┘ ║');
+    debugPrint('[OTP] ║  Expires in: $expiresIn minutes');
+    debugPrint('[OTP] ║                                          ║');
+    debugPrint('[OTP] ║  ⚠️  Console Mode - ไม่ส่ง SMS จริง      ║');
+    debugPrint('[OTP] ╚══════════════════════════════════════════╝');
+    debugPrint('');
   }
 
   Future<OtpResult> _sendRealSms(String phone, String otp) async {
@@ -231,6 +245,7 @@ class OtpService {
     try {
       // For now, return error since Supabase is not configured
       if (!AppConfig.isSupabaseConfigured) {
+        _log('real SMS skipped: Supabase not configured');
         return OtpResult(
           success: false,
           message: 'Supabase ยังไม่ได้ตั้งค่า กรุณาใช้ Console Mode',
@@ -245,7 +260,7 @@ class OtpService {
         message: 'ส่งรหัส OTP ไปยัง $phone แล้ว',
       );
     } catch (e) {
-      debugPrint('OtpService: Failed to send SMS - $e');
+      _log('failed to send real SMS: $e');
       return OtpResult(
         success: false,
         message: 'ไม่สามารถส่ง SMS ได้ กรุณาลองใหม่',

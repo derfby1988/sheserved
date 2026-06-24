@@ -1,3 +1,5 @@
+import 'package:sheserved/core/constants/user_roles.dart';
+
 /// ประเภทผู้ใช้งาน (ใช้เพื่อแยก Logic หน้าจอหลัก)
 enum UserType {
   consumer, // ผู้ซื้อ/ผู้รับบริการ
@@ -136,6 +138,9 @@ class UserModel {
 
   /// ตรวจสอบ role ว่าเป็น provider หรือไม่
   bool get isProvider => role == 'provider' || isConsultationProvider;
+
+  /// Phase 1: UserRole enum getter (สำหรับ future migration)
+  UserRole? get userRole => UserRole.fromValue(role);
 
   /// ตรวจสอบ role ที่ต้องการ (single หรือ multiple)
   bool hasRole(String requiredRole) => role == requiredRole;

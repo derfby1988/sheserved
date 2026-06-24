@@ -528,6 +528,82 @@ class DonationRepository {
     return List<Map<String, dynamic>>.from(response);
   }
 
+  bool _isMissingUserApproverSettingsTableError(Object error) {
+    final message = error.toString();
+    return message.contains('user_approver_settings') &&
+        (message.contains('PGRST205') ||
+            message.contains('Could not find the table') ||
+            message.contains('Not Found'));
+  }
+
+  /// อ่านการตั้งค่าผู้อนุมัติของ user แบบปลอดภัย
+  /// ถ้าตารางยังไม่พร้อม จะคืนรายการว่างแทนการ throw
+  Future<List<Map<String, dynamic>>> getUserApproverSettings(String userId) async {
+    try {
+      final response = await _client
+          .from('user_approver_settings')
+          .select('category_id, is_enabled, radius_meters')
+          .eq('user_id', userId);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      if (_isMissingUserApproverSettingsTableError(e)) {
+        debugPrint(
+            '[DonationRepository] user_approver_settings table is missing; using empty settings fallback');
+        return [];
+      }
+      rethrow;
+    }
+  }
+
+  /// บันทึก/อัปเดตการตั้งค่าผู้อนุมัติของ user แบบปลอดภัย
+  /// ถ้าตารางยังไม่พร้อม จะไม่ทำให้ flow หลักพัง
+  Future<void> upsertUserApproverSetting({
+    required String userId,
+    required String categoryId,
+    required bool isEnabled,
+    required int radiusMeters,
+  }) async {
+    try {
+      await _client.from('user_approver_settings').upsert(
+        {
+          'user_id': userId,
+          'category_id': categoryId,
+          'is_enabled': isEnabled,
+          'radius_meters': radiusMeters,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'user_id,category_id',
+      );
+    } catch (e) {
+      if (_isMissingUserApproverSettingsTableError(e)) {
+        debugPrint(
+            '[DonationRepository] user_approver_settings table is missing; skipping save for category=$categoryId');
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// บันทึกการตั้งค่าหลายหมวดหมู่แบบ batch
+  Future<void> upsertUserApproverSettings(
+    List<Map<String, dynamic>> updates,
+  ) async {
+    if (updates.isEmpty) return;
+    try {
+      await _client.from('user_approver_settings').upsert(
+        updates,
+        onConflict: 'user_id,category_id',
+      );
+    } catch (e) {
+      if (_isMissingUserApproverSettingsTableError(e)) {
+        debugPrint(
+            '[DonationRepository] user_approver_settings table is missing; skipping batch save');
+        return;
+      }
+      rethrow;
+    }
+  }
+
   /// ปฏิเสธคำร้องขอ
   Future<void> rejectRequest(String requestId) async {
     await _client.from('donation_requests').update({
@@ -724,13 +800,10 @@ class DonationRepository {
 
     if (userProfIds.isNotEmpty || userCatIds.isNotEmpty) {
       // Fetch user's approver settings (toggles)
-      final regData = await _client
-          .from('user_approver_settings')
-          .select('category_id, is_enabled, radius_meters')
-          .eq('user_id', userId);
+      final regData = await getUserApproverSettings(userId);
       
       final disabledCategories = <String>[];
-      for (final row in (regData as List)) {
+      for (final row in regData) {
         final catId = row['category_id'] as String;
         final isEnabled = row['is_enabled'] as bool? ?? true;
         final radiusMeters = row['radius_meters'] as int? ?? 500;

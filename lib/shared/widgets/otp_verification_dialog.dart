@@ -35,11 +35,8 @@ class OtpVerificationDialog extends StatefulWidget {
 
 class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
   final OtpService _otpService = OtpService();
-  final List<TextEditingController> _controllers = List.generate(
-    6,
-    (_) => TextEditingController(),
-  );
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  final TextEditingController _otpController = TextEditingController();
+  final FocusNode _otpFocusNode = FocusNode();
 
   bool _isLoading = false;
   bool _isSending = false;
@@ -47,23 +44,65 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
   int _remainingSeconds = 0;
   Timer? _countdownTimer;
   bool _isConsoleMode = false;
+  bool _isAutoVerifying = false;
 
   @override
   void initState() {
     super.initState();
+    _otpController.addListener(_handleOtpChanged);
     _sendOtp();
   }
 
   @override
   void dispose() {
-    for (var controller in _controllers) {
-      controller.dispose();
-    }
-    for (var node in _focusNodes) {
-      node.dispose();
-    }
+    _otpController.removeListener(_handleOtpChanged);
+    _otpController.dispose();
+    _otpFocusNode.dispose();
     _countdownTimer?.cancel();
     super.dispose();
+  }
+
+  void _focusOtpField() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _otpFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _clearOtpInput({bool clearError = true}) {
+    _otpController.clear();
+    _isAutoVerifying = false;
+    if (clearError && mounted) {
+      setState(() {
+        _errorMessage = null;
+      });
+    }
+  }
+
+  void _handleOtpChanged() {
+    if (!mounted) return;
+
+    setState(() {
+      if (_errorMessage != null) {
+        _errorMessage = null;
+      }
+    });
+
+    final otp = _otpController.text;
+
+    if (otp.length < 6) {
+      _isAutoVerifying = false;
+      return;
+    }
+
+    if (otp.length == 6 && !_isLoading && !_isSending && !_isAutoVerifying) {
+      _isAutoVerifying = true;
+      _verifyOtp().whenComplete(() {
+        _isAutoVerifying = false;
+      });
+    }
   }
 
   Future<void> _sendOtp() async {
@@ -82,11 +121,13 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
           _errorMessage = result.message;
         } else {
           _startCountdown();
+          _clearOtpInput(clearError: false);
         }
       });
 
       if (result.success) {
         _showSnackBar(result.message, isSuccess: true);
+        _focusOtpField();
       }
     }
   }
@@ -109,7 +150,7 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
   }
 
   Future<void> _verifyOtp() async {
-    final otp = _controllers.map((c) => c.text).join();
+    final otp = _otpController.text.trim();
     
     if (otp.length != 6) {
       setState(() {
@@ -138,11 +179,9 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
         setState(() {
           _errorMessage = result.message;
         });
-        // Clear OTP fields on error
-        for (var controller in _controllers) {
-          controller.clear();
-        }
-        _focusNodes[0].requestFocus();
+        // Clear OTP field on error and refocus for retry
+        _clearOtpInput(clearError: false);
+        _focusOtpField();
       }
     }
   }
@@ -162,11 +201,9 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
           _errorMessage = result.message;
         } else {
           _startCountdown();
-          // Clear OTP fields
-          for (var controller in _controllers) {
-            controller.clear();
-          }
-          _focusNodes[0].requestFocus();
+          // Clear OTP field
+          _clearOtpInput(clearError: false);
+          _focusOtpField();
         }
       });
 
@@ -184,27 +221,6 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
     );
   }
 
-  void _onOtpChanged(int index, String value) {
-    if (value.isNotEmpty && index < 5) {
-      _focusNodes[index + 1].requestFocus();
-    }
-    
-    // Auto verify when all digits entered
-    final otp = _controllers.map((c) => c.text).join();
-    if (otp.length == 6) {
-      _verifyOtp();
-    }
-  }
-
-  void _onKeyPressed(int index, RawKeyEvent event) {
-    if (event is RawKeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.backspace &&
-        _controllers[index].text.isEmpty &&
-        index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -220,7 +236,7 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -287,9 +303,9 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
                 child: CircularProgressIndicator(),
               )
             else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(6, (index) => _buildOtpField(index)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: _buildOtpInputSection(),
               ),
 
             const SizedBox(height: 16),
@@ -299,7 +315,7 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.1),
+                  color: AppColors.error.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -392,42 +408,106 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
     );
   }
 
-  Widget _buildOtpField(int index) {
-    return SizedBox(
-      width: 38,
-      height: 55,
-      child: RawKeyboardListener(
-        focusNode: FocusNode(),
-        onKey: (event) => _onKeyPressed(index, event),
-        child: TextField(
-          controller: _controllers[index],
-          focusNode: _focusNodes[index],
-          textAlign: TextAlign.center,
-          keyboardType: TextInputType.number,
-          maxLength: 1,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+  Widget _buildOtpInputSection() {
+    final otpText = _otpController.text;
+    final activeIndex = otpText.length >= 6 ? 5 : otpText.length;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: _focusOtpField,
+      child: AutofillGroup(
+        child: SizedBox(
+          height: 64,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(6, (index) {
+                  final hasDigit = index < otpText.length;
+                  final isActive = index == activeIndex && otpText.length < 6;
+                  return _buildOtpBox(
+                    value: hasDigit ? otpText[index] : '',
+                    isActive: isActive,
+                  );
+                }),
+              ),
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: SizedBox(
+                    width: 1,
+                    height: 1,
+                    child: Opacity(
+                      opacity: 0.01,
+                      child: TextField(
+                        controller: _otpController,
+                        focusNode: _otpFocusNode,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        enableSuggestions: false,
+                        autocorrect: false,
+                        showCursor: false,
+                        cursorColor: Colors.transparent,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.transparent,
+                          fontSize: 1,
+                          height: 1,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          counterText: '',
+                          isCollapsed: true,
+                          contentPadding: EdgeInsets.zero,
+                          filled: false,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(6),
+                        ],
+                        onSubmitted: (_) => _verifyOtp(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          decoration: InputDecoration(
-            counterText: '',
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary, width: 2),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-          ),
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onChanged: (value) => _onOtpChanged(index, value),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOtpBox({
+    required String value,
+    required bool isActive,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      width: 42,
+      height: 54,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isActive ? AppColors.primary : AppColors.border,
+          width: isActive ? 2 : 1,
+        ),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: AppColors.textPrimary,
         ),
       ),
     );
