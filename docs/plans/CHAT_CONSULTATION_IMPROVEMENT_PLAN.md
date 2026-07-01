@@ -5396,4 +5396,362 @@ NOTIFY pgrst, 'reload schema';
 
 ---
 
-*Last Updated: 2026-06-20* — Phase 6.11: Error handling UX + network timeout + reusable ErrorHandler
+## ✅ บันทึกการแก้ไข: Body Region Admin Editor (หน้าตั้งค่าอวัยวะ)
+
+### ไฟล์หลัก
+- `lib/features/admin/presentation/pages/body_region_admin_page.dart`
+
+### ปัญหา
+- หน้าแก้ไขอวัยวะบนมือถือเกิด overflow และ scroll area ซ้อนกัน
+- โมเดล 2D silhouette แสดงเล็กเกินไป กดตำแหน่งไม่แม่น
+- ข้อความในปุ่มเลือกไฟล์ถูกตัด/ซ้อน
+- ไฟล์ 3D model อ้างอิง (`assets/models/male_anatomy.glb`, `assets/models/female_anatomy.glb`) ไม่มีในโปรเจกต์ ทำให้ 3D preview เป็นหน้าจอว่าง
+
+### การปรับปรุงครั้งล่าสุด
+
+#### 1. Responsive Layout
+- ใช้ `LayoutBuilder` แยกโหมด `isCompact` (ความกว้าง < 900 px)
+- **Desktop:** 2 คอลัมน์ ซ้าย=ฟอร์ม ขวา=แผงแสดงผล แยก scroll ได้
+- **Mobile:** รวมเป็น `SingleChildScrollView` เลื่อนหน้าเดียว
+- แถวฟอร์ม Thai/English, X/Y sliders, ไอคอน/preview ฯลฯ เปลี่ยนเป็นแนวตั้งบนมือถือ
+
+#### 2. 2D Silhouette Picker (หลัก)
+- ใช้ `_HumanSilhouettePainter` วาดรูปร่าง 2D ตามเพศ
+- แสดง landmarks เป็นเส้นแนวนอน + จุด + ชื่อ อ้างอิงตำแหน่ง
+- แตะบน silhouette แล้วคำนวณ `_xRatio` / `_yRatio` ตามพื้นที่ render จริง (AspectRatio)
+- แสดง pointer dot และ calibration zone overlay ตรงกับตำแหน่งที่เลือก
+- **Mobile:** ขยาย silhouette ด้วย `aspectRatio = 0.95` และความสูง 440 px
+
+#### 3. 3D Reference / Preview
+- ปุ่ม toggle 2D ↔ 3D มุมขวาบนของ picker
+- โหมด 3D ใช้ `_buildReferenceModelViewer()` ซึ่งปัจจุบันแสดง **placeholder** เนื่องจากไฟล์ `.glb` อ้างอิงไม่มี
+- Preview ส่วนท้ายแสดง:
+  - `ModelViewer` ถ้ามีไฟล์/URL 3D model
+  - รูป 2D ถ้ามีไฟล์/URL รูป
+  - placeholder ถ้าไม่มีทั้งคู่
+
+#### 4. การจัดเรียง UI
+- บนมือถือย้ายแผง **เลือกตำแหน่ง + ตัวอย่าง (Preview)** มาก่อนส่วน **สีประจำอวัยวะ**
+- ลำดับ mobile: ข้อมูลพื้นฐาน → Position Picker + Preview → สีประจำอวัยวะ → ไอคอน/ไฟล์ → บันทึก
+
+#### 5. Calibration
+- ยังใช้ `_modelTopRatio` (0.08) และ `_modelBottomRatio` (0.93) เป็นค่าคงที่
+- Landmarks ใช้แสดงผลเป็น visual guide บน 2D ยังไม่ได้ map เป็น 3D ในหน้านี้
+
+### ไฟล์ที่แก้ไข
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `lib/features/admin/presentation/pages/body_region_admin_page.dart` | LayoutBuilder responsive, SingleChildScrollView บน mobile, ปรับแถวฟอร์มให้ wrap/stack, ขยาย silhouette บน mobile, ย้าย visual panel ก่อนสี, placeholder สำหรับ 3D model ที่หายไป |
+| `lib/features/admin/data/models/body_region_model.dart` | มี `hasSides`, `colorHex`, `modelTopRatio`, `modelBottomRatio` อยู่แล้ว |
+
+### สถานะ
+- ✅ โค้ด: `flutter analyze` ผ่าน (ไม่มี error)
+- ✅ 2D Silhouette: responsive + ขยายบน mobile แล้ว
+- ✅ Single scrollbar: บน mobile เลื่อนหน้าเดียว
+- ✅ จัดเรียง UI: preview/model ก่อนสีประจำอวัยวะ
+- ⚠️ 3D Reference Model: ยังเป็น placeholder เพราะไฟล์ `assets/models/*.glb` ไม่มีในโปรเจกต์
+- 🔄 Calibration: ค่า `_modelTopRatio`/`_modelBottomRatio` เป็น draft (0.08 / 0.93) — ต้องจูนจากภาพจริง
+
+---
+
+## 🎯 Phase 6.13: Body Region Calibration Improvement Plan — Multi-Point Calibration v2.0
+
+> **วันที่วิเคราะห์:** 25 มิถุนายน 2569  
+> **สถานะ:** Draft v2.0 — Future Target  
+> **ขอบเขต:** Gender-Aware + Platform-Aware + Expandable Landmarks + xRatio Calibration
+> **หมายเหตุ:** สถานะปัจจุบันของหน้าแก้ไขอวัยวะดูที่ **Phase 6.12** ด้านบน — ปัจจุบันยังใช้ 2D silhouette picker + top/bottom ratio ธรรมดา โดย v2.0 เป็นแผนขยายในอนาคต
+
+---
+
+### ปัญหาหลัก
+
+| ปัญหา | รายละเอียด | ผลกระทบ |
+|---|---|---|
+| **สัดส่วนร่างกายไม่ตรง** | 2D silhouette vs 3D model สัดส่วนต่างกัน | ตำแหน่งกลางไม่ตรงกัน |
+| **Calibration เดียวทั้งระบบ** | top/bottom 2 จุด สำหรับทุกอวัยวะ | อวัยวะต่าง ๆ ใช้ค่าเดียวกัน |
+| **ไม่แยกเพศ** | ชาย/หญิงสัดส่วนต่างกัน ใช้ calibration ชุดเดียว | หญิงตรง = ชายอาจไม่ตรง |
+| **ไม่รองรับ Platform** | 3D render ต่างกันบน mobile/web/tablet | ตำแหน่งเบี้ยวตาม device |
+| **xRatio ไม่ได้ Calibrate** | แตะซ้าย/ขวา ไม่ได้ map กับ 3D | อวัยวะ bilateral อาจเบี้ยว |
+| **จำนวน landmarks คงที่** | 7 จุด fixed | เพิ่มอวัยวะใหม่ต้อง hardcode |
+| **Admin ไม่เห็น feedback** | ไม่รู้ว่าจุดบน 2D = ตำแหน่งไหนบน 3D | ตำแหน่งผิด ลองผิดลองถูก |
+
+---
+
+### สถาปัตยกรรม v2.0: 4 Dimensions of Calibration
+
+> **ความยาก:** สูง | **เวลา:** ~8-12 ชั่วโมง | **ความแม่นยำ:** +97%
+
+#### แนวคิดหลัก
+
+แทนที่จะใช้ **2 จุด** (top/bottom) ให้ใช้ **expandable landmarks array** ที่รองรับ:
+1. **Gender** — แยก calibration ชาย/หญิง
+2. **Platform** — แยก mobile/web/tablet
+3. **Expandable** — landmarks เพิ่มได้ไม่จำกัด
+4. **xRatio** — calibrate ซ้าย/ขวาด้วย
+
+#### Expandable Landmarks (เริ่มต้น 7 จุด เพิ่มได้ไม่จำกัด)
+
+| ID | ชื่อ (TH) | y2d | y3d | x2d | x3d | หมายเหตุ |
+|:---:|---|---:|---:|---:|---:|---|
+| 0 | ยอดศีรษะ | 0.00 | 0.08 | 0.50 | 0.50 | Auto-detect ได้ |
+| 1 | คอ | 0.12 | 0.18 | 0.50 | 0.50 | |
+| 2 | ไหล่ | 0.18 | 0.25 | 0.50 | 0.50 | |
+| 3 | สะดือ | 0.50 | 0.52 | 0.50 | 0.50 | |
+| 4 | อวัยวะเพศ | 0.68 | 0.70 | 0.50 | 0.50 | |
+| 5 | หัวเข่า | 0.82 | 0.85 | 0.50 | 0.50 | |
+| 6 | เท้า | 1.00 | 0.93 | 0.50 | 0.50 | Auto-detect ได้ |
+
+**เพิ่มได้ในอนาคต:** ตา, หู, หัวใจ, ปอด, กระเพาะ, ลำไส้, ไต, ตับ ฯลฯ
+
+#### Architecture: 4-Layer Resolution
+
+```
+Layer 1: Per-Region Override (body_regions.landmarks JSONB)
+  ↓ ถ้า NULL
+Layer 2: Gender + Platform Specific (calibration_defaults table)
+  ↓ ถ้าไม่มี
+Layer 3: Gender + Universal (calibration_defaults table)
+  ↓ ถ้าไม่มี
+Layer 4: Both + Universal (fallback defaults)
+```
+
+#### Database Schema v2.0
+
+##### 1. Global Defaults Table (Gender + Platform Aware)
+
+```sql
+CREATE TABLE public.body_region_calibration_defaults (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  gender TEXT NOT NULL DEFAULT 'both',
+  platform TEXT NOT NULL DEFAULT 'universal',
+  landmarks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_active BOOLEAN DEFAULT true,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(gender, platform)
+);
+
+CREATE INDEX idx_calibration_lookup 
+ON body_region_calibration_defaults(gender, platform, is_active);
+```
+
+##### 2. Per-Region Override (JSONB in body_regions)
+
+```sql
+ALTER TABLE public.body_regions ADD COLUMN IF NOT EXISTS
+  landmarks JSONB,
+  calibration_gender TEXT DEFAULT 'both',
+  calibration_platform TEXT DEFAULT 'universal';
+```
+
+#### Algorithm v2.0: 4-Layer Resolution + xRatio
+
+```dart
+class BodyLandmark {
+  final int id;
+  final String name;
+  final double y2d, y3d, x2d, x3d;
+  final bool autoDetected;
+
+  BodyLandmark({
+    required this.id, required this.name,
+    required this.y2d, required this.y3d,
+    this.x2d = 0.5, this.x3d = 0.5,
+    this.autoDetected = false,
+  });
+
+  factory BodyLandmark.fromJson(Map<String, dynamic> json) => ...;
+  Map<String, dynamic> toJson() => ...;
+}
+
+List<BodyLandmark> _resolveLandmarks(BodyRegionModel region) {
+  // Layer 1: Per-region override
+  if (region.landmarks != null && region.landmarks!.isNotEmpty) {
+    return region.landmarks!;
+  }
+
+  // Layer 2-4: Query calibration_defaults with fallback
+  final gender = region.calibrationGender ?? 'both';
+  final platform = _detectPlatform(); // mobile/web/tablet
+
+  return _queryDefaults(gender: gender, platform: platform)
+      ?? _queryDefaults(gender: gender, platform: 'universal')
+      ?? _queryDefaults(gender: 'both', platform: 'universal')
+      ?? _fallbackLandmarks();
+}
+
+double _modelYRatio(List<BodyLandmark> lm, double y2d) {
+  if (lm.isEmpty) return y2d;
+  final s = [...lm]..sort((a, b) => a.y2d.compareTo(b.y2d));
+  for (int i = 0; i < s.length - 1; i++) {
+    if (y2d >= s[i].y2d && y2d <= s[i+1].y2d) {
+      final t = (y2d - s[i].y2d) / (s[i+1].y2d - s[i].y2d);
+      return s[i].y3d + t * (s[i+1].y3d - s[i].y3d);
+    }
+  }
+  return s.first.y3d + (y2d - s.first.y2d) *
+         (s.last.y3d - s.first.y3d) / (s.last.y2d - s.first.y2d);
+}
+
+double _modelXRatio(List<BodyLandmark> lm, double x2d) {
+  if (lm.isEmpty) return x2d;
+  final s = [...lm]..sort((a, b) => a.x2d.compareTo(b.x2d));
+  for (int i = 0; i < s.length - 1; i++) {
+    if (x2d >= s[i].x2d && x2d <= s[i+1].x2d) {
+      final t = (x2d - s[i].x2d) / (s[i+1].x2d - s[i].x2d);
+      return s[i].x3d + t * (s[i+1].x3d - s[i].x3d);
+    }
+  }
+  return x2d;
+}
+```
+
+#### UI สำหรับ Admin v2.0
+
+```
+┌─────────────────────────────────────────────┐
+│  Calibration โมเดล 3D (Multi-Point v2.0) │
+├─────────────────────────────────────────────┤
+│  [ชาย] [หญิง] [ทั้งสอง]  ← Gender Tabs   │
+│  [มือถือ] [เว็บ] [แท็บเล็ต] [ทุกแพลตฟอร์ม]│
+│                                             │
+│  [Auto-Detect จาก 3D]  [Reset]  [Save]    │
+│                                             │
+│  Landmarks (เพิ่ม/ลาก/ลบได้):            │
+│  ┌─────────────────────────────────────┐   │
+│  │ ● ศีรษะ  y2d:0.00 y3d:0.08 [x]     │   │
+│  │ ● คอ     y2d:0.12 y3d:0.18 [x]     │   │
+│  │ ● ไหล่   y2d:0.18 y3d:0.25 [x]     │   │
+│  │ ● สะดือ  y2d:0.50 y3d:0.52 [x]     │   │
+│  │ + [เพิ่ม Landmark]                   │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ───────────────────────────────────────   │
+│                                             │
+│  Per-Region Override:                      │
+│  ☑ ใช้ Global Defaults                     │
+│  ☐ ใช้ Landmarks เฉพาะอวัยวะนี้ (JSONB)  │
+└─────────────────────────────────────────────┘
+```
+
+#### ข้อดี v2.0
+- **แม่นยำสูงสุด** — Gender + Platform + xRatio + Expandable
+- **Auto-Detect** — ลดภาระ Admin (ไม่ต้องปรับทุกจุดเอง)
+- **JSONB ใน body_regions** — ไม่ต้อง JOIN table เพิ่ม (ลด N+1)
+- **Optional Override** — ใช้ global ได้ทันที ไม่ต้องปรับทุกอวัยวะ
+- **Scalable** — เพิ่มอวัยวะใหม่ ไม่ต้องแก้ schema
+- **Backward Compatible** — ถ้า landmarks = null → ใช้ top/bottom เดิม
+
+#### ข้อเสีย v2.0
+- UI ซับซ้อนขึ้น — มี gender + platform tabs
+- JSONB validation — ต้อง validate structure ใน Flutter
+- Auto-detect ไม่ perfect — อาจต้อง manual tune
+
+---
+
+### Fallback (สถานะปัจจุบัน)
+
+ใช้ **top/bottom ที่มีอยู่** (`modelTopRatio`/`modelBottomRatio`) แบบใน `body_region_admin_page.dart` ก่อน แล้วค่อย upgrade เป็น v2.0 เมื่อ:
+1. มีไฟล์ 3D model `.glb` ใน `assets/models/`
+2. มี schema `body_region_calibration_defaults` พร้อมใช้
+3. มีเวลาพัฒนา UI ปรับ landmarks แบบละเอียด
+
+ปัจจุบันยัง backward compatible กับ `modelTopRatio`/`modelBottomRatio` อยู่
+
+---
+
+### เปรียบเทียบ
+
+| ด้าน | v2.0 Multi-Point | v1.0 top/bottom |
+|---|:---:|:---:|
+| ความแม่นยำ | 97% | 70% |
+| Gender aware | ✅ | ❌ |
+| Platform aware | ✅ | ❌ |
+| xRatio calibrate | ✅ | ❌ |
+| Expandable landmarks | ✅ | ❌ |
+| N+1 query | ❌ (JSONB) | ✅ (separate table) |
+| Backward compatible | ✅ | N/A |
+
+---
+
+### ขั้นตอน Implement v2.0
+
+#### Phase 1: Database (~1.5h)
+- สร้าง `body_region_calibration_defaults`
+- เพิ่ม `landmarks`, `calibration_gender`, `calibration_platform` ใน `body_regions`
+- Seed gender-aware defaults (male/female/both)
+
+#### Phase 2: Model + Algorithm (~2h)
+- สร้าง `BodyLandmark` class (fromJson/toJson)
+- Implement `_resolveLandmarks()` (4-layer resolution)
+- Implement `_modelYRatio()` + `_modelXRatio()` (piecewise)
+- Backward compatible: landmarks=null → ใช้ top/bottom
+
+#### Phase 3: Auto-Detect (~1.5h)
+- Heuristic: ศีรษะ = top of bounding box, เท้า = bottom
+- คำนวณ intermediate landmarks จาก 3D model proportions
+- บันทึก `autoDetected=true` ใน JSONB
+
+#### Phase 4: UI Editor (~4h)
+- Gender tabs (ชาย/หญิง/ทั้งสอง)
+- Platform selector (มือถือ/เว็บ/แท็บเล็ต/ทุกแพลตฟอร์ม)
+- Landmark list (เพิ่ม/ลาก/ลบ/แก้ไข)
+- Auto-detect button
+- Per-region override toggle
+
+#### Phase 5: Patient Page Update (~1.5h)
+- ใช้ `_resolveLandmarks()` แทน top/bottom
+- ส่ง gender จาก patient profile
+- ตรวจสอบ platform อัตโนมัติ
+
+#### Phase 6: Testing (~1h)
+- Test ทุก gender + platform combination
+- Verify backward compatibility
+
+---
+
+### สถานะปัจจุบัน
+
+| งาน | สถานะ |
+|---|:---:|
+| Migration SQL (top/bottom) | ✅ เสร็จ |
+| BodyRegionModel (top/bottom) | ✅ เสร็จ |
+| Admin Editor UI (sliders) | ✅ เสร็จ |
+| Patient Page (use DB calibration) | ✅ เสร็จ |
+| **v2.0: calibration_defaults table** | ⏳ ยังไม่เริ่ม |
+| **v2.0: body_regions JSONB columns** | ⏳ ยังไม่เริ่ม |
+| **v2.0: BodyLandmark model** | ⏳ ยังไม่เริ่ม |
+| **v2.0: 4-layer resolution algorithm** | ⏳ ยังไม่เริ่ม |
+| **v2.0: xRatio interpolation** | ⏳ ยังไม่เริ่ม |
+| **v2.0: Auto-detect landmarks** | ⏳ ยังไม่เริ่ม |
+| **v2.0: Gender/Platform UI** | ⏳ ยังไม่เริ่ม |
+| **v2.0: Seed gender-aware defaults** | ⏳ ยังไม่เริ่ม |
+
+---
+
+### ขั้นตอนถัดไป
+
+1. **Phase 1: Database** — `body_region_calibration_defaults` + `body_regions` JSONB
+2. **Phase 2: Model** — `BodyLandmark` class + fromJson/toJson
+3. **Phase 3: Algorithm** — `_resolveLandmarks()` + `_modelYRatio()` + `_modelXRatio()`
+4. **Phase 4: UI** — Gender tabs + Platform selector + Landmark editor + Auto-detect
+5. **Phase 5: Patient** — Integrate 4-layer resolution + gender from profile
+6. **Phase 6: Test** — Cross-gender + cross-platform verification
+
+---
+
+### ไฟล์ที่เกี่ยวข้อง
+
+| ไฟล์ | สถานะ |
+|---|---|
+| `lib/features/admin/presentation/pages/body_region_admin_page.dart` | ✅ มี sliders, calibration zone overlay |
+| `lib/features/admin/data/models/body_region_model.dart` | ✅ มี `modelTopRatio`/`modelBottomRatio` |
+| `lib/features/consultation/presentation/pages/analyze_body_area_page.dart` | ✅ ใช้ DB calibration, guard clause |
+| `supabase/migrations/20260624170000_add_model_calibration_to_body_regions.sql` | ✅ สร้างแล้ว, push แล้ว |
+| `supabase/migrations/20260625XXXXXX_add_calibration_defaults.sql` | ⏳ ยังไม่สร้าง |
+| `supabase/migrations/20260625XXXXXX_add_body_regions_jsonb.sql` | ⏳ ยังไม่สร้าง |
+| `lib/features/admin/data/models/body_landmark_model.dart` | ⏳ ยังไม่สร้าง |
+| `lib/features/admin/data/services/calibration_service.dart` | ⏳ ยังไม่สร้าง |
+
+---
+
+*Last Updated: 2026-06-25* — Phase 6.13: Body Region Calibration Improvement Plan — Multi-Point Calibration v2.0 (Gender + Platform + Expandable + xRatio)

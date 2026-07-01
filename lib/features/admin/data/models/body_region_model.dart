@@ -1,3 +1,5 @@
+import 'body_landmark_model.dart';
+
 class BodyRegionModel {
   final String id;
   final String nameTh;
@@ -11,9 +13,22 @@ class BodyRegionModel {
   final String? image2dUrl;
   final String? model3dUrl;
   final String? colorHex; // New field for custom color
+  final double modelTopRatio;    // 3D model top calibration (default 0.08)
+  final double modelBottomRatio; // 3D model bottom calibration (default 0.93)
   final int displayOrder;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  // ─── v2.0 Multi-Point Calibration ──────────────────────────────────────
+  /// Optional per-region landmark override. When null, global defaults
+  /// from [body_region_calibration_defaults] are used.
+  final List<BodyLandmark>? landmarks;
+
+  /// Target gender for calibration lookup (male/female/both).
+  final String calibrationGender;
+
+  /// Target platform for calibration lookup (mobile/web/tablet/universal).
+  final String calibrationPlatform;
 
   const BodyRegionModel({
     required this.id,
@@ -28,9 +43,14 @@ class BodyRegionModel {
     this.image2dUrl,
     this.model3dUrl,
     this.colorHex,
+    this.modelTopRatio = 0.08,
+    this.modelBottomRatio = 0.93,
     this.displayOrder = 0,
     this.createdAt,
     this.updatedAt,
+    this.landmarks,
+    this.calibrationGender = 'both',
+    this.calibrationPlatform = 'universal',
   });
 
   factory BodyRegionModel.fromJson(Map<String, dynamic> json) {
@@ -62,7 +82,12 @@ class BodyRegionModel {
       image2dUrl: json['image_2d_url'] as String?,
       model3dUrl: json['model_3d_url'] as String?,
       colorHex: json['color_hex'] as String?,
+      modelTopRatio: parseDouble(json['model_top_ratio'], 0.08),
+      modelBottomRatio: parseDouble(json['model_bottom_ratio'], 0.93),
       displayOrder: parseInt(json['display_order']),
+      landmarks: _parseLandmarks(json['landmarks']),
+      calibrationGender: json['calibration_gender'] as String? ?? 'both',
+      calibrationPlatform: json['calibration_platform'] as String? ?? 'universal',
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
     );
@@ -82,7 +107,13 @@ class BodyRegionModel {
       'image_2d_url': image2dUrl,
       'model_3d_url': model3dUrl,
       'color_hex': colorHex,
+      'model_top_ratio': modelTopRatio,
+      'model_bottom_ratio': modelBottomRatio,
       'display_order': displayOrder,
+      if (landmarks != null)
+        'landmarks': landmarks!.map((l) => l.toJson()).toList(),
+      'calibration_gender': calibrationGender,
+      'calibration_platform': calibrationPlatform,
     };
   }
 
@@ -99,9 +130,14 @@ class BodyRegionModel {
     String? image2dUrl,
     String? model3dUrl,
     String? colorHex,
+    double? modelTopRatio,
+    double? modelBottomRatio,
     int? displayOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
+    List<BodyLandmark>? landmarks,
+    String? calibrationGender,
+    String? calibrationPlatform,
   }) {
     return BodyRegionModel(
       id: id ?? this.id,
@@ -116,9 +152,25 @@ class BodyRegionModel {
       image2dUrl: image2dUrl ?? this.image2dUrl,
       model3dUrl: model3dUrl ?? this.model3dUrl,
       colorHex: colorHex ?? this.colorHex,
+      modelTopRatio: modelTopRatio ?? this.modelTopRatio,
+      modelBottomRatio: modelBottomRatio ?? this.modelBottomRatio,
       displayOrder: displayOrder ?? this.displayOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      landmarks: landmarks ?? this.landmarks,
+      calibrationGender: calibrationGender ?? this.calibrationGender,
+      calibrationPlatform: calibrationPlatform ?? this.calibrationPlatform,
     );
+  }
+
+  static List<BodyLandmark>? _parseLandmarks(dynamic value) {
+    if (value == null) return null;
+    if (value is List) {
+      return value
+          .whereType<Map<String, dynamic>>()
+          .map((e) => BodyLandmark.fromJson(e))
+          .toList();
+    }
+    return null;
   }
 }

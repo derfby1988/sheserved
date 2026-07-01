@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_text_styles.dart';
 import '../../data/models/body_region_model.dart';
+import '../../data/models/body_landmark_model.dart';
+import '../../data/services/calibration_service.dart';
 import '../../data/repositories/body_region_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -44,6 +46,62 @@ IconData? _iconNameToIconData(String? name) {
   }
 }
 
+Widget _buildFilePickerRow({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required VoidCallback onPressed,
+}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 108,
+          height: 40,
+          child: ElevatedButton(
+            onPressed: onPressed,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: const Text(
+              'เลือกไฟล์',
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class BodyRegionAdminPage extends StatefulWidget {
   const BodyRegionAdminPage({super.key});
 
@@ -61,8 +119,8 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
   static const List<BodyRegionModel> _defaultRegions = [
     BodyRegionModel(id: 'top_head',   nameTh: 'ศีรษะด้านบน',  nameEn: 'Top of Head',   yRatio: 0.04, xRatio: 0.50, iconName: 'face', gender: 'both', hasSides: false, displayOrder: 1),
     BodyRegionModel(id: 'forehead',   nameTh: 'หน้าผาก',      nameEn: 'Forehead',      yRatio: 0.07, xRatio: 0.50, iconName: 'face_retouching_natural', gender: 'both', hasSides: false, displayOrder: 2),
-    BodyRegionModel(id: 'eyes',       nameTh: 'ดวงตา',        nameEn: 'Eyes',          yRatio: 0.09, xRatio: 0.50, iconName: 'remove_red_eye_outlined', gender: 'both', hasSides: false, displayOrder: 3),
-    BodyRegionModel(id: 'nose_ears',  nameTh: 'จมูก/หู',      nameEn: 'Nose/Ears',     yRatio: 0.11, xRatio: 0.50, iconName: 'hearing_outlined', gender: 'both', hasSides: false, displayOrder: 4),
+    BodyRegionModel(id: 'eyes',       nameTh: 'ดวงตา',        nameEn: 'Eyes',          yRatio: 0.09, xRatio: 0.50, iconName: 'remove_red_eye_outlined', gender: 'both', hasSides: true, displayOrder: 3),
+    BodyRegionModel(id: 'nose_ears',  nameTh: 'จมูก/หู',      nameEn: 'Nose/Ears',     yRatio: 0.11, xRatio: 0.50, iconName: 'hearing_outlined', gender: 'both', hasSides: true, displayOrder: 4),
     BodyRegionModel(id: 'mouth_jaw',  nameTh: 'ปาก/กราม',     nameEn: 'Mouth/Jaw',     yRatio: 0.13, xRatio: 0.50, iconName: 'record_voice_over_outlined', gender: 'both', hasSides: false, displayOrder: 5),
     BodyRegionModel(id: 'neck',       nameTh: 'ลำคอ',         nameEn: 'Neck',          yRatio: 0.17, xRatio: 0.50, iconName: 'compress', gender: 'both', hasSides: false, displayOrder: 6),
     BodyRegionModel(id: 'shoulder',   nameTh: 'หัวไหล่',      nameEn: 'Shoulder',      yRatio: 0.22, xRatio: 0.38, iconName: 'accessibility_new', gender: 'both', hasSides: true, displayOrder: 7),
@@ -354,7 +412,11 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
                       child: AspectRatio(
                         aspectRatio: 0.5,
                         child: CustomPaint(
-                          painter: _HumanSilhouettePainter(color: Colors.grey.shade300, gender: 'both'),
+                          painter: _HumanSilhouettePainter(
+                            color: Colors.grey.shade300,
+                            gender: 'both',
+                            selectedSide: 0,
+                          ),
                           child: Container(),
                         ),
                       ),
@@ -429,6 +491,7 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
       ],
     );
   }
+
 }
 
 class _BodyRegionEditorPage extends StatefulWidget {
@@ -461,10 +524,30 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
   String _gender = 'both';
   String? _colorHex;
 
+  // 3D model viewport calibration (how much the 3D model is inset within the viewport)
+  double _modelTopRatio = 0.08;
+  double _modelBottomRatio = 0.93;
+
+  // ── v2.0 Multi-Point Calibration ───────────────────────────────────────
+  /// Whether this region uses its own landmark override (true) or global defaults (false).
+  bool _useLandmarkOverride = false;
+
+  /// Per-region landmarks (only used when [_useLandmarkOverride] is true).
+  List<BodyLandmark> _landmarks = [];
+
+  /// Calibration target gender for this region.
+  String _calibrationGender = 'both';
+
+  /// Calibration target platform for this region.
+  String _calibrationPlatform = 'universal';
+
   File? _iconImageFile;
   File? _image2dFile;
   File? _model3dFile;
   bool _isSaving = false;
+
+  // Toggle between 2D picker view and 3D reference body view in the position picker
+  bool _show3dReference = false;
 
   bool get isEditing => widget.region != null;
 
@@ -482,6 +565,16 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
     _hasSides = widget.region?.hasSides ?? false;
     _gender = widget.region?.gender ?? 'both';
     _colorHex = widget.region?.colorHex;
+    _modelTopRatio = widget.region?.modelTopRatio ?? 0.08;
+    _modelBottomRatio = widget.region?.modelBottomRatio ?? 0.93;
+
+    // v2.0 init
+    _useLandmarkOverride = widget.region?.landmarks != null && widget.region!.landmarks!.isNotEmpty;
+    _landmarks = widget.region?.landmarks != null
+        ? List<BodyLandmark>.from(widget.region!.landmarks!)
+        : CalibrationService.autoDetectLandmarks();
+    _calibrationGender = widget.region?.calibrationGender ?? 'both';
+    _calibrationPlatform = widget.region?.calibrationPlatform ?? 'universal';
   }
 
   @override
@@ -540,10 +633,15 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
         hasSides: _hasSides,
         gender: _gender,
         colorHex: _colorHex,
+        modelTopRatio: _modelTopRatio,
+        modelBottomRatio: _modelBottomRatio,
         displayOrder: int.tryParse(_displayOrderCtrl.text.trim()) ?? 0,
         iconImageUrl: widget.region?.iconImageUrl,
         image2dUrl: widget.region?.image2dUrl,
         model3dUrl: widget.region?.model3dUrl,
+        landmarks: _useLandmarkOverride ? _landmarks : null,
+        calibrationGender: _calibrationGender,
+        calibrationPlatform: _calibrationPlatform,
       );
 
       if (isEditing) {
@@ -580,16 +678,30 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textOnPrimary,
       ),
-      body: Form(
-        key: _formKey,
-        child: Row(
-          children: [
-            // Left Side: Settings Form
-            Expanded(
-              flex: 4,
-              child: ListView(
-                padding: const EdgeInsets.all(24),
-                children: [
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 900;
+
+          return Form(
+            key: _formKey,
+            child: isCompact
+                ? SingleChildScrollView(
+                    child: _buildSettingsForm(isCompact: isCompact),
+                  )
+                : Row(
+                    children: [
+                      Expanded(flex: 4, child: _buildSettingsForm(isCompact: isCompact)),
+                      Expanded(flex: 3, child: _buildVisualPanel(isCompact: isCompact)),
+                    ],
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSettingsForm({required bool isCompact}) {
+    final children = <Widget>[
                   _buildSectionHeader('ข้อมูลพื้นฐาน'),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -602,26 +714,47 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                     validator: (v) => v!.isEmpty ? 'โปรดระบุ ID' : null,
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
+                  if (isCompact)
+                    Column(
+                      children: [
+                        TextFormField(
                           controller: _nameThCtrl,
                           decoration: const InputDecoration(labelText: 'ชื่อภาษาไทย', border: OutlineInputBorder()),
                           validator: (v) => v!.isEmpty ? 'โปรดระบุชื่อภาษาไทย' : null,
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
+                        const SizedBox(height: 16),
+                        TextFormField(
                           controller: _nameEnCtrl,
                           decoration: const InputDecoration(labelText: 'ชื่อภาษาอังกฤษ', border: OutlineInputBorder()),
                           validator: (v) => v!.isEmpty ? 'โปรดระบุชื่อภาษาอังกฤษ' : null,
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _nameThCtrl,
+                            decoration: const InputDecoration(labelText: 'ชื่อภาษาไทย', border: OutlineInputBorder()),
+                            validator: (v) => v!.isEmpty ? 'โปรดระบุชื่อภาษาไทย' : null,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _nameEnCtrl,
+                            decoration: const InputDecoration(labelText: 'ชื่อภาษาอังกฤษ', border: OutlineInputBorder()),
+                            validator: (v) => v!.isEmpty ? 'โปรดระบุชื่อภาษาอังกฤษ' : null,
+                          ),
+                        ),
+                      ],
+                    ),
                   
+                  const SizedBox(height: 32),
+                  _buildSectionHeader('เลือกตำแหน่งและตัวอย่างแบบจำลอง'),
+                  const SizedBox(height: 16),
+                  if (isCompact) _buildVisualPanel(isCompact: isCompact),
                   const SizedBox(height: 32),
                   _buildSectionHeader('สีประจำอวัยวะ'),
                   const SizedBox(height: 16),
@@ -630,10 +763,11 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                   const SizedBox(height: 32),
                   _buildSectionHeader('ไอคอนสำหรับแผนที่ร่างกาย'),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
+                  if (isCompact)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
                           controller: _iconNameCtrl,
                           decoration: const InputDecoration(
                             labelText: 'ชื่อ Material Icon (เช่น face, hearing_outlined)',
@@ -641,68 +775,121 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                             helperText: 'ใช้ fallback ถ้าไม่มีรูปไอคอน',
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      // Icon preview
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: _colorHex != null
-                              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                              : AppColors.primary.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: _iconImageFile != null
-                            ? ClipOval(
-                                child: Image.file(
-                                  _iconImageFile!,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : widget.region?.iconImageUrl != null
-                                ? ClipOval(
-                                    child: Image.network(
-                                      widget.region!.iconImageUrl!,
-                                      width: 48,
-                                      height: 48,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Icon(
-                                        _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
-                                        size: 24,
-                                        color: _colorHex != null
-                                            ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                                            : AppColors.primary,
-                                      ),
-                                    ),
-                                  )
-                                : Icon(
-                                    _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
-                                    size: 24,
-                                    color: _colorHex != null
-                                        ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                                        : AppColors.primary,
+                        const SizedBox(height: 16),
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: _colorHex != null
+                                ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                : AppColors.primary.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: _iconImageFile != null
+                              ? ClipOval(
+                                  child: Image.file(
+                                    _iconImageFile!,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
                                   ),
-                      ),
-                    ],
-                  ),
+                                )
+                              : widget.region?.iconImageUrl != null
+                                  ? ClipOval(
+                                      child: Image.network(
+                                        widget.region!.iconImageUrl!,
+                                        width: 48,
+                                        height: 48,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                          size: 24,
+                                          color: _colorHex != null
+                                              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                              : AppColors.primary,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                      size: 24,
+                                      color: _colorHex != null
+                                          ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                          : AppColors.primary,
+                                    ),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _iconNameCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'ชื่อ Material Icon (เช่น face, hearing_outlined)',
+                              border: OutlineInputBorder(),
+                              helperText: 'ใช้ fallback ถ้าไม่มีรูปไอคอน',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Icon preview
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: _colorHex != null
+                                ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                : AppColors.primary.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: _iconImageFile != null
+                              ? ClipOval(
+                                  child: Image.file(
+                                    _iconImageFile!,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : widget.region?.iconImageUrl != null
+                                  ? ClipOval(
+                                      child: Image.network(
+                                        widget.region!.iconImageUrl!,
+                                        width: 48,
+                                        height: 48,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                          size: 24,
+                                          color: _colorHex != null
+                                              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                              : AppColors.primary,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _iconNameToIconData(_iconNameCtrl.text) ?? Icons.image_not_supported,
+                                      size: 24,
+                                      color: _colorHex != null
+                                          ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                                          : AppColors.primary,
+                                    ),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 12),
                   Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.broken_image_outlined),
-                      title: const Text('รูปไอคอน (PNG สี่เหลี่ยม หรือวงกลม)'),
-                      subtitle: Text(
-                        _iconImageFile != null
-                            ? 'เลือกไฟล์แล้ว'
-                            : (widget.region?.iconImageUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์'),
-                      ),
-                      trailing: ElevatedButton(
-                        onPressed: _pickIconImage,
-                        child: const Text('เลือกไฟล์'),
-                      ),
+                    child: _buildFilePickerRow(
+                      icon: Icons.broken_image_outlined,
+                      title: 'รูปไอคอน (PNG สี่เหลี่ยม หรือวงกลม)',
+                      subtitle: _iconImageFile != null
+                          ? 'เลือกไฟล์แล้ว'
+                          : (widget.region?.iconImageUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์'),
+                      onPressed: _pickIconImage,
                     ),
                   ),
 
@@ -710,10 +897,11 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                   _buildSectionHeader('ตำแหน่งและการแสดงผล'),
                   const SizedBox(height: 16),
                   
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
+                  if (isCompact)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('แกน X: ${_xRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -725,10 +913,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 24),
-                      Expanded(
-                        child: Column(
+                        const SizedBox(height: 8),
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('แกน Y: ${_yRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -740,9 +926,290 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                             ),
                           ],
                         ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('แกน X: ${_xRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Slider(
+                                value: _xRatio,
+                                min: 0.0,
+                                max: 1.0,
+                                onChanged: (val) => setState(() => _xRatio = val),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('แกน Y: ${_yRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Slider(
+                                value: _yRatio,
+                                min: 0.0,
+                                max: 1.0,
+                                onChanged: (val) => setState(() => _yRatio = val),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                  // ── v2.0 Multi-Point Calibration ─────────────────────────────────
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Icon(Icons.model_training_outlined, color: AppColors.primary, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildSectionHeader('Calibration โมเดล 3D (Multi-Point v2.0)'),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'ปรับขอบเขตแนวตั้งของโมเดล 3D ด้วย landmarks หลายจุด — แม่นยำกว่า top/bottom 2 จุด',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Per-region override toggle
+                  SwitchListTile(
+                    title: const Text('ใช้ Landmarks เฉพาะอวัยวะนี้', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('ปิด = ใช้ Global Defaults (gender + platform) | เปิด = กำหนดเอง'),
+                    value: _useLandmarkOverride,
+                    onChanged: (val) {
+                      setState(() {
+                        _useLandmarkOverride = val;
+                        if (val && _landmarks.isEmpty) {
+                          _landmarks = CalibrationService.autoDetectLandmarks();
+                        }
+                      });
+                    },
+                  ),
+
+                  if (_useLandmarkOverride) ...[
+                    const SizedBox(height: 8),
+                    if (isCompact)
+                      Column(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            value: _calibrationGender,
+                            decoration: const InputDecoration(labelText: 'Calibration Gender', border: OutlineInputBorder()),
+                            items: const [
+                              DropdownMenuItem(value: 'both', child: Text('ทั้งสองเพศ')),
+                              DropdownMenuItem(value: 'female', child: Text('เฉพาะผู้หญิง')),
+                              DropdownMenuItem(value: 'male', child: Text('เฉพาะผู้ชาย')),
+                            ],
+                            onChanged: (val) => setState(() => _calibrationGender = val!),
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<String>(
+                            value: _calibrationPlatform,
+                            decoration: const InputDecoration(labelText: 'Calibration Platform', border: OutlineInputBorder()),
+                            items: const [
+                              DropdownMenuItem(value: 'universal', child: Text('ทุกแพลตฟอร์ม')),
+                              DropdownMenuItem(value: 'mobile', child: Text('มือถือ')),
+                              DropdownMenuItem(value: 'web', child: Text('เว็บ')),
+                              DropdownMenuItem(value: 'tablet', child: Text('แท็บเล็ต')),
+                            ],
+                            onChanged: (val) => setState(() => _calibrationPlatform = val!),
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _calibrationGender,
+                              decoration: const InputDecoration(labelText: 'Calibration Gender', border: OutlineInputBorder()),
+                              items: const [
+                                DropdownMenuItem(value: 'both', child: Text('ทั้งสองเพศ')),
+                                DropdownMenuItem(value: 'female', child: Text('เฉพาะผู้หญิง')),
+                                DropdownMenuItem(value: 'male', child: Text('เฉพาะผู้ชาย')),
+                              ],
+                              onChanged: (val) => setState(() => _calibrationGender = val!),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _calibrationPlatform,
+                              decoration: const InputDecoration(labelText: 'Calibration Platform', border: OutlineInputBorder()),
+                              items: const [
+                                DropdownMenuItem(value: 'universal', child: Text('ทุกแพลตฟอร์ม')),
+                                DropdownMenuItem(value: 'mobile', child: Text('มือถือ')),
+                                DropdownMenuItem(value: 'web', child: Text('เว็บ')),
+                                DropdownMenuItem(value: 'tablet', child: Text('แท็บเล็ต')),
+                              ],
+                              onChanged: (val) => setState(() => _calibrationPlatform = val!),
+                            ),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _landmarks = CalibrationService.autoDetectLandmarks();
+                            });
+                          },
+                          icon: const Icon(Icons.auto_fix_high),
+                          label: const Text('Auto-Detect จาก 3D'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              final nextId = _landmarks.isEmpty ? 0 : _landmarks.map((l) => l.id).reduce((a, b) => a > b ? a : b) + 1;
+                              _landmarks = [..._landmarks, BodyLandmark(
+                                id: nextId,
+                                name: 'จุดใหม่',
+                                y2d: 0.5,
+                                y3d: 0.5,
+                                x2d: 0.5,
+                                x3d: 0.5,
+                              )];
+                            });
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('เพิ่ม Landmark'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Landmark list editor
+                    ..._landmarks.map((lm) {
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      decoration: const InputDecoration(labelText: 'ชื่อ', isDense: true),
+                                      controller: TextEditingController(text: lm.name),
+                                      onChanged: (val) {
+                                        final idx = _landmarks.indexWhere((l) => l.id == lm.id);
+                                        if (idx >= 0) {
+                                          setState(() => _landmarks[idx] = _landmarks[idx].copyWith(name: val));
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () {
+                                      setState(() => _landmarks = _landmarks.where((l) => l.id != lm.id).toList());
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(child: Text('y2d: ${lm.y2d.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11))),
+                                  Expanded(child: Text('y3d: ${lm.y3d.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11))),
+                                  Expanded(child: Text('x2d: ${lm.x2d.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11))),
+                                  Expanded(child: Text('x3d: ${lm.x3d.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11))),
+                                  if (lm.autoDetected)
+                                    const Chip(label: Text('Auto', style: TextStyle(fontSize: 10)), padding: EdgeInsets.zero),
+                                ],
+                              ),
+                              Slider(
+                                value: lm.y2d,
+                                min: 0.0,
+                                max: 1.0,
+                                label: 'y2d',
+                                onChanged: (val) {
+                                  final idx = _landmarks.indexWhere((l) => l.id == lm.id);
+                                  if (idx >= 0) {
+                                    setState(() => _landmarks[idx] = _landmarks[idx].copyWith(y2d: val));
+                                  }
+                                },
+                              ),
+                              Slider(
+                                value: lm.y3d,
+                                min: 0.0,
+                                max: 1.0,
+                                label: 'y3d',
+                                onChanged: (val) {
+                                  final idx = _landmarks.indexWhere((l) => l.id == lm.id);
+                                  if (idx >= 0) {
+                                    setState(() => _landmarks[idx] = _landmarks[idx].copyWith(y3d: val));
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ] else ...[
+                    // Fallback: show old top/bottom sliders when not using landmark override
+                    const Text('ใช้ Global Defaults — ปรับที่ Global Calibration Manager', style: TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Top: ${_modelTopRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Slider(
+                                value: _modelTopRatio,
+                                min: 0.0,
+                                max: 1.0,
+                                onChanged: (val) {
+                                  if (val < _modelBottomRatio - 0.05) {
+                                    setState(() => _modelTopRatio = val);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Bottom: ${_modelBottomRatio.toStringAsFixed(3)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Slider(
+                                value: _modelBottomRatio,
+                                min: 0.0,
+                                max: 1.0,
+                                onChanged: (val) {
+                                  if (val > _modelTopRatio + 0.05) {
+                                    setState(() => _modelBottomRatio = val);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const Divider(height: 32),
 
                   const SizedBox(height: 16),
                   Row(
@@ -778,18 +1245,22 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                   Card(
                     child: Column(
                       children: [
-                        ListTile(
-                          leading: const Icon(Icons.image_outlined),
-                          title: const Text('ภาพนิ่ง 2D (PNG โปร่งใส)'),
-                          subtitle: Text(_image2dFile != null ? 'เลือกไฟล์แล้ว' : (widget.region?.image2dUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์')),
-                          trailing: ElevatedButton(onPressed: _pick2dImage, child: const Text('เลือกไฟล์')),
+                        _buildFilePickerRow(
+                          icon: Icons.image_outlined,
+                          title: 'ภาพนิ่ง 2D (PNG โปร่งใส)',
+                          subtitle: _image2dFile != null
+                              ? 'เลือกไฟล์แล้ว'
+                              : (widget.region?.image2dUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์'),
+                          onPressed: _pick2dImage,
                         ),
                         const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.view_in_ar_outlined),
-                          title: const Text('โมเดล 3D (.glb)'),
-                          subtitle: Text(_model3dFile != null ? 'เลือกไฟล์แล้ว' : (widget.region?.model3dUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์')),
-                          trailing: ElevatedButton(onPressed: _pick3dModel, child: const Text('เลือกไฟล์')),
+                        _buildFilePickerRow(
+                          icon: Icons.view_in_ar_outlined,
+                          title: 'โมเดล 3D (.glb)',
+                          subtitle: _model3dFile != null
+                              ? 'เลือกไฟล์แล้ว'
+                              : (widget.region?.model3dUrl != null ? 'มีไฟล์เดิม' : 'ยังไม่มีไฟล์'),
+                          onPressed: _pick3dModel,
                         ),
                       ],
                     ),
@@ -811,35 +1282,54 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                         : const Text('บันทึกข้อมูลอวัยวะ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                   ),
-                ],
-              ),
+    ];
+
+    return isCompact
+        ? Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
             ),
-            
-            // Right Side: Visual Picker and Preview
-            Expanded(
-              flex: 3,
-              child: Container(
-                color: Colors.grey.shade100,
-                child: Column(
-                  children: [
-                    // Position Picker
-                    Expanded(
-                      flex: 6,
-                      child: _buildPositionPicker(),
-                    ),
-                    const Divider(height: 1, thickness: 2),
-                    // Asset Preview (2D or 3D)
-                    Expanded(
-                      flex: 4,
-                      child: _buildAssetPreview(),
-                    ),
-                  ],
+          )
+        : ListView(
+            padding: const EdgeInsets.all(24),
+            children: children,
+          );
+  }
+
+  Widget _buildVisualPanel({required bool isCompact}) {
+    return Container(
+      color: Colors.grey.shade100,
+      child: isCompact
+          ? Column(
+              children: [
+                SizedBox(
+                  height: 440,
+                  child: _buildPositionPicker(isCompact: isCompact),
                 ),
-              ),
+                const Divider(height: 1, thickness: 2),
+                SizedBox(
+                  height: 300,
+                  child: _buildAssetPreview(),
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                // Position Picker
+                Expanded(
+                  flex: 6,
+                  child: _buildPositionPicker(isCompact: isCompact),
+                ),
+                const Divider(height: 1, thickness: 2),
+                // Asset Preview (2D or 3D)
+                Expanded(
+                  flex: 4,
+                  child: _buildAssetPreview(),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -912,12 +1402,61 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
     );
   }
 
-  Widget _buildPositionPicker() {
+  Widget _buildPositionPicker({required bool isCompact}) {
+    final silhouetteAspectRatio = isCompact ? 0.95 : 0.5;
+
     return Column(
       children: [
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('แตะบนร่างกายเพื่อกำหนดจุดตำแหน่ง (X, Y)', style: TextStyle(fontWeight: FontWeight.bold)),
+        // Header with toggle
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'แตะบนร่างกายเพื่อกำหนดจุดตำแหน่ง (X, Y)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+              ),
+              // 2D / 3D Reference toggle
+              GestureDetector(
+                onTap: () => setState(() => _show3dReference = !_show3dReference),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    gradient: _show3dReference ? AppColors.primaryGradient : null,
+                    color: _show3dReference ? null : Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _show3dReference
+                          ? Colors.transparent
+                          : AppColors.primary.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _show3dReference ? Icons.threed_rotation : Icons.view_in_ar_outlined,
+                        size: 14,
+                        color: _show3dReference ? Colors.white : AppColors.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _show3dReference ? '3D' : '2D',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _show3dReference ? Colors.white : AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         Expanded(
           child: LayoutBuilder(
@@ -925,79 +1464,104 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
               return GestureDetector(
                 onTapDown: (details) {
                   setState(() {
-                    _xRatio = (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
-                    _yRatio = (details.localPosition.dy / constraints.maxHeight).clamp(0.0, 1.0);
+                    if (_show3dReference) {
+                      _xRatio = (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
+                      _yRatio = (details.localPosition.dy / constraints.maxHeight).clamp(0.0, 1.0);
+                    } else {
+                      // Calculate silhouette rectangle
+                      final silW = math.min(constraints.maxWidth, constraints.maxHeight * 0.5);
+                      final silH = silW / 0.5;
+                      final silLeft = (constraints.maxWidth - silW) / 2;
+                      final silTop = (constraints.maxHeight - silH) / 2;
+
+                      // Convert tap to silhouette-relative coordinates
+                      final localDx = details.localPosition.dx - silLeft;
+                      final localDy = details.localPosition.dy - silTop;
+                      if (localDx >= 0 && localDx <= silW && localDy >= 0 && localDy <= silH) {
+                        _xRatio = (localDx / silW).clamp(0.0, 1.0);
+                        _yRatio = (localDy / silH).clamp(0.0, 1.0);
+                      }
+                    }
                   });
                 },
                 child: Stack(
                   children: [
-                    // Body Silhouette
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: 0.5,
-                        child: CustomPaint(
-                          painter: _HumanSilhouettePainter(
-                            color: Colors.grey.shade200,
-                            gender: _gender,
-                          ),
-                          child: Container(),
+                    // ── 3D Reference Body (read-only, behind everything) ──
+                    if (_show3dReference)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _buildReferenceModelViewer(),
                         ),
                       ),
-                    ),
-                    // Pointer Dot with icon preview
-                    Positioned(
-                      left: constraints.maxWidth * _xRatio - 14,
-                      top: constraints.maxHeight * _yRatio - 14,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _colorHex != null
-                                ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                                : AppColors.primary,
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6, spreadRadius: 1),
-                          ],
-                        ),
-                        child: _iconImageFile != null
-                          ? ClipOval(
-                              child: Image.file(
-                                _iconImageFile!,
-                                width: 24,
-                                height: 24,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : widget.region?.iconImageUrl != null
-                              ? ClipOval(
-                                  child: Image.network(
-                                    widget.region!.iconImageUrl!,
-                                    width: 24,
-                                    height: 24,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                      _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
-                                      size: 16,
-                                      color: _colorHex != null
-                                          ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                                          : AppColors.primary,
+
+                    // ── 2D Silhouette (picker mode) ──
+                    if (!_show3dReference)
+                      Center(
+                        child: AspectRatio(
+                          aspectRatio: silhouetteAspectRatio,
+                          child: LayoutBuilder(
+                            builder: (context, silConstraints) {
+                              final silW = silConstraints.maxWidth;
+                              final silH = silConstraints.maxHeight;
+                              return Stack(
+                                children: [
+                                  CustomPaint(
+                                    painter: _HumanSilhouettePainter(
+                                      color: Colors.grey.shade200,
+                                      gender: _gender,
+                                      selectedSide: _hasSides
+                                          ? (_xRatio < 0.5 ? -1 : 1)
+                                          : 0,
+                                      landmarks: _landmarks,
+                                    ),
+                                    child: Container(),
+                                  ),
+                                  // Calibration zone overlay
+                                  Positioned(
+                                    top: silH * _modelTopRatio,
+                                    left: 0,
+                                    right: 0,
+                                    height: silH * (_modelBottomRatio - _modelTopRatio),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          top: BorderSide(
+                                            color: AppColors.primary.withValues(alpha: 0.4),
+                                            width: 2,
+                                          ),
+                                          bottom: BorderSide(
+                                            color: AppColors.primary.withValues(alpha: 0.4),
+                                            width: 2,
+                                          ),
+                                        ),
+                                        color: AppColors.primary.withValues(alpha: 0.06),
+                                      ),
                                     ),
                                   ),
-                                )
-                              : Icon(
-                                  _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
-                                  size: 16,
-                                  color: _colorHex != null
-                                      ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
-                                      : AppColors.primary,
-                                ),
+                                  // Pointer dot
+                                  Positioned(
+                                    left: silW * _xRatio - 14,
+                                    top: silH * _yRatio - 14,
+                                    child: _buildPointerDot(),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
+
+                    // ── Pointer Dot (3D mode only) ──
+                    if (_show3dReference)
+                      Positioned(
+                        left: constraints.maxWidth * _xRatio - 14,
+                        top: constraints.maxHeight *
+                                (_modelTopRatio +
+                                    _yRatio *
+                                        (_modelBottomRatio - _modelTopRatio)) -
+                            14,
+                        child: _buildPointerDot(),
+                      ),
                   ],
                 ),
               );
@@ -1005,6 +1569,85 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPointerDot() {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: _colorHex != null
+              ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+              : AppColors.primary,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6, spreadRadius: 1),
+        ],
+      ),
+      child: _iconImageFile != null
+          ? ClipOval(
+              child: Image.file(
+                _iconImageFile!,
+                width: 24,
+                height: 24,
+                fit: BoxFit.cover,
+              ),
+            )
+          : widget.region?.iconImageUrl != null
+              ? ClipOval(
+                  child: Image.network(
+                    widget.region!.iconImageUrl!,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
+                      size: 16,
+                      color: _colorHex != null
+                          ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                          : AppColors.primary,
+                    ),
+                  ),
+                )
+              : Icon(
+                  _iconNameToIconData(_iconNameCtrl.text) ?? Icons.touch_app,
+                  size: 16,
+                  color: _colorHex != null
+                      ? Color(int.parse('FF${_colorHex!.replaceAll('#', '')}', radix: 16))
+                      : AppColors.primary,
+                ),
+    );
+  }
+
+  /// Read-only full-body 3D model for admin reference.
+  /// Placeholder: actual .glb assets are not yet bundled.
+  Widget _buildReferenceModelViewer() {
+    return Container(
+      color: Colors.grey.shade100,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.view_in_ar, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            Text(
+              '3D Reference Model\n(${_gender})',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'เพิ่มไฟล์ .glb ที่ assets/models/',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1034,7 +1677,7 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                     ? Image.file(_image2dFile!, fit: BoxFit.contain)
                     : Image.network(widget.region!.image2dUrl!, fit: BoxFit.contain),
                 )
-              : const Center(child: Text('ไม่มีตัวอย่างไฟล์')),
+              : _buildReferenceModelViewer(),
         ),
       ],
     );
@@ -1044,15 +1687,37 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
 class _HumanSilhouettePainter extends CustomPainter {
   final Color color;
   final String gender;
+  /// -1 = left, 0 = none/center, 1 = right — highlights the selected half
+  final int selectedSide;
+  /// v2.0: Optional landmarks to draw as guide lines and dots on the silhouette.
+  final List<BodyLandmark>? landmarks;
 
-  _HumanSilhouettePainter({required this.color, required this.gender});
+  _HumanSilhouettePainter({
+    required this.color,
+    required this.gender,
+    this.selectedSide = 0,
+    this.landmarks,
+  });
 
   bool get _isMale => gender == 'male' || gender == 'm' || gender == 'both';
 
   @override
   void paint(Canvas canvas, Size size) {
-    final fillPaint = Paint()
-      ..color = color
+    final cx = size.width / 2;
+    final h = size.height;
+
+    // --- Gradient fill for 3D volume illusion ---
+    final baseFill = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(0, -0.3),
+        radius: 0.9,
+        colors: [
+          color.withValues(alpha: 0.9),
+          color.withValues(alpha: 0.6),
+          color.withValues(alpha: 0.35),
+        ],
+        stops: const [0.0, 0.6, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.fill;
 
     final strokePaint = Paint()
@@ -1060,8 +1725,10 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
-    final cx = size.width / 2;
-    final h = size.height;
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.06)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
     // === HEAD ===
     final headRadius = size.width * 0.095;
@@ -1070,7 +1737,12 @@ class _HumanSilhouettePainter extends CustomPainter {
       width: headRadius * 2,
       height: headRadius * 2.2,
     );
-    canvas.drawOval(headRect, fillPaint);
+    // Shadow behind head
+    canvas.drawOval(
+      headRect.translate(0, 3),
+      shadowPaint,
+    );
+    canvas.drawOval(headRect, baseFill);
     canvas.drawOval(headRect, strokePaint);
 
     // === NECK ===
@@ -1080,13 +1752,13 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx + size.width * 0.05, h * 0.19)
       ..lineTo(cx - size.width * 0.05, h * 0.19)
       ..close();
-    canvas.drawPath(neckPath, fillPaint);
+    canvas.drawPath(neckPath, baseFill);
     canvas.drawPath(neckPath, strokePaint);
 
     // === TORSO ===
-    final shoulderW = _isMale ? 0.22 : 0.18; // Male has broader shoulders
+    final shoulderW = _isMale ? 0.22 : 0.18;
     final waistW = _isMale ? 0.14 : 0.12;
-    final hipW = _isMale ? 0.15 : 0.17; // Female has broader hips
+    final hipW = _isMale ? 0.15 : 0.17;
 
     final torsoPath = Path()
       ..moveTo(cx - size.width * shoulderW, h * 0.20)
@@ -1096,39 +1768,169 @@ class _HumanSilhouettePainter extends CustomPainter {
       ..lineTo(cx - size.width * hipW, h * 0.55)
       ..lineTo(cx - size.width * waistW, h * 0.47)
       ..close();
-    canvas.drawPath(torsoPath, fillPaint);
+    canvas.drawPath(torsoPath, baseFill);
     canvas.drawPath(torsoPath, strokePaint);
 
     // === ARMS ===
-    _drawArm(canvas, fillPaint, strokePaint, size, cx, h, startX: cx - size.width * shoulderW, isLeft: true);
-    _drawArm(canvas, fillPaint, strokePaint, size, cx, h, startX: cx + size.width * shoulderW, isLeft: false);
+    _drawArm(
+      canvas, baseFill, strokePaint, size, cx, h,
+      startX: cx - size.width * shoulderW, isLeft: true,
+    );
+    _drawArm(
+      canvas, baseFill, strokePaint, size, cx, h,
+      startX: cx + size.width * shoulderW, isLeft: false,
+    );
 
     // === LEGS ===
-    _drawLeg(canvas, fillPaint, strokePaint, size, cx, h, hipW: hipW, isLeft: true);
-    _drawLeg(canvas, fillPaint, strokePaint, size, cx, h, hipW: hipW, isLeft: false);
-    
-    // === ANATOMICAL GUIDES (Internal lines for better orientation) ===
+    _drawLeg(
+      canvas, baseFill, strokePaint, size, cx, h,
+      hipW: hipW, isLeft: true,
+    );
+    _drawLeg(
+      canvas, baseFill, strokePaint, size, cx, h,
+      hipW: hipW, isLeft: false,
+    );
+
+    // === LANDMARK GUIDES (v2.0) ===
+    if (landmarks != null && landmarks!.isNotEmpty) {
+      final guidePaint = Paint()
+        ..color = Colors.red.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..strokeCap = StrokeCap.round;
+
+      final dotPaint = Paint()
+        ..color = Colors.red.withValues(alpha: 0.7)
+        ..style = PaintingStyle.fill;
+
+      final textPainter = TextPainter(
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+      );
+
+      for (final lm in landmarks!) {
+        final ly = h * lm.y2d;
+        final lx = size.width * lm.x2d;
+
+        // Horizontal guide line across the silhouette
+        canvas.drawLine(
+          Offset(size.width * 0.05, ly),
+          Offset(size.width * 0.95, ly),
+          guidePaint,
+        );
+
+        // Dot at (x2d, y2d)
+        canvas.drawCircle(Offset(lx, ly), 3.5, dotPaint);
+
+        // Label
+        textPainter.text = TextSpan(
+          text: lm.name,
+          style: TextStyle(
+            color: Colors.red.withValues(alpha: 0.8),
+            fontSize: 9,
+            fontWeight: FontWeight.w500,
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(canvas, Offset(lx + 6, ly - textPainter.height - 2));
+      }
+    }
+
+    // === ANATOMICAL GUIDES (Internal lines) ===
     final guidePaint = Paint()
       ..color = Colors.grey.shade300
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
-      
+
     // Chest/Breast line
-    canvas.drawLine(Offset(cx - size.width * shoulderW * 0.8, h * 0.3), Offset(cx + size.width * shoulderW * 0.8, h * 0.3), guidePaint);
+    canvas.drawLine(
+      Offset(cx - size.width * shoulderW * 0.8, h * 0.3),
+      Offset(cx + size.width * shoulderW * 0.8, h * 0.3),
+      guidePaint,
+    );
     // Waist line
-    canvas.drawLine(Offset(cx - size.width * waistW, h * 0.47), Offset(cx + size.width * waistW, h * 0.47), guidePaint);
+    canvas.drawLine(
+      Offset(cx - size.width * waistW, h * 0.47),
+      Offset(cx + size.width * waistW, h * 0.47),
+      guidePaint,
+    );
     // Knee lines
-    canvas.drawLine(Offset(cx - size.width * 0.1, h * 0.77), Offset(cx - size.width * 0.02, h * 0.77), guidePaint);
-    canvas.drawLine(Offset(cx + size.width * 0.02, h * 0.77), Offset(cx + size.width * 0.1, h * 0.77), guidePaint);
+    canvas.drawLine(
+      Offset(cx - size.width * 0.1, h * 0.77),
+      Offset(cx - size.width * 0.02, h * 0.77),
+      guidePaint,
+    );
+    canvas.drawLine(
+      Offset(cx + size.width * 0.02, h * 0.77),
+      Offset(cx + size.width * 0.1, h * 0.77),
+      guidePaint,
+    );
+
+    // === CENTER VERTICAL LINE (anatomical midline) ===
+    final centerLinePaint = Paint()
+      ..color = Colors.grey.shade500.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(cx, h * 0.13),
+      Offset(cx, h * 0.58),
+      centerLinePaint,
+    );
+
+    // === SIDE HIGHLIGHT ===
+    if (selectedSide != 0) {
+      final highlightPaint = Paint()
+        ..color = (selectedSide < 0 ? Colors.blue : Colors.purple)
+            .withValues(alpha: 0.18)
+        ..style = PaintingStyle.fill
+        ..blendMode = BlendMode.srcOver;
+
+      final halfClip = Path()
+        ..addRect(
+          selectedSide < 0
+              ? Rect.fromLTWH(0, 0, cx, size.height)
+              : Rect.fromLTWH(cx, 0, size.width - cx, size.height),
+        );
+
+      canvas.save();
+      canvas.clipPath(halfClip);
+
+      // Re-draw body parts with highlight overlay
+      canvas.drawOval(headRect, highlightPaint);
+      canvas.drawPath(neckPath, highlightPaint);
+      canvas.drawPath(torsoPath, highlightPaint);
+      _drawArm(
+        canvas, highlightPaint, strokePaint, size, cx, h,
+        startX: cx - size.width * shoulderW, isLeft: true,
+      );
+      _drawArm(
+        canvas, highlightPaint, strokePaint, size, cx, h,
+        startX: cx + size.width * shoulderW, isLeft: false,
+      );
+      _drawLeg(
+        canvas, highlightPaint, strokePaint, size, cx, h,
+        hipW: hipW, isLeft: true,
+      );
+      _drawLeg(
+        canvas, highlightPaint, strokePaint, size, cx, h,
+        hipW: hipW, isLeft: false,
+      );
+      canvas.restore();
+    }
   }
 
-  void _drawArm(Canvas canvas, Paint fill, Paint stroke, Size size, double cx, double h, {required double startX, required bool isLeft}) {
+  void _drawArm(
+    Canvas canvas, Paint fill, Paint stroke, Size size, double cx, double h, {
+    required double startX,
+    required bool isLeft,
+  }) {
     final direction = isLeft ? -1 : 1;
     final path = Path()
       ..moveTo(startX, h * 0.22)
       ..lineTo(startX + direction * size.width * 0.04, h * 0.22)
-      ..lineTo(startX + direction * size.width * 0.08, h * 0.44) // Elbow area
-      ..lineTo(startX + direction * size.width * 0.06, h * 0.60) // Hand area
+      ..lineTo(startX + direction * size.width * 0.08, h * 0.44)
+      ..lineTo(startX + direction * size.width * 0.06, h * 0.60)
       ..lineTo(startX + direction * size.width * 0.01, h * 0.60)
       ..lineTo(startX + direction * size.width * 0.03, h * 0.44)
       ..close();
@@ -1136,13 +1938,17 @@ class _HumanSilhouettePainter extends CustomPainter {
     canvas.drawPath(path, stroke);
   }
 
-  void _drawLeg(Canvas canvas, Paint fill, Paint stroke, Size size, double cx, double h, {required double hipW, required bool isLeft}) {
+  void _drawLeg(
+    Canvas canvas, Paint fill, Paint stroke, Size size, double cx, double h, {
+    required double hipW,
+    required bool isLeft,
+  }) {
     final direction = isLeft ? -1 : 1;
     final path = Path()
       ..moveTo(cx + direction * size.width * hipW * 0.9, h * 0.55)
       ..lineTo(cx + direction * size.width * 0.03, h * 0.55)
-      ..lineTo(cx + direction * size.width * 0.04, h * 0.77) // Knee
-      ..lineTo(cx + direction * size.width * 0.06, h * 0.96) // Ankle
+      ..lineTo(cx + direction * size.width * 0.04, h * 0.77)
+      ..lineTo(cx + direction * size.width * 0.06, h * 0.96)
       ..lineTo(cx + direction * size.width * 0.12, h * 0.96)
       ..lineTo(cx + direction * size.width * 0.10, h * 0.77)
       ..close();
@@ -1151,5 +1957,10 @@ class _HumanSilhouettePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _HumanSilhouettePainter oldDelegate) {
+    return oldDelegate.selectedSide != selectedSide ||
+        oldDelegate.color != color ||
+        oldDelegate.gender != gender ||
+        oldDelegate.landmarks != landmarks;
+  }
 }

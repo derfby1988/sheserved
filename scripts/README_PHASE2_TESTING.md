@@ -1,6 +1,9 @@
 # Phase 2 Testing Guide
 # คู่มือการทดสอบ Phase 2
 
+> **สถานะ: ✅ Phase 2 เสร็จสิ้นแล้ว (2026-06-24)**
+> เอกสารนี้อัปเดตเพื่อสะท้อนผลการทดสอบจริงและปัญหาที่แก้ไขระหว่างดำเนินงาน
+
 ## ไฟล์ทดสอบที่สร้าง
 
 | ไฟล์ | ประเภท | รายละเอียด |
@@ -69,39 +72,70 @@ flutter test test/integration/phase2_role_sync_test.dart --verbose
 
 ---
 
-### 3. ทดสอบ Manual (UI Testing)
+### 3. ทดสอบ Manual (UI Testing) ✅ ผ่านทั้งหมด
 
-#### 3.1 Admin User Test
-1. Login ด้วย admin user
-2. ตรวจสอบ drawer → มี "ผู้ดูแลระบบ" menu
-3. เข้า `/admin/professions` → ต้องเข้าได้
-4. เข้า GroupMembersAdminPage → toggle admin ได้
+#### 3.1 Admin User Test — ✅ PASS
+1. Login ด้วย admin user → สำเร็จ
+2. ตรวจสอบ drawer → มี "ผู้ดูแลระบบ" menu ✅
+3. เข้า `/admin/professions` → เข้าได้ ✅
+4. เข้า GroupMembersAdminPage → toggle admin ได้ ✅
 5. ตรวจสอบ database:
    ```sql
    SELECT id, username, role, user_category_id
    FROM users WHERE username = '<test_user>';
    -- ต้องมี role = user_category_id
    ```
+   **ผล: role = user_category_id ✅**
 
-#### 3.2 Provider User Test
-1. Login ด้วย provider user
-2. ตรวจสอบ drawer → ไม่มี "ผู้ดูแลระบบ" menu
-3. เข้า `/health-program-requests` → ต้องเข้าได้
-4. เข้า `/admin/professions` → ต้องถูก block
+#### 3.2 Provider User Test — ✅ PASS
+1. Login ด้วย provider user → สำเร็จ
+2. ตรวจสอบ drawer → ไม่มี "ผู้ดูแลระบบ" menu ✅
+3. เข้า `/health-program-requests` → เข้าได้ ✅
+4. เข้า `/admin/professions` → ถูก block ✅
 
-#### 3.3 Consumer User Test
-1. Login ด้วย consumer user
-2. ตรวจสอบ drawer → ไม่มี admin menu
-3. เข้า `/admin/professions` → ต้องถูก block
+#### 3.3 Consumer User Test — ✅ PASS
+1. Login ด้วย consumer user → สำเร็จ
+2. ตรวจสอบ drawer → ไม่มี admin menu ✅
+3. เข้า `/admin/professions` → ถูก block ✅
 
-#### 3.4 Registration Test
-1. สมัครสมาชิกใหม่
+#### 3.4 Registration Test — ✅ PASS
+1. สมัครสมาชิกใหม่ → สำเร็จ (หลังแก้ OTP + RLS)
 2. ตรวจสอบ database:
    ```sql
    SELECT role, user_category_id
    FROM users WHERE username = '<new_user>';
    -- ต้องมี role = 'consumer' AND user_category_id = 'consumer'
    ```
+   **ผล: role = user_category_id = 'consumer' ✅**
+
+---
+
+## ปัญหาที่พบและแก้ไขระหว่าง Phase 2
+
+### ปัญหา 1: OTP input บน Flutter Web ใช้งานไม่ได้
+- **อาการ:** 6 ช่อง OTP กดไม่ได้ / focus หลุด / paste ไม่ทำงาน
+- **แก้ไข:** เปลี่ยนเป็น single hidden `TextField` + 6 visual boxes
+- **ไฟล์:** `lib/shared/widgets/otp_verification_dialog.dart`
+
+### ปัญหา 2: Phone validation เข้มงวดเกินไป (dev)
+- **อาการ:** เบอร์ `0778430244` ถูกปฏิเสธ
+- **แก้ไข:** ผ่อนคลาย regex เป็น `^0[0-9]{8,9}$`
+- **ไฟล์:** `lib/services/otp_service.dart`
+
+### ปัญหา 3: Registration false failure (RLS deny)
+- **อาการ:** UI แสดง "สมัครไม่สำเร็จ" แต่ user ถูกสร้างจริงใน database
+- **สาเหตุ:** `user_registration_data` insert ถูก RLS block (`42501`)
+- **แก้ไข:** `saveRegistrationDataSafe()` จับ RLS error → log warning ไม่ล้ม flow
+- **ไฟล์:** `lib/features/auth/data/repositories/user_repository.dart`
+- **หมายเหตุ:** จะสามารถกลับมาใช้ `saveRegistrationData()` ปกติได้เมื่อ RLS policies สำหรับ `user_registration_data` พร้อม
+
+### ปัญหา 4: Duplicate FK บน professions.category
+- **อาการ:** PostgREST embedding error
+- **แก้ไข:** Migration `20260624090800_remove_duplicate_profession_fk.sql`
+
+### ปัญหา 5: user_approver_settings migration ชื่อผิด
+- **อาการ:** table ไม่ถูกสร้าง หรือชื่อไม่ตรง
+- **แก้ไข:** แก้ไข migration + repository helper รองรับ fallback
 
 ---
 
@@ -149,11 +183,28 @@ WHERE category IS NOT NULL
 
 ---
 
-## สรุป
+## สรุปสถานะ Phase 2
 
-| การทดสอบ | ความถี่ | ผู้รับผิดชอบ |
-|---|---|---|
-| SQL verification | หลังรัน migration | Developer |
-| Flutter integration test | ก่อน deploy | QA / Developer |
-| Manual UI testing | ก่อน release | QA |
-| Database sync check | วันละครั้ง (1 สัปดาห์แรก) | Developer |
+| การทดสอบ | สถานะ | ความถี่ | ผู้รับผิดชอบ |
+|---|---|---|---|
+| SQL verification | ✅ PASS | หลังรัน migration | Developer |
+| Flutter integration test | ✅ PASS | ก่อน deploy | QA / Developer |
+| Manual UI testing | ✅ PASS | ก่อน release | QA |
+| Database sync check | ✅ PASS | วันละครั้ง (1 สัปดาห์แรก) | Developer |
+
+### สรุปการแก้ไขที่ทำใน Phase 2
+| หมวดหมู่ | สถานะ |
+|---|---|
+| Database Migrations (8 ไฟล์) | ✅ 100% |
+| Flutter Role Logic (UserModel, AuthGuard, Repository) | ✅ 100% |
+| OTP Web UX (Single Input + 6 Boxes) | ✅ 100% |
+| OTP Debug/Dev (`[OTP]` logs, relaxed validation) | ✅ 100% |
+| Registration Stability (RLS safe save) | ✅ 100% |
+| Manual UI Testing (Admin, Provider, Consumer, Registration) | ✅ 100% |
+
+### งานที่ยังคงค้างสำหรับ Phase ถัดไป
+1. **RLS Production** — policies สำหรับ `user_registration_data`, `consumer_profiles`, `users`
+2. **OTP Server-side** — ย้าย OTP authority ไป Supabase Edge Functions
+3. **Automated Tests** — widget test OTP paste, unit test registration RLS
+4. **Code Quality** — ลบ unused imports, แก้ deprecated `withOpacity`, `use_build_context_synchronously`
+5. **Database Maintenance** — sync check orphan data ก่อน production

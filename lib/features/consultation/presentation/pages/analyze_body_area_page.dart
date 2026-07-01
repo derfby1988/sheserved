@@ -1,10 +1,15 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../widgets/symptom_ruler_picker.dart';
 import '../../../../services/service_locator.dart';
+import '../../../admin/data/models/body_landmark_model.dart';
+import '../../../admin/data/services/calibration_service.dart';
 
 // ─── Data model for a body region selection ────────────────────────────────
 class _BodyRegion {
@@ -15,6 +20,12 @@ class _BodyRegion {
   final double xRatio; // 0.0 = left, 1.0 = right (horizontal position on body)
   final IconData icon;
   final String iconName; // Material icon name string for DB storage (e.g. 'lens_outlined')
+  final bool hasSides; // true = bilateral organ (left/right), false = midline (center only)
+  final double modelTopRatio;    // 3D model top calibration in viewport
+  final double modelBottomRatio; // 3D model bottom calibration in viewport
+
+  /// v2.0: Optional per-region landmarks for multi-point calibration.
+  final List<BodyLandmark>? landmarks;
 
   const _BodyRegion({
     required this.id,
@@ -24,7 +35,29 @@ class _BodyRegion {
     this.xRatio = 0.5, // Default to center
     required this.icon,
     required this.iconName,
+    this.hasSides = false,
+    this.modelTopRatio = 0.08,
+    this.modelBottomRatio = 0.93,
+    this.landmarks,
   });
+
+  _BodyRegion copyWith({
+    List<BodyLandmark>? landmarks,
+  }) {
+    return _BodyRegion(
+      id: id,
+      nameTh: nameTh,
+      nameEn: nameEn,
+      yRatio: yRatio,
+      xRatio: xRatio,
+      icon: icon,
+      iconName: iconName,
+      hasSides: hasSides,
+      modelTopRatio: modelTopRatio,
+      modelBottomRatio: modelBottomRatio,
+      landmarks: landmarks ?? this.landmarks,
+    );
+  }
 }
 
 List<_BodyRegion> _bodyRegions = [
@@ -54,6 +87,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.50,
     icon: Icons.remove_red_eye_outlined,
     iconName: 'remove_red_eye_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'nose_ears',
@@ -63,6 +97,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.50,
     icon: Icons.hearing_outlined,
     iconName: 'hearing_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'mouth_jaw',
@@ -90,6 +125,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.38,
     icon: Icons.accessibility_new,
     iconName: 'accessibility_new',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'collarbone',
@@ -99,6 +135,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.horizontal_rule,
     iconName: 'horizontal_rule',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'upper_chest',
@@ -117,6 +154,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.28,
     icon: Icons.fitness_center,
     iconName: 'fitness_center',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'lower_chest',
@@ -144,6 +182,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.22,
     icon: Icons.adjust,
     iconName: 'adjust',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'middle_abd',
@@ -162,6 +201,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.20,
     icon: Icons.pan_tool_alt_outlined,
     iconName: 'pan_tool_alt_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'lower_abd',
@@ -180,6 +220,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.18,
     icon: Icons.watch_outlined,
     iconName: 'watch_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'pelvis',
@@ -198,6 +239,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.15,
     icon: Icons.back_hand_outlined,
     iconName: 'back_hand_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'upper_thigh',
@@ -207,6 +249,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.40,
     icon: Icons.directions_walk,
     iconName: 'directions_walk',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'mid_thigh',
@@ -216,6 +259,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.38,
     icon: Icons.directions_run,
     iconName: 'directions_run',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'knee',
@@ -225,6 +269,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.lens_outlined,
     iconName: 'lens_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'upper_shin',
@@ -234,6 +279,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.linear_scale,
     iconName: 'linear_scale',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'lower_shin',
@@ -243,6 +289,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.align_vertical_bottom,
     iconName: 'align_vertical_bottom',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'ankle',
@@ -252,6 +299,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.radio_button_unchecked,
     iconName: 'radio_button_unchecked',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'foot',
@@ -261,6 +309,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.run_circle_outlined,
     iconName: 'run_circle_outlined',
+    hasSides: true,
   ),
   _BodyRegion(
     id: 'toes',
@@ -270,6 +319,7 @@ List<_BodyRegion> _bodyRegions = [
     xRatio: 0.42,
     icon: Icons.linear_scale_outlined,
     iconName: 'linear_scale_outlined',
+    hasSides: true,
   ),
 ];
 
@@ -372,6 +422,62 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   double _rippleCenterX = 0.5;
   double _rippleCenterY = 0.5;
 
+  // ─── 3D model state ──────────────────────────────────────────────────────
+  // When true, the 3D model is freely rotatable/zoomable and the tap overlays
+  // are disabled so the user can inspect the body. When false (select mode),
+  // the model is locked front-facing and the overlays handle region taps.
+  bool _is3dRotateMode = false;
+
+  // ─── v2.0 Calibration state ─────────────────────────────────────────────
+  late CalibrationService _calibrationService;
+  List<BodyLandmark> _calibrationLandmarks = [];
+
+  /// True only when a real 3D model asset is loaded. Landmark-based
+  /// calibration maps 2D silhouette coordinates onto the 3D model viewport,
+  /// so it must only be applied when the 3D model is actually shown.
+  /// Without a model, the flat 2D silhouette is the reference and the raw
+  /// yRatio/xRatio must be used so labels align with the drawn body.
+  bool get _use3dCalibration => _is3dModelAssetChecked && _has3dModelAsset;
+
+  /// Resolves a region's abstract yRatio (0..1 on the body silhouette)
+  /// into the on-screen vertical ratio.
+  ///
+  /// v2.0: When a 3D model is present, uses per-region landmarks (or global
+  /// calibration defaults) to map onto the 3D viewport. When no model is
+  /// present, returns the raw yRatio so labels line up with the 2D silhouette.
+  double _modelYRatio(_BodyRegion region) {
+    if (!_use3dCalibration) return region.yRatio;
+    final landmarks = region.landmarks ?? _calibrationLandmarks;
+    return CalibrationService.modelYRatioCompat(
+      landmarks,
+      region.yRatio,
+      modelTopRatio: region.modelTopRatio,
+      modelBottomRatio: region.modelBottomRatio,
+    );
+  }
+
+  /// v2.0: Resolves xRatio using landmark calibration when a 3D model is
+  /// present; otherwise returns the raw xRatio for the 2D silhouette.
+  double _modelXRatio(_BodyRegion region) {
+    if (!_use3dCalibration) return region.xRatio;
+    final landmarks = region.landmarks ?? _calibrationLandmarks;
+    if (landmarks.isNotEmpty) {
+      return CalibrationService.modelXRatio(landmarks, region.xRatio);
+    }
+    return region.xRatio;
+  }
+
+  /// Asset path of the 3D anatomy model for the current gender.
+  /// 'both' and unknown genders resolve to the male model so the 2D/3D
+  /// representations stay consistent.
+  String get _model3dSrc {
+    final g = _gender;
+    final isMale = g == 'male' || g == 'ชาย' || g == 'm' || g == 'both';
+    return isMale
+        ? 'assets/models/male_anatomy.glb'
+        : 'assets/models/female_anatomy.glb';
+  }
+
   // Animations
   late AnimationController _pulseController;
   late AnimationController _rippleController;
@@ -458,9 +564,20 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   // Popup opening state for UI feedback
   bool _isOpeningPopup = false;
 
+  bool _has3dModelAsset = false;
+  bool _is3dModelAssetChecked = false;
+
+  // ─── Left region panel auto-scroll ───────────────────────────────────────
+  final ScrollController _panelScrollController = ScrollController();
+  // Key on the panel ListView, used as the viewport reference for measurements.
+  final GlobalKey _panelListKey = GlobalKey();
+  // GlobalKeys per region row, used to measure position for keep-visible scroll.
+  final Map<String, GlobalKey> _regionKeys = {};
+
   @override
   void initState() {
     super.initState();
+    _calibrationService = CalibrationService(Supabase.instance.client);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -482,6 +599,8 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       });
     });
 
+    _check3dModelAvailability();
+
     _pulseAnim = Tween<double>(begin: 0.8, end: 1.4).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
@@ -491,6 +610,34 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     ).animate(CurvedAnimation(parent: _rippleController, curve: Curves.linear));
 
     _loadSymptomStats();
+  }
+
+  Future<void> _check3dModelAvailability() async {
+    try {
+      final manifest = await rootBundle.loadString('AssetManifest.json');
+      final g = _gender;
+      final isMale = g == 'male' || g == 'ชาย' || g == 'm';
+      final assetPath = isMale
+          ? 'assets/models/male_anatomy.glb'
+          : 'assets/models/female_anatomy.glb';
+      final hasAsset = manifest.contains(assetPath);
+
+      if (!mounted) return;
+      setState(() {
+        _has3dModelAsset = hasAsset;
+        _is3dModelAssetChecked = true;
+        if (!hasAsset) {
+          _is3dRotateMode = false;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _has3dModelAsset = false;
+        _is3dModelAssetChecked = true;
+        _is3dRotateMode = false;
+      });
+    }
   }
 
   Future<void> _loadSymptomStats() async {
@@ -503,6 +650,14 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       final dbRegions = await ServiceLocator.instance.bodyRegionRepository
           .getAllRegions();
 
+      // v2.0: Load global calibration defaults for the current gender/platform.
+      // Falls back to hardcoded fallback landmarks if DB is unavailable.
+      final calibrationGender = _gender == 'unknown' ? 'both' : _gender;
+      final landmarks = await _calibrationService.getDefaultLandmarks(
+        gender: calibrationGender,
+        platform: 'mobile',
+      );
+
       // Wait for at least some animation progress for better UX
       if (_scanController.value < 0.6) {
         await Future.delayed(const Duration(milliseconds: 800));
@@ -514,6 +669,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
           if (stats.isNotEmpty) {
             _maxSymptomCount = stats.values.reduce((a, b) => a > b ? a : b);
           }
+          _calibrationLandmarks = landmarks;
           if (dbRegions.isNotEmpty) {
             _bodyRegions = dbRegions
                 .where((r) {
@@ -529,8 +685,18 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                     xRatio: r.xRatio,
                     icon: _getIconData(r.iconName),
                     iconName: r.iconName ?? '',
+                    hasSides: r.hasSides,
+                    modelTopRatio: r.modelTopRatio,
+                    modelBottomRatio: r.modelBottomRatio,
+                    landmarks: r.landmarks ?? landmarks,
                   ),
                 )
+                .toList()
+              ..sort((a, b) => a.yRatio.compareTo(b.yRatio));
+          } else {
+            // No DB regions: apply global defaults to the hardcoded list.
+            _bodyRegions = _bodyRegions
+                .map((r) => r.copyWith(landmarks: landmarks))
                 .toList();
           }
         });
@@ -552,15 +718,76 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     _pulseController.dispose();
     _rippleController.dispose();
     _scanController.dispose();
+    _panelScrollController.dispose();
     super.dispose();
   }
 
-  void _onRegionTapped(_BodyRegion region) async {
-    // If it's the same region, don't reset the current selection states
+  /// Scrolls the left region panel so [region]'s row sits at roughly the same
+  /// vertical fraction as its position on the body model (via _modelYRatio).
+  /// This makes the list "follow" the tapped point on the silhouette. The
+  /// target is clamped to the scroll extent, so near the top/bottom the row
+  /// simply stays as close as possible while remaining visible. Runs after the
+  /// current frame so the target row is laid out and measurable.
+  void _ensureRegionVisibleInPanel(_BodyRegion region) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_panelScrollController.hasClients) return;
+      final key = _regionKeys[region.id];
+      final itemCtx = key?.currentContext;
+      final viewport = _panelScrollController.position;
+      if (itemCtx == null) return;
+
+      final itemBox = itemCtx.findRenderObject() as RenderBox?;
+      final listCtx = _panelListKey.currentContext;
+      final listBox = listCtx?.findRenderObject() as RenderBox?;
+      if (itemBox == null || listBox == null) return;
+
+      final itemTop = itemBox
+          .localToGlobal(Offset.zero, ancestor: listBox)
+          .dy;
+      final viewHeight = listBox.size.height;
+      final itemHeight = itemBox.size.height;
+
+      // Desired position of the row (its center) within the viewport, matching
+      // where the region's line is drawn on the model (0..1 of the height).
+      final modelRatio = _modelYRatio(region).clamp(0.0, 1.0);
+      final desiredTop = viewHeight * modelRatio - itemHeight / 2;
+
+      // Convert the desired viewport position into an absolute scroll offset.
+      final target = _panelScrollController.offset + (itemTop - desiredTop);
+
+      _panelScrollController.animateTo(
+        target.clamp(viewport.minScrollExtent, viewport.maxScrollExtent),
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  /// Determines the side to auto-select for a region given the horizontal
+  /// tap position (0.0 = far left, 1.0 = far right). Midline organs always
+  /// resolve to [_BodySide.center]; bilateral organs resolve to left/right
+  /// based on the tapped half. Returns null when the side cannot be inferred.
+  _BodySide? _autoSideForRegion(_BodyRegion region, double? tapXRatio) {
+    if (!region.hasSides) return _BodySide.center;
+    if (tapXRatio == null) return null;
+    return tapXRatio < 0.5 ? _BodySide.left : _BodySide.right;
+  }
+
+  void _onRegionTapped(_BodyRegion region, {double? tapXRatio}) async {
+    final autoSide = _autoSideForRegion(region, tapXRatio);
+
+    // If it's the same region, keep current selection but allow the user to
+    // re-tap the other half to switch sides (for bilateral organs).
     if (_hoveredRegion?.id == region.id) {
-      // Just update ripple position if needed and return
-      _rippleCenterX = region.xRatio + _xOffsetForSide(_selectedSide);
-      _rippleCenterY = region.yRatio;
+      setState(() {
+        if (region.hasSides && autoSide != null) {
+          _selectedSide = autoSide;
+        } else if (!region.hasSides) {
+          _selectedSide = _BodySide.center;
+        }
+        _rippleCenterX = _modelXRatio(region) + _xOffsetForSide(_selectedSide);
+        _rippleCenterY = region.yRatio;
+      });
       return;
     }
 
@@ -571,7 +798,7 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     setState(() {
       _isOpeningPopup = true;
       // Update ripple position immediately for visual response
-      _rippleCenterX = region.xRatio;
+      _rippleCenterX = _modelXRatio(region) + _xOffsetForSide(autoSide);
       _rippleCenterY = region.yRatio;
     });
 
@@ -584,9 +811,13 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     setState(() {
       _hoveredRegion = region;
       _popupDragRatio = region.yRatio;
-      _selectedSide = null;
+      // Auto-select the side based on where the user tapped (still editable).
+      _selectedSide = autoSide;
       _currentSymptom = _medicalSymptoms[0];
     });
+
+    // Keep the selected region visible in the left panel list.
+    _ensureRegionVisibleInPanel(region);
 
     // Phase 4: Reset opening state after the expensive build frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -601,8 +832,21 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   void _onPopupDrag(DragUpdateDetails details) {
     if (_silhouetteH <= 0) return;
     setState(() {
-      _popupDragRatio = (_popupDragRatio + details.delta.dy / _silhouetteH)
-          .clamp(0.0, 1.0);
+      // Convert the screen-space drag delta into logical yRatio space.
+      // With a 3D model, the silhouette is framed within top/bottom so the
+      // delta must be scaled by that span. Without a model the flat silhouette
+      // fills the height, so the mapping is identity (span = 1.0).
+      final region = _hoveredRegion;
+      final top = region?.modelTopRatio ?? 0.08;
+      final bottom = region?.modelBottomRatio ?? 0.93;
+      final span = _use3dCalibration
+          ? (bottom - top).clamp(0.01, 1.0)
+          : 1.0;
+      _popupDragRatio =
+          (_popupDragRatio + details.delta.dy / (_silhouetteH * span)).clamp(
+            0.0,
+            1.0,
+          );
       // Find nearest region to the new drag ratio
       _BodyRegion? closest;
       double minDist = double.infinity;
@@ -615,13 +859,18 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
       }
       if (closest != null && closest != _hoveredRegion) {
         _hoveredRegion = closest;
-        // RESET selection states when organ changes via drag
-        _selectedSide = null;
+        // RESET selection states when organ changes via drag.
+        // Midline organs auto-resolve to center; bilateral organs wait for the
+        // user to pick a side.
+        _selectedSide = closest.hasSides ? null : _BodySide.center;
         _currentSymptom = _medicalSymptoms[0];
 
         // Update ripple center to follow drag
         _rippleCenterY = closest.yRatio;
-        _rippleCenterX = closest.xRatio + _xOffsetForSide(_selectedSide);
+        _rippleCenterX = _modelXRatio(closest) + _xOffsetForSide(_selectedSide);
+
+        // Keep the newly hovered region visible in the left panel list.
+        _ensureRegionVisibleInPanel(closest);
       }
     });
   }
@@ -727,8 +976,11 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 _buildHeader(),
                 Expanded(
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Center: Body silhouette ──────────────────────────
+                      // ── Left: Scrollable region list (no overlap) ─────────
+                      SizedBox(width: 130, child: _buildRegionSidePanel()),
+                      // ── Right: Body silhouette ────────────────────────────
                       Expanded(child: _buildBodySilhouette()),
                     ],
                   ),
@@ -825,6 +1077,98 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
     );
   }
 
+  // ─── Left side panel: scrollable list of body regions (no overlap) ───────
+  Widget _buildRegionSidePanel() {
+    return Container(
+      margin: const EdgeInsets.only(left: 8, top: 12, bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: ListView.builder(
+          key: _panelListKey,
+          controller: _panelScrollController,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: _bodyRegions.length,
+          itemBuilder: (context, index) {
+            final region = _bodyRegions[index];
+            final isHovered = _hoveredRegion?.id == region.id;
+            final isConfirmed = _selectedPoints.any((p) => p.region.id == region.id);
+            final count = _symptomStats[region.id] ?? 0;
+            final rowKey = _regionKeys.putIfAbsent(region.id, () => GlobalKey());
+
+            return GestureDetector(
+              key: rowKey,
+              onTap: () {
+                // Tap on the panel acts like tapping the center of the region.
+                _onRegionTapped(region, tapXRatio: 0.5);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isHovered
+                      ? AppColors.primary.withOpacity(0.12)
+                      : isConfirmed
+                          ? AppColors.primary.withOpacity(0.08)
+                          : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isHovered
+                        ? AppColors.primary.withOpacity(0.4)
+                        : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      region.icon,
+                      size: 16,
+                      color: isHovered
+                          ? AppColors.primary
+                          : isConfirmed
+                              ? AppColors.primary
+                              : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        region.nameTh,
+                        style: TextStyle(
+                          fontSize: isHovered ? 12 : 11,
+                          fontWeight: isHovered || count > 0
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                          color: isHovered
+                              ? AppColors.primary
+                              : Colors.grey.shade800,
+                        ),
+                      ),
+                    ),
+                    if (isConfirmed)
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   // ─── Body silhouette with tap regions ────────────────────────────────────
   Widget _buildBodySilhouette() {
     return LayoutBuilder(
@@ -844,19 +1188,31 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (details) {
-                  // Find closest region by y position
-                  final tapY = details.localPosition.dy;
-                  final ratio = tapY / h;
+                  if (_is3dRotateMode) return;
+                  // Compare the tap's on-screen vertical ratio directly against
+                  // each region's on-screen ratio (via _modelYRatio). This works
+                  // for both the flat 2D silhouette (raw yRatio) and the 3D model
+                  // (landmark-mapped), so detection always matches the drawn lines.
+                  final tapYRatio = (details.localPosition.dy / h).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  final tapXRatio = (details.localPosition.dx / w).clamp(
+                    0.0,
+                    1.0,
+                  );
                   _BodyRegion? closest;
                   double minDist = double.infinity;
                   for (final r in _bodyRegions) {
-                    final dist = (r.yRatio - ratio).abs();
+                    final dist = (_modelYRatio(r) - tapYRatio).abs();
                     if (dist < minDist) {
                       minDist = dist;
                       closest = r;
                     }
                   }
-                  if (closest != null) _onRegionTapped(closest);
+                  if (closest != null) {
+                    _onRegionTapped(closest, tapXRatio: tapXRatio);
+                  }
                 },
               ),
             ),
@@ -902,7 +1258,9 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                       painter: _RipplePainter(
                         progress: _rippleAnim.value,
                         centerX: _rippleCenterX,
-                        centerY: _rippleCenterY,
+                        centerY: _hoveredRegion != null
+                          ? _modelYRatio(_hoveredRegion!)
+                          : _rippleCenterY,
                       ),
                     );
                   },
@@ -910,84 +1268,56 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               ),
             ),
 
-            // Human silhouette - Premium Gradient
+            // Faint silhouette behind the 3D model — acts as a graceful
+            // fallback while the model loads or if it fails on a platform.
             Positioned.fill(
               child: RepaintBoundary(
                 child: CustomPaint(
+                  // Landmark guides are an admin calibration aid only. Their
+                  // y2d values are tuned for the 3D model, not this simplified
+                  // 2D silhouette, so they must not be drawn on the
+                  // patient-facing page (they would mislead the user).
                   painter: _HumanSilhouettePainter(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: AppColors.primary.withOpacity(0.08),
                     gender: _gender,
                   ),
                 ),
               ),
             ),
 
-            // === Permanent Organ Labels (identify organ names) ===
-            ..._bodyRegions.map((region) {
-              final topY = h * region.yRatio;
-              final isHovered = _hoveredRegion?.id == region.id;
-
-              return Positioned(
-                top: topY - 20,
-                left: 12,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  child: Builder(
-                    builder: (context) {
-                      final count = _symptomStats[region.id] ?? 0;
-                      // Intensity calculations:
-                      // Opacity from 0.4 (rare) to 1.0 (very frequent)
-                      double intensity = 0.45;
-                      if (_maxSymptomCount > 0) {
-                        intensity = 0.45 + (count / _maxSymptomCount) * 0.55;
-                      }
-
-                      // Font weight based on frequency
-                      FontWeight weight = FontWeight.w400;
-                      if (count > 0) {
-                        if (count >= _maxSymptomCount * 0.7) {
-                          weight = FontWeight.w800;
-                        } else if (count >= _maxSymptomCount * 0.3) {
-                          weight = FontWeight.w600;
-                        } else {
-                          weight = FontWeight.w500;
-                        }
-                      }
-
-                      return Text(
-                        region.nameTh,
-                        style: TextStyle(
-                          fontSize: isHovered ? 12 : 10,
-                          fontWeight: isHovered ? FontWeight.bold : weight,
-                          color: isHovered
-                              ? AppColors.primary
-                              : Colors.grey.shade800.withValues(
-                                  alpha: intensity,
-                                ),
-                          letterSpacing: 0.5,
-                        ),
-                      );
-                    },
-                  ),
+            // === 3D anatomy model / placeholder ===
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 4,
                 ),
-              );
-            }),
+                child: _build3dModelViewport(),
+              ),
+            ),
 
             // Horizontal region tap lines + labels
-            ...List.generate(_bodyRegions.length, (i) {
-              final region = _bodyRegions[i];
-              final topY = h * region.yRatio;
-              final isHovered = _hoveredRegion?.id == region.id;
-              final isConfirmed = _selectedPoints.any(
-                (p) => p.region.id == region.id,
-              );
+            if (!_is3dRotateMode)
+              ...List.generate(_bodyRegions.length, (i) {
+                final region = _bodyRegions[i];
+                final topY = h * _modelYRatio(region);
+                final isHovered = _hoveredRegion?.id == region.id;
+                final isConfirmed = _selectedPoints.any(
+                  (p) => p.region.id == region.id,
+                );
 
-              return Positioned(
-                top: topY - 12,
-                left: 0,
-                right: 0,
+                return Positioned(
+                  top: topY - 12,
+                  left: 0,
+                  right: 0,
                 child: GestureDetector(
-                  onTap: () => _onRegionTapped(region),
+                  onTapDown: (details) {
+                    final tapXRatio = (details.localPosition.dx / w).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    _onRegionTapped(region, tapXRatio: tapXRatio);
+                  },
                   behavior: HitTestBehavior.translucent,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -1039,7 +1369,8 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
             }),
 
             // Hovered region: draggable label + confirm button
-            if (_hoveredRegion != null) _buildHoveredLabel(h),
+            if (_hoveredRegion != null && !_is3dRotateMode)
+              _buildHoveredLabel(h),
 
             // Feedback if popup is still 'opening' (busy UI thread)
             if (_isOpeningPopup)
@@ -1055,9 +1386,10 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
               ),
 
             // Confirmed points: small dot indicators on body
-            ..._selectedPoints.map((point) {
-              final topY = h * point.region.yRatio;
-              double leftX;
+            if (!_is3dRotateMode)
+              ..._selectedPoints.map((point) {
+                final topY = h * _modelYRatio(point.region);
+                double leftX;
               switch (point.side) {
                 case _BodySide.left:
                   leftX = w * 0.22;
@@ -1069,18 +1401,203 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                   leftX = w * 0.72;
                   break;
               }
-              return Positioned(
-                left: leftX,
-                top: topY - 8,
-                child: _PulsingDot(
-                  color: AppColors.primary,
-                  pulseAnim: _pulseAnim,
+                return Positioned(
+                  left: leftX,
+                  top: topY - 8,
+                  child: _PulsingDot(
+                    color: AppColors.primary,
+                    pulseAnim: _pulseAnim,
+                  ),
+                );
+              }),
+
+            // 3D rotate / inspect toggle button
+            Positioned(
+              top: 20,
+              right: 16,
+              child: _build3dToggleButton(),
+            ),
+
+            // Hint shown while inspecting in 3D rotate mode
+            if (_is3dRotateMode)
+              Positioned(
+                bottom: 20,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'ลากเพื่อหมุน • บีบเพื่อซูม',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
                 ),
-              );
-            }),
+              ),
           ],
         );
       },
+    );
+  }
+
+  // ─── 3D rotate / inspect toggle ──────────────────────────────────────────
+  Widget _build3dToggleButton() {
+    final canUse3d = _is3dModelAssetChecked && _has3dModelAsset;
+    final active = canUse3d && _is3dRotateMode;
+    return GestureDetector(
+      onTap: canUse3d
+          ? () {
+              HapticFeedback.selectionClick();
+              setState(() => _is3dRotateMode = !_is3dRotateMode);
+            }
+          : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: active ? AppColors.primaryGradient : null,
+          color: active
+              ? null
+              : canUse3d
+                  ? Colors.white.withOpacity(0.85)
+                  : Colors.white.withOpacity(0.55),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active
+                ? Colors.transparent
+                : canUse3d
+                    ? AppColors.primary.withOpacity(0.3)
+                    : Colors.grey.withOpacity(0.2),
+          ),
+          boxShadow: [
+            if (canUse3d)
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              !canUse3d
+                  ? Icons.image_not_supported_outlined
+                  : active
+                      ? Icons.touch_app_outlined
+                      : Icons.threed_rotation,
+              size: 16,
+              color: !canUse3d
+                  ? Colors.grey.shade500
+                  : active
+                      ? Colors.white
+                      : AppColors.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              !canUse3d
+                  ? 'ไม่มีโมเดล 3D'
+                  : active
+                      ? 'โหมดเลือก'
+                      : 'หมุนดู 3D',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: !canUse3d
+                    ? Colors.grey.shade500
+                    : active
+                        ? Colors.white
+                        : AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _build3dModelViewport() {
+    if (_is3dModelAssetChecked && _has3dModelAsset) {
+      return IgnorePointer(
+        ignoring: !_is3dRotateMode,
+        child: ModelViewer(
+          key: ValueKey('model_${_model3dSrc}_$_is3dRotateMode'),
+          src: _model3dSrc,
+          alt: 'แบบจำลองร่างกาย 3 มิติ',
+          ar: false,
+          autoRotate: false,
+          cameraControls: _is3dRotateMode,
+          disableZoom: !_is3dRotateMode,
+          disablePan: !_is3dRotateMode,
+          disableTap: true,
+          backgroundColor: Colors.transparent,
+          shadowIntensity: 0.8,
+          exposure: 1.05,
+          cameraOrbit: '0deg 90deg auto',
+          minCameraOrbit: 'auto auto auto',
+          maxCameraOrbit: 'auto auto auto',
+          interactionPrompt: InteractionPrompt.none,
+        ),
+      );
+    }
+
+    return IgnorePointer(
+      ignoring: true,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.view_in_ar_outlined,
+                  size: 16,
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _is3dModelAssetChecked
+                        ? 'ไม่มีโมเดล 3D'
+                        : 'กำลังตรวจสอบโมเดล...',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A4D10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1120,8 +1637,12 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
   Widget _buildHoveredLabel(double h) {
     final region = _hoveredRegion!;
-    // Use _popupDragRatio (updated by drag) instead of region.yRatio directly
-    final labelTop = (h * _popupDragRatio - 28).clamp(12.0, h - 70.0);
+    // Use _popupDragRatio (updated by drag) instead of region.yRatio directly,
+    // mapped through the model framing transform so it aligns with the body.
+    final labelTop = (h * _modelYRatio(region) - 28).clamp(
+      12.0,
+      h - 70.0,
+    );
 
     return Positioned(
       top: labelTop,
@@ -1142,10 +1663,10 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
                 vertical: 5,
               ), // Reduced vertical padding
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.65),
+                color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.5),
+                  color: Colors.white.withOpacity(0.4),
                   width: 1.5,
                 ),
                 boxShadow: [
@@ -1275,42 +1796,88 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
   }
 
   Widget _buildInlineSideSelector() {
+    final region = _hoveredRegion;
+    // Midline organs (no left/right) show a static "กึ่งกลาง" indicator instead
+    // of a toggle, so the user is not asked to choose an irrelevant side.
+    if (region != null && !region.hasSides) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.vertical_align_center,
+              size: 12,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _BodySide.center.labelTh,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Bilateral organs: offer only ซ้าย / ขวา (the auto-detected one is
+    // pre-highlighted but the user can switch).
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [_BodySide.left, _BodySide.center, _BodySide.right].map((s) {
+      children: [_BodySide.left, _BodySide.right].map((s) {
         final isSelected = _selectedSide == s;
+        final sideColor = _sideColor(s);
         return GestureDetector(
           onTap: () {
             setState(() {
               _selectedSide = s;
               // Update ripple X to reflect the selected side
               if (_hoveredRegion != null) {
-                _rippleCenterX = _hoveredRegion!.xRatio + _xOffsetForSide(s);
+                _rippleCenterX = _modelXRatio(_hoveredRegion!) + _xOffsetForSide(s);
               }
             });
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             margin: const EdgeInsets.only(left: 4),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? AppColors.primary
-                  : const Color(0xFFEEEEEE), // Solid light grey
+              color: isSelected ? sideColor : const Color(0xFFEEEEEE),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isSelected
-                    ? AppColors.primary
-                    : Colors.grey.withOpacity(0.2),
+                color: isSelected ? sideColor : Colors.grey.withOpacity(0.2),
               ),
             ),
-            child: Text(
-              s.labelTh,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.white : Colors.grey.shade600,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  s == _BodySide.left
+                      ? Icons.chevron_left
+                      : Icons.chevron_right,
+                  size: 12,
+                  color: isSelected ? Colors.white : Colors.grey.shade600,
+                ),
+                Text(
+                  s.labelTh,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected ? Colors.white : Colors.grey.shade600,
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -1320,23 +1887,34 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
 
   // ─── Bottom panel: tags + center button ───────────────────────────────────
   Widget _buildBottomPanel() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(28),
+        topRight: Radius.circular(28),
       ),
-      child: Column(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(28),
+              topRight: Radius.circular(28),
+            ),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.4),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1502,6 +2080,8 @@ class _AnalyzeBodyAreaPageState extends State<AnalyzeBodyAreaPage>
             ),
           ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -1703,9 +2283,12 @@ class _HumanSilhouettePainter extends CustomPainter {
   final Color color;
   final String gender;
 
-  _HumanSilhouettePainter({required this.color, required this.gender});
+  _HumanSilhouettePainter({
+    required this.color,
+    required this.gender,
+  });
 
-  bool get _isMale => gender == 'male' || gender == 'ชาย' || gender == 'm';
+  bool get _isMale => gender == 'male' || gender == 'ชาย' || gender == 'm' || gender == 'both';
 
   @override
   void paint(Canvas canvas, Size size) {
