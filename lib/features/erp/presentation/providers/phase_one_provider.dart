@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../services/service_locator.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/inventory_lot.dart';
 import '../../data/models/product.dart';
@@ -16,6 +17,11 @@ import '../../data/models/inventory_alert.dart';
 import '../../data/models/purchase_requisition.dart';
 import '../../data/models/purchase_order.dart';
 import '../../data/models/purchase_order_item.dart';
+import '../../data/models/purchase_requisition_item.dart';
+import '../../data/models/goods_receipt.dart';
+import '../../data/models/goods_receipt_item.dart';
+import '../../data/models/back_order.dart';
+import '../../data/models/procurement_settings.dart';
 import '../../data/repositories/phase_one_repository.dart';
 
 // ========================
@@ -59,6 +65,17 @@ class PhaseOneState {
   final List<InventoryLot> selectedProductLots;
   final List<PurchaseOrderItem> selectedPurchaseOrderItems;
 
+  // Procurement Step 2
+  final List<GoodsReceipt> goodsReceipts;
+  final List<GoodsReceiptItem> selectedGoodsReceiptItems;
+  final List<BackOrder> backOrders;
+  final List<PurchaseRequisitionItem> selectedPRItems;
+  final ProcurementSettings? procurementSettings;
+
+  // Procurement Step 3
+  final List<Map<String, dynamic>> reorderSuggestions;
+  final List<Map<String, dynamic>> supplierPriceHistory;
+
   PhaseOneState({
     this.isLoading = false,
     this.isSaving = false,
@@ -82,6 +99,13 @@ class PhaseOneState {
     this.selectedProductStockSummary = const [],
     this.selectedProductLots = const [],
     this.selectedPurchaseOrderItems = const [],
+    this.goodsReceipts = const [],
+    this.selectedGoodsReceiptItems = const [],
+    this.backOrders = const [],
+    this.selectedPRItems = const [],
+    this.procurementSettings,
+    this.reorderSuggestions = const [],
+    this.supplierPriceHistory = const [],
   });
 
   PhaseOneState copyWith({
@@ -109,6 +133,14 @@ class PhaseOneState {
     List<Map<String, dynamic>>? selectedProductStockSummary,
     List<InventoryLot>? selectedProductLots,
     List<PurchaseOrderItem>? selectedPurchaseOrderItems,
+    List<GoodsReceipt>? goodsReceipts,
+    List<GoodsReceiptItem>? selectedGoodsReceiptItems,
+    List<BackOrder>? backOrders,
+    List<PurchaseRequisitionItem>? selectedPRItems,
+    ProcurementSettings? procurementSettings,
+    bool clearProcurementSettings = false,
+    List<Map<String, dynamic>>? reorderSuggestions,
+    List<Map<String, dynamic>>? supplierPriceHistory,
   }) {
     final shouldClearError = clearError ||
         ((isLoading != null && !isLoading) || (isSaving != null && !isSaving));
@@ -135,6 +167,13 @@ class PhaseOneState {
       selectedProductStockSummary: selectedProductStockSummary ?? this.selectedProductStockSummary,
       selectedProductLots: selectedProductLots ?? this.selectedProductLots,
       selectedPurchaseOrderItems: selectedPurchaseOrderItems ?? this.selectedPurchaseOrderItems,
+      goodsReceipts: goodsReceipts ?? this.goodsReceipts,
+      selectedGoodsReceiptItems: selectedGoodsReceiptItems ?? this.selectedGoodsReceiptItems,
+      backOrders: backOrders ?? this.backOrders,
+      selectedPRItems: selectedPRItems ?? this.selectedPRItems,
+      procurementSettings: clearProcurementSettings ? null : (procurementSettings ?? this.procurementSettings),
+      reorderSuggestions: reorderSuggestions ?? this.reorderSuggestions,
+      supplierPriceHistory: supplierPriceHistory ?? this.supplierPriceHistory,
     );
   }
 
@@ -446,14 +485,22 @@ class PhaseOneNotifier extends StateNotifier<PhaseOneState> {
     state = state.copyWith(isSaving: true, clearError: true);
     try {
       final prNumber = 'PR-${DateTime.now().year}${DateTime.now().month.toString().padLeft(2, '0')}${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().millisecond.toString().padLeft(3, '0')}';
+
+      // Check approval threshold from procurement_settings
+      final settings = state.procurementSettings;
+      final threshold = settings?.approvalAmountThreshold ?? 10000;
+      final isAutoApproved = totalAmount < threshold;
+
       final success = await _repository.createPurchaseRequisition({
         'profession_id': professionId,
         'requester_id': requesterId,
         'branch_id': branchId,
         'pr_number': prNumber,
-        'status': 'pending_approval',
+        'status': isAutoApproved ? 'approved' : 'pending_approval',
         'total_amount': totalAmount,
         'notes': notes,
+        if (isAutoApproved) 'approved_by': requesterId,
+        if (isAutoApproved) 'approved_at': DateTime.now().toIso8601String(),
       });
       state = state.copyWith(isSaving: false);
       return success;
@@ -570,7 +617,8 @@ class PhaseOneNotifier extends StateNotifier<PhaseOneState> {
   Future<bool> sendPurchaseOrderToSupplier(String poId) async {
     state = state.copyWith(isSaving: true, clearError: true);
     try {
-      final success = await _repository.updatePurchaseOrderStatus(poId, 'sent');
+      final user = ServiceLocator.instance.currentUser;
+      final success = await _repository.sendPurchaseOrderRpc(poId, user?.id);
       state = state.copyWith(isSaving: false);
       return success;
     } catch (e) {
@@ -885,6 +933,318 @@ class PhaseOneNotifier extends StateNotifier<PhaseOneState> {
     } catch (e) {
       debugPrint('[Phase1] checkInventoryAlerts ERROR: $e');
       return 0;
+    }
+  }
+
+  // ========================
+  // PROCUREMENT STEP 2 — Goods Receipt, Back Orders, PR Items, Settings
+  // ========================
+
+  // --- Goods Receipts ---
+
+  Future<void> loadGoodsReceipts(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final grs = await _repository.getGoodsReceipts(professionId);
+      state = state.copyWith(isLoading: false, goodsReceipts: grs);
+    } catch (e) {
+      debugPrint('[Phase1] loadGoodsReceipts ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดใบรับของล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadGoodsReceiptItems(String grId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final items = await _repository.getGoodsReceiptItems(grId);
+      state = state.copyWith(isLoading: false, selectedGoodsReceiptItems: items);
+    } catch (e) {
+      debugPrint('[Phase1] loadGoodsReceiptItems ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรายการรับของล้มเหลว: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> createGoodsReceipt({
+    required String professionId,
+    String? branchId,
+    required String purchaseOrderId,
+    required String receivedBy,
+    String? supplierDeliveryNote,
+    required List<Map<String, dynamic>> items,
+    String? notes,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final idempotencyKey = 'gr_${professionId}_${purchaseOrderId}_${DateTime.now().millisecondsSinceEpoch}';
+      final result = await _repository.createGoodsReceiptRpc(
+        professionId: professionId,
+        branchId: branchId,
+        purchaseOrderId: purchaseOrderId,
+        receivedBy: receivedBy,
+        supplierDeliveryNote: supplierDeliveryNote,
+        items: items,
+        notes: notes,
+        idempotencyKey: idempotencyKey,
+      );
+      if (result != null) {
+        // Reload POs to reflect updated status
+        final pos = await _repository.getPurchaseOrders(professionId);
+        state = state.copyWith(isSaving: false, purchaseOrders: pos);
+      } else {
+        state = state.copyWith(isSaving: false, errorMessage: 'สร้างใบรับของไม่สำเร็จ');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[Phase1] createGoodsReceipt ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'สร้างใบรับของล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  // --- Back Orders ---
+
+  Future<void> loadBackOrders(String professionId, {String? status}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final bos = await _repository.getBackOrders(professionId, status: status);
+      state = state.copyWith(isLoading: false, backOrders: bos);
+    } catch (e) {
+      debugPrint('[Phase1] loadBackOrders ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรายการค้างส่งล้มเหลว: $e');
+    }
+  }
+
+  // --- Purchase Requisition Items ---
+
+  Future<void> loadPurchaseRequisitionItems(String requisitionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final items = await _repository.getPurchaseRequisitionItems(requisitionId);
+      state = state.copyWith(isLoading: false, selectedPRItems: items);
+    } catch (e) {
+      debugPrint('[Phase1] loadPurchaseRequisitionItems ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรายการขอซื้อล้มเหลว: $e');
+    }
+  }
+
+  Future<bool> addPurchaseRequisitionItem({
+    required String professionId,
+    required String requisitionId,
+    required String productId,
+    required String itemName,
+    required int quantityRequested,
+    double? estimatedUnitPrice,
+    String? notes,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final estimatedTotal = estimatedUnitPrice != null
+          ? estimatedUnitPrice * quantityRequested
+          : null;
+      final success = await _repository.addPurchaseRequisitionItem({
+        'profession_id': professionId,
+        'requisition_id': requisitionId,
+        'product_id': productId,
+        'item_name': itemName,
+        'quantity_requested': quantityRequested,
+        'estimated_unit_price': estimatedUnitPrice,
+        'estimated_total_price': estimatedTotal,
+        'notes': notes,
+      });
+      if (success) {
+        await loadPurchaseRequisitionItems(requisitionId);
+      }
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] addPurchaseRequisitionItem ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'เพิ่มรายการขอซื้อล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deletePurchaseRequisitionItem(String itemId, String requisitionId) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.deletePurchaseRequisitionItem(itemId);
+      if (success) {
+        await loadPurchaseRequisitionItems(requisitionId);
+      }
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] deletePurchaseRequisitionItem ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ลบรายการขอซื้อล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // --- Procurement Settings ---
+
+  Future<void> loadProcurementSettings(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final settings = await _repository.getProcurementSettings(professionId);
+      state = state.copyWith(isLoading: false, procurementSettings: settings);
+    } catch (e) {
+      debugPrint('[Phase1] loadProcurementSettings ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดตั้งค่าจัดซื้อล้มเหลว: $e');
+    }
+  }
+
+  Future<bool> updateProcurementSettings(String professionId, Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.updateProcurementSettings(professionId, data);
+      if (success) {
+        await loadProcurementSettings(professionId);
+      }
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] updateProcurementSettings ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'บันทึกตั้งค่าจัดซื้อล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // --- PR Approval/Rejection via RPC ---
+
+  Future<bool> approvePurchaseRequisitionRpc(String prId, String approvedBy) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.approvePurchaseRequisitionRpc(prId, approvedBy);
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] approvePurchaseRequisitionRpc ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'อนุมัติใบขอซื้อล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectPurchaseRequisitionRpc(String prId, String rejectedBy, {String? reason}) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.rejectPurchaseRequisitionRpc(prId, rejectedBy, reason: reason);
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] rejectPurchaseRequisitionRpc ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ปฏิเสธใบขอซื้อล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // --- Convert PR to PO via RPC ---
+
+  Future<Map<String, dynamic>?> convertPrToPo({
+    required String requisitionId,
+    required String supplierId,
+    required String createdBy,
+    String? branchId,
+    String? notes,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.convertPrToPoRpc(
+        requisitionId: requisitionId,
+        supplierId: supplierId,
+        createdBy: createdBy,
+        branchId: branchId,
+        notes: notes,
+      );
+      state = state.copyWith(isSaving: false);
+      return result;
+    } catch (e) {
+      debugPrint('[Phase1] convertPrToPo ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'แปลง PR เป็น PO ล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // REORDER SUGGESTIONS (Step 3)
+  // ========================
+
+  Future<void> loadReorderSuggestions(String professionId, {String? status}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final suggestions = await _repository.getReorderSuggestions(professionId, status: status);
+      state = state.copyWith(isLoading: false, reorderSuggestions: suggestions);
+    } catch (e) {
+      debugPrint('[Phase1] loadReorderSuggestions ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดคำแนะนำการสั่งซื้อล้มเหลว: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> checkReorderPoints(String professionId, {String? branchId}) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.checkReorderPoints(professionId, branchId: branchId);
+      state = state.copyWith(isSaving: false);
+      if (result != null) {
+        await loadReorderSuggestions(professionId);
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[Phase1] checkReorderPoints ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ตรวจสอบจุดสั่งซื้อล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<bool> confirmReorderSuggestion(String suggestionId, String confirmedBy) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.confirmReorderSuggestion(suggestionId, confirmedBy);
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] confirmReorderSuggestion ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ยืนยันคำแนะนำล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectReorderSuggestion(String suggestionId, String rejectedBy, {String? reason}) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.rejectReorderSuggestion(suggestionId, rejectedBy, reason: reason);
+      state = state.copyWith(isSaving: false);
+      return success;
+    } catch (e) {
+      debugPrint('[Phase1] rejectReorderSuggestion ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ปฏิเสธคำแนะนำล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> convertReorderToPr(String suggestionId, String createdBy) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.convertReorderToPr(suggestionId, createdBy);
+      state = state.copyWith(isSaving: false);
+      return result;
+    } catch (e) {
+      debugPrint('[Phase1] convertReorderToPr ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'แปลงคำแนะนำเป็น PR ล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // SUPPLIER PRICE HISTORY (Step 3)
+  // ========================
+
+  Future<void> loadSupplierPriceHistory(String professionId, {String? supplierId, String? productId}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final history = await _repository.getSupplierPriceHistory(professionId, supplierId: supplierId, productId: productId);
+      state = state.copyWith(isLoading: false, supplierPriceHistory: history);
+    } catch (e) {
+      debugPrint('[Phase1] loadSupplierPriceHistory ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดประวัติราคาล้มเหลว: $e');
     }
   }
 }

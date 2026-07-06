@@ -7,6 +7,12 @@ import '../models/chart_of_account.dart';
 import '../models/accounts_receivable.dart';
 import '../models/accounts_payable.dart';
 import '../models/shift.dart';
+import '../models/settlement_ledger.dart';
+import '../models/payroll_run.dart';
+import '../models/payroll_item.dart';
+import '../models/hr_settings.dart';
+import '../models/thai_holiday.dart';
+import '../models/employee_tax_allowance.dart';
 
 /// Repository สำหรับ ERP Phase 3 — Finance & Operations + Read Model
 class PhaseThreeRepository {
@@ -386,6 +392,297 @@ class PhaseThreeRepository {
   }
 
   // ========================
+  // PAYROLL (HR Core)
+  // ========================
+
+  Future<List<PayrollRun>> getPayrollRuns(
+    String professionId, {
+    String? status,
+    int limit = 50,
+  }) async {
+    try {
+      var query = _client
+          .from('payroll_runs')
+          .select()
+          .eq('profession_id', professionId);
+      if (status != null) {
+        query = query.eq('status', status);
+      }
+      final response = await query
+          .order('period_start', ascending: false)
+          .limit(limit);
+      return (response as List)
+          .map((e) => PayrollRun.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getPayrollRuns error: $e');
+      return [];
+    }
+  }
+
+  Future<PayrollRun?> createPayrollRun(Map<String, dynamic> data) async {
+    try {
+      final response = await _client
+          .from('payroll_runs')
+          .insert(data)
+          .select()
+          .single();
+      return PayrollRun.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] createPayrollRun error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> updatePayrollRun(String id, Map<String, dynamic> data) async {
+    try {
+      await _client.from('payroll_runs').update(data).eq('id', id);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] updatePayrollRun error: $e');
+      return false;
+    }
+  }
+
+  Future<List<PayrollItem>> getPayrollItems(String payrollRunId) async {
+    try {
+      final response = await _client
+          .from('payroll_items')
+          .select()
+          .eq('payroll_run_id', payrollRunId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => PayrollItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getPayrollItems error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> insertPayrollItems(List<Map<String, dynamic>> items) async {
+    try {
+      await _client.from('payroll_items').insert(items);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] insertPayrollItems error: $e');
+      return false;
+    }
+  }
+
+  Future<HrSettings?> getHrSettings(String professionId) async {
+    try {
+      final response = await _client
+          .from('hr_settings')
+          .select()
+          .eq('profession_id', professionId)
+          .maybeSingle();
+      if (response == null) return null;
+      return HrSettings.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getHrSettings error: $e');
+      return null;
+    }
+  }
+
+  Future<HrSettings?> upsertHrSettings(Map<String, dynamic> data) async {
+    try {
+      final response = await _client
+          .from('hr_settings')
+          .upsert(data)
+          .select()
+          .single();
+      return HrSettings.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] upsertHrSettings error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, double>> calculateEmployeePayroll({
+    required String employeeId,
+    required String professionId,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required HrSettings settings,
+    required double baseSalary,
+  }) async {
+    final result = <String, double>{};
+
+    result['base_salary'] = baseSalary;
+
+    try {
+      final otResponse = await _client
+          .from('time_attendances')
+          .select('attendance_status')
+          .eq('profession_id', professionId)
+          .eq('employee_id', employeeId)
+          .gte('clock_in_time', periodStart.toIso8601String())
+          .lte('clock_in_time', periodEnd.toIso8601String());
+
+      final attendances = otResponse as List;
+      int otCount = 0;
+      int lateCount = 0;
+      int absentCount = 0;
+      for (final att in attendances) {
+        final status = att['attendance_status'] as String? ?? 'on_time';
+        if (status == 'overtime') otCount++;
+        if (status == 'late') lateCount++;
+        if (status == 'absent') absentCount++;
+      }
+
+      final hourlyRate = baseSalary / (settings.defaultWorkHoursPerDay * 30);
+      final otAmount = otCount * hourlyRate * settings.otMultiplierWeekday;
+      result['overtime'] = otAmount;
+
+      final isDiligent = lateCount == 0 && absentCount == 0;
+      result['diligence_allowance'] =
+          isDiligent ? settings.diligenceAllowanceAmount : 0.0;
+    } catch (e) {
+      result['overtime'] = 0.0;
+      result['diligence_allowance'] = 0.0;
+    }
+
+    try {
+      final commResponse = await _client
+          .from('commissions')
+          .select('calculated_amount, adjusted_amount, status')
+          .eq('profession_id', professionId)
+          .eq('employee_id', employeeId)
+          .eq('status', 'approved')
+          .gte('period_start', periodStart.toIso8601String().split('T')[0])
+          .lte('period_end', periodEnd.toIso8601String().split('T')[0]);
+
+      double commissionTotal = 0;
+      for (final comm in commResponse as List) {
+        final adjusted = (comm['adjusted_amount'] as num?)?.toDouble();
+        final calculated = (comm['calculated_amount'] as num?)?.toDouble() ?? 0;
+        commissionTotal += adjusted ?? calculated;
+      }
+      result['commission'] = commissionTotal;
+    } catch (e) {
+      result['commission'] = 0.0;
+    }
+
+    final socialSecurity =
+        (baseSalary * settings.socialSecurityRate).clamp(0.0, 750.0);
+    result['social_security'] = socialSecurity;
+
+    final gross = (result['base_salary'] ?? 0) +
+        (result['overtime'] ?? 0) +
+        (result['diligence_allowance'] ?? 0) +
+        (result['commission'] ?? 0);
+    final deductions = result['social_security'] ?? 0;
+    result['gross'] = gross;
+    result['deductions'] = deductions;
+    result['net'] = gross - deductions;
+
+    return result;
+  }
+
+  /// Server-side payroll calculation via RPC (preferred over client-side)
+  Future<PayrollRun?> runPayrollCalculationRpc({
+    required String payrollRunId,
+    required String professionId,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'run_payroll_calculation',
+        params: {
+          'p_payroll_run_id': payrollRunId,
+          'p_profession_id': professionId,
+          'p_period_start': periodStart.toIso8601String().split('T')[0],
+          'p_period_end': periodEnd.toIso8601String().split('T')[0],
+        },
+      );
+      if (response == null) return null;
+      return PayrollRun.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] runPayrollCalculationRpc error: $e');
+      return null;
+    }
+  }
+
+  /// Server-side payroll approval via RPC (preferred — auto-creates GL entries)
+  Future<PayrollRun?> approvePayrollRunRpc({
+    required String payrollRunId,
+    required String approvedBy,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'approve_payroll_run',
+        params: {
+          'p_payroll_run_id': payrollRunId,
+          'p_approved_by': approvedBy,
+        },
+      );
+      if (response == null) return null;
+      return PayrollRun.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] approvePayrollRunRpc error: $e');
+      return null;
+    }
+  }
+
+  // ========================
+  // OUTBOX EVENTS (Payroll → Accounting)
+  // ========================
+
+  Future<bool> insertOutboxEvent({
+    required String professionId,
+    required String aggregateType,
+    required String aggregateId,
+    required String eventType,
+    required Map<String, dynamic> payload,
+  }) async {
+    try {
+      await _client.from('outbox_events').insert({
+        'profession_id': professionId,
+        'aggregate_type': aggregateType,
+        'aggregate_id': aggregateId,
+        'event_type': eventType,
+        'payload': payload,
+        'status': 'pending',
+      });
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] insertOutboxEvent error: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // SETTLEMENT LEDGERS (Settlement Core)
+  // ========================
+
+  Future<List<SettlementLedger>> getSettlementLedgers(
+    String professionId, {
+    String? status,
+    int limit = 50,
+  }) async {
+    try {
+      var query = _client
+          .from('settlement_ledgers')
+          .select()
+          .eq('profession_id', professionId);
+      if (status != null) {
+        query = query.eq('status', status);
+      }
+      final response = await query
+          .order('period_end', ascending: false)
+          .limit(limit);
+      return (response as List)
+          .map((e) => SettlementLedger.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getSettlementLedgers error: $e');
+      return [];
+    }
+  }
+
+  // ========================
   // SHIFTS (HR)
   // ========================
 
@@ -443,6 +740,133 @@ class PhaseThreeRepository {
     } catch (e, st) {
       debugPrint('[Phase3Repo] updateShift error: $e');
       return false;
+    }
+  }
+
+  // ========================
+  // THAI HOLIDAYS (OT Multiplier)
+  // ========================
+
+  Future<List<ThaiHoliday>> getThaiHolidays({int? year}) async {
+    try {
+      if (year != null) {
+        final startOfYear = DateTime(year, 1, 1).toIso8601String().split('T')[0];
+        final endOfYear = DateTime(year, 12, 31).toIso8601String().split('T')[0];
+        final response = await _client
+            .from('thai_holidays')
+            .select()
+            .eq('is_active', true)
+            .gte('holiday_date', startOfYear)
+            .lte('holiday_date', endOfYear)
+            .order('holiday_date');
+        return (response as List)
+            .map((e) => ThaiHoliday.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } else {
+        final response = await _client
+            .from('thai_holidays')
+            .select()
+            .eq('is_active', true)
+            .order('holiday_date');
+        return (response as List)
+            .map((e) => ThaiHoliday.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getThaiHolidays error: $e');
+      return [];
+    }
+  }
+
+  Future<ThaiHoliday?> upsertThaiHoliday(Map<String, dynamic> data) async {
+    try {
+      final response = await _client
+          .from('thai_holidays')
+          .upsert(data)
+          .select()
+          .single();
+      return ThaiHoliday.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] upsertThaiHoliday error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteThaiHoliday(String id) async {
+    try {
+      await _client.from('thai_holidays').update({'is_active': false}).eq('id', id);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] deleteThaiHoliday error: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // EMPLOYEE TAX ALLOWANCES
+  // ========================
+
+  Future<List<EmployeeTaxAllowance>> getTaxAllowances(
+    String employeeId, {
+    int? year,
+  }) async {
+    try {
+      var query = _client
+          .from('employee_tax_allowances')
+          .select()
+          .eq('employee_id', employeeId);
+      if (year != null) {
+        query = query.eq('effective_year', year);
+      }
+      final response = await query.order('allowance_type');
+      return (response as List)
+          .map((e) => EmployeeTaxAllowance.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getTaxAllowances error: $e');
+      return [];
+    }
+  }
+
+  Future<EmployeeTaxAllowance?> createTaxAllowance(Map<String, dynamic> data) async {
+    try {
+      final response = await _client
+          .from('employee_tax_allowances')
+          .insert(data)
+          .select()
+          .single();
+      return EmployeeTaxAllowance.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] createTaxAllowance error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteTaxAllowance(String id) async {
+    try {
+      await _client.from('employee_tax_allowances').delete().eq('id', id);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] deleteTaxAllowance error: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // HR SETTINGS RPC (with new fields)
+  // ========================
+
+  Future<HrSettings?> upsertHrSettingsRpc(Map<String, dynamic> params) async {
+    try {
+      final response = await _client.rpc(
+        'upsert_hr_settings',
+        params: params,
+      );
+      if (response == null) return null;
+      return HrSettings.fromJson(response as Map<String, dynamic>);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] upsertHrSettingsRpc error: $e');
+      return null;
     }
   }
 }

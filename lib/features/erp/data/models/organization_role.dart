@@ -5,6 +5,7 @@ class OrganizationRole {
   final String roleName;
   final String? roleDescription;
   final bool isSystemRole;
+  final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -14,6 +15,7 @@ class OrganizationRole {
     required this.roleName,
     this.roleDescription,
     this.isSystemRole = false,
+    this.isActive = true,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -25,6 +27,7 @@ class OrganizationRole {
       roleName: json['role_name'] as String,
       roleDescription: json['role_description'] as String?,
       isSystemRole: json['is_system_role'] as bool? ?? false,
+      isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -37,6 +40,7 @@ class OrganizationRole {
       'role_name': roleName,
       'role_description': roleDescription,
       'is_system_role': isSystemRole,
+      'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -48,6 +52,7 @@ class OrganizationRole {
     String? roleName,
     String? roleDescription,
     bool? isSystemRole,
+    bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -57,6 +62,7 @@ class OrganizationRole {
       roleName: roleName ?? this.roleName,
       roleDescription: roleDescription ?? this.roleDescription,
       isSystemRole: isSystemRole ?? this.isSystemRole,
+      isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

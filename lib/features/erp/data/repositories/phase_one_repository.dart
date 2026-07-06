@@ -17,6 +17,11 @@ import '../models/inventory_alert.dart';
 import '../models/purchase_requisition.dart';
 import '../models/purchase_order.dart';
 import '../models/purchase_order_item.dart';
+import '../models/purchase_requisition_item.dart';
+import '../models/goods_receipt.dart';
+import '../models/goods_receipt_item.dart';
+import '../models/back_order.dart';
+import '../models/procurement_settings.dart';
 
 /// Repository สำหรับ ERP Phase 1 — Data & Inflow
 /// ครอบคลุม: Product Master, CRM, Procurement, Inventory
@@ -470,6 +475,22 @@ class PhaseOneRepository {
       return true;
     } catch (e) {
       debugPrint('[Phase1Repo] updatePurchaseOrderStatus error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> sendPurchaseOrderRpc(String poId, String? sentBy) async {
+    try {
+      await _client.rpc(
+        'send_purchase_order',
+        params: {
+          'p_po_id': poId,
+          'p_sent_by': sentBy,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] sendPurchaseOrderRpc error: $e');
       return false;
     }
   }
@@ -992,6 +1013,394 @@ class PhaseOneRepository {
     } catch (e) {
       debugPrint('[Phase1Repo] checkInventoryAlerts error: $e');
       return 0;
+    }
+  }
+
+  // ========================
+  // PROCUREMENT STEP 2 — Goods Receipt, Back Orders, PR Items, Settings
+  // ========================
+
+  // --- Goods Receipts ---
+
+  Future<List<GoodsReceipt>> getGoodsReceipts(String professionId) async {
+    try {
+      final response = await _client
+          .from('goods_receipts')
+          .select('*, purchase_order:purchase_orders(po_number), branch:organization_branches(name), receiver:users(display_name)')
+          .eq('profession_id', professionId)
+          .order('receipt_date', ascending: false);
+      return (response as List)
+          .map((e) => GoodsReceipt.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getGoodsReceipts error: $e');
+      return [];
+    }
+  }
+
+  Future<List<GoodsReceipt>> getGoodsReceiptsByPO(String poId) async {
+    try {
+      final response = await _client
+          .from('goods_receipts')
+          .select('*, purchase_order:purchase_orders(po_number), branch:organization_branches(name), receiver:users(display_name)')
+          .eq('purchase_order_id', poId)
+          .order('receipt_date', ascending: false);
+      return (response as List)
+          .map((e) => GoodsReceipt.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getGoodsReceiptsByPO error: $e');
+      return [];
+    }
+  }
+
+  Future<List<GoodsReceiptItem>> getGoodsReceiptItems(String grId) async {
+    try {
+      final response = await _client
+          .from('goods_receipt_items')
+          .select('*, purchase_order_item:purchase_order_items(quantity_ordered, quantity_received, product:products(name))')
+          .eq('goods_receipt_id', grId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => GoodsReceiptItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getGoodsReceiptItems error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> createGoodsReceiptRpc({
+    required String professionId,
+    String? branchId,
+    required String purchaseOrderId,
+    required String receivedBy,
+    String? supplierDeliveryNote,
+    required List<Map<String, dynamic>> items,
+    String? notes,
+    String? idempotencyKey,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'create_goods_receipt',
+        params: {
+          'p_profession_id': professionId,
+          'p_branch_id': branchId,
+          'p_purchase_order_id': purchaseOrderId,
+          'p_received_by': receivedBy,
+          'p_supplier_delivery_note': supplierDeliveryNote,
+          'p_items': items,
+          'p_notes': notes,
+          'p_idempotency_key': idempotencyKey,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createGoodsReceiptRpc error: $e');
+      return null;
+    }
+  }
+
+  // --- Back Orders ---
+
+  Future<List<BackOrder>> getBackOrders(String professionId, {String? status}) async {
+    try {
+      var query = _client
+          .from('back_orders')
+          .select('*, purchase_order:purchase_orders(po_number), supplier:suppliers(supplier_name), purchase_order_item:purchase_order_items(product:products(name))')
+          .eq('profession_id', professionId);
+      if (status != null) {
+        query = query.eq('status', status);
+      }
+      final response = await query.order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => BackOrder.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getBackOrders error: $e');
+      return [];
+    }
+  }
+
+  // --- Purchase Requisition Items ---
+
+  Future<List<PurchaseRequisitionItem>> getPurchaseRequisitionItems(String requisitionId) async {
+    try {
+      final response = await _client
+          .from('purchase_requisition_items')
+          .select('*, product:products(name, sku)')
+          .eq('requisition_id', requisitionId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => PurchaseRequisitionItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getPurchaseRequisitionItems error: $e');
+      return [];
+    }
+  }
+
+  Future<bool> createPurchaseRequisitionItems(List<Map<String, dynamic>> items) async {
+    try {
+      await _client.from('purchase_requisition_items').insert(items);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] createPurchaseRequisitionItems error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> addPurchaseRequisitionItem(Map<String, dynamic> item) async {
+    try {
+      await _client.from('purchase_requisition_items').insert(item);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] addPurchaseRequisitionItem error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deletePurchaseRequisitionItem(String itemId) async {
+    try {
+      await _client.from('purchase_requisition_items').delete().eq('id', itemId);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] deletePurchaseRequisitionItem error: $e');
+      return false;
+    }
+  }
+
+  // --- Procurement Settings ---
+
+  Future<ProcurementSettings?> getProcurementSettings(String professionId) async {
+    try {
+      final response = await _client
+          .from('procurement_settings')
+          .select()
+          .eq('profession_id', professionId)
+          .maybeSingle();
+      if (response == null) return null;
+      return ProcurementSettings.fromJson(response);
+    } catch (e) {
+      debugPrint('[Phase1Repo] getProcurementSettings error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> updateProcurementSettings(String professionId, Map<String, dynamic> data) async {
+    try {
+      await _client
+          .from('procurement_settings')
+          .update(data)
+          .eq('profession_id', professionId);
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] updateProcurementSettings error: $e');
+      return false;
+    }
+  }
+
+  // --- PR Approval/Rejection RPCs ---
+
+  Future<bool> approvePurchaseRequisitionRpc(String prId, String approvedBy) async {
+    try {
+      await _client.rpc(
+        'approve_purchase_requisition',
+        params: {
+          'p_requisition_id': prId,
+          'p_approved_by': approvedBy,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] approvePurchaseRequisitionRpc error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectPurchaseRequisitionRpc(String prId, String rejectedBy, {String? reason}) async {
+    try {
+      await _client.rpc(
+        'reject_purchase_requisition',
+        params: {
+          'p_requisition_id': prId,
+          'p_rejected_by': rejectedBy,
+          'p_reason': reason,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] rejectPurchaseRequisitionRpc error: $e');
+      return false;
+    }
+  }
+
+  // --- Convert PR to PO RPC ---
+
+  Future<Map<String, dynamic>?> convertPrToPoRpc({
+    required String requisitionId,
+    required String supplierId,
+    required String createdBy,
+    String? branchId,
+    String? notes,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'convert_pr_to_po',
+        params: {
+          'p_requisition_id': requisitionId,
+          'p_supplier_id': supplierId,
+          'p_created_by': createdBy,
+          'p_branch_id': branchId,
+          'p_notes': notes,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('[Phase1Repo] convertPrToPoRpc error: $e');
+      return null;
+    }
+  }
+
+  // --- Reorder Suggestions (Step 3) ---
+
+  Future<List<Map<String, dynamic>>> getReorderSuggestions(
+    String professionId, {
+    String? branchId,
+    String? status,
+  }) async {
+    try {
+      var query = _client
+          .from('reorder_suggestions')
+          .select('''
+            *,
+            products(name, sku, unit_of_measure),
+            suppliers(supplier_name)
+          ''')
+          .eq('profession_id', professionId);
+      if (status != null) {
+        query = query.eq('status', status);
+      }
+      final response = await query.order('created_at', ascending: false);
+      return (response as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getReorderSuggestions error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> checkReorderPoints(
+    String professionId, {
+    String? branchId,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'check_reorder_points',
+        params: {
+          'p_profession_id': professionId,
+          'p_branch_id': branchId,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('[Phase1Repo] checkReorderPoints error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> confirmReorderSuggestion(String suggestionId, String confirmedBy) async {
+    try {
+      await _client.rpc(
+        'confirm_reorder_suggestion',
+        params: {
+          'p_id': suggestionId,
+          'p_confirmed_by': confirmedBy,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] confirmReorderSuggestion error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectReorderSuggestion(String suggestionId, String rejectedBy, {String? reason}) async {
+    try {
+      await _client.rpc(
+        'reject_reorder_suggestion',
+        params: {
+          'p_id': suggestionId,
+          'p_rejected_by': rejectedBy,
+          'p_reason': reason,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Phase1Repo] rejectReorderSuggestion error: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> convertReorderToPr(String suggestionId, String createdBy) async {
+    try {
+      final response = await _client.rpc(
+        'convert_reorder_to_pr',
+        params: {
+          'p_id': suggestionId,
+          'p_created_by': createdBy,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      debugPrint('[Phase1Repo] convertReorderToPr error: $e');
+      return null;
+    }
+  }
+
+  // --- Supplier Price History (Step 3) ---
+
+  Future<List<Map<String, dynamic>>> getSupplierPriceHistory(
+    String professionId, {
+    String? supplierId,
+    String? productId,
+    int limit = 20,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'get_supplier_price_history',
+        params: {
+          'p_profession_id': professionId,
+          'p_supplier_id': supplierId,
+          'p_product_id': productId,
+          'p_limit': limit,
+        },
+      );
+      if (response == null) return [];
+      return (response as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getSupplierPriceHistory error: $e');
+      return [];
+    }
+  }
+
+  Future<double?> getLatestSupplierPrice(
+    String professionId,
+    String supplierId,
+    String productId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'get_latest_supplier_price',
+        params: {
+          'p_profession_id': professionId,
+          'p_supplier_id': supplierId,
+          'p_product_id': productId,
+        },
+      );
+      return (response as num?)?.toDouble();
+    } catch (e) {
+      debugPrint('[Phase1Repo] getLatestSupplierPrice error: $e');
+      return null;
     }
   }
 }

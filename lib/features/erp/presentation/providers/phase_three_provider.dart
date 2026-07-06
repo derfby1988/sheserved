@@ -8,6 +8,12 @@ import '../../data/models/chart_of_account.dart';
 import '../../data/models/accounts_receivable.dart';
 import '../../data/models/accounts_payable.dart';
 import '../../data/models/shift.dart';
+import '../../data/models/settlement_ledger.dart';
+import '../../data/models/payroll_run.dart';
+import '../../data/models/payroll_item.dart';
+import '../../data/models/hr_settings.dart';
+import '../../data/models/thai_holiday.dart';
+import '../../data/models/employee_tax_allowance.dart';
 import '../../data/repositories/phase_three_repository.dart';
 
 final phaseThreeRepositoryProvider = Provider<PhaseThreeRepository>((ref) {
@@ -29,6 +35,12 @@ class PhaseThreeState {
   final List<AccountsReceivable> accountsReceivable;
   final List<AccountsPayable> accountsPayable;
   final List<Shift> shifts;
+  final List<SettlementLedger> settlementLedgers;
+  final List<PayrollRun> payrollRuns;
+  final List<PayrollItem> payrollItems;
+  final HrSettings? hrSettings;
+  final List<ThaiHoliday> thaiHolidays;
+  final List<EmployeeTaxAllowance> taxAllowances;
 
   PhaseThreeState({
     this.isLoading = false,
@@ -41,6 +53,12 @@ class PhaseThreeState {
     this.accountsReceivable = const [],
     this.accountsPayable = const [],
     this.shifts = const [],
+    this.settlementLedgers = const [],
+    this.payrollRuns = const [],
+    this.payrollItems = const [],
+    this.hrSettings,
+    this.thaiHolidays = const [],
+    this.taxAllowances = const [],
   });
 
   PhaseThreeState copyWith({
@@ -55,6 +73,12 @@ class PhaseThreeState {
     List<AccountsReceivable>? accountsReceivable,
     List<AccountsPayable>? accountsPayable,
     List<Shift>? shifts,
+    List<SettlementLedger>? settlementLedgers,
+    List<PayrollRun>? payrollRuns,
+    List<PayrollItem>? payrollItems,
+    HrSettings? hrSettings,
+    List<ThaiHoliday>? thaiHolidays,
+    List<EmployeeTaxAllowance>? taxAllowances,
   }) {
     final shouldClearError = clearError ||
         ((isLoading != null && !isLoading) || (isSaving != null && !isSaving));
@@ -69,6 +93,12 @@ class PhaseThreeState {
       accountsReceivable: accountsReceivable ?? this.accountsReceivable,
       accountsPayable: accountsPayable ?? this.accountsPayable,
       shifts: shifts ?? this.shifts,
+      settlementLedgers: settlementLedgers ?? this.settlementLedgers,
+      payrollRuns: payrollRuns ?? this.payrollRuns,
+      payrollItems: payrollItems ?? this.payrollItems,
+      hrSettings: hrSettings ?? this.hrSettings,
+      thaiHolidays: thaiHolidays ?? this.thaiHolidays,
+      taxAllowances: taxAllowances ?? this.taxAllowances,
     );
   }
 }
@@ -136,6 +166,21 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
               salary: data['salary'] != null
                   ? (data['salary'] as num).toDouble()
                   : e.salary,
+              baseSalary: data['base_salary'] != null
+                  ? (data['base_salary'] as num).toDouble()
+                  : e.baseSalary,
+              taxDeductibleExpenses: data['tax_deductible_expenses'] != null
+                  ? (data['tax_deductible_expenses'] as num).toDouble()
+                  : e.taxDeductibleExpenses,
+              personalAllowance: data['personal_allowance'] != null
+                  ? (data['personal_allowance'] as num).toDouble()
+                  : e.personalAllowance,
+              providentFundRate: data['provident_fund_rate'] != null
+                  ? (data['provident_fund_rate'] as num).toDouble()
+                  : e.providentFundRate,
+              paymentMethod: data['payment_method'] as String? ?? e.paymentMethod,
+              bankAccountNumber: data['bank_account_number'] as String? ?? e.bankAccountNumber,
+              bankName: data['bank_name'] as String? ?? e.bankName,
               commissionRate: data['commission_rate'] != null
                   ? (data['commission_rate'] as num).toDouble()
                   : e.commissionRate,
@@ -457,6 +502,294 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
   }
 
   // ========================
+  // SETTLEMENT LEDGERS
+  // ========================
+
+  Future<void> loadSettlementLedgers(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final ledgers = await _repository.getSettlementLedgers(professionId);
+      state = state.copyWith(isLoading: false, settlementLedgers: ledgers);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadSettlementLedgers ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดสรุปยอดล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // PAYROLL
+  // ========================
+
+  Future<void> loadPayrollRuns(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final runs = await _repository.getPayrollRuns(professionId);
+      state = state.copyWith(isLoading: false, payrollRuns: runs);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadPayrollRuns ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรอบเงินเดือนล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadPayrollItems(String payrollRunId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final items = await _repository.getPayrollItems(payrollRunId);
+      state = state.copyWith(isLoading: false, payrollItems: items);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadPayrollItems ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรายการเงินเดือนล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadHrSettings(String professionId) async {
+    try {
+      final settings = await _repository.getHrSettings(professionId);
+      state = state.copyWith(hrSettings: settings);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadHrSettings ERROR: $e');
+    }
+  }
+
+  Future<PayrollRun?> createPayrollRun(Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final run = await _repository.createPayrollRun(data);
+      if (run != null) {
+        final updated = [run, ...state.payrollRuns];
+        state = state.copyWith(isSaving: false, payrollRuns: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return run;
+    } catch (e, st) {
+      debugPrint('[Phase3] createPayrollRun ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'สร้างรอบเงินเดือนล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<bool> runPayrollCalculation({
+    required String payrollRunId,
+    required String professionId,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      // Try server-side RPC first (preferred — atomic, idempotent)
+      final rpcResult = await _repository.runPayrollCalculationRpc(
+        payrollRunId: payrollRunId,
+        professionId: professionId,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+      );
+
+      if (rpcResult != null) {
+        final updatedRuns = state.payrollRuns.map((r) {
+          if (r.id == payrollRunId) return rpcResult;
+          return r;
+        }).toList();
+        state = state.copyWith(isSaving: false, payrollRuns: updatedRuns);
+        return true;
+      }
+
+      // Fallback: client-side calculation
+      final settings = await _repository.getHrSettings(professionId);
+      if (settings == null) {
+        state = state.copyWith(isSaving: false, errorMessage: 'ไม่พบการตั้งค่า HR กรุณาตั้งค่าก่อนรัน Payroll');
+        return false;
+      }
+
+      final employees = await _repository.getEmployees(professionId);
+      if (employees.isEmpty) {
+        state = state.copyWith(isSaving: false, errorMessage: 'ไม่พบพนักงานที่ใช้งานอยู่');
+        return false;
+      }
+
+      final allItems = <Map<String, dynamic>>[];
+      double totalGross = 0;
+      double totalDeductions = 0;
+
+      for (final emp in employees) {
+        final calc = await _repository.calculateEmployeePayroll(
+          employeeId: emp.id,
+          professionId: professionId,
+          periodStart: periodStart,
+          periodEnd: periodEnd,
+          settings: settings,
+          baseSalary: emp.salary ?? 0,
+        );
+
+        final earningTypes = ['base_salary', 'overtime', 'diligence_allowance', 'commission'];
+        for (final entry in calc.entries) {
+          if (entry.key == 'gross' || entry.key == 'deductions' || entry.key == 'net') continue;
+          final isEarning = earningTypes.contains(entry.key);
+          final amount = entry.value;
+          if (amount == 0) continue;
+
+          allItems.add({
+            'profession_id': professionId,
+            'payroll_run_id': payrollRunId,
+            'employee_id': emp.id,
+            'item_type': entry.key,
+            'amount': amount,
+            'is_earning': isEarning,
+          });
+
+          if (isEarning) {
+            totalGross += amount;
+          } else {
+            totalDeductions += amount;
+          }
+        }
+      }
+
+      if (allItems.isNotEmpty) {
+        await _repository.insertPayrollItems(allItems);
+      }
+
+      await _repository.updatePayrollRun(payrollRunId, {
+        'status': 'pending_approval',
+        'total_gross': totalGross,
+        'total_deductions': totalDeductions,
+        'total_net': totalGross - totalDeductions,
+      });
+
+      await _repository.insertOutboxEvent(
+        professionId: professionId,
+        aggregateType: 'hr_payroll',
+        aggregateId: payrollRunId,
+        eventType: 'hr.payroll_calculated',
+        payload: {
+          'payroll_run_id': payrollRunId,
+          'period_start': periodStart.toIso8601String().split('T')[0],
+          'period_end': periodEnd.toIso8601String().split('T')[0],
+          'total_gross': totalGross,
+          'total_deductions': totalDeductions,
+          'total_net': totalGross - totalDeductions,
+          'employee_count': employees.length,
+          'status': 'pending_approval',
+        },
+      );
+
+      final updatedRuns = state.payrollRuns.map((r) {
+        if (r.id == payrollRunId) {
+          return PayrollRun(
+            id: r.id,
+            professionId: r.professionId,
+            branchId: r.branchId,
+            runName: r.runName,
+            periodStart: r.periodStart,
+            periodEnd: r.periodEnd,
+            payDate: r.payDate,
+            status: 'pending_approval',
+            totalGross: totalGross,
+            totalDeductions: totalDeductions,
+            totalNet: totalGross - totalDeductions,
+            employerSocialSecurity: r.employerSocialSecurity,
+            employerProvidentFund: r.employerProvidentFund,
+            totalEmployerCost: r.totalEmployerCost,
+            approvedBy: r.approvedBy,
+            approvedAt: r.approvedAt,
+            notes: r.notes,
+            createdAt: r.createdAt,
+            updatedAt: DateTime.now(),
+          );
+        }
+        return r;
+      }).toList();
+
+      state = state.copyWith(isSaving: false, payrollRuns: updatedRuns);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase3] runPayrollCalculation ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'คำนวณเงินเดือนล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> approvePayrollRun(String payrollRunId, String approvedBy) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      // Try server-side RPC first (auto-creates GL entries via outbox trigger)
+      final rpcResult = await _repository.approvePayrollRunRpc(
+        payrollRunId: payrollRunId,
+        approvedBy: approvedBy,
+      );
+
+      if (rpcResult != null) {
+        final updated = state.payrollRuns.map((r) {
+          if (r.id == payrollRunId) return rpcResult;
+          return r;
+        }).toList();
+        state = state.copyWith(isSaving: false, payrollRuns: updated);
+        return true;
+      }
+
+      // Fallback: direct update + manual outbox event
+      final success = await _repository.updatePayrollRun(payrollRunId, {
+        'status': 'approved',
+        'approved_by': approvedBy,
+        'approved_at': DateTime.now().toIso8601String(),
+      });
+      if (success) {
+        await _repository.insertOutboxEvent(
+          professionId: state.payrollRuns
+              .firstWhere((r) => r.id == payrollRunId)
+              .professionId,
+          aggregateType: 'hr_payroll',
+          aggregateId: payrollRunId,
+          eventType: 'hr.payroll_approved',
+          payload: {
+            'payroll_run_id': payrollRunId,
+            'approved_by': approvedBy,
+            'approved_at': DateTime.now().toIso8601String(),
+            'total_net': state.payrollRuns
+                .firstWhere((r) => r.id == payrollRunId)
+                .totalNet,
+          },
+        );
+
+        final updated = state.payrollRuns.map((r) {
+          if (r.id == payrollRunId) {
+            return PayrollRun(
+              id: r.id,
+              professionId: r.professionId,
+              branchId: r.branchId,
+              runName: r.runName,
+              periodStart: r.periodStart,
+              periodEnd: r.periodEnd,
+              payDate: r.payDate,
+              status: 'approved',
+              totalGross: r.totalGross,
+              totalDeductions: r.totalDeductions,
+              totalNet: r.totalNet,
+              employerSocialSecurity: r.employerSocialSecurity,
+              employerProvidentFund: r.employerProvidentFund,
+              totalEmployerCost: r.totalEmployerCost,
+              approvedBy: approvedBy,
+              approvedAt: DateTime.now(),
+              notes: r.notes,
+              createdAt: r.createdAt,
+              updatedAt: DateTime.now(),
+            );
+          }
+          return r;
+        }).toList();
+        state = state.copyWith(isSaving: false, payrollRuns: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return success;
+    } catch (e, st) {
+      debugPrint('[Phase3] approvePayrollRun ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'อนุมัติเงินเดือนล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // ========================
   // SHIFTS
   // ========================
 
@@ -536,6 +869,130 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
     } catch (e, st) {
       debugPrint('[Phase3] updateShift ERROR: $e');
       state = state.copyWith(isSaving: false, errorMessage: 'อัปเดตเวรล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // THAI HOLIDAYS
+  // ========================
+
+  Future<void> loadThaiHolidays({int? year}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final holidays = await _repository.getThaiHolidays(year: year);
+      state = state.copyWith(isLoading: false, thaiHolidays: holidays);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadThaiHolidays ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดวันหยุดล้มเหลว: $e');
+    }
+  }
+
+  Future<ThaiHoliday?> upsertThaiHoliday(Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final holiday = await _repository.upsertThaiHoliday(data);
+      if (holiday != null) {
+        final updated = [...state.thaiHolidays.where((h) => h.id != holiday.id), holiday];
+        updated.sort((a, b) => a.holidayDate.compareTo(b.holidayDate));
+        state = state.copyWith(isSaving: false, thaiHolidays: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return holiday;
+    } catch (e, st) {
+      debugPrint('[Phase3] upsertThaiHoliday ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'บันทึกวันหยุดล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteThaiHoliday(String id) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.deleteThaiHoliday(id);
+      if (success) {
+        final updated = state.thaiHolidays.where((h) => h.id != id).toList();
+        state = state.copyWith(isSaving: false, thaiHolidays: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return success;
+    } catch (e, st) {
+      debugPrint('[Phase3] deleteThaiHoliday ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ลบวันหยุดล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // EMPLOYEE TAX ALLOWANCES
+  // ========================
+
+  Future<void> loadTaxAllowances(String employeeId, {int? year}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final allowances = await _repository.getTaxAllowances(employeeId, year: year);
+      state = state.copyWith(isLoading: false, taxAllowances: allowances);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadTaxAllowances ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดค่าลดหย่อนล้มเหลว: $e');
+    }
+  }
+
+  Future<EmployeeTaxAllowance?> createTaxAllowance(Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final allowance = await _repository.createTaxAllowance(data);
+      if (allowance != null) {
+        final updated = [...state.taxAllowances, allowance];
+        state = state.copyWith(isSaving: false, taxAllowances: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return allowance;
+    } catch (e, st) {
+      debugPrint('[Phase3] createTaxAllowance ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'สร้างค่าลดหย่อนล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteTaxAllowance(String id) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final success = await _repository.deleteTaxAllowance(id);
+      if (success) {
+        final updated = state.taxAllowances.where((a) => a.id != id).toList();
+        state = state.copyWith(isSaving: false, taxAllowances: updated);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return success;
+    } catch (e, st) {
+      debugPrint('[Phase3] deleteTaxAllowance ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ลบค่าลดหย่อนล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // HR SETTINGS (with new fields via RPC)
+  // ========================
+
+  Future<bool> saveHrSettings(Map<String, dynamic> params) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final settings = await _repository.upsertHrSettingsRpc(params);
+      if (settings != null) {
+        state = state.copyWith(isSaving: false, hrSettings: settings);
+        return true;
+      }
+      state = state.copyWith(isSaving: false);
+      return false;
+    } catch (e, st) {
+      debugPrint('[Phase3] saveHrSettings ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'บันทึกการตั้งค่าล้มเหลว: $e');
       return false;
     }
   }

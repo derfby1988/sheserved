@@ -479,7 +479,7 @@ class _DashboardModuleBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final layout = theme?.moduleLayoutJson != null
-        ? DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson)
+        ? DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson).normalize()
         : DashboardModuleLayoutConfig.defaultLayout();
     final spacing = columns >= 3 ? 11.0 : 10.0;
     // The group card adds horizontal padding (14 on each side via GlassCard).

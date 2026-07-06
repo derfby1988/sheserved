@@ -30,6 +30,7 @@ class PhaseZeroState {
   final List<Map<String, dynamic>> userRolesAndPermissions;
   final List<OrganizationRole> organizationRoles;
   final List<EmployeeRole> employeeRoles;
+  final List<Map<String, dynamic>> usersWithRoles; // รายการ user พร้อม role สำหรับหน้า Assignment
 
   // Feature Flags
   final List<OrganizationFeatureFlag> featureFlags;
@@ -45,6 +46,7 @@ class PhaseZeroState {
     this.userRolesAndPermissions = const [],
     this.organizationRoles = const [],
     this.employeeRoles = const [],
+    this.usersWithRoles = const [],
     this.featureFlags = const [],
     this.selectedRole,
     this.selectedRolePermissions = const [],
@@ -58,6 +60,7 @@ class PhaseZeroState {
     List<Map<String, dynamic>>? userRolesAndPermissions,
     List<OrganizationRole>? organizationRoles,
     List<EmployeeRole>? employeeRoles,
+    List<Map<String, dynamic>>? usersWithRoles,
     List<OrganizationFeatureFlag>? featureFlags,
     OrganizationRole? selectedRole,
     bool clearSelectedRole = false,
@@ -73,6 +76,7 @@ class PhaseZeroState {
           userRolesAndPermissions ?? this.userRolesAndPermissions,
       organizationRoles: organizationRoles ?? this.organizationRoles,
       employeeRoles: employeeRoles ?? this.employeeRoles,
+      usersWithRoles: usersWithRoles ?? this.usersWithRoles,
       featureFlags: featureFlags ?? this.featureFlags,
       selectedRole: clearSelectedRole ? null : (selectedRole ?? this.selectedRole),
       selectedRolePermissions:
@@ -212,6 +216,39 @@ class PhaseZeroNotifier extends StateNotifier<PhaseZeroState> {
     state = state.copyWith(clearSelectedRole: true, selectedRolePermissions: []);
   }
 
+  /// เปลี่ยนสถานะ active/inactive ของ role
+  Future<bool> toggleOrganizationRoleActive(
+    String roleId,
+    bool isActive, {
+    required String professionId,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+
+    try {
+      final success = await _repository.toggleOrganizationRoleActive(
+        roleId,
+        isActive,
+      );
+
+      if (success) {
+        await loadOrganizationRoles(professionId);
+      } else {
+        state = state.copyWith(
+          isSaving: false,
+          errorMessage: 'เปลี่ยนสถานะตำแหน่งไม่สำเร็จ',
+        );
+      }
+      return success;
+    } catch (e, st) {
+      debugPrint('[Phase0] toggleOrganizationRoleActive ERROR: $e');
+      state = state.copyWith(
+        isSaving: false,
+        errorMessage: 'เปลี่ยนสถานะตำแหน่งล้มเหลว: $e',
+      );
+      return false;
+    }
+  }
+
   /// สร้าง role ใหม่
   Future<bool> createRole({
     required String professionId,
@@ -289,6 +326,104 @@ class PhaseZeroNotifier extends StateNotifier<PhaseZeroState> {
       state = state.copyWith(
         isSaving: false,
         errorMessage: 'อัปเดต permissions ล้มเหลว: $e',
+      );
+      return false;
+    }
+  }
+
+  // ========================
+  // RBAC — User-Role Assignment (Phase 4: Permission Management UI)
+  // ========================
+
+  /// โหลดรายการ user ทั้งหมดใน profession พร้อม role
+  Future<void> loadUsersWithRoles(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      final users = await _repository.getUsersWithRoles(professionId);
+      state = state.copyWith(
+        isLoading: false,
+        usersWithRoles: users,
+      );
+      debugPrint('[Phase0] loadUsersWithRoles — found ${users.length} user(s)');
+    } catch (e, st) {
+      debugPrint('[Phase0] loadUsersWithRoles ERROR: $e');
+      debugPrint('[Phase0] stackTrace: $st');
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'โหลดข้อมูล user พร้อม role ล้มเหลว: $e',
+      );
+    }
+  }
+
+  /// มอบ role ให้ user (wraps existing assignEmployeeRole)
+  Future<bool> assignRoleToUser({
+    required String professionId,
+    required String userId,
+    required String roleId,
+    String? branchId,
+    String? assignedBy,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+
+    try {
+      final result = await _repository.assignEmployeeRole(
+        professionId: professionId,
+        userId: userId,
+        roleId: roleId,
+        branchId: branchId,
+        assignedBy: assignedBy,
+      );
+
+      if (result == null) {
+        state = state.copyWith(
+          isSaving: false,
+          errorMessage: 'มอบ role ไม่สำเร็จ',
+        );
+        return false;
+      }
+
+      // โหลดรายการใหม่
+      await loadUsersWithRoles(professionId);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase0] assignRoleToUser ERROR: $e');
+      debugPrint('[Phase0] stackTrace: $st');
+      state = state.copyWith(
+        isSaving: false,
+        errorMessage: 'มอบ role ล้มเหลว: $e',
+      );
+      return false;
+    }
+  }
+
+  /// ถอน role จาก user (delete row)
+  Future<bool> revokeRoleFromUser({
+    required String employeeRoleId,
+    required String professionId,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+
+    try {
+      final success = await _repository.removeEmployeeRole(employeeRoleId);
+
+      if (!success) {
+        state = state.copyWith(
+          isSaving: false,
+          errorMessage: 'ถอน role ไม่สำเร็จ',
+        );
+        return false;
+      }
+
+      // โหลดรายการใหม่
+      await loadUsersWithRoles(professionId);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase0] revokeRoleFromUser ERROR: $e');
+      debugPrint('[Phase0] stackTrace: $st');
+      state = state.copyWith(
+        isSaving: false,
+        errorMessage: 'ถอน role ล้มเหลว: $e',
       );
       return false;
     }

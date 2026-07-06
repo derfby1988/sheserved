@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
+import '../services/auth_service.dart';
 
 class ErpMiniSidebar extends ConsumerStatefulWidget {
   final bool isExpanded;
@@ -20,6 +21,10 @@ class ErpMiniSidebar extends ConsumerStatefulWidget {
 class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
   static const double _expandedWidth = 240;
   static const double _collapsedWidth = 60;
+
+  String _getProfessionId() {
+    return AuthService.instance.currentUser?.professionId ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,17 +57,22 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final sidebarWidth = constraints.maxWidth;
-            final showExpandedContent = widget.isExpanded && sidebarWidth >= _expandedWidth;
+            final showExpandedContent = widget.isExpanded;
 
             return ClipRect(
               child: Column(
                 children: [
                 _buildToggleButton(isDark, activeColor),
                 const SizedBox(height: 6),
+                if (showExpandedContent)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: _buildSettingsMenuButton(context, activeColor),
+                  ),
                 Expanded(
                   child: ListView(
                     padding: EdgeInsets.zero,
+                    physics: const AlwaysScrollableScrollPhysics(),
                     children: [
                       _MiniNavItem(
                         icon: Icons.home,
@@ -118,13 +128,70 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
                       _MiniNavItem(
                         icon: Icons.people_alt,
                         label: 'HR Management',
-                        route: null,
+                        route: '/erp/payroll',
                         isExpanded: widget.isExpanded,
                         currentRoute: currentRoute,
                         activeColor: activeColor,
                         inactiveColor: inactiveColor,
                         isDark: isDark,
+                        onTap: (route) => Navigator.of(context).pushNamed(
+                          route!,
+                          arguments: {'professionId': _getProfessionId()},
+                        ),
                       ),
+                      if (showExpandedContent) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(left: 28),
+                          child: _MiniNavItem(
+                            icon: Icons.payments,
+                            label: 'เงินเดือน (Payroll)',
+                            route: '/erp/payroll',
+                            isExpanded: showExpandedContent,
+                            currentRoute: currentRoute,
+                            activeColor: activeColor,
+                            inactiveColor: inactiveColor,
+                            isDark: isDark,
+                            onTap: (route) => Navigator.of(context).pushNamed(
+                              route!,
+                              arguments: {'professionId': _getProfessionId()},
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 28),
+                          child: _MiniNavItem(
+                            icon: Icons.badge,
+                            label: 'พนักงาน',
+                            route: '/erp/employees',
+                            isExpanded: showExpandedContent,
+                            currentRoute: currentRoute,
+                            activeColor: activeColor,
+                            inactiveColor: inactiveColor,
+                            isDark: isDark,
+                            onTap: (route) => Navigator.of(context).pushNamed(
+                              route!,
+                              arguments: {'professionId': _getProfessionId()},
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 28),
+                          child: _MiniNavItem(
+                            icon: Icons.settings,
+                            label: 'ตั้งค่า HR',
+                            route: '/erp/hr-settings',
+                            isExpanded: showExpandedContent,
+                            currentRoute: currentRoute,
+                            activeColor: activeColor,
+                            inactiveColor: inactiveColor,
+                            isDark: isDark,
+                            onTap: (route) => Navigator.of(context).pushNamed(
+                              route!,
+                              arguments: {'professionId': _getProfessionId()},
+                            ),
+                          ),
+                        ),
+                      ],
                       _MiniNavItem(
                         icon: Icons.contact_support,
                         label: 'CRM Management',
@@ -208,6 +275,96 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
             ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsMenuButton(BuildContext context, Color activeColor) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (ctx) => Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'ตั้งค่า',
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      leading: Icon(Icons.dashboard_customize, color: activeColor),
+                      title: const Text('จัดการกลุ่มการ์ด'),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).pushNamed('/erp/settings/modules');
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.color_lens, color: activeColor),
+                      title: const Text('ธีมสี Dashboard'),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).pushNamed('/erp/settings/theme');
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.blur_on, color: activeColor),
+                      title: const Text('ความโปร่งใส (Glass)'),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).pushNamed('/erp/settings/glass');
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.business, color: activeColor),
+                      title: const Text('ตั้งค่าองค์กร'),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).pushNamed('/erp/settings');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+        child: Container(
+          width: double.infinity,
+          height: 38,
+          decoration: BoxDecoration(
+            color: activeColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: activeColor.withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.settings, color: activeColor, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                'ตั้งค่า',
+                style: GoogleFonts.inter(
+                  color: activeColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

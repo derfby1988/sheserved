@@ -75,6 +75,7 @@ class PhaseZeroRepository {
             'role_name': roleName,
             'role_description': roleDescription,
             'is_system_role': isSystemRole,
+            'is_active': true,
           })
           .select()
           .single();
@@ -83,6 +84,24 @@ class PhaseZeroRepository {
       debugPrint('[Phase0Repo] createOrganizationRole error: $e');
       debugPrint('[Phase0Repo] stackTrace: $st');
       return null;
+    }
+  }
+
+  /// เปลี่ยนสถานะ active/inactive ของ role
+  Future<bool> toggleOrganizationRoleActive(
+    String roleId,
+    bool isActive,
+  ) async {
+    try {
+      await _client
+          .from('organization_roles')
+          .update({'is_active': isActive})
+          .eq('id', roleId);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] toggleOrganizationRoleActive error: $e');
+      debugPrint('[Phase0Repo] stackTrace: $st');
+      return false;
     }
   }
 
@@ -170,6 +189,39 @@ class PhaseZeroRepository {
       return true;
     } catch (e, st) {
       debugPrint('[Phase0Repo] toggleEmployeeRole error: $e');
+      debugPrint('[Phase0Repo] stackTrace: $st');
+      return false;
+    }
+  }
+
+  /// ดึงรายการ user ทั้งหมดใน profession พร้อม role (เรียก RPC get_users_with_roles)
+  Future<List<Map<String, dynamic>>> getUsersWithRoles(String professionId) async {
+    try {
+      final response = await _client.rpc(
+        'get_users_with_roles',
+        params: {'p_profession_id': professionId},
+      );
+      if (response == null) return [];
+      return (response as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] getUsersWithRoles error: $e');
+      debugPrint('[Phase0Repo] stackTrace: $st');
+      return [];
+    }
+  }
+
+  /// ถอน role จาก user (delete row จาก employee_roles)
+  Future<bool> removeEmployeeRole(String employeeRoleId) async {
+    try {
+      await _client
+          .from('employee_roles')
+          .delete()
+          .eq('id', employeeRoleId);
+      return true;
+    } catch (e, st) {
+      debugPrint('[Phase0Repo] removeEmployeeRole error: $e');
       debugPrint('[Phase0Repo] stackTrace: $st');
       return false;
     }

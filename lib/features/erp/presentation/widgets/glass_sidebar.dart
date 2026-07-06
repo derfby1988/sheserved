@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/models/dashboard_theme.dart';
 import '../providers/dashboard_theme_provider.dart';
 import 'glass_card.dart';
 

@@ -185,6 +185,8 @@ class DashboardModuleLayoutConfig {
         moduleIds: [
           'employees',
           'shifts',
+          'payroll',
+          'hr_settings',
         ],
       ),
       DashboardModuleGroupConfig(
@@ -345,6 +347,44 @@ class DashboardModuleLayoutConfig {
 
   String groupColorHexForModule(String moduleId) {
     return groupForModule(moduleId)?.colorHex ?? '#BFE7FF';
+  }
+
+  /// ตรวจสอบว่า module ทุกตัวถูก assign เข้า group ตาม defaultGroupId
+  /// ถ้า module ไหนหาย หรืออยู่ในกลุ่มผิด ให้ย้ายกลับไป default group
+  DashboardModuleLayoutConfig normalize() {
+    final defaultGroups = defaultLayout().groups;
+    final defaultGroupByModuleId = <String, String>{};
+    for (final def in dashboardModuleDefinitions) {
+      defaultGroupByModuleId[def.id] = def.defaultGroupId;
+    }
+
+    // สร้าง group ใหม่จาก defaultLayout แล้วใส่ module ที่ควรอยู่
+    final nextGroups = defaultGroups.map((defaultGroup) {
+      final existingGroup = groupById(defaultGroup.id);
+      final existingModules = existingGroup?.moduleIds.toSet() ?? <String>{};
+      final normalizedModules = defaultGroup.moduleIds.toList();
+
+      // ย้าย module ที่ default อยู่กลุ่มนี้ แต่ถูกบันทึกไว้ที่อื่น กลับมาที่นี่
+      for (final moduleId in defaultGroup.moduleIds) {
+        if (defaultGroupByModuleId[moduleId] == defaultGroup.id) {
+          if (!normalizedModules.contains(moduleId)) {
+            normalizedModules.add(moduleId);
+          }
+        }
+      }
+
+      // เก็บ module ที่ user จัดวางไว้ในกลุ่มนี้ (แต่ไม่ใช่ default) ไว้ก่อน
+      for (final moduleId in existingModules) {
+        if (!normalizedModules.contains(moduleId) &&
+            groupForModule(moduleId)?.id == defaultGroup.id) {
+          normalizedModules.add(moduleId);
+        }
+      }
+
+      return defaultGroup.copyWith(moduleIds: normalizedModules);
+    }).toList();
+
+    return DashboardModuleLayoutConfig(groups: nextGroups);
   }
 }
 
@@ -570,6 +610,28 @@ const List<DashboardModuleDefinition> dashboardModuleDefinitions = [
     defaultGroupId: 'people',
   ),
   DashboardModuleDefinition(
+    id: 'payroll',
+    label: 'Payroll',
+    thaiLabel: 'เงินเดือน',
+    routeName: '/erp/payroll',
+    icon: Icons.payments,
+    span: 1,
+    heightFactor: 0.96,
+    variant: DashboardModuleTileVariant.square,
+    defaultGroupId: 'people',
+  ),
+  DashboardModuleDefinition(
+    id: 'hr_settings',
+    label: 'HR Settings',
+    thaiLabel: 'ตั้งค่า HR',
+    routeName: '/erp/hr-settings',
+    icon: Icons.settings_suggest,
+    span: 1,
+    heightFactor: 0.96,
+    variant: DashboardModuleTileVariant.square,
+    defaultGroupId: 'people',
+  ),
+  DashboardModuleDefinition(
     id: 'customers',
     label: 'CRM Management',
     thaiLabel: 'ลูกค้าสัมพันธ์',
@@ -683,7 +745,7 @@ const List<DashboardModuleDefinition> dashboardModuleDefinitions = [
     id: 'role_management',
     label: 'Role Management',
     thaiLabel: 'จัดการสิทธิ์ผู้ใช้',
-    routeName: '/erp/roles',
+    routeName: '/erp/settings/employee-roles',
     icon: Icons.admin_panel_settings,
     span: 1,
     heightFactor: 0.96,

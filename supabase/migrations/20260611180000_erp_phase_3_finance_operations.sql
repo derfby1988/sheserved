@@ -7,19 +7,11 @@
 -- ============================================================
 
 -- 1.1 Chart of Accounts (ผังบัญชี)
-CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    profession_id   UUID NOT NULL REFERENCES public.professions(id) ON DELETE CASCADE,
-    account_code    TEXT NOT NULL,                          -- รหัสบัญชี (เช่น 101, 201)
-    account_name    TEXT NOT NULL,
-    account_type    TEXT NOT NULL                          -- asset, liability, equity, revenue, expense
-                        CHECK (account_type IN ('asset', 'liability', 'equity', 'revenue', 'expense')),
-    parent_id       UUID REFERENCES public.chart_of_accounts(id) ON DELETE SET NULL,
-    is_active       BOOLEAN DEFAULT true,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (profession_id, account_code)
-);
+-- NOTE: chart_of_accounts is already created in 20260609180000_create_accounting_core_schema.sql
+-- with account_type SMALLINT (1=Asset, 2=Liability, 3=Equity, 4=Revenue, 5=Expense).
+-- This migration must NOT re-declare it with TEXT — that would be silently ignored
+-- by CREATE TABLE IF NOT EXISTS while leaving confusing TEXT references in SQL functions.
+-- Only add columns/indexes that the core schema doesn't have.
 
 CREATE INDEX IF NOT EXISTS idx_coa_profession
     ON public.chart_of_accounts(profession_id, account_type, is_active);
@@ -114,24 +106,23 @@ CREATE TRIGGER trg_ap_updated_at
 -- ============================================================
 
 -- 2.1 Employees (พนักงาน)
-CREATE TABLE IF NOT EXISTS public.employees (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    profession_id   UUID NOT NULL REFERENCES public.professions(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES public.users(id) ON DELETE SET NULL,
-    employee_code   TEXT NOT NULL,
-    full_name       TEXT NOT NULL,
-    email           TEXT,
-    phone           TEXT,
-    department      TEXT,                                   -- pharmacy, nursing, admin, etc.
-    job_title       TEXT,
-    hire_date       DATE,
-    salary          DECIMAL(12,2),
-    commission_rate DECIMAL(5,2) DEFAULT 0,              -- % commission จากยอดขาย
-    is_active       BOOLEAN DEFAULT true,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (profession_id, employee_code)
-);
+-- NOTE: employees table is already created in 20260609215000_create_employees_table.sql.
+-- This migration adds payroll-related columns that the original table doesn't have.
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS job_title TEXT;
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS hire_date DATE;
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS salary DECIMAL(12,2);
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS commission_rate DECIMAL(5,2) DEFAULT 0;
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES public.organization_branches(id) ON DELETE SET NULL;
+-- Add unique constraint on employee_code if not already present
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'employees' AND constraint_type = 'UNIQUE' AND constraint_name = 'uq_employees_profession_code'
+    ) THEN
+        ALTER TABLE public.employees ADD CONSTRAINT uq_employees_profession_code UNIQUE (profession_id, employee_code);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_employees_profession
     ON public.employees(profession_id, is_active, department);
@@ -365,11 +356,11 @@ BEGIN
 
     -- Get default accounts (fallback: first matching)
     SELECT id INTO v_cash_account FROM public.chart_of_accounts
-    WHERE profession_id = v_order.profession_id AND account_type = 'asset' AND is_active = true
+    WHERE profession_id = v_order.profession_id AND account_type = 1 AND is_active = true
     LIMIT 1;
 
     SELECT id INTO v_revenue_account FROM public.chart_of_accounts
-    WHERE profession_id = v_order.profession_id AND account_type = 'revenue' AND is_active = true
+    WHERE profession_id = v_order.profession_id AND account_type = 4 AND is_active = true
     LIMIT 1;
 
     -- Debit cash

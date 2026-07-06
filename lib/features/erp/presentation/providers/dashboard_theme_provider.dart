@@ -82,7 +82,7 @@ class DashboardThemeNotifier extends StateNotifier<DashboardThemeState> {
     if (theme?.moduleLayoutJson == null) {
       return DashboardModuleLayoutConfig.defaultLayout();
     }
-    return DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson);
+    return DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson).normalize();
   }
 
   Future<bool> resetModuleLayout() async {

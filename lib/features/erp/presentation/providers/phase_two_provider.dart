@@ -8,6 +8,8 @@ import '../../data/models/vendor_contract.dart';
 import '../../data/models/cart_session.dart';
 import '../../data/models/cart_item.dart';
 import '../../data/models/payment_channel.dart';
+import '../../data/models/payout_batch.dart';
+import '../../data/models/payout_batch_line.dart';
 import '../../data/repositories/phase_two_repository.dart';
 
 // ========================
@@ -32,6 +34,8 @@ class PhaseTwoState {
   final List<DeliveryOrder> deliveryOrders;
   final List<VendorContract>? vendorContracts;
   final List<PaymentChannel> paymentChannels;
+  final List<PayoutBatch> payoutBatches;
+  final Map<String, List<PayoutBatchLine>> payoutBatchLines;
 
   PhaseTwoState({
     this.isLoading = false,
@@ -44,6 +48,8 @@ class PhaseTwoState {
     this.deliveryOrders = const [],
     this.vendorContracts,
     this.paymentChannels = const [],
+    this.payoutBatches = const [],
+    this.payoutBatchLines = const {},
   });
 
   double get cartTotal => cartItems.fold(0, (sum, item) => sum + item.total);
@@ -62,6 +68,8 @@ class PhaseTwoState {
     List<DeliveryOrder>? deliveryOrders,
     List<VendorContract>? vendorContracts,
     List<PaymentChannel>? paymentChannels,
+    List<PayoutBatch>? payoutBatches,
+    Map<String, List<PayoutBatchLine>>? payoutBatchLines,
   }) {
     final shouldClearError = clearError ||
         ((isLoading != null && !isLoading) || (isSaving != null && !isSaving));
@@ -76,6 +84,8 @@ class PhaseTwoState {
       deliveryOrders: deliveryOrders ?? this.deliveryOrders,
       vendorContracts: vendorContracts ?? this.vendorContracts,
       paymentChannels: paymentChannels ?? this.paymentChannels,
+      payoutBatches: payoutBatches ?? this.payoutBatches,
+      payoutBatchLines: payoutBatchLines ?? this.payoutBatchLines,
     );
   }
 }
@@ -488,6 +498,32 @@ class PhaseTwoNotifier extends StateNotifier<PhaseTwoState> {
     } catch (e, st) {
       debugPrint('[Phase2] loadPaymentChannels ERROR: $e');
       state = state.copyWith(isLoading: false, errorMessage: 'โหลดช่องทางชำระเงินล้มเหลว: $e');
+    }
+  }
+
+  // ========================
+  // PAYOUT BATCHES (Settlement Core)
+  // ========================
+
+  Future<void> loadPayoutBatches(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final batches = await _repository.getPayoutBatches(professionId);
+      state = state.copyWith(isLoading: false, payoutBatches: batches);
+    } catch (e, st) {
+      debugPrint('[Phase2] loadPayoutBatches ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดรอบจ่ายล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadPayoutBatchLines(String batchId) async {
+    try {
+      final lines = await _repository.getPayoutBatchLines(batchId);
+      final updated = Map<String, List<PayoutBatchLine>>.from(state.payoutBatchLines);
+      updated[batchId] = lines;
+      state = state.copyWith(payoutBatchLines: updated);
+    } catch (e, st) {
+      debugPrint('[Phase2] loadPayoutBatchLines ERROR: $e');
     }
   }
 

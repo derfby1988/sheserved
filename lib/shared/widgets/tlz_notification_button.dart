@@ -1,42 +1,51 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../features/erp/presentation/providers/notification_provider.dart';
 
 /// Notification Button Widget with Badge
-/// Shows notification icon with badge count
-class TlzNotificationButton extends StatelessWidget {
-  final int badgeCount;
+/// Shows notification icon with badge count from NotificationProvider
+class TlzNotificationButton extends ConsumerWidget {
+  final int? badgeCount;
   final VoidCallback? onPressed;
   final Color? iconColor;
   final Color? badgeColor;
+  final String? category;
 
   const TlzNotificationButton({
     super.key,
-    this.badgeCount = 0,
+    this.badgeCount,
     this.onPressed,
     this.iconColor,
     this.badgeColor,
+    this.category,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notificationState = ref.watch(notificationProvider);
+    final count = badgeCount ?? notificationState.unreadCount;
     return Stack(
       clipBehavior: Clip.none,
       children: [
         IconButton(
           icon: Icon(
-            Icons.chat_bubble_outline,
-            color: iconColor ?? AppColors.accent, // สีส้ม-เหลือง
+            Icons.notifications_outlined,
+            color: iconColor ?? AppColors.accent,
             size: 24,
           ),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
           onPressed: onPressed ?? () {
-            // TODO: Navigate to notification page
-            debugPrint('Notification pressed');
+            Navigator.pushNamed(
+              context,
+              '/erp/notifications',
+              arguments: category != null ? {'category': category} : null,
+            );
           },
         ),
-        if (badgeCount > 0)
+        if (count > 0)
           Positioned(
             right: 2,
             top: 2,
@@ -49,7 +58,7 @@ class TlzNotificationButton extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  badgeCount > 9 ? '9+' : '$badgeCount',
+                  count > 9 ? '9+' : '$count',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.textOnPrimary,
                     fontSize: 10,

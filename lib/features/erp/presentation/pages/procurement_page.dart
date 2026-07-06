@@ -5,11 +5,15 @@ import '../../data/models/supplier.dart';
 import '../../data/models/purchase_requisition.dart';
 import '../../data/models/purchase_order.dart';
 import '../../data/models/purchase_order_item.dart';
+import '../../data/models/goods_receipt.dart';
+import '../../data/models/goods_receipt_item.dart';
+import '../../data/models/back_order.dart';
 import '../providers/phase_one_provider.dart';
 import '../providers/phase_zero_provider.dart';
 import '../providers/organization_settings_provider.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/permission_denied_widget.dart';
 
 class ProcurementPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -27,11 +31,12 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final Map<String, bool> _expandedPos = {};
+  final Map<String, bool> _expandedGRs = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     Future.microtask(() {
       ref.read(phaseZeroProvider.notifier).loadCurrentUserRoles();
       _loadAll();
@@ -50,6 +55,9 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
     notifier.loadPurchaseRequisitions(widget.professionId);
     notifier.loadPurchaseOrders(widget.professionId);
     notifier.loadProducts(widget.professionId);
+    notifier.loadGoodsReceipts(widget.professionId);
+    notifier.loadBackOrders(widget.professionId);
+    notifier.loadProcurementSettings(widget.professionId);
     ref.read(organizationSettingsProvider.notifier).loadOrganization(widget.professionId);
   }
 
@@ -93,15 +101,14 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Text(
-              'ขออภัย คุณไม่มีสิทธิ์เข้าถึงระบบจัดซื้อจัดจ้าง\nกรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์การเข้าใช้งาน (Module: procurement)',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ),
+        body: PermissionDeniedWidget(
+          moduleName: 'procurement',
+          moduleLabel: 'จัดซื้อจัดจ้าง',
+          onRequestPermission: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์')),
+            );
+          },
         ),
       );
     }
@@ -111,12 +118,27 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
         title: const Text('จัดซื้อจัดจ้าง / Procurement'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'ตั้งค่าระบบจัดซื้อ',
+            onPressed: () {
+              Navigator.pushNamed(
+                context,
+                '/erp/procurement-settings',
+                arguments: {'professionId': widget.professionId},
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: 'ผู้จัดจำหน่าย'),
             Tab(text: 'ใบขอซื้อ (PR)'),
             Tab(text: 'ใบสั่งซื้อ (PO)'),
+            Tab(text: 'รับของ (GR)'),
+            Tab(text: 'ค้างส่ง (Back Order)'),
           ],
         ),
       ),
@@ -139,6 +161,7 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
                   onApprove: _approvePr,
                   onReject: _rejectPr,
                   onConvertToPo: (pr) => _showCreatePoDialog(sourcePr: pr),
+                  onManageItems: _showPrItemsDialog,
                   accessLevel: accessLevel,
                 ),
                 _OrdersTab(
@@ -155,7 +178,26 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
                   },
                   selectedOrderItems: state.selectedPurchaseOrderItems,
                   onSendToSupplier: _sendPoToSupplier,
+                  onReceiveGoods: _showCreateGrDialog,
                   accessLevel: accessLevel,
+                ),
+                _GoodsReceiptsTab(
+                  goodsReceipts: state.goodsReceipts,
+                  onRefresh: _refresh,
+                  expandedGRs: _expandedGRs,
+                  onToggleExpand: (grId) async {
+                    setState(() {
+                      _expandedGRs[grId] = !(_expandedGRs[grId] ?? false);
+                    });
+                    if (_expandedGRs[grId] == true) {
+                      await ref.read(phaseOneProvider.notifier).loadGoodsReceiptItems(grId);
+                    }
+                  },
+                  selectedGRItems: state.selectedGoodsReceiptItems,
+                ),
+                _BackOrdersTab(
+                  backOrders: state.backOrders,
+                  onRefresh: _refresh,
                 ),
               ],
             ),
@@ -186,10 +228,280 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
                     label: const Text('สร้างใบสั่งซื้อ (PO)'),
                   );
                 }
+                if (index == 3) {
+                  return FloatingActionButton.extended(
+                    onPressed: () => _showCreateGrDialog(),
+                    icon: const Icon(Icons.inventory_2),
+                    label: const Text('รับของเข้า (GR)'),
+                  );
+                }
                 return const SizedBox.shrink();
               },
             ),
     );
+  }
+
+  // ========================
+  // Goods Receipt Logic
+  // ========================
+
+  void _showCreateGrDialog({String? poId}) {
+    final state = ref.read(phaseOneProvider);
+    final receivablePOs = state.purchaseOrders
+        .where((po) => po.status == 'sent' || po.status == 'partially_received')
+        .toList();
+
+    if (receivablePOs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่มีใบสั่งซื้อที่รอรับของ (ต้องส่งใบสั่งซื้อให้คู่ค้าก่อน)')),
+      );
+      return;
+    }
+
+    String? selectedPOId = poId ?? receivablePOs.first.id;
+    final deliveryNoteController = TextEditingController();
+    final notesController = TextEditingController();
+    List<Map<String, dynamic>> grItems = [];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('รับของเข้า / Goods Receipt'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedPOId,
+                        decoration: const InputDecoration(
+                          labelText: 'เลือกใบสั่งซื้อ (PO)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: receivablePOs.map((po) {
+                          return DropdownMenuItem(
+                            value: po.id,
+                            child: Text('${po.poNumber} - ${po.supplierName ?? ''} (${po.statusLabel})'),
+                          );
+                        }).toList(),
+                        onChanged: (val) async {
+                          selectedPOId = val;
+                          grItems = [];
+                          if (val != null) {
+                            await ref.read(phaseOneProvider.notifier).loadPurchaseOrderItems(val);
+                            final poItems = ref.read(phaseOneProvider).selectedPurchaseOrderItems;
+                            for (final item in poItems) {
+                              final remaining = item.quantityOrdered - item.quantityReceived;
+                              if (remaining > 0) {
+                                grItems.add({
+                                  'purchase_order_item_id': item.id,
+                                  'product_name': item.productName ?? 'ไม่ระบุ',
+                                  'quantity_ordered': item.quantityOrdered,
+                                  'quantity_received': item.quantityReceived,
+                                  'remaining': remaining,
+                                  'quantity_accepted': remaining,
+                                  'quantity_rejected': 0,
+                                  'lot_number': '',
+                                  'expiry_date': '',
+                                  'unit_cost': item.unitPrice,
+                                });
+                              }
+                            }
+                          }
+                          setDialogState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: deliveryNoteController,
+                        decoration: const InputDecoration(
+                          labelText: 'เลขที่ใบส่งของของ Supplier (ถ้ามี)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (grItems.isNotEmpty) ...[
+                        const Text('รายการรับของ:', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        ...grItems.asMap().entries.map((entry) {
+                          final i = entry.key;
+                          final item = entry.value;
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${item['product_name']} (สั่ง: ${item['quantity_ordered']}, รับแล้ว: ${item['quantity_received']})',
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: item['quantity_accepted'].toString(),
+                                          decoration: const InputDecoration(
+                                            labelText: 'จำนวนรับ',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          onChanged: (val) {
+                                            grItems[i]['quantity_accepted'] = int.tryParse(val) ?? 0;
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: item['quantity_rejected'].toString(),
+                                          decoration: const InputDecoration(
+                                            labelText: 'ตัดทิ้ง',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          onChanged: (val) {
+                                            grItems[i]['quantity_rejected'] = int.tryParse(val) ?? 0;
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: item['lot_number'] as String? ?? '',
+                                          decoration: const InputDecoration(
+                                            labelText: 'Lot/Batch',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (val) {
+                                            grItems[i]['lot_number'] = val;
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: item['expiry_date'] as String? ?? '',
+                                          decoration: const InputDecoration(
+                                            labelText: 'วันหมดอายุ (YYYY-MM-DD)',
+                                            isDense: true,
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (val) {
+                                            grItems[i]['expiry_date'] = val;
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: notesController,
+                        decoration: const InputDecoration(
+                          labelText: 'หมายเหตุ',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('ยกเลิก'),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.check),
+                  label: const Text('บันทึกรับของ'),
+                  onPressed: () async {
+                    if (selectedPOId == null || grItems.isEmpty) return;
+                    final user = ServiceLocator.instance.currentUser;
+                    if (user == null) return;
+
+                    final itemsJson = grItems.map((item) {
+                      return {
+                        'purchase_order_item_id': item['purchase_order_item_id'],
+                        'quantity_accepted': item['quantity_accepted'],
+                        'quantity_rejected': item['quantity_rejected'],
+                        'lot_number': item['lot_number'] ?? '',
+                        'expiry_date': item['expiry_date'] ?? '',
+                        'unit_cost': item['unit_cost'],
+                      };
+                    }).toList();
+
+                    Navigator.of(dialogContext).pop();
+
+                    final result = await ref.read(phaseOneProvider.notifier).createGoodsReceipt(
+                      professionId: widget.professionId,
+                      purchaseOrderId: selectedPOId!,
+                      receivedBy: user.id,
+                      supplierDeliveryNote: deliveryNoteController.text.isEmpty ? null : deliveryNoteController.text,
+                      items: itemsJson,
+                      notes: notesController.text.isEmpty ? null : notesController.text,
+                    );
+
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(result != null
+                              ? 'รับของสำเร็จ: ${result['gr_number']}'
+                              : 'รับของล้มเหลว'),
+                        ),
+                      );
+                    }
+                    if (result != null) _refresh();
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // Pre-load PO items if poId was passed
+    if (poId != null) {
+      Future.microtask(() async {
+        await ref.read(phaseOneProvider.notifier).loadPurchaseOrderItems(poId);
+        final poItems = ref.read(phaseOneProvider).selectedPurchaseOrderItems;
+        for (final item in poItems) {
+          final remaining = item.quantityOrdered - item.quantityReceived;
+          if (remaining > 0) {
+            grItems.add({
+              'purchase_order_item_id': item.id,
+              'product_name': item.productName ?? 'ไม่ระบุ',
+              'quantity_ordered': item.quantityOrdered,
+              'quantity_received': item.quantityReceived,
+              'remaining': remaining,
+              'quantity_accepted': remaining,
+              'quantity_rejected': 0,
+              'lot_number': '',
+              'expiry_date': '',
+              'unit_cost': item.unitPrice,
+            });
+          }
+        }
+      });
+    }
   }
 
   // ========================
@@ -233,6 +545,157 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
   // ========================
   // Form Dialogs
   // ========================
+
+  void _showPrItemsDialog(PurchaseRequisition pr) {
+    ref.read(phaseOneProvider.notifier).loadPurchaseRequisitionItems(pr.id);
+
+    final products = ref.read(phaseOneProvider).products;
+    String? selectedProductId;
+    final qtyController = TextEditingController();
+    final priceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          final prState = ref.watch(phaseOneProvider);
+          final items = prState.selectedPRItems;
+
+          return AlertDialog(
+            title: Text('รายการสินค้า: ${pr.prNumber}'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('ยังไม่มีรายการสินค้า'),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.3,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return ListTile(
+                            dense: true,
+                            title: Text(item.itemName),
+                            subtitle: Text(
+                              'จำนวน: ${item.quantityRequested}'
+                              '${item.estimatedUnitPrice != null ? ' × ฿${item.estimatedUnitPrice!.toStringAsFixed(2)}' : ''}',
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20),
+                              onPressed: () async {
+                                final success = await ref
+                                    .read(phaseOneProvider.notifier)
+                                    .deletePurchaseRequisitionItem(item.id, pr.id);
+                                if (success && context.mounted) {
+                                  setStateDialog(() {});
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  const Divider(),
+                  DropdownButtonFormField<String?>(
+                    decoration: const InputDecoration(labelText: 'เลือกสินค้า'),
+                    value: selectedProductId,
+                    items: products
+                        .map((p) => DropdownMenuItem(
+                              value: p.id,
+                              child: Text(p.name),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setStateDialog(() => selectedProductId = v),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: qtyController,
+                          decoration: const InputDecoration(
+                            labelText: 'จำนวน',
+                            isDense: true,
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: priceController,
+                          decoration: const InputDecoration(
+                            labelText: 'ราคา/หน่วย',
+                            isDense: true,
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('ปิด'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (selectedProductId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('กรุณาเลือกสินค้า')),
+                    );
+                    return;
+                  }
+                  final qty = int.tryParse(qtyController.text);
+                  if (qty == null || qty <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('กรุณาระบุจำนวนที่ถูกต้อง')),
+                    );
+                    return;
+                  }
+                  final price = double.tryParse(priceController.text);
+                  final productName = products
+                      .firstWhere((p) => p.id == selectedProductId)
+                      .name;
+
+                  final success = await ref
+                      .read(phaseOneProvider.notifier)
+                      .addPurchaseRequisitionItem(
+                        professionId: widget.professionId,
+                        requisitionId: pr.id,
+                        productId: selectedProductId!,
+                        itemName: productName,
+                        quantityRequested: qty,
+                        estimatedUnitPrice: price,
+                      );
+
+                  if (success && context.mounted) {
+                    qtyController.clear();
+                    priceController.clear();
+                    setStateDialog(() => selectedProductId = null);
+                  }
+                },
+                child: const Text('เพิ่ม'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   void _showCreateSupplierDialog() {
     final nameController = TextEditingController();
@@ -696,6 +1159,7 @@ class _RequisitionsTab extends StatelessWidget {
   final Future<void> Function(String) onApprove;
   final Future<void> Function(String) onReject;
   final Function(PurchaseRequisition) onConvertToPo;
+  final Function(PurchaseRequisition) onManageItems;
   final int accessLevel;
 
   const _RequisitionsTab({
@@ -704,6 +1168,7 @@ class _RequisitionsTab extends StatelessWidget {
     required this.onApprove,
     required this.onReject,
     required this.onConvertToPo,
+    required this.onManageItems,
     required this.accessLevel,
   });
 
@@ -790,6 +1255,17 @@ class _RequisitionsTab extends StatelessWidget {
                         child: const Text('แปลงเป็นใบสั่งซื้อ (Convert to PO)'),
                       ),
                     ),
+                  ],
+                  if (pr.status != 'converted' && accessLevel >= 2) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => onManageItems(pr),
+                        icon: const Icon(Icons.list_alt),
+                        label: const Text('จัดการรายการสินค้า'),
+                      ),
+                    ),
                   ]
                 ],
               ),
@@ -812,6 +1288,7 @@ class _OrdersTab extends StatelessWidget {
   final Function(String) onToggleExpand;
   final List<PurchaseOrderItem> selectedOrderItems;
   final Future<void> Function(String) onSendToSupplier;
+  final void Function({String? poId}) onReceiveGoods;
   final int accessLevel;
 
   const _OrdersTab({
@@ -821,6 +1298,7 @@ class _OrdersTab extends StatelessWidget {
     required this.onToggleExpand,
     required this.selectedOrderItems,
     required this.onSendToSupplier,
+    required this.onReceiveGoods,
     required this.accessLevel,
   });
 
@@ -934,12 +1412,279 @@ class _OrdersTab extends StatelessWidget {
                         label: const Text('ส่งใบสั่งซื้อให้คู่ค้า (Send to Supplier)'),
                       ),
                     ),
+                  ],
+                  if ((po.isSent || po.isPartiallyReceived) && accessLevel >= 2) ...[
+                    const Divider(),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.inventory_2),
+                        onPressed: () => onReceiveGoods(poId: po.id),
+                        label: const Text('รับของเข้า (Goods Receipt)'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                      ),
+                    ),
                   ]
                 ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ========================
+// 4. Goods Receipts Tab
+// ========================
+
+class _GoodsReceiptsTab extends StatelessWidget {
+  final List<GoodsReceipt> goodsReceipts;
+  final Future<void> Function() onRefresh;
+  final Map<String, bool> expandedGRs;
+  final Function(String) onToggleExpand;
+  final List<GoodsReceiptItem> selectedGRItems;
+
+  const _GoodsReceiptsTab({
+    required this.goodsReceipts,
+    required this.onRefresh,
+    required this.expandedGRs,
+    required this.onToggleExpand,
+    required this.selectedGRItems,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (goodsReceipts.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('ยังไม่มีใบรับของ\nกดปุ่ม + เพื่อสร้างใบรับของใหม่',
+                    textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: goodsReceipts.length,
+        itemBuilder: (context, index) {
+          final gr = goodsReceipts[index];
+          final isExpanded = expandedGRs[gr.id] ?? false;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: () => onToggleExpand(gr.id),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(gr.grNumber,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              const SizedBox(height: 4),
+                              Text('PO: ${gr.poNumber ?? '-'} | ${gr.receivedByName ?? '-'}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                              Text('วันที่รับ: ${gr.receiptDate.toLocal().toString().split('.')[0]}',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        Chip(
+                          label: Text(gr.statusLabel, style: const TextStyle(fontSize: 11)),
+                          backgroundColor: gr.statusColor.withValues(alpha: 0.15),
+                          side: BorderSide(color: gr.statusColor.withValues(alpha: 0.5)),
+                        ),
+                        Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                      ],
+                    ),
+                  ),
+                  if (isExpanded) ...[
+                    const Divider(),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                      child: Text('รายการรับของ:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                    if (selectedGRItems.isEmpty || selectedGRItems.first.goodsReceiptId != gr.id)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                        ),
+                      )
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: selectedGRItems.length,
+                        itemBuilder: (context, i) {
+                          final item = selectedGRItems[i];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(item.productName ?? 'ไม่ระบุ',
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                      Text('รับ: ${item.quantityAccepted} | ตัดทิ้ง: ${item.quantityRejected}',
+                                          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      if (item.lotNumber != null && item.lotNumber!.isNotEmpty)
+                                        Text('Lot: ${item.lotNumber}${item.expiryDate != null ? ' | หมดอายุ: ${item.expiryDate!.toIso8601String().split('T')[0]}' : ''}',
+                                            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                                if (item.unitCost != null)
+                                  Text('฿${item.unitCost!.toStringAsFixed(2)}',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ========================
+// 5. Back Orders Tab
+// ========================
+
+class _BackOrdersTab extends StatelessWidget {
+  final List<BackOrder> backOrders;
+  final Future<void> Function() onRefresh;
+
+  const _BackOrdersTab({
+    required this.backOrders,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (backOrders.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('ไม่มีรายการค้างส่ง\nรายการจะปรากฏเมื่อรับของบางส่วน',
+                    textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final openCount = backOrders.where((bo) => bo.isOpen || bo.isPartiallyFulfilled).length;
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: Column(
+        children: [
+          if (openCount > 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              color: Colors.orange.withValues(alpha: 0.1),
+              child: Text('มีรายการค้างส่ง $openCount รายการ',
+                  style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+            ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: backOrders.length,
+              itemBuilder: (context, index) {
+                final bo = backOrders[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('PO: ${bo.poNumber ?? '-'}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  Text(bo.productName ?? 'ไม่ระบุ',
+                                      style: const TextStyle(fontSize: 12)),
+                                  Text('Supplier: ${bo.supplierName ?? '-'}',
+                                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                ],
+                              ),
+                            ),
+                            Chip(
+                              label: Text(bo.statusLabel, style: const TextStyle(fontSize: 11)),
+                              backgroundColor: bo.statusColor.withValues(alpha: 0.15),
+                              side: BorderSide(color: bo.statusColor.withValues(alpha: 0.5)),
+                            ),
+                          ],
+                        ),
+                        const Divider(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('ค้างส่ง: ${bo.quantityBackOrdered}',
+                                style: const TextStyle(fontSize: 12)),
+                            Text('รับแล้ว: ${bo.quantityFulfilled}',
+                                style: const TextStyle(fontSize: 12)),
+                            Text('คงเหลือ: ${bo.remainingQuantity}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                          ],
+                        ),
+                        if (bo.expectedDeliveryDate != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('กำหนดส่งครั้งหน้า: ${bo.expectedDeliveryDate!.toIso8601String().split('T')[0]}',
+                                style: const TextStyle(fontSize: 11, color: Colors.blue)),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
