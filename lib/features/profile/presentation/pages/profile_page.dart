@@ -1028,9 +1028,11 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   Widget _buildProfessionRow() {
     final professionName = _profession?.name ?? 'ยังไม่ได้เลือกอาชีพ';
-    final isVerified = _user?.verificationStatus == VerificationStatus.verified;
-    final isPending = _user?.verificationStatus == VerificationStatus.pending;
-    final isRejected = _user?.verificationStatus == VerificationStatus.rejected;
+    final status = _user?.verificationStatus;
+    final isVerified = status == VerificationStatus.verified;
+    final isPending = status == VerificationStatus.pending;
+    final isRejected = status == VerificationStatus.rejected;
+    final isCancelled = status == VerificationStatus.cancelled;
 
     return InkWell(
       onTap: _isChangingProfession ? null : _showProfessionPicker,
@@ -1082,6 +1084,21 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       'ไม่ผ่าน',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.red,
+                        fontSize: 11,
+                      ),
+                    ),
+                  )
+                else if (isCancelled)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'ยกเลิกแล้ว',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey[700],
                         fontSize: 11,
                       ),
                     ),
@@ -1630,6 +1647,23 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       final userRepo = UserRepository(supabase);
       final profRepo = ProfessionRepository(supabase);
 
+      // 0. Pre-check: ตรวจสอบก่อนว่าสมัครได้หรือไม่ (ก่อนเปลี่ยน profession_id)
+      // เพื่อป้องกัน limbo state ที่ user เปลี่ยนอาชีพแล้วแต่สมัครไม่ได้
+      if (newProfession.requiresVerification) {
+        final errorMessage = await profRepo.canCreateApplication(
+          userId: _user!.id,
+          professionId: newProfession.id,
+        );
+        if (errorMessage != null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(errorMessage)),
+            );
+          }
+          return;
+        }
+      }
+
       // 1. Update user profession and role
       // หมายเหตุ: ตาราง users ใช้ column `role` (consumer/provider/admin) ไม่ใช่ `user_type`
       final newRole =
@@ -1646,9 +1680,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
       // 2. If requires verification, create registration application
       if (newProfession.requiresVerification) {
-        // Load field configs for the new profession
-        final fields = await profRepo.getFieldConfigsForProfession(newProfession.id);
-
         await profRepo.createApplication(
           oderId: _user!.id,
           professionId: newProfession.id,
@@ -1659,7 +1690,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           profileImageUrl: _user!.profileImageUrl,
           registrationData: {
             'is_owner_request': isOwnerRequest ? 'true' : 'false',
-          }, // User will fill this in later via profile edit
+          },
         );
       }
 

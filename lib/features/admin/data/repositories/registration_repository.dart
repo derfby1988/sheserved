@@ -198,30 +198,25 @@ class RegistrationRepository {
   }
 
   /// ผู้ใช้ยกเลิกใบสมัครของตัวเอง (ต้องเป็น pending เท่านั้น)
+  /// ใช้ RPC atomic — cancel + reset profession ใน transaction เดียว
   Future<void> cancelApplication(String applicationId, String userId) async {
-    final now = DateTime.now().toIso8601String();
-
     try {
-      final updatedRows = await _client
-          .from('registration_applications')
-          .update({
-            'status': 'cancelled',
-            'cancelled_by': 'user',
-            'cancelled_at': now,
-            'updated_at': now,
-          })
-          .eq('id', applicationId)
-          .eq('user_id', userId)
-          .eq('status', 'pending')
-          .select();
-
-      if ((updatedRows as List).isEmpty) {
+      await _client.rpc(
+        'cancel_registration_application',
+        params: {
+          'p_application_id': applicationId,
+          'p_user_id': userId,
+        },
+      );
+      debugPrint('Cancelled application $applicationId for user $userId');
+    } on PostgrestException catch (e) {
+      final msg = e.message;
+      if (msg.contains('NOT_PENDING_OR_NOT_OWNER')) {
         throw Exception(
           'ไม่สามารถยกเลิกได้: ใบสมัครไม่อยู่ในสถานะ pending หรือไม่ใช่ของผู้ใช้คนนี้',
         );
       }
-
-      debugPrint('Cancelled application $applicationId for user $userId');
+      rethrow;
     } catch (e) {
       debugPrint('RegistrationRepository.cancelApplication error: $e');
       rethrow;
@@ -247,37 +242,30 @@ class RegistrationRepository {
     }
   }
 
-  /// ปฏิเสธใบสมัคร
+  /// ปฏิเสธใบสมัคร (atomic — reject + reset profession ใน transaction เดียว)
   Future<void> rejectApplication(
     RegistrationApplication application,
     String note, {
     String? reviewedBy,
   }) async {
-    final now = DateTime.now().toIso8601String();
-
     try {
-      // 1. Update application status — guard: ต้องเป็น pending เท่านั้น
-      final updatedRows = await _client.from('registration_applications').update({
-        'status': 'rejected',
-        'review_note': note,
-        'reviewed_by': reviewedBy,
-        'reviewed_at': now,
-        'updated_at': now,
-      }).eq('id', application.id).eq('status', 'pending').select();
-
-      if ((updatedRows as List).isEmpty) {
+      await _client.rpc(
+        'reject_registration_application',
+        params: {
+          'p_application_id': application.id,
+          'p_review_note': note,
+          'p_reviewed_by': reviewedBy,
+        },
+      );
+      debugPrint('Rejected application for user: ${application.oderId}');
+    } on PostgrestException catch (e) {
+      final msg = e.message;
+      if (msg.contains('NOT_PENDING')) {
         throw Exception(
           'ไม่สามารถปฏิเสธได้: ใบสมัครไม่อยู่ในสถานะ pending หรือถูกยกเลิกไปแล้ว',
         );
       }
-
-      // 2. Update user's verification status
-      await _client.from('users').update({
-        'verification_status': 'rejected',
-        'updated_at': now,
-      }).eq('id', application.oderId);
-
-      debugPrint('Rejected application for user: ${application.oderId}');
+      rethrow;
     } catch (e) {
       debugPrint('RegistrationRepository.rejectApplication error: $e');
       rethrow;

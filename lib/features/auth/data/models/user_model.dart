@@ -49,6 +49,7 @@ enum VerificationStatus {
   pending, // รอตรวจสอบ
   verified, // ยืนยันแล้ว
   rejected, // ถูกปฏิเสธ
+  cancelled, // ยกเลิกโดยผู้ใช้หรือระบบอัตโนมัติ
 }
 
 extension VerificationStatusExtension on VerificationStatus {
@@ -60,6 +61,8 @@ extension VerificationStatusExtension on VerificationStatus {
         return 'verified';
       case VerificationStatus.rejected:
         return 'rejected';
+      case VerificationStatus.cancelled:
+        return 'cancelled';
     }
   }
 
@@ -71,6 +74,8 @@ extension VerificationStatusExtension on VerificationStatus {
         return 'ยืนยันแล้ว';
       case VerificationStatus.rejected:
         return 'ถูกปฏิเสธ';
+      case VerificationStatus.cancelled:
+        return 'ยกเลิกแล้ว';
     }
   }
 
@@ -82,6 +87,8 @@ extension VerificationStatusExtension on VerificationStatus {
         return VerificationStatus.verified;
       case 'rejected':
         return VerificationStatus.rejected;
+      case 'cancelled':
+        return VerificationStatus.cancelled;
       default:
         return VerificationStatus.pending;
     }

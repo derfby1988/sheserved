@@ -290,27 +290,47 @@ IF NEW.status = 'approved' AND OLD.status = 'pending' THEN
 
 **ประโยชน์:** รับประกัน trigger ทำงานเฉพาะจาก `pending → approved` เท่านั้น ไม่ทำงานจาก `cancelled → approved`
 
-### 4. Backend Logic — เพิ่ม method ยกเลิกใบสมัคร
+### 4. Backend Logic — Atomic RPC สำหรับยกเลิก/ปฏิเสธใบสมัคร + reset profession
+
+**RPC `cancel_registration_application`** และ **RPC `reject_registration_application`** ใน `@/Users/apisekpanyakong/ProjectFlutter/sheserved/supabase/migrations/20260708140000_cancel_reject_application_rpc.sql`:
+
+```sql
+-- Cancel: ผู้ใช้ยกเลิกเอง → cancel app + reset user เป็น consumer
+CREATE OR REPLACE FUNCTION cancel_registration_application(
+  p_application_id UUID, p_user_id UUID
+) ...
+
+-- Reject: admin ปฏิเสธ → reject app + reset user เป็น consumer
+CREATE OR REPLACE FUNCTION reject_registration_application(
+  p_application_id UUID, p_review_note TEXT, p_reviewed_by UUID
+) ...
+```
 
 **`RegistrationRepository`** (`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/data/repositories/registration_repository.dart`):
 
 ```dart
-/// ผู้ใช้ยกเลิกใบสมัครของตัวเอง (ต้องเป็น pending เท่านั้น)
+/// ผู้ใช้ยกเลิกใบสมัครของตัวเอง (atomic RPC)
 Future<void> cancelApplication(String applicationId, String userId) async {
-  final now = DateTime.now().toIso8601String();
-  await _client
-      .from('registration_applications')
-      .update({
-        'status': 'cancelled',
-        'cancelled_by': 'user',
-        'cancelled_at': now,
-        'updated_at': now,
-      })
-      .eq('id', applicationId)
-      .eq('user_id', userId)       // กันยกเลิกใบสมัครคนอื่น
-      .eq('status', 'pending');    // กันยกเลิกใบที่อนุมัติ/ปฏิเสธไปแล้ว
+  await _client.rpc('cancel_registration_application', params: {
+    'p_application_id': applicationId,
+    'p_user_id': userId,
+  });
+}
+
+/// Admin ปฏิเสธใบสมัคร (atomic RPC)
+Future<void> rejectApplication(application, note, {reviewedBy}) async {
+  await _client.rpc('reject_registration_application', params: {
+    'p_application_id': application.id,
+    'p_review_note': note,
+    'p_reviewed_by': reviewedBy,
+  });
 }
 ```
+
+**เหตุผลที่ใช้ RPC แทน multi-query:**
+1. **Atomic:** cancel + reset ใน transaction เดียว ถ้าอย่างหนึ่ง fail ทั้งคู่ rollback
+2. **RLS bypass:** `SECURITY DEFINER` ทำให้ user update ไม่ถูก RLS block
+3. **Consistent:** เหมือนกับ `create_registration_application` RPC ที่ใช้แล้ว
 
 > **หมายเหตุ:** ไม่ต้องเพิ่มใน `ProfessionRepository` เพราะ auto-cancel ทำใน DB trigger แล้ว
 
@@ -407,6 +427,103 @@ Future<void> approveApplication(String applicationId, {...}) async {
 - เพิ่มเช็ค `isCancelled` (status == cancelled) แยกจาก `isRejected`
 - แสดง badge **"ยกเลิกโดยผู้สมัคร"** หรือ **"ยกเลิกอัตโนมัติ (เปลี่ยนอาชีพ)"** ตาม `cancelled_by`
 
+### 10. กฎการสมัครใหม่หลังจากยกเลิก/ปฏิเสธ (Re-registration Rules)
+
+#### ปัญหา
+
+ผู้ใช้อาจพยายามสมัครซ้ำในขณะที่มีใบสมัคร `pending` อยู่แล้ว ทำให้เกิด `unique partial index violation` หรือข้อความ error จาก DB ที่ไม่เป็นมิตรต่อผู้ใช้
+
+#### กฎที่ต้องการ
+
+| สถานะใบสมัครเดิม | สมัครใหม่ได้หรือไม่ | เงื่อนไข |
+|---|---|---|
+| `pending` (รอตรวจสอบ) | ❌ ไม่ได้ | ต้องยกเลิกใบเดิมก่อน หรือรอผลตรวจสอบ |
+| `cancelled` (ยกเลิกแล้ว) | ✅ ได้ | ไม่มี pending ค้าง เงื่อนไข unique index คลายตัว |
+| `rejected` (ถูกปฏิเสธ) | ✅ ได้ | เช่นเดียวกับ cancelled |
+| `approved` (อนุมัติแล้ว) | ⚠️ ควรไม่ได้สำหรับอาชีพ/องค์กรเดิม | ป้องกัน duplicate owner role / employee / provider profile |
+
+#### การ Guard ใน Backend
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/data/repositories/profession_repository.dart` (`createApplication`):
+
+- ก่อน `INSERT` ตรวจสอบว่า `user_id` นี้มีใบสมัคร `status = 'pending'` อยู่หรือไม่
+- ถ้ามี → throw Exception ด้วยข้อความภาษาไทยที่ชัดเจน:
+  > "คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว กรุณารอผลตรวจสอบหรือยกเลิกใบสมัครเดิมก่อนสมัครใหม่"
+- ถ้าไม่มี → insert ใบสมัครใหม่ตามปกติ
+
+ข้อดีของการ guard ที่ repository:
+- UI ทุกจุด (`RegisterWizardPage`, `ProfilePage._onProfessionSelected`) ได้รับข้อความเดียวกันโดยอัตโนมัติผ่าน try/catch → SnackBar
+- ป้องกัน `PostgrestException` จาก unique index ที่อ่านยาก
+- สื่อสารให้ผู้ใช้รู้ว่าต้องไปยกเลิกใบเดิมในหน้า Profile ก่อน
+
+#### Guard สำหรับ approved
+
+เพื่อป้องกันการสมัครซ้ำสำหรับอาชีพ/องค์กรเดิมหลังจากถูกอนุมัติ `createApplication` ตรวจสอบเพิ่มอีก 2 เงื่อนไขก่อน `INSERT`:
+
+1. มีใบสมัคร `status = 'approved'` สำหรับ `profession_id` เดียวกันแล้ว
+2. มี `employee_roles` ที่ `is_active = true` สำหรับ `profession_id` เดียวกันแล้ว
+
+ถ้าเงื่อนไขใดเป็นจริง → throw Exception:
+- กรณี approved application: "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้"
+- กรณีมี employee_roles active: "คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว ไม่สามารถสมัครซ้ำได้ หากต้องการเปลี่ยนสิทธิ์กรุณาติดต่อผู้ดูแลระบบ"
+
+ข้อดี:
+- ป้องกัน duplicate `employee_roles`, `employees`, `provider_profiles`
+- อนุญาตให้สมัครอาชีพใหม่ (ต่าง `profession_id`) ได้ตามปกติ
+- ผู้ใช้ที่เปลี่ยนอาชีพแล้วต้องการกลับไปอาชีพเก่า จะถูกบล็อกและได้รับแนะนำให้ติดต่อ admin
+
+#### การป้องกัน Limbo State ใน ProfilePage
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/profile/presentation/pages/profile_page.dart` (`_onProfessionSelected`):
+
+**ปัญหาเดิม:** อัปเดต `users.profession_id` ก่อน → ค่อยเรียก `createApplication` ถ้า `createApplication` throw (เช่น approved guard) user จะติดในสถานะ `pending` ไม่มีใบสมัคร
+
+**วิธีแก้:** เพิ่ม pre-check `canCreateApplication()` ก่อนอัปเดต `users.profession_id`:
+- ถ้า pre-check คืน error message → แสดง SnackBar แล้ว return โดยไม่เปลี่ยนอาชีพ
+- ถ้า pre-check ผ่าน → อัปเดต profession → สร้าง application (มี guard ซ้ำใน createApplication เป็น defense-in-depth)
+
+#### การป้องกัน Bypass ผ่าน UnifiedRepository
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/data/repositories/unified_repository.dart`:
+- `UnifiedRepository.createApplication` ถูก deprecate แล้ว (ไม่มี guard)
+- ใช้ `ProfessionRepository.createApplication` แทนทุกกรณี
+
+#### Atomic RPC: กัน TOCTOU Race Condition แบบสมบูรณ์
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/supabase/migrations/20260708090000_create_application_rpc.sql`
+
+**ปัญหา:** `canCreateApplication()` (pre-check) กับ `createApplication()` (insert) มีช่องว่าง — concurrent request สองตัวอาจผ่าน pre-check พร้อมกันแล้ว insert พร้อมกัน (TOCTOU)
+
+**วิธีแก้:** สร้าง Postgres RPC `create_registration_application()` ที่ทำ check + insert ใน transaction เดียว:
+
+1. ตรวจสอบ pending → `RAISE EXCEPTION 'PENDING_EXISTS'`
+2. ตรวจสอบ approved สำหรับอาชีพเดียวกัน → `RAISE EXCEPTION 'APPROVED_EXISTS'`
+3. ตรวจสอบ active employee_roles → `RAISE EXCEPTION 'ROLE_EXISTS'`
+4. INSERT (unique partial index เป็น safety net สุดท้าย)
+
+Flutter เรียกผ่าน `_client.rpc('create_registration_application', ...)` และ map error code เป็นข้อความภาษาไทย:
+
+```
+PENDING_EXISTS  → "คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว..."
+APPROVED_EXISTS → "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว..."
+ROLE_EXISTS     → "คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว..."
+```
+
+**สถาปัตยกรรมสุดท้าย:**
+
+```
+ProfilePage:
+  canCreateApplication()     → pre-check (ป้องกัน limbo state ก่อนเปลี่ยน profession_id)
+      ↓ ผ่าน
+  updateUser(profession_id)  → เปลี่ยนอาชีพ + trigger auto-cancel old pending
+      ↓
+  createApplication()        → RPC atomic check+insert (กัน TOCTOU)
+```
+
+- `canCreateApplication()` ยังจำเป็นสำหรับ pre-check ก่อน `updateUser` เพื่อป้องกัน limbo state
+- `createApplication()` ใช้ RPC ทำ check+insert atomically กัน race condition ในระดับ DB
+- unique partial index เป็น safety net สุดท้ายในกรณี RPC ถูก bypass
+
 ### Checklist การ Implement แบ่งตาม Phase
 
 #### Phase A — แก้ Root Cause ป้องกันข้อมูลเสียหาย (Critical, ทำก่อน)
@@ -420,10 +537,16 @@ Future<void> approveApplication(String applicationId, {...}) async {
 - [x] Race-condition guard: แก้ `RegistrationRepository.approveApplication` เพิ่ม `.eq('status', 'pending')` + ตรวจ profession_id ปัจจุบัน
 - [x] Deprecate/รวม `ProfessionRepository.approveApplication` ให้เรียกผ่าน `RegistrationRepository`
 
-#### Phase B — Backend Logic สำหรับยกเลิกใบสมัคร (High priority)
-> เป้าหมาย: มี method รองรับการยกเลิก สำหรับ UI ปุ่มยกเลิกใน Profile
+#### Phase B — Backend Logic สำหรับยกเลิกใบสมัคร + Guard การสมัครซ้ำ (High priority)
+> เป้าหมาย: มี method รองรับการยกเลิก และป้องกันการสมัครซ้ำแบบ atomic (กัน TOCTOU)
 
-- [x] `RegistrationRepository.cancelApplication(applicationId, userId)`
+- [x] `RegistrationRepository.cancelApplication(applicationId, userId)` — atomic RPC
+- [x] `RegistrationRepository.rejectApplication(application, note)` — atomic RPC
+- [x] cancel/reject RPC reset user กลับไป default consumer profession + `verified`
+- [x] `ProfessionRepository.canCreateApplication()` pre-check ก่อนเปลี่ยนอาชีพ (ป้องกัน limbo state)
+- [x] Migration: Postgres RPC `create_registration_application()` ทำ check+insert atomically
+- [x] `ProfessionRepository.createApplication()` ใช้ RPC แทน multi-query + insert
+- [x] Deprecate `UnifiedRepository.createApplication` ที่ไม่มี guard
 
 #### Phase C — UI ฝั่งผู้ใช้ (Medium priority)
 > เป้าหมาย: ให้ผู้ใช้เห็นและยกเลิกใบสมัครได้เองโดยไม่ต้องพึ่ง auto-cancel เพียงอย่างเดียว
@@ -444,6 +567,10 @@ Future<void> approveApplication(String applicationId, {...}) async {
 - [ ] ทดสอบ: ยกเลิกใบสมัครผ่านปุ่มใน Profile โดยตรง
 - [ ] ทดสอบ: แอดมินพยายามอนุมัติใบที่เพิ่งถูกยกเลิก (race condition) ต้องได้ error ไม่ใช่ silent success
 - [ ] ทดสอบ: trigger auto-cancel ทำงานเมื่อเปลี่ยนอาชีพผ่าน admin tool/seed data
+- [ ] ทดสอบ: พยายามสมัครซ้ำขณะมี pending อยู่ → ต้องได้ข้อความ "คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว..." แทน DB error
+- [ ] ทดสอบ: ยกเลิกใบสมัครแล้วสมัครใหม่ → ต้องสร้างใบใหม่ได้
+- [ ] ทดสอบ: สมัครซ้ำสำหรับอาชีพที่ approved แล้ว → ต้องได้ข้อความ "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว..."
+- [ ] ทดสอบ: สมัครอาชีพที่มี active employee_roles อยู่แล้ว → ต้องได้ข้อความ "คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว..."
 
 ### บันทึกปัญหาที่พบระหว่าง Testing (Phase E) และวิธีแก้
 

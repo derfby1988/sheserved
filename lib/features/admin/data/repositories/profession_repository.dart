@@ -469,7 +469,49 @@ class ProfessionRepository {
     }
   }
 
-  /// สร้างใบสมัคร
+  /// ตรวจสอบว่า user สามารถสมัครสำหรับอาชีพนี้ได้หรือไม่ (pre-check ก่อนเปลี่ยนอาชีพ)
+  /// คืน null ถ้าสมัครได้, คืนข้อความ error ถ้าสมัครไม่ได้
+  Future<String?> canCreateApplication({
+    required String userId,
+    required String professionId,
+  }) async {
+    final existingApps = await _client
+        .from('registration_applications')
+        .select('id, status, profession_id')
+        .eq('user_id', userId)
+        .inFilter('status', ['pending', 'approved']);
+
+    final rows = existingApps as List;
+
+    final hasPending = rows.any((r) => r['status'] == 'pending');
+    if (hasPending) {
+      return 'คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว กรุณารอผลตรวจสอบหรือยกเลิกใบสมัครเดิมก่อนสมัครใหม่';
+    }
+
+    final hasApprovedSameProfession = rows.any(
+      (r) => r['status'] == 'approved' && r['profession_id'] == professionId,
+    );
+    if (hasApprovedSameProfession) {
+      return 'คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้';
+    }
+
+    final existingRole = await _client
+        .from('employee_roles')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('profession_id', professionId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+    if (existingRole != null) {
+      return 'คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว ไม่สามารถสมัครซ้ำได้ หากต้องการเปลี่ยนสิทธิ์กรุณาติดต่อผู้ดูแลระบบ';
+    }
+
+    return null;
+  }
+
+  /// สร้างใบสมัคร (atomic — ใช้ RPC เพื่อกัน TOCTOU race condition)
   Future<RegistrationApplication> createApplication({
     required String oderId,
     required String professionId,
@@ -480,27 +522,40 @@ class ProfessionRepository {
     String? profileImageUrl,
     Map<String, dynamic>? registrationData,
   }) async {
-    final now = DateTime.now();
-    final data = {
-      'user_id': oderId,
-      'profession_id': professionId,
-      'first_name': firstName,
-      'last_name': lastName,
-      'username': username,
-      'phone': phone,
-      'profile_image_url': profileImageUrl,
-      'registration_data': registrationData ?? {},
-      'status': 'pending',
-      'created_at': now.toIso8601String(),
-      'updated_at': now.toIso8601String(),
-    };
+    try {
+      final response = await _client.rpc(
+        'create_registration_application',
+        params: {
+          'p_user_id': oderId,
+          'p_profession_id': professionId,
+          'p_first_name': firstName,
+          'p_last_name': lastName,
+          'p_username': username,
+          'p_phone': phone,
+          'p_profile_image_url': profileImageUrl,
+          'p_registration_data': registrationData ?? {},
+        },
+      );
 
-    final response = await _client
-        .from('registration_applications')
-        .insert(data)
-        .select()
-        .single();
-    return RegistrationApplication.fromJson(response);
+      return RegistrationApplication.fromJson(response as Map<String, dynamic>);
+    } on PostgrestException catch (e) {
+      // Map RPC error codes to user-friendly Thai messages
+      final msg = e.message;
+      if (msg.contains('PENDING_EXISTS')) {
+        throw Exception(
+          'คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว กรุณารอผลตรวจสอบหรือยกเลิกใบสมัครเดิมก่อนสมัครใหม่',
+        );
+      } else if (msg.contains('APPROVED_EXISTS')) {
+        throw Exception(
+          'คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้',
+        );
+      } else if (msg.contains('ROLE_EXISTS')) {
+        throw Exception(
+          'คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว ไม่สามารถสมัครซ้ำได้ หากต้องการเปลี่ยนสิทธิ์กรุณาติดต่อผู้ดูแลระบบ',
+        );
+      }
+      rethrow;
+    }
   }
 
   /// อนุมัติใบสมัคร (Deprecated — ใช้ RegistrationRepository.approveApplication แทน)

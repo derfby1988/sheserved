@@ -292,7 +292,8 @@ class UnifiedRepository {
     return [];
   }
 
-  /// สร้างใบสมัคร
+  /// สร้างใบสมัคร (Deprecated — ใช้ ProfessionRepository.createApplication แทน เพื่อรองรับ guard ป้องกันการสมัครซ้ำ)
+  @Deprecated('ใช้ ProfessionRepository.createApplication แทน เพื่อรองรับ guard ป้องกัน pending/approved ซ้ำ')
   Future<RegistrationApplication?> createApplication({
     required String userId,
     required String professionId,
