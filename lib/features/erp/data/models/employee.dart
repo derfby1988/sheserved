@@ -19,6 +19,7 @@ class Employee {
   final String? bankAccountNumber;
   final String? bankName;
   final double commissionRate;
+  final String? branchId;
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -34,6 +35,7 @@ class Employee {
     this.department,
     this.jobTitle,
     this.hireDate,
+    this.branchId,
     this.salary,
     this.baseSalary = 0,
     this.taxDeductibleExpenses = 0,
@@ -60,6 +62,7 @@ class Employee {
       department: json['department'] as String?,
       jobTitle: json['job_title'] as String?,
       hireDate: json['hire_date'] != null ? DateTime.parse(json['hire_date'] as String) : null,
+      branchId: json['branch_id'] as String?,
       salary: (json['salary'] as num?)?.toDouble(),
       baseSalary: (json['base_salary'] as num?)?.toDouble() ?? 0,
       taxDeductibleExpenses: (json['tax_deductible_expenses'] as num?)?.toDouble() ?? 0,
@@ -87,6 +90,7 @@ class Employee {
       'department': department,
       'job_title': jobTitle,
       'hire_date': hireDate?.toIso8601String(),
+      'branch_id': branchId,
       'salary': salary,
       'base_salary': baseSalary,
       'tax_deductible_expenses': taxDeductibleExpenses,

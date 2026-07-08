@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../data/models/thai_holiday.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
@@ -42,19 +43,12 @@ class _ThaiHolidaysPageState extends ConsumerState<ThaiHolidaysPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ListTile(
-                  title: Text(pickedDate != null
-                      ? '${pickedDate!.day}/${pickedDate!.month}/${pickedDate!.year}'
-                      : 'เลือกวันที่'),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: ctx,
-                      initialDate: DateTime(_selectedYear),
-                      firstDate: DateTime(_selectedYear, 1, 1),
-                      lastDate: DateTime(_selectedYear, 12, 31),
-                    );
-                    if (d != null) setState(() => pickedDate = d);
+                ThaiBuddhistDatePickerField(
+                  value: pickedDate,
+                  label: 'วันที่หยุด',
+                  hint: 'เลือกวันที่หยุด',
+                  onDateSelected: (date) {
+                    setState(() => pickedDate = date);
                   },
                 ),
                 TextField(
@@ -152,7 +146,7 @@ class _ThaiHolidaysPageState extends ConsumerState<ThaiHolidaysPage> {
                 DropdownButton<int>(
                   value: _selectedYear,
                   items: List.generate(5, (i) => DateTime.now().year - 2 + i)
-                      .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                      .map((y) => DropdownMenuItem(value: y, child: Text('${y + 543}')))
                       .toList(),
                   onChanged: (y) {
                     if (y == null) return;

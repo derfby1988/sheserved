@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 /// Clinic POS Page (Mode C) — ขายบริการคลินิก
 class ClinicPosPage extends ConsumerStatefulWidget {
@@ -61,23 +62,11 @@ class _ClinicPosPageState extends ConsumerState<ClinicPosPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ListTile(
-                  leading: const Icon(Icons.calendar_today),
-                  title: Text(
-                    _appointmentDate != null
-                        ? 'วันนัด: ${_appointmentDate.toString().substring(0, 10)}'
-                        : 'เลือกวันนัด',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 90)),
-                    );
-                    if (date != null) setState(() => _appointmentDate = date);
-                  },
+                ThaiBuddhistDatePickerField(
+                  value: _appointmentDate,
+                  label: 'วันนัด',
+                  hint: 'เลือกวันนัด',
+                  onDateSelected: (date) => setState(() => _appointmentDate = date),
                 ),
               ],
             ),

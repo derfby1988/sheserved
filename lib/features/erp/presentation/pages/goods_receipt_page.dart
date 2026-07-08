@@ -4,6 +4,7 @@ import '../../data/models/dashboard_theme.dart';
 import '../providers/organization_settings_provider.dart';
 import '../providers/phase_one_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class GoodsReceiptPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -181,24 +182,11 @@ class _GoodsReceiptPageState extends ConsumerState<GoodsReceiptPage> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
                       const SizedBox(height: 12),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('วันหมดอายุ (ถ้ามี)'),
-                        subtitle: Text(_expiryDate != null
-                            ? '${_expiryDate!.day}/${_expiryDate!.month}/${_expiryDate!.year}'
-                            : 'ไม่ได้เลือก'),
-                        trailing: const Icon(Icons.calendar_today),
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now().add(const Duration(days: 365)),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
-                          );
-                          if (picked != null) {
-                            setState(() => _expiryDate = picked);
-                          }
-                        },
+                      ThaiBuddhistDatePickerField(
+                        value: _expiryDate,
+                        label: 'วันหมดอายุ (ถ้ามี)',
+                        hint: 'เลือกวันหมดอายุ',
+                        onDateSelected: (date) => setState(() => _expiryDate = date),
                       ),
                     ],
                   ),
@@ -230,7 +218,7 @@ class _GoodsReceiptPageState extends ConsumerState<GoodsReceiptPage> {
                         children: [
                           Text('รับเข้า: ${lot.quantityReceived} | คงเหลือ: ${lot.quantityRemaining}'),
                           if (lot.expiryDate != null)
-                            Text('หมดอายุ: ${lot.expiryDate!.day}/${lot.expiryDate!.month}/${lot.expiryDate!.year}'),
+                            Text('หมดอายุ: ${ThaiDateUtils.formatShortDateBE(lot.expiryDate!)}'),
                         ],
                       ),
                       trailing: Chip(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_one_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class StockMovementTrackingPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -118,7 +119,7 @@ class _StockMovementTrackingPageState extends ConsumerState<StockMovementTrackin
                                       ),
                                     if (createdAt != null)
                                       Text(
-                                        '${createdAt.day}/${createdAt.month}/${createdAt.year} ${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}',
+                                        '${ThaiDateUtils.formatShortDateBE(createdAt)} ${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}',
                                         style: const TextStyle(fontSize: 11, color: Colors.grey),
                                       ),
                                   ],

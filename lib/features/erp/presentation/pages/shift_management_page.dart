@@ -5,6 +5,7 @@ import '../../data/models/employee.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class ShiftManagementPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -96,7 +97,7 @@ class _ShiftManagementPageState extends ConsumerState<ShiftManagementPage> {
             },
           ),
           Text(
-            '${_selectedMonth.month}/${_selectedMonth.year}',
+            '${ThaiDateUtils.getThaiShortMonth(_selectedMonth.month)} ${_selectedMonth.year + 543}',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           IconButton(
@@ -150,18 +151,13 @@ class _ShiftManagementPageState extends ConsumerState<ShiftManagementPage> {
                   onChanged: (v) => selectedEmployeeId = v,
                 ),
               const SizedBox(height: 12),
-              ListTile(
-                title: const Text('วันที่'),
-                subtitle: Text('${shiftDate.day}/${shiftDate.month}/${shiftDate.year}'),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: ctx,
-                    initialDate: shiftDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2030),
-                  );
-                  if (picked != null) shiftDate = picked;
+              ThaiBuddhistDatePickerField(
+                value: shiftDate,
+                label: 'วันที่',
+                hint: 'เลือกวันที่',
+                onDateSelected: (date) {
+                  shiftDate = date;
+                  (ctx as Element).markNeedsBuild();
                 },
               ),
               ListTile(
@@ -319,7 +315,7 @@ class _ShiftCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${shift.shiftDate.day}/${shift.shiftDate.month}/${shift.shiftDate.year} '
+                    '${ThaiDateUtils.formatShortDateBE(shift.shiftDate)} '
                     '(${shift.shiftTypeLabel})',
                     style: const TextStyle(fontSize: 12),
                   ),

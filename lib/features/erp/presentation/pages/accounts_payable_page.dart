@@ -4,6 +4,7 @@ import '../../data/models/accounts_payable.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class AccountsPayablePage extends ConsumerStatefulWidget {
   final String professionId;
@@ -197,7 +198,7 @@ class _ApCard extends StatelessWidget {
             ),
             if (ap.dueDate != null)
               Text(
-                'กำหนดจ่าย: ${ap.dueDate!.day}/${ap.dueDate!.month}/${ap.dueDate!.year}',
+                'กำหนดจ่าย: ${ThaiDateUtils.formatShortDateBE(ap.dueDate!)}',
                 style: TextStyle(
                   fontSize: 12,
                   color: ap.isOverdue ? Colors.red : Colors.grey,

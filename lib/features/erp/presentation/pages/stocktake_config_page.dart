@@ -6,6 +6,7 @@ import '../../data/models/stocktake_configuration.dart';
 import '../providers/organization_settings_provider.dart';
 import '../providers/phase_one_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class StocktakeConfigPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -159,25 +160,11 @@ class _StocktakeConfigPageState extends ConsumerState<StocktakeConfigPage> {
                     onChanged: (v) => selectedBranchId = v,
                   ),
                 const SizedBox(height: 12),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('วันที่ตรวจนับถัดไป'),
-                  subtitle: Text(() {
-                    final d = nextDate;
-                    return d != null ? '${d.day}/${d.month}/${d.year}' : 'ไม่ได้เลือก';
-                  }()),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      initialDate: nextDate ?? DateTime.now().add(const Duration(days: 30)),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-                    );
-                    if (picked != null) {
-                      setState(() => nextDate = picked);
-                    }
-                  },
+                ThaiBuddhistDatePickerField(
+                  value: nextDate,
+                  label: 'วันที่ตรวจนับถัดไป',
+                  hint: 'เลือกวันที่ตรวจนับ',
+                  onDateSelected: (date) => setState(() => nextDate = date),
                 ),
               ],
             ),
@@ -253,7 +240,7 @@ class _ConfigCard extends StatelessWidget {
               Text('ความถี่: ${_freqLabel(config.frequencyType)}'),
               Text('สาขา: $branchName'),
               if (config.nextStocktakeDate case final d)
-                Text('ครั้งถัดไป: ${d.day}/${d.month}/${d.year}'),
+                Text('ครั้งถัดไป: ${ThaiDateUtils.formatShortDateBE(d)}'),
             ],
           ),
           trailing: Row(

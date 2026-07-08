@@ -14,6 +14,7 @@ import '../providers/organization_settings_provider.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/permission_denied_widget.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class ProcurementPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -391,15 +392,15 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
-                                        child: TextFormField(
-                                          initialValue: item['expiry_date'] as String? ?? '',
-                                          decoration: const InputDecoration(
-                                            labelText: 'วันหมดอายุ (YYYY-MM-DD)',
-                                            isDense: true,
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          onChanged: (val) {
-                                            grItems[i]['expiry_date'] = val;
+                                        child: ThaiBuddhistDatePickerField(
+                                          value: (item['expiry_date'] as String?) != null
+                                              ? DateTime.tryParse(item['expiry_date'] as String)
+                                              : null,
+                                          label: 'วันหมดอายุ',
+                                          hint: 'เลือกวันหมดอายุ',
+                                          onDateSelected: (date) {
+                                            grItems[i]['expiry_date'] = date.toIso8601String().split('T')[0];
+                                            (context as Element).markNeedsBuild();
                                           },
                                         ),
                                       ),
@@ -907,21 +908,14 @@ class _ProcurementPageState extends ConsumerState<ProcurementPage>
                           onChanged: (v) => setStateDialog(() => selectedBranchId = v),
                         ),
                       const SizedBox(height: 10),
-                      TextField(
-                        controller: deliveryDateController,
-                        readOnly: true,
-                        decoration: const InputDecoration(labelText: 'กำหนดส่งมอบสินค้า'),
-                        onTap: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now().add(const Duration(days: 7)),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (date != null) {
-                            selectedDeliveryDate = date;
-                            deliveryDateController.text = date.toString().split(' ')[0];
-                          }
+                      ThaiBuddhistDatePickerField(
+                        value: selectedDeliveryDate,
+                        label: 'กำหนดส่งมอบสินค้า',
+                        hint: 'เลือกวันที่ส่งมอบ',
+                        onDateSelected: (date) {
+                          selectedDeliveryDate = date;
+                          deliveryDateController.text = date.toIso8601String().split('T')[0];
+                          (context as Element).markNeedsBuild();
                         },
                       ),
                       TextField(
@@ -1552,7 +1546,7 @@ class _GoodsReceiptsTab extends StatelessWidget {
                                       Text('รับ: ${item.quantityAccepted} | ตัดทิ้ง: ${item.quantityRejected}',
                                           style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                       if (item.lotNumber != null && item.lotNumber!.isNotEmpty)
-                                        Text('Lot: ${item.lotNumber}${item.expiryDate != null ? ' | หมดอายุ: ${item.expiryDate!.toIso8601String().split('T')[0]}' : ''}',
+                                        Text('Lot: ${item.lotNumber}${item.expiryDate != null ? ' | หมดอายุ: ${ThaiDateUtils.formatShortDateBE(item.expiryDate!)}' : ''}',
                                             style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                     ],
                                   ),
@@ -1674,7 +1668,7 @@ class _BackOrdersTab extends StatelessWidget {
                         if (bo.expectedDeliveryDate != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
-                            child: Text('กำหนดส่งครั้งหน้า: ${bo.expectedDeliveryDate!.toIso8601String().split('T')[0]}',
+                            child: Text('กำหนดส่งครั้งหน้า: ${ThaiDateUtils.formatShortDateBE(bo.expectedDeliveryDate!)}',
                                 style: const TextStyle(fontSize: 11, color: Colors.blue)),
                           ),
                       ],

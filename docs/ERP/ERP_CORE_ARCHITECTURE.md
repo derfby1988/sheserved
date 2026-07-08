@@ -3598,6 +3598,58 @@ Entry Point (Flutter App หรือ Worker)
 
 ---
 
+## มาตรฐาน UI Form Controls (ERP UI Standards)
+
+### Date Picker — Thai Buddhist Calendar (พ.ศ.)
+
+ทุกหน้าจอ ERP ที่ต้องเลือกวันที่ จะต้องใช้ **คอมโพเนนต์ส่วนกลาง** `ThaiBuddhistDatePickerField` จาก `lib/shared/widgets/thai_buddhist_date_picker.dart` แทน `showDatePicker` ของ Flutter เพื่อให้ผู้ใช้งานในไทยเลือกวันที่ตามปฏิทิน พ.ศ. ได้ตรงตามความเข้าใจ
+
+#### หลักการ
+- **ไม่ใช้ `showDatePicker` / `showDateRangePicker` โดยตรงใน ERP UI** อีกต่อไป
+- ใช้ `ThaiBuddhistDatePickerField` สำหรับทุกการเลือกวันที่ ไม่ว่าจะเป็นวันเดียวหรือช่วงวันที่ (ใช้ 2 ฟิลด์)
+- คอมโพเนนต์นี้แสดง 2-Step flow:
+  1. เลือกปี พ.ศ. ก่อน (grid แสดงปี พ.ศ.)
+  2. เลือกวันที่ในปฏิทิน พ.ศ.
+
+#### API ของ `ThaiBuddhistDatePickerField`
+
+```dart
+ThaiBuddhistDatePickerField(
+  value: DateTime?,                 // วันที่ปัจจุบัน (CE)
+  label: String,                    // ข้อความ label
+  hint: String,                     // placeholder
+  isRequired: bool,                 // แสดง * ถ้าบังคับ
+  errorText: String?,               // ข้อความ error
+  onDateSelected: (DateTime date) {}, // callback เมื่อเลือกวันที่
+)
+```
+
+#### การแปลงค่า
+- คอมโพเนนต์คืนค่า `DateTime` ในรูปแบบ **CE (ค.ศ.)** เหมือน `DateTime.now()`
+- เมื่อบันทึกลง database ให้ใช้ `date.toIso8601String().split('T')[0]` สำหรับฟิลด์ `DATE`
+- เมื่อแสดงผล ให้คอมโพเนนต์จัดการการแสดงผลเอง (ไม่ต้อง format เอง)
+
+#### หน้าจอที่ใช้แล้ว (ตัวอย่าง)
+
+| หน้าจอ | ฟิลด์ | ไฟล์ |
+|--------|------|------|
+| สร้าง Payroll Run | วันที่เริ่มต้น, วันที่สิ้นสุด | `lib/features/erp/presentation/widgets/payroll_run_create_dialog.dart` |
+| วันหยุดนักขัตฤกษ์ | วันที่หยุด | `lib/features/erp/presentation/pages/thai_holidays_page.dart` |
+| จัดการกะ | วันที่ | `lib/features/erp/presentation/pages/shift_management_page.dart` |
+| รายงาน | จากวันที่, ถึงวันที่ | `lib/features/erp/presentation/pages/report_export_page.dart` |
+| รายงานจัดซื้อ | จากวันที่, ถึงวันที่ | `lib/features/erp/presentation/pages/procurement_report_page.dart` |
+| สมุดบัญชี GL | จาก, ถึง, วันที่รายการ | `lib/features/erp/presentation/pages/gl_entries_page.dart` |
+| สั่งซื้อ (PO) | กำหนดส่งมอบ, วันหมดอายุสินค้า | `lib/features/erp/presentation/pages/procurement_page.dart` |
+| รับสินค้า (GR) | วันหมดอายุ | `lib/features/erp/presentation/pages/goods_receipt_page.dart` |
+| ขายบริการคลินิก | วันนัด | `lib/features/erp/presentation/pages/clinic_pos_page.dart` |
+| ตั้งค่าตรวจนับสต๊อก | วันที่ตรวจนับถัดไป | `lib/features/erp/presentation/pages/stocktake_config_page.dart` |
+
+#### ข้อห้าม
+- ห้ามใช้ `TextField` กรอกวันที่ด้วยมือในรูปแบบ `YYYY-MM-DD` ยกเว้นกรณีที่มี requirement ชัดเจนว่าต้องรองรับ paste/import จากระบบอื่น
+- ห้ามใช้ `showDatePicker` หรือ `showDateRangePicker` โดยตรงใน ERP UI
+
+---
+
 ## แผนงานการพัฒนาและลำดับความสำคัญ (Development Roadmap & Phase Ordering)
 
 > **หมายเหตุ:** ส่วนนี้ถูกรวมเข้ากับเนื้อหาหลักข้างต้นแล้ว โปรดดู:

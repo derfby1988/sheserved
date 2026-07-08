@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_five_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class ReportExportPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -71,34 +72,20 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: _DatePickerTile(
+                      child: ThaiBuddhistDatePickerField(
+                        value: _startDate,
                         label: 'จากวันที่',
-                        date: _startDate,
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _startDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) setState(() => _startDate = picked);
-                        },
+                        hint: 'เลือกวันที่เริ่มต้น',
+                        onDateSelected: (date) => setState(() => _startDate = date),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _DatePickerTile(
+                      child: ThaiBuddhistDatePickerField(
+                        value: _endDate,
                         label: 'ถึงวันที่',
-                        date: _endDate,
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _endDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime.now(),
-                          );
-                          if (picked != null) setState(() => _endDate = picked);
-                        },
+                        hint: 'เลือกวันที่สิ้นสุด',
+                        onDateSelected: (date) => setState(() => _endDate = date),
                       ),
                     ),
                   ],
@@ -157,34 +144,6 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
   }
 }
 
-class _DatePickerTile extends StatelessWidget {
-  final String label;
-  final DateTime date;
-  final VoidCallback onTap;
-
-  const _DatePickerTile({required this.label, required this.date, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            Text(date.toString().substring(0, 10), style: const TextStyle(fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _ScheduledReportCard extends StatelessWidget {
   final dynamic report;

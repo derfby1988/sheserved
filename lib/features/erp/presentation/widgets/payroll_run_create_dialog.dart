@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../providers/phase_three_provider.dart';
 import 'payroll_formula_viewer_sheet.dart';
 
@@ -61,41 +62,29 @@ class _PayrollRunCreateDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'ชื่อรอบ (เช่น เงินเดือน กรกฎาคม 2026)',
+                  labelText: 'ชื่อรอบ',
+                  hintText: 'เช่น เงินเดือน กรกฎาคม 2026',
                   border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 18),
                 ),
               ),
               const SizedBox(height: 12),
-              ListTile(
-                title: Text(
-                    'วันที่เริ่มต้น: ${_periodStart.day}/${_periodStart.month}/${_periodStart.year}'),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _periodStart,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setState(() => _periodStart = picked);
-                },
+              ThaiBuddhistDatePickerField(
+                value: _periodStart,
+                label: 'วันที่เริ่มต้น',
+                hint: 'เลือกวันที่เริ่มต้น',
+                onDateSelected: (date) => setState(() => _periodStart = date),
               ),
-              ListTile(
-                title: Text(
-                    'วันที่สิ้นสุด: ${_periodEnd.day}/${_periodEnd.month}/${_periodEnd.year}'),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _periodEnd,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setState(() => _periodEnd = picked);
-                },
+              const SizedBox(height: 12),
+              ThaiBuddhistDatePickerField(
+                value: _periodEnd,
+                label: 'วันที่สิ้นสุด',
+                hint: 'เลือกวันที่สิ้นสุด',
+                onDateSelected: (date) => setState(() => _periodEnd = date),
               ),
               const Divider(),
               const Align(

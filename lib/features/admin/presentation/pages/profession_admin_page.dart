@@ -885,23 +885,32 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               )
             else
               DropdownButtonFormField<UserCategory>(
+                isExpanded: true,
                 initialValue: _selectedCategory,
                 decoration: const InputDecoration(
                   labelText: 'หมวดหมู่ผู้ใช้',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.category),
                 ),
-                items: _categories.isNotEmpty 
+                items: _categories.isNotEmpty
                   ? _categories.map((category) {
                       return DropdownMenuItem(
                         value: category,
-                        child: Text(category.displayName),
+                        child: Text(
+                          category.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       );
                     }).toList()
                   : [
                       DropdownMenuItem(
                         value: _selectedCategory,
-                        child: Text(_selectedCategory.displayName),
+                        child: Text(
+                          _selectedCategory.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       )
                     ],
                 onChanged: (value) {
@@ -1021,6 +1030,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String?>(
+                isExpanded: true,
                 initialValue: _copyFromProfessionId,
                 decoration: const InputDecoration(
                   labelText: 'เลือกอาชีพต้นแบบ',
@@ -1030,12 +1040,20 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
                 items: [
                   const DropdownMenuItem(
                     value: null,
-                    child: Text('ไม่คัดลอก'),
+                    child: Text(
+                      'ไม่คัดลอก',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   ...Profession.defaultProfessions.map((p) {
                     return DropdownMenuItem(
                       value: p.id,
-                      child: Text(p.name),
+                      child: Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     );
                   }),
                 ],

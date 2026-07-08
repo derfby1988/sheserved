@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/employee.dart';
+import '../models/employee_invitation.dart';
+import '../../../../services/auth_service.dart';
 import '../models/gl_entry.dart';
 import '../models/dashboard_snapshot.dart';
 import '../models/chart_of_account.dart';
@@ -43,9 +45,15 @@ class PhaseThreeRepository {
 
   Future<Employee?> createEmployee(Map<String, dynamic> data) async {
     try {
+      final userId = AuthService.instance.currentUser?.id;
+      final enrichedData = Map<String, dynamic>.from(data);
+      if (userId != null && userId.isNotEmpty) {
+        enrichedData['created_by'] = userId;
+        enrichedData['updated_by'] = userId;
+      }
       final response = await _client
           .from('employees')
-          .insert(data)
+          .insert(enrichedData)
           .select()
           .single();
       return Employee.fromJson(response as Map<String, dynamic>);
@@ -57,11 +65,133 @@ class PhaseThreeRepository {
 
   Future<bool> updateEmployee(String id, Map<String, dynamic> data) async {
     try {
-      await _client.from('employees').update(data).eq('id', id);
+      final userId = AuthService.instance.currentUser?.id;
+      final enrichedData = Map<String, dynamic>.from(data);
+      if (userId != null && userId.isNotEmpty) {
+        enrichedData['updated_by'] = userId;
+      }
+      await _client.from('employees').update(enrichedData).eq('id', id);
       return true;
     } catch (e, st) {
       debugPrint('[Phase3Repo] updateEmployee error: $e');
       return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAvailableUsersForInvite(
+    String professionId, {
+    String? search,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'get_available_users_for_invite',
+        params: {
+          'p_profession_id': professionId,
+          if (search != null && search.isNotEmpty) 'p_search': search,
+        },
+      );
+      if (response == null) return [];
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getAvailableUsersForInvite error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> inviteEmployee(Map<String, dynamic> data) async {
+    try {
+      final userId = AuthService.instance.currentUser?.id;
+      final response = await _client.rpc(
+        'invite_employee',
+        params: {
+          'p_profession_id': data['profession_id'],
+          'p_invited_by': userId,
+          if (data['user_id'] != null) 'p_user_id': data['user_id'],
+          if (data['email'] != null) 'p_email': data['email'],
+          if (data['phone'] != null) 'p_phone': data['phone'],
+          'p_full_name': data['full_name'],
+          if (data['employee_code'] != null) 'p_employee_code': data['employee_code'],
+          if (data['department'] != null) 'p_department': data['department'],
+          if (data['job_title'] != null) 'p_job_title': data['job_title'],
+          if (data['branch_id'] != null) 'p_branch_id': data['branch_id'],
+          if (data['base_salary'] != null) 'p_base_salary': data['base_salary'],
+          if (data['salary'] != null) 'p_salary': data['salary'],
+          if (data['commission_rate'] != null) 'p_commission_rate': data['commission_rate'],
+          if (data['provident_fund_rate'] != null) 'p_provident_fund_rate': data['provident_fund_rate'],
+          if (data['personal_allowance'] != null) 'p_personal_allowance': data['personal_allowance'],
+          if (data['tax_deductible_expenses'] != null) 'p_tax_deductible_expenses': data['tax_deductible_expenses'],
+          if (data['payment_method'] != null) 'p_payment_method': data['payment_method'],
+          if (data['bank_name'] != null) 'p_bank_name': data['bank_name'],
+          if (data['bank_account_number'] != null) 'p_bank_account_number': data['bank_account_number'],
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] inviteEmployee error: $e');
+      return null;
+    }
+  }
+
+  Future<List<EmployeeInvitation>> getEmployeeInvitations(String professionId) async {
+    try {
+      final response = await _client
+          .from('employee_invitations')
+          .select()
+          .eq('profession_id', professionId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map((e) => EmployeeInvitation.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getEmployeeInvitations error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> acceptEmployeeInvitation(String token) async {
+    try {
+      final userId = AuthService.instance.currentUser?.id;
+      final response = await _client.rpc(
+        'accept_employee_invitation',
+        params: {
+          'p_token': token,
+          if (userId != null) 'p_user_id': userId,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] acceptEmployeeInvitation error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> rejectEmployeeInvitation(String token) async {
+    try {
+      final response = await _client.rpc(
+        'reject_employee_invitation',
+        params: {'p_token': token},
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] rejectEmployeeInvitation error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> ensureOwnerAsEmployee(String professionId) async {
+    try {
+      final currentUserId = AuthService.instance.currentUser?.id;
+      final response = await _client.rpc(
+        'ensure_owner_as_employee',
+        params: {
+          'p_profession_id': professionId,
+          'p_current_user_id': currentUserId,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] ensureOwnerAsEmployee error: $e');
+      return null;
     }
   }
 

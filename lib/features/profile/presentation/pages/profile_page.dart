@@ -21,6 +21,7 @@ import '../../../../services/service_locator.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
+import '../../../admin/data/repositories/registration_repository.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -107,6 +108,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   bool _isLoadingAllProfessions = false;
   bool _isChangingProfession = false;
 
+  // ใบสมัครรอตรวจสอบ (Pending Application)
+  prof.RegistrationApplication? _pendingApplication;
+  bool _isCancellingApplication = false;
+
   String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
 
   @override
@@ -145,6 +150,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       _loadVolunteerProfessions();
       _loadAllProfessions();
       _checkCanApproveDonationStatus();
+      _loadPendingApplication();
     });
   }
 
@@ -210,6 +216,48 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     }
   }
 
+  Future<void> _loadPendingApplication() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+    try {
+      final regRepo = RegistrationRepository(Supabase.instance.client);
+      final app = await regRepo.getPendingApplicationForUser(userId);
+      if (mounted) {
+        setState(() => _pendingApplication = app);
+      }
+    } catch (e) {
+      debugPrint('Error loading pending application: $e');
+    }
+  }
+
+  Future<void> _cancelPendingApplication() async {
+    if (_pendingApplication == null) return;
+    final userId = AuthService.instance.userId;
+    if (userId == null) return;
+
+    setState(() => _isCancellingApplication = true);
+    try {
+      final regRepo = RegistrationRepository(Supabase.instance.client);
+      await regRepo.cancelApplication(_pendingApplication!.id, userId);
+      if (mounted) {
+        setState(() {
+          _pendingApplication = null;
+          _isCancellingApplication = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ยกเลิกใบสมัครเรียบร้อยแล้ว')),
+        );
+        _loadProfile();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCancellingApplication = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ไม่สามารถยกเลิกได้: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _checkCanApproveDonationStatus() async {
     final userId = AuthService.instance.userId;
@@ -970,6 +1018,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         ],
         const SizedBox(height: 12),
         _buildProfessionRow(),
+        if (_pendingApplication != null) ...[
+          const SizedBox(height: 12),
+          _buildPendingApplicationCard(),
+        ],
       ],
     );
   }
@@ -1044,6 +1096,102 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 else
                   Icon(Icons.edit, size: 14, color: Colors.grey[400]),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingApplicationCard() {
+    final app = _pendingApplication!;
+    final isOwnerRequest =
+        app.registrationData['is_owner_request'] == 'true' ||
+            app.registrationData['is_owner_request'] == true;
+    final createdDate = '${app.createdAt.day}/${app.createdAt.month}/${app.createdAt.year + 543}';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withOpacity(0.3), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hourglass_top, size: 16, color: Colors.orange[700]),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'ใบสมัครของคุณกำลังรอตรวจสอบ',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'อาชีพ: ${app.profession?.name ?? 'ไม่ระบุ'}${isOwnerRequest ? ' (สมัครเป็นเจ้าขององค์กร)' : ''}',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'สมัครเมื่อ: $createdDate',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _isCancellingApplication
+                  ? null
+                  : () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('ยืนยันการยกเลิก'),
+                          content: const Text(
+                            'คุณแน่ใจหรือไม่ว่าต้องการยกเลิกใบสมัครนี้?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('ไม่ยกเลิก'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _cancelPendingApplication();
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                              child: const Text('ยกเลิกใบสมัคร'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: _isCancellingApplication
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('ยกเลิกใบสมัคร'),
             ),
           ),
         ],
@@ -1417,9 +1565,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   Future<void> _onProfessionSelected(prof.Profession newProfession) async {
     if (newProfession.id == _user?.professionId) return;
 
-    // Derive new user type
-    final newUserType = _deriveUserTypeFromProfession(newProfession);
-
     bool isOwnerRequest = false;
     if (newProfession.requiresVerification) {
       // Show confirmation dialog for verification-required professions
@@ -1485,10 +1630,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       final userRepo = UserRepository(supabase);
       final profRepo = ProfessionRepository(supabase);
 
-      // 1. Update user profession and user_type
+      // 1. Update user profession and role
+      // หมายเหตุ: ตาราง users ใช้ column `role` (consumer/provider/admin) ไม่ใช่ `user_type`
+      final newRole =
+          newProfession.category.id == prof.UserCategory.consumerId
+              ? 'consumer'
+              : 'provider';
       await userRepo.updateUser(_user!.id, {
         'profession_id': newProfession.id,
-        'user_type': newUserType.name,
+        'role': newRole,
         'verification_status': newProfession.requiresVerification
             ? VerificationStatus.pending.value
             : VerificationStatus.verified.value,
@@ -1515,6 +1665,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
       // 3. Reload profile
       await _loadProfile();
+      _loadPendingApplication();
 
       if (mounted) {
         final message = newProfession.requiresVerification
@@ -1533,16 +1684,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       }
     } finally {
       if (mounted) setState(() => _isChangingProfession = false);
-    }
-  }
-
-  UserType _deriveUserTypeFromProfession(prof.Profession profession) {
-    if (profession.category.id == prof.UserCategory.consumerId) {
-      return UserType.consumer;
-    } else if (profession.nameEn?.toLowerCase().contains('clinic') == true) {
-      return UserType.clinic;
-    } else {
-      return UserType.expert;
     }
   }
 

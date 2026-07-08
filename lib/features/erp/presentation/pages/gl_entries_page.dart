@@ -6,6 +6,7 @@ import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/account_selector_sheet.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class GlEntriesPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -101,34 +102,20 @@ class _GlEntriesPageState extends ConsumerState<GlEntriesPage> {
           Row(
             children: [
               Expanded(
-                child: _DateFilterChip(
+                child: ThaiBuddhistDatePickerField(
+                  value: _fromDate,
                   label: 'จาก',
-                  date: _fromDate,
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _fromDate ?? DateTime.now(),
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
-                    );
-                    if (picked != null) setState(() => _fromDate = picked);
-                  },
+                  hint: 'เลือกวันที่เริ่มต้น',
+                  onDateSelected: (date) => setState(() => _fromDate = date),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _DateFilterChip(
+                child: ThaiBuddhistDatePickerField(
+                  value: _toDate,
                   label: 'ถึง',
-                  date: _toDate,
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _toDate ?? DateTime.now(),
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
-                    );
-                    if (picked != null) setState(() => _toDate = picked);
-                  },
+                  hint: 'เลือกวันที่สิ้นสุด',
+                  onDateSelected: (date) => setState(() => _toDate = date),
                 ),
               ),
             ],
@@ -250,19 +237,11 @@ class _GlEntriesPageState extends ConsumerState<GlEntriesPage> {
                     ),
                   ),
                 ),
-                ListTile(
-                  title: const Text('วันที่'),
-                  subtitle: Text('${entryDate.day}/${entryDate.month}/${entryDate.year}'),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      initialDate: entryDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
-                    );
-                    if (picked != null) setState(() => entryDate = picked);
-                  },
+                ThaiBuddhistDatePickerField(
+                  value: entryDate,
+                  label: 'วันที่',
+                  hint: 'เลือกวันที่',
+                  onDateSelected: (date) => setState(() => entryDate = date),
                 ),
                 Row(
                   children: [
@@ -326,39 +305,6 @@ class _GlEntriesPageState extends ConsumerState<GlEntriesPage> {
   }
 }
 
-class _DateFilterChip extends StatelessWidget {
-  final String label;
-  final DateTime? date;
-  final VoidCallback onTap;
-
-  const _DateFilterChip({required this.label, this.date, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('$label: ', style: const TextStyle(fontSize: 12)),
-            Text(
-              date != null ? '${date!.day}/${date!.month}/${date!.year}' : 'ทั้งหมด',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            const Icon(Icons.arrow_drop_down, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _GlEntryCard extends StatelessWidget {
   final GlEntry entry;
@@ -401,7 +347,7 @@ class _GlEntryCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   Text(
-                    '${entry.entryDate.day}/${entry.entryDate.month}/${entry.entryDate.year} | Ref: ${entry.referenceNo ?? '-'}',
+                    '${ThaiDateUtils.formatShortDateBE(entry.entryDate)} | Ref: ${entry.referenceNo ?? '-'}',
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ],

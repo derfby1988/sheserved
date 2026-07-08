@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/models/employee.dart';
+import '../../data/models/employee_invitation.dart';
 import '../../data/models/gl_entry.dart';
 import '../../data/models/dashboard_snapshot.dart';
 import '../../data/models/chart_of_account.dart';
@@ -29,6 +30,8 @@ class PhaseThreeState {
   final String? errorMessage;
 
   final List<Employee> employees;
+  final List<EmployeeInvitation> employeeInvitations;
+  final List<Map<String, dynamic>> availableUsersForInvite;
   final List<GlEntry> glEntries;
   final List<DashboardSnapshot> snapshots;
   final List<ChartOfAccount> chartOfAccounts;
@@ -47,6 +50,8 @@ class PhaseThreeState {
     this.isSaving = false,
     this.errorMessage,
     this.employees = const [],
+    this.employeeInvitations = const [],
+    this.availableUsersForInvite = const [],
     this.glEntries = const [],
     this.snapshots = const [],
     this.chartOfAccounts = const [],
@@ -67,6 +72,8 @@ class PhaseThreeState {
     String? errorMessage,
     bool clearError = false,
     List<Employee>? employees,
+    List<EmployeeInvitation>? employeeInvitations,
+    List<Map<String, dynamic>>? availableUsersForInvite,
     List<GlEntry>? glEntries,
     List<DashboardSnapshot>? snapshots,
     List<ChartOfAccount>? chartOfAccounts,
@@ -87,6 +94,8 @@ class PhaseThreeState {
       isSaving: isSaving ?? this.isSaving,
       errorMessage: shouldClearError ? null : (errorMessage ?? this.errorMessage),
       employees: employees ?? this.employees,
+      employeeInvitations: employeeInvitations ?? this.employeeInvitations,
+      availableUsersForInvite: availableUsersForInvite ?? this.availableUsersForInvite,
       glEntries: glEntries ?? this.glEntries,
       snapshots: snapshots ?? this.snapshots,
       chartOfAccounts: chartOfAccounts ?? this.chartOfAccounts,
@@ -184,6 +193,7 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
               commissionRate: data['commission_rate'] != null
                   ? (data['commission_rate'] as num).toDouble()
                   : e.commissionRate,
+              branchId: data['branch_id'] as String? ?? e.branchId,
               isActive: data['is_active'] as bool? ?? e.isActive,
               createdAt: e.createdAt,
               updatedAt: DateTime.now(),
@@ -199,6 +209,114 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
     } catch (e, st) {
       debugPrint('[Phase3] updateEmployee ERROR: $e');
       state = state.copyWith(isSaving: false, errorMessage: 'อัปเดตพนักงานล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  // ========================
+  // EMPLOYEE INVITATIONS
+  // ========================
+
+  Future<void> loadEmployeeInvitations(String professionId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final invitations = await _repository.getEmployeeInvitations(professionId);
+      state = state.copyWith(isLoading: false, employeeInvitations: invitations);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadEmployeeInvitations ERROR: $e');
+      state = state.copyWith(isLoading: false, errorMessage: 'โหลดคำเชิญล้มเหลว: $e');
+    }
+  }
+
+  Future<void> loadAvailableUsersForInvite(String professionId, {String? search}) async {
+    try {
+      final users = await _repository.getAvailableUsersForInvite(professionId, search: search);
+      state = state.copyWith(availableUsersForInvite: users);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadAvailableUsersForInvite ERROR: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> inviteEmployee(Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.inviteEmployee(data);
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadEmployeeInvitations(data['profession_id'] as String);
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ส่งคำเชิญล้มเหลว',
+        );
+      }
+      return result;
+    } catch (e, st) {
+      debugPrint('[Phase3] inviteEmployee ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ส่งคำเชิญล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<bool> acceptEmployeeInvitation(String token, String professionId) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.acceptEmployeeInvitation(token);
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadEmployeeInvitations(professionId);
+        await loadEmployees(professionId);
+        return true;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ยอมรับคำเชิญล้มเหลว',
+        );
+        return false;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] acceptEmployeeInvitation ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ยอมรับคำเชิญล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> rejectEmployeeInvitation(String token, String professionId) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.rejectEmployeeInvitation(token);
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadEmployeeInvitations(professionId);
+        return true;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ปฏิเสธคำเชิญล้มเหลว',
+        );
+        return false;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] rejectEmployeeInvitation ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ปฏิเสธคำเชิญล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<bool> ensureOwnerAsEmployee(String professionId) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.ensureOwnerAsEmployee(professionId);
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadEmployees(professionId);
+        return true;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'สร้างพนักงานเจ้าของล้มเหลว',
+        );
+        return false;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] ensureOwnerAsEmployee ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'สร้างพนักงานเจ้าของล้มเหลว: $e');
       return false;
     }
   }

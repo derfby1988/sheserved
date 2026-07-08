@@ -21,6 +21,7 @@ class ErpMiniSidebar extends ConsumerStatefulWidget {
 class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
   static const double _expandedWidth = 240;
   static const double _collapsedWidth = 60;
+  bool _isPromoCollapsed = true;
 
   String _getProfessionId() {
     return AuthService.instance.currentUser?.professionId ?? '';
@@ -270,7 +271,11 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
                     ],
                   ),
                 ),
-                showExpandedContent ? _buildExpandedBottomCard(isDark) : _buildCollapsedBottomButton(isDark),
+                showExpandedContent
+                    ? (_isPromoCollapsed
+                        ? _buildCollapsedPromoRow(isDark, activeColor)
+                        : _buildExpandedBottomCard(isDark))
+                    : _buildCollapsedBottomButton(isDark),
               ],
             ),
             );
@@ -428,6 +433,24 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setState(() => _isPromoCollapsed = true),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 18,
+                      color: isDark ? Colors.white54 : const Color(0xFF7A8794),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Container(
               width: 48,
               height: 48,
@@ -484,6 +507,47 @@ class _ErpMiniSidebarState extends ConsumerState<ErpMiniSidebar> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedPromoRow(bool isDark, Color activeColor) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _isPromoCollapsed = false),
+          child: Container(
+            height: 38,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFCCFF00), Color(0xFF88CC00)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.auto_awesome, size: 16, color: Colors.black87),
+                const SizedBox(width: 6),
+                Text(
+                  'Upgrade to AI',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1D2733),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.keyboard_arrow_up, size: 14, color: Color(0xFF1D2733)),
+              ],
+            ),
+          ),
         ),
       ),
     );

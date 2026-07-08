@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_four_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class LabResultsPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -141,7 +142,11 @@ class _LabResultCard extends StatelessWidget {
                 ],
                 const Spacer(),
                 Text(
-                  createdAt.isNotEmpty ? createdAt.substring(0, 10) : '-',
+                  createdAt.isNotEmpty
+                      ? (DateTime.tryParse(createdAt) != null
+                          ? ThaiDateUtils.formatShortDateBE(DateTime.parse(createdAt))
+                          : createdAt.substring(0, 10))
+                      : '-',
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               ],

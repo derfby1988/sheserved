@@ -19,6 +19,496 @@
 3. **HRM Activation:** แอดมินเปิด Toggle `has_external_hrm = true`
 4. **Onboarding:** Admin ขององค์กรเข้าถึงระบบ HR และส่งคำเชิญให้ผู้ใช้งานอื่นๆ โดยผู้ถูกเชิญสามารถ Accept หรือ Reject ได้
 
+## หมายเหตุการ implement หน้าเพิ่มพนักงาน (Employee Onboarding Implementation Notes)
+
+> บันทึกจากการตรวจสอบ `lib/features/erp/presentation/pages/employee_list_page.dart` (2026-07-06)
+> หน้าเพิ่มพนักงานปัจจุบันทำงานแบบสร้าง record ตรงๆ ซึ่งไม่สอดคล้องกับ workflow Onboarding ข้างต้น และไม่สอดคล้องกับ `ERP_CORE_ARCHITECTURE.md` ที่กำหนดให้มีสิทธิ์เฉพาะ Owner/ผู้ผ่านการยืนยัน Sheserved
+
+### ปัญหาที่พบ
+
+1. **ไม่มีกระบวนการเชิญ/ยอมรับ**
+   - Workflow กำหนดให้ Admin ส่งคำเชิญ → ผู้ถูกเชิญ Accept/Reject → กลายเป็นพนักงาน
+   - ปัจจุบันกด "บันทึก" แล้วเรียก `createEmployee(data)` สร้าง record ได้เลย โดยไม่เชื่อมโยง `user_id`
+
+2. **ไม่ตรวจสอบสิทธิ์ผู้สร้าง**
+   - `ERP_CORE_ARCHITECTURE.md` กำหนดให้มีสิทธิ์เฉพาะ Owner/ผู้ผ่านการยืนยัน Sheserved
+   - `ErpDashboardShell` ตรวจแค่ `user.isProvider` ไม่ได้ตรวจ owner/admin/permission ระดับองค์กร
+   - ระบบ RBAC (`organization_roles`, `employee_roles`, `role_module_permissions`) มีอยู่แล้วแต่ไม่ถูกใช้ในหน้านี้
+
+3. **ไม่บังคับให้เป็นสมาชิก Sheserved**
+   - Migration `20260609215000_create_employees_table.sql` กำหนด `user_id UUID NOT NULL REFERENCES public.users(id)`
+   - แต่ dialog ไม่มีช่องเลือก user และ `createEmployee` ไม่ส่ง `user_id` อาจทำให้ insert ล้มเหลว
+
+4. **ฟิลด์ในฟอร์มไม่ตรง schema**
+   - Schema ในแผนมี `first_name`, `last_name`, `id_card_number`, `date_of_birth`, `hire_date`, `termination_date`, `position`, `license_number`, `license_expiry`, `emergency_contact_*`
+   - ฟอร์มปัจจุบันมีแค่ `full_name`, `employee_code`, `department`, `job_title`, `salary`, `base_salary`, `commission_rate`, `provident_fund_rate`, `personal_allowance`, `tax_deductible_expenses`, `bank` และไม่มี `email`/`phone` ทั้งที่ model รองรับ
+
+5. **RLS อ่อนเกินไป**
+   - `employees_modify` policy ใช้ `(true)` ทำให้ใครก็ read/write ได้
+   - ไม่สอดคล้องกับหลักการ scope ข้อมูลภายใน `profession_id` และการควบคุมสิทธิ์ตาม owner/admin
+
+### ข้อเสนอแนะ (จัดเรียงตาม Phase)
+
+#### ไฟล์ที่เกี่ยวข้อง (References)
+
+| ไฟล์ | หน้าที่ |
+|------|---------|
+| `supabase/migrations/20260609215000_create_employees_table.sql` | Schema หลัก employees |
+| `supabase/migrations/20260706120000_employees_rls_and_audit.sql` | ปรับ RLS policy + audit trigger |
+| `supabase/migrations/20260706130000_employee_invitations_and_owner_auto_create.sql` | Invite table + RPC + owner auto-create |
+| `lib/ERP Dashboard/erp_dashboard_shell.dart` | เพิ่ม permission check ระดับองค์กร |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | เปลี่ยนเป็น invite flow + อัปเดตฟิลด์ |
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม logic invite/accept/owner |
+| `lib/features/erp/data/models/employee.dart` | เพิ่ม `branchId` |
+| `lib/features/erp/data/models/employee_invitation.dart` | Model สำหรับคำเชิญ |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | State management สำหรับ invite flow |
+
+#### Phase 1 — Security & Authorization (High priority, Low risk)
+
+1. **ปรับ RLS** ✅ Done
+   - เปลี่ยน `employees_modify` ให้ตรวจสอบ owner/admin/employee ของ profession นั้นๆ
+   - ไม่ควรใช้ `(true)` สำหรับ production
+   - **ความเสี่ยง:** ถ้าปรับ RLS ให้เข้มขึ้น อาจกระทบการทำงานปัจจุบัน — ต้องมี migration เพิ่ม default role ให้ existing users ก่อนเปลี่ยน policy
+   - **Fallback:** ควรมี mode สำหรับ development ที่ยังใช้ RLS `(true)` ได้ผ่าน environment variable หรือ config
+
+2. **ตรวจสอบสิทธิ์ก่อนเปิดหน้า/แสดงปุ่ม** ✅ Done
+   - ใน `EmployeeListPage` ตรวจว่า current user เป็น owner/admin ของ `profession_id` หรือมี `employee_roles` ที่มี permission จัดการ HR
+   - ซ่อน FAB สร้างพนักงานถ้าไม่มีสิทธิ์
+
+3. **ใช้ RBAC ที่มีอยู่** ✅ Done
+   - เชื่อม `employee_roles` กับหน้าจัดการพนักงาน เพื่อให้สามารถมอบสิทธิ์ HR Edit/View ได้
+
+4. **การระบุ `created_by` และ Audit Trail** ✅ Done
+   - Schema มี `created_by UUID` และ `updated_by UUID` แต่ฟอร์มปัจจุบันไม่ได้ส่งค่าเหล่านี้
+   - ควรกำหนด `created_by` = current user ID อัตโนมัติใน repository layer ทุกครั้งที่ create/update
+   - เพื่อให้ตรวจสอบย้อนหลังได้ว่าใครเป็นคนสร้าง/แก้ไขข้อมูลพนักงาน
+
+#### Phase 2 — Schema & Form Alignment (Medium priority)
+
+5. **อัปเดตฟิลด์ให้สอดคล้อง schema** ✅ Done
+   - เพิ่ม `email`, `phone`, `hire_date` ในฟอร์มแล้ว
+   - `id_card_number` ยังไม่เพิ่ม (รอ Phase 3 เมื่อเชื่อมกับ user profile)
+   - ทำให้ชัดเจนว่า `salary` (legacy) กับ `base_salary` ต่างกันอย่างไร — คงทั้งสองฟิลด์ไว้ `salary` = ค่าจ้างรวม, `base_salary` = เงินเดือนพื้นฐานก่อน OT/commission
+
+6. **ความชัดเจนเรื่อง schema ที่แตกต่างกัน** ✅ Resolved
+   - Migration `20260609215000_create_employees_table.sql` ใช้ `full_name TEXT NOT NULL` — คงไว้เป็น source of truth
+   - Schema ในแผนที่ใช้ `first_name`/`last_name` จะถูกอัปเดตให้ใช้ `full_name` ตรงกับ migration จริง
+   - ไม่เพิ่ม `first_name`/`last_name` columns เพื่อหลีกเลี่ยงความซับซ้อน
+
+7. **ความชัดเจนของ `erp_user_id` ใน Schema** ✅ Resolved
+   - `erp_user_id` ไม่มีใน migration จริง — เป็นเพียงการออกแบบในแผนเท่านั้น
+   - ใช้ `user_id` เป็นหลักในการเชื่อมโยงกับ `public.users` (สมาชิก Sheserved)
+   - ลบ `erp_user_id` ออกจากแผนเพื่อความชัดเจน
+
+8. **การสนับสนุน Multi-Branch Assignment** ✅ Done (Single branch)
+   - เพิ่มการเลือกสาขาในฟอร์มแล้ว (dropdown จาก `organization_branches`)
+   - `Employee` model มี `branchId` แล้ว
+   - การมอบหมายหลายสาขาผ่าน `employee_branches` junction table ยังไม่ implement (รอ Phase 3)
+
+#### Phase 3 — Invite-Based Onboarding (High priority, High complexity)
+
+9. **การกำหนดพนักงานคนแรก (First Employee / Owner Flow)** ✅ Done
+   - เมื่อองค์กรได้รับการอนุมัติจาก Sheserved และ `has_external_hrm = true` ผู้ที่เป็น Owner ควรถูกสร้างเป็น `employees` record อัตโนมัติพร้อม `user_id` ของตนเอง
+   - ไม่ต้องผ่าน invite flow เพราะ Owner คือผู้ขอสร้าง Profession อยู่แล้ว
+   - สร้าง RPC `ensure_owner_as_employee(p_profession_id)` และปุ่ม "สร้างพนักงานเจ้าของ" ในหน้าพนักงาน
+   - ในอนาคตควรเรียก RPC นี้ อัตโนมัติ ตอน HRM Activation (Step 3)
+
+10. **เปลี่ยนเป็น invite-based flow** ✅ Done
+    - สร้าง `employee_invitations` table พร้อม RPC:
+      - `invite_employee(...)` — สร้างคำเชิญ
+      - `accept_employee_invitation(token)` — สร้าง `employees` record หลังยอมรับ
+      - `reject_employee_invitation(token)` — ปฏิเสธ/ยกเลิกคำเชิญ
+      - `get_available_users_for_invite(profession_id)` — ค้นหาสมาชิก Sheserved ที่ยังไม่ใช่พนักงาน
+    - หน้า `EmployeeListPage` แบ่งเป็น 2 tabs: "พนักงาน" และ "คำเชิญ"
+    - FAB เปลี่ยนเป็น "เชิญพนักงาน" เปิด dialog เลือกสมาชิก Sheserved หรือเชิญใหม่ผ่าน email/phone
+    - การแก้ไขข้อมูลพนักงานที่มีอยู่ยังคงใช้งานได้
+
+11. **Backward Compatibility ระหว่างเปลี่ยน Phase** ✅ Done
+    - `employees.user_id` เปลี่ยนเป็น nullable รองรับข้อมูลเดิมที่ไม่มีการเชื่อมโยง
+    - มี partial unique index `(profession_id, user_id) WHERE user_id IS NOT NULL` ป้องกันพนักงานซ้ำต่อ user
+
+## Flow ผู้ใช้งานคนแรกขององค์กร (First User / Owner Onboarding Flow)
+
+> บันทึกจากการตรวจสอบและแก้ไขปัญหา (2026-07-07)
+> ผู้ใช้งานคนแรกขององค์กรต้องได้รับสิทธิ์ `owner` หรือบทบาทที่มี `hr` permission ระดับ 2+ ก่อนจึงจะเข้าหน้าจัดการพนักงานได้
+
+### Flow ปกติ (Happy Path)
+
+```
+1. ผู้ใช้ลงทะเบียน Provider ผ่านแอป
+   → สร้างใบสมัคร (registration_applications)
+   → สถานะ: รออนุมัติ (pending)
+   → ระบุว่าขอเป็นเจ้าขององค์กร
+
+2. ผู้ดูแลระบบอนุมัติใบสมัคร
+   → ระบบอัปเดตสถานะเป็น "อนุมัติแล้ว"
+   → ผูกผู้ใช้กับวิชาชีพ (profession)
+   → สร้างโปรไฟล์ผู้ให้บริการและใบอนุญาต
+   → มอบบทบาท "เจ้าขององค์กร" ให้ผู้ใช้ (ผ่าน DB trigger + repository fallback)
+   → เปิดใช้งาน feature flags เริ่มต้น
+
+3. ผู้ใช้เปิดหน้าจัดการพนักงาน
+   → ระบบโหลดบทบาทและสิทธิ์ของผู้ใช้
+   → ตรวจสอบสิทธิ์ module HR
+   → ได้สิทธิ์ระดับ Full (3)
+   → แสดงหน้าจัดการพนักงานเต็มรูปแบบ
+     · แท็บ พนักงาน / คำเชิญ
+     · ปุ่ม เชิญพนักงาน
+
+4. ยังไม่มีพนักงานในระบบ
+   → แสดงปุ่ม "สร้างพนักงานเจ้าของ"
+   → ผู้ใช้กดปุ่ม
+   → ระบบสร้างข้อมูลพนักงานให้เจ้าขององค์กรอัตโนมัติ
+```
+
+### การสร้างใบสมัครผู้ดูแลระบบคนแรกผ่าน UI
+
+ผู้ใช้สามารถสร้างใบสมัครที่ขอเป็น Owner ได้จากหน้า **Profile** โดยเปลี่ยนอาชีพ (Profession) ที่ต้องการ Verification:
+
+1. เปิดหน้า **Profile** แล้วกดเปลี่ยนอาชีพ
+2. เลือกอาชีพที่เปิด toggle **"ต้องตรวจสอบก่อนใช้งาน"** ใน dialog แก้ไขอาชีพ
+3. จะปรากฏ dialog ยืนยันการเปลี่ยนอาชีพ
+4. ติ๊ก checkbox:
+   > **"ต้องการสร้างและจดทะเบียนองค์กรใหม่ (สมัครเป็นผู้ดูแลระบบคนแรก/Owner)"**
+5. กด "ดำเนินการต่อ"
+
+ระบบจะสร้าง `registration_applications` พร้อม `registration_data.is_owner_request = 'true'` และตั้งสถานะ `pending`
+
+#### เงื่อนไขที่ checkbox Owner จะปรากฏ
+
+Checkbox ขึ้นเฉพาะอาชีพที่อยู่ในหมวดหนึ่งในสามนี้ `@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/profile/presentation/pages/profile_page.dart:1439-1441`:
+
+- หมวดหมู่ **Provider** (`UserCategory.providerId`)
+- อาชีพ **Clinic** (`Profession.clinicProfessionId`)
+- อาชีพ **Expert** (`Profession.expertProfessionId`)
+
+นอกจากนี้อาชีพนั้นต้องเปิด toggle **"ต้องตรวจสอบก่อนใช้งาน"** ด้วย มิเช่นนั้น dialog จะไม่ขึ้นและไม่มีโอกาสเลือก Owner
+
+### การติดตามสถานะการอนุมัติผู้ดูแล ERP (Owner Onboarding Tracking)
+
+หน้า `/admin/applications` มีแท็บ **"สถานะการอนุมัติผู้ดูแล ERP"** แสดงความคืบหน้า 4 ขั้นตอน:
+
+1. ส่งใบสมัคร (รอตรวจสอบ)
+2. Admin อนุมัติใบสมัคร
+3. ระบบมอบสิทธิ์ Owner + เปิด Feature Flags
+4. ผู้ใช้สร้างพนักงานเจ้าของสำเร็จ
+
+แท็บนี้แสดงเฉพาะใบสมัครที่ `registration_data.is_owner_request = 'true'` เรียงเคสที่ "ค้าง" ไว้บนสุด และแสดง badge จำนวนเคสที่ค้าง
+
+### สาเหตุที่อาจทำให้ Flow นี้พัง
+
+| สถานการณ์ | ผลกระทบ |
+|---|---|
+| ผู้ใช้ถูกสร้างจาก seed/เครื่องมือ admin โดยตรง | ไม่มี `registration_applications` → trigger ไม่ทำงาน → ไม่มี `employee_roles` |
+| ผู้ใช้เก่าจากระบบ `user_group_roles` ก่อน ERP Phase 0 | ไม่มี `employee_roles` → ไม่สามารถตรวจสอบสิทธิ์ HR ได้ |
+| อนุมัติใบสมัครแล้วแต่ไม่ได้ระบุ `is_owner_request` | ไม่ได้รับบทบาท owner อัตโนมัติ |
+| RPC `ensure_owner_as_employee` หา owner ไม่เจอ | ปุ่ม "สร้างพนักงานเจ้าของ" แสดง error |
+| **ผู้ใช้เปลี่ยนอาชีพหนีก่อนใบสมัครเดิมถูกอนุมัติ** | **ใบสมัครเดิม (pending, is_owner_request=true) ค้างในระบบ ถ้าแอดมินอนุมัติภายหลังจะเด้ง `users.profession_id` กลับไปเป็นอาชีพเดิมโดยไม่ตั้งใจ พร้อมมอบสิทธิ์ Owner ที่ผู้ใช้ไม่ต้องการแล้ว** |
+
+> **หมายเหตุ:** ปัจจุบัน (2026-07-07) ระบบยังไม่มีสถานะ `cancelled`/`withdrawn` และไม่มี UI ให้ผู้ใช้ยกเลิกใบสมัครเอง การเปลี่ยนอาชีพไปเป็นอาชีพอื่น **ไม่ได้ยกเลิกใบสมัครเดิม** เป็นเพียงการสร้างสถานะปัจจุบันทับ ใบสมัครเก่ายังคง `pending` ค้างไว้ในตาราง `registration_applications` — ดูแผนแก้ไขที่หัวข้อถัดไป
+
+---
+
+## แผน: ยกเลิก/ถอนใบสมัคร Owner (Cancel/Withdraw Application Plan)
+
+> สถานะ: 📝 วางแผนไว้ ยังไม่ implement (2026-07-07)
+> อัปเดตแผนตามข้อเสนอแนะปรับปรุง (2026-07-07)
+
+### เป้าหมาย
+1. ให้ผู้ใช้ยกเลิกใบสมัครของตัวเองที่ยัง `pending` ได้ผ่าน UI
+2. ป้องกันใบสมัครเก่าค้างในระบบเมื่อผู้ใช้เปลี่ยนอาชีพไปเป็นอาชีพอื่นก่อนใบสมัครถูกอนุมัติ
+3. ป้องกันการอนุมัติใบสมัครที่ผู้ใช้ไม่ต้องการแล้วโดยไม่ตั้งใจ
+4. ป้องกันช่องโหว่จาก `approveApplication` ซ้ำใน 2 repository
+
+### 1. Database Changes
+
+```sql
+-- เพิ่มสถานะ cancelled ใน CHECK constraint
+ALTER TABLE registration_applications
+  DROP CONSTRAINT IF EXISTS registration_applications_status_check;
+
+ALTER TABLE registration_applications
+  ADD CONSTRAINT registration_applications_status_check
+  CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'));
+
+-- เพิ่ม audit trail สำหรับการยกเลิก
+ALTER TABLE registration_applications
+  ADD COLUMN IF NOT EXISTS cancelled_by TEXT,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+-- ป้องกันผู้ใช้สร้าง pending application ซ้ำมากกว่า 1 ใบพร้อมกัน
+CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_applications_one_pending_per_user
+  ON registration_applications (user_id)
+  WHERE status = 'pending';
+```
+
+> **หมายเหตุ:** unique index ทำให้การสร้างใบสมัครใหม่ขณะที่มีใบเก่า `pending` อยู่ล้มเหลวทันที (constraint violation) แต่จะไม่เป็นปัญหาเพราะ DB trigger (ข้อ 2) จะยกเลิกใบเก่าก่อน insert ใบใหม่เสมอ
+
+### 2. DB Trigger — Auto-Cancel เมื่อเปลี่ยนอาชีพ
+
+**แก้ปัญหา:** Auto-cancel ใน Flutter ไม่ปลอดภัย (crash = ใบค้าง) → ย้ายไป DB trigger
+
+```sql
+-- Trigger ยกเลิกใบสมัคร pending อัตโนมัติเมื่อ user เปลี่ยนอาชีพ
+CREATE OR REPLACE FUNCTION auto_cancel_pending_applications()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.profession_id IS DISTINCT FROM OLD.profession_id THEN
+    UPDATE registration_applications
+    SET status = 'cancelled',
+        cancelled_by = 'auto_profession_change',
+        cancelled_at = now(),
+        updated_at = now()
+    WHERE user_id = NEW.id AND status = 'pending';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_auto_cancel_pending_apps ON users;
+CREATE TRIGGER trg_auto_cancel_pending_apps
+  AFTER UPDATE OF profession_id ON users
+  FOR EACH ROW EXECUTE FUNCTION auto_cancel_pending_applications();
+```
+
+**ประโยชน์:**
+- ไม่ต้องแก้ `_onProfessionSelected` ใน Flutter — trigger ทำงานอัตโนมัติ
+- ปลอดภัยจาก crash/network failure
+- ทำงานเสมอแม้ user เปลี่ยนอาชีพผ่าน admin tool หรือ seed data
+
+### 3. แก้ DB Trigger อนุมัติใบสมัคร — ป้องกัน race condition
+
+**แก้ปัญหา:** Trigger `on_registration_application_approved_trigger` ไม่ตรวจ `cancelled` → อนุมัติใบที่ถูกยกเลิกได้
+
+แก้ใน `@/Users/apisekpanyakong/ProjectFlutter/sheserved/supabase/migrations/20260613150000_organization_first_owner_trigger.sql:12`:
+
+```sql
+-- เดิม: IF NEW.status = 'approved' AND (OLD.status IS NULL OR OLD.status != 'approved') THEN
+-- ใหม่:
+IF NEW.status = 'approved' AND OLD.status = 'pending' THEN
+```
+
+**ประโยชน์:** รับประกัน trigger ทำงานเฉพาะจาก `pending → approved` เท่านั้น ไม่ทำงานจาก `cancelled → approved`
+
+### 4. Backend Logic — เพิ่ม method ยกเลิกใบสมัคร
+
+**`RegistrationRepository`** (`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/data/repositories/registration_repository.dart`):
+
+```dart
+/// ผู้ใช้ยกเลิกใบสมัครของตัวเอง (ต้องเป็น pending เท่านั้น)
+Future<void> cancelApplication(String applicationId, String userId) async {
+  final now = DateTime.now().toIso8601String();
+  await _client
+      .from('registration_applications')
+      .update({
+        'status': 'cancelled',
+        'cancelled_by': 'user',
+        'cancelled_at': now,
+        'updated_at': now,
+      })
+      .eq('id', applicationId)
+      .eq('user_id', userId)       // กันยกเลิกใบสมัครคนอื่น
+      .eq('status', 'pending');    // กันยกเลิกใบที่อนุมัติ/ปฏิเสธไปแล้ว
+}
+```
+
+> **หมายเหตุ:** ไม่ต้องเพิ่มใน `ProfessionRepository` เพราะ auto-cancel ทำใน DB trigger แล้ว
+
+### 5. แก้ `approveApplication` — ตรวจ profession_id ปัจจุบัน
+
+**แก้ปัญหา:** `approveApplication` เขียนทับ `users.profession_id` โดยไม่ตรวจสถานะปัจจุบัน
+
+แก้ใน `@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/data/repositories/registration_repository.dart:57-62`:
+
+```dart
+// 1. Update application status (ต้องเป็น pending เท่านั้น)
+final updated = await _client.from('registration_applications').update({
+  'status': 'approved',
+  'reviewed_by': reviewedBy,
+  'reviewed_at': now,
+  'updated_at': now,
+}).eq('id', application.id)
+ .eq('status', 'pending')  // ← เพิ่ม guard กัน race condition
+ .select()
+ .single();
+
+if (updated == null) {
+  throw Exception('ใบสมัครไม่อยู่ในสถานะ pending หรือถูกยกเลิกไปแล้ว');
+}
+
+// 2. ตรวจสอบว่า user ยังอยู่ในอาชีพนี้หรือไม่
+final userRes = await _client.from('users')
+    .select('profession_id').eq('id', application.oderId).single();
+if (userRes['profession_id'] != application.professionId) {
+  // user เปลี่ยนอาชีพไปแล้ว → auto-cancel และแจ้ง admin
+  await _client.from('registration_applications')
+      .update({'status': 'cancelled', 'updated_at': now})
+      .eq('id', application.id);
+  throw Exception('ผู้สมัครเปลี่ยนอาชีพไปแล้ว ใบสมัครนี้ถูกยกเลิกอัตโนมัติ');
+}
+
+// 3. Update user's profession and verification status
+await _client.from('users').update({
+  'profession_id': application.professionId,
+  'verification_status': 'verified',
+  'updated_at': now,
+}).eq('id', application.oderId);
+```
+
+**ประโยชน์:** ป้องกันการเด้งอาชีพผู้ใช้โดยไม่ตั้งใจ
+
+### 6. รวม `approveApplication` ให้เป็นที่เดียว
+
+**แก้ปัญหา:** มี `approveApplication` ซ้ำใน 2 repository → ช่องโหว่ผ่านอีกทาง
+
+**ตัดสินใจ:** ให้ `ProfessionRepository.approveApplication` เป็น wrapper ที่เรียก `RegistrationRepository.approveApplication` แทน หรือ mark เป็น `@deprecated` และให้แอปเรียกผ่าน `RegistrationRepository` เท่านั้น
+
+```dart
+// ใน ProfessionRepository
+@Deprecated('ใช้ RegistrationRepository.approveApplication แทน')
+Future<void> approveApplication(String applicationId, {...}) async {
+  final regRepo = RegistrationRepository(_client);
+  final app = await getApplicationById(applicationId);
+  if (app != null) {
+    await regRepo.approveApplication(app, reviewedBy: reviewedBy);
+  }
+}
+```
+
+### 7. UI — ปุ่มยกเลิกใบสมัครในหน้า Profile
+
+เพิ่ม section ใหม่ในหน้า Profile (แสดงเมื่อ `_user.verificationStatus == pending` และมี `registration_applications` ที่ `status = pending`):
+
+```
+┌─────────────────────────────────────┐
+│ ใบสมัครของคุณกำลังรอตรวจสอบ           │
+│ อาชีพ: คลินิก · สมัครเมื่อ 07/07/2026  │
+│ [ยกเลิกใบสมัคร]                       │
+└─────────────────────────────────────┘
+```
+
+- กด "ยกเลิกใบสมัคร" → dialog ยืนยัน → เรียก `cancelApplication`
+- สำเร็จ → รีเฟรช `_loadProfile()` และแสดง SnackBar ยืนยัน
+- ปุ่มนี้ควรอยู่ในหน้า Profile ใกล้กับส่วนแสดงอาชีพปัจจุบัน
+
+> **หมายเหตุ:** แม้ไม่มีปุ่มนี้ user ก็สามารถยกเลิกได้โดยเปลี่ยนอาชีพไปอาชีพอื่น (trigger จะ auto-cancel) แต่ปุ่มช่วยให้ user ยกเลิกโดยไม่ต้องเปลี่ยนอาชีพ
+
+### 8. Admin Side — ป้องกันอนุมัติใบสมัครที่ถูกยกเลิก
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/presentation/pages/application_review_page.dart`:
+
+- เพิ่ม tab/filter แสดงใบสมัครที่ `status = cancelled` แยกจาก `rejected` (label: **"ยกเลิกแล้ว"**)
+- แสดง `cancelled_by` และ `cancelled_at` ในรายละเอียดเพื่อ audit
+
+### 9. อัปเดต Owner Onboarding Tracking
+
+`@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/admin/models/owner_onboarding_tracking.dart`:
+
+- เพิ่มเช็ค `isCancelled` (status == cancelled) แยกจาก `isRejected`
+- แสดง badge **"ยกเลิกโดยผู้สมัคร"** หรือ **"ยกเลิกอัตโนมัติ (เปลี่ยนอาชีพ)"** ตาม `cancelled_by`
+
+### Checklist การ Implement แบ่งตาม Phase
+
+#### Phase A — แก้ Root Cause ป้องกันข้อมูลเสียหาย (Critical, ทำก่อน)
+> เป้าหมาย: ปิดช่องโหว่ที่ทำให้แอดมินอนุมัติใบสมัครที่ผู้ใช้ไม่ต้องการแล้วโดยไม่ตั้งใจ
+
+- [x] Migration: เพิ่มสถานะ `cancelled` ใน CHECK constraint ของ `registration_applications`
+- [x] Migration: เพิ่มคอลัมน์ `cancelled_by` + `cancelled_at` สำหรับ audit
+- [x] Migration: เพิ่ม unique partial index `(user_id) WHERE status = 'pending'` กันสร้าง pending ซ้ำ
+- [x] Migration: สร้าง DB trigger `auto_cancel_pending_applications` บน `users.profession_id`
+- [x] Migration: แก้ trigger `on_registration_application_approved_trigger` เพิ่มเงื่อนไข `OLD.status = 'pending'`
+- [x] Race-condition guard: แก้ `RegistrationRepository.approveApplication` เพิ่ม `.eq('status', 'pending')` + ตรวจ profession_id ปัจจุบัน
+- [x] Deprecate/รวม `ProfessionRepository.approveApplication` ให้เรียกผ่าน `RegistrationRepository`
+
+#### Phase B — Backend Logic สำหรับยกเลิกใบสมัคร (High priority)
+> เป้าหมาย: มี method รองรับการยกเลิก สำหรับ UI ปุ่มยกเลิกใน Profile
+
+- [x] `RegistrationRepository.cancelApplication(applicationId, userId)`
+
+#### Phase C — UI ฝั่งผู้ใช้ (Medium priority)
+> เป้าหมาย: ให้ผู้ใช้เห็นและยกเลิกใบสมัครได้เองโดยไม่ต้องพึ่ง auto-cancel เพียงอย่างเดียว
+
+- [x] Section แสดงใบสมัคร pending ในหน้า Profile พร้อมปุ่ม "ยกเลิกใบสมัคร"
+- [x] Dialog ยืนยันก่อนยกเลิก + SnackBar แจ้งผลลัพธ์
+
+#### Phase D — UI ฝั่ง Admin & Tracking (Medium-Low priority)
+> เป้าหมาย: ให้แอดมินแยกแยะเคสที่ถูกยกเลิกออกจากเคสที่ถูกปฏิเสธ/รออนุมัติ
+
+- [x] Filter/tab "ยกเลิกแล้ว" ใน `ApplicationReviewPage`
+- [x] แสดง `cancelled_by` + `cancelled_at` ในรายละเอียดเคส
+- [x] อัปเดต `OwnerOnboardingTracking` model รองรับ `isCancelled` + badge แยกตาม `cancelled_by`
+
+#### Phase E — Testing (ทำคู่กับทุก Phase)
+
+- [ ] ทดสอบ: สมัคร Owner → เปลี่ยนอาชีพก่อนอนุมัติ → ยืนยันใบเก่าเป็น `cancelled` และไม่ถูกอนุมัติซ้ำ
+- [ ] ทดสอบ: ยกเลิกใบสมัครผ่านปุ่มใน Profile โดยตรง
+- [ ] ทดสอบ: แอดมินพยายามอนุมัติใบที่เพิ่งถูกยกเลิก (race condition) ต้องได้ error ไม่ใช่ silent success
+- [ ] ทดสอบ: trigger auto-cancel ทำงานเมื่อเปลี่ยนอาชีพผ่าน admin tool/seed data
+
+### บันทึกปัญหาที่พบระหว่าง Testing (Phase E) และวิธีแก้
+
+ระหว่างทดสอบ flow "เปลี่ยนอาชีพ → สร้างใบสมัครใหม่" พบ error เป็นลำดับชั้น 3 ข้อ ต้องแก้ทีละชั้นจึงจะผ่านได้ครบ บันทึกไว้เพื่อป้องกันการ debug ซ้ำ
+
+#### 1. `PGRST204: Could not find the 'user_type' column of 'users' in the schema cache`
+
+- **สาเหตุ:** ตาราง `users` ไม่มี column `user_type` อีกต่อไป (ถูกแทนด้วย `role` ตั้งแต่ migration `20260622190000_add_user_role_column.sql`) แต่ `_onProfessionSelected` ยังส่ง `'user_type': newUserType.name` ใน `UserRepository.updateUser()`
+- **วิธีตรวจสอบ:** ดู `UserModel.toJson()` เขียนแค่ `'role'` ไม่เขียน `'user_type'` และ `UserModel.fromJson()` อ่าน `user_type` แบบ null-safe — เป็นตัวบ่งชี้ว่า column ถูกเลิกใช้
+- **วิธีแก้:** ใน `@/Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/profile/presentation/pages/profile_page.dart` เปลี่ยน update ให้ใช้ column `role` แทน:
+  - consumer profession → `'role': 'consumer'`
+  - อาชีพอื่น → `'role': 'provider'`
+  - ลบ `newUserType` local variable และ `_deriveUserTypeFromProfession()` ที่ไม่ถูกใช้แล้ว
+- **หลักการ:** ต้อง sync กับ schema จริง ไม่ใช่ตามชื่อ enum ใน Dart อย่างเดียว
+
+#### 2. `42P01: relation "professions" does not exist`
+
+- **สาเหตุ:** `sync_role_from_profession()` trigger (`@/Users/apisekpanyakong/ProjectFlutter/sheserved/supabase/migrations/20260624090600_add_role_sync_triggers.sql`) มี `SET search_path = ''` แต่อ้าง `FROM professions` แบบไม่ qualify schema เมื่อ update `profession_id` ผ่าน PostgREST ทำให้ `search_path` ว่าง ตารางจึงหาไม่เจอ
+- **ทำไมเพิ่งเจอ:** ก่อนหน้านี้ update ล้มเหลวที่ PostgREST ก่อนถึง DB (PGRST204) เมื่อแก้ข้อ 1 แล้ว update ไปถึง DB จริง trigger นี้จึง fire แล้ว error
+- **วิธีแก้:** สร้าง migration ให้ `CREATE OR REPLACE FUNCTION public.sync_role_from_profession()` แล้วเปลี่ยน `FROM professions` เป็น `FROM public.professions` ท้าย migration ใส่ `NOTIFY pgrst, 'reload schema';`
+- **หลักการ:** ทุก function ที่ `SET search_path = ''` ต้อง qualify ชื่อตารางด้วย schema (`public.table_name`) เสมอ
+
+#### 3. `42501: new row violates row-level security policy for table "registration_applications"`
+
+- **สาเหตุ:** ตาราง `registration_applications` เปิด RLS ไว้แต่ไม่มี policy ใดอนุญาต INSERT/UPDATE นอกจากนี้ แอปใช้ custom phone auth (OTP ยังเป็น TODO ใน `otp_service.dart`) ไม่ได้สร้าง Supabase Auth session ดังนั้น `auth.uid()` เป็น null ทำให้ policy แบบ `auth.uid() = user_id` ใช้ไม่ได้
+- **วิธีแก้:** เพิ่ม permissive RLS policies ให้ `registration_applications`:
+  - `SELECT USING (true)`
+  - `INSERT WITH CHECK (true)`
+  - `UPDATE USING (true) WITH CHECK (true)`
+- **ไฟล์:** `supabase/migrations/20260707180000_registration_applications_rls.sql`
+- **หลักการ:** แอปนี้ scope ความปลอดภัยที่ Application Layer (`repository.eq('user_id', userId)`) ไม่ใช่ที่ PostgreSQL RLS จึงต้องใช้ permissive policy คล้ายตาราง `users` ที่มี `SELECT USING (true)` อยู่แล้ว เมื่อเปิด Supabase Auth session จริงในอนาคต ควรเปลี่ยนเป็น `auth.uid() = user_id` ตามที่บันทึกใน `auth_data_guidelines.md`
+
+#### 4. หลักการทั่วไปสำหรับ migration ที่มี DDL
+
+- ท้ายทุก migration ที่แก้ schema ควรมี `NOTIFY pgrst, 'reload schema';` เพื่อป้องกัน PostgREST schema cache ค้าง
+- อย่าสรุปว่า `PGRST204` = schema cache ค้างเสมอ ถ้า reload แล้วยัง error ให้ตรวจสอบว่า column/relation มีอยู่จริงใน schema หรือไม่
+
+#### 5. Empty state แท็บ Admin แสดงข้อความผิด (เช่น แท็บ “ยกเลิกแล้ว” แต่ขึ้น “ยังไม่มีผู้สมัครที่ถูกปฏิเสธ”)
+
+- **สาเหตุหลัก:** แอปรันเวอร์ชั่นเก่าอยู่ (binary ยังไม่มี enum `VerificationStatus.cancelled` หรือโค้ด UI ยังไม่ถูกอัปเดต) ทำให้ `_selectedStatus` ไม่ตรงกับแท็บที่แสดงผล
+- **สาเหตุรอง:** ลำดับแท็บใน `TabBar` ไม่ตรงกับลำดับของ `VerificationStatus.values` เนื่องจาก `ApplicationReviewPage` ใช้ `_tabController.index` เป็น index ของ enum โดยตรง (`VerificationStatus.values[_tabController.index]`)
+- **วิธีแก้:**
+  1. **Hot restart** แอปหลังแก้ไข enum / UI (ไม่ใช่ hot reload เพียงอย่างเดียว) เพื่อให้ Dart binary โหลดค่า enum และ switch case ใหม่
+  2. ตรวจสอบว่าแท็บเรียงตามลำดับ enum เดียวกัน: `รอตรวจสอบ (pending) → อนุมัติแล้ว (approved) → ถูกปฏิเสธ (rejected) → ยกเลิกแล้ว (cancelled) → สถานะการอนุมัติผู้ดูแล ERP`
+  3. หากเพิ่มสถานะใหม่ใน enum ต้องเพิ่ม `case` ใน `_buildStatusBadge`, empty state text, และ icon mapping พร้อมกัน
+- **หลักการ:** อย่าพึ่ง hot reload อย่างเดียวเมื่อเปลี่ยน enum / switch statement / `TabBar` order ให้ hot restart เสมอ และรักษาความสอดคล้องระหว่าง `TabBar` index กับ `VerificationStatus.values`
+
+### วิธีป้องกันปัญหา
+
+1. **Migration ย้อนหลังสำหรับผู้ใช้เก่า**
+   - สร้าง migration ที่ auto-assign `owner` role ให้ user ที่มี `users.profession_id` แต่ยังไม่มี `employee_roles`
+   - หรือ auto-assign ให้กับ user ที่มี `user_categories.is_provider = true`
+
+2. **ปุ่ม "สร้างพนักงานเจ้าของ" ต้องใช้ current user id**
+   - RPC `ensure_owner_as_employee` รับ `p_current_user_id` จาก Flutter โดยตรง
+   - ไม่พึ่ง `app.get_current_user_id()` เพราะแอปไม่ได้ set config นี้ก่อนเรียก RPC
+
+3. **เพิ่ม data integrity check**
+   - ตรวจสอบว่าทุก profession มีผู้ใช้ที่มี `hr` permission ระดับ 2+
+   - แจ้งเตือนหรือ auto-fix ถ้าขาด
+
+4. **ทดสอบ flow คนแรกขององค์กรใน development**
+   - ไม่ควรอาศัย seed data ที่มี `employee_roles` อยู่แล้วเท่านั้น
+   - ต้องทดสอบจากสถานะที่ไม่มี `employee_roles` เพื่อยืนยัน fallback ทำงาน
+
 ## การเชื่อมโยงกับระบบอื่น (Integrations)
 - **POS:** ดึงข้อมูล `served_by` จากออเดอร์มาคำนวณ Commission
 - **Accounting:** ข้อมูล Payroll ส่งไปตั้งเบิกและตัดบัญชีเป็นค่าใช้จ่ายบริษัท ผ่าน Outbox Events

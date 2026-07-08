@@ -8,6 +8,7 @@ import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/payroll_formula_viewer_sheet.dart';
 import '../widgets/payroll_run_create_dialog.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class PayrollPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -344,7 +345,7 @@ class _PayrollRunCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'รอบ: ${run.periodStart.day}/${run.periodStart.month}/${run.periodStart.year} - ${run.periodEnd.day}/${run.periodEnd.month}/${run.periodEnd.year}',
+              'รอบ: ${ThaiDateUtils.formatShortDateBE(run.periodStart)} - ${ThaiDateUtils.formatShortDateBE(run.periodEnd)}',
               style: const TextStyle(color: Colors.grey, fontSize: 12),
             ),
             if (run.status == 'pending_approval' ||

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/notification_provider.dart';
 import '../widgets/glass_card.dart';
 import '../../data/models/dashboard_theme.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class NotificationListPage extends ConsumerStatefulWidget {
   final String? category;
@@ -158,6 +159,6 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
     if (diff.inMinutes < 60) return '${diff.inMinutes} นาทีที่แล้ว';
     if (diff.inHours < 24) return '${diff.inHours} ชม.ที่แล้ว';
     if (diff.inDays < 7) return '${diff.inDays} วันที่แล้ว';
-    return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+    return ThaiDateUtils.formatShortDateBE(dateTime);
   }
 }

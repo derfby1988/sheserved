@@ -367,3 +367,159 @@ State A: Collapsed (56dp)          State B: Expanded (240dp)
 - [ ] ใช้ `LayoutBuilder` เพื่อวัดพื้นที่จริงก่อนแสดง expanded content
 - [ ] ใช้ `ClipRect` + `OverflowBox` ครอบส่วนที่มีขนาดคงที่เพื่อป้องกัน reflow ตอน animation
 - [ ] ทดสอบบนหน้าจอที่มีความละเอียดต่าง ๆ (DPI ต่างกัน) เพราะการปัดเศษพิกเซลอาจทำให้ overflow
+
+---
+
+## 14. Expanded Sidebar Items Hidden — Root Cause & Fix (2026-07-06)
+
+### Problem
+เมื่อขยาย Sidebar (Expanded) แล้วไม่พบ:
+- Sub-menu ใต้ **HR Management** (เงินเดือน, พนักงาน, ตั้งค่า HR)
+- ปุ่ม **ตั้งค่า** ลัดด้านบน
+- ส่วน **Settings** ด้านล่าง (ธีมสี Dashboard, ความโปร่งใส, ตั้งค่าองค์กร, กลับหน้า Home)
+
+### Root Cause
+`showExpandedContent` ถูกกำหนดด้วยเงื่อนไข 2 ตัว:
+
+```dart
+final sidebarWidth = constraints.maxWidth;
+final showExpandedContent = widget.isExpanded && sidebarWidth >= _expandedWidth;
+```
+
+- `_expandedWidth = 240.0`
+- บนอุปกรณ์จริง ค่าความกว้างที่ `LayoutBuilder` รายงานอาจเป็น `239.999...` หรือไม่ถึง `240` เนื่องจาก **pixel rounding / device pixel ratio / SafeArea padding** ทำให้ `sidebarWidth >= _expandedWidth` เป็น `false` ตลอด
+- ผล: ทุกเนื้อหาที่ render ภายใต้ `if (showExpandedContent)` หายไปทั้งหมด
+
+### Solution
+ยกเลิกการเช็คความกว้าง ใช้เฉพาะสถานะ toggle เพราะ container มี width คงที่อยู่แล้ว:
+
+```dart
+// lib/ERP Dashboard/erp_mini_sidebar.dart
+final showExpandedContent = widget.isExpanded;
+```
+
+### Prevention Checklist
+- [ ] ไม่ใช้ `LayoutBuilder` วัด width แล้วเทียบกับค่าคงที่แบบ `>=` เพื่อตัดสินใจแสดงเนื้อหา
+- [ ] ถ้าต้องใช้ width threshold ให้ใช้ช่วง tolerance เช่น `sidebarWidth > _expandedWidth - 10` หรือใช้สัดส่วน
+- [ ] ทดสอบ sidebar บน device จริง ไม่ใช่แค่ emulator
+- [ ] ถ้า container มี width คงที่ (AnimatedContainer กำหนด `width` เอง) ให้ rely บน state ของ toggle
+
+---
+
+## 15. Dashboard Modules Falling Into "ไม่มีกลุ่ม" — Root Cause & Fix
+
+### Problem
+Module ใหม่ที่เพิ่มใน `DashboardModuleLayoutConfig.defaultLayout()` (เช่น `payroll`, `hr_settings`) แสดงอยู่ในกลุ่ม **"ไม่มีกลุ่ม"** แทนที่จะอยู่ในกลุ่ม **บุคคล** ตามที่ default layout กำหนด
+
+### Root Cause
+1. ผู้ใช้มี layout ที่บันทึกไว้ใน `dashboard_theme.module_layout_json` ก่อน module ใหม่ถูกเพิ่ม
+2. หน้า Dashboard เรียก `DashboardModuleLayoutConfig.fromJson(...)` โดยตรง โดยไม่ผ่าน `normalize()`:
+
+```dart
+// lib/ERP Dashboard/erp_dashboard_page.dart
+final layout = theme?.moduleLayoutJson != null
+    ? DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson)
+    : DashboardModuleLayoutConfig.defaultLayout();
+```
+
+3. `_groupModules()` จับ module ที่ไม่ได้อยู่ใน group ใด ๆ โยนเข้า fallback group `ไม่มีกลุ่ม`
+
+### Solution
+1. เพิ่ม `normalize()` ใน `DashboardModuleLayoutConfig` เพื่อ auto-assign module ที่ขาดกลับเข้า default group:
+
+```dart
+// lib/features/erp/data/models/dashboard_module_layout.dart
+DashboardModuleLayoutConfig normalize() {
+  final defaultGroups = defaultLayout().groups;
+  final defaultGroupByModuleId = <String, String>{};
+  for (final def in dashboardModuleDefinitions) {
+    defaultGroupByModuleId[def.id] = def.defaultGroupId;
+  }
+
+  final nextGroups = defaultGroups.map((defaultGroup) {
+    final existingGroup = groupById(defaultGroup.id);
+    final existingModules = existingGroup?.moduleIds.toSet() ?? <String>{};
+    final normalizedModules = defaultGroup.moduleIds.toList();
+
+    // ย้าย module ที่ default อยู่กลุ่มนี้ แต่ถูกบันทึกไว้ที่อื่น กลับมาที่นี่
+    for (final moduleId in defaultGroup.moduleIds) {
+      if (defaultGroupByModuleId[moduleId] == defaultGroup.id) {
+        if (!normalizedModules.contains(moduleId)) {
+          normalizedModules.add(moduleId);
+        }
+      }
+    }
+
+    // เก็บ module ที่ user จัดวางไว้ในกลุ่มนี้ (แต่ไม่ใช่ default) ไว้ก่อน
+    for (final moduleId in existingModules) {
+      if (!normalizedModules.contains(moduleId) &&
+          groupForModule(moduleId)?.id == defaultGroup.id) {
+        normalizedModules.add(moduleId);
+      }
+    }
+
+    return defaultGroup.copyWith(moduleIds: normalizedModules);
+  }).toList();
+
+  return DashboardModuleLayoutConfig(groups: nextGroups);
+}
+```
+
+2. เรียก `.normalize()` ทุกจุดที่โหลด layout จาก database:
+
+```dart
+// lib/ERP Dashboard/erp_dashboard_page.dart
+final layout = theme?.moduleLayoutJson != null
+    ? DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson).normalize()
+    : DashboardModuleLayoutConfig.defaultLayout();
+```
+
+```dart
+// lib/features/erp/presentation/providers/dashboard_theme_provider.dart
+DashboardModuleLayoutConfig get moduleLayout {
+  final theme = state.theme;
+  if (theme?.moduleLayoutJson == null) {
+    return DashboardModuleLayoutConfig.defaultLayout();
+  }
+  return DashboardModuleLayoutConfig.fromJson(theme!.moduleLayoutJson).normalize();
+}
+```
+
+### Prevention Checklist
+- [ ] ทุกการเรียก `fromJson` ของ module layout ต้องผ่าน `normalize()` ก่อนใช้
+- [ ] เมื่อเพิ่ม module ใหม่ใน `dashboardModuleDefinitions` ต้องระบุ `defaultGroupId` ให้ถูกต้อง
+- [ ] ทดสอบกับ user ที่มี layout เก่าบันทึกไว้ใน database ไม่ใช่แค่ default layout
+- [ ] ถ้าเปลี่ยน default layout ที่มีผลกับ user เก่า ให้เพิ่ม migration/normalization หรือ reset flow
+
+---
+
+## 16. Current ERP Mini Sidebar Structure (2026-07-06)
+
+### Main Items (always visible)
+- หน้าหลัก (`/erp/dashboard`)
+- POS Management (disabled)
+- Inventory Management (disabled)
+- Procurement Management (disabled)
+- Accounting Management (disabled)
+- HR Management → นำไป `/erp/payroll`
+- CRM Management (disabled)
+- KPI / Analytics (`/kpi/dashboard`)
+
+### HR Management Sub-menu (when expanded)
+- เงินเดือน (Payroll) → `/erp/payroll`
+- พนักงาน → `/erp/employees`
+- ตั้งค่า HR → `/erp/hr-settings`
+
+### Settings (when expanded)
+- ปุ่ม **ตั้งค่า** ด้านบน → เปิด Bottom Sheet
+  - จัดการกลุ่มการ์ด (`/erp/settings/modules`)
+  - ธีมสี Dashboard (`/erp/settings/theme`)
+  - ความโปร่งใส (Glass) (`/erp/settings/glass`)
+  - ตั้งค่าองค์กร (`/erp/settings`)
+- ธีมสี Dashboard (`/erp/settings/theme`)
+- ความโปร่งใส (Glass) (`/erp/settings/glass`)
+- ตั้งค่าองค์กร (`/erp/settings`)
+- กลับหน้า Home (`/home`)
+
+### Bottom Promo
+- Upgrade to AI card (expanded) / icon (collapsed)

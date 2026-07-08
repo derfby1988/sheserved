@@ -44,16 +44,17 @@ class PermissionDeniedWidget extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
               children: [
-    if (onRequestPermission != null)
+                if (onRequestPermission != null)
                   OutlinedButton.icon(
                     onPressed: onRequestPermission,
                     icon: const Icon(Icons.add_circle_outline),
                     label: const Text('ขอสิทธิ์'),
                   ),
-                if (onRequestPermission != null) const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: () => _showContactAdminDialog(context),
                   icon: const Icon(Icons.contact_support),

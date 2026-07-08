@@ -4,6 +4,7 @@ import '../../data/models/accounts_receivable.dart';
 import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class AccountsReceivablePage extends ConsumerStatefulWidget {
   final String professionId;
@@ -197,7 +198,7 @@ class _ArCard extends StatelessWidget {
             ),
             if (ar.dueDate != null)
               Text(
-                'กำหนดชำระ: ${ar.dueDate!.day}/${ar.dueDate!.month}/${ar.dueDate!.year}',
+                'กำหนดชำระ: ${ThaiDateUtils.formatShortDateBE(ar.dueDate!)}',
                 style: TextStyle(
                   fontSize: 12,
                   color: ar.isOverdue ? Colors.red : Colors.grey,

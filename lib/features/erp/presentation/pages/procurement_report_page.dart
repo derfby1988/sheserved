@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../widgets/glass_card.dart';
 
 class ProcurementReportPage extends StatefulWidget {
@@ -19,7 +20,8 @@ class ProcurementReportPage extends StatefulWidget {
 
 class _ProcurementReportPageState extends State<ProcurementReportPage> {
   String _selectedReportType = 'po_summary';
-  DateTimeRange? _dateRange;
+  DateTime? _startDate;
+  DateTime? _endDate;
   List<Map<String, dynamic>> _data = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -45,8 +47,8 @@ class _ProcurementReportPageState extends State<ProcurementReportPage> {
     });
     try {
       final now = DateTime.now();
-      final start = _dateRange?.start ?? now.subtract(const Duration(days: 30));
-      final end = _dateRange?.end ?? now;
+      final start = _startDate ?? now.subtract(const Duration(days: 30));
+      final end = _endDate ?? now;
 
       final response = await Supabase.instance.client.rpc(
         'get_procurement_report',
@@ -76,24 +78,6 @@ class _ProcurementReportPageState extends State<ProcurementReportPage> {
     }
   }
 
-  Future<void> _pickDateRange() async {
-    final now = DateTime.now();
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(now.year - 2),
-      lastDate: now,
-      initialDateRange: _dateRange ??
-          DateTimeRange(
-            start: now.subtract(const Duration(days: 30)),
-            end: now,
-          ),
-    );
-    if (picked != null) {
-      setState(() => _dateRange = picked);
-      _loadReport();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,11 +87,6 @@ class _ProcurementReportPageState extends State<ProcurementReportPage> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: _pickDateRange,
-            tooltip: 'เลือกช่วงวันที่',
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _isLoading ? null : _loadReport,
           ),
@@ -116,17 +95,36 @@ class _ProcurementReportPageState extends State<ProcurementReportPage> {
       body: Column(
         children: [
           _buildFilterBar(),
-          if (_dateRange != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${_dateRange!.start.toIso8601String().split('T')[0]} → ${_dateRange!.end.toIso8601String().split('T')[0]}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ThaiBuddhistDatePickerField(
+                    value: _startDate,
+                    label: 'จากวันที่',
+                    hint: 'เลือกวันที่เริ่มต้น',
+                    onDateSelected: (date) {
+                      setState(() => _startDate = date);
+                      _loadReport();
+                    },
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ThaiBuddhistDatePickerField(
+                    value: _endDate,
+                    label: 'ถึงวันที่',
+                    hint: 'เลือกวันที่สิ้นสุด',
+                    onDateSelected: (date) {
+                      setState(() => _endDate = date);
+                      _loadReport();
+                    },
+                  ),
+                ),
+              ],
             ),
+          ),
           const SizedBox(height: 8),
           Expanded(child: _buildBody()),
         ],

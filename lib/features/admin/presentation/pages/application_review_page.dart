@@ -5,6 +5,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
 import '../../models/profession.dart';
+import '../../models/owner_onboarding_tracking.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// หน้าตรวจสอบผู้สมัครลงทะเบียน
@@ -17,6 +18,8 @@ class ApplicationReviewPage extends StatefulWidget {
 
 class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     with SingleTickerProviderStateMixin {
+  static const int _ownerTrackingTabIndex = 4;
+
   late TabController _tabController;
   final _repo = ServiceLocator.instance.registrationRepository;
   List<RegistrationApplication> _applications = [];
@@ -24,19 +27,43 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   VerificationStatus _selectedStatus = VerificationStatus.pending;
   Set<String> _usersWithPendingBeneficiary = {};
 
+  List<OwnerOnboardingTracking> _ownerTracking = [];
+  bool _isLoadingOwnerTracking = true;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
-        setState(() {
-          _selectedStatus = VerificationStatus.values[_tabController.index];
-        });
-        _loadApplications();
+        if (_tabController.index == _ownerTrackingTabIndex) {
+          _loadOwnerTracking();
+        } else {
+          setState(() {
+            _selectedStatus = VerificationStatus.values[_tabController.index];
+          });
+          _loadApplications();
+        }
       }
     });
     _loadApplications();
+  }
+
+  Future<void> _loadOwnerTracking() async {
+    if (!mounted) return;
+    setState(() => _isLoadingOwnerTracking = true);
+    try {
+      final tracking = await _repo.getOwnerOnboardingTracking();
+      if (mounted) {
+        setState(() {
+          _ownerTracking = tracking;
+          _isLoadingOwnerTracking = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingOwnerTracking = false);
+      debugPrint('Error loading owner onboarding tracking: $e');
+    }
   }
 
   @override
@@ -169,6 +196,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
               ),
               TabBar(
                 controller: _tabController,
+                isScrollable: true,
                 indicatorColor: AppColors.textOnPrimary,
                 labelColor: AppColors.textOnPrimary,
                 unselectedLabelColor: AppColors.textOnPrimary.withOpacity(0.6),
@@ -185,16 +213,43 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   ),
                   const Tab(text: 'อนุมัติแล้ว'),
                   const Tab(text: 'ถูกปฏิเสธ'),
+                  const Tab(text: 'ยกเลิกแล้ว'),
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.admin_panel_settings_outlined, size: 16),
+                        const SizedBox(width: 4),
+                        const Text('สถานะการอนุมัติผู้ดูแล ERP'),
+                        const SizedBox(width: 4),
+                        _buildBadge(_getStuckOwnerCount()),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildApplicationList(),
+      body: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, _) {
+          if (_tabController.index == _ownerTrackingTabIndex) {
+            return _isLoadingOwnerTracking
+                ? const Center(child: CircularProgressIndicator())
+                : _buildOwnerTrackingList();
+          }
+          return _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _buildApplicationList();
+        },
+      ),
     );
+  }
+
+  int _getStuckOwnerCount() {
+    return _ownerTracking.where((t) => t.isStuck).length;
   }
 
   Widget _buildBadge(int count) {
@@ -236,7 +291,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   ? Icons.inbox_outlined
                   : _selectedStatus == VerificationStatus.approved
                       ? Icons.check_circle_outline
-                      : Icons.cancel_outlined,
+                      : _selectedStatus == VerificationStatus.rejected
+                          ? Icons.cancel_outlined
+                          : Icons.remove_circle_outline,
               size: 64,
               color: AppColors.textHint,
             ),
@@ -246,7 +303,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   ? 'ไม่มีผู้สมัครรอตรวจสอบ'
                   : _selectedStatus == VerificationStatus.approved
                       ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
-                      : 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ',
+                      : _selectedStatus == VerificationStatus.rejected
+                          ? 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ'
+                          : 'ยังไม่มีใบสมัครที่ถูกยกเลิก',
               style: AppTextStyles.bodyLarge.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -262,6 +321,270 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
       itemBuilder: (context, index) {
         return _buildApplicationCard(filteredApps[index]);
       },
+    );
+  }
+
+  Widget _buildOwnerTrackingList() {
+    if (_ownerTracking.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.admin_panel_settings_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'ยังไม่มีคำขอจดทะเบียน Owner',
+              style: AppTextStyles.bodyLarge.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // เรียงให้เคสที่ค้างอยู่ขึ้นก่อน
+    final sorted = List<OwnerOnboardingTracking>.from(_ownerTracking)
+      ..sort((a, b) {
+        if (a.isStuck != b.isStuck) return a.isStuck ? -1 : 1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+    return RefreshIndicator(
+      onRefresh: _loadOwnerTracking,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: sorted.length,
+        itemBuilder: (context, index) => _buildOwnerTrackingCard(sorted[index]),
+      ),
+    );
+  }
+
+  Widget _buildOwnerTrackingCard(OwnerOnboardingTracking tracking) {
+    final steps = OwnerOnboardingStep.values;
+    final currentStep = tracking.currentStepNumber;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tracking.fullName,
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '@${tracking.username} • ${tracking.professionName}',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                if (tracking.isRejected)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'ถูกปฏิเสธ',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else if (tracking.isCancelled)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      tracking.cancelledByLabel,
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else if (tracking.isStuck)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.orange.shade600, width: 0.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 12, color: Colors.orange.shade800),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ค้างขั้นตอนที่ $currentStep',
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (tracking.isFullyCompleted)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'เสร็จสมบูรณ์',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (tracking.isRejected)
+              Row(
+                children: [
+                  Icon(Icons.cancel, size: 16, color: AppColors.error),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tracking.reviewNote?.isNotEmpty == true
+                          ? 'ใบสมัครถูกปฏิเสธ: ${tracking.reviewNote}'
+                          : 'ใบสมัครถูกปฏิเสธ',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.error),
+                    ),
+                  ),
+                ],
+              )
+            else if (tracking.isCancelled)
+              Row(
+                children: [
+                  Icon(Icons.remove_circle_outline, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tracking.cancelledAt != null
+                          ? '${tracking.cancelledByLabel} (${_formatDate(tracking.cancelledAt!)})'
+                          : tracking.cancelledByLabel,
+                      style: AppTextStyles.caption.copyWith(color: Colors.grey[600]),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: List.generate(steps.length * 2 - 1, (i) {
+                  if (i.isOdd) {
+                    final leftStepDone =
+                        currentStep != null && steps[i ~/ 2].stepNumber <= currentStep;
+                    return Expanded(
+                      child: Container(
+                        height: 2,
+                        color: leftStepDone
+                            ? AppColors.success
+                            : AppColors.textHint.withOpacity(0.3),
+                      ),
+                    );
+                  }
+                  final step = steps[i ~/ 2];
+                  final isDone =
+                      currentStep != null && step.stepNumber <= currentStep;
+                  final isCurrent = step.stepNumber == currentStep;
+                  return Tooltip(
+                    message: step.label,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isDone
+                                ? (isCurrent ? AppColors.primary : AppColors.success)
+                                : Colors.transparent,
+                            border: Border.all(
+                              color: isDone
+                                  ? (isCurrent ? AppColors.primary : AppColors.success)
+                                  : AppColors.textHint,
+                              width: 2,
+                            ),
+                          ),
+                          child: Center(
+                            child: isDone
+                                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                                : Text(
+                                    '${step.stepNumber}',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.textHint,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+            if (!tracking.isRejected && !tracking.isCancelled) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: steps
+                    .map((s) => Expanded(
+                          child: Text(
+                            s.label,
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.caption.copyWith(
+                              fontSize: 10,
+                              color: currentStep != null && s.stepNumber <= currentStep
+                                  ? AppColors.textPrimary
+                                  : AppColors.textHint,
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'สมัครเมื่อ: ${_formatTimeAgo(tracking.createdAt)}'
+              '${tracking.reviewedAt != null ? ' • อนุมัติเมื่อ: ${_formatTimeAgo(tracking.reviewedAt!)}' : ''}',
+              style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -321,7 +644,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -341,8 +666,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                               ),
                             ),
                             if (application.registrationData['is_owner_request'] == 'true' ||
-                                application.registrationData['is_owner_request'] == true) ...[
-                              const SizedBox(width: 6),
+                                application.registrationData['is_owner_request'] == true)
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
@@ -369,7 +693,6 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                   ],
                                 ),
                               ),
-                            ],
                           ],
                         ),
                       ],
@@ -525,6 +848,11 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
         text = 'ถูกปฏิเสธ';
         icon = Icons.cancel;
         break;
+      case VerificationStatus.cancelled:
+        color = Colors.grey;
+        text = 'ยกเลิกแล้ว';
+        icon = Icons.remove_circle_outline;
+        break;
     }
 
     return Container(
@@ -561,6 +889,10 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     } else {
       return 'เมื่อสักครู่';
     }
+  }
+
+  String _formatDate(DateTime dateTime) {
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year + 543}';
   }
 
   void _showApplicationDetail(RegistrationApplication application) {

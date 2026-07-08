@@ -7,6 +7,7 @@ import '../../data/models/dashboard_theme.dart';
 import '../providers/phase_two_provider.dart';
 import '../providers/phase_three_provider.dart';
 import '../widgets/glass_card.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class SettlementPayoutPage extends ConsumerStatefulWidget {
   final String professionId;
@@ -338,7 +339,7 @@ class _LedgerCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'รอบที่ ${ledger.periodStart.day}/${ledger.periodStart.month}/${ledger.periodStart.year} - ${ledger.periodEnd.day}/${ledger.periodEnd.month}/${ledger.periodEnd.year}',
+                    'รอบที่ ${ThaiDateUtils.formatShortDateBE(ledger.periodStart)} - ${ThaiDateUtils.formatShortDateBE(ledger.periodEnd)}',
                     style: const TextStyle(
                         fontWeight: FontWeight.w600, fontSize: 14),
                   ),
@@ -370,7 +371,7 @@ class _LedgerCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'จ่ายเมื่อ: ${ledger.paidAt!.day}/${ledger.paidAt!.month}/${ledger.paidAt!.year}',
+                  'จ่ายเมื่อ: ${ThaiDateUtils.formatShortDateBE(ledger.paidAt!)}',
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ),
@@ -573,7 +574,7 @@ class _PayoutBatchCard extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'รอบจ่าย ${batch.batchDate.day}/${batch.batchDate.month}/${batch.batchDate.year}',
+                      'รอบจ่าย ${ThaiDateUtils.formatShortDateBE(batch.batchDate)}',
                       style: const TextStyle(
                           fontWeight: FontWeight.w600, fontSize: 14),
                     ),

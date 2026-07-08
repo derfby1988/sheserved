@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/profession.dart';
 import '../../models/registration_field_config.dart';
+import '../repositories/registration_repository.dart';
 
 /// Repository สำหรับจัดการอาชีพ
 class ProfessionRepository {
@@ -502,65 +503,31 @@ class ProfessionRepository {
     return RegistrationApplication.fromJson(response);
   }
 
-  /// อนุมัติใบสมัคร
+  /// อนุมัติใบสมัคร (Deprecated — ใช้ RegistrationRepository.approveApplication แทน)
+  @Deprecated('ใช้ RegistrationRepository.approveApplication แทน เพื่อรองรับ race-condition guard')
   Future<void> approveApplication(
     String applicationId, {
     String? reviewNote,
     String? reviewedBy,
   }) async {
-    final now = DateTime.now();
-    await _client
-        .from('registration_applications')
-        .update({
-          'status': 'approved',
-          'review_note': reviewNote,
-          'reviewed_by': reviewedBy,
-          'reviewed_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        })
-        .eq('id', applicationId);
-
-    // Update user verification status
+    final regRepo = RegistrationRepository(_client);
     final application = await getApplicationById(applicationId);
     if (application != null) {
-      await _client
-          .from('users')
-          .update({
-            'verification_status': 'verified',
-            'updated_at': now.toIso8601String(),
-          })
-          .eq('id', application.oderId);
+      await regRepo.approveApplication(application, reviewedBy: reviewedBy);
     }
   }
 
-  /// ปฏิเสธใบสมัคร
+  /// ปฏิเสธใบสมัคร (Deprecated — ใช้ RegistrationRepository.rejectApplication แทน)
+  @Deprecated('ใช้ RegistrationRepository.rejectApplication แทน เพื่อรองรับ race-condition guard')
   Future<void> rejectApplication(
     String applicationId, {
     required String reviewNote,
     String? reviewedBy,
   }) async {
-    final now = DateTime.now();
-    await _client
-        .from('registration_applications')
-        .update({
-          'status': 'rejected',
-          'review_note': reviewNote,
-          'reviewed_by': reviewedBy,
-          'reviewed_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        })
-        .eq('id', applicationId);
-
-    // Update user verification status
+    final regRepo = RegistrationRepository(_client);
     final application = await getApplicationById(applicationId);
     if (application != null) {
-      await _client
-          .from('users')
-          .update({
-            'verification_status': 'rejected',
-            'updated_at': now.toIso8601String(),
-          })
-          .eq('id', application.oderId);
+      await regRepo.rejectApplication(application, reviewNote, reviewedBy: reviewedBy);
     }
   }
 
