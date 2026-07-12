@@ -581,8 +581,7 @@ class _HomePageState extends ConsumerState<HomePage>
     final user = AuthService.instance.currentUser;
     if (user == null || user.professionId == null) return;
 
-    const consumerProfessionId = '00000000-0000-0000-0000-000000000001';
-    if (user.professionId == consumerProfessionId) return;
+    if (!user.isProvider) return;
 
     final repo = ConsultationRepository(Supabase.instance.client);
 

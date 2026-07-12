@@ -268,11 +268,10 @@ class UserModel {
       return json['professions']['is_consultation_provider'] == true;
     }
 
-    // 2. Fallback: ใช้ profession_id ตรวจสอบ
-    final professionId = json['profession_id']?.toString();
-    if (professionId == null || professionId.isEmpty) return false;
-    const consumerId = '00000000-0000-0000-0000-000000000001';
-    return professionId != consumerId;
+    // 2. Fallback: ใช้ category จาก profession ที่ join มาจาก DB
+    final category = json['professions']?['category']?.toString().toLowerCase();
+    if (category == 'provider') return true;
+    return false;
   }
 
   UserModel copyWith({

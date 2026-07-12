@@ -1,0 +1,310 @@
+# Scenario 2: Organization Override for a clinic user
+# This flow logs in with a clinic A account (organization user) and verifies
+# that Organization Override applies to all members of the same clinic.
+# Prerequisites:
+#   - App is installed on the device
+#   - Network connectivity to Supabase backend
+#   - App data should be cleared before first login (the flow does this with clearState)
+#   - CLINIC_USERNAME and MEMBER_USERNAME must be existing users in the target organization
+#   - Both users must have an active profession with can_manage_drug_risk=true
+# Environment:
+#   - CLINIC_USERNAME: username for organization user (default: "clinic")
+#   - CLINIC_PASSWORD: password for organization user (default: "123456")
+#   - MEDICATION_NAME: name of medication to search (default: "Paracetamol")
+#   - MEMBER_USERNAME: username for another member in the same organization (default: "member")
+#   - MEMBER_PASSWORD: password for another member (default: "123456")
+
+appId: com.sheserved.app
+env:
+  CLINIC_USERNAME: "apisek"
+  CLINIC_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+  MEMBER_USERNAME: "firm"
+  MEMBER_PASSWORD: "123456"
+---
+# ═══════════════════════════════════════════
+# Step 1: Login as organization user
+# ═══════════════════════════════════════════
+# App shows home page in guest mode on launch — navigate to login via drawer
+- launchApp:
+    appId: com.sheserved.app
+    clearState: true
+
+# Wait for home page to load
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Navigate to login via bottom nav bar donation tab (index 1)
+# MainAppLayout redirects unauthenticated users to /login when tapping donation tab
+# Bottom nav donation tab bounds: [240,1248][301,1309], center ~(270,1278)
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for login page to appear
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CLINIC_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CLINIC_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# ═══════════════════════════════════════════
+# Step 2: Verify login completed and navigate to drug risk
+# ═══════════════════════════════════════════
+# After login via donation tab, app redirects to donation page.
+# Wait for donation page to appear (means login completed).
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+# Open drawer directly from donation page (drawer is accessible from any tab)
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify drug risk page loaded (mode depends on user's professionId)
+- assertVisible: 'จัดการความเสี่ยงยา .*'
+
+# Wait for loading to finish — look for the search tab text that appears after load
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ═══════════════════════════════════════════
+# Step 3: Search for medication and set Organization Override
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "400,330"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- setClipboard: "${MEDICATION_NAME}"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Unfocus text field by tapping on app bar area (avoid hideKeyboard which sends back button and pops the page)
+- tapOn:
+    point: "400,75"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Flutter's onChanged debounce (500ms) auto-triggers search after paste
+- extendedWaitUntil:
+    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
+    timeout: 15000
+
+# Wait for results to render
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for Override button to appear (no scroll needed if only one result)
+- extendedWaitUntil:
+    visible: ".*Override.*"
+    timeout: 30000
+
+- tapOn: ".*ตั้งค่า.*Override.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: 'Override:.*'
+
+# Change FDA Risk Status to S
+- tapOn:
+    point: "400,440"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,454"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill reason field
+- tapOn:
+    point: "400,770"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "Test Organization Override"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn: "บันทึก Override"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Dismiss any remaining keyboard by tapping app bar
+- tapOn:
+    point: "400,75"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Verify override scope badge appears (org or personal depending on user's profession)
+- extendedWaitUntil:
+    visible: ".*Override (องค์กร|ส่วนตัว).*"
+    timeout: 15000
+- assertVisible: ".*Override (องค์กร|ส่วนตัว).*"
+
+# ═══════════════════════════════════════════
+# Step 4: Kill app and relaunch as another organization member
+# ═══════════════════════════════════════════
+# AuthService is in-memory only, so killing the process clears the login state.
+# Don't use clearState — it causes a black screen due to slow re-initialization.
+- killApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- launchApp:
+    appId: com.sheserved.app
+
+# Wait for home page to load (guest mode after kill)
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Navigate to login via bottom nav bar donation tab
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for login page to appear
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${MEMBER_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${MEMBER_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# After login via donation tab, app redirects to donation page.
+# Wait for donation page to appear (means login completed).
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+# Open drawer directly from donation page
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for loading to finish — look for the search tab text that appears after load
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Search same medication
+- tapOn:
+    point: "400,330"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- setClipboard: "${MEDICATION_NAME}"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Unfocus text field by tapping on app bar area (avoid hideKeyboard which sends back button and pops the page)
+- tapOn:
+    point: "400,75"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Flutter's onChanged debounce (500ms) auto-triggers search after paste
+- extendedWaitUntil:
+    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
+    timeout: 15000
+
+# Wait for results to render
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Another clinic member should see the same override badge
+- extendedWaitUntil:
+    visible: ".*Override (องค์กร|ส่วนตัว).*"
+    timeout: 10000
+- assertVisible: ".*Override (องค์กร|ส่วนตัว).*"

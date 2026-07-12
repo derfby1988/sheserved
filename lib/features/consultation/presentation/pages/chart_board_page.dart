@@ -168,9 +168,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     super.initState();
     _bodyMapChatController = BodyMapChatController(msgController: _msgController);
     // Robust provider check (matches Dashboard logic)
-    final professionId = _currentUser?.professionId;
-    _isProvider = professionId != null && 
-                  professionId != '00000000-0000-0000-0000-000000000001';
+    _isProvider = _currentUser?.isProvider ?? false;
 
     // Auto-detect initial state
     // NOTE: Don't set _isConsultationActive here — let _initChat determine
@@ -630,16 +628,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (value.contains('specialist') || value.contains('เฉพาะทาง')) return 'specialist';
     if (value.contains('pharmacist') || value.contains('เภสัช')) return 'pharmacist';
     if (value.contains('nurse') || value.contains('พยาบาล')) return 'nurse';
-    if (value == Profession.doctorGpProfessionId ||
-        value == Profession.doctorFamilyProfessionId ||
-        value == 'doctor_gp' ||
-        value == 'doctor_family') {
+    if (value == 'doctor_gp' || value == 'doctor_family') {
       return 'doctor';
     }
-    if (value == Profession.doctorSpecialistProfessionId || value == 'doctor_specialist') {
+    if (value == 'doctor_specialist') {
       return 'specialist';
     }
-    if (value == Profession.pharmacistProfessionId || value == 'pharmacist') {
+    if (value == 'pharmacist') {
       return 'pharmacist';
     }
     if (value.contains('doctor') || value.contains('แพทย์') || value == 'หมอ') return 'doctor';

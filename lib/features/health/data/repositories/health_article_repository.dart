@@ -379,7 +379,7 @@ class HealthArticleRepository {
     try {
       final response = await _client
           .from('health_article_products')
-          .select('*, users!tagged_by_id(profession_id)')
+          .select('*, users!tagged_by_id(profession_id, professions(category))')
           .eq('article_id', articleId)
           .order('created_at', ascending: false);
 
@@ -388,15 +388,13 @@ class HealthArticleRepository {
           final jsonMap = Map<String, dynamic>.from(e);
           // Extract user category from joined users table
           if (jsonMap['users'] != null) {
-            final professionId = jsonMap['users']['profession_id'];
-            if (professionId == '00000000-0000-0000-0000-000000000001') {
-              jsonMap['tagger_user_category'] = 'consumer';
-            } else if (professionId == '00000000-0000-0000-0000-000000000002' ||
-                professionId == '00000000-0000-0000-0000-000000000003') {
-              jsonMap['tagger_user_category'] = 'provider';
-            } else {
-              jsonMap['tagger_user_category'] = 'other';
-            }
+            final profession = jsonMap['users']['professions'];
+            final category = profession is Map ? profession['category']?.toString() : null;
+            jsonMap['tagger_user_category'] = category == 'provider'
+                ? 'provider'
+                : category == 'consumer'
+                    ? 'consumer'
+                    : 'other';
           }
           return HealthArticleProduct.fromJson(jsonMap);
         }).toList();

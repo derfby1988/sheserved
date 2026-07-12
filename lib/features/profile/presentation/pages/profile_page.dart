@@ -332,9 +332,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   @override
   void didPopNext() {
     debugPrint('[ProfilePage] didPopNext → refreshing history if on history tab');
-    final bool isConsumer =
-        _user?.professionId == null ||
-        _user?.professionId == '00000000-0000-0000-0000-000000000001';
     final int baseTabCount = _canApproveDonation ? 3 : 2;
     final int historyTabIndex = baseTabCount;
     if (_selectedTabIndex == historyTabIndex) {
@@ -605,7 +602,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   Widget _buildContent() {
-    final bool isConsumer = _user?.professionId == null || _user?.professionId == '00000000-0000-0000-0000-000000000001';
+    final bool isConsumer = !(_user?.isProvider ?? false);
     final bool isProvider = !isConsumer;
     final int baseTabCount = _canApproveDonation ? 3 : 2;
     final int historyTabIndex = baseTabCount;

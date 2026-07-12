@@ -1,0 +1,500 @@
+# Drug Risk Override - Implementation Approach 1 Test Flow
+# File: /Users/dave_macmini/sheserved/docs/guides/drug_risk_override_test_flow.yaml
+# Purpose: Comprehensive testing flow and impact prevention plan after implementing
+#          approach 1 (can_manage_drug_risk flag) for Drug Risk override.
+#
+# Execution note:
+#   This is a hybrid test-plan YAML, not a directly executable Maestro flow.
+#   Sections using runScript are SQL/API pseudo-steps and must be run separately.
+#   Maestro does not provide a runScript step, and the referenced shared login flow
+#   must be replaced with the project's actual login flow before execution.
+#
+# References:
+#   - maestro/scenario_02_organization_override.yaml
+#   - docs/guides/profession_system_migration_guide.md
+#   - lib/features/pharmacy/presentation/pages/drug_risk_classification_admin_page.dart
+#   - supabase/migrations/20260708160000_add_drug_risk_overrides.sql
+#
+# Manual scenario coverage from
+# test/features/pharmacy/data/services/drug_risk_screening_service_test.dart:336-428:
+#   1 Personal Override: covered by B.3/C.4, but independent-user data must exist.
+#   2 Organization Override: covered by B.2/C.1/C.2/F.1.
+#   3 Member reads org override without edit rights: covered by C.2/C.3.
+#   4 Second authorized editor + update history: NOT covered by the UI steps below;
+#     requires a second can_manage_drug_risk=true account and manual/API verification.
+#   5 No organization override uses default: NOT covered; add a clean-organization
+#     fixture and verify overrideScope is null.
+#   6 Legal N/P rule: covered by E.1, with backend/API assertion still required.
+#   7 Remove override + delete history: NOT covered by the current UI steps;
+#     add a remove/default action and verify active row plus history snapshot.
+#   8 Deactivated modifier fallback_history: partially covered by D.2; verify
+#     resolve_effective_modifier status and snapshot name through RPC/API.
+#   9 All historical modifiers inactive fallback_system: NOT covered; requires
+#     controlled history fixtures and direct RPC verification.
+#   10 Personal history filtered by user_id: NOT covered; add a personal history
+#     fixture and assert no other user's history is returned.
+#   12 Prescription effective risk + badge: covered by F.1.
+#
+# Important inconsistency in the existing Scenario 1: professionId=null results in
+# Personal mode in DrugRiskClassificationAdminPage, regardless of canManageDrugRisk.
+# Treat canManageDrugRisk=true with professionId=null as a data-fixture error or
+# explicitly test it as the secure Personal fallback.
+
+appId: com.sheserved.app
+
+env:
+  # Primary test accounts for capability-based organization override
+  ORG_USER_USERNAME: "apisek"          # user with custom profession having can_manage_drug_risk=true
+  ORG_USER_PASSWORD: "123456"
+
+  ORG_MEMBER_USERNAME: "firm"            # another member of same clinic/organization
+  ORG_MEMBER_PASSWORD: "123456"
+
+  PERSONAL_USER_USERNAME: "personaluser" # user with custom profession having can_manage_drug_risk=false
+  PERSONAL_USER_PASSWORD: "123456"
+
+  ADMIN_USERNAME: "admin"                  # system admin account
+  ADMIN_PASSWORD: "123456"
+
+  MEDICATION_NAME: "Paracetamol"
+  MEDICATION_NAME_NARCOTIC: "Morphine"   # FDA N or P class for legal rule test
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section A: Pre-test data verification (SQL read-only checks)
+# ═══════════════════════════════════════════════════════════════════
+- runScript:
+    label: "A.1 Verify professions and capability flags"
+    language: sql
+    script: |
+      SELECT id,
+             name,
+             profession_code,
+             is_active,
+             can_manage_drug_risk
+      FROM professions
+      ORDER BY display_order;
+
+- runScript:
+    label: "A.2 Verify users have expected profession mapping"
+    language: sql
+    script: |
+      SELECT id,
+             username,
+             name,
+             profession_id,
+             is_active
+      FROM users
+      WHERE username IN (
+        '{{ ORG_USER_USERNAME }}',
+        '{{ ORG_MEMBER_USERNAME }}',
+        '{{ PERSONAL_USER_USERNAME }}',
+        '{{ ADMIN_USERNAME }}'
+      );
+
+- runScript:
+    label: "A.3 Verify RLS policies on override tables"
+    language: sql
+    script: |
+      SELECT schemaname,
+             tablename,
+             policyname,
+             permissive,
+             roles,
+             cmd,
+             qual,
+             with_check
+      FROM pg_policies
+      WHERE tablename IN ('drug_risk_overrides', 'drug_risk_override_history');
+
+- runScript:
+    label: "A.4 Verify RPC functions for override resolution"
+    language: sql
+    script: |
+      SELECT n.nspname AS schema_name,
+             p.proname AS function_name,
+             pg_get_function_identity_arguments(p.oid) AS arguments,
+             p.prosecdef AS security_definer,
+             has_function_privilege(p.oid, 'EXECUTE') AS executable
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE p.proname IN ('resolve_effective_modifier', 'get_drug_risk_override_modifier');
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section B: Test mode resolution per user type
+# ═══════════════════════════════════════════════════════════════════
+# B.1 Admin user should see Global Admin mode with 4 tabs
+- launchApp:
+    appId: "{{ appId }}"
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ADMIN_USERNAME }}"
+    PASSWORD: "{{ ADMIN_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "หมวดหมู่ยาอันตราย"
+    timeout: 10000
+- assertVisible: "ระดับความเสี่ยง"
+- assertVisible: "ค้นหาและตั้งค่า"
+- assertVisible: "ประวัติ"
+- assertVisible: ".*Global.*"   # Or exact global admin label
+
+- clearState:
+    appId: "{{ appId }}"
+
+# B.2 Organization user (can_manage_drug_risk=true) should see Organization mode
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_USER_USERNAME }}"
+    PASSWORD: "{{ ORG_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- assertVisible: "ประวัติ"
+- assertNotVisible: "หมวดหมู่ยาอันตราย"  # global-only tab should not appear
+- assertVisible: ".*Organization.*"       # Or exact organization label
+
+- clearState:
+    appId: "{{ appId }}"
+
+# B.3 Personal user (can_manage_drug_risk=false) should see Personal mode
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ PERSONAL_USER_USERNAME }}"
+    PASSWORD: "{{ PERSONAL_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- assertVisible: "ประวัติ"
+- assertNotVisible: "หมวดหมู่ยาอันตราย"
+- assertVisible: ".*Personal.*"           # Or exact personal label
+- assertNotVisible: "ตั้งค่า Override องค์กร"  # Organization actions should be hidden
+
+- clearState:
+    appId: "{{ appId }}"
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section C: Organization override CRUD and scope isolation
+# ═══════════════════════════════════════════════════════════════════
+# C.1 Organization user creates an organization override
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_USER_USERNAME }}"
+    PASSWORD: "{{ ORG_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- tapOn: "ค้นหา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- tapOn: "ตั้งค่า Override"
+- tapOn: "FDA Risk Status"
+- tapOn: "ND"
+- tapOn: "บันทึก"
+- extendedWaitUntil:
+    visible: "บันทึกสำเร็จ"
+    timeout: 10000
+
+- runScript:
+    label: "C.2 Verify override stored with correct scope"
+    language: sql
+    script: |
+      SELECT o.id,
+             o.profession_id,
+             o.user_id,
+             o.medication_id,
+             o.override_fda_risk_status,
+             o.last_modified_by,
+             u.username AS modifier_username
+      FROM drug_risk_overrides o
+      JOIN users u ON u.id = o.last_modified_by
+      JOIN medications m ON m.id = o.medication_id
+      WHERE m.name = '{{ MEDICATION_NAME }}'
+        AND u.username = '{{ ORG_USER_USERNAME }}';
+
+- clearState:
+    appId: "{{ appId }}"
+
+# C.2 Another member of same clinic sees organization override
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_MEMBER_USERNAME }}"
+    PASSWORD: "{{ ORG_MEMBER_PASSWORD }}"
+- tapOn: "สั่งยา"  # Navigate to prescription editor
+- extendedWaitUntil:
+    visible: "ค้นหายา"
+    timeout: 10000
+- tapOn: "ค้นหายา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- assertVisible: "🔵"   # Organization override badge
+- assertVisible: ".*Organization.*"
+
+- clearState:
+    appId: "{{ appId }}"
+
+# C.3 Member without capability cannot modify organization override
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_MEMBER_USERNAME }}"
+    PASSWORD: "{{ ORG_MEMBER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- tapOn: "ค้นหา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- assertNotVisible: "ตั้งค่า Override"  # Must not have edit action
+
+- clearState:
+    appId: "{{ appId }}"
+
+# C.4 Personal user cannot create organization override via UI
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ PERSONAL_USER_USERNAME }}"
+    PASSWORD: "{{ PERSONAL_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- tapOn: "ค้นหา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- assertNotVisible: "ตั้งค่า Override องค์กร"
+- assertVisible: "ตั้งค่า Override ส่วนตัว"  # Personal action only
+
+- clearState:
+    appId: "{{ appId }}"
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section D: Stale state and capability change tests
+# ═══════════════════════════════════════════════════════════════════
+# D.1 Admin revokes can_manage_drug_risk from organization user
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ADMIN_USERNAME }}"
+    PASSWORD: "{{ ADMIN_PASSWORD }}"
+- tapOn: "จัดการอาชีพ"
+- extendedWaitUntil:
+    visible: "รายการอาชีพ"
+    timeout: 10000
+- tapOn: "{{ ORG_USER_USERNAME }}"  # Or profession name tied to apisek
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- tapOn: "บันทึก"
+- extendedWaitUntil:
+    visible: "บันทึกสำเร็จ"
+    timeout: 10000
+
+- clearState:
+    appId: "{{ appId }}"
+
+# D.2 Organization user now opens page after flag revoked
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_USER_USERNAME }}"
+    PASSWORD: "{{ ORG_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- assertVisible: ".*Personal.*"
+- assertNotVisible: ".*Organization.*"
+- tapOn: "ค้นหา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- assertNotVisible: "ตั้งค่า Override องค์กร"
+
+- clearState:
+    appId: "{{ appId }}"
+
+# D.3 Re-enable capability for rollback
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ADMIN_USERNAME }}"
+    PASSWORD: "{{ ADMIN_PASSWORD }}"
+- tapOn: "จัดการอาชีพ"
+- extendedWaitUntil:
+    visible: "รายการอาชีพ"
+    timeout: 10000
+- tapOn: "{{ ORG_USER_USERNAME }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- tapOn: "บันทึก"
+- extendedWaitUntil:
+    visible: "บันทึกสำเร็จ"
+    timeout: 10000
+
+- clearState:
+    appId: "{{ appId }}"
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section E: Legal and business rule validation
+# ═══════════════════════════════════════════════════════════════════
+# E.1 Narcotic override cannot be set to telemedicine allowed
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_USER_USERNAME }}"
+    PASSWORD: "{{ ORG_USER_PASSWORD }}"
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- extendedWaitUntil:
+    visible: "ค้นหาและตั้งค่า"
+    timeout: 10000
+- tapOn: "ค้นหา"
+- inputText: "{{ MEDICATION_NAME_NARCOTIC }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME_NARCOTIC }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME_NARCOTIC }}"
+- tapOn: "ตั้งค่า Override"
+- tapOn: "อนุญาต Telemedicine"
+- assertVisible: "ปิดใช้งาน"  # Toggle should be disabled for N/P
+- tapOn: "บันทึก"
+- extendedWaitUntil:
+    visible: "ไม่สามารถอนุญาต Telemedicine"
+    timeout: 10000
+
+- clearState:
+    appId: "{{ appId }}"
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section F: Prescription editor and delivery flag verification
+# ═══════════════════════════════════════════════════════════════════
+# F.1 Prescription editor shows effective risk with organization badge
+- runFlow: "../maestro/shared/login_flow.yaml"
+  env:
+    USERNAME: "{{ ORG_MEMBER_USERNAME }}"
+    PASSWORD: "{{ ORG_MEMBER_PASSWORD }}"
+- tapOn: "สั่งยา"
+- extendedWaitUntil:
+    visible: "ค้นหายา"
+    timeout: 10000
+- tapOn: "ค้นหายา"
+- inputText: "{{ MEDICATION_NAME }}"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "{{ MEDICATION_NAME }}"
+    timeout: 10000
+- tapOn: "{{ MEDICATION_NAME }}"
+- assertVisible: "🔵"
+- assertVisible: ".*Organization.*"
+- assertVisible: "ND"  # or whatever effective risk was set
+
+- clearState:
+    appId: "{{ appId }}"
+
+# F.2 Delivery order contains correct drug_risk_flags
+- runScript:
+    label: "F.2 Verify delivery order metadata after prescription"
+    language: sql
+    script: |
+      SELECT id,
+             metadata -> 'drug_risk_flags' ->> 'has_override' AS has_override,
+             metadata -> 'drug_risk_flags' ->> 'override_scope' AS override_scope,
+             metadata -> 'drug_risk_flags' ->> 'requires_id_verification' AS requires_id_verification
+      FROM delivery_orders
+      WHERE metadata -> 'drug_risk_flags' ->> 'has_override' IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 1;
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section G: Negative security tests (must be performed manually or via API client)
+# ═══════════════════════════════════════════════════════════════════
+- runScript:
+    label: "G.1 Attempt direct write without capability"
+    language: bash
+    script: |
+      # Use Supabase REST client with an unprivileged user token
+      # Expected: 401 or 403 for unauthorized write
+      echo "Direct write without capability should be rejected by backend/RLS"
+
+- runScript:
+    label: "G.2 Attempt cross-user personal override modification"
+    language: bash
+    script: |
+      # Use personal user token to modify another user's personal override
+      # Expected: 403 or row not matching RLS policy
+      echo "Cross-user personal override should be rejected"
+
+- runScript:
+    label: "G.3 Attempt cross-profession organization override modification"
+    language: bash
+    script: |
+      # Use user from profession B to modify profession A organization override
+      # Expected: 403 or no matching rows
+      echo "Cross-profession organization override should be rejected"
+
+- runScript:
+    label: "G.4 Attempt forged performedBy/performedByName"
+    language: bash
+    script: |
+      # Send override payload with forged user identity fields
+      # Expected: backend should derive identity from authenticated session, not client
+      echo "Forged identity fields should be ignored/rejected by server"
+
+- runScript:
+    label: "G.5 Attempt delete audit history"
+    language: bash
+    script: |
+      # Regular user tries to delete drug_risk_override_history rows
+      # Expected: 403
+      echo "History deletion by regular user should be rejected"
+
+---
+# ═══════════════════════════════════════════════════════════════════
+# Section H: Post-test rollback and data cleanup
+# ═══════════════════════════════════════════════════════════════════
+- runScript:
+    label: "H.1 Restore capability flags to baseline"
+    language: sql
+    script: |
+      -- Only restore if you have baseline values captured in A.1
+      -- Example safe rollback:
+      -- UPDATE professions
+      -- SET can_manage_drug_risk = <baseline_value>
+      -- WHERE id = '<profession_id>';
+      SELECT 'Rollback requires baseline values captured in Section A.1' AS note;
+
+- runScript:
+    label: "H.2 Clean up test overrides"
+    language: sql
+    script: |
+      DELETE FROM drug_risk_override_history
+      WHERE medication_id IN (
+        SELECT id FROM medications WHERE name IN ('{{ MEDICATION_NAME }}', '{{ MEDICATION_NAME_NARCOTIC }}')
+      );
+
+      DELETE FROM drug_risk_overrides
+      WHERE medication_id IN (
+        SELECT id FROM medications WHERE name IN ('{{ MEDICATION_NAME }}', '{{ MEDICATION_NAME_NARCOTIC }}')
+      );

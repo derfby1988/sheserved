@@ -112,7 +112,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       if (_selectedProfession == null && _professions.isNotEmpty) {
         try {
           final consumer = _professions.firstWhere(
-            (p) => p.id == Profession.consumerProfessionId,
+            (p) => p.category.id == UserCategory.consumerId,
             orElse: () => _professions.first,
           );
           _selectedProfession = consumer;

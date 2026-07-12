@@ -55,10 +55,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   StreamSubscription<ChatRoom?>? _roomSub;
   ChatRoom? _currentRoom;
-  bool get _isProvider {
-    final pid = AuthService.instance.currentUser?.professionId;
-    return pid != null && pid != '00000000-0000-0000-0000-000000000001';
-  }
+  bool get _isProvider => AuthService.instance.currentUser?.isProvider ?? false;
 
   Map<String, dynamic>? _healthPermissionRequest;
   String? _lastShownHealthPermissionRequestId;

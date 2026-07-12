@@ -23,7 +23,7 @@ List<ProfessionPackageRule> _normalizeProfessionRules(
 String _professionIdForGroupRole(String role, List<Profession> availableProfessions) {
   if (role == 'professor') {
     final professor = availableProfessions.where((p) => p.professionCode == 'professor').toList();
-    return professor.isNotEmpty ? professor.first.id : Profession.professorProfessionId;
+    return professor.isNotEmpty ? professor.first.id : 'professor';
   }
   return role;
 }
@@ -112,7 +112,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         displayOrder: 0,
         expertGroups: [
           ExpertGroup(id: 'eg_001', name: 'อาจารย์แพทย์', role: 'professor', maxExperts: 1, isRequired: true),
-          ExpertGroup(id: 'eg_002', name: 'แพทย์ผู้ช่วย', role: Profession.doctorGpProfessionId, maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_002', name: 'แพทย์ผู้ช่วย', role: 'doctor', maxExperts: 2, isRequired: false),
         ],
         createdAt: now,
         updatedAt: now,
@@ -142,7 +142,7 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         isActive: true,
         displayOrder: 2,
         expertGroups: [
-          ExpertGroup(id: 'eg_004', name: 'แพทย์เฉพาะทาง', role: Profession.doctorSpecialistProfessionId, maxExperts: 1, isRequired: true),
+          ExpertGroup(id: 'eg_004', name: 'แพทย์เฉพาะทาง', role: 'specialist', maxExperts: 1, isRequired: true),
         ],
         createdAt: now,
         updatedAt: now,
@@ -157,8 +157,8 @@ class _PackageAdminPageState extends State<PackageAdminPage>
         isActive: true,
         displayOrder: 3,
         expertGroups: [
-          ExpertGroup(id: 'eg_005', name: 'แพทย์ทั่วไป', role: Profession.doctorGpProfessionId, maxExperts: 2, isRequired: false),
-          ExpertGroup(id: 'eg_006', name: 'เภสัชกร', role: Profession.pharmacistProfessionId, maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_005', name: 'แพทย์ทั่วไป', role: 'doctor', maxExperts: 2, isRequired: false),
+          ExpertGroup(id: 'eg_006', name: 'เภสัชกร', role: 'pharmacist', maxExperts: 2, isRequired: false),
         ],
         createdAt: now,
         updatedAt: now,
@@ -598,7 +598,6 @@ class _PackageAdminPageState extends State<PackageAdminPage>
   IconData _roleIcon(String role) {
     switch (role) {
       case 'professor': return Icons.workspace_premium;
-      case Profession.professorProfessionId: return Icons.workspace_premium;
       case 'specialist': return Icons.biotech_outlined;
       case 'pharmacist': return Icons.medication_outlined;
       default: return Icons.medical_services_outlined;
@@ -1306,7 +1305,6 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   IconData _roleIconForGroup(String role) {
     switch (role) {
       case 'professor': return Icons.workspace_premium;
-      case Profession.professorProfessionId: return Icons.workspace_premium;
       case 'specialist': return Icons.biotech_outlined;
       case 'pharmacist': return Icons.medication_outlined;
       default: return Icons.medical_services_outlined;
@@ -1316,13 +1314,15 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
   String _roleDisplayNameForGroup(String role) {
     switch (role) {
       case 'professor':
-      case Profession.professorProfessionId:
         return 'อาจารย์แพทย์';
-      case Profession.doctorGpProfessionId:
+      case 'doctor':
+      case 'doctor_gp':
+      case 'doctor_family':
         return 'แพทย์ทั่วไป';
-      case Profession.doctorSpecialistProfessionId:
+      case 'specialist':
+      case 'doctor_specialist':
         return 'แพทย์เฉพาะทาง';
-      case Profession.pharmacistProfessionId:
+      case 'pharmacist':
         return 'เภสัชกร';
       default:
         return role;
@@ -1474,10 +1474,10 @@ class _PackageEditorSheetState extends State<PackageEditorSheet> {
                       items: [
                         if (!availableProfessions.any((p) => p.professionCode == 'professor'))
                           DropdownMenuItem<String>(
-                            value: Profession.professorProfessionId,
+                            value: 'professor',
                             child: Row(
                               children: [
-                                Icon(_roleIconForGroup(Profession.professorProfessionId), size: 18, color: const Color(0xFF0f3460)),
+                                Icon(_roleIconForGroup('professor'), size: 18, color: const Color(0xFF0f3460)),
                                 const SizedBox(width: 8),
                                 const Text('อาจารย์แพทย์', style: TextStyle(fontSize: 13)),
                               ],

@@ -135,9 +135,7 @@ class _HealthProgramRequestDashboardState
       debugPrint('Dashboard: ▶️ _init() START for user ${user.id}');
 
       // ตรวจว่าเป็น provider หรือเปล่า
-      _isProvider =
-          user.professionId != null &&
-          user.professionId != '00000000-0000-0000-0000-000000000001';
+      _isProvider = user.isProvider;
 
       // โหลดจำนวนงานที่กำลังทำอยู่ (สำหรับ provider)
       if (_isProvider) {

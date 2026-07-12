@@ -1,16 +1,14 @@
-import '../../../admin/models/profession.dart';
-
 String _canonicalExpertGroupRole(String? rawRole) {
   final role = (rawRole ?? '').toLowerCase().trim();
   if (role.isEmpty) return '';
   if (role == 'doctor' || role == 'หมอ' || role.contains('แพทย์ทั่วไป')) {
-    return Profession.doctorGpProfessionId;
+    return 'doctor';
   }
   if (role == 'specialist' || role == 'เฉพาะทาง' || role.contains('แพทย์เฉพาะทาง')) {
-    return Profession.doctorSpecialistProfessionId;
+    return 'specialist';
   }
   if (role == 'pharmacist' || role == 'เภสัช' || role.contains('เภสัชกร')) {
-    return Profession.pharmacistProfessionId;
+    return 'pharmacist';
   }
   return rawRole?.trim() ?? '';
 }

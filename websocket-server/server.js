@@ -1909,10 +1909,14 @@ app.post('/api/applications/:id/approve', strictRateLimiter, duplicateCheckMiddl
       return res.status(404).json({ error: 'Application not found or already processed' });
     }
 
-    // Update user verification status
+    // Update user profession and verification status
     await pool.query(
-      `UPDATE users SET verification_status = 'verified' WHERE id = $1`,
-      [result.rows[0].user_id]
+      `UPDATE users 
+       SET profession_id = $1, 
+           verification_status = 'verified',
+           updated_at = NOW()
+       WHERE id = $2`,
+      [result.rows[0].profession_id, result.rows[0].user_id]
     );
 
     res.json({ message: 'Application approved', application: result.rows[0] });
@@ -1948,9 +1952,13 @@ app.post('/api/applications/:id/reject', strictRateLimiter, duplicateCheckMiddle
       return res.status(404).json({ error: 'Application not found or already processed' });
     }
 
-    // Update user verification status
+    // Reset user profession to consumer and update verification status
     await pool.query(
-      `UPDATE users SET verification_status = 'rejected' WHERE id = $1`,
+      `UPDATE users 
+       SET profession_id = '00000000-0000-0000-0000-000000000001',
+           verification_status = 'rejected',
+           updated_at = NOW()
+       WHERE id = $1`,
       [result.rows[0].user_id]
     );
 

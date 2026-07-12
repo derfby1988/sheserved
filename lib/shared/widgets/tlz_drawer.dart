@@ -159,22 +159,13 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
     if (user.professionId != null) {
       try {
         final repo = ProfessionRepository(Supabase.instance.client);
-        final professions = await repo.getAllProfessions();
-        final profession = professions.firstWhere(
-          (p) => p.id == user.professionId,
-          orElse: () => Profession(
-            id: '',
-            name: '',
-            category: const UserCategory(id: '', name: ''),
-            createdAt: DateTime.parse('0000-01-01'),
-            updatedAt: DateTime.parse('0000-01-01'),
-          ),
-        );
-        if (mounted && profession.id.isNotEmpty) {
-          setState(() => _canManageDrugRisk = profession.canManageDrugRisk);
+        final profession = await repo.getProfessionById(user.professionId!);
+        if (mounted) {
+          setState(() => _canManageDrugRisk = profession?.canManageDrugRisk ?? false);
         }
       } catch (e) {
         debugPrint('Error checking drug risk permission: $e');
+        if (mounted) setState(() => _canManageDrugRisk = false);
       }
     } else {
       if (mounted) setState(() => _canManageDrugRisk = false);
@@ -746,22 +737,25 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                       title: AuthService.instance.isLoggedIn ? 'ออกจากระบบ' : 'ลงชื่อเข้าใช้',
                       icon: AuthService.instance.isLoggedIn ? Icons.exit_to_app : Icons.login,
                       onTap: () async {
-                        _animationController.forward().then((_) async {
-                          if (AuthService.instance.isLoggedIn) {
-                            if (widget.onLogout != null) {
-                              widget.onLogout!();
-                            } else {
-                              await AuthService.instance.logout();
-                              if (context.mounted) {
-                                Navigator.of(context).pop();
-                                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-                              }
-                            }
+                        if (AuthService.instance.isLoggedIn) {
+                          if (widget.onLogout != null) {
+                            widget.onLogout!();
                           } else {
+                            // Capture navigator before closing drawer
+                            final navigator = Navigator.of(context, rootNavigator: true);
+                            // Close drawer first
                             Navigator.of(context).pop();
-                            Navigator.of(context).pushNamed('/login');
+                            await AuthService.instance.logout();
+                            // Wait for drawer close animation to complete
+                            await Future.delayed(const Duration(milliseconds: 400));
+                            // Use captured navigator — context is now unmounted
+                            navigator.pushNamedAndRemoveUntil('/login', (route) => false);
                           }
-                        });
+                        } else {
+                          final navigator = Navigator.of(context);
+                          navigator.pop();
+                          navigator.pushNamed('/login');
+                        }
                       },
                     ),
                   ),

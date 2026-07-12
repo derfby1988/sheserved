@@ -7,6 +7,7 @@ import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products
 import 'package:sheserved/features/profile/presentation/pages/profile_page.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_drawer.dart';
+import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/service_locator.dart';
 
 class MainAppLayout extends StatefulWidget {
@@ -24,6 +25,7 @@ class MainAppLayout extends StatefulWidget {
 class _MainAppLayoutState extends State<MainAppLayout> {
   late int _currentIndex;
   bool _isNavBarVisible = true;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -48,9 +50,19 @@ class _MainAppLayoutState extends State<MainAppLayout> {
         }
       },
       child: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: AppColors.background,
         extendBody: true, // สำคัญมาก เพื่อให้ Navigation Bar โปร่งใสแสดงทะลุเห็นเนื้อหาได้
-        drawer: const TlzDrawer(),
+        drawer: TlzDrawer(
+          onLogout: () async {
+            _scaffoldKey.currentState?.closeDrawer();
+            await AuthService.instance.logout();
+            await Future.delayed(const Duration(milliseconds: 400));
+            if (context.mounted) {
+              Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+            }
+          },
+        ),
         drawerEnableOpenDragGesture: _currentIndex == 0, // ให้เปิด Drawer จากขอบจอได้เฉพาะตอนอยู่หน้า Home
         body: NotificationListener<UserScrollNotification>(
           onNotification: (notification) {

@@ -360,16 +360,34 @@ class UnifiedRepository {
 
   /// อนุมัติใบสมัคร
   Future<void> approveApplication(String applicationId, {String? note}) async {
+    String? professionId;
+    String? userId;
+
     // Write to both
     if (_supabaseClient != null) {
       try {
         final now = DateTime.now();
-        await _supabaseClient!.from('registration_applications').update({
+        // 1. Update application status and fetch profession_id + user_id
+        final result = await _supabaseClient!.from('registration_applications').update({
           'status': 'approved',
           'review_note': note,
           'reviewed_at': now.toIso8601String(),
           'updated_at': now.toIso8601String(),
-        }).eq('id', applicationId);
+        }).eq('id', applicationId).eq('status', 'pending').select();
+
+        if ((result as List).isNotEmpty) {
+          professionId = result[0]['profession_id'] as String?;
+          userId = result[0]['user_id'] as String?;
+
+          // 2. Update user's profession_id and verification_status
+          if (userId != null && professionId != null) {
+            await _supabaseClient!.from('users').update({
+              'profession_id': professionId,
+              'verification_status': 'verified',
+              'updated_at': now.toIso8601String(),
+            }).eq('id', userId);
+          }
+        }
       } catch (e) {
         debugPrint('UnifiedRepository: Failed to approve in Supabase - $e');
       }
@@ -388,16 +406,32 @@ class UnifiedRepository {
 
   /// ปฏิเสธใบสมัคร
   Future<void> rejectApplication(String applicationId, {required String note}) async {
+    String? userId;
+
     // Write to both
     if (_supabaseClient != null) {
       try {
         final now = DateTime.now();
-        await _supabaseClient!.from('registration_applications').update({
+        // 1. Update application status and fetch user_id
+        final result = await _supabaseClient!.from('registration_applications').update({
           'status': 'rejected',
           'review_note': note,
           'reviewed_at': now.toIso8601String(),
           'updated_at': now.toIso8601String(),
-        }).eq('id', applicationId);
+        }).eq('id', applicationId).eq('status', 'pending').select();
+
+        if ((result as List).isNotEmpty) {
+          userId = result[0]['user_id'] as String?;
+
+          // 2. Reset user's profession_id to consumer and update verification_status
+          if (userId != null) {
+            await _supabaseClient!.from('users').update({
+              'profession_id': '00000000-0000-0000-0000-000000000001',
+              'verification_status': 'rejected',
+              'updated_at': now.toIso8601String(),
+            }).eq('id', userId);
+          }
+        }
       } catch (e) {
         debugPrint('UnifiedRepository: Failed to reject in Supabase - $e');
       }

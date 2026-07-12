@@ -1,0 +1,9 @@
+appId: com.sheserved.app
+---
+- launchApp:
+    appId: "com.sheserved.app"
+    clearState: false
+- extendedWaitUntil:
+    visible: ".*"
+    timeout: 10000
+- assertVisible: ".*"

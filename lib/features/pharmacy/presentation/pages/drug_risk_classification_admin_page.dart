@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/features/admin/models/profession.dart';
+import 'package:sheserved/features/admin/data/repositories/profession_repository.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/drug_risk_classification_models.dart';
@@ -43,6 +44,8 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   // Soft delete visibility
   bool _showDeletedSubcategories = false;
   bool _showDeletedRiskLevels = false;
+  Profession? _currentUserProfession;
+  bool _isProfessionLoaded = false;
 
   String get _currentUserId => AuthService.instance.currentUser?.id ?? 'unknown';
 
@@ -50,9 +53,7 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
     final user = AuthService.instance.currentUser;
     if (user == null) return DrugRiskPageMode.personalOverride;
     if (user.isAdmin) return DrugRiskPageMode.globalAdmin;
-    final isOrg = user.professionId == Profession.clinicProfessionId ||
-                  user.professionId == Profession.expertProfessionId;
-    if (user.professionId != null && isOrg) {
+    if (_currentUserProfession?.canManageDrugRisk == true) {
       return DrugRiskPageMode.organizationOverride;
     }
     return DrugRiskPageMode.personalOverride;
@@ -61,14 +62,32 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   @override
   void initState() {
     super.initState();
-    final mode = _pageMode;
-    final tabLength = (mode == DrugRiskPageMode.globalAdmin) ? 4 : 2;
+    final user = AuthService.instance.currentUser;
+    final tabLength = user?.isAdmin == true ? 4 : 2;
     _tabController = TabController(length: tabLength, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // Rebuild for floatingActionButton visibility
     });
     _repo = DrugRiskClassificationRepository(Supabase.instance.client);
-    _loadAllData();
+    _initializePage();
+  }
+
+  Future<void> _initializePage() async {
+    final user = AuthService.instance.currentUser;
+    if (user != null && !user.isAdmin && user.professionId != null) {
+      try {
+        _currentUserProfession = await ProfessionRepository(Supabase.instance.client)
+            .getProfessionById(user.professionId!);
+      } catch (e) {
+        debugPrint('DrugRisk: failed to load current profession: $e');
+      }
+    }
+    _isProfessionLoaded = true;
+
+    if (mounted) {
+      setState(() {});
+      await _loadAllData();
+    }
   }
 
   @override
@@ -391,21 +410,23 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
           tabs: tabs,
         ),
       ),
-      body: Column(
-        children: [
-          _buildModeBanner(mode),
-          Expanded(
-            child: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty && _overrideHistory.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text('Error: $_error'))
-                    : TabBarView(
-                        controller: _tabController,
-                        children: tabViews,
-                      ),
-          ),
-        ],
-      ),
+      body: !_isProfessionLoaded && mode != DrugRiskPageMode.globalAdmin
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                _buildModeBanner(mode),
+                Expanded(
+                  child: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty && _overrideHistory.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(child: Text('Error: $_error'))
+                          : TabBarView(
+                              controller: _tabController,
+                              children: tabViews,
+                            ),
+                ),
+              ],
+            ),
       floatingActionButton: mode == DrugRiskPageMode.globalAdmin && _tabController.index < 2
           ? FloatingActionButton(
               onPressed: () => _showAddDialog(_tabController.index),
