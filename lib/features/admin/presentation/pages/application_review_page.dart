@@ -703,7 +703,12 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      _buildStatusBadge(application.status),
+                      _buildStatusBadge(
+                        application.status,
+                        cancelledBy: application.status == VerificationStatus.cancelled
+                            ? application.cancelledBy
+                            : null,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         _formatTimeAgo(application.createdAt),
@@ -827,7 +832,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     );
   }
 
-  Widget _buildStatusBadge(VerificationStatus status) {
+  Widget _buildStatusBadge(VerificationStatus status, {String? cancelledBy}) {
     Color color;
     String text;
     IconData icon;
@@ -850,7 +855,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
         break;
       case VerificationStatus.cancelled:
         color = Colors.grey;
-        text = 'ยกเลิกแล้ว';
+        text = (cancelledBy == 'auto_profession_change')
+            ? 'เปลี่ยนกลุ่มแล้ว'
+            : 'ยกเลิกแล้ว';
         icon = Icons.remove_circle_outline;
         break;
     }

@@ -333,10 +333,18 @@ class PhaseTwoNotifier extends StateNotifier<PhaseTwoState> {
     }
   }
 
-  Future<bool> createDeliveryOrder(Map<String, dynamic> data) async {
+  /// สร้าง delivery order
+  /// [drugRiskFlags]: ผลลัพธ์จาก `DrugRiskScreeningService.buildDeliveryRiskFlags()`
+  Future<bool> createDeliveryOrder(
+    Map<String, dynamic> data, {
+    Map<String, dynamic>? drugRiskFlags,
+  }) async {
     state = state.copyWith(isSaving: true, clearError: true);
     try {
-      final order = await _repository.createDeliveryOrder(data);
+      final order = await _repository.createDeliveryOrder(
+        data,
+        drugRiskFlags: drugRiskFlags,
+      );
       state = state.copyWith(isSaving: false);
       return order != null;
     } catch (e, st) {

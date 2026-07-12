@@ -803,6 +803,13 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get photoBlurCompleteStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#photoBlurCompleteStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   _i3.Stream<Map<String, dynamic>> get yieldWayAlertStream =>
       (super.noSuchMethod(
         Invocation.getter(#yieldWayAlertStream),

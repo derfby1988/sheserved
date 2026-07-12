@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../repositories/drug_risk_classification_repository.dart';
 
 /// ผลลัพธ์การตรวจสอบความเสี่ยงของยาแต่ละรายการ
 class DrugRiskScreeningResult {
@@ -20,6 +21,8 @@ class DrugRiskScreeningResult {
   final String? requiredLicense;
   final bool providerHasLicense;
   final List<String> additionalNotes;
+  /// Override scope: 'personal', 'organization', หรือ null (ใช้ค่า Sheserved Default)
+  final String? overrideScope;
 
   const DrugRiskScreeningResult({
     required this.medicationName,
@@ -39,6 +42,7 @@ class DrugRiskScreeningResult {
     this.requiredLicense,
     this.providerHasLicense = true,
     this.additionalNotes = const [],
+    this.overrideScope,
   });
 
   /// สรุปข้อความแสดงผลลัพธ์
@@ -47,11 +51,18 @@ class DrugRiskScreeningResult {
     if (isWarning) return 'ต้องระวัง — ตรวจสอบเงื่อนไข';
     return 'อนุญาตสั่งผ่าน Telemedicine';
   }
+
+  /// มี Override หรือไม่ (สำหรับแสดง Badge 🔵/🟣)
+  bool get hasOverride => overrideScope != null;
 }
 
 /// บริการตรวจสอบความเสี่ยงยาก่อนสั่งจ่าย
 class DrugRiskScreeningService {
-  DrugRiskScreeningService(SupabaseClient client);
+  final DrugRiskClassificationRepository _repo;
+
+  DrugRiskScreeningService(SupabaseClient client)
+      : _repo = DrugRiskClassificationRepository(client);
+
 
   /// ข้อมูล FDA Risk Status
   static const Map<String, Map<String, dynamic>> _fdaRiskInfo = {
@@ -400,5 +411,160 @@ class DrugRiskScreeningService {
       results.add(result);
     }
     return results;
+  }
+
+  // ════════════════════════════════════════════════
+  // Override-Aware Screening (v3.0)
+  // ════════════════════════════════════════════════
+
+  /// ตรวจสอบยา 1 รายการ พร้อม Merge Override จาก Tier 3
+  ///
+  /// ลำดับ Merge:
+  ///   Personal Override > Organization Override > Platform Custom > Thai FDA
+  ///
+  /// Parameters:
+  /// - [medicationId]: UUID ของยา (ใช้ดึง effective risk จาก DB)
+  /// - [medicationName]: ชื่อยา (สำหรับแสดงผล)
+  /// - [providerId]: UUID ของแพทย์ (ตรวจใบอนุญาต Telemedicine)
+  /// - [currentUserId]: UUID ของผู้ใช้ปัจจุบัน (สำหรับ Personal Override)
+  /// - [professionId]: UUID ของอาชีพ/องค์กร (สำหรับ Org Override, nullable)
+  Future<DrugRiskScreeningResult> screenMedicationWithOverride({
+    required String medicationId,
+    required String medicationName,
+    required String providerId,
+    required String currentUserId,
+    String? professionId,
+    bool isTelemedicine = true,
+  }) async {
+    try {
+      // 1. ดึง effective risk (Merge ทุก Tier)
+      final effective = await _repo.getMedicationRiskEffective(
+        medicationId: medicationId,
+        currentUserId: currentUserId,
+        professionId: professionId,
+      );
+
+      // 2. ส่งต่อไปยัง screenMedication ด้วยค่าที่ merge แล้ว
+      final result = await screenMedication(
+        medicationName: medicationName,
+        fdaRiskStatus: effective['fda_risk_status'] as String?,
+        dangerousSubCategory:
+            effective['dangerous_sub_category'] as String?,
+        customRiskLevel: effective['custom_risk_level'] as String?,
+        providerId: providerId,
+        isTelemedicine: isTelemedicine,
+      );
+
+      // 3. เพิ่ม override scope ข้อมูลสำหรับ UI Badge
+      final overrideScope = effective['override_scope'] as String?;
+      if (overrideScope != null) {
+        return DrugRiskScreeningResult(
+          medicationName: result.medicationName,
+          isBlocked: result.isBlocked,
+          isWarning: result.isWarning,
+          fdaRiskStatus: result.fdaRiskStatus,
+          fdaStatusNameTh: result.fdaStatusNameTh,
+          dangerousSubCategory: result.dangerousSubCategory,
+          dangerousSubCategoryName: result.dangerousSubCategoryName,
+          customRiskLevel: result.customRiskLevel,
+          customRiskLevelName: result.customRiskLevelName,
+          blockReason: result.blockReason,
+          blockCode: result.blockCode,
+          legalBasis: result.legalBasis,
+          prescriptionCondition: result.prescriptionCondition,
+          pharmacistDispensingRule: result.pharmacistDispensingRule,
+          requiredLicense: result.requiredLicense,
+          providerHasLicense: result.providerHasLicense,
+          additionalNotes: result.additionalNotes,
+          overrideScope: overrideScope,
+        );
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Error in screenMedicationWithOverride: $e');
+      // Fallback: ใช้ screenMedication แบบเดิม (ไม่มี Override)
+      return screenMedication(
+        medicationName: medicationName,
+        providerId: providerId,
+        isTelemedicine: isTelemedicine,
+      );
+    }
+  }
+
+  /// ตรวจสอบรายการยาทั้งหมดในใบสั่งยา พร้อม Merge Override
+  Future<List<DrugRiskScreeningResult>> screenPrescriptionWithOverride({
+    required List<Map<String, dynamic>> medications,
+    required String providerId,
+    required String currentUserId,
+    String? professionId,
+    bool isTelemedicine = true,
+  }) async {
+    final results = <DrugRiskScreeningResult>[];
+    for (final med in medications) {
+      final medicationId = med['id'] as String?;
+      if (medicationId != null) {
+        final result = await screenMedicationWithOverride(
+          medicationId: medicationId,
+          medicationName: med['name'] ?? med['trade_name'] ?? 'ไม่ระบุชื่อ',
+          providerId: providerId,
+          currentUserId: currentUserId,
+          professionId: professionId,
+          isTelemedicine: isTelemedicine,
+        );
+        results.add(result);
+      } else {
+        // ไม่มี medicationId → ใช้ screenMedication แบบเดิม
+        final result = await screenMedication(
+          medicationName: med['name'] ?? 'ไม่ระบุชื่อ',
+          fdaRiskStatus: med['fda_risk_status'] as String?,
+          dangerousSubCategory: med['dangerous_sub_category'] as String?,
+          customRiskLevel: med['custom_risk_level'] as String?,
+          providerId: providerId,
+          isTelemedicine: isTelemedicine,
+        );
+        results.add(result);
+      }
+    }
+    return results;
+  }
+
+  /// รหัส FDA Risk Status ที่ต้องยืนยันตัวตนผู้รับ + ห้ามฝากตู้ล็อกเกอร์
+  /// (ยาควบคุมพิเศษ/เสพติดให้โทษ/วัตถุออกฤทธิ์ต่อจิตและประสาท)
+  static const _restrictedDeliveryFdaStatuses = {'S', 'N', 'P'};
+
+  /// สร้าง `drug_risk_flags` สำหรับ embed ใน `delivery_orders.metadata`
+  /// (DRUG_RISK_OVERRIDE_PLAN.md ข้อ 5.2)
+  ///
+  /// ใช้เมื่อสร้าง delivery order จากใบสั่งยาที่ผ่าน `screenPrescriptionWithOverride`
+  /// เพื่อแจ้งเตือนไรเดอร์/คลังยาถึงข้อกำหนดพิเศษในการจัดส่ง
+  static Map<String, dynamic> buildDeliveryRiskFlags(
+    List<DrugRiskScreeningResult> results,
+  ) {
+    final hasOverride = results.any((r) => r.hasOverride);
+
+    // Personal override มีผลเหนือ organization override เมื่อรวมหลายยา
+    String? overrideScope;
+    if (results.any((r) => r.overrideScope == 'personal')) {
+      overrideScope = 'personal';
+    } else if (results.any((r) => r.overrideScope == 'organization')) {
+      overrideScope = 'organization';
+    }
+
+    final requiresRestrictedHandling = results.any(
+      (r) =>
+          _restrictedDeliveryFdaStatuses.contains(r.fdaRiskStatus) ||
+          r.customRiskLevel == 'prohibited' ||
+          r.customRiskLevel == 'very_high',
+    );
+
+    return {
+      'drug_risk_flags': {
+        'has_override': hasOverride,
+        if (overrideScope != null) 'override_scope': overrideScope,
+        'requires_id_verification': requiresRestrictedHandling,
+        'no_safe_box_allowed': requiresRestrictedHandling,
+      },
+    };
   }
 }

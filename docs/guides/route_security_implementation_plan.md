@@ -883,3 +883,12 @@ If issues arise after deployment:
 ---
 
 **Next Steps:** Sprint 0 — start **Phase 0 (decide & implement role model)** and **Phase 1 (Backend RLS audit)** in parallel. AuthGuardWidget (Phase 2) begins only after Phase 0 lands.
+
+---
+
+## 11. Architectural Guidelines & Best Practices
+
+**UI Separation for Different Roles (Provider vs Admin)**
+- ให้สร้างหน้าสำหรับ **"การจัดการโดยรวม (Global Monitoring)"** แยกต่างหากสำหรับ Admin และดึงข้อมูลเฉพาะที่จำเป็นมาแสดง
+- **หลีกเลี่ยง** การแชร์หน้า UI เดียวกันที่มีบริบทการทำงานต่างกัน (เช่น งาน Operation ของ Provider vs งาน Monitoring ของ Admin) ข้ามหมวดหมู่
+- ตัวอย่างเช่น: แทนที่จะนำหน้า "คำขอโปรแกรมรักษา" (ของ Provider) ไปใส่ในเมนู "ผู้ดูแลระบบ" (Drawer) ให้ Admin ใช้งาน ให้สร้างหน้า Dashboard สำหรับดูภาพรวมคำขอทั้งหมดแยกออกมาต่างหากเพื่อ Admin โดยเฉพาะ ซึ่งจะช่วยป้องกันความสับสนและจัดระเบียบสิทธิการเข้าถึงได้อย่างชัดเจน

@@ -34,6 +34,7 @@ BEGIN
   END IF;
 
   -- 2. ตรวจสอบ approved สำหรับอาชีพเดียวกัน
+  -- บล็อกเฉพาะเมื่อ user ยังอยู่ในอาชีพนี้จริงๆ
   SELECT EXISTS(
     SELECT 1 FROM public.registration_applications
     WHERE user_id = p_user_id
@@ -41,7 +42,10 @@ BEGIN
       AND status = 'approved'
   ) INTO v_existing_approved;
 
-  IF v_existing_approved THEN
+  IF v_existing_approved AND EXISTS(
+    SELECT 1 FROM public.users
+    WHERE id = p_user_id AND profession_id = p_profession_id
+  ) THEN
     RAISE EXCEPTION 'APPROVED_EXISTS';
   END IF;
 

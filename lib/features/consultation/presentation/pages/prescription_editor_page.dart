@@ -732,9 +732,11 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
       // 2. ตรวจสอบความเสี่ยงยาก่อนสั่งจ่าย
       setState(() => _isLoading = true);
       final screener = DrugRiskScreeningService(Supabase.instance.client);
-      final screenResults = await screener.screenPrescription(
+      final screenResults = await screener.screenPrescriptionWithOverride(
         medications: medicationsList,
         providerId: userId,
+        currentUserId: userId,
+        professionId: professionId,
         isTelemedicine: true,
       );
       setState(() => _isLoading = false);

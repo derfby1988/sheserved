@@ -608,6 +608,7 @@ class RegistrationApplication {
   final DateTime? reviewedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? cancelledBy;
 
   const RegistrationApplication({
     required this.id,
@@ -626,6 +627,7 @@ class RegistrationApplication {
     this.reviewedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.cancelledBy,
   });
 
   String get fullName => '$firstName $lastName';
@@ -678,6 +680,7 @@ class RegistrationApplication {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'])
           : DateTime.now(),
+      cancelledBy: json['cancelled_by'] as String?,
     );
   }
 }

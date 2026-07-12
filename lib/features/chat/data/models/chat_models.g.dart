@@ -101,13 +101,18 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       attachmentType: fields[8] as String?,
       readBy: (fields[9] as Map).cast<String, DateTime>(),
       bodyPart: fields[10] as String?,
+      isRequired: fields[11] as bool,
+      requiredStatus: fields[12] as RequiredStatus?,
+      requiredAnswer: fields[13] as String?,
+      requiredAnsweredAt: fields[14] as DateTime?,
+      requiredOwnerId: fields[15] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -129,7 +134,17 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(9)
       ..write(obj.readBy)
       ..writeByte(10)
-      ..write(obj.bodyPart);
+      ..write(obj.bodyPart)
+      ..writeByte(11)
+      ..write(obj.isRequired)
+      ..writeByte(12)
+      ..write(obj.requiredStatus)
+      ..writeByte(13)
+      ..write(obj.requiredAnswer)
+      ..writeByte(14)
+      ..write(obj.requiredAnsweredAt)
+      ..writeByte(15)
+      ..write(obj.requiredOwnerId);
   }
 
   @override
@@ -232,6 +247,50 @@ class MessageStatusAdapter extends TypeAdapter<MessageStatus> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is MessageStatusAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class RequiredStatusAdapter extends TypeAdapter<RequiredStatus> {
+  @override
+  final int typeId = 4;
+
+  @override
+  RequiredStatus read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return RequiredStatus.unread;
+      case 1:
+        return RequiredStatus.reading;
+      case 2:
+        return RequiredStatus.answered;
+      default:
+        return RequiredStatus.unread;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, RequiredStatus obj) {
+    switch (obj) {
+      case RequiredStatus.unread:
+        writer.writeByte(0);
+        break;
+      case RequiredStatus.reading:
+        writer.writeByte(1);
+        break;
+      case RequiredStatus.answered:
+        writer.writeByte(2);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RequiredStatusAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

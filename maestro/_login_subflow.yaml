@@ -1,0 +1,32 @@
+# Login subflow for Sheserved app
+# Usage: called from other flows via runFlow
+# Credentials: firm / 123456 (freelance profession user with drug risk permission)
+# This flow clears state, launches app, logs in, and waits for home page.
+
+appId: com.sheserved.app
+---
+# Clear state to ensure fresh login
+- launchApp:
+    clearState: true
+
+# Wait for app and login page to load
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Verify we are on the login page
+- assertVisible: "ยินดีต้อนรับ!"
+
+# Enter username
+- tapOn: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "firm"
+
+# Enter password
+- tapOn: "รหัสผ่าน"
+- inputText: "123456"
+
+# Tap login button
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for home page to load after login
+- waitForAnimationToEnd:
+    timeout: 15000

@@ -1,0 +1,202 @@
+# Scenario 1: Personal Override for a freelance profession user
+# This flow automatically logs in with firm/123456 (freelance profession user)
+# before running the override test steps.
+# Prerequisites:
+#   - App is installed on the device
+#   - Network connectivity to Supabase backend
+#   - App data should be cleared before running (adb shell pm clear com.sheserved.app)
+# Environment:
+#   - MEDICATION_NAME: name of medication to search (default: "Paracetamol")
+
+appId: com.sheserved.app
+env:
+  MEDICATION_NAME: "Paracetamol"
+---
+# ═══════════════════════════════════════════
+# Step 1: Login as freelance profession user (firm/123456)
+# ═══════════════════════════════════════════
+# Launch app (do NOT use clearState: true — it causes ANR on this device)
+- launchApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for consumer home to load
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Open drawer by tapping hamburger icon (top-left)
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for login option in drawer
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+
+# Close drawer by tapping X button (top-right of drawer)
+# This triggers the drawer's close animation which navigates to login page
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify login page appeared
+- assertVisible: "ยินดีต้อนรับ!"
+
+# Enter username — tap the EditText by hint text
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "firm"
+
+# Dismiss keyboard to access password field
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Enter password — tap the EditText by coordinates (below "รหัสผ่าน" label)
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "123456"
+
+# Dismiss keyboard
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap login button
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for home page to load after login
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# ═══════════════════════════════════════════
+# Step 2: Verify profession home page
+# ═══════════════════════════════════════════
+# Precondition: verify we are on the profession home page
+# (freelance profession users see a profession tab at the top)
+- assertVisible: "เภสัชกร"
+
+# Open drawer by tapping hamburger icon (top-left)
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Scroll drawer down to reveal drug management items
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Navigate to drug risk classification page via drawer menu
+# "การจัดการยา" group is expanded by default in drawer
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+
+# Wait for page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify Personal mode page loaded
+- assertVisible: 'จัดการความเสี่ยงยา \(Personal\)'
+
+# ═══════════════════════════════════════════
+# Step 3: Search for medication
+# ═══════════════════════════════════════════
+# Tap the search text field
+- tapOn:
+    point: "400,330"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+# Use clipboard paste — Maestro's inputText doesn't update Flutter's TextEditingController
+- setClipboard: "${MEDICATION_NAME}"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap the "ค้นหา" search button to trigger search
+# (Flutter's onSubmitted/onChanged are not reliably triggered by Maestro)
+- tapOn: "ค้นหา"
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Wait for search results to appear (placeholder disappears)
+- extendedWaitUntil:
+    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
+    timeout: 10000
+
+# Tap "ตั้งค่า Override" on first medication card
+- tapOn: "ตั้งค่า Override"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Verify override dialog opened
+- assertVisible: 'Override:.*'
+
+# Change FDA Risk Status to D
+# Tap the FDA Risk Status button to open dropdown
+- tapOn:
+    point: "400,440"
+- waitForAnimationToEnd:
+    timeout: 2000
+# Tap "D (ยาอันตราย)" — 2nd option in dropdown, approx y=454
+- tapOn:
+    point: "400,454"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill notes field (5th field in dialog, approx y=770)
+- tapOn:
+    point: "400,770"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "Test Personal Override"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill reason field (6th field in dialog, approx y=900)
+- tapOn:
+    point: "400,900"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "For testing"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Save override
+- tapOn: "บันทึก Override"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Wait for dialog to close and card to update with badge
+# "Override ส่วนตัว" is embedded in a larger accessibility text block,
+# so use regex to match it
+- extendedWaitUntil:
+    visible: ".*Override ส่วนตัว.*"
+    timeout: 10000
+
+# Verify personal scope badge appears
+- assertVisible: ".*Override ส่วนตัว.*"

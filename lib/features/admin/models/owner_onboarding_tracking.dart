@@ -108,7 +108,7 @@ class OwnerOnboardingTracking {
       case 'user':
         return 'ยกเลิกโดยผู้สมัคร';
       case 'auto_profession_change':
-        return 'ยกเลิกอัตโนมัติ (เปลี่ยนอาชีพ)';
+        return 'เปลี่ยนกลุ่มแล้ว';
       default:
         return 'ยกเลิกแล้ว';
     }

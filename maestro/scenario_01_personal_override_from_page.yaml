@@ -1,0 +1,62 @@
+# Scenario 1: Personal Override - starts on Drug Risk Classification page
+# Prerequisites:
+#   - App is installed on the device
+#   - User is already logged in as a freelance profession (personal mode)
+#   - User has can_manage_drug_risk permission
+#   - User has MANUALLY navigated to "จัดการหมวดหมู่ความเสี่ยงยา" page
+#   - DO NOT use clearState: true before this flow; it wipes login state
+# Environment:
+#   - MEDICATION_NAME: name of medication to search (default: "Paracetamol")
+
+appId: com.sheserved.app
+---
+# Verify we are on the Personal mode page
+- assertVisible: 'จัดการความเสี่ยงยา \\(Personal\\)'
+- assertVisible: "ตั้งค่าส่วนตัว"
+
+# Ensure we are on the "ค้นหายา" tab
+- tapOn: "ค้นหายา"
+
+# Search for medication
+- tapOn: "ค้นหาตามชื่อยา"
+- inputText: "${MEDICATION_NAME}"
+
+# Submit search
+- pressKey: Enter
+
+# Wait for search results
+- extendedWaitUntil:
+    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
+    timeout: 10000
+
+# Tap "ตั้งค่า Override" on first medication card
+- tapOn: "ตั้งค่า Override"
+
+# Verify override dialog opened
+- assertVisible: 'Override:.*'
+
+# Change FDA Risk Status to D
+- tapOn: "FDA Risk Status"
+- tapOn: 'D \(ยาอันตราย\)'
+
+# Fill notes
+- tapOn: 'หมายเหตุการสั่งยาสำหรับหน้างาน \(ป้ายคำเตือน\)'
+- inputText: "ทดสอบ Personal Override"
+
+# Fill reason (required)
+- tapOn: 'เหตุผลการ Override เพื่อบันทึกประวัติ \*'
+- inputText: "สำหรับทดสอบ"
+
+# Save override
+- tapOn: "บันทึก Override"
+
+# Wait for dialog to close and card to update
+- extendedWaitUntil:
+    visible: "แก้ไขล่าสุดโดย"
+    timeout: 10000
+
+# Verify personal scope badge appears (purple badge text "ส่วนตัว" in app)
+- assertVisible: "ส่วนตัว"
+
+# Take screenshot for evidence
+- takeScreenshot: scenario_01_personal_override_success

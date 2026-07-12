@@ -488,10 +488,20 @@ class ProfessionRepository {
       return 'คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว กรุณารอผลตรวจสอบหรือยกเลิกใบสมัครเดิมก่อนสมัครใหม่';
     }
 
+    final userRes = await _client
+        .from('users')
+        .select('profession_id')
+        .eq('id', userId)
+        .single();
+    final currentProfessionId = userRes['profession_id'] as String?;
+    final isCurrentlyInThisProfession = currentProfessionId == professionId;
+
+    // บล็อก approved application เฉพาะเมื่อ user ยังอยู่ในอาชีพนี้จริงๆ
+    // ถ้า user เปลี่ยนออกไปแล้ว อนุญาตให้สมัครใหม่ได้ (cleanup trigger จะจัดการข้อมูลเก่า)
     final hasApprovedSameProfession = rows.any(
       (r) => r['status'] == 'approved' && r['profession_id'] == professionId,
     );
-    if (hasApprovedSameProfession) {
+    if (hasApprovedSameProfession && isCurrentlyInThisProfession) {
       return 'คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้';
     }
 

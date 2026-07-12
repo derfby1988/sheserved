@@ -476,7 +476,7 @@ class DrugRiskClassificationRepository {
     try {
       final response = await _client
           .from('medications')
-          .select('id, trade_name, generic_name, fda_risk_status, dangerous_sub_category')
+          .select()
           .or('trade_name.ilike.%$query%,generic_name.ilike.%$query%')
           .limit(50);
 
@@ -498,7 +498,7 @@ class DrugRiskClassificationRepository {
       // 1. ดึงค่าเดิม
       final old = await _client
           .from('medications')
-          .select('fda_risk_status, dangerous_sub_category')
+          .select()
           .eq('id', medicationId)
           .single();
 
@@ -562,7 +562,7 @@ class DrugRiskClassificationRepository {
           .isFilter('custom_risk_level', null)
           .count(CountOption.exact);
 
-      return response.count ?? 0;
+      return response.count;
     } catch (e) {
       debugPrint('Error counting custom meds without risk: $e');
       return 0;
@@ -583,6 +583,371 @@ class DrugRiskClassificationRepository {
     } catch (e) {
       debugPrint('Error fetching override logs: $e');
       return [];
+    }
+  }
+
+  // ════════════════════════════════════════════════
+  // Drug Risk Overrides (Org + Personal scope — v3.0)
+  // ════════════════════════════════════════════════
+
+  /// Upsert Override (ใช้ได้ทั้ง personal และ org scope)
+  /// บันทึก History + Name Snapshot อัตโนมัติ
+  Future<DrugRiskOverride> setOverride({
+    String? userId,          // Personal scope
+    String? professionId,    // Organization scope
+    required String medicationId,
+    String? overrideFdaRiskStatus,
+    String? overrideSubCategory,
+    String? overrideCustomRiskCode,
+    bool? overrideIsTelemedicineProhibited,
+    String? overrideNotes,
+    required String performedBy,
+    required String performedByName, // ชื่อจริงสำหรับ snapshot
+    String? changeReason,
+  }) async {
+    assert(userId != null || professionId != null,
+        'ต้องระบุ userId หรือ professionId');
+
+    // กฎเหล็ก: N/P ห้าม override เป็น telemedicine allowed
+    if (overrideIsTelemedicineProhibited == false &&
+        (overrideFdaRiskStatus == 'N' || overrideFdaRiskStatus == 'P')) {
+      throw Exception(
+          'ไม่สามารถอนุญาต Telemedicine สำหรับยาประเภท N หรือ P ได้ (บังคับตามกฎหมาย)');
+    }
+
+    try {
+      // 1. ดึงค่าเดิม (เพื่อ snapshot ใน History)
+      final existing = await getOverride(
+        userId: userId,
+        professionId: professionId,
+        medicationId: medicationId,
+      );
+
+      // 2. Insert or Update Active Override
+      //    (Can't use upsert with onConflict because the unique indexes are partial)
+      final data = <String, dynamic>{
+        if (userId != null) 'user_id': userId,
+        if (professionId != null) 'profession_id': professionId,
+        'medication_id': medicationId,
+        'override_fda_risk_status': overrideFdaRiskStatus,
+        'override_sub_category': overrideSubCategory,
+        'override_custom_risk_code': overrideCustomRiskCode,
+        'override_is_telemedicine_prohibited': overrideIsTelemedicineProhibited,
+        'override_notes': overrideNotes,
+        'last_modified_by': performedBy,
+        'last_modified_at': DateTime.now().toIso8601String(),
+      };
+
+      late final Map<String, dynamic> response;
+
+      if (existing != null) {
+        // Update existing override
+        final updated = await _client
+            .from('drug_risk_overrides')
+            .update(data)
+            .eq('id', existing.id)
+            .select()
+            .single();
+        response = updated;
+      } else {
+        // Insert new override
+        data['created_by'] = performedBy;
+        final inserted = await _client
+            .from('drug_risk_overrides')
+            .insert(data)
+            .select()
+            .single();
+        response = inserted;
+      }
+
+      final result = DrugRiskOverride.fromJson(response);
+
+      // 3. บันทึก History (ทั้ง org และ personal scope)
+      await _insertOverrideHistory(
+        overrideId: result.id,
+        professionId: professionId,
+        userId: userId,
+        medicationId: medicationId,
+        existing: existing,
+        overrideFdaRiskStatus: overrideFdaRiskStatus,
+        overrideSubCategory: overrideSubCategory,
+        overrideCustomRiskCode: overrideCustomRiskCode,
+        overrideIsTelemedicineProhibited: overrideIsTelemedicineProhibited,
+        overrideNotes: overrideNotes,
+        action: existing == null ? 'create' : 'update',
+        changedBy: performedBy,
+        changedByName: performedByName,
+        changeReason: changeReason,
+      );
+
+      // 4. Admin audit log
+      await _logAdminAction(
+        tableName: 'drug_risk_overrides',
+        recordId: result.id,
+        action: existing == null ? 'create' : 'update',
+        oldData: existing?.toJson(),
+        newData: result.toJson(),
+        performedBy: performedBy,
+      );
+
+      return result;
+    } catch (e) {
+      debugPrint('Error setting override: $e');
+      rethrow;
+    }
+  }
+
+  /// ลบ Override → คืนค่า tier ที่ต่ำกว่า
+  Future<void> removeOverride({
+    String? userId,
+    String? professionId,
+    required String medicationId,
+    required String performedBy,
+    required String performedByName,
+    String? changeReason,
+  }) async {
+    assert(userId != null || professionId != null);
+
+    try {
+      final existing = await getOverride(
+        userId: userId,
+        professionId: professionId,
+        medicationId: medicationId,
+      );
+      if (existing == null) return;
+
+      // บันทึก History ก่อน delete
+      await _insertOverrideHistory(
+        overrideId: existing.id,
+        professionId: professionId,
+        userId: userId,
+        medicationId: medicationId,
+        existing: existing,
+        action: 'delete',
+        changedBy: performedBy,
+        changedByName: performedByName,
+        changeReason: changeReason,
+      );
+
+      // ลบ record
+      var query = _client.from('drug_risk_overrides').delete();
+      if (userId != null) {
+        query = query.eq('user_id', userId);
+      }
+      if (professionId != null) {
+        query = query.eq('profession_id', professionId);
+      }
+      await query.eq('medication_id', medicationId);
+
+      await _logAdminAction(
+        tableName: 'drug_risk_overrides',
+        recordId: existing.id,
+        action: 'delete',
+        oldData: existing.toJson(),
+        performedBy: performedBy,
+      );
+    } catch (e) {
+      debugPrint('Error removing override: $e');
+      rethrow;
+    }
+  }
+
+  /// ดึง Active Override ที่ตรงกับ scope (nullable ถ้าไม่มี)
+  Future<DrugRiskOverride?> getOverride({
+    String? userId,
+    String? professionId,
+    required String medicationId,
+  }) async {
+    try {
+      var query = _client
+          .from('drug_risk_overrides')
+          .select()
+          .eq('medication_id', medicationId);
+
+      if (userId != null) {
+        query = query.eq('user_id', userId);
+      } else if (professionId != null) {
+        query = query.eq('profession_id', professionId);
+      } else {
+        return null;
+      }
+
+      final response = await query.maybeSingle();
+      if (response == null) return null;
+      return DrugRiskOverride.fromJson(response);
+    } catch (e) {
+      debugPrint('Error fetching override: $e');
+      return null;
+    }
+  }
+
+  /// ดึง History ของ Override (รองรับทั้ง org และ personal)
+  Future<List<DrugRiskOverrideHistory>> getOverrideHistory({
+    String? professionId,
+    String? userId,
+    String? medicationId,
+    int limit = 20,
+  }) async {
+    try {
+      var query = _client
+          .from('drug_risk_override_history')
+          .select();
+
+      if (professionId != null) {
+        query = query.eq('profession_id', professionId);
+      }
+      if (userId != null) {
+        query = query.eq('user_id', userId);
+      }
+      if (medicationId != null) {
+        query = query.eq('medication_id', medicationId);
+      }
+
+      final response = await query
+          .order('changed_at', ascending: false)
+          .limit(limit);
+
+      return (response as List)
+          .map((json) => DrugRiskOverrideHistory.fromJson(json))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching override history: $e');
+      return [];
+    }
+  }
+
+  /// RPC: ดึงผู้รับผิดชอบที่ยังมีตัวตนและสิทธิ์ (Single DB call — ไม่มี N+1)
+  Future<EffectiveModifierInfo> resolveEffectiveModifier({
+    required String medicationId,
+    String? professionId,
+    String? userId,
+  }) async {
+    try {
+      final result = await _client.rpc('resolve_effective_modifier', params: {
+        'p_medication_id': medicationId,
+        'p_profession_id': professionId,
+        'p_user_id': userId,
+      });
+      return EffectiveModifierInfo.fromJson(
+          Map<String, dynamic>.from(result as Map));
+    } catch (e) {
+      debugPrint('Error resolving effective modifier: $e');
+      return const EffectiveModifierInfo(
+        name: 'System Admin',
+        status: 'fallback_system',
+      );
+    }
+  }
+
+  /// Merge ทุก Tier → effective risk สำหรับผู้ใช้คนนี้
+  Future<Map<String, dynamic>> getMedicationRiskEffective({
+    required String medicationId,
+    String? currentUserId,
+    String? professionId,
+  }) async {
+    try {
+      // Tier 1+2: ค่ากลาง
+      final base = await _client
+          .from('medications')
+          .select()
+          .eq('id', medicationId)
+          .single();
+
+      Map<String, dynamic> result = {
+        ...base,
+        'has_override': false,
+        'override_scope': null,
+      };
+
+      // Tier 3a: Organization Override
+      if (professionId != null) {
+        final orgOverride = await getOverride(
+            professionId: professionId, medicationId: medicationId);
+        if (orgOverride != null && orgOverride.hasAnyOverride) {
+          result = _mergeOverride(result, orgOverride, 'organization');
+        }
+      }
+
+      // Tier 3b: Personal Override (ชนะ Org)
+      if (currentUserId != null) {
+        final personalOverride = await getOverride(
+            userId: currentUserId, medicationId: medicationId);
+        if (personalOverride != null && personalOverride.hasAnyOverride) {
+          result = _mergeOverride(result, personalOverride, 'personal');
+        }
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Error getting effective risk: $e');
+      rethrow;
+    }
+  }
+
+  // ─── Private Helpers ─────────────────────────────
+
+  Map<String, dynamic> _mergeOverride(
+    Map<String, dynamic> base,
+    DrugRiskOverride override,
+    String scope,
+  ) {
+    return {
+      ...base,
+      if (override.overrideFdaRiskStatus != null)
+        'fda_risk_status': override.overrideFdaRiskStatus,
+      if (override.overrideSubCategory != null)
+        'dangerous_sub_category': override.overrideSubCategory,
+      if (override.overrideIsTelemedicineProhibited != null)
+        'is_telemedicine_prohibited': override.overrideIsTelemedicineProhibited,
+      'has_override': true,
+      'override_scope': scope,
+      'override_notes': override.overrideNotes,
+      'override_last_modified_by': override.lastModifiedBy,
+      'override_last_modified_at': override.lastModifiedAt.toIso8601String(),
+    };
+  }
+
+  Future<void> _insertOverrideHistory({
+    required String overrideId,
+    String? professionId,
+    String? userId,
+    required String medicationId,
+    DrugRiskOverride? existing,
+    String? overrideFdaRiskStatus,
+    String? overrideSubCategory,
+    String? overrideCustomRiskCode,
+    bool? overrideIsTelemedicineProhibited,
+    String? overrideNotes,
+    required String action,
+    required String changedBy,
+    required String changedByName,
+    String? changeReason,
+  }) async {
+    try {
+      await _client.from('drug_risk_override_history').insert({
+        'override_id': overrideId,
+        if (professionId != null) 'profession_id': professionId,
+        if (userId != null) 'user_id': userId,
+        'medication_id': medicationId,
+        'fda_risk_status_before': existing?.overrideFdaRiskStatus,
+        'fda_risk_status_after': action == 'delete' ? null : overrideFdaRiskStatus,
+        'sub_category_before': existing?.overrideSubCategory,
+        'sub_category_after': action == 'delete' ? null : overrideSubCategory,
+        'custom_risk_code_before': existing?.overrideCustomRiskCode,
+        'custom_risk_code_after': action == 'delete' ? null : overrideCustomRiskCode,
+        'is_telemedicine_prohibited_before':
+            existing?.overrideIsTelemedicineProhibited,
+        'is_telemedicine_prohibited_after':
+            action == 'delete' ? null : overrideIsTelemedicineProhibited,
+        'notes_before': existing?.overrideNotes,
+        'notes_after': action == 'delete' ? null : overrideNotes,
+        'action': action,
+        'changed_by': changedBy,
+        'changed_by_name': changedByName,
+        'change_reason': changeReason,
+      });
+    } catch (e) {
+      debugPrint('Error inserting override history: $e');
     }
   }
 }

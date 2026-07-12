@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/constants/app_colors.dart';
+import 'package:sheserved/features/admin/models/profession.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/drug_risk_classification_models.dart';
 import '../../data/repositories/drug_risk_classification_repository.dart';
+
+enum DrugRiskPageMode { globalAdmin, organizationOverride, personalOverride }
 
 class DrugRiskClassificationAdminPage extends StatefulWidget {
   const DrugRiskClassificationAdminPage({super.key});
@@ -28,10 +31,14 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   // Tab 3 data
   List<Map<String, dynamic>> _searchResults = [];
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
   // Tab 4 data
   List<MedicationRiskOverrideLog> _recentOverrides = [];
   int _customMedsWithoutRisk = 0;
   List<Map<String, dynamic>> _adminLogs = [];
+
+  // Override history data (for Org/Personal modes)
+  List<DrugRiskOverrideHistory> _overrideHistory = [];
 
   // Soft delete visibility
   bool _showDeletedSubcategories = false;
@@ -39,10 +46,24 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
   String get _currentUserId => AuthService.instance.currentUser?.id ?? 'unknown';
 
+  DrugRiskPageMode get _pageMode {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return DrugRiskPageMode.personalOverride;
+    if (user.isAdmin) return DrugRiskPageMode.globalAdmin;
+    final isOrg = user.professionId == Profession.clinicProfessionId ||
+                  user.professionId == Profession.expertProfessionId;
+    if (user.professionId != null && isOrg) {
+      return DrugRiskPageMode.organizationOverride;
+    }
+    return DrugRiskPageMode.personalOverride;
+  }
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    final mode = _pageMode;
+    final tabLength = (mode == DrugRiskPageMode.globalAdmin) ? 4 : 2;
+    _tabController = TabController(length: tabLength, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // Rebuild for floatingActionButton visibility
     });
@@ -54,6 +75,7 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   void dispose() {
     _tabController.removeListener(() {});
     _tabController.dispose();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -64,11 +86,16 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       _error = null;
     });
     try {
-      await Future.wait([
-        _loadSubcategories(),
-        _loadRiskLevels(),
-        _loadReports(),
-      ]);
+      final mode = _pageMode;
+      if (mode == DrugRiskPageMode.globalAdmin) {
+        await Future.wait([
+          _loadSubcategories(),
+          _loadRiskLevels(),
+          _loadReports(),
+        ]);
+      } else {
+        await _loadReports();
+      }
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -91,9 +118,58 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   }
 
   Future<void> _loadReports() async {
-    _recentOverrides = await _repo.getRecentOverrides();
-    _customMedsWithoutRisk = await _repo.getCustomMedicationsWithoutRiskLevel();
-    _adminLogs = await _repo.getAdminLogs();
+    final mode = _pageMode;
+    if (mode == DrugRiskPageMode.globalAdmin) {
+      _recentOverrides = await _repo.getRecentOverrides();
+      _customMedsWithoutRisk = await _repo.getCustomMedicationsWithoutRiskLevel();
+      _adminLogs = await _repo.getAdminLogs();
+    } else {
+      final user = AuthService.instance.currentUser;
+      if (user != null) {
+        _overrideHistory = await _repo.getOverrideHistory(
+          professionId: mode == DrugRiskPageMode.organizationOverride ? user.professionId : null,
+          userId: mode == DrugRiskPageMode.personalOverride ? user.id : null,
+        );
+      }
+    }
+  }
+
+  Future<void> _enrichSearchResults() async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return;
+    final userId = user.id;
+    final professionId = user.professionId;
+    final mode = _pageMode;
+
+    for (int i = 0; i < _searchResults.length; i++) {
+      final med = _searchResults[i];
+      final medId = med['id'] as String;
+
+      final effective = await _repo.getMedicationRiskEffective(
+        medicationId: medId,
+        currentUserId: mode == DrugRiskPageMode.personalOverride ? userId : null,
+        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+      );
+
+      final modifier = await _repo.resolveEffectiveModifier(
+        medicationId: medId,
+        userId: mode == DrugRiskPageMode.personalOverride ? userId : null,
+        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+      );
+
+      final activeOverride = await _repo.getOverride(
+        userId: mode == DrugRiskPageMode.personalOverride ? userId : null,
+        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+        medicationId: medId,
+      );
+
+      _searchResults[i] = {
+        ...med,
+        'effective_risk': effective,
+        'effective_modifier': modifier,
+        'active_override': activeOverride,
+      };
+    }
   }
 
   Future<void> _searchMedications(String query) async {
@@ -104,11 +180,12 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
     setState(() => _isLoading = true);
     try {
       final results = await _repo.searchMedications(query);
+      _searchResults = results;
+      if (_pageMode != DrugRiskPageMode.globalAdmin) {
+        await _enrichSearchResults();
+      }
       if (mounted) {
-        setState(() {
-          _searchResults = results;
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       if (mounted) {
@@ -117,70 +194,219 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('จัดการหมวดหมู่ความเสี่ยงยา'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'reset_subcategories') {
-                final inserted = await _repo.resetSubcategorySeed(performedBy: _currentUserId);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('รีเซ็ตหมวดยาอันตราย: ${inserted.length} รายการ')),
-                  );
-                }
-                _loadSubcategories();
-                setState(() {});
-              } else if (value == 'reset_risk_levels') {
-                final inserted = await _repo.resetRiskLevelSeed(performedBy: _currentUserId);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('รีเซ็ตระดับความเสี่ยง: ${inserted.length} รายการ')),
-                  );
-                }
-                _loadRiskLevels();
-                setState(() {});
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'reset_subcategories', child: Text('รีเซ็ตค่าเริ่มต้น: หมวดยาอันตราย')),
-              const PopupMenuItem(value: 'reset_risk_levels', child: Text('รีเซ็ตค่าเริ่มต้น: ระดับความเสี่ยง')),
-            ],
+  String _formatRelativeTime(DateTime? dateTime) {
+    if (dateTime == null) return '';
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inDays > 0) return 'เมื่อ ${diff.inDays} วันที่แล้ว';
+    if (diff.inHours > 0) return 'เมื่อ ${diff.inHours} ชั่วโมงที่แล้ว';
+    if (diff.inMinutes > 0) return 'เมื่อ ${diff.inMinutes} นาทีที่แล้ว';
+    return 'เมื่อสักครู่';
+  }
+
+  Widget _buildCardBanner(EffectiveModifierInfo modifier, DrugRiskOverride? activeOverride) {
+    String text = '';
+    Color color = Colors.orange.shade800;
+    Color bgColor = Colors.orange.shade50;
+
+    final notes = activeOverride?.overrideNotes ?? '';
+    final notesSuffix = notes.isNotEmpty ? '\n"$notes"' : '';
+    final relativeTime = _formatRelativeTime(modifier.modifiedAt);
+    final timeStr = relativeTime.isNotEmpty ? ' $relativeTime' : '';
+
+    if (modifier.status == 'active') {
+      text = '⚠️ แก้ไขล่าสุดโดย ${modifier.name}$timeStr$notesSuffix';
+    } else if (modifier.status == 'fallback_history') {
+      final displayName = modifier.snapshotName ?? modifier.name;
+      text = '⚠️ ตั้งค่าโดยอดีตเจ้าหน้าที่ (โอนย้ายสิทธิ์ดูแลให้ $displayName [Active]$timeStr)$notesSuffix';
+      color = Colors.blue.shade900;
+      bgColor = Colors.blue.shade50;
+    } else if (modifier.status == 'fallback_system') {
+      text = '⚠️ ดูแลโดย System Admin (เนื่องจากผู้ตั้งค่าพ้นสภาพการเป็นผู้ดูแลระบบ)$notesSuffix';
+      color = Colors.red.shade900;
+      bgColor = Colors.red.shade50;
+    }
+
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeBanner(DrugRiskPageMode mode) {
+    String text;
+    Color bgColor;
+    Color textColor;
+    IconData icon;
+
+    switch (mode) {
+      case DrugRiskPageMode.globalAdmin:
+        text = '🌐 โหมดจัดการส่วนกลาง — เปลี่ยนแปลงส่งผลต่อทุกผู้ใช้';
+        bgColor = Colors.blue.shade50;
+        textColor = Colors.blue.shade900;
+        icon = Icons.public;
+        break;
+      case DrugRiskPageMode.organizationOverride:
+        text = '🏥 ตั้งค่าสำหรับองค์กร — จะมีผลกับทุกคนในคลินิก/ร้านยาของคุณ';
+        bgColor = Colors.teal.shade50;
+        textColor = Colors.teal.shade900;
+        icon = Icons.local_hospital;
+        break;
+      case DrugRiskPageMode.personalOverride:
+        text = '👤 ตั้งค่าส่วนตัว — จะใช้เฉพาะกับการออกใบสั่งยาของคุณเท่านั้น';
+        bgColor = Colors.purple.shade50;
+        textColor = Colors.purple.shade900;
+        icon = Icons.person;
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: bgColor,
+      child: Row(
+        children: [
+          Icon(icon, color: textColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = _pageMode;
+    String title;
+    List<Tab> tabs;
+    List<Widget> tabViews;
+
+    switch (mode) {
+      case DrugRiskPageMode.globalAdmin:
+        title = 'จัดการหมวดหมู่ความเสี่ยงยา';
+        tabs = const [
+          Tab(icon: Icon(Icons.category_outlined, size: 20), text: 'หมวดยาอันตราย'),
+          Tab(icon: Icon(Icons.scale_outlined, size: 20), text: 'ระดับความเสี่ยง'),
+          Tab(icon: Icon(Icons.medical_services_outlined, size: 20), text: 'ตรวจสอบยา'),
+          Tab(icon: Icon(Icons.bar_chart_outlined, size: 20), text: 'รายงาน'),
+        ];
+        tabViews = [
+          _buildSubcategoriesTab(),
+          _buildRiskLevelsTab(),
+          _buildMedicationReviewTab(),
+          _buildReportsTab(),
+        ];
+        break;
+
+      case DrugRiskPageMode.organizationOverride:
+        title = 'จัดการความเสี่ยงยา (Organization)';
+        tabs = const [
+          Tab(icon: Icon(Icons.medical_services_outlined, size: 20), text: 'ค้นหายา'),
+          Tab(icon: Icon(Icons.history, size: 20), text: 'ประวัติการตั้งค่า'),
+        ];
+        tabViews = [
+          _buildMedicationReviewTab(),
+          _buildHistoryTab(),
+        ];
+        break;
+
+      case DrugRiskPageMode.personalOverride:
+        title = 'จัดการความเสี่ยงยา (Personal)';
+        tabs = const [
+          Tab(icon: Icon(Icons.medical_services_outlined, size: 20), text: 'ค้นหายา'),
+          Tab(icon: Icon(Icons.history, size: 20), text: 'ประวัติการตั้งค่า'),
+        ];
+        tabViews = [
+          _buildMedicationReviewTab(),
+          _buildHistoryTab(),
+        ];
+        break;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: mode == DrugRiskPageMode.globalAdmin
+            ? [
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'reset_subcategories') {
+                      final inserted = await _repo.resetSubcategorySeed(performedBy: _currentUserId);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('รีเซ็ตหมวดยาอันตราย: ${inserted.length} รายการ')),
+                        );
+                      }
+                      _loadSubcategories();
+                      setState(() {});
+                    } else if (value == 'reset_risk_levels') {
+                      final inserted = await _repo.resetRiskLevelSeed(performedBy: _currentUserId);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('รีเซ็ตระดับความเสี่ยง: ${inserted.length} รายการ')),
+                        );
+                      }
+                      _loadRiskLevels();
+                      setState(() {});
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'reset_subcategories', child: Text('รีเซ็ตค่าเริ่มต้น: หมวดยาอันตราย')),
+                    const PopupMenuItem(value: 'reset_risk_levels', child: Text('รีเซ็ตค่าเริ่มต้น: ระดับความเสี่ยง')),
+                  ],
+                ),
+              ]
+            : null,
         bottom: TabBar(
           controller: _tabController,
-          isScrollable: true,
+          isScrollable: mode == DrugRiskPageMode.globalAdmin,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
           labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400, fontSize: 13),
-          tabs: const [
-            Tab(icon: Icon(Icons.category_outlined, size: 20), text: 'หมวดยาอันตราย'),
-            Tab(icon: Icon(Icons.scale_outlined, size: 20), text: 'ระดับความเสี่ยง'),
-            Tab(icon: Icon(Icons.medical_services_outlined, size: 20), text: 'ตรวจสอบยา'),
-            Tab(icon: Icon(Icons.bar_chart_outlined, size: 20), text: 'รายงาน'),
-          ],
+          tabs: tabs,
         ),
       ),
-      body: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text('Error: $_error'))
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildSubcategoriesTab(),
-                    _buildRiskLevelsTab(),
-                    _buildMedicationReviewTab(),
-                    _buildReportsTab(),
-                  ],
-                ),
-      floatingActionButton: _tabController.index < 2
+      body: Column(
+        children: [
+          _buildModeBanner(mode),
+          Expanded(
+            child: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty && _overrideHistory.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text('Error: $_error'))
+                    : TabBarView(
+                        controller: _tabController,
+                        children: tabViews,
+                      ),
+          ),
+        ],
+      ),
+      floatingActionButton: mode == DrugRiskPageMode.globalAdmin && _tabController.index < 2
           ? FloatingActionButton(
               onPressed: () => _showAddDialog(_tabController.index),
               child: const Icon(Icons.add),
@@ -248,7 +474,9 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                       : (item.isTelemedicineProhibited ? Colors.red.shade100 : Colors.green.shade100),
                   child: Icon(
                     isDeleted ? Icons.delete_outline : (item.isTelemedicineProhibited ? Icons.block : Icons.check_circle),
-                    color: isDeleted ? Colors.grey : (item.isTelemedicineProhibited ? Colors.red : Colors.green),
+                    color: isDeleted
+                        ? Colors.grey.shade700
+                        : (item.isTelemedicineProhibited ? Colors.red : Colors.green),
                     size: 20,
                   ),
                 ),
@@ -257,60 +485,32 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        item.nameTh,
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          decoration: isDeleted ? TextDecoration.lineThrough : null,
-                          color: isDeleted ? Colors.grey : null,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Text(item.nameTh, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                          if (item.nameEn != null) ...[
+                            const SizedBox(width: 6),
+                            Text('(${item.nameEn})', style: AppTextStyles.bodySmall),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        item.code,
-                        style: AppTextStyles.bodySmall.copyWith(fontFamily: 'monospace'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      Text('Code: ${item.code}', style: AppTextStyles.bodySmall),
                       if (item.description != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          item.description!,
-                          style: AppTextStyles.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        const SizedBox(height: 4),
+                        Text(item.description!, style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade600)),
                       ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
                 _buildCardActions(
                   isDeleted: isDeleted,
                   onRestore: () => _reactivateSubcategory(item),
                   isActive: item.isActive,
-                  onToggle: (v) => _toggleSubcategoryActive(item, v),
+                  onToggle: (val) => _toggleSubcategoryActive(item, val),
                   onEdit: () => _showEditSubcategoryDialog(item),
                   onDelete: () => _confirmDeleteSubcategory(item),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                if (isDeleted)
-                  _buildStatusChip('ถูกลบ', Colors.red)
-                else ...[
-                  _buildStatusChip(
-                    item.isTelemedicineProhibited ? 'ห้าม Telemedicine' : 'อนุญาต Telemedicine',
-                    item.isTelemedicineProhibited ? Colors.red : Colors.green,
-                  ),
-                  if (!item.isActive) _buildStatusChip('ปิดใช้งาน', Colors.orange),
-                ],
               ],
             ),
           ],
@@ -373,10 +573,15 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
               children: [
                 CircleAvatar(
                   radius: 20,
-                  backgroundColor: isDeleted ? Colors.grey.shade400 : _riskLevelColor(item.code),
-                  child: Text(
-                    isDeleted ? 'X' : item.code.toUpperCase(),
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                  backgroundColor: isDeleted
+                      ? Colors.grey.shade400
+                      : _riskLevelColor(item.code).withOpacity(0.2),
+                  child: Icon(
+                    isDeleted ? Icons.delete_outline : (item.isTelemedicineProhibited ? Icons.block : Icons.check_circle),
+                    color: isDeleted
+                        ? Colors.grey.shade700
+                        : _riskLevelColor(item.code),
+                    size: 20,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -384,60 +589,41 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        item.nameTh,
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          decoration: isDeleted ? TextDecoration.lineThrough : null,
-                          color: isDeleted ? Colors.grey : null,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Text(item.nameTh, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                          if (item.nameEn != null) ...[
+                            const SizedBox(width: 6),
+                            Text('(${item.nameEn})', style: AppTextStyles.bodySmall),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        item.code,
-                        style: AppTextStyles.bodySmall.copyWith(fontFamily: 'monospace'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Text('Code: ${item.code}', style: AppTextStyles.bodySmall),
+                          const SizedBox(width: 8),
+                          _buildStatusChip(
+                            item.isTelemedicineProhibited ? 'ห้าม Telemed' : 'อนุญาต Telemed',
+                            item.isTelemedicineProhibited ? Colors.red : Colors.green,
+                          ),
+                        ],
                       ),
                       if (item.description != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          item.description!,
-                          style: AppTextStyles.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        const SizedBox(height: 4),
+                        Text(item.description!, style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade600)),
                       ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
                 _buildCardActions(
                   isDeleted: isDeleted,
                   onRestore: () => _reactivateRiskLevel(item),
                   isActive: item.isActive,
-                  onToggle: (v) => _toggleRiskLevelActive(item, v),
+                  onToggle: (val) => _toggleRiskLevelActive(item, val),
                   onEdit: () => _showEditRiskLevelDialog(item),
                   onDelete: () => _confirmDeleteRiskLevel(item),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                if (isDeleted)
-                  _buildStatusChip('ถูกลบ', Colors.red)
-                else ...[
-                  _buildStatusChip(
-                    item.isTelemedicineProhibited ? 'ห้าม Telemedicine' : 'อนุญาต Telemedicine',
-                    item.isTelemedicineProhibited ? Colors.red : Colors.green,
-                  ),
-                  if (!item.isActive) _buildStatusChip('ปิดใช้งาน', Colors.orange),
-                ],
               ],
             ),
           ],
@@ -512,12 +698,12 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
   Color _riskLevelColor(String code) {
     switch (code) {
-      case 'low': return Colors.green.shade200;
-      case 'medium': return Colors.yellow.shade200;
-      case 'high': return Colors.orange.shade200;
-      case 'very_high': return Colors.deepOrange.shade200;
-      case 'prohibited': return Colors.red.shade200;
-      default: return Colors.grey.shade200;
+      case 'low': return Colors.green;
+      case 'medium': return Colors.amber;
+      case 'high': return Colors.orange;
+      case 'very_high': return Colors.deepOrange;
+      case 'prohibited': return Colors.red;
+      default: return Colors.grey;
     }
   }
 
@@ -530,21 +716,45 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'ค้นหาตามชื่อยา (Trade/Generic)...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _searchController.clear();
-                  _searchMedications('');
-                },
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'ค้นหาตามชื่อยา (Trade/Generic)...',
+                    prefixIcon: IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () {
+                        _searchMedications(_searchController.text);
+                      },
+                    ),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _searchMedications('');
+                      },
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onSubmitted: _searchMedications,
+                  onChanged: (value) {
+                    _searchDebounce?.cancel();
+                    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+                      _searchMedications(value);
+                    });
+                  },
+                ),
               ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onSubmitted: _searchMedications,
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  _searchMedications(_searchController.text);
+                },
+                child: const Text('ค้นหา'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -564,8 +774,26 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   }
 
   Widget _buildMedicationCard(Map<String, dynamic> med) {
-    final fdaStatus = med['fda_risk_status'] as String?;
-    final subCategory = med['dangerous_sub_category'] as String?;
+    final mode = _pageMode;
+    String? fdaStatus = med['fda_risk_status'] as String?;
+    String? subCategory = med['dangerous_sub_category'] as String?;
+    bool hasOverride = false;
+    String? overrideScope;
+    EffectiveModifierInfo? modifier;
+    DrugRiskOverride? activeOverride;
+
+    if (mode != DrugRiskPageMode.globalAdmin) {
+      final effective = med['effective_risk'] as Map<String, dynamic>?;
+      modifier = med['effective_modifier'] as EffectiveModifierInfo?;
+      activeOverride = med['active_override'] as DrugRiskOverride?;
+
+      if (effective != null) {
+        fdaStatus = effective['fda_risk_status'] as String?;
+        subCategory = effective['dangerous_sub_category'] as String?;
+        hasOverride = effective['has_override'] == true;
+        overrideScope = effective['override_scope'] as String?;
+      }
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -574,15 +802,27 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (modifier != null && modifier.status != 'no_override')
+              _buildCardBanner(modifier, activeOverride),
             Row(
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        med['trade_name'] ?? 'ไม่ระบุชื่อ',
-                        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              med['trade_name'] ?? 'ไม่ระบุชื่อ',
+                              style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          if (hasOverride) ...[
+                            const SizedBox(width: 8),
+                            _buildOverrideScopeBadge(overrideScope),
+                          ],
+                        ],
                       ),
                       if (med['generic_name'] != null)
                         Text('Generic: ${med['generic_name']}', style: AppTextStyles.bodySmall),
@@ -599,15 +839,54 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (mode != DrugRiskPageMode.globalAdmin && activeOverride != null) ...[
+                  TextButton.icon(
+                    onPressed: () => _removeOverride(med),
+                    icon: const Icon(Icons.restore, color: Colors.red),
+                    label: const Text('คืนค่า Default', style: TextStyle(color: Colors.red)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 TextButton.icon(
                   onPressed: () => _showOverrideDialog(med),
                   icon: const Icon(Icons.edit),
-                  label: const Text('Override'),
+                  label: Text(mode == DrugRiskPageMode.globalAdmin ? 'Override' : 'ตั้งค่า Override'),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildOverrideScopeBadge(String? scope) {
+    final isOrg = scope == 'organization';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: (isOrg ? Colors.teal : Colors.purple).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: isOrg ? Colors.teal : Colors.purple, width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isOrg ? Icons.local_hospital : Icons.person,
+            size: 10,
+            color: isOrg ? Colors.teal : Colors.purple,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isOrg ? 'Override องค์กร' : 'Override ส่วนตัว',
+            style: TextStyle(
+              fontSize: 9,
+              color: isOrg ? Colors.teal : Colors.purple,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -790,6 +1069,78 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   }
 
   // ═══════════════════════════════════════════
+  // Org / Personal Override History Tab
+  // ═══════════════════════════════════════════
+
+  Widget _buildHistoryTab() {
+    if (_overrideHistory.isEmpty) {
+      return const Center(child: Text('ไม่มีประวัติการตั้งค่า Override'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _overrideHistory.length,
+      itemBuilder: (context, index) {
+        final log = _overrideHistory[index];
+        final isOrg = log.professionId != null;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (isOrg ? Colors.teal : Colors.purple).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: isOrg ? Colors.teal : Colors.purple),
+                      ),
+                      child: Text(
+                        isOrg ? '🏥 องค์กร' : '👤 ส่วนตัว',
+                        style: TextStyle(
+                          color: isOrg ? Colors.teal : Colors.purple,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${log.changedAt.day}/${log.changedAt.month}/${log.changedAt.year} ${log.changedAt.hour.toString().padLeft(2, '0')}:${log.changedAt.minute.toString().padLeft(2, '0')}',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'การกระทำ: ${log.action == 'create' ? 'สร้างการ Override' : log.action == 'update' ? 'แก้ไขการ Override' : 'ยกเลิกการ Override (คืนค่า)'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (log.fdaRiskStatusBefore != log.fdaRiskStatusAfter)
+                  Text('FDA: ${log.fdaRiskStatusBefore ?? 'ค่าเริ่มต้น'} → ${log.fdaRiskStatusAfter ?? 'ค่าเริ่มต้น'}'),
+                if (log.subCategoryBefore != log.subCategoryAfter)
+                  Text('Subcategory: ${log.subCategoryBefore ?? 'ค่าเริ่มต้น'} → ${log.subCategoryAfter ?? 'ค่าเริ่มต้น'}'),
+                if (log.isTelemedicineProhibitedBefore != log.isTelemedicineProhibitedAfter)
+                  Text('ห้าม Telemedicine: ${log.isTelemedicineProhibitedBefore ?? 'ค่าเริ่มต้น'} → ${log.isTelemedicineProhibitedAfter ?? 'ค่าเริ่มต้น'}'),
+                const SizedBox(height: 8),
+                if (log.changeReason != null && log.changeReason!.isNotEmpty)
+                  Text('เหตุผล: ${log.changeReason}', style: const TextStyle(fontStyle: FontStyle.italic)),
+                const Divider(),
+                Text('ดำเนินการโดย: ${log.changedByName} (ณ ขณะนั้น)', style: AppTextStyles.bodySmall),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ═══════════════════════════════════════════
   // Dialogs & Actions
   // ═══════════════════════════════════════════
 
@@ -950,67 +1301,286 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   }
 
   Future<void> _showOverrideDialog(Map<String, dynamic> med) async {
-    final fdaController = TextEditingController(text: med['fda_risk_status'] ?? '');
-    final subCatController = TextEditingController(text: med['dangerous_sub_category'] ?? '');
-    final reasonController = TextEditingController();
+    final mode = _pageMode;
+    if (mode == DrugRiskPageMode.globalAdmin) {
+      final fdaController = TextEditingController(text: med['fda_risk_status'] ?? '');
+      final subCatController = TextEditingController(text: med['dangerous_sub_category'] ?? '');
+      final reasonController = TextEditingController();
 
-    final result = await showDialog<bool>(
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Override: ${med['trade_name']}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: fdaController,
+                  decoration: const InputDecoration(labelText: 'FDA Risk Status (ND/D/S/N/P)'),
+                ),
+                TextField(
+                  controller: subCatController,
+                  decoration: const InputDecoration(labelText: 'Dangerous Sub Category'),
+                ),
+                TextField(
+                  controller: reasonController,
+                  decoration: const InputDecoration(labelText: 'เหตุผล *'),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก')),
+            FilledButton(
+              onPressed: () async {
+                if (reasonController.text.isEmpty) return;
+                try {
+                  final userId = AuthService.instance.currentUser?.id ?? 'unknown';
+                  await _repo.updateMedicationClassification(
+                    medicationId: med['id'] as String,
+                    fdaRiskStatus: fdaController.text.isNotEmpty ? fdaController.text : null,
+                    dangerousSubCategory: subCatController.text.isNotEmpty ? subCatController.text : null,
+                    reason: reasonController.text,
+                    overriddenBy: userId,
+                  );
+                  if (mounted) {
+                    Navigator.pop(context, true);
+                    _searchMedications(_searchController.text);
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                }
+              },
+              child: const Text('บันทึก Override'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == true) {
+        _loadReports();
+        setState(() {});
+      }
+    } else {
+      final activeOverride = med['active_override'] as DrugRiskOverride?;
+      final modifier = med['effective_modifier'] as EffectiveModifierInfo?;
+
+      String? selectedFda = activeOverride?.overrideFdaRiskStatus ?? med['fda_risk_status'];
+      String? selectedSubCat = activeOverride?.overrideSubCategory ?? med['dangerous_sub_category'];
+      String? selectedCustomCode = activeOverride?.overrideCustomRiskCode;
+
+      bool isTeleProhibited = activeOverride?.overrideIsTelemedicineProhibited ?? 
+          (selectedFda == 'S' || selectedFda == 'N' || selectedFda == 'P' || 
+           (selectedFda == 'D' && (selectedSubCat == 'hormone_injection' || selectedSubCat == 'chemotherapy' || selectedSubCat == 'abortifacient')));
+
+      final notesController = TextEditingController(text: activeOverride?.overrideNotes ?? '');
+      final reasonController = TextEditingController();
+
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isNP = selectedFda == 'N' || selectedFda == 'P';
+            if (isNP) {
+              isTeleProhibited = true;
+            }
+
+            return AlertDialog(
+              title: Text('Override: ${med['trade_name']}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (modifier != null && modifier.status != 'no_override') ...[
+                      _buildCardBanner(modifier, activeOverride),
+                      const SizedBox(height: 12),
+                    ],
+                    DropdownButtonFormField<String>(
+                      value: selectedFda,
+                      decoration: const InputDecoration(labelText: 'FDA Risk Status'),
+                      items: const [
+                        DropdownMenuItem(value: 'ND', child: Text('ND (ยาสามัญประจำบ้าน)')),
+                        DropdownMenuItem(value: 'D', child: Text('D (ยาอันตราย)')),
+                        DropdownMenuItem(value: 'S', child: Text('S (ยาควบคุมพิเศษ)')),
+                        DropdownMenuItem(value: 'N', child: Text('N (ยาเสพติดให้โทษ)')),
+                        DropdownMenuItem(value: 'P', child: Text('P (วัตถุออกฤทธิ์ต่อจิต/ประสาท)')),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() {
+                          selectedFda = val;
+                          if (val == 'N' || val == 'P') {
+                            isTeleProhibited = true;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: TextEditingController(text: selectedSubCat)..selection = TextSelection.collapsed(offset: (selectedSubCat ?? '').length),
+                      decoration: const InputDecoration(
+                        labelText: 'Dangerous Subcategory (ถ้ามี)',
+                        hintText: 'e.g. hormone_injection',
+                      ),
+                      onChanged: (val) {
+                        selectedSubCat = val.isEmpty ? null : val;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedCustomCode,
+                      decoration: const InputDecoration(labelText: 'Custom Risk Level (ถ้ามี)'),
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('ไม่ได้กำหนด')),
+                        DropdownMenuItem(value: 'low', child: Text('ความเสี่ยงต่ำ')),
+                        DropdownMenuItem(value: 'medium', child: Text('ความเสี่ยงปานกลาง')),
+                        DropdownMenuItem(value: 'high', child: Text('ความเสี่ยงสูง')),
+                        DropdownMenuItem(value: 'very_high', child: Text('ความเสี่ยงสูงมาก')),
+                        DropdownMenuItem(value: 'prohibited', child: Text('ห้ามใช้')),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() {
+                          selectedCustomCode = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      title: const Text('ห้ามจ่ายผ่าน Telemedicine'),
+                      subtitle: isNP
+                          ? const Text('ประเภท N/P ห้ามจ่ายผ่าน Telemedicine ตามกฎหมาย', style: TextStyle(color: Colors.red, fontSize: 11))
+                          : null,
+                      secondary: isNP
+                          ? Chip(
+                              label: const Text('บังคับตามกฎหมาย'),
+                              backgroundColor: Colors.red.shade100,
+                              labelStyle: TextStyle(color: Colors.red.shade900, fontSize: 11),
+                            )
+                          : null,
+                      value: isTeleProhibited,
+                      onChanged: isNP
+                          ? null
+                          : (val) {
+                              setDialogState(() {
+                                isTeleProhibited = val;
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesController,
+                      decoration: const InputDecoration(labelText: 'หมายเหตุการสั่งยาสำหรับหน้างาน (ป้ายคำเตือน)'),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: reasonController,
+                      decoration: const InputDecoration(
+                        labelText: 'เหตุผลการ Override เพื่อบันทึกประวัติ *',
+                        hintText: 'ระบุสาเหตุที่ต้องการแก้ไขการจัดหมวดหมู่นี้',
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก')),
+                FilledButton(
+                  onPressed: () async {
+                    if (reasonController.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('กรุณาระบุเหตุผลการ Override')),
+                      );
+                      return;
+                    }
+                    try {
+                      final user = AuthService.instance.currentUser;
+                      if (user == null) return;
+
+                      await _repo.setOverride(
+                        userId: mode == DrugRiskPageMode.personalOverride ? user.id : null,
+                        professionId: mode == DrugRiskPageMode.organizationOverride ? user.professionId : null,
+                        medicationId: med['id'] as String,
+                        overrideFdaRiskStatus: selectedFda,
+                        overrideSubCategory: selectedSubCat,
+                        overrideCustomRiskCode: selectedCustomCode,
+                        overrideIsTelemedicineProhibited: isTeleProhibited,
+                        overrideNotes: notesController.text.isNotEmpty ? notesController.text : null,
+                        performedBy: user.id,
+                        performedByName: user.fullName,
+                        changeReason: reasonController.text,
+                      );
+
+                      if (mounted) {
+                        Navigator.pop(context, true);
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('บันทึก Override'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      if (result == true) {
+        await _searchMedications(_searchController.text);
+        await _loadReports();
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> _removeOverride(Map<String, dynamic> med) async {
+    final mode = _pageMode;
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Override: ${med['trade_name']}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: fdaController,
-                decoration: const InputDecoration(labelText: 'FDA Risk Status (ND/D/S/N/P)'),
-              ),
-              TextField(
-                controller: subCatController,
-                decoration: const InputDecoration(labelText: 'Dangerous Sub Category'),
-              ),
-              TextField(
-                controller: reasonController,
-                decoration: const InputDecoration(labelText: 'เหตุผล *'),
-                maxLines: 2,
-              ),
-            ],
-          ),
-        ),
+        title: const Text('ยืนยันการคืนค่าเริ่มต้น'),
+        content: const Text('คุณต้องการลบการ Override ยานี้และใช้ค่าเริ่มต้นของ Sheserved หรือไม่?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก')),
           FilledButton(
-            onPressed: () async {
-              if (reasonController.text.isEmpty) return;
-              try {
-                final userId = AuthService.instance.currentUser?.id ?? 'unknown';
-                await _repo.updateMedicationClassification(
-                  medicationId: med['id'] as String,
-                  fdaRiskStatus: fdaController.text.isNotEmpty ? fdaController.text : null,
-                  dangerousSubCategory: subCatController.text.isNotEmpty ? subCatController.text : null,
-                  reason: reasonController.text,
-                  overriddenBy: userId,
-                );
-                if (mounted) {
-                  Navigator.pop(context, true);
-                  _searchMedications(_searchController.text);
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
-                );
-              }
-            },
-            child: const Text('บันทึก Override'),
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('ยืนยันการคืนค่า'),
           ),
         ],
       ),
     );
 
-    if (result == true) {
-      _loadReports();
-      setState(() {});
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final user = AuthService.instance.currentUser;
+      if (user == null) return;
+
+      await _repo.removeOverride(
+        userId: mode == DrugRiskPageMode.personalOverride ? user.id : null,
+        professionId: mode == DrugRiskPageMode.organizationOverride ? user.professionId : null,
+        medicationId: med['id'] as String,
+        performedBy: user.id,
+        performedByName: user.fullName,
+        changeReason: 'คืนค่า Default ของระบบ',
+      );
+
+      await _searchMedications(_searchController.text);
+      await _loadReports();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 

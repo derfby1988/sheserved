@@ -148,8 +148,24 @@ class PhaseTwoRepository {
   // DELIVERY ORDERS
   // ========================
 
-  Future<DeliveryOrder?> createDeliveryOrder(Map<String, dynamic> data) async {
+  /// สร้าง delivery order
+  /// [drugRiskFlags]: ผลลัพธ์จาก `DrugRiskScreeningService.buildDeliveryRiskFlags()`
+  /// จะถูก merge เข้า `data['metadata']` อัตโนมัติ (DRUG_RISK_OVERRIDE_PLAN.md ข้อ 5.2)
+  Future<DeliveryOrder?> createDeliveryOrder(
+    Map<String, dynamic> data, {
+    Map<String, dynamic>? drugRiskFlags,
+  }) async {
     try {
+      if (drugRiskFlags != null) {
+        final rawMetadata = data['metadata'];
+        final existingMetadata = rawMetadata != null
+            ? Map<String, dynamic>.from(rawMetadata as Map)
+            : <String, dynamic>{};
+        data = {
+          ...data,
+          'metadata': {...existingMetadata, ...drugRiskFlags},
+        };
+      }
       final response = await _client
           .from('delivery_orders')
           .insert(data)

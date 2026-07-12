@@ -203,16 +203,17 @@ Checkbox ขึ้นเฉพาะอาชีพที่อยู่ใน�
 | ผู้ใช้เก่าจากระบบ `user_group_roles` ก่อน ERP Phase 0 | ไม่มี `employee_roles` → ไม่สามารถตรวจสอบสิทธิ์ HR ได้ |
 | อนุมัติใบสมัครแล้วแต่ไม่ได้ระบุ `is_owner_request` | ไม่ได้รับบทบาท owner อัตโนมัติ |
 | RPC `ensure_owner_as_employee` หา owner ไม่เจอ | ปุ่ม "สร้างพนักงานเจ้าของ" แสดง error |
-| **ผู้ใช้เปลี่ยนอาชีพหนีก่อนใบสมัครเดิมถูกอนุมัติ** | **ใบสมัครเดิม (pending, is_owner_request=true) ค้างในระบบ ถ้าแอดมินอนุมัติภายหลังจะเด้ง `users.profession_id` กลับไปเป็นอาชีพเดิมโดยไม่ตั้งใจ พร้อมมอบสิทธิ์ Owner ที่ผู้ใช้ไม่ต้องการแล้ว** |
+| **ผู้ใช้เปลี่ยนอาชีพหนีก่อนใบสมัครเดิมถูกอนุมัติ** | ~~ใบสมัครเดิมค้างในระบบ~~ **แก้แล้ว:** DB trigger `auto_cancel_pending_applications` ยกเลิกใบ pending อัตโนมัติเมื่อเปลี่ยนอาชีพ + `approveApplication` ตรวจ `OLD.status = 'pending'` กันอนุมัติใบที่ถูกยกเลิก |
 
-> **หมายเหตุ:** ปัจจุบัน (2026-07-07) ระบบยังไม่มีสถานะ `cancelled`/`withdrawn` และไม่มี UI ให้ผู้ใช้ยกเลิกใบสมัครเอง การเปลี่ยนอาชีพไปเป็นอาชีพอื่น **ไม่ได้ยกเลิกใบสมัครเดิม** เป็นเพียงการสร้างสถานะปัจจุบันทับ ใบสมัครเก่ายังคง `pending` ค้างไว้ในตาราง `registration_applications` — ดูแผนแก้ไขที่หัวข้อถัดไป
+> **หมายเหตุ:** ปัจจุบัน (2026-07-10) ระบบมีสถานะ `cancelled` และ UI ให้ผู้ใช้ยกเลิกใบสมัครเองแล้ว (Phase A-D implement ครบ) การเปลี่ยนอาชีพจะ trigger auto-cancel ใบสมัคร pending อัตโนมัติ และมี RPC atomic สำหรับ cancel/reject พร้อม reset user กลับเป็น consumer default — ดูรายละเอียดที่หัวข้อถัดไป
 
 ---
 
 ## แผน: ยกเลิก/ถอนใบสมัคร Owner (Cancel/Withdraw Application Plan)
 
-> สถานะ: 📝 วางแผนไว้ ยังไม่ implement (2026-07-07)
+> สถานะ: ✅ Phase A-D implement ครบแล้ว (2026-07-10) | 🔄 Phase E Testing ดำเนินการ
 > อัปเดตแผนตามข้อเสนอแนะปรับปรุง (2026-07-07)
+> อัปเดตสถานะหลัง implement ครบ Phase A-D (2026-07-10)
 
 ### เป้าหมาย
 1. ให้ผู้ใช้ยกเลิกใบสมัครของตัวเองที่ยัง `pending` ได้ผ่าน UI
@@ -244,37 +245,72 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_applications_one_pending_per_u
 
 > **หมายเหตุ:** unique index ทำให้การสร้างใบสมัครใหม่ขณะที่มีใบเก่า `pending` อยู่ล้มเหลวทันที (constraint violation) แต่จะไม่เป็นปัญหาเพราะ DB trigger (ข้อ 2) จะยกเลิกใบเก่าก่อน insert ใบใหม่เสมอ
 
-### 2. DB Trigger — Auto-Cancel เมื่อเปลี่ยนอาชีพ
+### 2. DB Trigger — Auto-Cancel + Cleanup เมื่อเปลี่ยนอาชีพ
 
-**แก้ปัญหา:** Auto-cancel ใน Flutter ไม่ปลอดภัย (crash = ใบค้าง) → ย้ายไป DB trigger
+**แก้ปัญหา:** Auto-cancel ใน Flutter ไม่ปลอดภัย (crash = ใบค้าง) → ย้ายไป DB trigger แล้วขยายให้ cleanup ข้อมูลที่เกี่ยวข้องทั้งหมด
+
+**ทำอะไรบ้างเมื่อ `users.profession_id` เปลี่ยน:**
+1. ยกเลิกใบสมัคร `pending` ของอาชีพเดิม
+2. ยกเลิกใบสมัคร `approved` ของอาชีพเดิม (user ออกจากอาชีพแล้ว ใบอนุมัติใช้ไม่ได้)
+3. Deactivate `employee_roles` ของอาชีพเดิม (ป้องกัน `ROLE_EXISTS` block การสมัครซ้ำ)
+4. Mark `provider_profiles` ของอาชีพเดิมว่าไม่ verified (`is_verified = false`, `verified_at = NULL`)
 
 ```sql
--- Trigger ยกเลิกใบสมัคร pending อัตโนมัติเมื่อ user เปลี่ยนอาชีพ
-CREATE OR REPLACE FUNCTION auto_cancel_pending_applications()
+CREATE OR REPLACE FUNCTION public.auto_cancel_pending_applications()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.profession_id IS DISTINCT FROM OLD.profession_id THEN
-    UPDATE registration_applications
+    -- 1. ยกเลิก pending ของอาชีพเดิม
+    UPDATE public.registration_applications
     SET status = 'cancelled',
         cancelled_by = 'auto_profession_change',
         cancelled_at = now(),
         updated_at = now()
-    WHERE user_id = NEW.id AND status = 'pending';
+    WHERE user_id = NEW.id
+      AND status = 'pending'
+      AND profession_id IS DISTINCT FROM NEW.profession_id;
+
+    -- 2. ยกเลิก approved ของอาชีพเดิม
+    UPDATE public.registration_applications
+    SET status = 'cancelled',
+        cancelled_by = 'auto_profession_change',
+        cancelled_at = now(),
+        updated_at = now()
+    WHERE user_id = NEW.id
+      AND status = 'approved'
+      AND profession_id IS DISTINCT FROM NEW.profession_id;
+
+    -- 3. Deactivate employee_roles ของอาชีพเดิม
+    -- สำคัญ: ตาราง employee_roles ไม่มี updated_at
+    UPDATE public.employee_roles
+    SET is_active = false
+    WHERE user_id = NEW.id
+      AND profession_id IS DISTINCT FROM NEW.profession_id
+      AND is_active = true;
+
+    -- 4. Mark provider_profiles ไม่ verified
+    UPDATE public.provider_profiles
+    SET is_verified = false,
+        verified_at = NULL,
+        updated_at = now()
+    WHERE user_id = NEW.id
+      AND is_verified = true;
   END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS trg_auto_cancel_pending_apps ON users;
+DROP TRIGGER IF EXISTS trg_auto_cancel_pending_apps ON public.users;
 CREATE TRIGGER trg_auto_cancel_pending_apps
-  AFTER UPDATE OF profession_id ON users
-  FOR EACH ROW EXECUTE FUNCTION auto_cancel_pending_applications();
+  AFTER UPDATE OF profession_id ON public.users
+  FOR EACH ROW EXECUTE FUNCTION public.auto_cancel_pending_applications();
 ```
 
 **ประโยชน์:**
 - ไม่ต้องแก้ `_onProfessionSelected` ใน Flutter — trigger ทำงานอัตโนมัติ
 - ปลอดภัยจาก crash/network failure
 - ทำงานเสมอแม้ user เปลี่ยนอาชีพผ่าน admin tool หรือ seed data
+- user เปลี่ยนอาชีพออกแล้ว สามารถสมัครอาชีพเดิมใหม่ได้โดยไม่ต้อง SQL reset
 
 ### 3. แก้ DB Trigger อนุมัติใบสมัคร — ป้องกัน race condition
 
@@ -458,19 +494,20 @@ Future<void> approveApplication(String applicationId, {...}) async {
 
 #### Guard สำหรับ approved
 
-เพื่อป้องกันการสมัครซ้ำสำหรับอาชีพ/องค์กรเดิมหลังจากถูกอนุมัติ `createApplication` ตรวจสอบเพิ่มอีก 2 เงื่อนไขก่อน `INSERT`:
+เพื่อป้องกันการสมัครซ้ำสำหรับอาชีพ/องค์กรเดิมหลังจากถูกอนุมัติ `createApplication` ตรวจสอบเพิ่ม 2 เงื่อนไขก่อน `INSERT` แต่ **บล็อกเฉพาะเมื่อ user ยังอยู่ในอาชีพนั้นจริงๆ**:
 
-1. มีใบสมัคร `status = 'approved'` สำหรับ `profession_id` เดียวกันแล้ว
+1. มีใบสมัคร `status = 'approved'` สำหรับ `profession_id` เดียวกันแล้ว **และ** `users.profession_id` ปัจจุบันคือ `profession_id` นั้น
 2. มี `employee_roles` ที่ `is_active = true` สำหรับ `profession_id` เดียวกันแล้ว
 
 ถ้าเงื่อนไขใดเป็นจริง → throw Exception:
-- กรณี approved application: "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้"
+- กรณี approved application ขณะยังอยู่ในอาชีพ: "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว ไม่สามารถสมัครซ้ำได้"
 - กรณีมี employee_roles active: "คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว ไม่สามารถสมัครซ้ำได้ หากต้องการเปลี่ยนสิทธิ์กรุณาติดต่อผู้ดูแลระบบ"
 
 ข้อดี:
-- ป้องกัน duplicate `employee_roles`, `employees`, `provider_profiles`
+- ป้องกัน duplicate `employee_roles`, `employees`, `provider_profiles` ขณะ user ยังอยู่ในอาชีพ
 - อนุญาตให้สมัครอาชีพใหม่ (ต่าง `profession_id`) ได้ตามปกติ
-- ผู้ใช้ที่เปลี่ยนอาชีพแล้วต้องการกลับไปอาชีพเก่า จะถูกบล็อกและได้รับแนะนำให้ติดต่อ admin
+- ผู้ใช้ที่เปลี่ยนอาชีพออกไปแล้ว สามารถสมัครอาชีพเดิมใหม่ได้ (trigger จะ cleanup ข้อมูลเก่าให้)
+- ไม่ต้องพึ่ง admin "Force reset" หรือ SQL reset ใน flow ปกติ
 
 #### การป้องกัน Limbo State ใน ProfilePage
 
@@ -497,9 +534,11 @@ Future<void> approveApplication(String applicationId, {...}) async {
 **วิธีแก้:** สร้าง Postgres RPC `create_registration_application()` ที่ทำ check + insert ใน transaction เดียว:
 
 1. ตรวจสอบ pending → `RAISE EXCEPTION 'PENDING_EXISTS'`
-2. ตรวจสอบ approved สำหรับอาชีพเดียวกัน → `RAISE EXCEPTION 'APPROVED_EXISTS'`
+2. ตรวจสอบ approved สำหรับอาชีพเดียวกัน → `RAISE EXCEPTION 'APPROVED_EXISTS'` **เฉพาะเมื่อ** `users.profession_id = p_profession_id`
 3. ตรวจสอบ active employee_roles → `RAISE EXCEPTION 'ROLE_EXISTS'`
 4. INSERT (unique partial index เป็น safety net สุดท้าย)
+
+> การยกเว้น `APPROVED_EXISTS` ขณะ user ไม่ได้อยู่ในอาชีพนั้นแล้ว ทำให้ user ที่เปลี่ยนอาชีพออกไปสามารถสมัครอาชีพเดิมใหม่ได้ โดย trigger จะ cleanup ข้อมูลเก่าให้เอง
 
 Flutter เรียกผ่าน `_client.rpc('create_registration_application', ...)` และ map error code เป็นข้อความภาษาไทย:
 
@@ -523,6 +562,21 @@ ProfilePage:
 - `canCreateApplication()` ยังจำเป็นสำหรับ pre-check ก่อน `updateUser` เพื่อป้องกัน limbo state
 - `createApplication()` ใช้ RPC ทำ check+insert atomically กัน race condition ในระดับ DB
 - unique partial index เป็น safety net สุดท้ายในกรณี RPC ถูก bypass
+
+### 11. การจัดการกรณีผู้ใช้ยกเลิกใบสมัครเอง (Reset to Consumer Default)
+
+#### ปัญหา
+ผู้ใช้กดยกเลิกใบสมัครของตนเอง (`cancelled_by = 'user'`) แต่ยังคงค้างอยู่ในอาชีพ (Profession) ที่รอตรวจสอบ ทำให้ไม่สามารถใช้งานระบบในฐานะผู้ใช้ทั่วไป (Consumer) ได้ หากไม่มีใบสมัครอื่นที่ `pending`/`approved` หรือมี `employee_roles` ที่ `active`
+
+#### วิธีแก้ไข
+ต้องมีกระบวนการตรวจสอบและ Reset สถานะผู้ใช้กลับไปเป็น Consumer Default เมื่อผู้ใช้ยกเลิกใบสมัครเอง:
+
+1. **RPC `cancel_registration_application`:**
+   - เมื่อผู้ใช้กดยกเลิกใบสมัคร RPC จะทำการตรวจสอบว่าผู้ใช้รายนี้มีใบสมัครอื่นที่ `status = 'pending'` หรือ `status = 'approved'` หรือไม่
+   - ตรวจสอบว่าผู้ใช้มี `employee_roles` ที่ `is_active = true` หรือไม่
+   - หากไม่มีเงื่อนไขใดข้างต้นเป็นจริง ให้ทำการอัปเดต `users.profession_id` กลับไปเป็นค่าเริ่มต้น (Consumer) และเปลี่ยน `verification_status` กลับเป็น `verified` (หรือสถานะพื้นฐานของ Consumer)
+2. **การอัปเดต UI:**
+   - หลังจากเรียก `cancelApplication` สำเร็จ หน้า Profile ต้องรีเฟรชข้อมูลผู้ใช้ (`_loadProfile()`) เพื่อให้สะท้อนสถานะกลับมาเป็น Consumer ทันที
 
 ### Checklist การ Implement แบ่งตาม Phase
 
@@ -555,10 +609,13 @@ ProfilePage:
 - [x] Dialog ยืนยันก่อนยกเลิก + SnackBar แจ้งผลลัพธ์
 
 #### Phase D — UI ฝั่ง Admin & Tracking (Medium-Low priority)
-> เป้าหมาย: ให้แอดมินแยกแยะเคสที่ถูกยกเลิกออกจากเคสที่ถูกปฏิเสธ/รออนุมัติ
+> เป้าหมาย: ให้แอดมินแยกแยะเคสที่ถูกยกเลิกออกจากเคสที่ถูกปฏิเสธ/รออนุมัติ และแยกสาเหตุการยกเลิก
 
-- [x] Filter/tab "ยกเลิกแล้ว" ใน `ApplicationReviewPage`
+- [x] Filter/tab "ยกเลิกแล้ว" ใน `ApplicationReviewPage` (ไม่เปลี่ยนชื่อแท็บ)
 - [x] แสดง `cancelled_by` + `cancelled_at` ในรายละเอียดเคส
+- [x] Badge สถานะในการ์ดแยกตาม `cancelled_by`:
+  - `user` หรืออื่นๆ → "ยกเลิกแล้ว"
+  - `auto_profession_change` → "เปลี่ยนกลุ่มแล้ว"
 - [x] อัปเดต `OwnerOnboardingTracking` model รองรับ `isCancelled` + badge แยกตาม `cancelled_by`
 
 #### Phase E — Testing (ทำคู่กับทุก Phase)
@@ -569,8 +626,19 @@ ProfilePage:
 - [ ] ทดสอบ: trigger auto-cancel ทำงานเมื่อเปลี่ยนอาชีพผ่าน admin tool/seed data
 - [ ] ทดสอบ: พยายามสมัครซ้ำขณะมี pending อยู่ → ต้องได้ข้อความ "คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว..." แทน DB error
 - [ ] ทดสอบ: ยกเลิกใบสมัครแล้วสมัครใหม่ → ต้องสร้างใบใหม่ได้
+- [ ] ทดสอบ: อนุมัติแล้ว → เปลี่ยนอาชีพออก → สมัครอาชีพเดิมใหม่ → ต้องสร้างใบใหม่ได้โดยไม่ต้อง SQL reset
 - [ ] ทดสอบ: สมัครซ้ำสำหรับอาชีพที่ approved แล้ว → ต้องได้ข้อความ "คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว..."
 - [ ] ทดสอบ: สมัครอาชีพที่มี active employee_roles อยู่แล้ว → ต้องได้ข้อความ "คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว..."
+
+#### บันทึกปัญหาเพิ่มเติมหลัง implement (2026-07-10)
+
+##### 6. `PGRST204: Could not find the 'is_verified' column of 'provider_profiles'`
+
+- **สาเหตุ:** `RegistrationRepository.approveApplication()` อ้างอิง columns `is_verified` และ `verified_at` ในตาราง `provider_profiles` แต่ migration `20260614150000_profession_approval_registration_fields.sql` สร้างตารางโดยไม่มี columns เหล่านี้
+- **วิธีแก้:** สร้าง migration `20260710084500_fix_provider_profiles_missing_columns.sql` เพิ่ม `is_verified BOOLEAN NOT NULL DEFAULT false` และ `verified_at TIMESTAMPTZ` พร้อม `NOTIFY pgrst, 'reload schema'`
+- **แก้รอง:** `onConflict` ใน upsert เปลี่ยนจาก `'user_id,profession_id'` เป็น `'user_id'` ให้ตรงกับ unique constraint ของตาราง
+- **ไฟล์ที่แก้:** `lib/features/admin/data/repositories/registration_repository.dart:101`
+- **หลักการ:** ต้องตรวจสอบว่าทุก column ที่อ้างอิงใน Flutter code มีอยู่ใน migration ที่สร้างตารางจริง
 
 ### บันทึกปัญหาที่พบระหว่าง Testing (Phase E) และวิธีแก้
 
@@ -608,7 +676,21 @@ ProfilePage:
 - ท้ายทุก migration ที่แก้ schema ควรมี `NOTIFY pgrst, 'reload schema';` เพื่อป้องกัน PostgREST schema cache ค้าง
 - อย่าสรุปว่า `PGRST204` = schema cache ค้างเสมอ ถ้า reload แล้วยัง error ให้ตรวจสอบว่า column/relation มีอยู่จริงใน schema หรือไม่
 
-#### 5. Empty state แท็บ Admin แสดงข้อความผิด (เช่น แท็บ “ยกเลิกแล้ว” แต่ขึ้น “ยังไม่มีผู้สมัครที่ถูกปฏิเสธ”)
+#### 5. User ที่เคย approved เปลี่ยนอาชีพกลับไม่ได้ / สมัครอาชีพเดิมไม่ได้ (`APPROVED_EXISTS` / `ROLE_EXISTS`)
+
+- **สาเหตุ:** ครั้งแรก trigger `auto_cancel_pending_applications` ยกเลิกแค่ `pending` แต่ไม่ได้ยกเลิก `approved` หรือ deactivate `employee_roles` ทำให้ `canCreateApplication` / `create_registration_application` บล็อก user ที่เปลี่ยนอาชีพออกไปแล้ว
+- **วิธีแก้:**
+  1. ขยาย trigger ให้ยกเลิก `approved` + deactivate `employee_roles` + unverify `provider_profiles` เมื่อ `profession_id` เปลี่ยน
+  2. อัปเดต `ProfessionRepository.canCreateApplication()` และ `create_registration_application` RPC ให้บล็อก `APPROVED_EXISTS` เฉพาะเมื่อ user ยังอยู่ในอาชีพนั้น (`users.profession_id = profession_id`) แต่ยังคงบล็อก `ROLE_EXISTS` เสมอ
+- **หลักการ:** ถ้า user ออกจากอาชีพแล้ว ระบบต้อง cleanup ข้อมูลเก่าให้เอง ไม่บังคับให้ติดต่อ admin หรือ SQL reset
+
+#### 5.1 `42703: column "updated_at" of relation "employee_roles" does not exist`
+
+- **สาเหตุ:** ตาราง `employee_roles` ไม่มี column `updated_at` แต่ trigger `auto_cancel_pending_applications` พยายาม `SET updated_at = now()` ใน `UPDATE employee_roles`
+- **วิธีแก้:** เอา `updated_at` ออกจาก `UPDATE employee_roles` ใน trigger function
+- **หลักการ:** อย่าสมมติว่าทุกตารางมี `updated_at` ตรวจ schema จริงก่อนใช้ column ใน trigger/RPC
+
+#### 6. Empty state แท็บ Admin แสดงข้อความผิด (เช่น แท็บ “ยกเลิกแล้ว” แต่ขึ้น “ยังไม่มีผู้สมัครที่ถูกปฏิเสธ”)
 
 - **สาเหตุหลัก:** แอปรันเวอร์ชั่นเก่าอยู่ (binary ยังไม่มี enum `VerificationStatus.cancelled` หรือโค้ด UI ยังไม่ถูกอัปเดต) ทำให้ `_selectedStatus` ไม่ตรงกับแท็บที่แสดงผล
 - **สาเหตุรอง:** ลำดับแท็บใน `TabBar` ไม่ตรงกับลำดับของ `VerificationStatus.values` เนื่องจาก `ApplicationReviewPage` ใช้ `_tabController.index` เป็น index ของ enum โดยตรง (`VerificationStatus.values[_tabController.index]`)

@@ -98,7 +98,7 @@ class RegistrationRepository {
           'verified_at': now,
           'updated_at': now,
         };
-        await _client.from('provider_profiles').upsert(profileData, onConflict: 'user_id,profession_id');
+        await _client.from('provider_profiles').upsert(profileData, onConflict: 'user_id');
 
         // Fetch attachments to create credentials
         final attachments = await getApplicationAttachments(application.id);

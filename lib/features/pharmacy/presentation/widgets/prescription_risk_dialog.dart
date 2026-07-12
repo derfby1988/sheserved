@@ -243,12 +243,22 @@ class PrescriptionRiskDialog extends StatelessWidget {
       ),
       child: ExpansionTile(
         leading: Icon(statusIcon, color: statusColor, size: 28),
-        title: Text(
-          result.medicationName,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: result.isBlocked ? Colors.red.shade800 : null,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                result.medicationName,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: result.isBlocked ? Colors.red.shade800 : null,
+                ),
+              ),
+            ),
+            if (result.hasOverride) ...[
+              const SizedBox(width: 8),
+              _buildOverrideBadge(result.overrideScope),
+            ],
+          ],
         ),
         subtitle: Text(
           result.summary,
@@ -446,6 +456,26 @@ class PrescriptionRiskDialog extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOverrideBadge(String? scope) {
+    final isOrg = scope == 'organization';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: (isOrg ? Colors.teal : Colors.purple).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: isOrg ? Colors.teal : Colors.purple, width: 0.5),
+      ),
+      child: Text(
+        isOrg ? 'Override องค์กร' : 'Override ส่วนตัว',
+        style: TextStyle(
+          fontSize: 8,
+          color: isOrg ? Colors.teal : Colors.purple,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

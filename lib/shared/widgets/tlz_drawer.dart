@@ -60,6 +60,7 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
     'settings': false,
     'admin': false,
     'help': false,
+    'drug_management': true,
   };
   
   // Scroll Controller สำหรับจัดการ Dynamic Curve
@@ -122,6 +123,8 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
 
   /// Rebuild drawer when AuthService notifies (login/logout/role change)
   void _onAuthChanged() {
+    _checkVolunteerRole();
+    _checkDrugRiskPermission();
     if (mounted) setState(() {});
   }
   
@@ -145,7 +148,15 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
 
   void _checkDrugRiskPermission() async {
     final user = AuthService.instance.currentUser;
-    if (user != null && user.professionId != null) {
+    if (user == null) {
+      if (mounted) setState(() => _canManageDrugRisk = false);
+      return;
+    }
+    if (user.isAdmin) {
+      if (mounted) setState(() => _canManageDrugRisk = true);
+      return;
+    }
+    if (user.professionId != null) {
       try {
         final repo = ProfessionRepository(Supabase.instance.client);
         final professions = await repo.getAllProfessions();
@@ -165,6 +176,8 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
       } catch (e) {
         debugPrint('Error checking drug risk permission: $e');
       }
+    } else {
+      if (mounted) setState(() => _canManageDrugRisk = false);
     }
   }
   
@@ -583,6 +596,34 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               isSubItem: true,
                             ),
                           ],
+                          // การจัดการยา (สำหรับผู้มีสิทธิ์)
+                          if (_canManageDrugRisk) ...[
+                            const SizedBox(height: 16),
+                            const Divider(color: AppColors.divider),
+                            const SizedBox(height: 16),
+                            _buildGroupHeader(
+                              context,
+                              title: 'การจัดการยา',
+                              isExpanded: _expandedGroups['drug_management']!,
+                              onTap: () => setState(() => _expandedGroups['drug_management'] = !_expandedGroups['drug_management']!),
+                            ),
+                            if (_expandedGroups['drug_management']!) ...[
+                              _buildMenuItem(
+                                context,
+                                title: 'จัดการหมวดหมู่ความเสี่ยงยา',
+                                icon: Icons.warning_amber_outlined,
+                                onTap: () {
+                                  Navigator.of(context).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const DrugRiskClassificationAdminPage(),
+                                    ),
+                                  );
+                                },
+                                isSubItem: true,
+                              ),
+                            ],
+                          ],
                           
                           const SizedBox(height: 16),
                           const Divider(color: AppColors.divider),
@@ -667,21 +708,6 @@ class _TlzDrawerState extends State<TlzDrawer> with SingleTickerProviderStateMix
                               onTap: () => _navigateTo(context, '/admin/pharmacy_filters'),
                               isSubItem: true,
                             ),
-                            if (_canManageDrugRisk)
-                              _buildMenuItem(
-                                context,
-                                title: 'จัดการหมวดหมู่ความเสี่ยงยา',
-                                icon: Icons.warning_amber_outlined,
-                                onTap: () {
-                                  Navigator.of(context).pop();
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => const DrugRiskClassificationAdminPage(),
-                                    ),
-                                  );
-                                },
-                                isSubItem: true,
-                              ),
                             _buildMenuItem(
                               context,
                               title: 'ควบคุมระบบวิดีโอ',

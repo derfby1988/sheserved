@@ -14,6 +14,9 @@ class DeliveryOrder {
   final DateTime? deliveredAt;
   final Map<String, dynamic> proofOfDelivery;
   final String? trackingNumber;
+  /// Metadata เพิ่มเติม — รวม `drug_risk_flags` สำหรับแจ้งเตือนไรเดอร์/คลังยา
+  /// เมื่อรายการมียาที่มี Override หรือยาควบคุมพิเศษ (ดู DRUG_RISK_OVERRIDE_PLAN.md ข้อ 5.2)
+  final Map<String, dynamic> metadata;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -32,6 +35,7 @@ class DeliveryOrder {
     this.deliveredAt,
     this.proofOfDelivery = const {},
     this.trackingNumber,
+    this.metadata = const {},
     required this.createdAt,
     required this.updatedAt,
   });
@@ -50,8 +54,13 @@ class DeliveryOrder {
       deliveryType: json['delivery_type'] as String? ?? 'standard',
       scheduledDeliveryAt: json['scheduled_delivery_at'] != null ? DateTime.parse(json['scheduled_delivery_at'] as String) : null,
       deliveredAt: json['delivered_at'] != null ? DateTime.parse(json['delivered_at'] as String) : null,
-      proofOfDelivery: json['proof_of_delivery'] as Map<String, dynamic>? ?? {},
+      proofOfDelivery: json['proof_of_delivery'] != null
+          ? Map<String, dynamic>.from(json['proof_of_delivery'] as Map)
+          : {},
       trackingNumber: json['tracking_number'] as String?,
+      metadata: json['metadata'] != null
+          ? Map<String, dynamic>.from(json['metadata'] as Map)
+          : {},
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -73,10 +82,28 @@ class DeliveryOrder {
       'delivered_at': deliveredAt?.toIso8601String(),
       'proof_of_delivery': proofOfDelivery,
       'tracking_number': trackingNumber,
+      'metadata': metadata,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
   }
+
+  /// Drug risk flags จาก metadata (DRUG_RISK_OVERRIDE_PLAN.md ข้อ 5.2)
+  Map<String, dynamic>? get drugRiskFlags {
+    final value = metadata['drug_risk_flags'];
+    if (value == null) return null;
+    return Map<String, dynamic>.from(value as Map);
+  }
+
+  /// มียาที่มี Override หรือยาควบคุมพิเศษในรายการจัดส่งนี้หรือไม่
+  bool get hasDrugRiskFlags => drugRiskFlags != null;
+
+  /// ต้องยืนยันตัวตนผู้รับก่อนส่งมอบ (ยาควบคุมพิเศษ/เสพติด/วัตถุออกฤทธิ์)
+  bool get requiresIdVerification =>
+      drugRiskFlags?['requires_id_verification'] == true;
+
+  /// ห้ามฝากไว้ในตู้ล็อกเกอร์ ต้องส่งมอบให้ผู้รับโดยตรง
+  bool get noSafeBoxAllowed => drugRiskFlags?['no_safe_box_allowed'] == true;
 
   bool get isDelivered => deliveryStatus == 'delivered';
   bool get isActive => deliveryStatus != 'delivered' && deliveryStatus != 'cancelled' && deliveryStatus != 'returned';
