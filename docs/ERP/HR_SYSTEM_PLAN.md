@@ -3065,3 +3065,651 @@ NOTIFY pgrst, 'reload schema';
 - หาก UI ต้องแสดง "ชื่อองค์กร" ให้มีการ guard ใน Flutter ด้วย ไม่ใช่แค่ fallback ที่ RPC
 - การ์ดที่ต้องพึ่ง RPC ควรมี loading mechanism ที่ชัดเจนและ debug log เพื่อตรวจสอบว่าข้อมูลถูกโหลดหรือไม่
 
+## แผนปรับปรุง: การเชิญซ้ำ การให้ออก และกฎการรับกลับพนักงาน (2026-07-13)
+
+### วิเคราะห์สถานะปัจจุบัน
+
+#### A. การเชิญซ้ำหลังปฏิเสธ (Re-invite after rejection)
+
+**สถานะ: ทำได้ในระดับ RPC แต่ UI ยังไม่รองรับ**
+
+- RPC `invite_employee` ตรวจสอบ duplicate เฉพาะ `status = 'pending'` เท่านั้น (บรรทัด 167-178 ใน migration `20260706130000`) ดังนั้นเมื่อคำเชิญเดิมถูกปฏิเสธ (`status = 'rejected'`) สามารถสร้างคำเชิญใหม่ได้
+- แต่ UI ใน `employee_list_page.dart` แท็บ "คำเชิญ" แสดง rejected cards เฉยๆ ไม่มีปุ่ม "เชิญใหม่"
+- ไม่มีมุมมองประวัติการเชิญทั้งหมดของ user คนเดียว (history view)
+- `get_available_users_for_invite` ไม่กรอง user ที่เคยถูกปฏิเสธ จึงสามารถเลือกเชิญใหม่ได้ผ่าน dialog ปกติ แต่ admin ไม่เห็นประวัติว่าเคยถูกปฏิเสธ
+
+#### B. การให้พนักงานออก (Employee Termination)
+
+**สถานะ: มีเพียง toggle `is_active` ไม่มี flow การให้ออกที่เป็นทางการ**
+
+- `employees` table มี `is_active BOOLEAN` แต่ไม่มี `termination_date`, `termination_reason`, `terminated_at`
+- UI ใน edit employee dialog มี Switch "Active" เท่านั้น ไม่มีฟิลด์เหตุผล/วันที่ให้ออก
+- ไม่มี RPC เฉพาะสำหรับ termination (ใช้ `updateEmployee` ทั่วไป)
+- ไม่มีการ revoke สิทธิ์ (`employee_roles.is_active`) อัตโนมัติเมื่อให้ออก
+
+#### C. การรับกลับพนักงานที่ถูกให้ออก (Re-invite after termination)
+
+**สถานะ: ทำไม่ได้ในปัจจุบัน**
+
+- RPC `invite_employee` ตรวจสอบ existing employee โดย query:
+  ```sql
+  SELECT COUNT(*) FROM public.employees
+  WHERE profession_id = p_profession_id AND user_id = p_user_id
+  ```
+  ไม่ได้กรอง `is_active = true` จึงเจอ record ของพนักงานที่ถูกให้ออก (is_active = false) ด้วย ทำให้ส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" และไม่สามารถเชิญใหม่ได้
+- ไม่มีกฎเกณฑ์เรื่อง cooldown หรือ eligibility
+
+### แผนการปรับปรุง
+
+#### Phase A: แก้ไขการเชิญซ้ำหลังปฏิเสธ (ความสำคัญ: สูง)
+
+**A1. เพิ่มปุ่ม "เชิญใหม่" บน rejected invitation card**
+
+ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart`
+
+- ใน `_InvitationCard` เพิ่ม callback `onReinvite`
+- แสดงปุ่มเมื่อ `invitation.isRejected` และ `accessLevel >= 2`
+- เมื่อกด → เปิด invite dialog พร้อมกรอกข้อมูลเดิม (full_name, email/phone, job_title ฯลฯ)
+
+**A2. เพิ่ม RPC ดึงประวัติการเชิญทั้งหมดของ user**
+
+ไฟล์ migration ใหม่: `supabase/migrations/20260713160000_reinvite_and_termination.sql`
+
+```sql
+CREATE OR REPLACE FUNCTION public.get_invitation_history_for_user(
+  p_profession_id UUID,
+  p_user_id UUID DEFAULT NULL,
+  p_email TEXT DEFAULT NULL,
+  p_phone TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN (
+    SELECT jsonb_agg(jsonb_build_object(
+      'id', ei.id,
+      'status', ei.status,
+      'full_name', ei.full_name,
+      'job_title', ei.job_title,
+      'rejection_reason', ei.rejection_reason,
+      'rejected_at', ei.rejected_at,
+      'created_at', ei.created_at,
+      'expires_at', ei.expires_at,
+      'invited_by_name', COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username, u.email)
+    ) ORDER BY ei.created_at DESC)
+    FROM public.employee_invitations ei
+    LEFT JOIN public.users u ON u.id = ei.invited_by
+    WHERE ei.profession_id = p_profession_id
+      AND (
+        (p_user_id IS NOT NULL AND ei.user_id = p_user_id) OR
+        (p_email IS NOT NULL AND ei.email IS NOT NULL AND lower(ei.email) = lower(p_email)) OR
+        (p_phone IS NOT NULL AND ei.phone IS NOT NULL AND ei.phone = p_phone)
+      )
+  );
+END;
+$$;
+```
+
+**A3. แสดงประวัติการเชิญใน invite dialog**
+
+- เมื่อ admin เลือก user ใน invite dialog ให้เรียก `get_invitation_history_for_user`
+- แสดง history section: วันที่เชิญ, สถานะ, เหตุผลปฏิเสธ (ถ้ามี)
+- ช่วยให้ admin ตัดสินใจก่อนเชิญซ้ำ
+
+#### Phase B: การให้พนักงานออก (ความสำคัญ: สูง)
+
+**B1. เพิ่ม columns สำหรับ termination**
+
+```sql
+ALTER TABLE public.employees
+  ADD COLUMN IF NOT EXISTS termination_date DATE,
+  ADD COLUMN IF NOT EXISTS termination_reason TEXT,
+  ADD COLUMN IF NOT EXISTS terminated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS terminated_by UUID REFERENCES public.users(id);
+```
+
+**B2. เพิ่ม RPC `terminate_employee`**
+
+```sql
+CREATE OR REPLACE FUNCTION public.terminate_employee(
+  p_employee_id UUID,
+  p_terminated_by UUID,
+  p_termination_reason TEXT DEFAULT NULL,
+  p_termination_date DATE DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_employee public.employees%ROWTYPE;
+BEGIN
+  SELECT * INTO v_employee FROM public.employees WHERE id = p_employee_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ไม่พบพนักงาน');
+  END IF;
+
+  UPDATE public.employees
+  SET is_active = false,
+      termination_date = COALESCE(p_termination_date, now()::DATE),
+      termination_reason = p_termination_reason,
+      terminated_at = now(),
+      terminated_by = p_terminated_by,
+      updated_at = now()
+  WHERE id = p_employee_id;
+
+  -- Revoke employee_roles
+  UPDATE public.employee_roles
+  SET is_active = false, updated_at = now()
+  WHERE profession_id = v_employee.profession_id
+    AND user_id = v_employee.user_id
+    AND is_active = true;
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+```
+
+**B3. UI: เพิ่ม flow ให้ออกใน EmployeeCard**
+
+ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart`
+
+- เพิ่ม menu item "ให้ออก" ใน PopupMenuButton ของ `_EmployeeCard` (เฉพาะ `accessLevel >= 3`)
+- เปิด dialog ยืนยัน: วันที่ให้ออก + เหตุผล (TextField)
+- เรียก RPC `terminate_employee`
+- แสดงพนักงานที่ไม่ active ในแท็บ "พนักงาน" แยก section "พนักงานที่ออกแล้ว" หรือกรองด้วย toggle
+
+**B4. อัปเดต Employee model**
+
+ไฟล์: `lib/features/erp/data/models/employee.dart`
+
+- เพิ่ม fields: `terminationDate`, `terminationReason`, `terminatedAt`, `terminatedBy`
+
+#### Phase C: กฎการรับกลับพนักงานที่ถูกให้ออก (ความสำคัญ: ปานกลาง)
+
+**C1. แก้ไข RPC `invite_employee` ให้กรองเฉพาะ active employees**
+
+```sql
+-- เปลี่ยนจาก:
+SELECT COUNT(*) FROM public.employees
+WHERE profession_id = p_profession_id AND user_id = p_user_id;
+
+-- เป็น:
+SELECT COUNT(*) FROM public.employees
+WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = true;
+```
+
+**C2. เพิ่มกฎ cooldown (optional)**
+
+- เพิ่ม column `reinvite_eligible_at TIMESTAMPTZ` ใน `employees` table
+- เมื่อ terminate ให้ตั้ง `reinvite_eligible_at = now() + interval '30 days'` (configurable)
+- RPC `invite_employee` ตรวจสอบ:
+  ```sql
+  IF EXISTS (
+    SELECT 1 FROM public.employees
+    WHERE profession_id = p_profession_id AND user_id = p_user_id
+      AND is_active = false
+      AND reinvite_eligible_at > now()
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ยังไม่สามารถเชิญพนักงานคนนี้ได้ (อยู่ในช่วง cooldown)');
+  END IF;
+  ```
+
+**C3. เพิ่ม column `can_reinvite BOOLEAN DEFAULT true`**
+
+- ให้ admin กำหนดเป็นรายกรณีว่าพนักงานที่ถูกให้ออกสามารถถูกเชิญกลับได้หรือไม่
+- ใน dialog ให้ออก มี checkbox "ห้ามเชิญกลับ"
+- RPC `invite_employee` ตรวจสอบ:
+  ```sql
+  IF EXISTS (
+    SELECT 1 FROM public.employees
+    WHERE profession_id = p_profession_id AND user_id = p_user_id
+      AND is_active = false
+      AND can_reinvite = false
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'พนักงานคนนี้ถูกทำเครื่องหมายว่าไม่สามารถเชิญกลับได้');
+  END IF;
+  ```
+
+**C4. UI: แสดงสถานะ eligibility ใน invite dialog**
+
+- เมื่อ admin เลือก user ที่เคยเป็นพนักงานและถูกให้ออก ให้แสดง:
+  - วันที่ให้ออก, เหตุผล
+  - สถานะ: "สามารถเชิญกลับได้" หรือ "อยู่ในช่วง cooldown (อีก N วัน)" หรือ "ถูกห้ามเชิญกลับ"
+
+#### Phase D: ประวัติการเชิญและการให้ออก (ความสำคัญ: ปานกลาง)
+
+**D1. รวมประวัติใน EmployeeCard**
+
+- สำหรับพนักงานปัจจุบัน: แสดงประวัติการถูกเชิญ (จาก `employee_invitations`) และประวัติการทำงาน
+- สำหรับพนักงานที่ออกแล้ว: แสดงเหตุผลการให้ออก + วันที่
+
+**D2. Audit trail**
+
+- ใช้ `terminated_by` และ `termination_reason` สำหรับ audit
+- เพิ่ม log ใน `employee_invitations` เมื่อเชิญซ้ำ (กำหนด `previous_invitation_id` เชื่อมกับคำเชิญเดิม)
+
+### ลำดับการ implement
+
+1. **Phase A** (รวดเร็วที่สุด กระทบน้อย): เพิ่มปุ่ม "เชิญใหม่" + RPC history
+2. **Phase B** (ต้อง migration): เพิ่ม termination columns + RPC + UI
+3. **Phase C** (ต้องแก้ RPC): แก้ `invite_employee` กรอง `is_active` + กฎ cooldown
+4. **Phase D** (enhancement): audit trail + ประวัติรวม
+
+### ไฟล์ที่ต้องแก้ไขสรุป
+
+| ไฟล์ | เปลี่ยนแปลง |
+|------|------------|
+| `supabase/migrations/20260713160000_reinvite_and_termination.sql` | migration ใหม่: termination columns, RPCs, แก้ invite_employee |
+| `lib/features/erp/data/models/employee.dart` | เพิ่ม termination fields |
+| `lib/features/erp/data/models/employee_invitation.dart` | เพิ่ม previous_invitation_id (optional) |
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม terminateEmployee, getInvitationHistory |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม state/methods |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | เพิ่มปุ่มเชิญใหม่, termination dialog, history view |
+
+### ข้อเสนอแนะเพิ่มเติมให้แผนสมบูรณ์
+
+#### E1. แก้ไข Unique Constraint เพื่อรองรับการรับกลับ/เชิญซ้ำ
+
+**ปัญหา**: index `idx_employees_unique_user_profession` เป็น `UNIQUE (profession_id, user_id)` ไม่ได้กรอง `is_active` แปลว่า user หนึ่งคนจะมี employee record ได้แค่ครั้งเดียวต่อ profession หากต้องการ rehire แบบเก็บประวัติไว้จะติด unique constraint
+
+**แนวทางแก้ไข (เลือกอย่างใดอย่างหนึ่ง)**:
+
+**E1.1 เปลี่ยนเป็น partial unique index (แนะนำ)**
+```sql
+DROP INDEX IF EXISTS idx_employees_unique_user_profession;
+CREATE UNIQUE INDEX idx_employees_unique_active_user_profession
+  ON public.employees (profession_id, user_id)
+  WHERE user_id IS NOT NULL AND is_active = true;
+```
+- ข้อดี: อนุญาตให้มี 1 active employee + 1 หรือ 0 inactive employee
+- ข้อควรระวัง: ต้อง reactivate หรือ update record เดิม ไม่ใช่ insert ใหม่
+
+**E1.2 สร้าง employment history table (แนะนำหากต้องการเก็บประวัติ rehire หลายรอบ)**
+```sql
+CREATE TABLE IF NOT EXISTS public.employee_employment_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id     UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  profession_id   UUID NOT NULL REFERENCES public.professions(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  action          TEXT NOT NULL CHECK (action IN ('hired','rehired','terminated')),
+  action_date     DATE NOT NULL,
+  action_reason   TEXT,
+  action_by       UUID REFERENCES public.users(id),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_employment_history_employee ON public.employee_employment_history(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_employment_history_user ON public.employee_employment_history(user_id, profession_id);
+```
+
+เมื่อมี history table:
+- `accept_employee_invitation` ครั้งแรก → insert `hired`
+- `terminate_employee` → insert `terminated`
+- re-accept → update `employees` (is_active=true, hire_date=now()) + insert `rehired`
+- UI สามารถแสดง timeline ได้
+
+**ข้อแนะนำ**: ใช้ทั้งสองแบบร่วมกัน — เปลี่ยน partial unique index + สร้าง `employee_employment_history` table
+
+#### E2. อัปเดต `accept_employee_invitation` ให้รองรับ re-acceptance
+
+`accept_employee_invitation` ปัจจุบันตรวจ existing employee แล้ว block หากเจอ record แต่ไม่ได้กรอง `is_active` ต้องแก้ให้:
+
+```sql
+SELECT id, is_active INTO v_existing_employee
+FROM public.employees
+WHERE profession_id = v_invitation.profession_id AND user_id = v_user_id
+LIMIT 1;
+
+IF FOUND AND v_existing_employee.is_active = true THEN
+  RETURN jsonb_build_object('success', false, 'error', 'ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว');
+ELSIF FOUND AND v_existing_employee.is_active = false THEN
+  UPDATE public.employees
+  SET is_active = true,
+      hire_date = COALESCE(v_invitation.hire_date::DATE, now()::DATE),
+      termination_date = NULL,
+      termination_reason = NULL,
+      terminated_at = NULL,
+      terminated_by = NULL,
+      updated_at = now()
+  WHERE id = v_existing_employee.id;
+
+  INSERT INTO public.employee_employment_history
+    (employee_id, profession_id, user_id, action, action_date, action_by, notes)
+  VALUES
+    (v_existing_employee.id, v_invitation.profession_id, v_user_id, 'rehired', now()::DATE, v_invitation.invited_by, 'Re-invited after termination');
+ELSE
+  INSERT INTO public.employees (...);
+  INSERT INTO public.employee_employment_history
+    (employee_id, profession_id, user_id, action, action_date, action_by)
+  VALUES
+    (v_employee_id, v_invitation.profession_id, v_user_id, 'hired', now()::DATE, v_invitation.invited_by);
+END IF;
+```
+
+#### E3. อัปเดต `get_available_users_for_invite` ให้แสดง terminated ด้วย
+
+ปัจจุบัน RPC กรอง:
+```sql
+NOT EXISTS (
+  SELECT 1 FROM public.employees e
+  WHERE e.profession_id = p_profession_id AND e.user_id = u.id
+)
+```
+ซึ่งจะซ่อน user ที่เคยเป็นพนักงานแล้วออกไป แม้ inactive แล้วก็ตาม
+
+**แก้ไข**:
+```sql
+WHERE (p_search IS NULL OR ...)
+  AND NOT EXISTS (
+    SELECT 1 FROM public.employees e
+    WHERE e.profession_id = p_profession_id
+      AND e.user_id = u.id
+      AND e.is_active = true
+  )
+```
+
+และเพิ่ม return field:
+```sql
+'previous_employee_status', CASE
+  WHEN EXISTS (SELECT 1 FROM public.employees e
+    WHERE e.profession_id = p_profession_id AND e.user_id = u.id AND e.is_active = false)
+  THEN 'terminated' ELSE NULL END
+```
+
+UI แสดงสถานะ "เคยเป็นพนักงาน" พร้อมวันที่ให้ออก/เหตุผล
+
+#### E4. แยกการยกเลิกของ admin ออกจากการปฏิเสธของผู้ถูกเชิญ
+
+ปัจจุบัน `_cancelInvitation` เรียก `rejectEmployeeInvitation` ทำให้ `status = 'rejected'` ไม่ได้บันทึกว่าใครยกเลิก
+
+**แนวทาง**:
+- เพิ่ม `cancelled_at`, `cancelled_by`, `cancellation_reason` หรือ
+- ใช้ `status = 'cancelled'` แยกจาก `'rejected'`
+- `get_invitation_history_for_user` return ทั้งสองสถานะ
+
+#### E5. ระบบแจ้งเตือน
+
+- เชิญซ้ำหลังปฏิเสธ: ส่ง notification ไปยังผู้ถูกเชิญ (HomeHeader alert ทำงานอยู่แล้ว)
+- ให้ออก: ส่ง notification/email ให้พนักงาน
+- ยกเลิกคำเชิญ: แจ้งผู้ถูกเชิญหากเป็น existing user
+
+#### E6. Permission Model
+
+| Action | ระดับสิทธิ์ hr |
+|--------|----------------|
+| ดูคำเชิญ | >= 1 |
+| ส่ง/ยกเลิกคำเชิญ | >= 2 |
+| ให้พนักงานออก | >= 3 |
+| แก้ไขพนักงานที่ออก/เปลี่ยน can_reinvite | >= 3 |
+
+owner ควรมี access_level = 3 โดย default
+
+#### E7. UI/UX เพิ่มเติม
+
+- แท็บ "ประวัติ" แสดง employee_employment_history + invitation history
+- กรองพนักงาน: active, terminated, all
+- กรองคำเชิญ: pending, rejected, cancelled, expired
+- Confirmation dialog ก่อน re-invite / terminate / rehire
+- Badge แท็บ pending และ recent terminations
+
+#### E8. Data Migration
+
+- หากมี `is_active = false` ที่ไม่มี `termination_date` ให้ backfill ด้วย `updated_at` หรือ `now()`
+- ตรวจสอบไม่มี duplicate `is_active = true` สำหรับ `(profession_id, user_id)` คู่เดียวกัน
+- `employee_invitations` ที่ `status = 'rejected'` อยู่แล้วถือเป็น history ที่ถูกต้อง
+
+#### E9. Edge Cases
+
+- หลายคำเชิญ pending: `invite_employee` ต้อง block
+- ผู้ใช้สามารถเป็นพนักงานหลาย profession ได้ (per-profession unique)
+- การเชิญด้วย email/phone ที่เคยปฏิเสธ ต้องแสดงประวัติ
+- refresh หน้าคำเชิญอัตโนมัติเมื่อมีการเปลี่ยนแปลง
+
+#### E10. Test Plan เพิ่มเติม
+
+1. ผู้ถูกเชิญปฏิเสธ → admin กด "เชิญใหม่" ได้
+2. ปฏิเสธ 2 ครั้ง → แสดงประวัติทั้งหมด
+3. Admin ให้ออก → inactive → ไม่สามารถใช้ ERP ได้
+4. เชิญกลับก่อน cooldown หมด → ถูก block
+5. เชิญกลับหลัง cooldown → accept → active อีกครั้ง
+6. ทดสอบ unique constraint กรณี 1 active + 1 inactive
+7. ทดสอบ `employee_employment_history` ครบ hired → terminated → rehired
+
+### F. สิทธิ์เข้าถึง ERP Dashboard สำหรับผู้ยอมรับคำเชิญ
+
+> **ปัญหาที่พบ**: แผนปัจจุบันไม่ได้กำหนดให้ผู้ที่ยอมรับคำเชิญได้รับ `employee_roles` ทั้งที่ `ErpAccessService.canAccess()` ใช้ `employee_roles.is_active = true` เป็น source of truth สำหรับการเข้า ERP Dashboard
+
+#### F1. สาเหตุ
+
+- `accept_employee_invitation` RPC สร้าง record ใน `employees` เท่านั้น ไม่ได้สร้าง `employee_roles`
+- `ErpAccessService` (`lib/features/erp/data/services/erp_access_service.dart`) ตรวจสอบ:
+  ```dart
+  final rows = await _client
+      .from('employee_roles')
+      .select('id, organization_roles!inner(id)')
+      .eq('user_id', userId)
+      .eq('profession_id', professionId)
+      .eq('is_active', true)
+      .limit(1);
+  ```
+- ดังนั้นผู้ถูกเชิญที่กด "ยอมรับ" จะกลายเป็นพนักงานใน `employees` แต่ไม่สามารถเข้า ERP Dashboard ได้
+
+#### F2. วิธีแก้ไข
+
+**F2.1 ให้ admin เลือก role ตอนส่งคำเชิญ (แนะนำ) แทนการ hardcode `staff`**
+
+การ hardcode `staff` เป็น default ไม่ยืดหยุ่น เพราะ admin อาจเชิญ manager หรือ accountant โดยตรง
+
+**แนวทางที่แนะนำ**:
+
+1. เพิ่ม column `intended_role_name TEXT DEFAULT 'staff'` ใน `employee_invitations`
+2. เพิ่ม parameter `p_role_name TEXT DEFAULT 'staff'` ใน `invite_employee`
+3. แก้ไข `accept_employee_invitation` ให้ assign role ตาม `intended_role_name`:
+
+```sql
+-- เพิ่ม column
+ALTER TABLE public.employee_invitations
+  ADD COLUMN IF NOT EXISTS intended_role_name TEXT DEFAULT 'staff';
+
+-- ใน invite_employee: บันทึก intended_role_name
+-- ใน accept_employee_invitation: หลังสร้าง employee record
+DECLARE v_role_id UUID;
+BEGIN
+  -- หา organization_roles ตาม intended_role_name
+  SELECT or2.id INTO v_role_id
+  FROM public.organization_roles or2
+  WHERE or2.profession_id = v_invitation.profession_id
+    AND or2.role_name = COALESCE(v_invitation.intended_role_name, 'staff');
+
+  IF v_role_id IS NULL THEN
+    -- fallback สู่ staff หาก role ที่ระบุไม่มี
+    SELECT or2.id INTO v_role_id
+    FROM public.organization_roles or2
+    WHERE or2.profession_id = v_invitation.profession_id
+      AND or2.role_name = 'staff';
+  END IF;
+
+  IF v_role_id IS NOT NULL THEN
+    -- ตรวจสอบว่ามี active role อยู่แล้วหรือไม่ (รองรับ rehire)
+    IF NOT EXISTS (
+      SELECT 1 FROM public.employee_roles er
+      WHERE er.profession_id = v_invitation.profession_id
+        AND er.user_id = v_user_id
+        AND er.is_active = true
+    ) THEN
+      INSERT INTO public.employee_roles (
+        profession_id, user_id, role_id, branch_id, is_active, assigned_by
+      ) VALUES (
+        v_invitation.profession_id, v_user_id, v_role_id,
+        v_invitation.branch_id, true, v_invitation.invited_by
+      );
+    END IF;
+  END IF;
+END;
+```
+
+> **สำคัญ**: `ON CONFLICT (profession_id, user_id, role_id, branch_id)` ไม่ทำงานเมื่อ `branch_id` เป็น NULL เพราะ PostgreSQL ถือว่า NULL != NULL ใน unique constraint ต้องใช้ `IF NOT EXISTS` แทน
+
+**F2.2 กำหนด default permissions สำหรับ role `staff`**
+
+เดิมเพาะ `hr` module เท่านั้น ไม่เพียงพอ พนักงานต้องเข้าถึง module อื่นด้วย (เช่น `pos`, `inventory`)
+
+```sql
+-- Seed default permissions สำหรับ staff (access_level 1 = view only)
+INSERT INTO public.role_module_permissions (role_id, module_name, access_level)
+SELECT or2.id, m.module_name, 1
+FROM public.organization_roles or2
+CROSS JOIN LATERAL (VALUES
+  ('pos'), ('inventory'), ('hr'), ('crm'), ('read_model')
+) AS m(module_name)
+WHERE or2.role_name = 'staff'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.role_module_permissions rmp
+    WHERE rmp.role_id = or2.id AND rmp.module_name = m.module_name
+  );
+```
+
+> Admin สามารถปรับ access_level ของแต่ละ module ภายหลังได้ผ่าน ERP settings
+
+**F2.3 แก้ไข `ensure_owner_as_employee` ให้ assign role owner ถ้ายังไม่มี**
+
+ปัจจุบัน `ensure_owner_as_employee` สร้าง employee record แต่ไม่ได้ตรวจสอบ/สร้าง owner role อาจทำให้เจ้าขององค์กรเข้า ERP ไม่ได้หาก trigger ไม่ทำงาน
+
+ควรเพิ่ม (ใช้ `IF NOT EXISTS` แทน `ON CONFLICT` เพราะ `branch_id` เป็น NULL ได้):
+```sql
+IF NOT EXISTS (
+  SELECT 1 FROM public.employee_roles er
+  JOIN public.organization_roles or2 ON or2.id = er.role_id
+  WHERE er.profession_id = p_profession_id
+    AND er.user_id = v_owner_id
+    AND er.is_active = true
+    AND or2.role_name = 'owner'
+) THEN
+  INSERT INTO public.employee_roles (profession_id, user_id, role_id, is_active, assigned_by)
+  SELECT p_profession_id, v_owner_id, or2.id, true, v_owner_id
+  FROM public.organization_roles or2
+  WHERE or2.profession_id = p_profession_id AND or2.role_name = 'owner';
+END IF;
+```
+
+#### F3. UI แสดง ERP card บน Home Page
+
+ไฟล์: `lib/features/home/presentation/pages/home_page.dart`
+
+**ปัญหา**: `_checkErpAccess()` ปัจจุบันใช้ `user.professionId` ซึ่งเป็น profession ของ user ใน `users` table แต่ผู้ถูกเชิญอาจเป็น consumer (ไม่มี `professionId`) ที่ถูกเชิญเข้า profession อื่น ทำให้ `canAccess()` return false เสมอ
+
+**แนวทางแก้ไข**: แก้ `ErpAccessService.canAccess()` ให้ตรวจสอบทุก profession ที่ user มี `employee_roles` active ไม่ใช่แค่ `user.professionId`
+
+```dart
+// ErpAccessService - เพิ่ม method ใหม่
+Future<bool> canAccessAnyProfession(String userId) async {
+  try {
+    final rows = await _client
+        .from('employee_roles')
+        .select('id, profession_id')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .limit(1);
+    return rows is List && rows.isNotEmpty;
+  } catch (e) {
+    return false;
+  }
+}
+```
+
+ใน `home_page.dart`:
+```dart
+Future<void> _checkErpAccess() async {
+  final user = AuthService.instance.currentUser;
+  if (user == null) {
+    if (mounted) setState(() { _canAccessErp = false; _erpAccessChecked = true; });
+    return;
+  }
+  // Admin เข้าได้เสมอ
+  if (user.isAdmin) {
+    if (mounted) setState(() { _canAccessErp = true; _erpAccessChecked = true; });
+    return;
+  }
+  // ตรวจสอบทุก profession ที่มี active employee_roles
+  final canAccess = await _erpAccessService.canAccessAnyProfession(user.id);
+  if (mounted) setState(() { _canAccessErp = canAccess; _erpAccessChecked = true; });
+}
+```
+
+> **สำคัญ**: หลังจาก accept invitation แล้ว user อาจต้อง logout + login ใหม่เพื่อให้ `_checkErpAccess()` ทำงานอีกครั้ง หรือเพิ่ม trigger ให้ reload ERP access หลัง accept
+
+#### F4. การจัดการเมื่อพนักงานถูกให้ออก
+
+เมื่อ `terminate_employee` ทำงาน:
+- `employee_roles.is_active` ถูก set เป็น false ไปแล้ว (ตาม Phase B)
+- ผลคือ user จะไม่สามารถเข้า ERP Dashboard ได้อีกต่อไป (ตรงตาม `ErpAccessService.canAccess()`)
+- เมื่อ rehire กลับมา ต้อง assign role ใหม่ตาม `intended_role_name` ของคำเชิญใหม่ (ไม่ reactivate role เดิม เพราะอาจมีหลาย role และไม่ทราบว่าควร reactivate role ใด)
+
+**ขั้นตอน rehire ใน `accept_employee_invitation`**:
+1. ตรวจสอบ existing employee record (is_active = false)
+2. Reactivate employee record (is_active = true, hire_date = now())
+3. Assign role ใหม่ตาม `intended_role_name` ของคำเชิญใหม่ (ใช้ `IF NOT EXISTS` ไม่ใช่ `ON CONFLICT`)
+4. บันทึก `rehired` ใน `employee_employment_history`
+
+> **ไม่ควร reactivate role เดิม** เพราะ admin อาจต้องการเปลี่ยน role ของพนักงานที่รับกลับมา
+
+#### F5. Permission model สำหรับ role ที่ assign อัตโนมัติ
+
+| Role | สิทธิ์ HR | สิทธิ์ ERP Dashboard | หมายเหตุ |
+|------|----------|---------------------|----------|
+| owner | access_level 3 | เข้าได้ทุก module | สำหรับเจ้าของ |
+| admin | access_level 3 | เข้าได้ทุก module | กำหนดโดย admin |
+| manager | access_level 2 | เข้าได้บาง module | กำหนดโดย admin |
+| staff | access_level 1 | เข้าได้บาง module แบบ view only | default สำหรับผู้รับเชิญ |
+
+> **คำแนะนำ**: ไม่ควรให้ default role เป็น `admin` หรือ `manager` โดยอัตโนมัติ เพราะผู้ถูกเชิญอาจเป็นพนักงานระดับล่าง ควรให้ admin เปลี่ยน role ภายหลังได้
+
+#### F6. ข้อควรระวังเพิ่มเติม
+
+**F6.1 NULL branch_id ใน unique constraint**
+
+`employee_roles` มี `UNIQUE (profession_id, user_id, role_id, branch_id)` แต่ `branch_id` เป็น NULL ได้ PostgreSQL ถือว่า NULL != NULL ใน unique constraint ทำให้ `ON CONFLICT ... DO NOTHING` ไม่ทำงานเมื่อ `branch_id` เป็น NULL
+
+**แนวทาง**: ใช้ `IF NOT EXISTS` แทน `ON CONFLICT` ทุกที่ที่ `branch_id` เป็น NULL ได้
+
+**F6.2 `user.professionId` ไม่ใช่ source of truth สำหรับ ERP access**
+
+ผู้ถูกเชิญอาจเป็น consumer (ไม่มี `professionId`) หรือมี `professionId` ของ profession อื่น แต่ถูกเชิญเข้า profession ใหม่ ต้องตรวจสอบ `employee_roles` โดยตรง ไม่ใช่ผ่าน `user.professionId`
+
+**F6.3 Refresh ERP access หลัง accept invitation**
+
+หลังจาก user กดยอมรับคำเชิญ ต้อง trigger `_checkErpAccess()` ใหม่ มิฉะนั้น ERP card จะไม่แสดงจนกว่าจะ logout + login ใหม่
+
+**F6.4 กรณี `organization_roles` ไม่มี role ที่ระบุ**
+
+หาก `intended_role_name` ไม่มีใน `organization_roles` ของ profession นั้น ให้ fallback สู่ `staff` หาก `staff` ก็ไม่มี ให้ return error และไม่ assign role (แต่ยังสร้าง employee record ได้)
+
+#### F7. ไฟล์ที่ต้องแก้ไขเพิ่มเติม
+
+| ไฟล์ | เปลี่ยนแปลง |
+|------|------------|
+| `supabase/migrations/20260706130000_employee_invitations_and_owner_auto_create.sql` | แก้ `accept_employee_invitation` ให้ assign `employee_roles` ตาม `intended_role_name` |
+| `supabase/migrations/20260713160000_reinvite_and_termination.sql` | เพิ่ม `intended_role_name` column, seed `role_module_permissions` สำหรับ `staff` |
+| `lib/features/erp/data/services/erp_access_service.dart` | เพิ่ม `canAccessAnyProfession()` ตรวจสอบทุก profession |
+| `lib/features/home/presentation/pages/home_page.dart` | ใช้ `canAccessAnyProfession()` + refresh หลัง accept |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | เพิ่ม role selector ใน invite dialog |
+
+#### F8. Test Plan
+
+1. ผู้ถูกเชิญยอมรับคำเชิญ → ตรวจสอบว่ามี `employee_roles` ที่ `is_active = true` ตาม `intended_role_name`
+2. ผู้ถูกเชิญ login → Home Page แสดง ERP card (แม้ `user.professionId` เป็น NULL)
+3. ผู้ถูกเชิญกด ERP card → เข้า ERP Dashboard ได้
+4. Admin ให้พนักงานออก → `employee_roles.is_active = false` → ERP card หายไป
+5. Rehire กลับมาด้วย role ใหม่ → `employee_roles` active ด้วย role ใหม่ → ERP card กลับมา
+6. ตรวจสอบว่า default role เป็น `staff` ไม่ใช่ `admin` (เมื่อ admin ไม่ระบุ role)
+7. Admin เลือก role `manager` ตอนเชิญ → ผู้ถูกเชิญได้ role `manager` หลัง accept
+8. ผู้ถูกเชิญเป็น consumer (ไม่มี professionId) → ยอมรับคำเชิญ → เข้า ERP ได้
+9. ทดสอบกรณี `branch_id` เป็น NULL → insert ไม่ duplicate
+10. ทดสอบกรณี `organization_roles` ไม่มี role ที่ระบุ → fallback สู่ `staff`
+
