@@ -2684,3 +2684,384 @@ if (accessLevel == 0) {
 - **Existing code reuse:** ใช้ `EmployeeRole` model, `assignEmployeeRole()`, `toggleEmployeeRole()` ที่มีอยู่แล้ว ไม่ต้องสร้างใหม่
 - **RPC ใหม่เพียง 1 ตัว:** `get_users_with_roles` สำหรับโหลดรายการ user ทั้งหมดพร้อม role ในหน้า Assignment
 
+---
+
+## แผน: UI สำหรับผู้ถูกเชิญรับ/ปฏิเสธคำเชิญพนักงาน + บันทึกเหตุผลการปฏิเสธ
+
+> สถานะ: 🔄 วางแผน (ยังไม่ implement)
+> วันที่: 2026-07-13
+> ที่มา: ต้องการให้ผู้ถูกเชิญ (เช่น firm) สามารถตอบรับหรือปฏิเสธคำเชิญได้ และหากปฏิเสธต้องกรอกเหตุผล แล้วผู้เชิญ (เช่น apisek) ต้องเห็นเหตุผลนั้นได้
+
+### เป้าหมาย
+
+1. ผู้ถูกเชิญเห็นการแจ้งเตือนคำเชิญพนักงาน ERP บนหน้า Home
+2. ผู้ถูกเชิญกดรับ หรือ ปฏิเสธ พร้อมกรอกเหตุผล
+3. เหตุผลการปฏิเสธถูกบันทึกลงตาราง `employee_invitations`
+4. ผู้เชิญเห็นสถานะ `rejected` และเหตุผลการปฏิเสธในแท็บ "คำเชิญ" ของหน้า `EmployeeListPage`
+5. รองรับทั้งการเชิญ existing Sheserved user และเชิญผ่าน email/phone
+
+### 1. Database Changes
+
+```sql
+-- เพิ่ม column สำหรับเหตุผลการปฏิเสธ
+ALTER TABLE public.employee_invitations
+  ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+  ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;
+```
+
+**ความหมาย:**
+- `rejection_reason` — เหตุผลที่ผู้ถูกเชิญกรอกตอนปฏิเสธ (nullable)
+- `rejected_at` — timestamp ตอนปฏิเสธ (nullable)
+
+### 2. Backend RPC Changes
+
+#### 2.1 แก้ `reject_employee_invitation` ให้รับเหตุผล
+
+ไฟล์: `supabase/migrations/20260706130000_employee_invitations_and_owner_auto_create.sql` บรรทัด 285-318
+
+```sql
+CREATE OR REPLACE FUNCTION public.reject_employee_invitation(
+  p_token TEXT,
+  p_rejection_reason TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_invitation public.employee_invitations%ROWTYPE;
+BEGIN
+  SELECT * INTO v_invitation
+  FROM public.employee_invitations
+  WHERE token = p_token AND status = 'pending'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'คำเชิญไม่ถูกต้อง');
+  END IF;
+
+  IF v_invitation.expires_at < now() THEN
+    UPDATE public.employee_invitations
+    SET status = 'expired', updated_at = now()
+    WHERE id = v_invitation.id;
+    RETURN jsonb_build_object('success', false, 'error', 'คำเชิญหมดอายุ');
+  END IF;
+
+  UPDATE public.employee_invitations
+  SET status = 'rejected',
+      rejection_reason = p_rejection_reason,
+      rejected_at = now(),
+      updated_at = now()
+  WHERE id = v_invitation.id;
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+```
+
+#### 2.2 RPC สำหรับผู้ถูกเชิญโหลดคำเชิญของตัวเอง
+
+```sql
+CREATE OR REPLACE FUNCTION public.get_pending_employee_invitations_for_user(
+  p_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN (
+    SELECT jsonb_agg(jsonb_build_object(
+      'id', ei.id,
+      'token', ei.token,
+      'profession_id', ei.profession_id,
+      'profession_name', p.name,
+      'full_name', ei.full_name,
+      'employee_code', ei.employee_code,
+      'department', ei.department,
+      'job_title', ei.job_title,
+      'branch_name', b.branch_name,
+      'invited_by_name', COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username, u.email),
+      'expires_at', ei.expires_at,
+      'created_at', ei.created_at
+    ))
+    FROM public.employee_invitations ei
+    JOIN public.professions p ON p.id = ei.profession_id
+    LEFT JOIN public.organization_branches b ON b.id = ei.branch_id
+    LEFT JOIN public.users u ON u.id = ei.invited_by
+    WHERE ei.user_id = p_user_id
+      AND ei.status = 'pending'
+      AND ei.expires_at > now()
+    ORDER BY ei.created_at DESC
+  );
+END;
+$$;
+```
+
+**หมายเหตุ:** สำหรับคำเชิญที่ส่งผ่าน email/phone (ยังไม่ผูก user_id) ให้ผู้ใช้เข้าระบบด้วย phone/email ตรงกันก่อน หรือใช้ deep link token ใน SMS/email
+
+### 3. Flutter: Repository & Provider
+
+#### 3.1 `PhaseThreeRepository` เพิ่ม method
+
+ไฟล์: `lib/features/erp/data/repositories/phase_three_repository.dart`
+
+```dart
+/// โหลดคำเชิญ pending ของ current user (ฝั่งผู้ถูกเชิญ)
+Future<List<Map<String, dynamic>>> getPendingInvitationsForCurrentUser() async {
+  final userId = AuthService.instance.currentUser?.id;
+  if (userId == null || userId.isEmpty) return [];
+  try {
+    final response = await _client.rpc(
+      'get_pending_employee_invitations_for_user',
+      params: {'p_user_id': userId},
+    );
+    if (response == null) return [];
+    return List<Map<String, dynamic>>.from(response as List);
+  } catch (e, st) {
+    debugPrint('[Phase3Repo] getPendingInvitationsForCurrentUser error: $e');
+    return [];
+  }
+}
+
+/// ปฏิเสธคำเชิญพร้อมเหตุผล
+Future<Map<String, dynamic>?> rejectEmployeeInvitation(
+  String token, {
+  String? rejectionReason,
+}) async {
+  try {
+    final response = await _client.rpc(
+      'reject_employee_invitation',
+      params: {
+        'p_token': token,
+        if (rejectionReason != null && rejectionReason.isNotEmpty)
+          'p_rejection_reason': rejectionReason,
+      },
+    );
+    return response as Map<String, dynamic>?;
+  } catch (e, st) {
+    debugPrint('[Phase3Repo] rejectEmployeeInvitation error: $e');
+    return null;
+  }
+}
+```
+
+#### 3.2 `PhaseThreeProvider` เพิ่ม state
+
+```dart
+// State
+final List<Map<String, dynamic>> pendingInvitationsForCurrentUser;
+
+// Method
+Future<void> loadPendingInvitationsForCurrentUser() async { ... }
+Future<bool> rejectEmployeeInvitation(String token, String? reason) async { ... }
+```
+
+### 4. Flutter: แจ้งเตือนบน Home Header
+
+ไฟล์ที่เกี่ยวข้อง:
+- `lib/features/home/presentation/widgets/home_header_section.dart`
+- `lib/features/home/presentation/pages/home_page.dart`
+
+#### 4.1 `HomeHeaderSection` รองรับ employee invitation alerts
+
+เพิ่มพารามิเตอร์:
+
+```dart
+final List<Map<String, dynamic>> employeeInvitationAlerts;
+final Function(String token)? onEmployeeInvitationTapped;
+```
+
+ใน `combinedItems` ให้เพิ่ม type `employee_invitation` ต่อจาก `consultation` (หรืออยู่ถัดลงมา) และสร้าง UI card แสดง:
+
+> "คำเชิญพนักงาน: [ชื่อองค์กร]"
+
+เมื่อกด → เปิด dialog/page สำหรับตอบรับ/ปฏิเสธ
+
+#### 4.2 `HomePage` โหลดคำเชิญของ current user
+
+```dart
+Future<void> _loadEmployeeInvitations() async {
+  final user = AuthService.instance.currentUser;
+  if (user == null) return;
+  await ref.read(phaseThreeProvider.notifier).loadPendingInvitationsForCurrentUser();
+}
+```
+
+เรียกในตอน initState และเมื่อ auth state เปลี่ยน (เหมือน `_checkErpAccess`)
+
+### 5. Flutter: Dialog ตอบรับ/ปฏิเสธคำเชิญ
+
+สร้างใหม่หรือ inline dialog บน `HomePage`:
+
+```
+┌─────────────────────────────────────────┐
+│ คำเชิญพนักงาน                          │
+│ คุณได้รับเชิญจาก [ชื่อองค์กร]            │
+│ ตำแหน่ง: [job_title]                    │
+│ สาขา: [branch_name]                     │
+│ หมดอายุ: [expires_at]                   │
+│                                         │
+│ [ปฏิเสธ]              [ยอมรับ]          │
+└─────────────────────────────────────────┘
+```
+
+เมื่อกด **ปฏิเสธ**:
+- เปิด dialog ให้กรอกเหตุผล (TextField)
+- มีปุ่ม "ยกเลิก" และ "ยืนยันปฏิเสธ"
+- ส่ง `rejectionReason` ไปยัง RPC `reject_employee_invitation`
+
+เมื่อกด **ยอมรับ**:
+- เรียก RPC `accept_employee_invitation(token)`
+- หากสำเร็จ → แสดง SnackBar + refresh pending list
+
+### 6. Flutter: ผู้เชิญเห็นเหตุผลการปฏิเสธ
+
+ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart` แท็บ "คำเชิญ"
+
+ในรายการคำเชิญที่ status = `rejected` ให้แสดง:
+
+```
+ชื่อผู้ถูกเชิญ
+สถานะ: ถูกปฏิเสธ
+เหตุผล: [rejection_reason]
+```
+
+ถ้า `rejection_reason` เป็น null ให้แสดง "ไม่ได้ระบุเหตุผล"
+
+### 7. Migration ที่ต้องสร้าง
+
+สร้าง migration ใหม่: `supabase/migrations/20260713140000_employee_invitation_rejection_reason.sql`
+
+เนื้อหา:
+1. ADD COLUMN `rejection_reason`, `rejected_at`
+2. CREATE OR REPLACE FUNCTION `reject_employee_invitation(p_token, p_rejection_reason)`
+3. CREATE OR REPLACE FUNCTION `get_pending_employee_invitations_for_user(p_user_id)`
+
+### 8. Test Plan
+
+1. apisek ส่งคำเชิญให้ firm
+2. firm login แล้วเห็นการ์ดแจ้งเตือนบน Home Header
+3. firm กดปฏิเสธ + กรอกเหตุผล
+4. apisek เปิด EmployeeListPage แท็บ "คำเชิญ" เห็นสถานะ rejected + เหตุผล
+5. ทดสอบ accept path ด้วย: firm กดยอมรับ → สร้าง employees record สำเร็จ
+
+### 9. ไฟล์ที่ต้องแก้ไขสรุป
+
+| ไฟล์ | เปลี่ยนแปลง |
+|------|------------|
+| `supabase/migrations/20260713140000_employee_invitation_rejection_reason.sql` | migration ใหม่ |
+| `supabase/migrations/20260706130000_employee_invitations_and_owner_auto_create.sql` | แก้ RPC ต้นฉบับ |
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม method |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม state/method |
+| `lib/features/home/presentation/widgets/home_header_section.dart` | แสดง employee invitation alerts |
+| `lib/features/home/presentation/pages/home_page.dart` | โหลด pending invitations |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | แสดง rejection reason ในแท็บคำเชิญ |
+
+## บันทึกปัญหาและวิธีแก้ไข: การ์ดคำเชิญพนักงานไม่แสดง / ชื่อองค์กรผิด (2026-07-13)
+
+### ปัญหา
+
+1. **การ์ดคำเชิญพนักงานหายไปจาก Home Header** แม้ว่าเคยแสดงมาก่อน
+2. **Dialog แสดงชื่อองค์กรผิด**: แสดงชื่อ `profession` เช่น "แพทย์ทั่วไป" แทนที่จะเป็นชื่อบริษัท/คลินิกจริง
+
+### สาเหตุหลัก
+
+#### สาเหตุ 1: RPC `get_pending_employee_invitations_for_user` ล้มเหลว
+- **ข้อผิดพลาด**: `ERROR: 42703: column pp.profession_id does not exist`
+- **ที่มา**: `provider_profiles` ใน database จริงไม่มี column `profession_id` (เป็น `UNIQUE(user_id)` เท่านั้น) แต่ RPC ใช้ JOIN condition `AND pp.profession_id = ei.profession_id`
+- **ผลกระทบ**: RPC ทำงานไม่ได้ → Flutter ไม่ได้รับข้อมูล → การ์ดไม่แสดง
+
+#### สาเหตุ 2: ชื่อองค์กรไม่ถูกดึงมาจากแหล่งข้อมูลที่ถูกต้อง
+- แหล่งข้อมูลที่ถูกต้องคือ `provider_profiles.business_name`
+- หาก `business_name` ว่าง ควร fallback ไปที่ `registration_applications.registration_data->>'business_name'` (ใบสมัครที่ approved แล้ว)
+- หากไม่มีข้อมูลจริง UI ไม่ควร fallback ไปแสดง `profession_name` เป็น "องค์กร"
+
+#### สาเหตุ 3: Flutter ไม่เรียก `_loadEmployeeInvitations()` ในจังหวะที่เหมาะสม
+- การ์ดไม่แสดงเนื่องจาก state ของ `pendingInvitationsForCurrentUser` ไม่ถูกโหลดตอน login
+- โค้ดเดิมไม่ได้เรียก repository ให้แน่ใจว่าทำงานทั้งใน `initState` และ `_onAuthChanged`
+
+### วิธีแก้ไข
+
+#### 1. แก้ไข RPC `get_pending_employee_invitations_for_user`
+
+ไฟล์: `supabase/migrations/20260713140000_employee_invitation_rejection_reason.sql`
+
+- ลบ condition `AND pp.profession_id = ei.profession_id` ออกจาก JOIN `provider_profiles`
+- ดึง `business_name` จาก `provider_profiles` เป็นหลัก
+- เพิ่ม fallback ดึง `business_name` จาก `registration_applications.registration_data`
+- ใช้ `COALESCE` ลำดับ: `provider_profiles.business_name` → `registration_applications.registration_data->>'business_name'` → `professions.name`
+
+```sql
+'organization_name', COALESCE(
+  NULLIF(TRIM(pp.business_name), ''),
+  NULLIF(TRIM(ra_business.business_name), ''),
+  p.name
+),
+
+LEFT JOIN public.provider_profiles pp ON pp.user_id = ei.invited_by
+LEFT JOIN LATERAL (
+  SELECT (ra.registration_data->>'business_name')::TEXT AS business_name
+  FROM public.registration_applications ra
+  WHERE ra.user_id = ei.invited_by
+    AND ra.profession_id = ei.profession_id
+    AND ra.status = 'approved'
+  ORDER BY ra.updated_at DESC
+  LIMIT 1
+) ra_business ON true
+```
+
+#### 2. แก้ไข Flutter HomePage
+
+ไฟล์: `lib/features/home/presentation/pages/home_page.dart`
+
+- เรียก `_loadEmployeeInvitations()` ใน `initState` (ถ้ามี user) และ `_onAuthChanged`
+- เพิ่ม `Timer.periodic` รีเฟรชทุก 30 วินาที แล้ว cancel ใน `dispose()`
+- ใน `_EmployeeInvitationDialog` ซ่อนบรรทัด "องค์กร:" ถ้า `organization_name` ตรงกับ `profession_name` (แสดงว่าไม่มีชื่อองค์กรจริง)
+
+```dart
+final professionName = widget.invitation['profession_name']?.toString() ?? '';
+final organizationName = widget.invitation['organization_name']?.toString() ?? '';
+final displayOrganization = organizationName.isNotEmpty && organizationName != professionName;
+
+if (displayOrganization) Text('องค์กร: $organizationName'),
+```
+
+#### 3. แก้ไข Flutter HomeHeaderSection
+
+ไฟล์: `lib/features/home/presentation/widgets/home_header_section.dart`
+
+- ใช้ `organization_name` จาก RPC ในการแสดงชื่อองค์กร
+- แก้ไขการ parse `created_at` ที่เป็น `String` จาก RPC ให้ใช้ `DateTime.tryParse()`
+- แก้ไข syntax error จาก `if`/`else if` chain และ type error จาก `List<Widget?>`
+- เพิ่ม `debugPrint` ตรวจจำนวน `employeeInvitationAlerts`
+
+### คำสั่งตรวจสอบที่มีประโยชน์
+
+ตรวจสอบ RPC:
+```sql
+SELECT public.get_pending_employee_invitations_for_user('<user_id>'::uuid);
+```
+
+ตรวจสอบ business_name ของ inviter:
+```sql
+SELECT business_name FROM public.provider_profiles WHERE user_id = '<inviter_id>'::uuid;
+SELECT registration_data->>'business_name'
+FROM public.registration_applications
+WHERE user_id = '<inviter_id>'::uuid AND status = 'approved'
+ORDER BY updated_at DESC LIMIT 1;
+```
+
+รีเฟรช PostgREST schema cache:
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
+### บทเรียน
+
+- อย่าสมมติว่า schema ใน migration ใหม่ตรงกับ database ที่ deploy ไว้เสมอ ให้ใช้ `pg_get_functiondef()` หรือ `` ตรวจสอบ schema จริงก่อนเขียน JOIN
+- หาก UI ต้องแสดง "ชื่อองค์กร" ให้มีการ guard ใน Flutter ด้วย ไม่ใช่แค่ fallback ที่ RPC
+- การ์ดที่ต้องพึ่ง RPC ควรมี loading mechanism ที่ชัดเจนและ debug log เพื่อตรวจสอบว่าข้อมูลถูกโหลดหรือไม่
+

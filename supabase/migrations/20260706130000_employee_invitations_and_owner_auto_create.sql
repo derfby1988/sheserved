@@ -283,7 +283,8 @@ $$;
 -- =====================================================
 
 CREATE OR REPLACE FUNCTION public.reject_employee_invitation(
-  p_token TEXT
+  p_token TEXT,
+  p_rejection_reason TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -310,7 +311,10 @@ BEGIN
   END IF;
 
   UPDATE public.employee_invitations
-  SET status = 'rejected', updated_at = now()
+  SET status = 'rejected',
+      rejection_reason = p_rejection_reason,
+      rejected_at = now(),
+      updated_at = now()
   WHERE id = v_invitation.id;
 
   RETURN jsonb_build_object('success', true);
@@ -439,7 +443,8 @@ BEGIN
       )
       AND (
         p_search IS NULL OR
-        COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username) ILIKE '%' || p_search || '%' OR
+        COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), '') ILIKE '%' || p_search || '%' OR
+        u.username ILIKE '%' || p_search || '%' OR
         u.email ILIKE '%' || p_search || '%' OR
         u.phone ILIKE '%' || p_search || '%'
       )

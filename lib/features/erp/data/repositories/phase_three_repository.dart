@@ -165,16 +165,39 @@ class PhaseThreeRepository {
     }
   }
 
-  Future<Map<String, dynamic>?> rejectEmployeeInvitation(String token) async {
+  Future<Map<String, dynamic>?> rejectEmployeeInvitation(
+    String token, {
+    String? rejectionReason,
+  }) async {
     try {
       final response = await _client.rpc(
         'reject_employee_invitation',
-        params: {'p_token': token},
+        params: {
+          'p_token': token,
+          if (rejectionReason != null && rejectionReason.isNotEmpty)
+            'p_rejection_reason': rejectionReason,
+        },
       );
       return response as Map<String, dynamic>?;
     } catch (e, st) {
       debugPrint('[Phase3Repo] rejectEmployeeInvitation error: $e');
       return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingInvitationsForCurrentUser() async {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null || userId.isEmpty) return [];
+    try {
+      final response = await _client.rpc(
+        'get_pending_employee_invitations_for_user',
+        params: {'p_user_id': userId},
+      );
+      if (response == null) return [];
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getPendingInvitationsForCurrentUser error: $e\n$st');
+      return [];
     }
   }
 

@@ -3658,3 +3658,51 @@ ThaiBuddhistDatePickerField(
 > - **สิ่งที่ยังไม่ได้เชื่อมต่อ:** `### สิ่งที่ยังไม่ได้เชื่อมต่อตามแผน` (แยก 3 กลุ่ม: Current Blockers / Future Work / Infrastructure)
 >
 > ส่วน Mermaid diagram และรายการ bullet แบบเดิมถูกลบออกเพื่อป้องกัน drift ระหว่างเอกสารหลักกับสำเนา
+
+---
+
+## บันทึกปัญหาและบทเรียน (Troubleshooting & Lessons Learned)
+
+### ERP Access Card ไม่แสดงบน Home Page (2026-07-13)
+
+#### อาการ
+- User ที่มี `profession_id` (provider) ไม่เห็น ERP Dashboard card บน Home Page
+- เข้า route `/erp` ไม่ได้ (route guard ส่งกลับ `/home`)
+- ใน logs เห็น `ERP access result=false` ทั้งที่ user มี profession_id ที่ถูกต้อง
+
+#### Root Cause
+ตาราง `organization_roles` **ไม่มี column `is_active`** (ดู schema ใน migration `20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql` บรรทัด 69-78) แต่ทั้ง:
+
+1. **`ErpAccessService.canAccess()`** ใช้ `.eq('organization_roles.is_active', true)` ใน Supabase query → query ล้มเหลวเพราะ column ไม่มีอยู่ → return `false`
+2. **Backfill migration** (`20260713100000_backfill_employee_roles_and_seed_org_roles.sql`) ใช้ `AND or2.is_active = true` ใน JOIN กับ `organization_roles` → JOIN ไม่ match → ไม่มี `employee_roles` ถูก insert
+
+สรุป: การอ้างอิง column ที่ไม่มีอยู่จริงทำให้ทั้ง backfill และ runtime query ล้มเหลวแบบเงียบ (silent failure) — query ไม่ throw error แต่ return empty result
+
+#### วิธีแก้ไข
+1. **`erp_access_service.dart`**: เปลี่ยน query จาก:
+   ```dart
+   // ❌ ผิด — organization_roles ไม่มี is_active
+   .select('id, organization_roles!inner(is_active)')
+   .eq('organization_roles.is_active', true)
+   ```
+   เป็น:
+   ```dart
+   // ✅ ถูก — เช็คเฉพาะ employee_roles.is_active เท่านั้น
+   .select('id, organization_roles!inner(id)')
+   .eq('is_active', true)  // หมายถึง employee_roles.is_active
+   ```
+
+2. **Backfill migration**: ลบ `AND or2.is_active = true` ออกจาก JOIN condition
+
+#### สิ่งที่ต้องตรวจสอบเมื่อเขียน query/migration ที่เกี่ยวกับ ERP RBAC
+- **ตรวจสอบ schema จริง** ของตารางก่อนเขียน query ที่อ้างอิง column ใหม่ — อย่าสมมติว่ามี column อยู่เพราะ "น่าจะมี"
+- **`organization_roles`** มี columns: `id`, `profession_id`, `role_name`, `role_description`, `is_system_role`, `created_at`, `updated_at` — **ไม่มี `is_active`**
+- **`employee_roles`** มี columns: `id`, `profession_id`, `branch_id`, `user_id`, `role_id`, `assigned_at`, `assigned_by`, `is_active` — **มี `is_active`**
+- เมื่อ query ผ่าน Supabase PostgREST แล้วเจอ column ที่ไม่มี อาจไม่ throw error แต่ return empty result ทำให้ debug ยาก — ควรเพิ่ม debug log ชั่วคราวเพื่อดูจำนวน rows ที่ return
+
+#### ไฟล์ที่เกี่ยวข้อง
+- `lib/features/erp/data/services/erp_access_service.dart` — ERP access check service
+- `lib/features/home/presentation/pages/home_page.dart` — HomeErpCard rendering
+- `lib/ERP Dashboard/erp_dashboard_shell.dart` — Route guard
+- `supabase/migrations/20260713100000_backfill_employee_roles_and_seed_org_roles.sql` — Backfill migration
+- `supabase/migrations/20260611140000_erp_phase_0_reliability_rbac_feature_flags.sql` — Original schema definition

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../features/erp/presentation/providers/organization_settings_provider.dart';
 import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
 import '../features/admin/models/organization_settings.dart';
+import '../features/erp/data/services/erp_access_service.dart';
 import '../services/auth_service.dart';
 import 'erp_mini_sidebar.dart';
 
@@ -21,10 +23,15 @@ class ErpDashboardShell extends ConsumerStatefulWidget {
 
 class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
   bool _isSidebarExpanded = false;
+  bool _accessChecked = false;
+  bool _canAccess = false;
+  late final ErpAccessService _erpAccessService;
 
   @override
   void initState() {
     super.initState();
+    _erpAccessService = ErpAccessService(Supabase.instance.client);
+    _checkErpAccess();
     // Ensure organization data + theme are loaded when shell mounts
     Future.microtask(() {
       ref.read(organizationSettingsProvider.notifier).loadFromCurrentUser();
@@ -39,9 +46,27 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     });
   }
 
+  Future<void> _checkErpAccess() async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() { _canAccess = false; _accessChecked = true; });
+      return;
+    }
+    try {
+      final canAccess = await _erpAccessService.canAccess(
+        userId: user.id,
+        professionId: user.professionId,
+        isAdmin: user.isAdmin,
+      );
+      if (mounted) setState(() { _canAccess = canAccess; _accessChecked = true; });
+    } catch (_) {
+      if (mounted) setState(() { _canAccess = false; _accessChecked = true; });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Route-level guard: all ERP routes require provider role
+    // Route-level guard: all ERP routes require authenticated user
     final user = AuthService.instance.currentUser;
     if (user == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,7 +76,14 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    if (!user.isProvider) {
+
+    // While ERP access is being checked, show loading
+    if (!_accessChecked) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // Guard: user must have active employee_roles or be admin
+    if (!_canAccess) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
           Navigator.pushReplacementNamed(context, '/home');

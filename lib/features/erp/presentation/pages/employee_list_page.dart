@@ -186,7 +186,8 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
       return const Center(child: CircularProgressIndicator());
     }
     final pending = state.employeeInvitations.where((i) => i.isPending).toList();
-    if (pending.isEmpty) {
+    final rejected = state.employeeInvitations.where((i) => i.isRejected).toList();
+    if (pending.isEmpty && rejected.isEmpty) {
       return const Center(
         child: Text(
           'ไม่มีคำเชิญที่ค้างอยู่',
@@ -196,15 +197,22 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: pending.length,
+      itemCount: pending.length + rejected.length,
       itemBuilder: (context, index) {
-        final invite = pending[index];
+        if (index < pending.length) {
+          final invite = pending[index];
+          return _InvitationCard(
+            invitation: invite,
+            accessLevel: accessLevel,
+            onCancel: accessLevel < 2
+                ? null
+                : () => _cancelInvitation(context, invite),
+          );
+        }
+        final invite = rejected[index - pending.length];
         return _InvitationCard(
           invitation: invite,
           accessLevel: accessLevel,
-          onCancel: accessLevel < 2
-              ? null
-              : () => _cancelInvitation(context, invite),
         );
       },
     );
@@ -766,9 +774,35 @@ class _InvitationCard extends StatelessWidget {
                     'สถานะ: ${invitation.status}',
                     style: TextStyle(
                       fontSize: 11,
-                      color: invitation.isExpiredDate ? Colors.red : Colors.orange,
+                      color: invitation.isRejected
+                          ? Colors.red
+                          : (invitation.isExpiredDate ? Colors.red : Colors.orange),
                     ),
                   ),
+                  if (invitation.isRejected && invitation.rejectionReason != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'เหตุผลที่ปฏิเสธ:',
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red),
+                            ),
+                            Text(
+                              invitation.rejectionReason!,
+                              style: const TextStyle(fontSize: 11, color: Colors.red),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (invitation.expiresAt != null)
                     Text(
                       'หมดอายุ: ${invitation.expiresAt!.day}/${invitation.expiresAt!.month}/${invitation.expiresAt!.year + 543}',

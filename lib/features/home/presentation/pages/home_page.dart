@@ -27,6 +27,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../consultation/presentation/pages/health_program_request_dashboard.dart';
 import '../../../../services/platform_service.dart';
+import '../../../erp/data/services/erp_access_service.dart';
+import '../../../erp/presentation/providers/phase_three_provider.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -60,6 +62,7 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _refreshTimer;
+  Timer? _employeeInvitationRefreshTimer;
   double? _dragStartX;
   bool _isDraggingFromLeft = false;
   late ScrollController _scrollController;
@@ -126,6 +129,11 @@ class _HomePageState extends ConsumerState<HomePage>
   Timer? _consultationPollTimer;
   final List<Map<String, dynamic>> _consultationAlerts = [];
 
+  // === ERP Access State ===
+  bool _erpAccessChecked = false;
+  bool _canAccessErp = false;
+  late final ErpAccessService _erpAccessService;
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +143,9 @@ class _HomePageState extends ConsumerState<HomePage>
 
     // Listen for auth state changes to refresh data and re-load preferences
     AuthService.instance.addListener(_onAuthChanged);
+
+    // Initialize ERP access service
+    _erpAccessService = ErpAccessService(Supabase.instance.client);
 
     // Clear alerts on auth change manually if needed or via _onAuthChanged
     _professionalAlerts.clear();
@@ -171,11 +182,26 @@ class _HomePageState extends ConsumerState<HomePage>
     debugPrint('HomePage: initState _subscribeConsultationAlerts about to run, professionId=${initUser?.professionId}');
     _subscribeConsultationAlerts(); // ✅ Phase 5: Head sector consultation alerts
 
+    // ✅ Load pending employee invitations for current user (invitee side)
+    // ทำที่นี่โดยตรง ไม่ผูกกับ _checkErpAccess เพราะผู้ถูกเชิญอาจยังไม่มี ERP access
+    if (initUser != null) {
+      debugPrint('HomePage: initState loading employee invitations for user=${initUser.id}');
+      _loadEmployeeInvitations();
+    }
+
     // Start auto-refresh timer as a fail-safe (every 90 seconds)
     _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
       if (mounted) {
         debugPrint('HomePage: Auto-refreshing alerts via timer...');
         _loadActiveAlerts();
+      }
+    });
+
+    // ✅ Auto-refresh employee invitations every 30 seconds (in case first load misses)
+    _employeeInvitationRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        debugPrint('HomePage: Auto-refreshing employee invitations via timer...');
+        _loadEmployeeInvitations();
       }
     });
   }
@@ -184,6 +210,7 @@ class _HomePageState extends ConsumerState<HomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _employeeInvitationRefreshTimer?.cancel();
     AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.dispose();
     _emergencySub?.cancel();
@@ -1265,6 +1292,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (userId != null) {
       _connectWebSocket();
       _subscribeConsultationAlerts(); // ✅ re-subscribe เมื่อ login
+      _loadEmployeeInvitations(); // ✅ re-load employee invitations เมื่อ login
     } else {
       // Logout — clear consultation alerts
       _consultationAlertSub?.cancel();
@@ -1421,6 +1449,9 @@ class _HomePageState extends ConsumerState<HomePage>
 
   Future<void> _loadHomeData() async {
     debugPrint('HomePage: _loadHomeData called. Reloading articles...');
+
+    // Check ERP access asynchronously
+    _checkErpAccess();
 
     // Show loading indicator
     setState(() {
@@ -2005,6 +2036,11 @@ class _HomePageState extends ConsumerState<HomePage>
                                           _onConsultationAlertDismissed,
                                       onConsultationAlertTapped:
                                           _onConsultationAlertTapped,
+                                      employeeInvitationAlerts: ref
+                                          .watch(phaseThreeProvider)
+                                          .pendingInvitationsForCurrentUser,
+                                      onEmployeeInvitationTapped:
+                                          _onEmployeeInvitationTapped,
                                       onAlertDismissed: (videoId) {
                                         _recordDismissedAlert(videoId);
                                         setState(() {
@@ -2253,14 +2289,95 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 
-  /// แสดง HomeErpCard ถ้าผู้ใช้เปิดสิทธิ์เข้า ERP Dashboard (isConsultationProvider)
+  /// ตรวจสอบสิทธิ์ ERP access แบบ async ผ่าน ErpAccessService
+  /// ใช้ employee_roles เป็น source of truth แทน isConsultationProvider
+  Future<void> _checkErpAccess() async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() { _canAccessErp = false; _erpAccessChecked = true; });
+      return;
+    }
+
+    try {
+      final canAccess = await _erpAccessService.canAccess(
+        userId: user.id,
+        professionId: user.professionId,
+        isAdmin: user.isAdmin,
+      );
+      if (mounted) {
+        setState(() {
+          _canAccessErp = canAccess;
+          _erpAccessChecked = true;
+        });
+      }
+      // Load pending employee invitations for current user (invitee side)
+      // ไม่ขึ้นกับ ERP access — ผู้ถูกเชิญอาจยังไม่มี employee_roles
+      _loadEmployeeInvitations();
+    } catch (e) {
+      debugPrint('HomePage: ERP access check error: $e');
+      if (mounted) setState(() { _canAccessErp = false; _erpAccessChecked = true; });
+    }
+  }
+
+  /// โหลดคำเชิญพนักงาน ERP ที่รอ current user ตอบรับ/ปฏิเสธ
+  Future<void> _loadEmployeeInvitations() async {
+    await ref.read(phaseThreeProvider.notifier).loadPendingInvitationsForCurrentUser();
+  }
+
+  /// เมื่อผู้ใช้กดการ์ดคำเชิญพนักงานบน Home Header → เปิด dialog
+  void _onEmployeeInvitationTapped(String token) {
+    final invitations = ref.read(phaseThreeProvider).pendingInvitationsForCurrentUser;
+    final invitation = invitations.cast<Map<String, dynamic>?>().firstWhere(
+      (inv) => inv?['token'] == token,
+      orElse: () => null,
+    );
+    if (invitation == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => _EmployeeInvitationDialog(
+        invitation: invitation,
+        onAccept: () async {
+          Navigator.pop(context);
+          final success = await ref
+              .read(phaseThreeProvider.notifier)
+              .acceptEmployeeInvitationFromHome(token);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'ยอมรับคำเชิญสำเร็จ' : 'ยอมรับคำเชิญล้มเหลว'),
+              ),
+            );
+          }
+        },
+        onReject: (String reason) async {
+          Navigator.pop(context);
+          final success = await ref
+              .read(phaseThreeProvider.notifier)
+              .rejectEmployeeInvitation(token, '', rejectionReason: reason);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'ปฏิเสธคำเชิญสำเร็จ' : 'ปฏิเสธคำเชิญล้มเหลว'),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  /// แสดง HomeErpCard ถ้าผู้ใช้มี active employee_roles (ตรวจสอบผ่าน ErpAccessService)
   /// มิฉะนั้นแสดง HomePharmacyCard (ผู้บริโภคทั่วไป)
   Widget _buildPharmacyOrErpCard() {
-    final user = AuthService.instance.currentUser;
-    // เช็ค toggle isConsultationProvider จาก profession (ตาม dialog แก้ไขหมวดหมู่)
-    final showErp = user?.isConsultationProvider ?? false;
+    if (!_erpAccessChecked) {
+      return const SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
 
-    if (showErp) {
+    if (_canAccessErp) {
       return HomeErpCard(
         key: _pharmacyKey,
         onEnterTap: () => Navigator.of(context).pushNamed('/erp'),
@@ -2683,6 +2800,133 @@ class _HomePageState extends ConsumerState<HomePage>
             ),
           );
         }),
+      ),
+    );
+  }
+}
+
+/// Dialog สำหรับผู้ถูกเชิญตอบรับ/ปฏิเสธคำเชิญพนักงาน ERP
+class _EmployeeInvitationDialog extends StatefulWidget {
+  final Map<String, dynamic> invitation;
+  final Future<void> Function() onAccept;
+  final Future<void> Function(String reason) onReject;
+
+  const _EmployeeInvitationDialog({
+    required this.invitation,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  State<_EmployeeInvitationDialog> createState() => _EmployeeInvitationDialogState();
+}
+
+class _EmployeeInvitationDialogState extends State<_EmployeeInvitationDialog> {
+  bool _showRejectField = false;
+  final _reasonController = TextEditingController();
+  bool _isProcessing = false;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final professionName = widget.invitation['profession_name']?.toString() ?? '';
+    final organizationName = widget.invitation['organization_name']?.toString() ?? '';
+    // แสดงชื่อองค์กรเฉพาะเมื่อมีค่าจริง และไม่ใช่ชื่อ profession ที่ถูก fallback มา
+    final displayOrganization = organizationName.isNotEmpty && organizationName != professionName;
+    final jobTitle = widget.invitation['job_title']?.toString() ?? 'ไม่ระบุตำแหน่ง';
+    final department = widget.invitation['department']?.toString() ?? '';
+    final branchName = widget.invitation['branch_name']?.toString() ?? '';
+    final invitedBy = widget.invitation['invited_by_name']?.toString() ?? 'ไม่ระบุ';
+    final employeeCode = widget.invitation['employee_code']?.toString() ?? '';
+    final expiresAt = widget.invitation['expires_at']?.toString() ?? '';
+
+    return AlertDialog(
+      title: const Text('คำเชิญพนักงาน'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('คุณได้รับเชิญจาก: $invitedBy'),
+          const SizedBox(height: 8),
+          if (displayOrganization) Text('องค์กร: $organizationName'),
+          if (jobTitle.isNotEmpty) Text('ตำแหน่ง: $jobTitle'),
+          if (department.isNotEmpty) Text('แผนก: $department'),
+          if (branchName.isNotEmpty) Text('สาขา: $branchName'),
+          if (employeeCode.isNotEmpty) Text('รหัสพนักงาน: $employeeCode'),
+          if (expiresAt.isNotEmpty)
+            Text('หมดอายุ: ${expiresAt.substring(0, 10)}'),
+          const SizedBox(height: 16),
+          if (_showRejectField) ...[
+            const Text(
+              'เหตุผลในการปฏิเสธ',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'กรอกเหตุผล...',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                TextButton(
+                  onPressed: _isProcessing
+                      ? null
+                      : () => setState(() => _showRejectField = false),
+                  child: const Text('ยกเลิก'),
+                ),
+                FilledButton.tonal(
+                  onPressed: _isProcessing
+                      ? null
+                      : () async {
+                          setState(() => _isProcessing = true);
+                          await widget.onReject(_reasonController.text.trim());
+                        },
+                  child: const Text('ยืนยันปฏิเสธ'),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                FilledButton.tonal(
+                  onPressed: _isProcessing
+                      ? null
+                      : () => setState(() => _showRejectField = true),
+                  style: FilledButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                  child: const Text('ปฏิเสธ'),
+                ),
+                FilledButton(
+                  onPressed: _isProcessing
+                      ? null
+                      : () async {
+                          setState(() => _isProcessing = true);
+                          await widget.onAccept();
+                        },
+                  child: const Text('ยอมรับ'),
+                ),
+              ],
+            ),
+          ],
+          if (_isProcessing)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
       ),
     );
   }

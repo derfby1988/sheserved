@@ -124,24 +124,12 @@ env:
 - setClipboard: "${MEDICATION_NAME}"
 - pasteText
 - waitForAnimationToEnd:
-    timeout: 2000
-
-# Unfocus text field by tapping on app bar area (avoid hideKeyboard which sends back button and pops the page)
-- tapOn:
-    point: "400,75"
-- waitForAnimationToEnd:
-    timeout: 3000
-
-# Flutter's onChanged debounce (500ms) auto-triggers search after paste
-- extendedWaitUntil:
-    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
-    timeout: 15000
-
-# Wait for results to render
+    timeout: 1000
+- pressKey: Enter
 - waitForAnimationToEnd:
     timeout: 5000
 
-# Wait for Override button to appear (no scroll needed if only one result)
+# Wait for Override button to appear in search results
 - extendedWaitUntil:
     visible: ".*Override.*"
     timeout: 30000
@@ -152,19 +140,21 @@ env:
 
 - assertVisible: 'Override:.*'
 
-# Change FDA Risk Status to S
+# Change FDA Risk Status — tap the FDA button (accessibility text is multiline: "FDA Risk Status\n...")
 - tapOn:
-    point: "400,440"
-- waitForAnimationToEnd:
-    timeout: 2000
-- tapOn:
-    point: "400,454"
+    text: "FDA Risk Status.*"
 - waitForAnimationToEnd:
     timeout: 2000
 
-# Fill reason field
+# Select S (ยาควบคุมพิเศษ) from dropdown
 - tapOn:
-    point: "400,770"
+    text: "S (ยาควบคุมพิเศษ)"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill reason field — tap by hint text to ensure correct field
+- tapOn:
+    text: "เหตุผลการ Override เพื่อบันทึกประวัติ *"
 - waitForAnimationToEnd:
     timeout: 1000
 - setClipboard: "Test Organization Override"
@@ -172,15 +162,26 @@ env:
 - waitForAnimationToEnd:
     timeout: 1000
 
+# Tap save button by text
 - tapOn: "บันทึก Override"
 - waitForAnimationToEnd:
     timeout: 10000
 
-# Dismiss any remaining keyboard by tapping app bar
+# Re-trigger search to see the override badge
 - tapOn:
-    point: "400,75"
+    point: "400,330"
 - waitForAnimationToEnd:
-    timeout: 3000
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+- setClipboard: "${MEDICATION_NAME}"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+- pressKey: Enter
+- waitForAnimationToEnd:
+    timeout: 5000
 
 # Verify override scope badge appears (org or personal depending on user's profession)
 - extendedWaitUntil:
@@ -286,25 +287,13 @@ env:
 - setClipboard: "${MEDICATION_NAME}"
 - pasteText
 - waitForAnimationToEnd:
-    timeout: 2000
-
-# Unfocus text field by tapping on app bar area (avoid hideKeyboard which sends back button and pops the page)
-- tapOn:
-    point: "400,75"
-- waitForAnimationToEnd:
-    timeout: 3000
-
-# Flutter's onChanged debounce (500ms) auto-triggers search after paste
-- extendedWaitUntil:
-    notVisible: "พิมพ์ชื่อยาเพื่อค้นหา"
-    timeout: 15000
-
-# Wait for results to render
+    timeout: 1000
+- pressKey: Enter
 - waitForAnimationToEnd:
     timeout: 5000
 
-# Another clinic member should see the same override badge
+# Wait for override badge to appear
 - extendedWaitUntil:
     visible: ".*Override (องค์กร|ส่วนตัว).*"
-    timeout: 10000
+    timeout: 15000
 - assertVisible: ".*Override (องค์กร|ส่วนตัว).*"

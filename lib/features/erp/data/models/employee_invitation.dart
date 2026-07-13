@@ -22,6 +22,8 @@ class EmployeeInvitation {
   final String? bankAccountNumber;
   final String status;
   final String token;
+  final String? rejectionReason;
+  final DateTime? rejectedAt;
   final DateTime? expiresAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -49,6 +51,8 @@ class EmployeeInvitation {
     this.bankAccountNumber,
     required this.status,
     required this.token,
+    this.rejectionReason,
+    this.rejectedAt,
     this.expiresAt,
     required this.createdAt,
     required this.updatedAt,
@@ -78,6 +82,8 @@ class EmployeeInvitation {
       bankAccountNumber: json['bank_account_number'] as String?,
       status: json['status'] as String,
       token: json['token'] as String,
+      rejectionReason: json['rejection_reason'] as String?,
+      rejectedAt: json['rejected_at'] != null ? DateTime.parse(json['rejected_at'] as String) : null,
       expiresAt: json['expires_at'] != null ? DateTime.parse(json['expires_at'] as String) : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -108,6 +114,8 @@ class EmployeeInvitation {
       'bank_account_number': bankAccountNumber,
       'status': status,
       'token': token,
+      'rejection_reason': rejectionReason,
+      'rejected_at': rejectedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),

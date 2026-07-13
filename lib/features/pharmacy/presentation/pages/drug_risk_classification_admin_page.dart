@@ -1538,6 +1538,7 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                       );
 
                       if (mounted) {
+                        FocusScope.of(context).unfocus();
                         Navigator.pop(context, true);
                       }
                     } catch (e) {
@@ -1555,6 +1556,7 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       );
 
       if (result == true) {
+        FocusManager.instance.primaryFocus?.unfocus();
         await _searchMedications(_searchController.text);
         await _loadReports();
         setState(() {});

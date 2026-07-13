@@ -32,6 +32,7 @@ class PhaseThreeState {
   final List<Employee> employees;
   final List<EmployeeInvitation> employeeInvitations;
   final List<Map<String, dynamic>> availableUsersForInvite;
+  final List<Map<String, dynamic>> pendingInvitationsForCurrentUser;
   final List<GlEntry> glEntries;
   final List<DashboardSnapshot> snapshots;
   final List<ChartOfAccount> chartOfAccounts;
@@ -52,6 +53,7 @@ class PhaseThreeState {
     this.employees = const [],
     this.employeeInvitations = const [],
     this.availableUsersForInvite = const [],
+    this.pendingInvitationsForCurrentUser = const [],
     this.glEntries = const [],
     this.snapshots = const [],
     this.chartOfAccounts = const [],
@@ -74,6 +76,7 @@ class PhaseThreeState {
     List<Employee>? employees,
     List<EmployeeInvitation>? employeeInvitations,
     List<Map<String, dynamic>>? availableUsersForInvite,
+    List<Map<String, dynamic>>? pendingInvitationsForCurrentUser,
     List<GlEntry>? glEntries,
     List<DashboardSnapshot>? snapshots,
     List<ChartOfAccount>? chartOfAccounts,
@@ -96,6 +99,7 @@ class PhaseThreeState {
       employees: employees ?? this.employees,
       employeeInvitations: employeeInvitations ?? this.employeeInvitations,
       availableUsersForInvite: availableUsersForInvite ?? this.availableUsersForInvite,
+      pendingInvitationsForCurrentUser: pendingInvitationsForCurrentUser ?? this.pendingInvitationsForCurrentUser,
       glEntries: glEntries ?? this.glEntries,
       snapshots: snapshots ?? this.snapshots,
       chartOfAccounts: chartOfAccounts ?? this.chartOfAccounts,
@@ -279,13 +283,21 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
     }
   }
 
-  Future<bool> rejectEmployeeInvitation(String token, String professionId) async {
+  Future<bool> rejectEmployeeInvitation(
+    String token,
+    String professionId, {
+    String? rejectionReason,
+  }) async {
     state = state.copyWith(isSaving: true, clearError: true);
     try {
-      final result = await _repository.rejectEmployeeInvitation(token);
+      final result = await _repository.rejectEmployeeInvitation(
+        token,
+        rejectionReason: rejectionReason,
+      );
       state = state.copyWith(isSaving: false);
       if (result != null && result['success'] == true) {
         await loadEmployeeInvitations(professionId);
+        await loadPendingInvitationsForCurrentUser();
         return true;
       } else {
         state = state.copyWith(
@@ -296,6 +308,37 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
     } catch (e, st) {
       debugPrint('[Phase3] rejectEmployeeInvitation ERROR: $e');
       state = state.copyWith(isSaving: false, errorMessage: 'ปฏิเสธคำเชิญล้มเหลว: $e');
+      return false;
+    }
+  }
+
+  Future<void> loadPendingInvitationsForCurrentUser() async {
+    try {
+      final invitations = await _repository.getPendingInvitationsForCurrentUser();
+      debugPrint('[Phase3] loadPendingInvitationsForCurrentUser: loaded ${invitations.length} invitations');
+      state = state.copyWith(pendingInvitationsForCurrentUser: invitations);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadPendingInvitationsForCurrentUser ERROR: $e\n$st');
+    }
+  }
+
+  Future<bool> acceptEmployeeInvitationFromHome(String token) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.acceptEmployeeInvitation(token);
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadPendingInvitationsForCurrentUser();
+        return true;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ยอมรับคำเชิญล้มเหลว',
+        );
+        return false;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] acceptEmployeeInvitationFromHome ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ยอมรับคำเชิญล้มเหลว: $e');
       return false;
     }
   }

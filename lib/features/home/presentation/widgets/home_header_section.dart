@@ -24,6 +24,10 @@ class HomeHeaderSection extends StatelessWidget {
   final Function(String consultationId)? onConsultationAlertDismissed;
   /// callback เมื่อกดดูการแจ้งเตือนปรึกษา → นำทางไป Dashboard
   final Function(String consultationId)? onConsultationAlertTapped;
+  /// ✅ [ERP] คำเชิญพนักงาน ERP ที่รอผู้ใช้ตอบรับ/ปฏิเสธ
+  final List<Map<String, dynamic>> employeeInvitationAlerts;
+  /// callback เมื่อกดการ์ดคำเชิญพนักงาน → เปิด dialog ตอบรับ/ปฏิเสธ
+  final Function(String token)? onEmployeeInvitationTapped;
 
   const HomeHeaderSection({
     super.key,
@@ -40,6 +44,8 @@ class HomeHeaderSection extends StatelessWidget {
     this.consultationAlerts = const [],
     this.onConsultationAlertDismissed,
     this.onConsultationAlertTapped,
+    this.employeeInvitationAlerts = const [],
+    this.onEmployeeInvitationTapped,
   });
 
   @override
@@ -156,7 +162,22 @@ class HomeHeaderSection extends StatelessWidget {
                         // รวม notification ทุกประเภทเข้า list เดียว
                         final List<Map<String, dynamic>> combinedItems = [];
 
-                        // 1. Consultation alerts (สำคัญสุด — อยู่บนสุด)
+                        // 0. Employee invitation alerts (สำคัญสุด — อยู่บนสุด)
+                        for (var inv in employeeInvitationAlerts) {
+                          combinedItems.add({
+                            'time': inv['created_at'] is DateTime
+                                ? inv['created_at'] as DateTime
+                                : (inv['created_at'] != null
+                                    ? DateTime.tryParse(inv['created_at'].toString()) ?? DateTime.now()
+                                    : DateTime.now()),
+                            'type': 'employee_invitation',
+                            'data': inv,
+                          });
+                        }
+
+                        debugPrint('HomeHeader: employeeInvitationAlerts.length=${employeeInvitationAlerts.length}');
+
+                        // 1. Consultation alerts (สำคัญรองลงมา)
                         debugPrint('HomeHeader: consultationAlerts.length=${consultationAlerts.length}');
                         for (var c in consultationAlerts) {
                           combinedItems.add({
@@ -193,12 +214,12 @@ class HomeHeaderSection extends StatelessWidget {
                           });
                         }
 
-                        // เรียงลำดับ: consultation อยู่บนสุดเสมอ (pinned), ที่เหลือใหม่ล่าสุดก่อน
+                        // เรียงลำดับ: employee_invitation และ consultation อยู่บนสุด (pinned), ที่เหลือใหม่ล่าสุดก่อน
                         combinedItems.sort((a, b) {
-                          final aIsConsult = a['type'] == 'consultation';
-                          final bIsConsult = b['type'] == 'consultation';
-                          if (aIsConsult && !bIsConsult) return -1;
-                          if (!aIsConsult && bIsConsult) return 1;
+                          final aPinned = a['type'] == 'employee_invitation' || a['type'] == 'consultation';
+                          final bPinned = b['type'] == 'employee_invitation' || b['type'] == 'consultation';
+                          if (aPinned && !bPinned) return -1;
+                          if (!aPinned && bPinned) return 1;
                           return (b['time'] as DateTime).compareTo(a['time'] as DateTime);
                         });
 
@@ -270,6 +291,69 @@ class HomeHeaderSection extends StatelessWidget {
                                           textAlign: TextAlign.right,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+
+                            // ── Employee Invitation Alert (ERP) ────────────────
+                            } else if (item['type'] == 'employee_invitation') {
+                              final inv = item['data'] as Map<String, dynamic>;
+                              final token = inv['token']?.toString() ?? '';
+                              final professionName = inv['profession_name']?.toString() ?? '';
+                              final organizationName = inv['organization_name']?.toString() ?? '';
+                              final displayOrganizationName = organizationName.isNotEmpty && organizationName != professionName;
+                              final jobTitle = inv['job_title']?.toString() ?? '';
+                              return GestureDetector(
+                                onTap: () => onEmployeeInvitationTapped?.call(token),
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 3),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1565C0).withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: const Color(0xFF42A5F5).withOpacity(0.55),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      const Icon(Icons.badge, color: Color(0xFF42A5F5), size: 10),
+                                      const SizedBox(width: 5),
+                                      Flexible(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'คำเชิญพนักงาน',
+                                              style: AppTextStyles.caption.copyWith(
+                                                color: const Color(0xFF42A5F5),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 9,
+                                              ),
+                                              maxLines: 1,
+                                            ),
+                                            if (displayOrganizationName || jobTitle.isNotEmpty)
+                                              Text(
+                                                displayOrganizationName && jobTitle.isNotEmpty
+                                                    ? '$organizationName • $jobTitle'
+                                                    : (displayOrganizationName
+                                                        ? organizationName
+                                                        : jobTitle),
+                                                style: AppTextStyles.caption.copyWith(
+                                                  color: Colors.white.withOpacity(0.8),
+                                                  fontSize: 8.5,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                          ],
                                         ),
                                       ),
                                     ],
@@ -436,7 +520,7 @@ class HomeHeaderSection extends StatelessWidget {
                                 ),
                               );
                             }
-                          }).toList(),
+                          }).whereType<Widget>().toList(),
                         );
                       },
                     ),
