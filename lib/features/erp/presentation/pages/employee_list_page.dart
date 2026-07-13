@@ -32,7 +32,12 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
-      if (_tabController.index == 1 && _tabController.indexIsChanging) {
+      if (!_tabController.indexIsChanging) return;
+      if (_tabController.index == 0) {
+        // Refresh employees list when returning to employees tab
+        // so invitees who just accepted appear immediately
+        ref.read(phaseThreeProvider.notifier).loadEmployees(widget.professionId);
+      } else if (_tabController.index == 1) {
         ref.read(phaseThreeProvider.notifier).loadEmployeeInvitations(widget.professionId);
       }
     });
@@ -133,7 +138,9 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     if (state.errorMessage != null) {
       return Center(child: Text('Error: ${state.errorMessage}'));
     }
-    if (state.employees.isEmpty) {
+    final active = state.employees.where((e) => e.isActive).toList();
+    final terminated = state.employees.where((e) => !e.isActive).toList();
+    if (active.isEmpty && terminated.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -157,12 +164,24 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: state.employees.length,
+      itemCount: active.length + terminated.length + (terminated.isNotEmpty ? 1 : 0),
       itemBuilder: (context, index) {
-        final emp = state.employees[index];
+        if (index == active.length && terminated.isNotEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 24, bottom: 8),
+            child: Text(
+              'พนักงานที่ออกแล้ว (${terminated.length})',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          );
+        }
+        final emp = index < active.length
+            ? active[index]
+            : terminated[index - active.length - (terminated.isNotEmpty ? 1 : 0)];
         return _EmployeeCard(
           employee: emp,
           professionId: widget.professionId,
+          accessLevel: accessLevel,
           onEdit: () => _showEditEmployeeDialog(context, emp),
           onTaxAllowance: () {
             Navigator.push(
@@ -176,6 +195,9 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
               ),
             );
           },
+          onTerminate: accessLevel >= 3 && emp.isActive
+              ? () => _showTerminateEmployeeDialog(context, emp)
+              : null,
         );
       },
     );
@@ -213,6 +235,9 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
         return _InvitationCard(
           invitation: invite,
           accessLevel: accessLevel,
+          onReinvite: accessLevel >= 2
+              ? () => _showInviteEmployeeDialog(context, reinviteInvitation: invite)
+              : null,
         );
       },
     );
@@ -247,6 +272,75 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
 
   void _showEditEmployeeDialog(BuildContext context, Employee employee) {
     _showEmployeeDialog(context, employee: employee);
+  }
+
+  void _showTerminateEmployeeDialog(BuildContext context, Employee employee) {
+    final reasonController = TextEditingController();
+    DateTime? terminationDate;
+    bool canReinvite = true;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('ให้พนักงานออก'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('พนักงาน: ${employee.fullName}'),
+                const SizedBox(height: 12),
+                ThaiBuddhistDatePickerField(
+                  value: terminationDate,
+                  label: 'วันที่ให้ออก',
+                  hint: 'เลือกวันที่ให้ออก',
+                  onDateSelected: (date) => setState(() => terminationDate = date),
+                ),
+                TextField(
+                  controller: reasonController,
+                  decoration: const InputDecoration(labelText: 'เหตุผล'),
+                  maxLines: 3,
+                ),
+                CheckboxListTile(
+                  title: const Text('อนุญาตให้รับกลับได้'),
+                  value: canReinvite,
+                  onChanged: (v) => setState(() => canReinvite = v ?? true),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () async {
+                final notifier = ref.read(phaseThreeProvider.notifier);
+                final result = await notifier.terminateEmployee(
+                  employeeId: employee.id,
+                  terminationReason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
+                  terminationDate: terminationDate,
+                  canReinvite: canReinvite,
+                );
+                if (context.mounted) Navigator.pop(context);
+                if (result != null && result['success'] == true) {
+                  await notifier.loadEmployees(widget.professionId);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('ให้พนักงานออกสำเร็จ')),
+                    );
+                  }
+                } else if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result?['error'] as String? ?? 'ให้พนักงานออกล้มเหลว')),
+                  );
+                }
+              },
+              child: const Text('ให้ออก', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showEmployeeDialog(BuildContext context, {Employee? employee}) {
@@ -439,39 +533,73 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     );
   }
 
-  void _showInviteEmployeeDialog(BuildContext context) {
-    final codeController = TextEditingController();
-    final nameController = TextEditingController();
-    final deptController = TextEditingController();
-    final titleController = TextEditingController();
-    final salaryController = TextEditingController();
-    final baseSalaryController = TextEditingController();
-    final commissionController = TextEditingController();
-    final pfRateController = TextEditingController(text: '0.03');
-    final taxExpensesController = TextEditingController(text: '0');
-    final personalAllowanceController = TextEditingController(text: '60000');
-    final emailController = TextEditingController();
-    final phoneController = TextEditingController();
-    final bankNameController = TextEditingController();
-    final bankAccController = TextEditingController();
-    String paymentMethod = 'bank_transfer';
+  void _showInviteEmployeeDialog(BuildContext context, {EmployeeInvitation? reinviteInvitation}) {
+    final isReinvite = reinviteInvitation != null;
+    final codeController = TextEditingController(text: reinviteInvitation?.employeeCode ?? '');
+    final nameController = TextEditingController(text: reinviteInvitation?.fullName ?? '');
+    final deptController = TextEditingController(text: reinviteInvitation?.department ?? '');
+    final titleController = TextEditingController(text: reinviteInvitation?.jobTitle ?? '');
+    final salaryController = TextEditingController(
+      text: reinviteInvitation?.salary != null ? reinviteInvitation!.salary.toString() : '',
+    );
+    final baseSalaryController = TextEditingController(
+      text: reinviteInvitation?.baseSalary != null ? reinviteInvitation!.baseSalary.toString() : '',
+    );
+    final commissionController = TextEditingController(
+      text: reinviteInvitation?.commissionRate != null ? reinviteInvitation!.commissionRate.toString() : '',
+    );
+    final pfRateController = TextEditingController(
+      text: reinviteInvitation?.providentFundRate != null
+          ? reinviteInvitation!.providentFundRate.toString()
+          : '0.03',
+    );
+    final taxExpensesController = TextEditingController(
+      text: reinviteInvitation?.taxDeductibleExpenses != null
+          ? reinviteInvitation!.taxDeductibleExpenses.toString()
+          : '0',
+    );
+    final personalAllowanceController = TextEditingController(
+      text: reinviteInvitation?.personalAllowance != null
+          ? reinviteInvitation!.personalAllowance.toString()
+          : '60000',
+    );
+    final emailController = TextEditingController(text: reinviteInvitation?.email ?? '');
+    final phoneController = TextEditingController(text: reinviteInvitation?.phone ?? '');
+    final bankNameController = TextEditingController(text: reinviteInvitation?.bankName ?? '');
+    final bankAccController = TextEditingController(text: reinviteInvitation?.bankAccountNumber ?? '');
+    String paymentMethod = reinviteInvitation?.paymentMethod ?? 'bank_transfer';
     DateTime? hireDate;
-    String? selectedBranchId;
-    String? selectedUserId;
-    bool useExistingUser = true;
+    String? selectedBranchId = reinviteInvitation?.branchId;
+    String? selectedUserId = reinviteInvitation?.userId;
+    bool useExistingUser = reinviteInvitation?.userId != null || reinviteInvitation == null;
     String searchQuery = '';
+    String? selectedRoleName = reinviteInvitation?.intendedRoleName ?? 'staff';
 
     final orgState = ref.read(organizationSettingsProvider);
     final branches = orgState.settings?.branches ?? [];
+
+    // Preload roles and history
+    Future.microtask(() {
+      ref.read(phaseThreeProvider.notifier).loadOrganizationRoles(widget.professionId);
+      if (isReinvite) {
+        ref.read(phaseThreeProvider.notifier).loadInvitationHistory(
+          professionId: widget.professionId,
+          userId: reinviteInvitation!.userId,
+          email: reinviteInvitation.email,
+          phone: reinviteInvitation.phone,
+        );
+      }
+    });
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('เชิญพนักงาน'),
+          title: Text(isReinvite ? 'เชิญพนักงานใหม่ (รับกลับ)' : 'เชิญพนักงาน'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SegmentedButton<bool>(
                   segments: const [
@@ -479,7 +607,9 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                     ButtonSegment(value: false, label: Text('เชิญใหม่')),
                   ],
                   selected: {useExistingUser},
-                  onSelectionChanged: (v) => setState(() => useExistingUser = v.first),
+                  onSelectionChanged: isReinvite
+                      ? null
+                      : (v) => setState(() => useExistingUser = v.first),
                 ),
                 const SizedBox(height: 12),
                 if (useExistingUser) ...[
@@ -512,17 +642,49 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                           final fullName = u['full_name'] as String? ?? 'ไม่ระบุชื่อ';
                           final email = u['email'] as String?;
                           final phone = u['phone'] as String?;
+                          final previousStatus = u['previous_employee_status'] as String?;
+                          final canReinviteUser = u['can_reinvite'] as bool? ?? true;
+                          final cooldown = u['reinvite_eligible_at'] as String?;
+                          final isInCooldown = cooldown != null && DateTime.tryParse(cooldown)?.isAfter(DateTime.now()) == true;
+                          final isEligible = previousStatus == null || (canReinviteUser && !isInCooldown);
                           return RadioListTile<String>(
                             title: Text(fullName),
-                            subtitle: Text([email, phone].whereType<String>().join(' | ')),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text([email, phone].whereType<String>().join(' | ')),
+                                if (previousStatus == 'terminated')
+                                  Text(
+                                    isEligible
+                                        ? 'สามารถรับกลับได้'
+                                        : (isInCooldown
+                                            ? 'อยู่ในช่วง cooldown (${DateTime.parse(cooldown!).day}/${DateTime.parse(cooldown).month}/${DateTime.parse(cooldown).year + 543})'
+                                            : 'ไม่สามารถรับกลับได้'),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isEligible ? Colors.green : Colors.red,
+                                    ),
+                                  ),
+                              ],
+                            ),
                             value: userId,
                             groupValue: selectedUserId,
-                            onChanged: (v) => setState(() {
-                              selectedUserId = v;
-                              nameController.text = fullName;
-                              if (email != null) emailController.text = email;
-                              if (phone != null) phoneController.text = phone;
-                            }),
+                            onChanged: isEligible
+                                ? (v) {
+                                    setState(() {
+                                      selectedUserId = v;
+                                      nameController.text = fullName;
+                                      if (email != null) emailController.text = email;
+                                      if (phone != null) phoneController.text = phone;
+                                    });
+                                    ref.read(phaseThreeProvider.notifier).loadInvitationHistory(
+                                      professionId: widget.professionId,
+                                      userId: userId,
+                                      email: email,
+                                      phone: phone,
+                                    );
+                                  }
+                                : null,
                           );
                         }).toList(),
                       );
@@ -542,9 +704,24 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                 ],
                 const Divider(),
                 TextField(controller: codeController, decoration: const InputDecoration(labelText: 'รหัสพนักงาน')),
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อ-นามสกุล')),
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อ-นามสกุล *')),
                 TextField(controller: deptController, decoration: const InputDecoration(labelText: 'แผนก')),
                 TextField(controller: titleController, decoration: const InputDecoration(labelText: 'ตำแหน่ง')),
+                Consumer(
+                  builder: (context, ref, child) {
+                    final roles = ref.watch(phaseThreeProvider).organizationRoles;
+                    if (roles.isEmpty) return const SizedBox.shrink();
+                    return DropdownButtonFormField<String>(
+                      value: selectedRoleName,
+                      decoration: const InputDecoration(labelText: 'บทบาท (Role)'),
+                      items: roles.map((r) {
+                        final name = r['role_name'] as String? ?? '';
+                        return DropdownMenuItem(value: name, child: Text(name));
+                      }).toList(),
+                      onChanged: (v) => setState(() => selectedRoleName = v ?? 'staff'),
+                    );
+                  },
+                ),
                 if (branches.isNotEmpty)
                   DropdownButtonFormField<String>(
                     value: selectedBranchId,
@@ -626,6 +803,37 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                     decoration: const InputDecoration(labelText: 'เลขบัญชี'),
                   ),
                 ],
+                const Divider(),
+                Consumer(
+                  builder: (context, ref, child) {
+                    final history = ref.watch(phaseThreeProvider).invitationHistory;
+                    if (history.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'ประวัติคำเชิญ / การรับกลับ',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        const SizedBox(height: 8),
+                        ...history.take(5).map((h) {
+                          final status = h['status'] as String? ?? '';
+                          final createdAt = h['created_at'] != null
+                              ? DateTime.parse(h['created_at'] as String)
+                              : null;
+                          return ListTile(
+                            dense: true,
+                            title: Text('สถานะ: ${EmployeeInvitation.statusLabelThai(status)}'),
+                            subtitle: Text(
+                              'เชิญเมื่อ ${createdAt?.day}/${createdAt?.month}/${(createdAt?.year ?? 0) + 543}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -633,6 +841,12 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
             ElevatedButton(
               onPressed: () async {
+                if (nameController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('กรุณาระบุชื่อพนักงาน')),
+                  );
+                  return;
+                }
                 final data = {
                   'profession_id': widget.professionId,
                   if (useExistingUser && selectedUserId != null) 'user_id': selectedUserId,
@@ -655,6 +869,7 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                   'payment_method': paymentMethod,
                   'bank_name': bankNameController.text.trim().isEmpty ? null : bankNameController.text.trim(),
                   'bank_account_number': bankAccController.text.trim().isEmpty ? null : bankAccController.text.trim(),
+                  'intended_role_name': selectedRoleName,
                 };
                 await ref.read(phaseThreeProvider.notifier).inviteEmployee(data);
                 if (context.mounted) Navigator.pop(context);
@@ -671,14 +886,18 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
 class _EmployeeCard extends StatelessWidget {
   final Employee employee;
   final String professionId;
+  final int accessLevel;
   final VoidCallback onEdit;
   final VoidCallback onTaxAllowance;
+  final VoidCallback? onTerminate;
 
   const _EmployeeCard({
     required this.employee,
     required this.professionId,
+    required this.accessLevel,
     required this.onEdit,
     required this.onTaxAllowance,
+    this.onTerminate,
   });
 
   @override
@@ -692,6 +911,7 @@ class _EmployeeCard extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
+              backgroundColor: employee.isActive ? null : Colors.grey,
               child: Text(employee.fullName.substring(0, 1)),
             ),
             const SizedBox(width: 12),
@@ -700,7 +920,15 @@ class _EmployeeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(employee.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text('${employee.employeeCode} | ${employee.department ?? '-'}'),
+                  if ((employee.employeeCode != null && employee.employeeCode!.isNotEmpty) ||
+                      (employee.department != null && employee.department!.isNotEmpty))
+                    Text(
+                      [
+                        if (employee.employeeCode != null && employee.employeeCode!.isNotEmpty) employee.employeeCode,
+                        if (employee.department != null && employee.department!.isNotEmpty) employee.department,
+                      ].join(' | '),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
                   if (employee.jobTitle != null)
                     Text(employee.jobTitle!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   if (employee.email != null || employee.phone != null)
@@ -713,6 +941,24 @@ class _EmployeeCard extends StatelessWidget {
                       'เริ่มงาน: ${employee.hireDate!.day}/${employee.hireDate!.month}/${employee.hireDate!.year + 543}',
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
+                  if (!employee.isActive)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'ให้ออกแล้ว${employee.terminationDate != null ? ' (${employee.terminationDate!.day}/${employee.terminationDate!.month}/${employee.terminationDate!.year + 543})' : ''}',
+                        style: const TextStyle(fontSize: 11, color: Colors.red),
+                      ),
+                    ),
+                  if (employee.terminationReason != null && employee.terminationReason!.isNotEmpty)
+                    Text(
+                      'เหตุผล: ${employee.terminationReason}',
+                      style: const TextStyle(fontSize: 11, color: Colors.red),
+                    ),
                   if (employee.baseSalary > 0)
                     Text('฿${employee.baseSalary.toStringAsFixed(0)}/เดือน',
                         style: const TextStyle(fontSize: 12, color: Colors.green)),
@@ -723,10 +969,13 @@ class _EmployeeCard extends StatelessWidget {
               onSelected: (v) {
                 if (v == 'edit') onEdit();
                 if (v == 'tax') onTaxAllowance();
+                if (v == 'terminate') onTerminate?.call();
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('แก้ไข')),
-                PopupMenuItem(value: 'tax', child: Text('ค่าลดหย่อนภาษี')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Text('แก้ไข')),
+                const PopupMenuItem(value: 'tax', child: Text('ค่าลดหย่อนภาษี')),
+                if (onTerminate != null && accessLevel >= 3)
+                  const PopupMenuItem(value: 'terminate', child: Text('ให้ออก', style: TextStyle(color: Colors.red))),
               ],
             ),
           ],
@@ -740,11 +989,13 @@ class _InvitationCard extends StatelessWidget {
   final EmployeeInvitation invitation;
   final int accessLevel;
   final VoidCallback? onCancel;
+  final VoidCallback? onReinvite;
 
   const _InvitationCard({
     required this.invitation,
     required this.accessLevel,
     this.onCancel,
+    this.onReinvite,
   });
 
   @override
@@ -771,7 +1022,7 @@ class _InvitationCard extends StatelessWidget {
                   if (invitation.phone != null)
                     Text(invitation.phone!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   Text(
-                    'สถานะ: ${invitation.status}',
+                    'สถานะ: ${invitation.statusDisplayThai}',
                     style: TextStyle(
                       fontSize: 11,
                       color: invitation.isRejected
@@ -815,6 +1066,12 @@ class _InvitationCard extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.red),
                 onPressed: onCancel,
+              ),
+            if (accessLevel >= 2 && onReinvite != null)
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.blue),
+                onPressed: onReinvite,
+                tooltip: 'เชิญใหม่',
               ),
           ],
         ),

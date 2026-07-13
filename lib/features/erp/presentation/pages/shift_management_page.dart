@@ -276,7 +276,7 @@ class _ShiftCard extends StatelessWidget {
     final emp = employees.firstWhere(
       (e) => e.id == shift.employeeId,
       orElse: () => Employee(
-        id: '', professionId: '', fullName: 'ไม่ทราบ', employeeCode: '',
+        id: '', professionId: '', fullName: 'ไม่ทราบ',
         createdAt: DateTime.now(), updatedAt: DateTime.now(),
       ),
     );

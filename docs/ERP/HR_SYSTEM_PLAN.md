@@ -3087,7 +3087,7 @@ NOTIFY pgrst, 'reload schema';
 - ไม่มี RPC เฉพาะสำหรับ termination (ใช้ `updateEmployee` ทั่วไป)
 - ไม่มีการ revoke สิทธิ์ (`employee_roles.is_active`) อัตโนมัติเมื่อให้ออก
 
-#### C. การรับกลับพนักงานที่ถูกให้ออก (Re-invite after termination)
+#### C. การรับกลับพนักงานที่ถูกให้ออก (Rehire / รับกลับเข้าทำงาน)
 
 **สถานะ: ทำไม่ได้ในปัจจุบัน**
 
@@ -3096,8 +3096,9 @@ NOTIFY pgrst, 'reload schema';
   SELECT COUNT(*) FROM public.employees
   WHERE profession_id = p_profession_id AND user_id = p_user_id
   ```
-  ไม่ได้กรอง `is_active = true` จึงเจอ record ของพนักงานที่ถูกให้ออก (is_active = false) ด้วย ทำให้ส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" และไม่สามารถเชิญใหม่ได้
+  ไม่ได้กรอง `is_active = true` จึงเจอ record ของพนักงานที่ถูกให้ออก (is_active = false) ด้วย ทำให้ส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" และไม่สามารถรับกลับได้
 - ไม่มีกฎเกณฑ์เรื่อง cooldown หรือ eligibility
+- คำว่า "รับกลับ" (rehire) ในภาษาธุรกิจหมายถึงการรับพนักงานเดิมกลับเข้าทำงาน ไม่ใช่การ "เชิญกลับ" อย่างเดียว (re-invite เป็นกลไกหนึ่งของ rehire)
 
 ### แผนการปรับปรุง
 
@@ -3110,6 +3111,40 @@ NOTIFY pgrst, 'reload schema';
 - ใน `_InvitationCard` เพิ่ม callback `onReinvite`
 - แสดงปุ่มเมื่อ `invitation.isRejected` และ `accessLevel >= 2`
 - เมื่อกด → เปิด invite dialog พร้อมกรอกข้อมูลเดิม (full_name, email/phone, job_title ฯลฯ)
+
+**A1.1 เมื่อผู้ถูกเชิญปฏิเสธ ให้นำการ์ดออกจาก HomePage header sector ขวาทันที**
+
+ไฟล์: `lib/features/home/presentation/pages/home_page.dart`
+
+- ใน `_onEmployeeInvitationTapped` callback `onReject` หลัง `rejectEmployeeInvitation` สำเร็จ ให้เรียก `_loadEmployeeInvitations()` เพื่อรีเฟรช `pendingInvitationsForCurrentUser`
+- `HomeHeaderSection` จะ rebuild และลบการ์ดคำเชิญที่มี `status = 'rejected'` ออกจาก panel ด้านขวาบน
+- ตรวจสอบว่า `HomeHeaderSection.employeeInvitationAlerts` รับค่าจาก `ref.watch(phaseThreeProvider).pendingInvitationsForCurrentUser` เพื่อให้ state update สะท้อนทันที
+
+**A1.2 เมื่อผู้ถูกเชิญตอบรับ ให้พนักงานคนใหม่ปรากฏในแท็บ "พนักงาน" ทันที**
+
+ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart`
+
+- ใน `_EmployeeListPageState.initState` listener ของ `TabController` เมื่อ switch กลับมา tab index 0 (พนักงาน) ให้เรียก `loadEmployees(widget.professionId)`
+- ทำให้ invitee ที่เพิ่ง accept คำเชิญปรากฏในรายชื่อพนักงานทันที โดยไม่ต้องออกจากหน้าแล้วเข้าใหม่
+- tab index 1 (คำเชิญ) ยังคง reload `loadEmployeeInvitations` เหมือนเดิม
+
+**A1.3 ผู้ถูกเชิญที่ตอบรับแล้วเข้า ERP Dashboard ไม่ได้ — "ไม่มีสิทธิ์เข้าถึง"**
+
+ไฟล์ที่เกี่ยวข้อง:
+- `lib/ERP Dashboard/erp_dashboard_shell.dart`
+- `lib/features/erp/data/services/erp_access_service.dart`
+
+**สาเหตุ:**
+- RPC `accept_employee_invitation` สร้าง `employee_roles` record ด้วย `profession_id` จากคำเชิญ
+- แต่ `users.profession_id` ไม่ได้ถูก update ทำให้ยังเป็นค่าเดิม (null หรือ consumer profession)
+- `ErpDashboardShell._checkErpAccess()` ใช้ `canAccess(userId, professionId: user.professionId)` ซึ่งตรวจเฉพาะ `user.professionId` ไม่พบ `employee_roles` → ปฏิเสธการเข้าถึง
+- `OrganizationSettingsProvider.loadFromCurrentUser()` ก็ใช้ `user.professionId` → ไม่โหลดข้อมูลองค์กร
+
+**วิธีแก้:**
+- เพิ่ม `ErpAccessService.getActiveProfessionId(userId)` ดึง `profession_id` แรกจาก `employee_roles` ที่ `is_active = true`
+- เปลี่ยน `ErpDashboardShell._checkErpAccess()` จาก `canAccess(user.professionId)` → `canAccessAnyProfession(user.id)` (เหมือน HomePage)
+- หลังผ่าน access check ใช้ `getActiveProfessionId()` resolve `profession_id` จริง แล้วใช้โหลด `loadOrganization()` และ `loadTheme()`
+- ไม่ขัดแย้งกับ `profession_system_migration_guide.md` เพราะคู่มือนั้นเกี่ยวกับ Drug Risk permissions (ใช้ `can_manage_drug_risk` flag) ส่วนการแก้นี้เกี่ยวกับ ERP Dashboard access (ใช้ `employee_roles` table เป็น source of truth)
 
 **A2. เพิ่ม RPC ดึงประวัติการเชิญทั้งหมดของ user**
 
@@ -3229,7 +3264,9 @@ $$;
 
 - เพิ่ม fields: `terminationDate`, `terminationReason`, `terminatedAt`, `terminatedBy`
 
-#### Phase C: กฎการรับกลับพนักงานที่ถูกให้ออก (ความสำคัญ: ปานกลาง)
+#### Phase C: กฎการรับกลับพนักงานที่ถูกให้ออก (ความสำคัญ: สูง — เป็นข้อกำหนดเบื้องต้นของการ rehire)
+
+> **สำคัญ**: การจะเชิญพนักงานที่ถูกให้ออกกลับมาได้ ต้องแก้ไข **3 จุด** พร้อมกัน คือ C1 (กรอง active), E1 (แก้ unique constraint), และ E2 (แก้ accept_employee_invitation ให้ reactivate) ถ้าขาดจุดใดจุดหนึ่งจะทำไม่ได้
 
 **C1. แก้ไข RPC `invite_employee` ให้กรองเฉพาะ active employees**
 
@@ -3243,10 +3280,13 @@ SELECT COUNT(*) FROM public.employees
 WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = true;
 ```
 
-**C2. เพิ่มกฎ cooldown (optional)**
+> หากไม่แก้จุดนี้ ระบบจะส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" เมื่อพยายามรับพนักงานที่ถูกให้ออกกลับ (is_active = false)
+
+**C2. เพิ่มกฎ cooldown (default เปิด สามารถปิดได้)**
 
 - เพิ่ม column `reinvite_eligible_at TIMESTAMPTZ` ใน `employees` table
-- เมื่อ terminate ให้ตั้ง `reinvite_eligible_at = now() + interval '30 days'` (configurable)
+- เพิ่ม `organization_settings.rehire_cooldown_days INT DEFAULT 30` หรือใช้ constant 30 วันใน RPC (แนะนำให้ config ได้ในอนาคต)
+- เมื่อ terminate ให้ตั้ง `reinvite_eligible_at = now() + interval '30 days'` (default)
 - RPC `invite_employee` ตรวจสอบ:
   ```sql
   IF EXISTS (
@@ -3255,14 +3295,16 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
       AND is_active = false
       AND reinvite_eligible_at > now()
   ) THEN
-    RETURN jsonb_build_object('success', false, 'error', 'ยังไม่สามารถเชิญพนักงานคนนี้ได้ (อยู่ในช่วง cooldown)');
+    RETURN jsonb_build_object('success', false, 'error', 'ยังไม่สามารถรับพนักงานคนนี้กลับได้ (อยู่ในช่วง cooldown)');
   END IF;
   ```
+- Admin สามารถ bypass ได้โดยตั้ง `reinvite_eligible_at = NULL` ผ่าน dialog "แก้ไขพนักงานที่ออก" (ต้องมีสิทธิ์ >= 3)
 
-**C3. เพิ่ม column `can_reinvite BOOLEAN DEFAULT true`**
+**C3. เพิ่ม column `can_reinvite BOOLEAN DEFAULT true` แต่เปิดใช้งานโดย default**
 
-- ให้ admin กำหนดเป็นรายกรณีว่าพนักงานที่ถูกให้ออกสามารถถูกเชิญกลับได้หรือไม่
-- ใน dialog ให้ออก มี checkbox "ห้ามเชิญกลับ"
+- ให้ admin กำหนดเป็นรายกรณีว่าพนักงานที่ถูกให้ออกสามารถถูกรับกลับได้หรือไม่
+- ใน dialog ให้ออก มี checkbox "ห้ามรับกลับ" (default ไม่ติ๊ก)
+- ในแท็บ "พนักงานที่ออกแล้ว" admin สามารถเปลี่ยน `can_reinvite` ได้ (ต้องมีสิทธิ์ >= 3)
 - RPC `invite_employee` ตรวจสอบ:
   ```sql
   IF EXISTS (
@@ -3271,7 +3313,7 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
       AND is_active = false
       AND can_reinvite = false
   ) THEN
-    RETURN jsonb_build_object('success', false, 'error', 'พนักงานคนนี้ถูกทำเครื่องหมายว่าไม่สามารถเชิญกลับได้');
+    RETURN jsonb_build_object('success', false, 'error', 'พนักงานคนนี้ถูกทำเครื่องหมายว่าไม่สามารถรับกลับได้');
   END IF;
   ```
 
@@ -3279,7 +3321,7 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
 
 - เมื่อ admin เลือก user ที่เคยเป็นพนักงานและถูกให้ออก ให้แสดง:
   - วันที่ให้ออก, เหตุผล
-  - สถานะ: "สามารถเชิญกลับได้" หรือ "อยู่ในช่วง cooldown (อีก N วัน)" หรือ "ถูกห้ามเชิญกลับ"
+  - สถานะ: "สามารถรับกลับได้" หรือ "อยู่ในช่วง cooldown (อีก N วัน)" หรือ "ถูกห้ามรับกลับ"
 
 #### Phase D: ประวัติการเชิญและการให้ออก (ความสำคัญ: ปานกลาง)
 
@@ -3297,21 +3339,39 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
 
 1. **Phase A** (รวดเร็วที่สุด กระทบน้อย): เพิ่มปุ่ม "เชิญใหม่" + RPC history
 2. **Phase B** (ต้อง migration): เพิ่ม termination columns + RPC + UI
-3. **Phase C** (ต้องแก้ RPC): แก้ `invite_employee` กรอง `is_active` + กฎ cooldown
+3. **Phase C + E** (ต้องแก้ RPC + migration — **ทำพร้อมกัน**): 
+   - C1: แก้ `invite_employee` กรอง `is_active = true`
+   - E1: เปลี่ยน unique constraint เป็น partial unique index (เฉพาะ active)
+   - E2: แก้ `accept_employee_invitation` ให้ reactivate record เดิมแทน insert ใหม่
+   - E3: แก้ `get_available_users_for_invite` ให้แสดง terminated employees
+   - C2/C3: กฎ cooldown + can_reinvite (optional)
+   - C4: UI แสดง eligibility status
+   > ⚠️ C1, E1, E2 เป็น **ข้อกำหนดเบื้องต้น** ที่ต้องทำพร้อมกัน ถ้าขาดจุดใดจุดหนึ่งจะรับกลับไม่ได้
 4. **Phase D** (enhancement): audit trail + ประวัติรวม
 
 ### ไฟล์ที่ต้องแก้ไขสรุป
 
-| ไฟล์ | เปลี่ยนแปลง |
-|------|------------|
-| `supabase/migrations/20260713160000_reinvite_and_termination.sql` | migration ใหม่: termination columns, RPCs, แก้ invite_employee |
-| `lib/features/erp/data/models/employee.dart` | เพิ่ม termination fields |
-| `lib/features/erp/data/models/employee_invitation.dart` | เพิ่ม previous_invitation_id (optional) |
-| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม terminateEmployee, getInvitationHistory |
-| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม state/methods |
-| `lib/features/erp/presentation/pages/employee_list_page.dart` | เพิ่มปุ่มเชิญใหม่, termination dialog, history view |
+| ไฟล์ | เปลี่ยนแปลง | Phase |
+|------|------------|-------|
+| `supabase/migrations/20260713160000_reinvite_and_termination.sql` | migration ใหม่: termination columns, RPCs, แก้ invite_employee, แก้ unique constraint, แก้ accept_employee_invitation, แก้ get_available_users_for_invite, employee_employment_history table | B, C, E |
+| `lib/features/erp/data/models/employee.dart` | เพิ่ม termination fields (terminationDate, terminationReason, terminatedAt, terminatedBy) | B |
+| `lib/features/erp/data/models/employee_invitation.dart` | เพิ่ม previous_invitation_id (optional) | D |
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม terminateEmployee, getInvitationHistory | B, A |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม state/methods สำหรับ terminate, reinvite, history | B, A |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | เพิ่มปุ่มเชิญใหม่, termination dialog, history view, eligibility status | A, B, C |
+| `lib/features/home/presentation/pages/home_page.dart` | บังคับ logout หลังยอมรับคำเชิญ (F9) | F |
 
-### ข้อเสนอแนะเพิ่มเติมให้แผนสมบูรณ์
+### ข้อกำหนดเบื้องต้นสำหรับการ Rehire (Phase C + E — ต้องทำพร้อมกัน)
+
+> การรับกลับพนักงานที่ถูกให้ออก (rehire) ต้องแก้ไข **3 จุด** พร้อมกัน ดังนี้:
+>
+> | จุด | ปัญหา | แก้ไข |
+> |-----|-------|------|
+> | **C1** | `invite_employee` บล็อกเพราะเจอ inactive employee record | กรอง `is_active = true` |
+> | **E1** | `UNIQUE (profession_id, user_id)` ป้องกัน insert ใหม่ | เปลี่ยนเป็น partial unique index (เฉพาะ active) |
+> | **E2** | `accept_employee_invitation` บล็อกเพราะเจอ existing record | แก้ให้ reactivate record เดิมแทน insert |
+>
+> ถ้าขาดจุดใดจุดหนึ่ง จะรับกลับไม่ได้
 
 #### E1. แก้ไข Unique Constraint เพื่อรองรับการรับกลับ/เชิญซ้ำ
 
@@ -3653,10 +3713,12 @@ Future<void> _checkErpAccess() async {
 
 **ขั้นตอน rehire ใน `accept_employee_invitation`**:
 1. ตรวจสอบ existing employee record (is_active = false)
-2. Reactivate employee record (is_active = true, hire_date = now())
-3. Assign role ใหม่ตาม `intended_role_name` ของคำเชิญใหม่ (ใช้ `IF NOT EXISTS` ไม่ใช่ `ON CONFLICT`)
-4. บันทึก `rehired` ใน `employee_employment_history`
+2. Reactivate employee record (is_active = true, hire_date = now(), ล้าง termination fields)
+3. ลบ `employee_roles` ที่ `is_active = false` ทั้งหมดของ user ใน profession นี้ (clean up inactive role เดิม)
+4. Assign role ใหม่ตาม `intended_role_name` ของคำเชิญใหม่ (ใช้ `IF NOT EXISTS` แล้ว insert)
+5. บันทึก `rehired` ใน `employee_employment_history`
 
+> **ทำไมต้องลบ role เก่าก่อน**: ป้องกันการค้าง role ที่ inactive จำนวนมากใน `employee_roles` ซึ่งอาจทำให้ UI permission/audit สับสน หากต้องการเก็บประวัติ role ควรสร้าง `employee_role_history` table แยกต่างหาก ไม่ใช่เก็บใน `employee_roles` ที่ inactive ค้าง
 > **ไม่ควร reactivate role เดิม** เพราะ admin อาจต้องการเปลี่ยน role ของพนักงานที่รับกลับมา
 
 #### F5. Permission model สำหรับ role ที่ assign อัตโนมัติ
@@ -3684,7 +3746,9 @@ Future<void> _checkErpAccess() async {
 
 **F6.3 Refresh ERP access หลัง accept invitation**
 
-หลังจาก user กดยอมรับคำเชิญ ต้อง trigger `_checkErpAccess()` ใหม่ มิฉะนั้น ERP card จะไม่แสดงจนกว่าจะ logout + login ใหม่
+~หลังจาก user กดยอมรับคำเชิญ ต้อง trigger `_checkErpAccess()` ใหม่ มิฉะนั้น ERP card จะไม่แสดงจนกว่าจะ logout + login ใหม่~
+
+**ปรับให้สอดคล้องกับ F9**: หลัง accept ให้บังคับ logout + redirect ไปหน้า login แทนการ refresh in-place เพื่อความเชื่อถือได้และหลีกเลี่ยง cache ของ auth state ทั้งหมด ดังนั้น `home_page.dart` ไม่ต้องเพิ่ม `_checkErpAccess()` refresh หลัง accept แต่ให้ทำงานตาม F9 เท่านั้น
 
 **F6.4 กรณี `organization_roles` ไม่มี role ที่ระบุ**
 
@@ -3706,10 +3770,27 @@ Future<void> _checkErpAccess() async {
 2. ผู้ถูกเชิญ login → Home Page แสดง ERP card (แม้ `user.professionId` เป็น NULL)
 3. ผู้ถูกเชิญกด ERP card → เข้า ERP Dashboard ได้
 4. Admin ให้พนักงานออก → `employee_roles.is_active = false` → ERP card หายไป
-5. Rehire กลับมาด้วย role ใหม่ → `employee_roles` active ด้วย role ใหม่ → ERP card กลับมา
+5. Rehire กลับมาด้วย role ใหม่ → ลบ role เก่าที่ inactive → assign role ใหม่ → `employee_roles` active ด้วย role ใหม่ → ERP card กลับมา
 6. ตรวจสอบว่า default role เป็น `staff` ไม่ใช่ `admin` (เมื่อ admin ไม่ระบุ role)
 7. Admin เลือก role `manager` ตอนเชิญ → ผู้ถูกเชิญได้ role `manager` หลัง accept
 8. ผู้ถูกเชิญเป็น consumer (ไม่มี professionId) → ยอมรับคำเชิญ → เข้า ERP ได้
 9. ทดสอบกรณี `branch_id` เป็น NULL → insert ไม่ duplicate
 10. ทดสอบกรณี `organization_roles` ไม่มี role ที่ระบุ → fallback สู่ `staff`
+
+#### F9. บังคับ Logout หลังยอมรับคำเชิญ (Implemented)
+
+**ปัญหา**: หลัง user ยอมรับคำเชิญ ERP card ไม่แสดงอัตโนมัติเพราะ `ErpAccessService.canAccess()` ถูกเรียกครั้งเดียวตอน `initState` ของ `HomePage` และ cache ผลลัพธ์ใน `_canAccessErp` ทำให้ต้อง logout แล้ว login ใหม่ถึงจะเห็น ERP card
+
+**แนวทาง**: บังคับ logout และนำเข้าหน้า login อัตโนมัติหลังยอมรับคำเชิญสำเร็จ
+
+**Flow**:
+1. User กด "ยอมรับ" ใน invitation dialog บน Home Page
+2. ระบบเรียก `acceptEmployeeInvitationFromHome(token)` → RPC สร้าง `employee_roles` record
+3. แสดง SnackBar: "ยอมรับคำเชิญสำเร็จ กำลังออกจากระบบเพื่อรีเฟรชสถานะ..."
+4. รอ 2 วินาที (ให้ user อ่านข้อความ)
+5. `Supabase.instance.client.auth.signOut()` + `AuthService.instance.logout()`
+6. `Navigator.pushNamedAndRemoveUntil('/login', (route) => false)` → ไปหน้า login
+7. User login ใหม่ → `HomePage._checkErpAccess()` ตรวจสอบ `employee_roles` → แสดง ERP card
+
+**ไฟล์ที่แก้ไข**: `lib/features/home/presentation/pages/home_page.dart` — แก้ `onAccept` callback ใน `_onEmployeeInvitationTapped`
 

@@ -38,4 +38,43 @@ class ErpAccessService {
       return false;
     }
   }
+
+  /// ตรวจสอบว่า user มี active employee_roles ใน profession ใดๆ หรือไม่
+  /// ใช้สำหรับ Home Page ที่ต้องแสดง ERP card แม้ user.professionId ไม่ตรงกับ profession ที่ถูกเชิญ
+  Future<bool> canAccessAnyProfession(String userId) async {
+    try {
+      final rows = await _client
+          .from('employee_roles')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .limit(1);
+      return rows is List && rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('[ERPAccess] any profession access check failed: $error');
+      debugPrint('[ERPAccess] stackTrace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// ดึง profession_id แรกที่ user มี active employee_roles
+  /// ใช้เมื่อ user.professionId ไม่ตรงกับ profession ที่ถูกเชิญ (เช่น invitee ที่เพิ่ง accept)
+  Future<String?> getActiveProfessionId(String userId) async {
+    try {
+      final rows = await _client
+          .from('employee_roles')
+          .select('profession_id')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .limit(1);
+      if (rows is List && rows.isNotEmpty) {
+        return rows[0]['profession_id'] as String?;
+      }
+      return null;
+    } catch (error, stackTrace) {
+      debugPrint('[ERPAccess] getActiveProfessionId failed: $error');
+      debugPrint('[ERPAccess] stackTrace: $stackTrace');
+      return null;
+    }
+  }
 }

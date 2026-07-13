@@ -3,7 +3,7 @@ class Employee {
   final String id;
   final String professionId;
   final String? userId;
-  final String employeeCode;
+  final String? employeeCode;
   final String fullName;
   final String? email;
   final String? phone;
@@ -21,6 +21,12 @@ class Employee {
   final double commissionRate;
   final String? branchId;
   final bool isActive;
+  final DateTime? terminationDate;
+  final String? terminationReason;
+  final DateTime? terminatedAt;
+  final String? terminatedBy;
+  final DateTime? reinviteEligibleAt;
+  final bool canReinvite;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -28,7 +34,7 @@ class Employee {
     required this.id,
     required this.professionId,
     this.userId,
-    required this.employeeCode,
+    this.employeeCode,
     required this.fullName,
     this.email,
     this.phone,
@@ -46,6 +52,12 @@ class Employee {
     this.bankName,
     this.commissionRate = 0,
     this.isActive = true,
+    this.terminationDate,
+    this.terminationReason,
+    this.terminatedAt,
+    this.terminatedBy,
+    this.reinviteEligibleAt,
+    this.canReinvite = true,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -55,7 +67,7 @@ class Employee {
       id: json['id'] as String,
       professionId: json['profession_id'] as String,
       userId: json['user_id'] as String?,
-      employeeCode: json['employee_code'] as String,
+      employeeCode: json['employee_code'] as String?,
       fullName: json['full_name'] as String,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
@@ -73,6 +85,18 @@ class Employee {
       bankName: json['bank_name'] as String?,
       commissionRate: (json['commission_rate'] as num?)?.toDouble() ?? 0,
       isActive: json['is_active'] as bool? ?? true,
+      terminationDate: json['termination_date'] != null
+          ? DateTime.parse(json['termination_date'] as String)
+          : null,
+      terminationReason: json['termination_reason'] as String?,
+      terminatedAt: json['terminated_at'] != null
+          ? DateTime.parse(json['terminated_at'] as String)
+          : null,
+      terminatedBy: json['terminated_by'] as String?,
+      reinviteEligibleAt: json['reinvite_eligible_at'] != null
+          ? DateTime.parse(json['reinvite_eligible_at'] as String)
+          : null,
+      canReinvite: json['can_reinvite'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -101,6 +125,12 @@ class Employee {
       'bank_name': bankName,
       'commission_rate': commissionRate,
       'is_active': isActive,
+      'termination_date': terminationDate?.toIso8601String(),
+      'termination_reason': terminationReason,
+      'terminated_at': terminatedAt?.toIso8601String(),
+      'terminated_by': terminatedBy,
+      'reinvite_eligible_at': reinviteEligibleAt?.toIso8601String(),
+      'can_reinvite': canReinvite,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };

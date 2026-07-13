@@ -2299,11 +2299,9 @@ class _HomePageState extends ConsumerState<HomePage>
     }
 
     try {
-      final canAccess = await _erpAccessService.canAccess(
-        userId: user.id,
-        professionId: user.professionId,
-        isAdmin: user.isAdmin,
-      );
+      // ตรวจสอบทุก profession ที่ user มี active employee_roles
+      // ไม่ใช้ user.professionId เพราะผู้ถูกเชิญอาจเป็น consumer หรือถูกเชิญเข้า profession อื่น
+      final canAccess = await _erpAccessService.canAccessAnyProfession(user.id);
       if (mounted) {
         setState(() {
           _canAccessErp = canAccess;
@@ -2342,12 +2340,21 @@ class _HomePageState extends ConsumerState<HomePage>
           final success = await ref
               .read(phaseThreeProvider.notifier)
               .acceptEmployeeInvitationFromHome(token);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(success ? 'ยอมรับคำเชิญสำเร็จ' : 'ยอมรับคำเชิญล้มเหลว'),
-              ),
-            );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(success
+                  ? 'ยอมรับคำเชิญสำเร็จ กำลังออกจากระบบเพื่อรีเฟรชสถานะ...'
+                  : 'ยอมรับคำเชิญล้มเหลว'),
+            ),
+          );
+          if (success) {
+            await Future.delayed(const Duration(seconds: 2));
+            if (!mounted) return;
+            await Supabase.instance.client.auth.signOut();
+            await AuthService.instance.logout();
+            if (!mounted) return;
+            Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
           }
         },
         onReject: (String reason) async {
@@ -2355,6 +2362,10 @@ class _HomePageState extends ConsumerState<HomePage>
           final success = await ref
               .read(phaseThreeProvider.notifier)
               .rejectEmployeeInvitation(token, '', rejectionReason: reason);
+          if (success && mounted) {
+            // Remove card from HomePage header right sector immediately
+            await _loadEmployeeInvitations();
+          }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

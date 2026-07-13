@@ -26,14 +26,16 @@ class PhaseThreeRepository {
   // EMPLOYEES (HR Core)
   // ========================
 
-  Future<List<Employee>> getEmployees(String professionId) async {
+  Future<List<Employee>> getEmployees(String professionId, {bool includeInactive = false}) async {
     try {
-      final response = await _client
+      var query = _client
           .from('employees')
           .select()
-          .eq('profession_id', professionId)
-          .eq('is_active', true)
-          .order('full_name');
+          .eq('profession_id', professionId);
+      if (!includeInactive) {
+        query = query.eq('is_active', true);
+      }
+      final response = await query.order('is_active', ascending: false).order('full_name');
       return (response as List)
           .map((e) => Employee.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -123,6 +125,7 @@ class PhaseThreeRepository {
           if (data['payment_method'] != null) 'p_payment_method': data['payment_method'],
           if (data['bank_name'] != null) 'p_bank_name': data['bank_name'],
           if (data['bank_account_number'] != null) 'p_bank_account_number': data['bank_account_number'],
+          if (data['intended_role_name'] != null) 'p_intended_role_name': data['intended_role_name'],
         },
       );
       return response as Map<String, dynamic>?;
@@ -215,6 +218,74 @@ class PhaseThreeRepository {
     } catch (e, st) {
       debugPrint('[Phase3Repo] ensureOwnerAsEmployee error: $e');
       return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> terminateEmployee({
+    required String employeeId,
+    String? terminationReason,
+    DateTime? terminationDate,
+    bool canReinvite = true,
+    DateTime? reinviteEligibleAt,
+  }) async {
+    try {
+      final currentUserId = AuthService.instance.currentUser?.id;
+      final response = await _client.rpc(
+        'terminate_employee',
+        params: {
+          'p_employee_id': employeeId,
+          'p_terminated_by': currentUserId,
+          if (terminationReason != null && terminationReason.isNotEmpty)
+            'p_termination_reason': terminationReason,
+          if (terminationDate != null)
+            'p_termination_date': terminationDate.toIso8601String().split('T')[0],
+          'p_can_reinvite': canReinvite,
+          if (reinviteEligibleAt != null)
+            'p_reinvite_eligible_at': reinviteEligibleAt.toIso8601String(),
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] terminateEmployee error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getInvitationHistoryForUser({
+    required String professionId,
+    String? userId,
+    String? email,
+    String? phone,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'get_invitation_history_for_user',
+        params: {
+          'p_profession_id': professionId,
+          if (userId != null && userId.isNotEmpty) 'p_user_id': userId,
+          if (email != null && email.isNotEmpty) 'p_email': email,
+          if (phone != null && phone.isNotEmpty) 'p_phone': phone,
+        },
+      );
+      if (response == null) return [];
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getInvitationHistoryForUser error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getOrganizationRoles(String professionId) async {
+    try {
+      final response = await _client
+          .from('organization_roles')
+          .select('id, role_name')
+          .eq('profession_id', professionId)
+          .order('role_name');
+      return (response as List).cast<Map<String, dynamic>>();
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getOrganizationRoles error: $e');
+      return [];
     }
   }
 

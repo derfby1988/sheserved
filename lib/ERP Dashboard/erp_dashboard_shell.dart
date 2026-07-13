@@ -25,6 +25,7 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
   bool _isSidebarExpanded = false;
   bool _accessChecked = false;
   bool _canAccess = false;
+  String? _resolvedProfessionId;
   late final ErpAccessService _erpAccessService;
 
   @override
@@ -32,18 +33,6 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     super.initState();
     _erpAccessService = ErpAccessService(Supabase.instance.client);
     _checkErpAccess();
-    // Ensure organization data + theme are loaded when shell mounts
-    Future.microtask(() {
-      ref.read(organizationSettingsProvider.notifier).loadFromCurrentUser();
-      final user = AuthService.instance.currentUser;
-      final professionId = user?.professionId;
-      if (user != null && professionId != null && professionId.isNotEmpty) {
-        ref.read(dashboardThemeProvider.notifier).loadTheme(
-          userId: user.id,
-          professionId: professionId,
-        );
-      }
-    });
   }
 
   Future<void> _checkErpAccess() async {
@@ -53,11 +42,23 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
       return;
     }
     try {
-      final canAccess = await _erpAccessService.canAccess(
-        userId: user.id,
-        professionId: user.professionId,
-        isAdmin: user.isAdmin,
-      );
+      // Use canAccessAnyProfession instead of canAccess(user.professionId)
+      // because invitees may have employee_roles in a different profession
+      // than user.professionId (which may be null or a consumer profession)
+      final canAccess = await _erpAccessService.canAccessAnyProfession(user.id);
+      if (canAccess) {
+        // Resolve the actual profession_id from employee_roles
+        _resolvedProfessionId = await _erpAccessService.getActiveProfessionId(user.id);
+        // Load organization data and theme using the resolved profession_id
+        final professionId = _resolvedProfessionId ?? user.professionId;
+        if (professionId != null && professionId.isNotEmpty) {
+          await ref.read(organizationSettingsProvider.notifier).loadOrganization(professionId);
+          ref.read(dashboardThemeProvider.notifier).loadTheme(
+            userId: user.id,
+            professionId: professionId,
+          );
+        }
+      }
       if (mounted) setState(() { _canAccess = canAccess; _accessChecked = true; });
     } catch (_) {
       if (mounted) setState(() { _canAccess = false; _accessChecked = true; });

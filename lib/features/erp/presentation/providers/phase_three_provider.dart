@@ -33,6 +33,8 @@ class PhaseThreeState {
   final List<EmployeeInvitation> employeeInvitations;
   final List<Map<String, dynamic>> availableUsersForInvite;
   final List<Map<String, dynamic>> pendingInvitationsForCurrentUser;
+  final List<Map<String, dynamic>> invitationHistory;
+  final List<Map<String, dynamic>> organizationRoles;
   final List<GlEntry> glEntries;
   final List<DashboardSnapshot> snapshots;
   final List<ChartOfAccount> chartOfAccounts;
@@ -54,6 +56,8 @@ class PhaseThreeState {
     this.employeeInvitations = const [],
     this.availableUsersForInvite = const [],
     this.pendingInvitationsForCurrentUser = const [],
+    this.invitationHistory = const [],
+    this.organizationRoles = const [],
     this.glEntries = const [],
     this.snapshots = const [],
     this.chartOfAccounts = const [],
@@ -77,6 +81,8 @@ class PhaseThreeState {
     List<EmployeeInvitation>? employeeInvitations,
     List<Map<String, dynamic>>? availableUsersForInvite,
     List<Map<String, dynamic>>? pendingInvitationsForCurrentUser,
+    List<Map<String, dynamic>>? invitationHistory,
+    List<Map<String, dynamic>>? organizationRoles,
     List<GlEntry>? glEntries,
     List<DashboardSnapshot>? snapshots,
     List<ChartOfAccount>? chartOfAccounts,
@@ -100,6 +106,8 @@ class PhaseThreeState {
       employeeInvitations: employeeInvitations ?? this.employeeInvitations,
       availableUsersForInvite: availableUsersForInvite ?? this.availableUsersForInvite,
       pendingInvitationsForCurrentUser: pendingInvitationsForCurrentUser ?? this.pendingInvitationsForCurrentUser,
+      invitationHistory: invitationHistory ?? this.invitationHistory,
+      organizationRoles: organizationRoles ?? this.organizationRoles,
       glEntries: glEntries ?? this.glEntries,
       snapshots: snapshots ?? this.snapshots,
       chartOfAccounts: chartOfAccounts ?? this.chartOfAccounts,
@@ -131,7 +139,7 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
   Future<void> loadEmployees(String professionId) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final employees = await _repository.getEmployees(professionId);
+      final employees = await _repository.getEmployees(professionId, includeInactive: true);
       state = state.copyWith(isLoading: false, employees: employees);
     } catch (e, st) {
       debugPrint('[Phase3] loadEmployees ERROR: $e');
@@ -199,6 +207,18 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
                   : e.commissionRate,
               branchId: data['branch_id'] as String? ?? e.branchId,
               isActive: data['is_active'] as bool? ?? e.isActive,
+              terminationDate: data['termination_date'] != null
+                  ? DateTime.parse(data['termination_date'] as String)
+                  : e.terminationDate,
+              terminationReason: data['termination_reason'] as String? ?? e.terminationReason,
+              terminatedAt: data['terminated_at'] != null
+                  ? DateTime.parse(data['terminated_at'] as String)
+                  : e.terminatedAt,
+              terminatedBy: data['terminated_by'] as String? ?? e.terminatedBy,
+              reinviteEligibleAt: data['reinvite_eligible_at'] != null
+                  ? DateTime.parse(data['reinvite_eligible_at'] as String)
+                  : e.reinviteEligibleAt,
+              canReinvite: data['can_reinvite'] as bool? ?? e.canReinvite,
               createdAt: e.createdAt,
               updatedAt: DateTime.now(),
             );
@@ -238,6 +258,15 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
       state = state.copyWith(availableUsersForInvite: users);
     } catch (e, st) {
       debugPrint('[Phase3] loadAvailableUsersForInvite ERROR: $e');
+    }
+  }
+
+  Future<void> loadOrganizationRoles(String professionId) async {
+    try {
+      final roles = await _repository.getOrganizationRoles(professionId);
+      state = state.copyWith(organizationRoles: roles);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadOrganizationRoles ERROR: $e');
     }
   }
 
@@ -361,6 +390,57 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
       debugPrint('[Phase3] ensureOwnerAsEmployee ERROR: $e');
       state = state.copyWith(isSaving: false, errorMessage: 'สร้างพนักงานเจ้าของล้มเหลว: $e');
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> terminateEmployee({
+    required String employeeId,
+    String? terminationReason,
+    DateTime? terminationDate,
+    bool canReinvite = true,
+    DateTime? reinviteEligibleAt,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final result = await _repository.terminateEmployee(
+        employeeId: employeeId,
+        terminationReason: terminationReason,
+        terminationDate: terminationDate,
+        canReinvite: canReinvite,
+        reinviteEligibleAt: reinviteEligibleAt,
+      );
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        return result;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ให้พนักงานออกล้มเหลว',
+        );
+        return result;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] terminateEmployee ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ให้พนักงานออกล้มเหลว: $e');
+      return null;
+    }
+  }
+
+  Future<void> loadInvitationHistory({
+    required String professionId,
+    String? userId,
+    String? email,
+    String? phone,
+  }) async {
+    try {
+      final history = await _repository.getInvitationHistoryForUser(
+        professionId: professionId,
+        userId: userId,
+        email: email,
+        phone: phone,
+      );
+      state = state.copyWith(invitationHistory: history);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadInvitationHistory ERROR: $e');
     }
   }
 

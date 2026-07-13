@@ -25,6 +25,7 @@ class EmployeeInvitation {
   final String? rejectionReason;
   final DateTime? rejectedAt;
   final DateTime? expiresAt;
+  final String? intendedRoleName;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -54,6 +55,7 @@ class EmployeeInvitation {
     this.rejectionReason,
     this.rejectedAt,
     this.expiresAt,
+    this.intendedRoleName,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -85,6 +87,7 @@ class EmployeeInvitation {
       rejectionReason: json['rejection_reason'] as String?,
       rejectedAt: json['rejected_at'] != null ? DateTime.parse(json['rejected_at'] as String) : null,
       expiresAt: json['expires_at'] != null ? DateTime.parse(json['expires_at'] as String) : null,
+      intendedRoleName: json['intended_role_name'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -117,6 +120,7 @@ class EmployeeInvitation {
       'rejection_reason': rejectionReason,
       'rejected_at': rejectedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
+      'intended_role_name': intendedRoleName,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -127,4 +131,26 @@ class EmployeeInvitation {
   bool get isRejected => status == 'rejected';
   bool get isExpired => status == 'expired';
   bool get isExpiredDate => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+
+  /// ชื่อสถานะภาษาไทยสำหรับแสดงผลใน UI
+  String get statusDisplayThai => statusLabelThai(status);
+
+  static String statusLabelThai(String status) {
+    switch (status) {
+      case 'pending':
+        return 'รอตอบรับ';
+      case 'accepted':
+        return 'ตอบรับแล้ว';
+      case 'rejected':
+        return 'ปฏิเสธ';
+      case 'expired':
+        return 'หมดอายุ';
+      case 'terminated':
+        return 'ออกจากองค์กรแล้ว';
+      case 'active':
+        return 'ทำงานอยู่';
+      default:
+        return status;
+    }
+  }
 }
