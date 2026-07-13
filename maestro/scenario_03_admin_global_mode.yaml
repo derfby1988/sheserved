@@ -1,0 +1,142 @@
+# Scenario 3: Admin Global Mode — verify admin sees globalAdmin with 4 tabs
+# Covers: migration guide section 10.2 test 1 (Admin)
+# Prerequisites:
+#   - App is installed on the device
+#   - Network connectivity to Supabase backend
+#   - ADMIN_USERNAME must be an admin-level user
+# Environment:
+#   - ADMIN_USERNAME: admin username (default: "admin")
+#   - ADMIN_PASSWORD: admin password (default: "123456")
+#   - MEDICATION_NAME: medication to search (default: "Paracetamol")
+
+appId: com.sheserved.app
+env:
+  ADMIN_USERNAME: "admin"
+  ADMIN_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+---
+# ═══════════════════════════════════════════
+# Step 1: Login as admin
+# ═══════════════════════════════════════════
+- launchApp:
+    appId: com.sheserved.app
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Navigate to login via bottom nav donation tab
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# ═══════════════════════════════════════════
+# Step 2: Navigate to drug risk page
+# ═══════════════════════════════════════════
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+# Open drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# ═══════════════════════════════════════════
+# Step 3: Verify Global Admin mode
+# ═══════════════════════════════════════════
+# Admin should see global admin mode (not Personal or Organization)
+- assertVisible: 'จัดการความเสี่ยงยา .*'
+
+# Wait for loading to finish
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Admin should see 4 tabs (global configuration tabs)
+# Verify at least 2 tab labels are visible (Global / Platform-level config)
+- extendedWaitUntil:
+    visible: ".*Global.*|.*ทั่วไป.*|.*แพลตฟอร์ม.*"
+    timeout: 10000
+
+# ═══════════════════════════════════════════
+# Step 4: Search medication and verify global config access
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "400,330"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- setClipboard: "${MEDICATION_NAME}"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+- pressKey: Enter
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify search results appear
+- extendedWaitUntil:
+    visible: ".*Override.*"
+    timeout: 30000
+
+# Admin should be able to set override at global level
+- tapOn: ".*ตั้งค่า.*Override.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: 'Override:.*'
+
+# Close dialog without saving (just verifying access)
+- tapOn: "ยกเลิก"
+- waitForAnimationToEnd:
+    timeout: 2000

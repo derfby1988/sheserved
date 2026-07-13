@@ -1,0 +1,380 @@
+# Scenario 5: Stale state — verify mode changes after admin toggles can_manage_drug_risk flag
+# Covers: migration guide section 10.5 (stale state and capability change)
+# Prerequisites:
+#   - App is installed on the device
+#   - Network connectivity to Supabase backend
+#   - ADMIN_USERNAME must be an admin user
+#   - TARGET_USERNAME must be a user whose profession currently has can_manage_drug_risk=true
+#   - After admin sets flag to false, target user must see Personal mode on next page load
+# Environment:
+#   - ADMIN_USERNAME: admin username (default: "admin")
+#   - ADMIN_PASSWORD: admin password (default: "123456")
+#   - TARGET_USERNAME: user with can_manage_drug_risk=true initially (default: "apisek")
+#   - TARGET_PASSWORD: password (default: "123456")
+#   - MEDICATION_NAME: medication to search (default: "Paracetamol")
+#   - PROFESSION_NAME: name of target user's profession in admin list (default: "แพทย์ทั่วไป")
+
+appId: com.sheserved.app
+env:
+  ADMIN_USERNAME: "admin"
+  ADMIN_PASSWORD: "123456"
+  TARGET_USERNAME: "apisek"
+  TARGET_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+  PROFESSION_NAME: "แพทย์ทั่วไป"
+---
+# ═══════════════════════════════════════════
+# Step 1: Login as target user — verify Organization mode
+# ═══════════════════════════════════════════
+- launchApp:
+    appId: com.sheserved.app
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${TARGET_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${TARGET_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# Navigate to drug risk page
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify user sees Organization mode (flag is currently true)
+- assertVisible: 'จัดการความเสี่ยงยา .*'
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Verify Organization mode is active (not Personal)
+- assertNotVisible: 'จัดการความเสี่ยงยา \(Personal\)'
+
+# ═══════════════════════════════════════════
+# Step 2: Kill app and login as admin
+# ═══════════════════════════════════════════
+- killApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- launchApp:
+    appId: com.sheserved.app
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+# ═══════════════════════════════════════════
+# Step 3: Navigate to Profession Admin page and toggle flag off
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Navigate to profession management
+- tapOn: "จัดการอาชีพ"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for profession list to load
+- extendedWaitUntil:
+    visible: ".*${PROFESSION_NAME}.*"
+    timeout: 15000
+
+# Tap on the target profession to edit
+- tapOn:
+    text: ".*${PROFESSION_NAME}.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for edit dialog to appear
+- extendedWaitUntil:
+    visible: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+    timeout: 10000
+
+# Toggle can_manage_drug_risk OFF
+- tapOn: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Save the profession
+- tapOn: ".*บันทึก.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# ═══════════════════════════════════════════
+# Step 4: Kill app and re-login as target user
+# ═══════════════════════════════════════════
+- killApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- launchApp:
+    appId: com.sheserved.app
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${TARGET_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${TARGET_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+# ═══════════════════════════════════════════
+# Step 5: Verify user now sees Personal mode (flag is false)
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# User should now see Personal mode (flag was turned off)
+- assertVisible: 'จัดการความเสี่ยงยา \(Personal\)'
+
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Should NOT see Organization mode
+- assertNotVisible: ".*Organization.*|.*องค์กร.*"
+
+# ═══════════════════════════════════════════
+# Step 6: Restore flag — login as admin and re-enable
+# ═══════════════════════════════════════════
+- killApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- launchApp:
+    appId: com.sheserved.app
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "270,1278"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "ค้นหาการบริจาค..."
+    timeout: 60000
+
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการอาชีพ"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*${PROFESSION_NAME}.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*${PROFESSION_NAME}.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+    timeout: 10000
+
+# Toggle can_manage_drug_risk back ON
+- tapOn: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: ".*บันทึก.*"
+- waitForAnimationToEnd:
+    timeout: 5000
