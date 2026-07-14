@@ -2039,6 +2039,9 @@ class _HomePageState extends ConsumerState<HomePage>
                                       employeeInvitationAlerts: ref
                                           .watch(phaseThreeProvider)
                                           .pendingInvitationsForCurrentUser,
+                                      cancelledEmployeeInvitationAlerts: ref
+                                          .watch(phaseThreeProvider)
+                                          .cancelledInvitationsForCurrentUser,
                                       onEmployeeInvitationTapped:
                                           _onEmployeeInvitationTapped,
                                       onAlertDismissed: (videoId) {
@@ -2317,9 +2320,10 @@ class _HomePageState extends ConsumerState<HomePage>
     }
   }
 
-  /// โหลดคำเชิญพนักงาน ERP ที่รอ current user ตอบรับ/ปฏิเสธ
+  /// โหลดคำเชิญพนักงาน ERP ที่รอ current user ตอบรับ/ปฏิเสธ + ที่ถูกยกเลิกโดย admin
   Future<void> _loadEmployeeInvitations() async {
     await ref.read(phaseThreeProvider.notifier).loadPendingInvitationsForCurrentUser();
+    await ref.read(phaseThreeProvider.notifier).loadCancelledInvitationsForCurrentUser();
   }
 
   /// เมื่อผู้ใช้กดการ์ดคำเชิญพนักงานบน Home Header → เปิด dialog

@@ -1,0 +1,45 @@
+# E4.9 Test 4: Admin ยกเลิก → ไม่แสดงปุ่ม "เชิญใหม่"
+# Expected: cancelled invitation card ไม่มีปุ่ม refresh/reinvite
+# Precondition: ต้องมี cancelled invitation อย่างน้อย 1 รายการ
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 04 - Cancelled card has no reinvite button"
+tags:
+  - e4
+  - admin
+  - cancel
+  - reinvite
+---
+# Login as admin (apisek)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Scroll to "ยกเลิกโดย admin" section
+- scrollUntilVisible:
+    element: "ยกเลิกโดย admin"
+    direction: DOWN
+    timeout: 10000
+
+# Take screenshot of cancelled section
+- takeScreenshot: "test_04_cancelled_section"
+
+# Verify cancelled invitation card shows "ยกเลิกโดย admin" status
+- assertVisible:
+    text: ".*สถานะ: ยกเลิกโดย admin.*"
+    label: "Verify cancelled status"
+
+# Verify "เชิญใหม่" tooltip is NOT visible on cancelled cards
+# The reinvite button has tooltip "เชิญใหม่" — it should not appear
+- assertNotVisible:
+    text: "เชิญใหม่"
+    label: "Verify no reinvite button on cancelled card"
+
+# Use AI to verify no refresh icon on cancelled cards
+- assertWithAI:
+    assertion: "The cancelled invitation cards do not have a refresh or reinvite button icon on the right side"

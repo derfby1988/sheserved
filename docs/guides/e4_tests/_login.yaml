@@ -1,0 +1,82 @@
+# Shared login subflow for E4 tests
+# Usage: runFlow with env USERNAME and PASSWORD
+# Device: R8YYA0G5S6J (Android) — screen 800x1340
+# Note: Flutter content-desc is not matched by Maestro text: on this device.
+#       Maestro inputText does not reliably enter text into Flutter TextFields.
+#       We use tapOn by point + inputText, with screenshots for debugging.
+#       App starts on Home page (not login), so must navigate via Profile tab.
+appId: com.sheserved.app
+name: "E4 - Login Subflow"
+tags:
+  - e4-shared
+---
+# Launch app fresh (clearState ensures no prior login session)
+- launchApp:
+    clearState: true
+    stopApp: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# App starts on Home page — navigate to Profile tab (rightmost bottom nav icon)
+- tapOn:
+    point: "91%, 97%"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Tap "เข้าสู่ระบบ / สมัครสมาชิก" button on Profile page
+- tapOn:
+    point: "50%, 52%"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot to verify we're on login page
+- takeScreenshot: login_page_loaded
+
+# Tap username field
+- tapOn:
+    point: "400, 764"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Take screenshot after tapping username field
+- takeScreenshot: after_tap_username
+
+# Type username
+- inputText: ${USERNAME}
+- waitForAnimationToEnd:
+    timeout: 1500
+
+# Take screenshot after typing username
+- takeScreenshot: after_input_username
+
+# Use Tab key to move focus to password field
+- pressKey: Tab
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Type password (focus is now on password field)
+- inputText: ${PASSWORD}
+- waitForAnimationToEnd:
+    timeout: 1500
+
+# Take screenshot after typing password
+- takeScreenshot: after_input_password
+
+# Tap login button using exact pixel coordinates (keyboard visible position)
+# Login button center is at (400, 676) on 800x1340 screen with keyboard up
+- tapOn:
+    point: "400, 676"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Take screenshot after tapping login
+- takeScreenshot: after_tap_login
+
+# Verify login succeeded by navigating to Profile page
+- tapOn:
+    point: "725, 1279"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of Profile page
+- takeScreenshot: profile_after_login

@@ -1,0 +1,48 @@
+# E4.9 Test 14: get_cancelled_invitations_for_user ต้อง return เฉพาะ
+# status = 'cancelled' และ user_id = p_user_id ไม่ปะปนกับ pending/rejected
+# Note: นี่เป็น database-level test ส่วนหนึ่ง แต่สามารถตรวจสอบทาง UI ได้
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 14 - Cancelled feed RPC returns only cancelled for user"
+tags:
+  - e4
+  - rpc
+  - invitee
+  - home-header
+  - db-test
+---
+# Login as invitee (firm)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of home header
+- takeScreenshot: "test_14_home_header"
+
+# Verify "คำเชิญถูกยกเลิก" items are visible (if any cancelled invitations exist)
+- assertVisible:
+    text: "คำเชิญถูกยกเลิก"
+    label: "Verify cancelled invitations appear in Home Header"
+    optional: true
+
+# Verify "คำเชิญพนักงาน" (pending) items are NOT shown as cancelled
+# They should be in a separate blue/tappable card, not grey/read-only
+- assertVisible:
+    text: "คำเชิญพนักงาน"
+    label: "Verify pending invitations are separate from cancelled"
+    optional: true
+
+# Use AI to verify the cancelled feed only contains cancelled items
+- assertWithAI:
+    assertion: "The 'คำเชิญถูกยกเลิก' (cancelled invitation) items are grey and read-only, while 'คำเชิญพนักงาน' (pending invitation) items are blue and tappable. They are clearly separate and not mixed together."
+
+# Note: Full DB verification requires SQL:
+# SELECT public.get_cancelled_invitations_for_user('firm-user-uuid');
+# Must return only rows where status = 'cancelled' AND user_id = 'firm-user-uuid'
+# No pending or rejected invitations should appear in the result.

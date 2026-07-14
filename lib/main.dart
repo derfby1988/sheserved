@@ -129,6 +129,16 @@ class AppScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
+Future<void> _openBoxSafe<T>(String boxName) async {
+  try {
+    await Hive.openBox<T>(boxName);
+  } catch (e) {
+    debugPrint('Hive: Failed to open box "$boxName" ($e) — deleting and recreating');
+    await Hive.deleteBoxFromDisk(boxName);
+    await Hive.openBox<T>(boxName);
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -161,10 +171,10 @@ void main() async {
   Hive.registerAdapter(ChatMessageAdapter());
   Hive.registerAdapter(ChatParticipantAdapter());
   
-  // Open Boxes
-  await Hive.openBox<ChatRoom>('chat_rooms');
-  await Hive.openBox<ChatMessage>('chat_messages');
-  await Hive.openBox<ChatParticipant>('chat_participants');
+  // Open Boxes (with fallback: delete corrupt boxes from schema changes)
+  await _openBoxSafe<ChatRoom>('chat_rooms');
+  await _openBoxSafe<ChatMessage>('chat_messages');
+  await _openBoxSafe<ChatParticipant>('chat_participants');
 
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();

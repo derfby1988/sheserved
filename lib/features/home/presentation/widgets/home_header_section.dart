@@ -26,6 +26,8 @@ class HomeHeaderSection extends StatelessWidget {
   final Function(String consultationId)? onConsultationAlertTapped;
   /// ✅ [ERP] คำเชิญพนักงาน ERP ที่รอผู้ใช้ตอบรับ/ปฏิเสธ
   final List<Map<String, dynamic>> employeeInvitationAlerts;
+  /// ✅ [ERP] คำเชิญพนักงาน ERP ที่ถูก admin ยกเลิก (read-only feed)
+  final List<Map<String, dynamic>> cancelledEmployeeInvitationAlerts;
   /// callback เมื่อกดการ์ดคำเชิญพนักงาน → เปิด dialog ตอบรับ/ปฏิเสธ
   final Function(String token)? onEmployeeInvitationTapped;
 
@@ -45,6 +47,7 @@ class HomeHeaderSection extends StatelessWidget {
     this.onConsultationAlertDismissed,
     this.onConsultationAlertTapped,
     this.employeeInvitationAlerts = const [],
+    this.cancelledEmployeeInvitationAlerts = const [],
     this.onEmployeeInvitationTapped,
   });
 
@@ -177,6 +180,21 @@ class HomeHeaderSection extends StatelessWidget {
 
                         debugPrint('HomeHeader: employeeInvitationAlerts.length=${employeeInvitationAlerts.length}');
 
+                        // 0.5. Cancelled employee invitation alerts (read-only, no action buttons)
+                        for (var inv in cancelledEmployeeInvitationAlerts) {
+                          combinedItems.add({
+                            'time': inv['cancelled_at'] is DateTime
+                                ? inv['cancelled_at'] as DateTime
+                                : (inv['cancelled_at'] != null
+                                    ? DateTime.tryParse(inv['cancelled_at'].toString()) ?? DateTime.now()
+                                    : DateTime.now()),
+                            'type': 'employee_invitation_cancelled',
+                            'data': inv,
+                          });
+                        }
+
+                        debugPrint('HomeHeader: cancelledEmployeeInvitationAlerts.length=${cancelledEmployeeInvitationAlerts.length}');
+
                         // 1. Consultation alerts (สำคัญรองลงมา)
                         debugPrint('HomeHeader: consultationAlerts.length=${consultationAlerts.length}');
                         for (var c in consultationAlerts) {
@@ -216,8 +234,12 @@ class HomeHeaderSection extends StatelessWidget {
 
                         // เรียงลำดับ: employee_invitation และ consultation อยู่บนสุด (pinned), ที่เหลือใหม่ล่าสุดก่อน
                         combinedItems.sort((a, b) {
-                          final aPinned = a['type'] == 'employee_invitation' || a['type'] == 'consultation';
-                          final bPinned = b['type'] == 'employee_invitation' || b['type'] == 'consultation';
+                          final aPinned = a['type'] == 'employee_invitation' ||
+                              a['type'] == 'employee_invitation_cancelled' ||
+                              a['type'] == 'consultation';
+                          final bPinned = b['type'] == 'employee_invitation' ||
+                              b['type'] == 'employee_invitation_cancelled' ||
+                              b['type'] == 'consultation';
                           if (aPinned && !bPinned) return -1;
                           if (!aPinned && bPinned) return 1;
                           return (b['time'] as DateTime).compareTo(a['time'] as DateTime);
@@ -358,6 +380,82 @@ class HomeHeaderSection extends StatelessWidget {
                                       ),
                                     ],
                                   ),
+                                ),
+                              );
+
+                            // ── Employee Invitation Cancelled (read-only) ────
+                            } else if (item['type'] == 'employee_invitation_cancelled') {
+                              final inv = item['data'] as Map<String, dynamic>;
+                              final professionName = inv['profession_name']?.toString() ?? '';
+                              final organizationName = inv['organization_name']?.toString() ?? '';
+                              final displayOrganizationName = organizationName.isNotEmpty && organizationName != professionName;
+                              final cancelledByName = inv['cancelled_by_name']?.toString() ?? '';
+                              final cancellationReason = inv['cancellation_reason']?.toString() ?? '';
+                              return Container(
+                                margin: const EdgeInsets.symmetric(vertical: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.grey.withOpacity(0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    const Icon(Icons.cancel_outlined, color: Colors.grey, size: 10),
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'คำเชิญถูกยกเลิก',
+                                            style: AppTextStyles.caption.copyWith(
+                                              color: Colors.grey,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 9,
+                                            ),
+                                            maxLines: 1,
+                                          ),
+                                          if (displayOrganizationName)
+                                            Text(
+                                              organizationName,
+                                              style: AppTextStyles.caption.copyWith(
+                                                color: Colors.white.withOpacity(0.6),
+                                                fontSize: 8.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          if (cancelledByName.isNotEmpty)
+                                            Text(
+                                              'โดย: $cancelledByName',
+                                              style: AppTextStyles.caption.copyWith(
+                                                color: Colors.white.withOpacity(0.5),
+                                                fontSize: 8,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          if (cancellationReason.isNotEmpty)
+                                            Text(
+                                              cancellationReason,
+                                              style: AppTextStyles.caption.copyWith(
+                                                color: Colors.white.withOpacity(0.5),
+                                                fontSize: 8,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
 

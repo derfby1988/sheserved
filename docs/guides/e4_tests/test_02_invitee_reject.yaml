@@ -1,0 +1,69 @@
+# E4.9 Test 2: ผู้ถูกเชิญปฏิเสธ → status = 'rejected' (ไม่กระทบกรณี admin)
+# Expected: rejection creates 'rejected' status, not 'cancelled'
+# Precondition: admin ต้องส่งคำเชิญไปยัง user "firm" และยังเป็น pending
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 02 - Invitee reject invitation"
+tags:
+  - e4
+  - invitee
+  - reject
+---
+# Login as invitee (firm)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of home page
+- takeScreenshot: "test_02_home_header"
+
+# Verify pending invitation alert is visible in Home Header
+- assertVisible:
+    text: "คำเชิญพนักงาน"
+    label: "Verify pending invitation alert in Home Header"
+
+# Tap on the pending invitation alert to open dialog
+- tapOn: "คำเชิญพนักงาน"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Verify invitation dialog appears
+- assertVisible: "ปฏิเสธ"
+- assertVisible: "ยอมรับ"
+
+# Tap "ปฏิเสธ" button
+- tapOn: "ปฏิเสธ"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Verify rejection reason field appears
+- assertVisible: "เหตุผลในการปฏิเสธ"
+
+# Enter rejection reason
+- tapOn:
+    text: "เหตุผลในการปฏิเสธ"
+- inputText: "ทดสอบปฏิเสธโดยผู้ถูกเชิญ"
+
+# Confirm rejection
+- tapOn: "ยืนยันปฏิเสธ"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot after rejection
+- takeScreenshot: "test_02_after_reject"
+
+# Verify success snackbar
+- assertVisible:
+    text: ".*ปฏิเสธคำเชิญสำเร็จ.*"
+    label: "Verify rejection success message"
+
+# Verify the pending invitation alert is gone from Home Header
+- assertNotVisible:
+    text: "คำเชิญพนักงาน"
+    label: "Verify pending invitation removed from Home Header"

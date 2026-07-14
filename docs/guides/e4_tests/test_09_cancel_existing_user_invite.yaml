@@ -1,0 +1,80 @@
+# E4.9 Test 9: Admin ยกเลิกคำเชิญที่ส่งไปยัง existing user
+# Expected: pending action card หายไป และ feed แยกต้องเห็น read-only "คำเชิญถูกยกเลิก"
+# Precondition: admin (apisek) ต้องส่งคำเชิญไปยัง user "firm" และยังเป็น pending
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 09 - Cancel existing user invite, verify invitee feed"
+tags:
+  - e4
+  - admin
+  - invitee
+  - cancel
+  - home-header
+---
+# ===== Step 1: Admin cancels the invitation =====
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Take screenshot before cancel
+- takeScreenshot: "test_09_admin_before_cancel"
+
+# Verify pending invitation exists
+- assertVisible:
+    text: ".*รอตอบรับ.*"
+    label: "Verify pending invitation exists"
+
+# Tap the cancel (X) button on the first pending invitation
+- tapOn:
+    point: "93%, 18%"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Confirm cancellation in dialog
+- assertVisible: "ยกเลิกคำเชิญ"
+- tapOn: "ยกเลิก"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot after cancel
+- takeScreenshot: "test_09_admin_after_cancel"
+
+# Verify invitation moved to cancelled section
+- scrollUntilVisible:
+    element: "ยกเลิกโดย admin"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: ".*ยกเลิกโดย admin.*"
+    label: "Verify cancelled section"
+
+# ===== Step 2: Login as invitee (firm) to verify feed =====
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of invitee home header
+- takeScreenshot: "test_09_invitee_home_header"
+
+# Verify "คำเชิญถูกยกเลิก" is visible (read-only cancelled feed)
+- assertVisible:
+    text: "คำเชิญถูกยกเลิก"
+    label: "Verify cancelled invitation appears in invitee Home Header"
+
+# Verify "คำเชิญพนักงาน" (pending action) is NOT visible for the cancelled invitation
+# Note: If firm has other pending invitations, this may still be visible
+- assertNotVisible:
+    text: "คำเชิญพนักงาน"
+    label: "Verify no pending action for the cancelled invitation"
+    optional: true

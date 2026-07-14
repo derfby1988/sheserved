@@ -163,7 +163,7 @@ class DrugRiskClassificationRepository {
 
       await _client
           .from('dangerous_drug_subcategories')
-          .update({'deleted_at': DateTime.now().toIso8601String(), 'is_active': false})
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String(), 'is_active': false})
           .eq('id', id);
 
       await _logAdminAction(
@@ -368,7 +368,7 @@ class DrugRiskClassificationRepository {
 
       await _client
           .from('custom_risk_levels')
-          .update({'deleted_at': DateTime.now().toIso8601String(), 'is_active': false})
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String(), 'is_active': false})
           .eq('id', id);
 
       await _logAdminAction(
@@ -635,7 +635,7 @@ class DrugRiskClassificationRepository {
         'override_is_telemedicine_prohibited': overrideIsTelemedicineProhibited,
         'override_notes': overrideNotes,
         'last_modified_by': performedBy,
-        'last_modified_at': DateTime.now().toIso8601String(),
+        'last_modified_at': DateTime.now().toUtc().toIso8601String(),
       };
 
       late final Map<String, dynamic> response;
@@ -739,6 +739,15 @@ class DrugRiskClassificationRepository {
       }
       await query.eq('medication_id', medicationId);
 
+      final remaining = await getOverride(
+        userId: userId,
+        professionId: professionId,
+        medicationId: medicationId,
+      );
+      if (remaining != null) {
+        throw Exception('ไม่สามารถลบ Override จากตาราง drug_risk_overrides ได้');
+      }
+
       await _logAdminAction(
         tableName: 'drug_risk_overrides',
         recordId: existing.id,
@@ -814,6 +823,21 @@ class DrugRiskClassificationRepository {
       debugPrint('Error fetching override history: $e');
       return [];
     }
+  }
+
+  /// ดึงประวัติ Override ล่าสุดของยาตาม scope
+  Future<DrugRiskOverrideHistory?> getLatestOverrideHistory({
+    String? professionId,
+    String? userId,
+    required String medicationId,
+  }) async {
+    final history = await getOverrideHistory(
+      professionId: professionId,
+      userId: userId,
+      medicationId: medicationId,
+      limit: 1,
+    );
+    return history.isEmpty ? null : history.first;
   }
 
   /// RPC: ดึงผู้รับผิดชอบที่ยังมีตัวตนและสิทธิ์ (Single DB call — ไม่มี N+1)

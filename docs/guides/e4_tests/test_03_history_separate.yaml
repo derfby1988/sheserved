@@ -1,0 +1,54 @@
+# E4.9 Test 3: ดูประวัติ → แยกชัดเจน: "ปฏิเสธ" vs "ยกเลิกโดย admin"
+# Expected: rejected และ cancelled แสดงใน section แยกกัน มี label ต่างกัน
+# Precondition: ต้องมีทั้ง rejected และ cancelled invitation อย่างน้อย 1 รายการ
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 03 - History shows rejected vs cancelled separately"
+tags:
+  - e4
+  - admin
+  - history
+---
+# Login as admin (apisek)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Take screenshot of invitations tab
+- takeScreenshot: "test_03_invitations_tab"
+
+# Verify "ปฏิเสธโดยผู้ถูกเชิญ" section is visible (if rejected invitations exist)
+- scrollUntilVisible:
+    element: "ปฏิเสธโดยผู้ถูกเชิญ"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: ".*ปฏิเสธโดยผู้ถูกเชิญ.*"
+    label: "Verify rejected section header"
+
+# Verify rejected invitation shows "ปฏิเสธ" status
+- assertVisible:
+    text: ".*สถานะ: ปฏิเสธ.*"
+    label: "Verify rejected status label"
+
+# Scroll down to find "ยกเลิกโดย admin" section
+- scrollUntilVisible:
+    element: "ยกเลิกโดย admin"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: ".*ยกเลิกโดย admin.*"
+    label: "Verify cancelled section header"
+
+# Verify cancelled invitation shows "ยกเลิกโดย admin" status
+- assertVisible:
+    text: ".*สถานะ: ยกเลิกโดย admin.*"
+    label: "Verify cancelled status label"
+
+# Take screenshot showing both sections
+- takeScreenshot: "test_03_both_sections"

@@ -1,0 +1,39 @@
+# Shared navigation subflow: Home -> ERP Dashboard -> Employees -> Invitations tab
+# Precondition: User must be logged in and on Home page
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 - Navigate to Invitations Tab"
+tags:
+  - e4-shared
+---
+# Scroll to find the ERP Dashboard card on Home page
+- scrollUntilVisible:
+    element: "ERP Dashboard"
+    direction: DOWN
+    timeout: 10000
+
+# Tap the "เข้า" button on the ERP card
+- tapOn: "เข้า"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Expand the mini sidebar by tapping the toggle button (top-left corner)
+# Sidebar is 60px wide when collapsed; toggle is at ~3% width, ~3% height
+- tapOn:
+    point: "3%, 4%"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Tap "พนักงาน" in the expanded sidebar
+- scrollUntilVisible:
+    element: "พนักงาน"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "พนักงาน"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Switch to the "คำเชิญ" tab
+- tapOn: "คำเชิญ"
+- waitForAnimationToEnd:
+    timeout: 3000

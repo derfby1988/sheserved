@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../features/admin/data/repositories/local_database_repository.dart';
@@ -134,7 +136,7 @@ class ServiceLocator {
             supabaseUrl: AppConfig.supabaseUrl,
             supabaseAnonKey: AppConfig.supabaseAnonKey,
           );
-          await _syncService!.initialize();
+          unawaited(_syncService!.initialize());
         }
         break;
 
@@ -160,7 +162,10 @@ class ServiceLocator {
 
     // Check local connection
     if (_localRepository != null) {
-      final isConnected = await _localRepository!.healthCheck();
+      final isConnected = await _localRepository!.healthCheck().timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => false,
+      );
       if (isConnected) {
         debugPrint('ServiceLocator: Local database connected');
       } else {

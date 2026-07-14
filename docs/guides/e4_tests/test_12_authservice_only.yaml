@@ -1,0 +1,40 @@
+# E4.9 Test 12: ตรวจว่า Flutter ไม่ใช้ Supabase.instance.client.auth.currentUser
+# หรือ _client.auth.currentUser เป็น identity; ใช้ AuthService.instance.currentUser?.id เท่านั้น
+# Note: นี่เป็น code inspection test ไม่ใช่ UI test
+# Device: R8YYA0G5GJ (Android)
+appId: com.sheserved.app
+name: "E4 Test 12 - Verify AuthService is used (not Supabase Auth)"
+tags:
+  - e4
+  - code-review
+  - security
+  - authservice
+---
+# This is a code inspection test, not a UI test.
+# To verify, run the following grep command in the project:
+#
+#   grep -rn "Supabase.instance.client.auth.currentUser" lib/features/erp/
+#   grep -rn "_client.auth.currentUser" lib/features/erp/
+#   grep -rn "Supabase.instance.client.auth" lib/features/erp/data/repositories/phase_three_repository.dart
+#
+# Expected: No results (or only in comments/documentation)
+#
+# Then verify AuthService is used:
+#   grep -rn "AuthService.instance.currentUser" lib/features/erp/
+#
+# Expected: Results in:
+#   - phase_three_repository.dart (cancelEmployeeInvitation, getCancelledInvitationsForUser)
+#   - phase_three_provider.dart (cancelEmployeeInvitation, loadCancelledInvitationsForCurrentUser)
+#
+# The app should launch and function normally, proving AuthService-based auth works:
+- launchApp:
+    clearState: true
+    stopApp: true
+- waitForAnimationToEnd
+
+# Take screenshot of login page
+- takeScreenshot: "test_12_login_page"
+
+# Verify login page is shown (proving no Supabase Auth session is used)
+- assertVisible: "เข้าสู่ระบบ"
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"

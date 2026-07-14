@@ -16,6 +16,7 @@ import '../../data/models/hr_settings.dart';
 import '../../data/models/thai_holiday.dart';
 import '../../data/models/employee_tax_allowance.dart';
 import '../../data/repositories/phase_three_repository.dart';
+import '../../../../services/auth_service.dart';
 
 final phaseThreeRepositoryProvider = Provider<PhaseThreeRepository>((ref) {
   return PhaseThreeRepository(Supabase.instance.client);
@@ -33,6 +34,7 @@ class PhaseThreeState {
   final List<EmployeeInvitation> employeeInvitations;
   final List<Map<String, dynamic>> availableUsersForInvite;
   final List<Map<String, dynamic>> pendingInvitationsForCurrentUser;
+  final List<Map<String, dynamic>> cancelledInvitationsForCurrentUser;
   final List<Map<String, dynamic>> invitationHistory;
   final List<Map<String, dynamic>> organizationRoles;
   final List<GlEntry> glEntries;
@@ -56,6 +58,7 @@ class PhaseThreeState {
     this.employeeInvitations = const [],
     this.availableUsersForInvite = const [],
     this.pendingInvitationsForCurrentUser = const [],
+    this.cancelledInvitationsForCurrentUser = const [],
     this.invitationHistory = const [],
     this.organizationRoles = const [],
     this.glEntries = const [],
@@ -81,6 +84,7 @@ class PhaseThreeState {
     List<EmployeeInvitation>? employeeInvitations,
     List<Map<String, dynamic>>? availableUsersForInvite,
     List<Map<String, dynamic>>? pendingInvitationsForCurrentUser,
+    List<Map<String, dynamic>>? cancelledInvitationsForCurrentUser,
     List<Map<String, dynamic>>? invitationHistory,
     List<Map<String, dynamic>>? organizationRoles,
     List<GlEntry>? glEntries,
@@ -106,6 +110,7 @@ class PhaseThreeState {
       employeeInvitations: employeeInvitations ?? this.employeeInvitations,
       availableUsersForInvite: availableUsersForInvite ?? this.availableUsersForInvite,
       pendingInvitationsForCurrentUser: pendingInvitationsForCurrentUser ?? this.pendingInvitationsForCurrentUser,
+      cancelledInvitationsForCurrentUser: cancelledInvitationsForCurrentUser ?? this.cancelledInvitationsForCurrentUser,
       invitationHistory: invitationHistory ?? this.invitationHistory,
       organizationRoles: organizationRoles ?? this.organizationRoles,
       glEntries: glEntries ?? this.glEntries,
@@ -341,6 +346,40 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
     }
   }
 
+  Future<bool> cancelEmployeeInvitation(
+    String token,
+    String professionId, {
+    String? cancellationReason,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final userId = AuthService.instance.currentUser?.id;
+      if (userId == null || userId.isEmpty) {
+        state = state.copyWith(isSaving: false, errorMessage: 'ไม่พบผู้ใช้ใน session');
+        return false;
+      }
+      final result = await _repository.cancelEmployeeInvitation(
+        token,
+        cancelledBy: userId,
+        cancellationReason: cancellationReason,
+      );
+      state = state.copyWith(isSaving: false);
+      if (result != null && result['success'] == true) {
+        await loadEmployeeInvitations(professionId);
+        return true;
+      } else {
+        state = state.copyWith(
+          errorMessage: result?['error'] as String? ?? 'ยกเลิกคำเชิญล้มเหลว',
+        );
+        return false;
+      }
+    } catch (e, st) {
+      debugPrint('[Phase3] cancelEmployeeInvitation ERROR: $e');
+      state = state.copyWith(isSaving: false, errorMessage: 'ยกเลิกคำเชิญล้มเหลว: $e');
+      return false;
+    }
+  }
+
   Future<void> loadPendingInvitationsForCurrentUser() async {
     try {
       final invitations = await _repository.getPendingInvitationsForCurrentUser();
@@ -348,6 +387,16 @@ class PhaseThreeNotifier extends StateNotifier<PhaseThreeState> {
       state = state.copyWith(pendingInvitationsForCurrentUser: invitations);
     } catch (e, st) {
       debugPrint('[Phase3] loadPendingInvitationsForCurrentUser ERROR: $e\n$st');
+    }
+  }
+
+  Future<void> loadCancelledInvitationsForCurrentUser() async {
+    try {
+      final invitations = await _repository.getCancelledInvitationsForUser();
+      debugPrint('[Phase3] loadCancelledInvitationsForCurrentUser: loaded ${invitations.length} invitations');
+      state = state.copyWith(cancelledInvitationsForCurrentUser: invitations);
+    } catch (e, st) {
+      debugPrint('[Phase3] loadCancelledInvitationsForCurrentUser ERROR: $e\n$st');
     }
   }
 

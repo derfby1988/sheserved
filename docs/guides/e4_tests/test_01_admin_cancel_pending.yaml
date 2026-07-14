@@ -1,0 +1,69 @@
+# E4.9 Test 1: Admin ยกเลิก pending invitation
+# Expected: status = 'cancelled', cancelled_by มีค่า, cancelled_at มีค่า
+# Precondition: ต้องมี pending invitation อย่างน้อย 1 รายการ
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 01 - Admin cancel pending invitation"
+tags:
+  - e4
+  - admin
+  - cancel
+---
+# Login as admin (apisek)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Verify pending invitation exists (status text "รอตอบรับ")
+- assertVisible:
+    text: ".*รอตอบรับ.*"
+    label: "Verify pending invitation is visible"
+
+# Take screenshot before cancellation
+- takeScreenshot: "test_01_before_cancel"
+
+# Tap the cancel (X) button on the first pending invitation card
+# The X icon is at the right edge of the card (~93% width, ~18% height)
+- tapOn:
+    point: "93%, 18%"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Verify cancel dialog appears
+- assertVisible: "ยกเลิกคำเชิญ"
+- assertVisible: "เหตุผลการยกเลิก (ไม่บังคับ)"
+
+# Optionally enter a cancellation reason
+- tapOn:
+    text: "เหตุผลการยกเลิก (ไม่บังคับ)"
+- inputText: "ทดสอบยกเลิกโดย admin"
+
+# Confirm cancellation
+- tapOn: "ยกเลิก"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot after cancellation
+- takeScreenshot: "test_01_after_cancel"
+
+# Verify the invitation moved to "ยกเลิกโดย admin" section
+- scrollUntilVisible:
+    element: "ยกเลิกโดย admin"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: ".*ยกเลิกโดย admin.*"
+    label: "Verify cancelled section appears"
+
+# Verify the cancelled invitation shows admin name and reason
+- assertVisible:
+    text: ".*ยกเลิกโดย.*"
+    label: "Verify cancelled by admin name is shown"
+- assertVisible:
+    text: ".*เหตุผล.*ทดสอบยกเลิก.*"
+    label: "Verify cancellation reason is shown"

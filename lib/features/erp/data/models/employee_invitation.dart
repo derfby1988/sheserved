@@ -26,6 +26,10 @@ class EmployeeInvitation {
   final DateTime? rejectedAt;
   final DateTime? expiresAt;
   final String? intendedRoleName;
+  final DateTime? cancelledAt;
+  final String? cancelledBy;
+  final String? cancellationReason;
+  final String? cancelledByName;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -56,6 +60,10 @@ class EmployeeInvitation {
     this.rejectedAt,
     this.expiresAt,
     this.intendedRoleName,
+    this.cancelledAt,
+    this.cancelledBy,
+    this.cancellationReason,
+    this.cancelledByName,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -88,6 +96,10 @@ class EmployeeInvitation {
       rejectedAt: json['rejected_at'] != null ? DateTime.parse(json['rejected_at'] as String) : null,
       expiresAt: json['expires_at'] != null ? DateTime.parse(json['expires_at'] as String) : null,
       intendedRoleName: json['intended_role_name'] as String?,
+      cancelledAt: json['cancelled_at'] != null ? DateTime.parse(json['cancelled_at'] as String) : null,
+      cancelledBy: json['cancelled_by'] as String?,
+      cancellationReason: json['cancellation_reason'] as String?,
+      cancelledByName: json['cancelled_by_name'] as String? ?? _extractUserName(json['cancelled_by_user']),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -121,6 +133,10 @@ class EmployeeInvitation {
       'rejected_at': rejectedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
       'intended_role_name': intendedRoleName,
+      'cancelled_at': cancelledAt?.toIso8601String(),
+      'cancelled_by': cancelledBy,
+      'cancellation_reason': cancellationReason,
+      'cancelled_by_name': cancelledByName,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -130,10 +146,22 @@ class EmployeeInvitation {
   bool get isAccepted => status == 'accepted';
   bool get isRejected => status == 'rejected';
   bool get isExpired => status == 'expired';
+  bool get isCancelled => status == 'cancelled';
   bool get isExpiredDate => expiresAt != null && expiresAt!.isBefore(DateTime.now());
 
   /// ชื่อสถานะภาษาไทยสำหรับแสดงผลใน UI
   String get statusDisplayThai => statusLabelThai(status);
+
+  static String? _extractUserName(dynamic userData) {
+    if (userData is Map<String, dynamic>) {
+      final firstName = userData['first_name'] as String? ?? '';
+      final lastName = userData['last_name'] as String? ?? '';
+      final fullName = '$firstName $lastName'.trim();
+      if (fullName.isNotEmpty) return fullName;
+      return userData['username'] as String? ?? userData['email'] as String?;
+    }
+    return null;
+  }
 
   static String statusLabelThai(String status) {
     switch (status) {
@@ -145,6 +173,8 @@ class EmployeeInvitation {
         return 'ปฏิเสธ';
       case 'expired':
         return 'หมดอายุ';
+      case 'cancelled':
+        return 'ยกเลิกโดย admin';
       case 'terminated':
         return 'ออกจากองค์กรแล้ว';
       case 'active':

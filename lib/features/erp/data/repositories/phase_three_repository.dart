@@ -139,7 +139,7 @@ class PhaseThreeRepository {
     try {
       final response = await _client
           .from('employee_invitations')
-          .select()
+          .select('*, cancelled_by_user:users!cancelled_by(first_name, last_name, username, email)')
           .eq('profession_id', professionId)
           .order('created_at', ascending: false);
       return (response as List)
@@ -185,6 +185,44 @@ class PhaseThreeRepository {
     } catch (e, st) {
       debugPrint('[Phase3Repo] rejectEmployeeInvitation error: $e');
       return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> cancelEmployeeInvitation(
+    String token, {
+    required String cancelledBy,
+    String? cancellationReason,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'cancel_employee_invitation',
+        params: {
+          'p_token': token,
+          'p_cancelled_by': cancelledBy,
+          if (cancellationReason != null && cancellationReason.isNotEmpty)
+            'p_cancellation_reason': cancellationReason,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] cancelEmployeeInvitation error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCancelledInvitationsForUser() async {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null || userId.isEmpty) return [];
+    try {
+      final response = await _client.rpc(
+        'get_cancelled_invitations_for_user',
+        params: {'p_user_id': userId},
+      );
+      if (response == null) return [];
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e, st) {
+      debugPrint('[Phase3Repo] getCancelledInvitationsForUser error: $e\n$st');
+      return [];
     }
   }
 

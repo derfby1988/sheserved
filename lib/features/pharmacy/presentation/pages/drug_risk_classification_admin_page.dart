@@ -23,6 +23,8 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
   late DrugRiskClassificationRepository _repo;
 
   bool _isLoading = true;
+  bool _isSearching = false;
+  bool _isMutationLoading = false;
   String? _error;
 
   // Tab 1 data
@@ -193,23 +195,24 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
   Future<void> _searchMedications(String query) async {
     if (query.isEmpty) {
-      setState(() => _searchResults = []);
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+          _isSearching = false;
+        });
+      }
       return;
     }
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isSearching = true);
     try {
       final results = await _repo.searchMedications(query);
       _searchResults = results;
       if (_pageMode != DrugRiskPageMode.globalAdmin) {
         await _enrichSearchResults();
       }
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isSearching = false);
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isSearching = false);
     }
   }
 
@@ -412,19 +415,44 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       ),
       body: !_isProfessionLoaded && mode != DrugRiskPageMode.globalAdmin
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : Stack(
               children: [
-                _buildModeBanner(mode),
-                Expanded(
-                  child: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty && _overrideHistory.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : _error != null
-                          ? Center(child: Text('Error: $_error'))
-                          : TabBarView(
-                              controller: _tabController,
-                              children: tabViews,
-                            ),
+                Column(
+                  children: [
+                    _buildModeBanner(mode),
+                    Expanded(
+                      child: _isLoading && _subcategories.isEmpty && _riskLevels.isEmpty && _overrideHistory.isEmpty
+                          ? const Center(child: CircularProgressIndicator())
+                          : _error != null
+                              ? Center(child: Text('Error: $_error'))
+                              : TabBarView(
+                                  controller: _tabController,
+                                  children: tabViews,
+                                ),
+                    ),
+                  ],
                 ),
+                if (_isMutationLoading)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: Colors.black26,
+                      child: Center(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 12),
+                                Text('กำลังบันทึกและโหลดข้อมูลใหม่...', style: AppTextStyles.bodyMedium),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
       floatingActionButton: mode == DrugRiskPageMode.globalAdmin && _tabController.index < 2
@@ -770,10 +798,16 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
               ),
               const SizedBox(width: 8),
               ElevatedButton(
-                onPressed: () {
-                  _searchMedications(_searchController.text);
-                },
-                child: const Text('ค้นหา'),
+                onPressed: _isSearching
+                    ? null
+                    : () => _searchMedications(_searchController.text),
+                child: _isSearching
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('ค้นหา'),
               ),
             ],
           ),
@@ -1368,12 +1402,13 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                   );
                   if (mounted) {
                     Navigator.pop(context, true);
-                    _searchMedications(_searchController.text);
                   }
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('บันทึก Override'),
@@ -1383,8 +1418,23 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       );
 
       if (result == true) {
-        _loadReports();
-        setState(() {});
+        if (mounted) setState(() => _isMutationLoading = true);
+        try {
+          await _searchMedications(_searchController.text);
+          await _loadReports();
+        } finally {
+          if (mounted) setState(() => _isMutationLoading = false);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('บันทึก Override สำเร็จ'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          setState(() {});
+        }
       }
     } else {
       final activeOverride = med['active_override'] as DrugRiskOverride?;
@@ -1399,7 +1449,15 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
            (selectedFda == 'D' && (selectedSubCat == 'hormone_injection' || selectedSubCat == 'chemotherapy' || selectedSubCat == 'abortifacient')));
 
       final notesController = TextEditingController(text: activeOverride?.overrideNotes ?? '');
-      final reasonController = TextEditingController();
+      final latestHistory = await _repo.getLatestOverrideHistory(
+        professionId: mode == DrugRiskPageMode.organizationOverride ? AuthService.instance.currentUser?.professionId : null,
+        userId: mode == DrugRiskPageMode.personalOverride ? AuthService.instance.currentUser?.id : null,
+        medicationId: med['id'] as String,
+      );
+      final reasonController = TextEditingController(
+        text: latestHistory?.action == 'delete' ? '' : latestHistory?.changeReason ?? '',
+      );
+      bool isSaving = false;
 
       final result = await showDialog<bool>(
         context: context,
@@ -1512,13 +1570,16 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก')),
                 FilledButton(
-                  onPressed: () async {
+                  onPressed: isSaving
+                      ? null
+                      : () async {
                     if (reasonController.text.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('กรุณาระบุเหตุผลการ Override')),
                       );
                       return;
                     }
+                    setDialogState(() => isSaving = true);
                     try {
                       final user = AuthService.instance.currentUser;
                       if (user == null) return;
@@ -1542,12 +1603,21 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
                         Navigator.pop(context, true);
                       }
                     } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $e')),
-                      );
+                      setDialogState(() => isSaving = false);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: $e')),
+                        );
+                      }
                     }
                   },
-                  child: const Text('บันทึก Override'),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('บันทึก Override'),
                 ),
               ],
             );
@@ -1557,9 +1627,23 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
       if (result == true) {
         FocusManager.instance.primaryFocus?.unfocus();
-        await _searchMedications(_searchController.text);
-        await _loadReports();
-        setState(() {});
+        if (mounted) setState(() => _isMutationLoading = true);
+        try {
+          await _searchMedications(_searchController.text);
+          await _loadReports();
+        } finally {
+          if (mounted) setState(() => _isMutationLoading = false);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('บันทึก Override สำเร็จ'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          setState(() {});
+        }
       }
     }
   }
@@ -1584,7 +1668,7 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
     if (confirm != true) return;
 
-    setState(() => _isLoading = true);
+    setState(() => _isMutationLoading = true);
     try {
       final user = AuthService.instance.currentUser;
       if (user == null) return;
@@ -1600,10 +1684,23 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
       await _searchMedications(_searchController.text);
       await _loadReports();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('คืนค่า Default สำเร็จ'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isMutationLoading = false);
+      }
     }
   }
 

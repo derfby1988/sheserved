@@ -1,0 +1,39 @@
+# E4.9 Test 5: ผู้ถูกเชิญปฏิเสธ → แสดงปุ่ม "เชิญใหม่"
+# Expected: rejected invitation card มีปุ่ม refresh/reinvite (tooltip "เชิญใหม่")
+# Precondition: ต้องมี rejected invitation อย่างน้อย 1 รายการ
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 05 - Rejected card has reinvite button"
+tags:
+  - e4
+  - admin
+  - reject
+  - reinvite
+---
+# Login as admin (apisek)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Scroll to "ปฏิเสธโดยผู้ถูกเชิญ" section
+- scrollUntilVisible:
+    element: "ปฏิเสธโดยผู้ถูกเชิญ"
+    direction: DOWN
+    timeout: 10000
+
+# Take screenshot of rejected section
+- takeScreenshot: "test_05_rejected_section"
+
+# Verify rejected invitation card shows "ปฏิเสธ" status
+- assertVisible:
+    text: ".*สถานะ: ปฏิเสธ.*"
+    label: "Verify rejected status"
+
+# Use AI to verify reinvite (refresh) button exists on rejected cards
+- assertWithAI:
+    assertion: "The rejected invitation cards have a refresh or reinvite button icon on the right side"

@@ -1,0 +1,41 @@
+# E4.9 Test 8: get_pending_employee_invitations_for_user → ไม่ return cancelled ใน action list
+# Expected: pending action list แสดงเฉพาะ "คำเชิญพนักงาน" (pending) ไม่มี "คำเชิญถูกยกเลิก"
+# Precondition: user "firm" ต้องมีทั้ง pending และ cancelled invitation
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 08 - Pending action list does not include cancelled"
+tags:
+  - e4
+  - invitee
+  - home-header
+  - pending
+---
+# Login as invitee (firm)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of home page
+- takeScreenshot: "test_08_home_header"
+
+# Verify pending invitation shows as "คำเชิญพนักงาน" (action item, tappable)
+- assertVisible:
+    text: "คำเชิญพนักงาน"
+    label: "Verify pending invitation in action list"
+    optional: true
+
+# Verify cancelled invitation shows separately as "คำเชิญถูกยกเลิก" (read-only)
+- assertVisible:
+    text: "คำเชิญถูกยกเลิก"
+    label: "Verify cancelled invitation in separate feed"
+    optional: true
+
+# Use AI to verify pending and cancelled are visually separate
+- assertWithAI:
+    assertion: "The 'คำเชิญพนักงาน' (pending invitation) and 'คำเชิญถูกยกเลิก' (cancelled invitation) are displayed as separate items with different colors — pending is blue and tappable, cancelled is grey and read-only"

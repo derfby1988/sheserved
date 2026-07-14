@@ -209,7 +209,9 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     }
     final pending = state.employeeInvitations.where((i) => i.isPending).toList();
     final rejected = state.employeeInvitations.where((i) => i.isRejected).toList();
-    if (pending.isEmpty && rejected.isEmpty) {
+    final cancelled = state.employeeInvitations.where((i) => i.isCancelled).toList();
+    final expired = state.employeeInvitations.where((i) => i.isExpired).toList();
+    if (pending.isEmpty && rejected.isEmpty && cancelled.isEmpty && expired.isEmpty) {
       return const Center(
         child: Text(
           'ไม่มีคำเชิญที่ค้างอยู่',
@@ -217,12 +219,20 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
         ),
       );
     }
+    final itemCount = pending.length +
+        rejected.length +
+        cancelled.length +
+        expired.length +
+        (rejected.isNotEmpty ? 1 : 0) +
+        (cancelled.isNotEmpty ? 1 : 0) +
+        (expired.isNotEmpty ? 1 : 0);
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: pending.length + rejected.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
-        if (index < pending.length) {
-          final invite = pending[index];
+        var i = index;
+        if (i < pending.length) {
+          final invite = pending[i];
           return _InvitationCard(
             invitation: invite,
             accessLevel: accessLevel,
@@ -231,14 +241,70 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                 : () => _cancelInvitation(context, invite),
           );
         }
-        final invite = rejected[index - pending.length];
-        return _InvitationCard(
-          invitation: invite,
-          accessLevel: accessLevel,
-          onReinvite: accessLevel >= 2
-              ? () => _showInviteEmployeeDialog(context, reinviteInvitation: invite)
-              : null,
-        );
+        i -= pending.length;
+        if (rejected.isNotEmpty) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 24, bottom: 8),
+              child: Text(
+                'ปฏิเสธโดยผู้ถูกเชิญ (${rejected.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            );
+          }
+          i -= 1;
+          if (i < rejected.length) {
+            final invite = rejected[i];
+            return _InvitationCard(
+              invitation: invite,
+              accessLevel: accessLevel,
+              onReinvite: accessLevel >= 2
+                  ? () => _showInviteEmployeeDialog(context, reinviteInvitation: invite)
+                  : null,
+            );
+          }
+          i -= rejected.length;
+        }
+        if (cancelled.isNotEmpty) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 24, bottom: 8),
+              child: Text(
+                'ยกเลิกโดย admin (${cancelled.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            );
+          }
+          i -= 1;
+          if (i < cancelled.length) {
+            final invite = cancelled[i];
+            return _InvitationCard(
+              invitation: invite,
+              accessLevel: accessLevel,
+            );
+          }
+          i -= cancelled.length;
+        }
+        if (expired.isNotEmpty) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 24, bottom: 8),
+              child: Text(
+                'หมดอายุ (${expired.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            );
+          }
+          i -= 1;
+          if (i < expired.length) {
+            final invite = expired[i];
+            return _InvitationCard(
+              invitation: invite,
+              accessLevel: accessLevel,
+            );
+          }
+        }
+        return const SizedBox.shrink();
       },
     );
   }
@@ -255,19 +321,45 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
   }
 
   Future<void> _cancelInvitation(BuildContext context, EmployeeInvitation invite) async {
+    final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('ยกเลิกคำเชิญ'),
-        content: Text('ยกเลิกคำเชิญของ ${invite.fullName}?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ไม่')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ยกเลิก')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('ยกเลิกคำเชิญ'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('ยกเลิกคำเชิญของ ${invite.fullName}?'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'เหตุผลการยกเลิก (ไม่บังคับ)',
+                  hintText: 'ระบุเหตุผล...',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ไม่')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ยกเลิก')),
+          ],
+        ),
       ),
     );
     if (confirmed != true) return;
-    await ref.read(phaseThreeProvider.notifier).rejectEmployeeInvitation(invite.token, widget.professionId);
+    await ref.read(phaseThreeProvider.notifier).cancelEmployeeInvitation(
+      invite.token,
+      widget.professionId,
+      cancellationReason: reasonController.text.trim().isEmpty
+          ? null
+          : reasonController.text.trim(),
+    );
   }
 
   void _showEditEmployeeDialog(BuildContext context, Employee employee) {
@@ -1027,7 +1119,9 @@ class _InvitationCard extends StatelessWidget {
                       fontSize: 11,
                       color: invitation.isRejected
                           ? Colors.red
-                          : (invitation.isExpiredDate ? Colors.red : Colors.orange),
+                          : (invitation.isCancelled
+                              ? Colors.grey
+                              : (invitation.isExpiredDate ? Colors.red : Colors.orange)),
                     ),
                   ),
                   if (invitation.isRejected && invitation.rejectionReason != null)
@@ -1050,6 +1144,32 @@ class _InvitationCard extends StatelessWidget {
                               invitation.rejectionReason!,
                               style: const TextStyle(fontSize: 11, color: Colors.red),
                             ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (invitation.isCancelled && (invitation.cancelledByName != null || invitation.cancellationReason != null))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (invitation.cancelledByName != null)
+                              Text(
+                                'ยกเลิกโดย: ${invitation.cancelledByName}',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey),
+                              ),
+                            if (invitation.cancellationReason != null)
+                              Text(
+                                'เหตุผล: ${invitation.cancellationReason}',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
                           ],
                         ),
                       ),

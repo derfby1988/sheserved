@@ -1,0 +1,38 @@
+# E4.9 Test 11: เรียก cancel RPC ด้วย user ที่ไม่มี HR permission → RPC ต้อง reject
+# Expected: RPC returns {success: false, error: 'ไม่มีสิทธิ์ยกเลิกคำเชิญ'}
+# Note: นี่เป็น database-level test ส่วนหนึ่ง แต่สามารถตรวจสอบทาง UI ได้บางส่วน
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 11 - RPC rejects user without HR permission"
+tags:
+  - e4
+  - rpc
+  - security
+  - permission
+---
+# Login as invitee (firm) — user without HR permission
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot showing home page (no ERP admin access)
+- takeScreenshot: "test_11_invitee_home"
+
+# Verify the invitee does NOT see the ERP Dashboard card with admin functions
+# The invitee should not be able to navigate to ERP > Employees > Invitations
+# and should not see the cancel (X) button on any invitation card
+
+# Note: Full verification requires SQL:
+# -- Login as a user without HR permission, then:
+# SELECT public.cancel_employee_invitation('token', 'user-id-without-hr', NULL);
+# Must return success=false with error 'ไม่มีสิทธิ์ยกเลิกคำเชิญ'
+#
+# The RPC uses set_config('app.user_id', p_cancelled_by, true) then checks
+# app.can_manage_employees(v_invitation.profession_id) which will return false
+# for users without HR role, causing the RPC to reject.

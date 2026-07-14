@@ -1,0 +1,62 @@
+# E4.9 Test 6: กรองคำเชิญใน UI: pending / rejected / cancelled / expired แยกกัน
+# Expected: ทุก section แสดงแยกกัน มี header ชัดเจน
+# Precondition: ควรมีคำเชิญในแต่ละสถานะ (ถ้ามี) เพื่อตรวจสอบครบทุก section
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 06 - Filter sections: pending/rejected/cancelled/expired"
+tags:
+  - e4
+  - admin
+  - filter
+---
+# Login as admin (apisek)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to ERP > Employees > Invitations tab
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Take screenshot of top (pending section)
+- takeScreenshot: "test_06_pending_section"
+
+# Verify pending invitations are visible (status "รอตอบรับ")
+- assertVisible:
+    text: ".*รอตอบรับ.*"
+    label: "Verify pending section"
+    optional: true
+
+# Scroll to rejected section
+- scrollUntilVisible:
+    element: "ปฏิเสธโดยผู้ถูกเชิญ"
+    direction: DOWN
+    timeout: 8000
+- takeScreenshot: "test_06_rejected_section"
+- assertVisible:
+    text: ".*ปฏิเสธโดยผู้ถูกเชิญ.*"
+    label: "Verify rejected section header"
+    optional: true
+
+# Scroll to cancelled section
+- scrollUntilVisible:
+    element: "ยกเลิกโดย admin"
+    direction: DOWN
+    timeout: 8000
+- takeScreenshot: "test_06_cancelled_section"
+- assertVisible:
+    text: ".*ยกเลิกโดย admin.*"
+    label: "Verify cancelled section header"
+    optional: true
+
+# Scroll to expired section
+- scrollUntilVisible:
+    element: "หมดอายุ"
+    direction: DOWN
+    timeout: 8000
+- takeScreenshot: "test_06_expired_section"
+- assertVisible:
+    text: ".*หมดอายุ.*"
+    label: "Verify expired section header"
+    optional: true

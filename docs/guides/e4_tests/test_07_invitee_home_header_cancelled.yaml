@@ -1,0 +1,42 @@
+# E4.9 Test 7: ผู้ถูกเชิญเห็น cancelled read-only item ใน Home Header
+# Expected: แสดง "คำเชิญถูกยกเลิก" ไม่ใช่ "ปฏิเสธ" และไม่มีปุ่ม accept/reject
+# Precondition: admin ต้องยกเลิกคำเชิญที่ส่งไปยัง user "firm" ก่อนรัน test นี้
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 07 - Invitee sees cancelled read-only in Home Header"
+tags:
+  - e4
+  - invitee
+  - home-header
+  - cancelled
+---
+# Login as invitee (firm)
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "firm"
+      PASSWORD: "123456"
+
+# Wait for home page to load
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Take screenshot of home page with Home Header
+- takeScreenshot: "test_07_home_header"
+
+# Verify "คำเชิญถูกยกเลิก" is visible in Home Header (right side)
+- assertVisible:
+    text: "คำเชิญถูกยกเลิก"
+    label: "Verify cancelled invitation alert in Home Header"
+
+# Verify it shows as read-only (no accept/reject buttons)
+- assertNotVisible:
+    text: "ยอมรับ"
+    label: "Verify no accept button for cancelled invitation"
+- assertNotVisible:
+    text: "ปฏิเสธ"
+    label: "Verify no reject button for cancelled invitation"
+
+# Use AI to verify the cancelled item is grey/read-only
+- assertWithAI:
+    assertion: "There is a grey read-only 'คำเชิญถูกยกเลิก' (cancelled invitation) item in the top-right header area, with no action buttons"

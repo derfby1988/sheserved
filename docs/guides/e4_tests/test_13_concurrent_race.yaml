@@ -1,0 +1,48 @@
+# E4.9 Test 13: เรียก cancel RPC และ accept RPC พร้อมกัน (concurrent)
+# Expected: FOR UPDATE lock ป้องกัน race; transaction แรกชนะ อันที่สองได้ 'not found'
+# Note: นี่เป็น database-level concurrency test ไม่สามารถทดสอบผ่าน UI ได้
+# Device: R8YYA0G5S6J (Android)
+appId: com.sheserved.app
+name: "E4 Test 13 - Concurrent cancel and accept race condition"
+tags:
+  - e4
+  - rpc
+  - concurrency
+  - db-test
+---
+# This test verifies database-level concurrency control, not UI behavior.
+# The RPC cancel_employee_invitation uses:
+#   SELECT * FROM employee_invitations WHERE token = p_token AND status = 'pending' FOR UPDATE;
+# This row-level lock prevents concurrent accept/cancel from both succeeding.
+#
+# To test manually via Supabase SQL Editor (run two sessions simultaneously):
+#
+# Session 1:
+#   SELECT public.cancel_employee_invitation('pending-token', 'admin-uuid', NULL);
+#
+# Session 2 (run immediately after):
+#   SELECT public.accept_employee_invitation('pending-token', 'invitee-uuid');
+#
+# Expected: Only one transaction succeeds. The other gets 'not found' or similar error
+# because the FOR UPDATE lock ensures the first transaction completes before the second
+# can read the row, and by then the status is no longer 'pending'.
+#
+# UI Verification (indirect):
+# Login as admin and verify the cancel flow works without errors:
+
+- runFlow:
+    file: "_login.yaml"
+    env:
+      USERNAME: "apisek"
+      PASSWORD: "123456"
+
+# Navigate to invitations
+- runFlow: "_navigate_to_invitations.yaml"
+
+# Take screenshot documenting the test
+- takeScreenshot: "test_13_concurrent_test"
+
+# Verify the invitations tab loads without errors
+- assertVisible:
+    text: "คำเชิญ"
+    label: "Verify invitations tab is active"

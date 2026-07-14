@@ -3067,50 +3067,53 @@ NOTIFY pgrst, 'reload schema';
 
 ## แผนปรับปรุง: การเชิญซ้ำ การให้ออก และกฎการรับกลับพนักงาน (2026-07-13)
 
+> **อัปเดตสถานะ (2026-07-14): Phase A, B, C, E, F implement ครบแล้ว ยกเว้น D (audit trail เพิ่มเติม) และ E4-E5 (แยก cancel/reject, ระบบแจ้งเตือน)**
+
 ### วิเคราะห์สถานะปัจจุบัน
 
 #### A. การเชิญซ้ำหลังปฏิเสธ (Re-invite after rejection)
 
-**สถานะ: ทำได้ในระดับ RPC แต่ UI ยังไม่รองรับ**
+**สถานะ: ✅ Done — RPC + UI รองรับแล้ว**
 
-- RPC `invite_employee` ตรวจสอบ duplicate เฉพาะ `status = 'pending'` เท่านั้น (บรรทัด 167-178 ใน migration `20260706130000`) ดังนั้นเมื่อคำเชิญเดิมถูกปฏิเสธ (`status = 'rejected'`) สามารถสร้างคำเชิญใหม่ได้
-- แต่ UI ใน `employee_list_page.dart` แท็บ "คำเชิญ" แสดง rejected cards เฉยๆ ไม่มีปุ่ม "เชิญใหม่"
-- ไม่มีมุมมองประวัติการเชิญทั้งหมดของ user คนเดียว (history view)
-- `get_available_users_for_invite` ไม่กรอง user ที่เคยถูกปฏิเสธ จึงสามารถเลือกเชิญใหม่ได้ผ่าน dialog ปกติ แต่ admin ไม่เห็นประวัติว่าเคยถูกปฏิเสธ
+- RPC `invite_employee` ตรวจสอบ duplicate เฉพาะ `status = 'pending'` เท่านั้น ดังนั้นเมื่อคำเชิญเดิมถูกปฏิเสธ (`status = 'rejected'`) สามารถสร้างคำเชิญใหม่ได้
+- ✅ UI มีปุ่ม "เชิญใหม่" บน rejected invitation card (`_InvitationCard.onReinvite`)
+- ✅ มี RPC `get_invitation_history_for_user` ดึงประวัติการเชิญทั้งหมด
+- ✅ UI แสดงประวัติใน invite dialog (Consumer ของ `phaseThreeProvider.invitationHistory`)
+- ✅ `get_available_users_for_invite` แก้ไขแล้ว กรองเฉพาะ `is_active = true` และ return `previous_employee_status`, `can_reinvite`, `reinvite_eligible_at`
 
 #### B. การให้พนักงานออก (Employee Termination)
 
-**สถานะ: มีเพียง toggle `is_active` ไม่มี flow การให้ออกที่เป็นทางการ**
+**สถานะ: ✅ Done — migration + RPC + UI ครบ**
 
-- `employees` table มี `is_active BOOLEAN` แต่ไม่มี `termination_date`, `termination_reason`, `terminated_at`
-- UI ใน edit employee dialog มี Switch "Active" เท่านั้น ไม่มีฟิลด์เหตุผล/วันที่ให้ออก
-- ไม่มี RPC เฉพาะสำหรับ termination (ใช้ `updateEmployee` ทั่วไป)
-- ไม่มีการ revoke สิทธิ์ (`employee_roles.is_active`) อัตโนมัติเมื่อให้ออก
+- ✅ `employees` table เพิ่ม columns: `termination_date`, `termination_reason`, `terminated_at`, `terminated_by`, `reinvite_eligible_at`, `can_reinvite`
+- ✅ RPC `terminate_employee` ทำงานครบ: set inactive + revoke `employee_roles` + insert `employee_employment_history`
+- ✅ UI มี dialog "ให้ออก" ใน `_showTerminateEmployeeDialog` พร้อมวันที่, เหตุผล, checkbox "อนุญาตให้รับกลับได้"
+- ✅ UI แสดงพนักงานที่ออกแล้วใน section "พนักงานที่ออกแล้ว" พร้อม badge วันที่ให้ออก
+- ✅ `Employee` model มี fields: `terminationDate`, `terminationReason`, `terminatedAt`, `terminatedBy`, `reinviteEligibleAt`, `canReinvite`
+- ✅ RPC `terminate_employee` revoke `employee_roles.is_active = false` อัตโนมัติเมื่อให้ออก
 
 #### C. การรับกลับพนักงานที่ถูกให้ออก (Rehire / รับกลับเข้าทำงาน)
 
-**สถานะ: ทำไม่ได้ในปัจจุบัน**
+**สถานะ: ✅ Done — ทำได้แล้ว (C1 + C2 + C3 + E1 + E2 + E3 ครบ)**
 
-- RPC `invite_employee` ตรวจสอบ existing employee โดย query:
-  ```sql
-  SELECT COUNT(*) FROM public.employees
-  WHERE profession_id = p_profession_id AND user_id = p_user_id
-  ```
-  ไม่ได้กรอง `is_active = true` จึงเจอ record ของพนักงานที่ถูกให้ออก (is_active = false) ด้วย ทำให้ส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" และไม่สามารถรับกลับได้
-- ไม่มีกฎเกณฑ์เรื่อง cooldown หรือ eligibility
-- คำว่า "รับกลับ" (rehire) ในภาษาธุรกิจหมายถึงการรับพนักงานเดิมกลับเข้าทำงาน ไม่ใช่การ "เชิญกลับ" อย่างเดียว (re-invite เป็นกลไกหนึ่งของ rehire)
+- ✅ RPC `invite_employee` กรอง `is_active = true` แล้ว (C1) ไม่บล็อกพนักงานที่ถูกให้ออก
+- ✅ มีกฎ cooldown: `reinvite_eligible_at` (default 30 วัน) และ `can_reinvite` flag (C2 + C3)
+- ✅ RPC `accept_employee_invitation` รองรับ rehire: reactivate record เดิม + ล้าง termination fields + insert `employee_employment_history` action='rehired' (E2)
+- ✅ เปลี่ยน unique constraint เป็น partial unique index สำหรับ active เท่านั้น (E1)
+- ✅ `get_available_users_for_invite` แสดง terminated employees พร้อมสถานะ eligibility (E3)
+- ✅ UI แสดงสถานะ "สามารถรับกลับได้" / "อยู่ในช่วง cooldown" / "ไม่สามารถรับกลับได้" ใน invite dialog (C4)
 
 ### แผนการปรับปรุง
 
-#### Phase A: แก้ไขการเชิญซ้ำหลังปฏิเสธ (ความสำคัญ: สูง)
+#### Phase A: แก้ไขการเชิญซ้ำหลังปฏิเสธ (ความสำคัญ: สูง) — ✅ Done
 
-**A1. เพิ่มปุ่ม "เชิญใหม่" บน rejected invitation card**
+**A1. เพิ่มปุ่ม "เชิญใหม่" บน rejected invitation card** ✅
 
 ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart`
 
-- ใน `_InvitationCard` เพิ่ม callback `onReinvite`
-- แสดงปุ่มเมื่อ `invitation.isRejected` และ `accessLevel >= 2`
-- เมื่อกด → เปิด invite dialog พร้อมกรอกข้อมูลเดิม (full_name, email/phone, job_title ฯลฯ)
+- ✅ ใน `_InvitationCard` เพิ่ม callback `onReinvite`
+- ✅ แสดงปุ่มเมื่อ `invitation.isRejected` และ `accessLevel >= 2`
+- ✅ เมื่อกด → เปิด invite dialog พร้อมกรอกข้อมูลเดิม (full_name, email/phone, job_title ฯลฯ)
 
 **A1.1 เมื่อผู้ถูกเชิญปฏิเสธ ให้นำการ์ดออกจาก HomePage header sector ขวาทันที**
 
@@ -3194,9 +3197,9 @@ $$;
 - แสดง history section: วันที่เชิญ, สถานะ, เหตุผลปฏิเสธ (ถ้ามี)
 - ช่วยให้ admin ตัดสินใจก่อนเชิญซ้ำ
 
-#### Phase B: การให้พนักงานออก (ความสำคัญ: สูง)
+#### Phase B: การให้พนักงานออก (ความสำคัญ: สูง) — ✅ Done
 
-**B1. เพิ่ม columns สำหรับ termination**
+**B1. เพิ่ม columns สำหรับ termination** ✅
 
 ```sql
 ALTER TABLE public.employees
@@ -3206,7 +3209,7 @@ ALTER TABLE public.employees
   ADD COLUMN IF NOT EXISTS terminated_by UUID REFERENCES public.users(id);
 ```
 
-**B2. เพิ่ม RPC `terminate_employee`**
+**B2. เพิ่ม RPC `terminate_employee`** ✅
 
 ```sql
 CREATE OR REPLACE FUNCTION public.terminate_employee(
@@ -3249,7 +3252,7 @@ END;
 $$;
 ```
 
-**B3. UI: เพิ่ม flow ให้ออกใน EmployeeCard**
+**B3. UI: เพิ่ม flow ให้ออกใน EmployeeCard** ✅
 
 ไฟล์: `lib/features/erp/presentation/pages/employee_list_page.dart`
 
@@ -3258,17 +3261,17 @@ $$;
 - เรียก RPC `terminate_employee`
 - แสดงพนักงานที่ไม่ active ในแท็บ "พนักงาน" แยก section "พนักงานที่ออกแล้ว" หรือกรองด้วย toggle
 
-**B4. อัปเดต Employee model**
+**B4. อัปเดต Employee model** ✅
 
 ไฟล์: `lib/features/erp/data/models/employee.dart`
 
 - เพิ่ม fields: `terminationDate`, `terminationReason`, `terminatedAt`, `terminatedBy`
 
-#### Phase C: กฎการรับกลับพนักงานที่ถูกให้ออก (ความสำคัญ: สูง — เป็นข้อกำหนดเบื้องต้นของการ rehire)
+#### Phase C: กฎการรับกลับพนักงานที่ถูกให้ออก (ความสำคัญ: สูง — เป็นข้อกำหนดเบื้องต้นของการ rehire) — ✅ Done
 
 > **สำคัญ**: การจะเชิญพนักงานที่ถูกให้ออกกลับมาได้ ต้องแก้ไข **3 จุด** พร้อมกัน คือ C1 (กรอง active), E1 (แก้ unique constraint), และ E2 (แก้ accept_employee_invitation ให้ reactivate) ถ้าขาดจุดใดจุดหนึ่งจะทำไม่ได้
 
-**C1. แก้ไข RPC `invite_employee` ให้กรองเฉพาะ active employees**
+**C1. แก้ไข RPC `invite_employee` ให้กรองเฉพาะ active employees** ✅
 
 ```sql
 -- เปลี่ยนจาก:
@@ -3282,7 +3285,7 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
 
 > หากไม่แก้จุดนี้ ระบบจะส่ง error "ผู้ใช้นี้เป็นพนักงานในองค์กรนี้แล้ว" เมื่อพยายามรับพนักงานที่ถูกให้ออกกลับ (is_active = false)
 
-**C2. เพิ่มกฎ cooldown (default เปิด สามารถปิดได้)**
+**C2. เพิ่มกฎ cooldown (default เปิด สามารถปิดได้)** ✅
 
 - เพิ่ม column `reinvite_eligible_at TIMESTAMPTZ` ใน `employees` table
 - เพิ่ม `organization_settings.rehire_cooldown_days INT DEFAULT 30` หรือใช้ constant 30 วันใน RPC (แนะนำให้ config ได้ในอนาคต)
@@ -3300,7 +3303,7 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
   ```
 - Admin สามารถ bypass ได้โดยตั้ง `reinvite_eligible_at = NULL` ผ่าน dialog "แก้ไขพนักงานที่ออก" (ต้องมีสิทธิ์ >= 3)
 
-**C3. เพิ่ม column `can_reinvite BOOLEAN DEFAULT true` แต่เปิดใช้งานโดย default**
+**C3. เพิ่ม column `can_reinvite BOOLEAN DEFAULT true` แต่เปิดใช้งานโดย default** ✅
 
 - ให้ admin กำหนดเป็นรายกรณีว่าพนักงานที่ถูกให้ออกสามารถถูกรับกลับได้หรือไม่
 - ใน dialog ให้ออก มี checkbox "ห้ามรับกลับ" (default ไม่ติ๊ก)
@@ -3317,13 +3320,13 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
   END IF;
   ```
 
-**C4. UI: แสดงสถานะ eligibility ใน invite dialog**
+**C4. UI: แสดงสถานะ eligibility ใน invite dialog** ✅
 
 - เมื่อ admin เลือก user ที่เคยเป็นพนักงานและถูกให้ออก ให้แสดง:
   - วันที่ให้ออก, เหตุผล
   - สถานะ: "สามารถรับกลับได้" หรือ "อยู่ในช่วง cooldown (อีก N วัน)" หรือ "ถูกห้ามรับกลับ"
 
-#### Phase D: ประวัติการเชิญและการให้ออก (ความสำคัญ: ปานกลาง)
+#### Phase D: ประวัติการเชิญและการให้ออก (ความสำคัญ: ปานกลาง) — ⏳ Partial (D1 done via employment_history, D2 previous_invitation_id ยังไม่ทำ)
 
 **D1. รวมประวัติใน EmployeeCard**
 
@@ -3373,7 +3376,7 @@ WHERE profession_id = p_profession_id AND user_id = p_user_id AND is_active = tr
 >
 > ถ้าขาดจุดใดจุดหนึ่ง จะรับกลับไม่ได้
 
-#### E1. แก้ไข Unique Constraint เพื่อรองรับการรับกลับ/เชิญซ้ำ
+#### E1. แก้ไข Unique Constraint เพื่อรองรับการรับกลับ/เชิญซ้ำ ✅
 
 **ปัญหา**: index `idx_employees_unique_user_profession` เป็น `UNIQUE (profession_id, user_id)` ไม่ได้กรอง `is_active` แปลว่า user หนึ่งคนจะมี employee record ได้แค่ครั้งเดียวต่อ profession หากต้องการ rehire แบบเก็บประวัติไว้จะติด unique constraint
 
@@ -3416,7 +3419,7 @@ CREATE INDEX IF NOT EXISTS idx_employee_employment_history_user ON public.employ
 
 **ข้อแนะนำ**: ใช้ทั้งสองแบบร่วมกัน — เปลี่ยน partial unique index + สร้าง `employee_employment_history` table
 
-#### E2. อัปเดต `accept_employee_invitation` ให้รองรับ re-acceptance
+#### E2. อัปเดต `accept_employee_invitation` ให้รองรับ re-acceptance ✅
 
 `accept_employee_invitation` ปัจจุบันตรวจ existing employee แล้ว block หากเจอ record แต่ไม่ได้กรอง `is_active` ต้องแก้ให้:
 
@@ -3452,7 +3455,7 @@ ELSE
 END IF;
 ```
 
-#### E3. อัปเดต `get_available_users_for_invite` ให้แสดง terminated ด้วย
+#### E3. อัปเดต `get_available_users_for_invite` ให้แสดง terminated ด้วย ✅
 
 ปัจจุบัน RPC กรอง:
 ```sql
@@ -3484,16 +3487,324 @@ WHERE (p_search IS NULL OR ...)
 
 UI แสดงสถานะ "เคยเป็นพนักงาน" พร้อมวันที่ให้ออก/เหตุผล
 
-#### E4. แยกการยกเลิกของ admin ออกจากการปฏิเสธของผู้ถูกเชิญ
+#### E4. แยกการยกเลิกของ admin ออกจากการปฏิเสธของผู้ถูกเชิญ — ❌ Not done
 
-ปัจจุบัน `_cancelInvitation` เรียก `rejectEmployeeInvitation` ทำให้ `status = 'rejected'` ไม่ได้บันทึกว่าใครยกเลิก
+**ปัญหาปัจจุบัน:**
 
-**แนวทาง**:
-- เพิ่ม `cancelled_at`, `cancelled_by`, `cancellation_reason` หรือ
-- ใช้ `status = 'cancelled'` แยกจาก `'rejected'`
-- `get_invitation_history_for_user` return ทั้งสองสถานะ
+ปัจจุบันมี 2 การกระทำที่ใช้ RPC เดียวกัน (`reject_employee_invitation`) แต่ความหมายต่างกันโดยสิ้นเชิง:
 
-#### E5. ระบบแจ้งเตือน
+1. **ผู้ถูกเชิญปฏิเสธ** — ผู้ถูกเชิญกด "ปฏิเสธ" ใน invitation dialog บน HomePage → `home_page.dart` เรียก `rejectEmployeeInvitation(token, '', rejectionReason: reason)` → RPC set `status = 'rejected'`
+2. **Admin ยกเลิก** — admin กดปุ่ม X บน pending invitation card ใน `employee_list_page.dart` → `_cancelInvitation()` เรียก `rejectEmployeeInvitation(invite.token, widget.professionId)` → RPC set `status = 'rejected'` เหมือนกัน
+
+ผลลัพธ์: ไม่สามารถแยกได้ว่า `status = 'rejected'` เกิดจากผู้ถูกเชิญปฏิเสธ หรือ admin เป็นคนยกเลิก ทำให้:
+- ประวัติการเชิญ (`get_invitation_history_for_user`) แสดงสถานะ "ปฏิเสธ" ทั้ง 2 กรณี ไม่สื่อความหมาย
+- Admin ไม่สามารถกรองดูว่าคำเชิญไหนที่ตนเองยกเลิก vs ผู้ถูกเชิญปฏิเสธ
+- ไม่มี audit trail ว่า admin คนไหนยกเลิก เมื่อไร เหตุผลอะไร
+- สถิติการปฏิเสธ (rejection rate) บิดเบือน เพราะนับรวมการยกเลิกของ admin
+
+**สถานะปัจจุบันของไฟล์ที่เกี่ยวข้อง:**
+
+| ไฟล์ | บรรทัด | ปัญหา |
+|------|--------|-------|
+| `supabase/migrations/20260713140000_employee_invitation_rejection_reason.sql` | 14-51 | RPC `reject_employee_invitation` รับเพียง `p_token` + `p_rejection_reason` ไม่มี parameter สำหรับ admin cancellation |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | 257-271 | `_cancelInvitation()` เรียก `rejectEmployeeInvitation` โดยไม่ส่ง `rejectionReason` |
+| `lib/features/home/presentation/pages/home_page.dart` | 2361-2367 | ผู้ถูกเชิญปฏิเสธก็เรียก `rejectEmployeeInvitation` เช่นกัน |
+| `lib/features/erp/data/models/employee_invitation.dart` | 129-133 | มีเพียง `isRejected` ไม่มี `isCancelled` |
+| `lib/features/erp/data/models/employee_invitation.dart` | 138-155 | `statusLabelThai` ไม่มี case `'cancelled'` |
+
+**Flow ปัจจุบัน (รวม admin และ invitee ใน RPC เดียวกัน):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Flow A: ผู้ถูกเชิญปฏิเสธ (Invitee Reject)                       │
+│                                                                 │
+│  HomePage → invitation dialog → กด "ปฏิเสธ"                     │
+│     ↓                                                           │
+│  home_page.dart: rejectEmployeeInvitation(token, reason)        │
+│     ↓                                                           │
+│  RPC reject_employee_invitation(p_token, p_rejection_reason)   │
+│     ↓                                                           │
+│  UPDATE employee_invitations SET status = 'rejected'            │
+│    rejection_reason = p_rejection_reason                        │
+│    rejected_at = now()                                          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Flow B: Admin ยกเลิก (Admin Cancel) — ใช้ RPC เดียวกัน!        │
+│                                                                 │
+│  EmployeeListPage → แท็บ "คำเชิญ" → กดปุ่ม X บน pending card    │
+│     ↓                                                           │
+│  employee_list_page.dart: _cancelInvitation(context, invite)    │
+│     ↓                                                           │
+│  rejectEmployeeInvitation(invite.token, professionId)           │
+│     ↓                                                           │
+│  RPC reject_employee_invitation(p_token) — ไม่ส่ง reason        │
+│     ↓                                                           │
+│  UPDATE employee_invitations SET status = 'rejected'            │
+│    rejection_reason = NULL                                      │
+│    rejected_at = now()                                          │
+│                                                                 │
+│  ⚠️ ไม่รู้ว่าเป็น admin ที่ยกเลิก ไม่มี cancelled_by               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**แนวทางแก้ไข:**
+
+แยกเป็น 2 status และ 2 RPC ชัดเจน:
+
+**E4.1 เพิ่ม columns สำหรับ admin cancellation + แก้ CHECK constraint**
+
+```sql
+-- เพิ่ม columns สำหรับ admin cancellation
+ALTER TABLE public.employee_invitations
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_by UUID REFERENCES public.users(id),
+  ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+
+-- ⚠️ สำคัญ: แก้ CHECK constraint เพื่อรองรับ status 'cancelled'
+-- constraint เดิม: CHECK (status IN ('pending','accepted','rejected','expired'))
+-- ต้องหาชื่อ constraint ก่อน (PostgreSQL สร้างชื่ออัตโนมัติ)
+ALTER TABLE public.employee_invitations
+  DROP CONSTRAINT IF EXISTS employee_invitations_status_check;
+ALTER TABLE public.employee_invitations
+  ADD CONSTRAINT employee_invitations_status_check
+  CHECK (status IN ('pending','accepted','rejected','expired','cancelled'));
+```
+
+**E4.2 เพิ่ม RPC `cancel_employee_invitation` (สำหรับ admin)**
+
+> **สถาปัตยกรรม identity (B-lite):** ส่ง `p_cancelled_by` จาก Flutter ผ่าน `AuthService.instance.currentUser?.id` เหมือน existing RPCs (`p_invited_by`, `p_terminated_by`) แต่ RPC **set session variable เอง**ก่อนเรียก permission check ทำให้ `app.can_manage_employees()` ทำงานได้จริงและไม่ fail-open
+>
+> ประโยชน์:
+> - สอดคล้องกับ existing pattern (ส่ง UUID เป็น parameter)
+> - แก้ fail-open gap: `set_config('app.user_id', p_cancelled_by, true)` ก่อน permission check
+> - ไม่ต้องแก้ Flutter infrastructure หรือ RPC อื่นในตอนนี้
+> - พร้อม migrate RPC อื่น ๆ ในอนาคต
+
+```sql
+CREATE OR REPLACE FUNCTION public.cancel_employee_invitation(
+  p_token TEXT,
+  p_cancelled_by UUID,
+  p_cancellation_reason TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_invitation public.employee_invitations%ROWTYPE;
+BEGIN
+  -- ตรวจ parameter พื้นฐาน
+  IF p_cancelled_by IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ไม่พบผู้ใช้ใน session');
+  END IF;
+
+  SELECT * INTO v_invitation
+  FROM public.employee_invitations
+  WHERE token = p_token AND status = 'pending'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'คำเชิญไม่ถูกต้องหรือดำเนินการไปแล้ว');
+  END IF;
+
+  -- set session variable เพื่อให้ app.can_manage_employees() ทำงานได้จริง
+  -- (แก้ backward-compatible fail-open ของ app.can_manage_employees)
+  PERFORM set_config('app.user_id', p_cancelled_by::TEXT, true);
+
+  -- ตรวจสิทธิ์ใน database ไม่พึ่ง accessLevel จาก UI
+  IF NOT app.can_manage_employees(v_invitation.profession_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ไม่มีสิทธิ์ยกเลิกคำเชิญ');
+  END IF;
+
+  UPDATE public.employee_invitations
+  SET status = 'cancelled',
+      cancelled_at = now(),
+      cancelled_by = p_cancelled_by,
+      cancellation_reason = p_cancellation_reason,
+      updated_at = now()
+  WHERE id = v_invitation.id;
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+```
+
+**E4.3 แก้ไข Flutter code ให้เรียก RPC ที่ถูกต้อง**
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|------|---------------|
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม `cancelEmployeeInvitation(token, cancelledBy, reason)` เรียก RPC `cancel_employee_invitation`; ส่ง `cancelledBy` จาก `AuthService.instance.currentUser?.id` เหมือน `p_invited_by` ใน `inviteEmployee` |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม `cancelEmployeeInvitation()` แยกจาก `rejectEmployeeInvitation()` และตรวจ state หลัง RPC |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | `_cancelInvitation()` เปลี่ยนจาก `rejectEmployeeInvitation` → `cancelEmployeeInvitation`; ใช้สิทธิ์จาก provider/access state |
+| `lib/features/home/presentation/pages/home_page.dart` | ยังใช้ `rejectEmployeeInvitation` เหมือนเดิม (ผู้ถูกเชิญปฏิเสธ); identity ใช้ `AuthService`/`ServiceLocator` ตาม guideline |
+| `lib/features/erp/data/models/employee_invitation.dart` | เพิ่ม `isCancelled`, `cancelledAt`, `cancelledBy`, `cancellationReason` + case `'cancelled'` ใน `statusLabelThai` |
+
+**Flow หลังแก้ (แยกชัดเจน):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Flow A: ผู้ถูกเชิญปฏิเสธ (Invitee Reject) — ไม่เปลี่ยนแปลง      │
+│                                                                 │
+│  HomePage → invitation dialog → กด "ปฏิเสธ" + กรอกเหตุผล        │
+│     ↓                                                           │
+│  home_page.dart: rejectEmployeeInvitation(token, reason)        │
+│     ↓                                                           │
+│  RPC reject_employee_invitation(p_token, p_rejection_reason)   │
+│     ↓                                                           │
+│  UPDATE employee_invitations SET status = 'rejected'            │
+│    rejection_reason = p_rejection_reason                        │
+│    rejected_at = now()                                          │
+│                                                                 │
+│  → status = 'rejected' (ผู้ถูกเชิญเป็นคนปฏิเสธ)                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Flow B: Admin ยกเลิก (Admin Cancel) — ใช้ RPC ใหม่             │
+│                                                                 │
+│  EmployeeListPage → แท็บ "คำเชิญ" → กดปุ่ม X บน pending card    │
+│     ↓                                                           │
+│  employee_list_page.dart: _cancelInvitation(context, invite)    │
+│     ↓                                                           │
+│  cancelEmployeeInvitation(token, currentUserId, reason)         │
+│     ↓                                                           │
+│  RPC cancel_employee_invitation(p_token, p_cancelled_by, p_reason)│
+│  1. set_config('app.user_id', p_cancelled_by)                  │
+│  2. ตรวจ app.can_manage_employees() ใน RPC                     │
+│     ↓                                                           │
+│  UPDATE employee_invitations SET status = 'cancelled'           │
+│    cancelled_at = now()                                         │
+│    cancelled_by = p_cancelled_by                                │
+│    cancellation_reason = p_reason                               │
+│                                                                 │
+│  → status = 'cancelled' (admin เป็นคนยกเลิก) พร้อม audit trail │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**E4.4 อัปเดต `get_invitation_history_for_user` ให้ return ข้อมูล cancellation**
+
+```sql
+-- เพิ่มใน jsonb_build_object ของ RPC:
+'cancelled_at', ei.cancelled_at,
+'cancelled_by_name', COALESCE(
+  NULLIF(TRIM(cu.first_name || ' ' || cu.last_name), ''), cu.username, cu.email
+),
+'cancellation_reason', ei.cancellation_reason
+-- เพิ่ม LEFT JOIN:
+LEFT JOIN public.users cu ON cu.id = ei.cancelled_by
+```
+
+**E4.5 อัปเดต UI ใน `employee_list_page.dart`**
+
+- เพิ่ม section สำหรับ "ยกเลิกโดย admin" ในแท็บ "คำเชิญ"
+- `_InvitationCard` แสดงสถานะ "ยกเลิกโดย admin" พร้อมชื่อ admin และเหตุผล
+- กรองคำเชิญ: pending, rejected (โดยผู้ถูกเชิญ), cancelled (โดย admin), expired
+- ปุ่ม "เชิญใหม่" แสดงเฉพาะ `isRejected`; cancelled card ไม่มีปุ่ม แต่ admin ยังเปิด invite dialog จากปุ่มเชิญพนักงานและเลือก user เดิม/ใหม่ได้เอง
+- Home Header ด้านขวาแสดง cancelled invitation แบบ read-only เมื่อระบบโหลด invitation history/notification สำหรับ user นั้น; ห้ามแสดงปุ่ม accept/reject และห้ามเปิด flow ยอมรับคำเชิญ
+
+**E4.6 อัปเดต `EmployeeInvitation` model**
+
+```dart
+// เพิ่ม fields
+final DateTime? cancelledAt;
+final String? cancelledBy;
+final String? cancellationReason;
+
+// เพิ่ม getters
+bool get isCancelled => status == 'cancelled';
+
+// เพิ่มใน statusLabelThai
+case 'cancelled':
+  return 'ยกเลิกโดย admin';
+```
+
+**E4.7 ไฟล์ที่ต้องแก้ไขสรุป**
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|------|---------------|
+| `supabase/migrations/<new_timestamp>_employee_invitation_admin_cancellation.sql` | migration ใหม่สำหรับ columns + CHECK constraint + RPC; ห้ามแก้ migration ที่ apply แล้ว |
+| `supabase/migrations/20260713160000_reinvite_and_termination.sql` | ใช้อ้างอิง logic เดิมเท่านั้น ไม่แก้ย้อนหลัง |
+| `lib/features/erp/data/models/employee_invitation.dart` | เพิ่ม `isCancelled`, `cancelledAt`, `cancelledBy`, `cancellationReason` + `statusLabelThai` |
+| `lib/features/erp/data/repositories/phase_three_repository.dart` | เพิ่ม `cancelEmployeeInvitation()` |
+| `lib/features/erp/presentation/providers/phase_three_provider.dart` | เพิ่ม `cancelEmployeeInvitation()` |
+| `lib/features/erp/presentation/pages/employee_list_page.dart` | `_cancelInvitation` เปลี่ยนไปเรียก `cancelEmployeeInvitation` + แสดง cancelled cards |
+
+**E4.8 ข้อควรระวังเพิ่มเติม**
+
+1. **Permission check ทั้ง UI และ RPC (B-lite)**: `cancelled` ใช้เฉพาะ admin/owner ที่มีสิทธิ์ invitation (`accessLevel >= 2`) เท่านั้น; RPC รับ `p_cancelled_by` จาก Flutter (เหมือน `p_invited_by`, `p_terminated_by`) แล้ว `set_config('app.user_id', p_cancelled_by, true)` ก่อนเรียก `app.can_manage_employees()` — แก้ fail-open gap โดยไม่ต้องแก้ Flutter infrastructure; identity มาจาก `AuthService.instance.currentUser?.id` ตาม `auth_data_guidelines.md` ไม่ใช้ Supabase Auth โดยตรง
+2. **UX ฝั่งผู้ถูกเชิญ**: เมื่อ admin ยกเลิกคำเชิญ ผู้ถูกเชิญไม่ควรเห็น status `'cancelled'` แสดงเป็น `'rejected'` ต่อหน้า ควรแสดงว่า "คำเชิญถูกยกเลิก" แทน เพื่อไม่ให้สับสนว่าตนเองปฏิเสธ
+3. **`get_invitation_history_for_user`**: ต้อง `LEFT JOIN public.users` 2 ครั้งแยกกัน — ครั้งที่ 1 สำหรับ `invited_by_name` (alias `iu`) และครั้งที่ 2 สำหรับ `cancelled_by_name` (alias `cu`) เพื่อให้ได้ชื่อครบทั้งคนเชิญและคนยกเลิก
+4. **Home Header ต้องมี read-only cancelled feed แยกจาก pending**: `get_pending_employee_invitations_for_user` ยังคงกรอง `status = 'pending'` สำหรับ action ที่ตอบรับ/ปฏิเสธ; หากต้องการให้ cancelled แสดงทางขวา Home Header ต้องเพิ่ม RPC/query ประวัติหรือ notification ที่คืน `status = 'cancelled'` โดย UI ต้องเป็น read-only และไม่ปะปนกับ pending action list
+5. **⚠️ มี CHECK constraint ที่ต้องแก้**: `employee_invitations.status` มี `CHECK (status IN ('pending','accepted','rejected','expired'))` ใน migration `20260706130000` บรรทัด 48 จึงต้อง `DROP CONSTRAINT` และ `ADD CONSTRAINT` เพิ่ม `'cancelled'` ก่อน ไม่เช่นนั้น `UPDATE SET status = 'cancelled'` จะ fail ที่ database level
+6. **`invite_employee` duplicate check**: ปัจจุบันตรวจเฉพาะ `status = 'pending'` เท่านั้น ดังนั้นคำเชิญที่ถูก cancel แล้วสามารถเชิญใหม่ได้ทันที (ไม่ติด duplicate) — ถือว่าถูกต้องเพราะ admin ที่ยกเลิกเองอาจต้องการเชิญใหม่ในภายหลัง
+
+**E4.9 Test Plan**
+
+1. Admin ยกเลิก pending invitation → status = 'cancelled', `cancelled_by` มีค่า, `cancelled_at` มีค่า
+2. ผู้ถูกเชิญปฏิเสธ → status = 'rejected' (ไม่กระทบกรณี admin)
+3. ดูประวัติ → แยกชัดเจน: "ปฏิเสธ" vs "ยกเลิกโดย admin"
+4. Admin ยกเลิก → ไม่แสดงปุ่ม "เชิญใหม่" (เพราะ admin เป็นคนยกเลิกเอง)
+5. ผู้ถูกเชิญปฏิเสธ → แสดงปุ่ม "เชิญใหม่" (เพราะ admin อาจต้องการเชิญใหม่)
+6. กรองคำเชิญใน UI: pending / rejected / cancelled / expired แยกกัน
+7. ผู้ถูกเชิญเห็น cancelled read-only item ใน Home Header → แสดง "คำเชิญถูกยกเลิก" ไม่ใช่ "ปฏิเสธ" และไม่มีปุ่ม accept/reject
+8. `get_pending_employee_invitations_for_user` → ไม่ return cancelled ใน action list; cancelled read-only item ต้องมาจาก history/notification feed แยก
+9. Admin ยกเลิกคำเชิญที่ส่งไปยัง existing user → pending action card หายไป และ feed แยกต้องเห็น read-only "คำเชิญถูกยกเลิก"
+10. เรียก cancel RPC โดยส่ง `p_cancelled_by = NULL` → RPC ต้อง reject
+11. เรียก cancel RPC ด้วย user ที่ไม่มี HR permission → RPC ต้อง reject แม้ UI จะส่งคำขอได้ (เพราะ `set_config` + `can_manage_employees` ตรวจใน database)
+12. ตรวจว่า Flutter ไม่ใช้ `Supabase.instance.client.auth.currentUser` หรือ `_client.auth.currentUser` เป็น identity; ใช้ `AuthService.instance.currentUser?.id` เท่านั้น
+13. เรียก cancel RPC และ accept RPC พร้อมกัน (concurrent) → `FOR UPDATE` lock ป้องกัน race; transaction แรกชนะ อันที่สองได้ 'not found'
+14. `get_cancelled_invitations_for_user` ต้อง return เฉพาะ `status = 'cancelled'` และ `user_id = p_user_id` ไม่ปะปนกับ pending/rejected
+
+**E4.10 ประเมินผลกระทบต่อส่วนอื่นในแพลตฟอร์มหลังทำ E4 เสร็จ**
+
+**ลำดับการ deploy ที่ปลอดภัย:**
+
+1. สร้าง migration ใหม่ (ห้ามแก้ไฟล์ migration ที่เคย apply แล้ว) เพิ่ม columns และแก้ status CHECK constraint
+2. สร้าง RPC `cancel_employee_invitation` แบบ B-lite: รับ `p_cancelled_by` จาก Flutter, `set_config('app.user_id', ...)` ก่อนเรียก `app.can_manage_employees()`, ตรวจ permission ใน database
+3. อัปเดต repository/provider/UI ฝั่ง admin ให้เรียก RPC ใหม่
+4. เพิ่ม RPC `get_cancelled_invitations_for_user` และ cancelled read-only feed ใน Home Header โดยแยก query/state จาก pending action list
+5. อัปเดต model/history RPC และรัน regression tests ก่อนเปิดใช้งานจริง
+
+| ส่วนที่กระทบ | ระดับ | รายละเอียด | การจัดการ |
+|------------|------|-----------|----------|
+| **⚠️ CHECK constraint (DB)** | **สูง** | `employee_invitations.status` มี `CHECK (status IN ('pending','accepted','rejected','expired'))` ใน migration `20260706130000` บรรทัด 48 หากไม่แก้ `UPDATE SET status = 'cancelled'` จะ **fail ทันที** | **ต้องแก้** — `DROP CONSTRAINT` + `ADD CONSTRAINT` เพิ่ม `'cancelled'` (ใน E4.1) |
+| **`getEmployeeInvitations` query** | ปานกลาง | Repository เรียก `.from('employee_invitations').select()` โดยไม่กรอง status จึง return คำเชิญที่ `cancelled` ด้วย แต่ UI กรองเฉพาะ `isPending` + `isRejected` ทำให้ cancelled cards หายไปจากหน้าจอ | **ต้องแก้** — เพิ่ม `cancelled` list ใน `employee_list_page.dart` |
+| **UI filtering ใน EmployeeListPage** | ปานกลาง | บรรทัด 210-212 กรองเฉพาะ `isPending` และ `isRejected` ไม่มี `isCancelled` คำเชิญที่ cancelled จะถูกซ่อนโดยไม่ตั้งใจ | **ต้องแก้** — เพิ่ม `final cancelled = state.employeeInvitations.where((i) => i.isCancelled).toList()` |
+| **RLS policies + fail-open gap** | **สูง** | RPC เป็น `SECURITY DEFINER` จึง bypass RLS; `app.can_manage_employees()` มี backward-compatible fail-open เมื่อ `app.user_id` ไม่ถูกตั้ง; Flutter ไม่ได้ตั้ง `app.user_id` ในปัจจุบัน | **ต้องป้องกันใน RPC (B-lite)** — RPC รับ `p_cancelled_by` แล้ว `set_config('app.user_id', p_cancelled_by, true)` ก่อน permission check; ห้ามเรียก `app.can_manage_employees()` โดยไม่ set session ก่อน |
+| **Trigger `set_invitation_updated_at`** | ไม่กระทบ | trigger บน `BEFORE UPDATE` เพียง set `updated_at = now()` ทำงานเหมือนเดิมไม่สนใจ status | ไม่ต้องแก้ |
+| **HomePage Header (ผู้ถูกเชิญ)** | **สูง** | ต้องคง pending action list แยกจาก cancelled read-only item; cancelled ต้องแสดงด้านขวาโดยไม่มี accept/reject; ต้องมี RPC ใหม่ `get_cancelled_invitations_for_user` เพื่อ feed cancelled แยกจาก pending | **ต้องออกแบบ/แก้** — เพิ่ม RPC `get_cancelled_invitations_for_user(p_user_id)` และ feed ใน HomeHeader; identity ใช้ `AuthService`/`ServiceLocator` ตาม guideline |
+| **HomePage `_onEmployeeInvitationTapped`** | ปานกลาง | handler ปัจจุบันรองรับ token ของ pending action; cancelled item ต้องใช้ handler แยกหรือ ignore tap เพื่อคง read-only | ต้องแก้ — แยก callback/read-only rendering |
+| **EmployeeListPage แท็บ "คำเชิญ"** | ปานกลาง | ปัจจุบันแบ่งเป็น pending + rejected ต้องเพิ่ม cancelled section และอัปเดต filtering | ต้องแก้ — เพิ่ม `cancelled` list และ UI สำหรับแสดง |
+| **`_InvitationCard` widget** | ปานกลาง | ต้องแสดงสถานะ "ยกเลิกโดย admin" พร้อมชื่อ admin และเหตุผล และซ่อนปุ่ม "เชิญใหม่" | ต้องแก้ — เพิ่ม `isCancelled` check |
+| **`get_invitation_history_for_user` RPC** | ปานกลาง | ต้อง return `cancelled_at`, `cancelled_by_name`, `cancellation_reason` และ `LEFT JOIN` เพิ่ม | ต้องแก้ — ตาม E4.4 |
+| **`EmployeeInvitation` model** | ต่ำ | เพิ่ม fields + `isCancelled` getter + `statusLabelThai` | ต้องแก้ — ตาม E4.6 |
+| **`phase_three_repository.dart`** | ต่ำ | เพิ่ม `cancelEmployeeInvitation()` method | ต้องแก้ — ตาม E4.3 |
+| **`phase_three_provider.dart`** | ต่ำ | เพิ่ม `cancelEmployeeInvitation()` แยกจาก `rejectEmployeeInvitation()` | ต้องแก้ — ตาม E4.3 |
+| **`rejectEmployeeInvitation` RPC** | ไม่กระทบ | ยังใช้สำหรับผู้ถูกเชิญปฏิเสธเหมือนเดิม ไม่ต้องแก้ | ไม่ต้องแก้ |
+| **`invite_employee` RPC** | ไม่กระทบ | duplicate check ตรวจเฉพาะ `status = 'pending'` อยู่แล้ว คำเชิญที่ cancelled สามารถเชิญใหม่ได้ | ไม่ต้องแก้ — ถือว่าถูกต้อง |
+| **`accept_employee_invitation` RPC** | ไม่กระทบ | ตรวจ `status = 'pending'` อยู่แล้ว คำเชิญที่ cancelled จะไม่สามารถ accept ได้ | ไม่ต้องแก้ |
+| **`get_available_users_for_invite` RPC** | ไม่กระทบ | ไม่ได้ query `employee_invitations` จึงไม่กระทบ | ไม่ต้องแก้ |
+| **Owner onboarding tracking** | ไม่กระทบ | `owner_onboarding_tracking.dart` ไม่ได้อ้างอิง `employee_invitations.status` | ไม่ต้องแก้ |
+| **Registration applications** | ไม่กระทบ | ระบบ application ใช้ `registration_applications.status` แยกจาก `employee_invitations` | ไม่ต้องแก้ |
+| **ERP Dashboard access** | ไม่กระทบ | `ErpAccessService` ตรวจ `employee_roles` ไม่เกี่ยวกับ invitation status; การ cancel invitation ไม่ revoke role ที่มีอยู่ | ไม่ต้องแก้ แต่ต้องมี regression test ว่า role เดิมไม่ถูกแก้ |
+| **Notification system (E5)** | เชื่อมโยง | เมื่อทำ E4 เสร็จ ควรทำ E5 ต่อเพื่อส่ง notification ให้ผู้ถูกเชิญทราบว่าคำเชิญถูกยกเลิก | ทำ E5 ภายหลัง |
+| **Audit trail / reporting** | เชื่อมโยง | หลัง E4 สามารถแยก rejection rate (ผู้ถูกเชิญปฏิเสธ) จาก cancellation rate (admin ยกเลิก) ได้ | ประโยชน์รองรับ — ไม่ต้องแก้เพิ่ม |
+
+**สรุปผลกระทบ**: กระทบ **9 จุด** (เพิ่มจากเดิม 8 เป็น 9) เพราะเพิ่ม `get_cancelled_invitations_for_user` RPC และแก้ fail-open gap:
+1. **⚠️ CHECK constraint** — ต้องแก้ก่อนอย่างอื่น ไม่เช่นนั้น RPC จะ fail
+2. **`getEmployeeInvitations` query** — return cancelled ด้วย แต่ UI ยังไม่กรอง
+3. **UI filtering** — ต้องเพิ่ม `isCancelled` list
+4. **RLS + fail-open gap** — RPC ต้อง `set_config` ก่อน permission check (B-lite)
+5. **`_InvitationCard`** — ต้องแสดง cancelled status
+6. **`get_invitation_history_for_user` RPC** — ต้อง return cancellation info
+7. **`EmployeeInvitation` model** — ต้องเพิ่ม fields + getter
+8. **Repository + Provider** — ต้องเพิ่ม `cancelEmployeeInvitation()`
+9. **Home Header feed + `get_cancelled_invitations_for_user` RPC** — เพิ่ม cancelled read-only item แยกจาก pending action list
+
+ไม่กระทบระบบอื่น (ERP Dashboard, registration, owner onboarding, trigger) แต่ต้องเพิ่ม regression tests และต้องไม่ใช้ `Supabase.instance.client.auth.currentUser` หรือ `_client.auth.currentUser`; Flutter identity ต้องมาจาก `AuthService`/`ServiceLocator` ตาม `auth_data_guidelines.md`
+
+#### E5. ระบบแจ้งเตือน — ❌ Not done
 
 - เชิญซ้ำหลังปฏิเสธ: ส่ง notification ไปยังผู้ถูกเชิญ (HomeHeader alert ทำงานอยู่แล้ว)
 - ให้ออก: ส่ง notification/email ให้พนักงาน
@@ -3545,7 +3856,7 @@ owner ควรมี access_level = 3 โดย default
 
 > **ปัญหาที่พบ**: แผนปัจจุบันไม่ได้กำหนดให้ผู้ที่ยอมรับคำเชิญได้รับ `employee_roles` ทั้งที่ `ErpAccessService.canAccess()` ใช้ `employee_roles.is_active = true` เป็น source of truth สำหรับการเข้า ERP Dashboard
 
-#### F1. สาเหตุ
+#### F1. สาเหตุ — ✅ Fixed (A1.3)
 
 - `accept_employee_invitation` RPC สร้าง record ใน `employees` เท่านั้น ไม่ได้สร้าง `employee_roles`
 - `ErpAccessService` (`lib/features/erp/data/services/erp_access_service.dart`) ตรวจสอบ:
@@ -3560,9 +3871,9 @@ owner ควรมี access_level = 3 โดย default
   ```
 - ดังนั้นผู้ถูกเชิญที่กด "ยอมรับ" จะกลายเป็นพนักงานใน `employees` แต่ไม่สามารถเข้า ERP Dashboard ได้
 
-#### F2. วิธีแก้ไข
+#### F2. วิธีแก้ไข — ✅ Done (F2.1 + F2.2 + F2.3)
 
-**F2.1 ให้ admin เลือก role ตอนส่งคำเชิญ (แนะนำ) แทนการ hardcode `staff`**
+**F2.1 ให้ admin เลือก role ตอนส่งคำเชิญ (แนะนำ) แทนการ hardcode `staff`** ✅
 
 การ hardcode `staff` เป็น default ไม่ยืดหยุ่น เพราะ admin อาจเชิญ manager หรือ accountant โดยตรง
 
@@ -3616,7 +3927,7 @@ END;
 
 > **สำคัญ**: `ON CONFLICT (profession_id, user_id, role_id, branch_id)` ไม่ทำงานเมื่อ `branch_id` เป็น NULL เพราะ PostgreSQL ถือว่า NULL != NULL ใน unique constraint ต้องใช้ `IF NOT EXISTS` แทน
 
-**F2.2 กำหนด default permissions สำหรับ role `staff`**
+**F2.2 กำหนด default permissions สำหรับ role `staff`** ✅
 
 เดิมเพาะ `hr` module เท่านั้น ไม่เพียงพอ พนักงานต้องเข้าถึง module อื่นด้วย (เช่น `pos`, `inventory`)
 
@@ -3637,7 +3948,7 @@ WHERE or2.role_name = 'staff'
 
 > Admin สามารถปรับ access_level ของแต่ละ module ภายหลังได้ผ่าน ERP settings
 
-**F2.3 แก้ไข `ensure_owner_as_employee` ให้ assign role owner ถ้ายังไม่มี**
+**F2.3 แก้ไข `ensure_owner_as_employee` ให้ assign role owner ถ้ายังไม่มี** ✅
 
 ปัจจุบัน `ensure_owner_as_employee` สร้าง employee record แต่ไม่ได้ตรวจสอบ/สร้าง owner role อาจทำให้เจ้าขององค์กรเข้า ERP ไม่ได้หาก trigger ไม่ทำงาน
 
@@ -3658,7 +3969,7 @@ IF NOT EXISTS (
 END IF;
 ```
 
-#### F3. UI แสดง ERP card บน Home Page
+#### F3. UI แสดง ERP card บน Home Page ✅
 
 ไฟล์: `lib/features/home/presentation/pages/home_page.dart`
 
@@ -3777,7 +4088,7 @@ Future<void> _checkErpAccess() async {
 9. ทดสอบกรณี `branch_id` เป็น NULL → insert ไม่ duplicate
 10. ทดสอบกรณี `organization_roles` ไม่มี role ที่ระบุ → fallback สู่ `staff`
 
-#### F9. บังคับ Logout หลังยอมรับคำเชิญ (Implemented)
+#### F9. บังคับ Logout หลังยอมรับคำเชิญ ✅ Done
 
 **ปัญหา**: หลัง user ยอมรับคำเชิญ ERP card ไม่แสดงอัตโนมัติเพราะ `ErpAccessService.canAccess()` ถูกเรียกครั้งเดียวตอน `initState` ของ `HomePage` และ cache ผลลัพธ์ใน `_canAccessErp` ทำให้ต้อง logout แล้ว login ใหม่ถึงจะเห็น ERP card
 
