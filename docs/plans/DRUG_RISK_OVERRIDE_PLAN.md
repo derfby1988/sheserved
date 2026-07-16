@@ -4,6 +4,8 @@
 > **สถานะ:** Draft v3.0
 > **วันที่:** 2026-07-09
 > **อ้างอิง:** [route_security_implementation_plan.md](../guides/route_security_implementation_plan.md), [CHAT_CONSULTATION_IMPROVEMENT_PLAN.md](CHAT_CONSULTATION_IMPROVEMENT_PLAN.md), [Delivery_PLAN.md](Delivery_PLAN.md), [ERP_CORE_ARCHITECTURE.md](../ERP/ERP_CORE_ARCHITECTURE.md)
+>
+> **Implementation clarification (2026-07-14):** สิทธิ์ Drug Risk ต้องตรวจจากข้อมูลจริงของ `users.profession_id` → `professions.can_manage_drug_risk` เท่านั้น ห้ามอนุมานจากชื่อบัญชี, ประเภทพนักงาน, การเข้า ERP Dashboard หรือ screenshot. ผู้มีสิทธิ์หลายคนที่ใช้ `profession_id` เดียวกันสามารถแก้ Organization Override เดียวกันได้ เพราะ scope อยู่ที่ `profession_id`; `last_modified_by` และ History ใช้แยกผู้แก้แต่ละคน. ERP Dashboard access (`employee_roles`) เป็นคนละระบบและไม่เปลี่ยนค่า `can_manage_drug_risk` โดยอัตโนมัติ.
 
 ---
 
@@ -51,6 +53,8 @@ Thai FDA Standard (Tier 1)              ← ค่าเริ่มต้นข
 | **สมาชิกองค์กร + มีสิทธิ์แก้** | `professionId != null` + `canManageDrugRisk == true` + `!isAdmin` | 🏥 Organization Override | แก้ Override **ในนามองค์กร** (ทุกคนในองค์กรได้รับผล) |
 | **สมาชิกองค์กร + ไม่มีสิทธิ์แก้** | `professionId != null` + `canManageDrugRisk == false` | *(ไม่เห็นเมนู)* | ใช้ค่า Override ขององค์กรอัตโนมัติ |
 | **อาชีพอิสระ + มีสิทธิ์แก้** | `professionId == null` + `canManageDrugRisk == true` + `!isAdmin` | 👤 Personal Override | แก้ Override **ส่วนตัว** (ผลกระทบเฉพาะตนเอง) |
+
+> **ข้อกำหนดสำหรับผู้มีสิทธิ์หลายคน:** พนักงานทุกคนที่มี `canManageDrugRisk == true` และอยู่ใน `profession_id` เดียวกันต้องเห็นและแก้ Org Override เดียวกันได้. ห้ามซ่อนปุ่มแก้ไขเพียงเพราะไม่ใช่ผู้สร้างรายการคนแรก. ก่อนสรุปสิทธิ์ของพนักงานคนใด ต้องตรวจค่า `users.profession_id` และแถว `professions.can_manage_drug_risk` ของข้อมูลจริง.
 
 ---
 
@@ -452,6 +456,7 @@ if (_canManageDrugRisk) ...[
 | 2 | คลินิก A Override ยา X (org) | ทุกคนในคลินิก A เห็น Badge 🔵 |
 | 3 | สมาชิกคลินิก A (ไม่มีสิทธิ์แก้) | ใช้ค่า org override อัตโนมัติ ไม่เห็นเมนู |
 | 4 | ผู้มีสิทธิ์คนที่ 2 แก้ org Override ยา X | เห็น Last-Modified Banner → บันทึกทับ → History |
+
 | 5 | องค์กรไม่มี Override ใดๆ | ใช้ Sheserved Default (Tier 1+2) |
 | 6 | Override ยา N → `is_telemedicine_prohibited = false` | ระบบปฏิเสธ (Legal Compliance) |
 | 7 | กด "คืนค่า Default" | ลบ Override, History action='delete' |
@@ -460,6 +465,8 @@ if (_canManageDrugRisk) ...[
 | 10 | อาชีพอิสระ ดูประวัติ Personal Override | Tab "ประวัติ" แสดง history กรอง `user_id` + ชื่อจาก snapshot |
 | 11 | Delivery ยาที่มี org override | `metadata.drug_risk_flags.has_override = true` |
 | 12 | Prescription Editor แสดง effective risk | ค่า Merge แล้วจาก `getMedicationRiskEffective` + Badge ตาม scope |
+
+> **ห้ามตีความ Scenario 3/4 ปะปนกัน:** สมาชิกที่ `can_manage_drug_risk = false` ไม่ควรเข้า Admin Page; ผู้มีสิทธิ์คนที่ 2 ที่ `can_manage_drug_risk = true` ต้องยังมีปุ่มแก้ไขและคืนค่า Default. การทดสอบต้องใช้ค่าจาก profession row จริง ไม่ใช้การคาดเดาจากชื่อผู้ใช้หรือสิทธิ์ ERP.
 
 ### 8.0 Maestro Test Environment Setup
 
@@ -648,6 +655,14 @@ adb shell pm clear com.sheserved.app
 3. **คาดหวัง:** ไม่เห็นกลุ่มเมนู "การจัดการยา" (ซ่อนเพราะ `_canManageDrugRisk = false`)
 4. ไปหน้า Prescription Editor และเพิ่มยา X (ที่คลินิกตั้ง Override ไว้ใน Scenario 2)
 5. **คาดหวัง:** ยา X แสดงค่า risk ตาม Organization Override อัตโนมัติ (Badge 🔵) แม้ผู้ใช้ไม่มีสิทธิ์แก้
+
+> **Implementation Note (2026-07-16):** การแสดง Badge ใน Prescription Editor ขึ้นกับการส่ง `medication_id` จาก `PrescriptionEditorPage` ไปยัง `DrugRiskScreeningService.screenPrescriptionWithOverride()` หากส่งแค่ชื่อยา (ไม่มี `id`) ระบบจะไม่สามารถดึง `Organization Override` ได้ → Badge ไม่ปรากฏ แม้ผู้ใช้จะมี `profession_id` ตรงก็ตาม
+>
+> สาเหตุเดิม: `MedicationItem` ไม่ได้เก็บ `medication_id` และ `_buildMedicationSnapshot()` ไม่ได้รวม `id` ไว้ใน snapshot
+>
+> วิธีแก้ไข: เพิ่ม `medicationId` ใน `MedicationItem`, เก็บ `model.id` เมื่อเลือกจาก autocomplete, ล้าง `medicationId` เมื่อผู้ใช้พิมพ์ชื่อยาเอง, ส่ง `'id': m.medicationId` ใน `_buildMedicationSnapshot()`, และ persist `medication_id` ใน Draft/Template
+>
+> ไฟล์: `lib/features/consultation/presentation/pages/prescription_editor_page.dart`
 
 #### Scenario 4: ผู้มีสิทธิ์คนที่ 2 แก้ Org Override ยา X
 

@@ -22,6 +22,7 @@ class PrescriptionSection {
 }
 
 class MedicationItem {
+  String? medicationId;
   String name;
   String dose;
   String frequency;
@@ -35,6 +36,7 @@ class MedicationItem {
   final FocusNode focusNode;
 
   MedicationItem({
+    this.medicationId,
     this.name = '',
     this.dose = '',
     this.frequency = '',
@@ -115,13 +117,14 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
     _token++;
     _ignoreNextChange = true;
     final item = widget.item;
+    item.medicationId = model.id;
     item.name = model.tradeName;
     item.dose = model.strength ?? '';
     FocusScope.of(context).unfocus();
     item.nameController.text = model.tradeName;
     item.doseController.text = model.strength ?? '';
     widget.onChanged?.call();
-    debugPrint('[MedicationCard] selected: name="${model.tradeName}" strength="${model.strength}"');
+    debugPrint('[MedicationCard] selected: id="${model.id}" name="${model.tradeName}" strength="${model.strength}"');
     if (mounted) {
       setState(() {
         _results = [];
@@ -170,6 +173,7 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                       ),
                       onChanged: (val) {
                         item.name = val;
+                        item.medicationId = null;
                         widget.onChanged?.call();
                         if (_ignoreNextChange) return;
                         _timer?.cancel();
@@ -364,6 +368,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
       final prefs = await SharedPreferences.getInstance();
       final draft = {
         'medications': _medications.map((m) => {
+          'medication_id': m.medicationId,
           'name': m.name,
           'dose': m.dose,
           'frequency': m.frequency,
@@ -398,6 +403,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         _medications.clear();
         for (final m in meds) {
           final item = MedicationItem(
+            medicationId: m['medication_id']?.toString(),
             name: m['name'] ?? '',
             dose: m['dose'] ?? '',
             frequency: m['frequency'] ?? '',
@@ -437,6 +443,8 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         .where((m) => m.name.trim().isNotEmpty)
         .map(
           (m) => {
+            if (m.medicationId != null && m.medicationId!.isNotEmpty)
+              'id': m.medicationId,
             'name': m.name.trim(),
             'dose': m.dose.trim(),
             'frequency': m.frequency.trim(),
@@ -603,6 +611,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
                                     ..addAll(
                                       medications.map(
                                         (item) => MedicationItem(
+                                          medicationId: item['medication_id']?.toString(),
                                           name: item['name']?.toString() ?? '',
                                           dose: item['dose']?.toString() ?? '',
                                           frequency: item['frequency']?.toString() ?? '',

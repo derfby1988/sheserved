@@ -3148,6 +3148,7 @@ NOTIFY pgrst, 'reload schema';
 - เปลี่ยน `ErpDashboardShell._checkErpAccess()` จาก `canAccess(user.professionId)` → `canAccessAnyProfession(user.id)` (เหมือน HomePage)
 - หลังผ่าน access check ใช้ `getActiveProfessionId()` resolve `profession_id` จริง แล้วใช้โหลด `loadOrganization()` และ `loadTheme()`
 - ไม่ขัดแย้งกับ `profession_system_migration_guide.md` เพราะคู่มือนั้นเกี่ยวกับ Drug Risk permissions (ใช้ `can_manage_drug_risk` flag) ส่วนการแก้นี้เกี่ยวกับ ERP Dashboard access (ใช้ `employee_roles` table เป็น source of truth)
+- **ข้อกำหนดร่วมกับ Drug Risk:** การเข้า ERP Dashboard หรือการมี role ใน `employee_roles` ไม่ได้เปลี่ยนสิทธิ์ Drug Risk โดยอัตโนมัติ. สิทธิ์ Drug Risk ต้องอ่านจาก `users.profession_id` → `professions.can_manage_drug_risk` ตามข้อมูลจริง. พนักงานหลายคนที่มี `can_manage_drug_risk = true` และใช้ `profession_id` เดียวกันต้องแก้ Organization Override เดียวกันได้; ห้ามใช้ชื่อบัญชี, ลำดับผู้สร้าง, หรือสิทธิ์ ERP เพื่อตัดสิทธิ์บุคคลเหล่านี้.
 
 **A2. เพิ่ม RPC ดึงประวัติการเชิญทั้งหมดของ user**
 

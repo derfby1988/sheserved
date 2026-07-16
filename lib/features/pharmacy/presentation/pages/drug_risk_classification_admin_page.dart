@@ -51,6 +51,11 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
   String get _currentUserId => AuthService.instance.currentUser?.id ?? 'unknown';
 
+  bool get _canAccessDrugRisk {
+    final user = AuthService.instance.currentUser;
+    return user?.isAdmin == true || _currentUserProfession?.canManageDrugRisk == true;
+  }
+
   DrugRiskPageMode get _pageMode {
     final user = AuthService.instance.currentUser;
     if (user == null) return DrugRiskPageMode.personalOverride;
@@ -166,23 +171,30 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
       final med = _searchResults[i];
       final medId = med['id'] as String;
 
+      // For personalOverride users, also check org-level override via professionId
+      // so they can see (read-only) organization overrides applied to their profession.
+      // For organizationOverride users, also check personal override via userId.
       final effective = await _repo.getMedicationRiskEffective(
         medicationId: medId,
-        currentUserId: mode == DrugRiskPageMode.personalOverride ? userId : null,
-        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+        currentUserId: userId,
+        professionId: professionId,
       );
 
       final modifier = await _repo.resolveEffectiveModifier(
         medicationId: medId,
-        userId: mode == DrugRiskPageMode.personalOverride ? userId : null,
-        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+        userId: userId,
+        professionId: professionId,
       );
 
-      final activeOverride = await _repo.getOverride(
-        userId: mode == DrugRiskPageMode.personalOverride ? userId : null,
-        professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
-        medicationId: medId,
-      );
+      // active_override: only show for users who can manage it
+      final canManage = mode != DrugRiskPageMode.personalOverride;
+      final activeOverride = canManage
+          ? await _repo.getOverride(
+              userId: mode == DrugRiskPageMode.personalOverride ? userId : null,
+              professionId: mode == DrugRiskPageMode.organizationOverride ? professionId : null,
+              medicationId: medId,
+            )
+          : null;
 
       _searchResults[i] = {
         ...med,
@@ -321,6 +333,15 @@ class _DrugRiskClassificationAdminPageState extends State<DrugRiskClassification
 
   @override
   Widget build(BuildContext context) {
+    if (_isProfessionLoaded && !_canAccessDrugRisk) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('จัดการความเสี่ยงยา')),
+        body: const Center(
+          child: Text('คุณไม่มีสิทธิ์เข้าถึงการจัดการความเสี่ยงยา'),
+        ),
+      );
+    }
+
     final mode = _pageMode;
     String title;
     List<Tab> tabs;
