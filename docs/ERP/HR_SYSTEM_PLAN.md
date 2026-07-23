@@ -640,6 +640,24 @@ ProfilePage:
 - **ไฟล์ที่แก้:** `lib/features/admin/data/repositories/registration_repository.dart:101`
 - **หลักการ:** ต้องตรวจสอบว่าทุก column ที่อ้างอิงใน Flutter code มีอยู่ใน migration ที่สร้างตารางจริง
 
+##### 6.1 `PGRST204: Could not find the 'profession_id' column of 'provider_profiles'`
+
+- **สถานะ:** ปัญหาใหม่ที่เกี่ยวข้องกับ root cause เดิม เป็น schema drift ระหว่างฐานข้อมูล/Schema cache กับ Flutter code ไม่ใช่ปัญหา permission หรือการอนุมัติไม่สำเร็จ
+- **อาการ:** การอัปเดต `registration_applications.status = 'approved'` สำเร็จ ทำให้รายการย้ายไปแท็บ "อนุมัติแล้ว" แต่ขั้นตอนถัดมาที่ `RegistrationRepository.approveApplication()` ทำ `upsert` ลง `provider_profiles` ล้มเหลว จึงมี SnackBar error ทั้งที่ผู้สมัครถูกอนุมัติแล้ว
+- **สาเหตุ:** `RegistrationRepository.approveApplication()` ส่ง `profession_id` ใน `profileData` แต่ฐานข้อมูล/Schema cache ของ `provider_profiles` ที่กำลังใช้งานไม่มี column นี้ แม้ migration หลัก `20260614150000_profession_approval_registration_fields.sql` จะประกาศ column ไว้แล้ว แสดงว่า environment นั้นยังไม่ได้ apply migration หรือ PostgREST schema cache ยังไม่ตรงกับฐานข้อมูล
+- **วิธีแก้:** เพิ่ม migration `20260716150000_fix_provider_profiles_profession_id.sql` ด้วย `ADD COLUMN IF NOT EXISTS profession_id UUID REFERENCES public.professions(id)`, สร้าง index แบบ idempotent และ `NOTIFY pgrst, 'reload schema'` จากนั้นตรวจสอบ migration history และทดสอบอนุมัติใหม่
+- **วิธีป้องกัน:** ก่อน release ให้ตรวจ schema จริงของทุก environment เทียบกับ migration และให้ approval flow ใช้ transaction/RPC เดียวสำหรับ status update + provider profile + credentials เพื่อไม่ให้เกิด partial success ที่แสดงว่าอนุมัติแล้วแต่มีขั้นตอนหลังอนุมัติล้มเหลว
+- **หลักการ:** ข้อความ "อนุมัติสำเร็จ" ต้องหมายถึงทั้ง workflow สำเร็จ ไม่ใช่เฉพาะการเปลี่ยนสถานะใบสมัคร หากยังใช้หลายคำสั่งจาก client ต้องแสดงสถานะ `approved_pending_provisioning` หรือ rollback เมื่อ provisioning ล้มเหลว
+
+##### 6.2 `42501: new row violates row-level security policy for table "provider_profiles"`
+
+- **สถานะ:** พบหลังจากแก้ `profession_id` สำเร็จแล้ว เป็นปัญหาชั้นถัดไปของ schema/security drift
+- **อาการ:** `provider_profiles.upsert()` ถูกปฏิเสธด้วย RLS หลัง `registration_applications.status` เปลี่ยนเป็น `approved` แล้ว
+- **สาเหตุ:** environment ที่ทดสอบเปิด RLS บน `provider_profiles` แต่ไม่มี policy สำหรับ INSERT/UPDATE หรือ policy ที่มีอยู่ไม่ครอบคลุม `WITH CHECK`; แอปใช้ custom phone auth จึงไม่มี Supabase Auth session และไม่ควรใช้ `auth.uid()` เป็นเงื่อนไขใน policy ปัจจุบัน
+- **วิธีแก้:** เพิ่ม migration `20260716153000_fix_provider_profiles_rls.sql` ให้ `provider_profiles` และ `provider_credentials` มี policy แบบ permissive ตาม security model ปัจจุบัน (`USING (true)` + `WITH CHECK (true)`) และ reload schema หลัง migration
+- **ข้อควรระวัง:** policy แบบ permissive เหมาะกับ environment ปัจจุบันที่บังคับ scope ที่ repository/application layer เท่านั้น ไม่ใช่แนวทางสุดท้ายสำหรับ production หลังย้ายไป Supabase Auth; เมื่อมี Auth session แล้วต้องเปลี่ยนเป็น policy ที่ตรวจ `auth.uid()` และ role/organization scope
+- **หลักการ:** การแก้ schema ให้ครบอย่างเดียวไม่พอ ต้องตรวจทั้ง column, schema cache, RLS policy และสิทธิ์ของทุก table ที่อยู่ใน approval workflow
+
 ### บันทึกปัญหาที่พบระหว่าง Testing (Phase E) และวิธีแก้
 
 ระหว่างทดสอบ flow "เปลี่ยนอาชีพ → สร้างใบสมัครใหม่" พบ error เป็นลำดับชั้น 3 ข้อ ต้องแก้ทีละชั้นจึงจะผ่านได้ครบ บันทึกไว้เพื่อป้องกันการ debug ซ้ำ
@@ -3067,7 +3085,7 @@ NOTIFY pgrst, 'reload schema';
 
 ## แผนปรับปรุง: การเชิญซ้ำ การให้ออก และกฎการรับกลับพนักงาน (2026-07-13)
 
-> **อัปเดตสถานะ (2026-07-14): Phase A, B, C, E, F implement ครบแล้ว ยกเว้น D (audit trail เพิ่มเติม) และ E4-E5 (แยก cancel/reject, ระบบแจ้งเตือน)**
+> **อัปเดตสถานะ (2026-07-17): Phase A, B, C, E, F implement ครบแล้ว และเพิ่มการยกเลิก Personal Drug Risk Override อัตโนมัติเมื่อให้ออก; ยกเว้น D (audit trail เพิ่มเติม) และ E4-E5 (แยก cancel/reject, ระบบแจ้งเตือน)**
 
 ### วิเคราะห์สถานะปัจจุบัน
 
@@ -3091,6 +3109,8 @@ NOTIFY pgrst, 'reload schema';
 - ✅ UI แสดงพนักงานที่ออกแล้วใน section "พนักงานที่ออกแล้ว" พร้อม badge วันที่ให้ออก
 - ✅ `Employee` model มี fields: `terminationDate`, `terminationReason`, `terminatedAt`, `terminatedBy`, `reinviteEligibleAt`, `canReinvite`
 - ✅ RPC `terminate_employee` revoke `employee_roles.is_active = false` อัตโนมัติเมื่อให้ออก
+- ✅ Trigger `revoke_personal_drug_overrides_on_termination` ลบ Personal Override ของผู้ถูกให้ออก และบันทึก History action=`delete` พร้อมเหตุผลจาก HR
+- ✅ Organization Override ไม่ถูกลบ เพราะเป็นข้อมูลระดับองค์กร ไม่ใช่ข้อมูลส่วนบุคคลของพนักงาน
 
 #### C. การรับกลับพนักงานที่ถูกให้ออก (Rehire / รับกลับเข้าทำงาน)
 
@@ -3102,6 +3122,7 @@ NOTIFY pgrst, 'reload schema';
 - ✅ เปลี่ยน unique constraint เป็น partial unique index สำหรับ active เท่านั้น (E1)
 - ✅ `get_available_users_for_invite` แสดง terminated employees พร้อมสถานะ eligibility (E3)
 - ✅ UI แสดงสถานะ "สามารถรับกลับได้" / "อยู่ในช่วง cooldown" / "ไม่สามารถรับกลับได้" ใน invite dialog (C4)
+- ✅ เมื่อรับกลับและผู้ใช้มีอาชีพที่ `can_manage_drug_risk = true` ผู้ใช้สามารถสร้าง Personal Override ใหม่ด้วย `user_id` เดิมได้ โดยไม่คืนค่า Override ที่ถูกยกเลิกตอนให้ออก
 
 ### แผนการปรับปรุง
 

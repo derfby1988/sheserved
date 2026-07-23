@@ -1,0 +1,219 @@
+# Scenario 6: Override ยา N → ปิด Telemedicine (Legal Compliance)
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# This flow logs in as apisek, searches for Paracetamol, opens the Override dialog,
+# selects FDA Risk Status = N, and verifies that:
+#   1. The "ห้ามจ่ายผ่าน Telemedicine" switch is disabled (grayed out)
+#   2. The "บังคับตามกฎหมาย" chip is visible (red)
+#   3. The subtitle shows legal warning text
+# Then saves the override.
+#
+# Prerequisites:
+#   - User "apisek" must have can_manage_drug_risk = true
+#   - Paracetamol must exist in the medications table
+#
+# Credentials:
+#   - Admin: apisek / 123456
+#
+# Run:
+#   maestro test docs/guides/scenario_06_telemedicine_legal.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+#
+# References:
+#   - docs/plans/DRUG_RISK_OVERRIDE_PLAN.md §8.1 Scenario 6
+#   - lib/features/pharmacy/presentation/pages/drug_risk_classification_admin_page.dart
+#     line 1552-1572: SwitchListTile for telemedicine, isNP disables switch
+
+appId: com.example.treeLawZoo
+env:
+  ADMIN_USERNAME: "apisek"
+  ADMIN_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+---
+# ═══════════════════════════════════════════
+# Step 1: Launch app and login as admin (apisek)
+# ═══════════════════════════════════════════
+- launchApp:
+    appId: com.example.treeLawZoo
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 2: Navigate to Drug Risk Admin
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- assertVisible: "ออกจากระบบ"
+
+- swipe:
+    start: "50%, 20%"
+    end: "50%, 80%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ═══════════════════════════════════════════
+# Step 3: Search Paracetamol and open Override dialog
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*${MEDICATION_NAME}.*"
+    timeout: 60000
+
+- tapOn: ".*ตั้งค่า.*Override.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: 'Override:.*'
+
+# ═══════════════════════════════════════════
+# Step 4: Select FDA Risk Status = N and verify Telemedicine lock
+# ═══════════════════════════════════════════
+- tapOn:
+    text: "FDA Risk Status.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    text: "N (ยาเสพติดให้โทษ)"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ✅ Verify "บังคับตามกฎหมาย" chip is visible (red chip next to switch)
+# Note: Maestro text matcher is full-string regex, but SwitchListTile combines all text
+# into one accessibility label, so we use .* wildcards to match substrings.
+- assertVisible: ".*บังคับตามกฎหมาย.*"
+
+# ✅ Verify legal warning subtitle is visible
+- assertVisible: ".*ห้ามจ่ายผ่าน Telemedicine ตามกฎหมาย.*"
+
+# Note: Maestro cannot directly test that a switch is disabled (onChanged: null).
+# The presence of "บังคับตามกฎหมาย" chip and the red subtitle confirms isNP = true,
+# which in the code (line 1565) sets onChanged: null (disabled switch).
+
+# ═══════════════════════════════════════════
+# Step 5: Fill reason and save Override
+# ═══════════════════════════════════════════
+# Scroll down inside the dialog to reveal the reason text field
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*เหตุผลการ Override.*"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "Legal compliance N override test"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn: "บันทึก Override"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# ═══════════════════════════════════════════
+# Step 6: Re-search and verify Override badge
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*Override องค์กร.*"
+    timeout: 60000
+- assertVisible: ".*Override องค์กร.*"

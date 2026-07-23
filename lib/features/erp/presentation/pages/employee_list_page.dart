@@ -370,6 +370,7 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
     final reasonController = TextEditingController();
     DateTime? terminationDate;
     bool canReinvite = true;
+    DateTime? reinviteEligibleAt;
 
     showDialog(
       context: context,
@@ -398,6 +399,22 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                   value: canReinvite,
                   onChanged: (v) => setState(() => canReinvite = v ?? true),
                 ),
+                if (canReinvite) ...[
+                  const SizedBox(height: 8),
+                  ThaiBuddhistDatePickerField(
+                    value: reinviteEligibleAt,
+                    label: 'วันที่สามารถรับกลับได้',
+                    hint: 'เว้นว่าง = รับกลับได้ทันที',
+                    onDateSelected: (date) => setState(() => reinviteEligibleAt = date),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    reinviteEligibleAt == null
+                        ? 'ค่าเริ่มต้น: รับกลับได้ทันที'
+                        : 'รับกลับได้หลังวันที่เลือก',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
               ],
             ),
           ),
@@ -412,6 +429,7 @@ class _EmployeeListPageState extends ConsumerState<EmployeeListPage>
                   terminationReason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
                   terminationDate: terminationDate,
                   canReinvite: canReinvite,
+                  reinviteEligibleAt: reinviteEligibleAt,
                 );
                 if (context.mounted) Navigator.pop(context);
                 if (result != null && result['success'] == true) {

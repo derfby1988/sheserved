@@ -173,9 +173,12 @@ class _MedicationCardWidgetState extends State<_MedicationCardWidget> {
                       ),
                       onChanged: (val) {
                         item.name = val;
+                        if (_ignoreNextChange) {
+                          widget.onChanged?.call();
+                          return;
+                        }
                         item.medicationId = null;
                         widget.onChanged?.call();
-                        if (_ignoreNextChange) return;
                         _timer?.cancel();
                         _timer = Timer(
                           const Duration(milliseconds: 400),
@@ -439,7 +442,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
   }
 
   List<Map<String, dynamic>> _buildMedicationSnapshot() {
-    return _medications
+    final result = _medications
         .where((m) => m.name.trim().isNotEmpty)
         .map(
           (m) => {
@@ -453,6 +456,8 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
           },
         )
         .toList();
+    debugPrint('[Prescription] _buildMedicationSnapshot: $result');
+    return result;
   }
 
   Future<void> _loadSavedTemplates() async {

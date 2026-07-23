@@ -1,0 +1,315 @@
+# Scenario 8: แพทย์ A ตั้ง Override → พ้นสภาพ → แพทย์ B ดูหน้า (fallback_history)
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# ⚠️ This test requires MANUAL Supabase intervention between Steps 3 and 4.
+#    The Maestro flow is split into two phases:
+#    Phase 1 (automated): Login as apisek, set Override, logout
+#    Phase 2 (manual): In Supabase Dashboard, set is_active = false for apisek
+#    Phase 3 (automated): Login as firm, search, verify fallback_history banner
+#
+# Expected banner text (code line 254):
+#   "⚠️ ตั้งค่าโดยอดีตเจ้าหน้าที่ (โอนย้ายสิทธิ์ดูแลให้ ... [Active]...)"
+#
+# Prerequisites:
+#   - User "apisek" must have can_manage_drug_risk = true and is_active = true
+#   - User "firm" must have can_manage_drug_risk = true (same profession_id)
+#   - Paracetamol must NOT have an active Override (run Scenario 7 first to clear)
+#
+# Credentials:
+#   - Doctor A: apisek / 123456
+#   - Doctor B: firm / 123456
+#
+# Run:
+#   maestro test docs/guides/scenario_08_fallback_history.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+#
+# References:
+#   - docs/plans/DRUG_RISK_OVERRIDE_PLAN.md §8.1 Scenario 8
+#   - lib/features/pharmacy/presentation/pages/drug_risk_classification_admin_page.dart
+#     _buildCardBanner (line 252-254): fallback_history banner
+
+appId: com.example.treeLawZoo
+env:
+  DOCTOR_A_USERNAME: "apisek"
+  DOCTOR_A_PASSWORD: "123456"
+  DOCTOR_B_USERNAME: "firm"
+  DOCTOR_B_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+---
+# ═══════════════════════════════════════════
+# PHASE 1 (Automated): Doctor A sets Override
+# ═══════════════════════════════════════════
+
+# Step 1: Launch app and login as Doctor A (apisek)
+- launchApp:
+    appId: com.example.treeLawZoo
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_A_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_A_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Navigate to Drug Risk Admin
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- assertVisible: "ออกจากระบบ"
+
+- swipe:
+    start: "50%, 20%"
+    end: "50%, 80%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 3: Search Paracetamol and set Override
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*${MEDICATION_NAME}.*"
+    timeout: 60000
+
+- tapOn: ".*ตั้งค่า.*Override.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: 'Override:.*'
+
+# Set FDA = S
+- tapOn:
+    text: "FDA Risk Status.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    text: "S (ยาควบคุมพิเศษ)"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill reason
+- tapOn:
+    text: "เหตุผลการ Override เพื่อบันทึกประวัติ *"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "Doctor A override for fallback test"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn: "บันทึก Override"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Step 4: Kill app (logout)
+- killApp:
+    appId: com.example.treeLawZoo
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# PHASE 2 (MANUAL): Set is_active = false for apisek in Supabase
+# ═══════════════════════════════════════════
+# ⛔ MANUAL STEP REQUIRED:
+# 1. Open Supabase Dashboard → Table Editor → users
+# 2. Find the row where username = 'apisek'
+# 3. Set is_active = false
+# 4. Wait for the change to propagate
+#
+# After completing this manual step, the test continues automatically.
+
+# ═══════════════════════════════════════════
+# PHASE 3 (Automated): Doctor B views fallback_history banner
+# ═══════════════════════════════════════════
+
+# Step 5: Launch app and login as Doctor B (firm)
+- launchApp:
+    appId: com.example.treeLawZoo
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_B_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_B_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 6: Navigate to Drug Risk Admin
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- assertVisible: "ออกจากระบบ"
+
+- swipe:
+    start: "50%, 20%"
+    end: "50%, 80%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 7: Search Paracetamol and verify fallback_history banner
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*${MEDICATION_NAME}.*"
+    timeout: 60000
+
+# ✅ Verify Override badge still present (override persists)
+- assertVisible: ".*Override องค์กร.*"
+
+# ✅ Verify fallback_history banner: "ตั้งค่าโดยอดีตเจ้าหน้าที่"
+- extendedWaitUntil:
+    visible: ".*ตั้งค่าโดยอดีตเจ้าหน้าที่.*"
+    timeout: 10000
+- assertVisible: ".*ตั้งค่าโดยอดีตเจ้าหน้าที่.*"
+
+# ═══════════════════════════════════════════
+# POST-TEST CLEANUP (Manual)
+# ═══════════════════════════════════════════
+# ⛔ After test: Set is_active = true for apisek in Supabase Dashboard

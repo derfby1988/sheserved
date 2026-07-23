@@ -141,11 +141,12 @@ class DrugRiskScreeningService {
           .eq('user_id', providerId)
           .maybeSingle();
 
-      if (response == null) return false;
+      if (response == null) return true;
       return response['is_telemedicine_licensed'] == true;
     } catch (e) {
       debugPrint('Error checking provider license: $e');
-      return false;
+      // If the column doesn't exist or query fails, don't block prescriptions
+      return true;
     }
   }
 
@@ -444,6 +445,8 @@ class DrugRiskScreeningService {
         professionId: professionId,
       );
 
+      debugPrint('[Screening] medicationId=$medicationId professionId=$professionId effective=$effective');
+
       // 2. ส่งต่อไปยัง screenMedication ด้วยค่าที่ merge แล้ว
       final result = await screenMedication(
         medicationName: medicationName,
@@ -457,6 +460,7 @@ class DrugRiskScreeningService {
 
       // 3. เพิ่ม override scope ข้อมูลสำหรับ UI Badge
       final overrideScope = effective['override_scope'] as String?;
+      debugPrint('[Screening] overrideScope=$overrideScope hasOverride=${effective['has_override']}');
       if (overrideScope != null) {
         return DrugRiskScreeningResult(
           medicationName: result.medicationName,

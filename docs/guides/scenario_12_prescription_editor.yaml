@@ -1,0 +1,203 @@
+# Scenario 12: Prescription Editor แสดง Effective Risk + Badge
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Tests that Prescription Editor shows merged risk values and Override badge
+# in the drug risk screening dialog.
+#
+# Prerequisites:
+#   - User "apisek" must have is_active = true, is_provider = true, and can_manage_drug_risk = true
+#   - Medication "BOOTS PARACETAMOL" (id: 93f3d4ad, generic: โอสถ อินเตอร์ แลบบอราทอรีส์) must have
+#     an active Organization Override (FDA = S) set by apisek
+#   - Note: There are 2 medications named "BOOTS PARACETAMOL" in the DB;
+#     the override must be on id 93f3d4ad (the one autocomplete returns first)
+#   - An in_progress consultation must exist for apisek (id: 59294c78)
+#   - Flow: Drawer → คำขอโปรแกรมรักษา → HealthProgramRequestDashboard
+#     → แท็บกำลังดำเนินการ → เข้าห้องแชทผู้ป่วย → ChartBoardPage
+#     → Medical Tools → ออกใบสั่งยา → PrescriptionEditorPage
+#
+# Expected:
+#   - Drug risk screening dialog shows "Override องค์กร" badge
+#   - FDA status reflects the override value (S) not the default
+#   - Note: FDA status S blocks telemedicine (expected behavior)
+#
+# Run:
+#   maestro test docs/guides/scenario_12_prescription_editor.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+env:
+  DOCTOR_USERNAME: "apisek"
+  DOCTOR_PASSWORD: "123456"
+  MEDICATION_SEARCH: "Paracetamol"
+---
+# ═══════════════════════════════════════════
+# Step 1: Launch app and login as doctor (apisek)
+# ═══════════════════════════════════════════
+- launchApp:
+    appId: com.example.treeLawZoo
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${DOCTOR_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 2: Navigate to Health Program Request Dashboard
+# ═══════════════════════════════════════════
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# The provider dashboard is exposed in the medical-services group.
+- tapOn: "คำขอโปรแกรมรักษา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Confirm the consultation dashboard loaded, then select the provider's active jobs.
+- extendedWaitUntil:
+    visible: "กำลังดำเนินการ"
+    timeout: 30000
+- tapOn: "กำลังดำเนินการ"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Open the consultation entry itself; do not use the legacy ChatListPage.
+- extendedWaitUntil:
+    visible: ".*เข้าห้องแชทผู้ป่วย.*"
+    timeout: 30000
+- tapOn: ".*เข้าห้องแชทผู้ป่วย.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# ChartBoardPage is the active consultation room and receives the ConsultationEntry.
+- extendedWaitUntil:
+    visible: ".*ถามผู้เชี่ยวชาญ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 3: Open medical tools → Prescription Editor
+# ═══════════════════════════════════════════
+# Tap the medical tools icon at the bottom-left of ChartBoardPage
+- tapOn: "เครื่องมือแพทย์"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ออกใบสั่งยา.*"
+    timeout: 10000
+
+- tapOn: ".*ออกใบสั่งยา.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: ".*ออกใบสั่งยา.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 5: Add medication with override
+# ═══════════════════════════════════════════
+# Tap on the medication name field (first field)
+- tapOn:
+    text: ".*ชื่อยา.*"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- inputText: "${MEDICATION_SEARCH}"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for autocomplete results to appear
+- extendedWaitUntil:
+    visible: ".*BOOTS PARACETAMOL.*"
+    timeout: 10000
+
+# Select the first BOOTS PARACETAMOL from autocomplete
+- tapOn:
+    text: ".*BOOTS PARACETAMOL.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ═══════════════════════════════════════════
+# Step 6: Submit prescription to trigger screening
+# ═══════════════════════════════════════════
+# Dismiss keyboard
+- tapOn:
+    id: "Done"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Scroll down to find the submit button
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "บันทึก & ส่งใบสั่งยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# ═══════════════════════════════════════════
+# Step 7: Verify drug risk screening dialog with Override badge
+# ═══════════════════════════════════════════
+# Wait for the screening dialog to appear
+- extendedWaitUntil:
+    visible: ".*BOOTS PARACETAMOL.*"
+    timeout: 15000
+
+# ✅ Verify "Override องค์กร" badge is shown in the dialog
+- assertVisible: ".*Override องค์กร.*"
+
+# ✅ Verify FDA risk status shows override value (S)
+- assertVisible: ".*S.*ยาอันตราย.*"
+
+# Close dialog (tap ปิด/ยกเลิก)
+- tapOn:
+    text: ".*ยกเลิก.*"

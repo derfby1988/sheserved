@@ -1,0 +1,378 @@
+# Scenario 2: Organization Override for a clinic user
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# This flow logs in with a clinic A account (organization user with can_manage_drug_risk=true),
+# creates an Organization Override for Paracetamol, then logs in as another member of the
+# same clinic to verify the override is shared (Badge 🔵).
+#
+# ⚠️ Login verification: หน้า home ปรากฏขึ้นไม่ได้ยืนยันว่า login สำเร็จ
+#    แอปแสดงหน้า home ในโหมด guest ได้ ต้องตรวจสอบโดยเปิด Drawer และดูว่า
+#    เห็นเมนู "ออกจากระบบ" (ไม่ใช่ "ลงชื่อเข้าใช้") จึงจะยืนยันว่า login สำเร็จ
+#
+# Prerequisites:
+#   - App is installed on the simulator (flutter run -d A692F954-72BF-4D54-9557-FB61BCB5DBA6)
+#   - Network connectivity to Supabase backend
+#   - User "apisek" must have professionId != null and can_manage_drug_risk = true
+#   - User "firm" must be in the same profession/organization as "apisek"
+#
+# Credentials:
+#   - Account A (org editor): apisek / 123456
+#   - Account B (org member): firm / 123456
+#
+# Run:
+#   maestro test docs/guides/scenario_02_organization_override.yaml
+#
+# References:
+#   - docs/plans/DRUG_RISK_OVERRIDE_PLAN.md §8.1 Scenario 2
+#   - lib/shared/widgets/tlz_drawer.dart (Drawer gating via _canManageDrugRisk)
+#   - lib/features/pharmacy/presentation/pages/drug_risk_classification_admin_page.dart
+
+appId: com.example.treeLawZoo
+env:
+  CLINIC_USERNAME: "apisek"
+  CLINIC_PASSWORD: "123456"
+  MEDICATION_NAME: "Paracetamol"
+  MEMBER_USERNAME: "firm"
+  MEMBER_PASSWORD: "123456"
+---
+# ═══════════════════════════════════════════
+# Step 1: Login as organization user (apisek)
+# ═══════════════════════════════════════════
+- launchApp:
+    appId: com.example.treeLawZoo
+
+# Wait for home page to load (guest mode)
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Navigate to login via bottom nav bar donation tab (index 1)
+# MainAppLayout redirects unauthenticated users to /login when tapping donation tab
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for login page to appear
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+# Enter username
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CLINIC_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Switch to password field by tapping below the "รหัสผ่าน" label
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CLINIC_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Dismiss keyboard by tapping the welcome text (non-interactive element)
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap login button
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for home page to appear (login API call takes time; waitForAnimationToEnd returns too early)
+# After login, home page shows "ค้นหาการบริจาค..." instead of "ค้นหายา ร้านยา หมอ..."
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 2: Verify login success by checking Drawer
+# ═══════════════════════════════════════════
+# ⚠️ หน้า home ไม่ได้ยืนยันว่า login สำเร็จ (guest mode ก็แสดง home ได้)
+# ต้องเปิด Drawer และตรวจสอบว่าเห็น "ออกจากระบบ" (ไม่ใช่ "ลงชื่อเข้าใช้")
+
+# Open drawer to verify login
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Scroll to bottom of drawer to see login/logout menu item
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ✅ Verify login success: must see "ออกจากระบบ" (not "ลงชื่อเข้าใช้")
+- assertVisible: "ออกจากระบบ"
+
+# ═══════════════════════════════════════════
+# Step 3: Navigate to Drug Risk Admin page
+# ═══════════════════════════════════════════
+# Scroll back up to reveal drug management items
+- swipe:
+    start: "50%, 20%"
+    end: "50%, 80%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap "จัดการหมวดหมู่ความเสี่ยงยา" menu item
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify drug risk page loaded
+- assertVisible: 'จัดการความเสี่ยงยา .*'
+
+# Wait for loading to finish — search tab text appears after load
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ═══════════════════════════════════════════
+# Step 4: Search for medication and set Organization Override
+# ═══════════════════════════════════════════
+# Tap the search text field (center of [16,261][283,313])
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+# Type medication name (triggers onChanged debounce search after 500ms)
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap the search button by coordinates (center of [291,261][377,314])
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for medication card to appear in search results
+- extendedWaitUntil:
+    visible: ".*${MEDICATION_NAME}.*"
+    timeout: 60000
+
+# Tap "ตั้งค่า Override" button (tapOn matches accessibility labels, not just text elements)
+- tapOn: ".*ตั้งค่า.*Override.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Verify override dialog opened
+- assertVisible: 'Override:.*'
+
+# Change FDA Risk Status — tap the FDA button
+- tapOn:
+    text: "FDA Risk Status.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Select S (ยาควบคุมพิเศษ) from dropdown
+- tapOn:
+    text: "S (ยาควบคุมพิเศษ)"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Fill reason field
+- tapOn:
+    text: "เหตุผลการ Override เพื่อบันทึกประวัติ *"
+- waitForAnimationToEnd:
+    timeout: 1000
+- setClipboard: "Test Organization Override"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Tap save button
+- tapOn: "บันทึก Override"
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# ═══════════════════════════════════════════
+# Step 5: Verify override badge appears for Account A
+# ═══════════════════════════════════════════
+# Re-trigger search: tap search field (center of [16,261][283,313])
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap search button by coordinates (center of [291,261][377,314])
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify organization override badge appears
+- extendedWaitUntil:
+    visible: ".*Override องค์กร.*"
+    timeout: 60000
+- assertVisible: ".*Override องค์กร.*"
+
+# ═══════════════════════════════════════════
+# Step 6: Kill app and relaunch as another organization member (firm)
+# ═══════════════════════════════════════════
+# AuthService is in-memory only, so killing the process clears the login state
+- killApp:
+    appId: com.example.treeLawZoo
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- launchApp:
+    appId: com.example.treeLawZoo
+
+# Wait for home page to load (guest mode after kill)
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Navigate to login via bottom nav bar donation tab
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Wait for login page to appear
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+
+# Enter username for member account
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${MEMBER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Switch to password field by tapping below the "รหัสผ่าน" label
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${MEMBER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Dismiss keyboard by tapping the welcome text (non-interactive element)
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap login button
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for home page to appear (login API call takes time; waitForAnimationToEnd returns too early)
+# After login, home page shows "ค้นหาการบริจาค..." instead of "ค้นหายา ร้านยา หมอ..."
+- extendedWaitUntil:
+    visible:
+      text: ".*ค้นหาการบริจาค.*"
+    timeout: 180000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# ═══════════════════════════════════════════
+# Step 7: Verify member login success by checking Drawer
+# ═══════════════════════════════════════════
+# ⚠️ ตรวจสอบ login สำเร็จก่อนเข้าหน้า Drug Risk Admin
+
+# Open drawer to verify login
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Scroll to bottom of drawer to see login/logout menu item
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ✅ Verify login success: must see "ออกจากระบบ" (not "ลงชื่อเข้าใช้")
+- assertVisible: "ออกจากระบบ"
+
+# ═══════════════════════════════════════════
+# Step 8: Navigate to Drug Risk Admin as member
+# ═══════════════════════════════════════════
+# Scroll back up to reveal drug management items
+- swipe:
+    start: "50%, 20%"
+    end: "50%, 80%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap "จัดการหมวดหมู่ความเสี่ยงยา" menu item
+- tapOn: "จัดการหมวดหมู่ความเสี่ยงยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Wait for loading to finish
+- extendedWaitUntil:
+    visible: ".*ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# ═══════════════════════════════════════════
+# Step 9: Search same medication and verify org override badge
+# ═══════════════════════════════════════════
+# Tap the search text field (center of [16,261][283,313])
+- tapOn:
+    point: "150,287"
+- waitForAnimationToEnd:
+    timeout: 1000
+- eraseText
+- waitForAnimationToEnd:
+    timeout: 500
+
+- inputText: "${MEDICATION_NAME}"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap search button by coordinates (center of [291,261][377,314])
+- tapOn:
+    point: "334,287"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify organization override badge appears for member too
+- extendedWaitUntil:
+    visible: ".*Override องค์กร.*"
+    timeout: 60000
+- assertVisible: ".*Override องค์กร.*"
