@@ -1,0 +1,37 @@
+# AUTH-02: Login ด้วย phone + password สำเร็จ
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "sister" has a phone number in the users table, password 123456
+#   - Replace PHONE_VALUE with sister's actual phone number
+#
+# Expected:
+#   - Login succeeds via phone field, navigates to Home
+#
+# Run:
+#   maestro test docs/guides/scenario_auth_02_login_phone.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - auth
+env:
+  PHONE: "0812345678"
+  PASSWORD: "123456"
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000

@@ -1,0 +1,40 @@
+# HOME-01: Home page แสดง search bar และ category icons
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - App is in guest mode (not logged in)
+#
+# Expected:
+#   - Home page shows search bar "ค้นหายา ร้านยา หมอ..."
+#   - Category icons are visible
+#
+# Run:
+#   maestro test docs/guides/scenario_home_01_search_bar.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - home
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Verify search bar is present
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+
+# Verify the login/account icon is visible (bottom right area)
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Should navigate to login page
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- assertVisible: "เข้าสู่ระบบ"

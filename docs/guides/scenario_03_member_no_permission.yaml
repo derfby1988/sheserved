@@ -49,54 +49,14 @@ env:
 
 # Navigate to login via bottom nav bar donation tab (index 1)
 # MainAppLayout redirects unauthenticated users to /login when tapping donation tab
-- tapOn:
-    point: "174,809"
-- waitForAnimationToEnd:
-    timeout: 3000
-
-# Wait for login page to appear
-- extendedWaitUntil:
-    visible: ".*ยินดีต้อนรับ.*"
-    timeout: 10000
-
-- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
-
-# ═══════════════════════════════════════════
-# Step 2: Login as member (firm) with can_manage_drug_risk = false
-# ═══════════════════════════════════════════
-# Enter username
-- tapOn:
-    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
-- waitForAnimationToEnd:
-    timeout: 1000
-- inputText: "${MEMBER_USERNAME}"
-- waitForAnimationToEnd:
-    timeout: 1000
-
-# Switch to password field by tapping below the "รหัสผ่าน" label
-- tapOn:
-    below:
-      text: "รหัสผ่าน"
-- waitForAnimationToEnd:
-    timeout: 1000
-- inputText: "${MEMBER_PASSWORD}"
-- waitForAnimationToEnd:
-    timeout: 1000
-
-# Dismiss keyboard by tapping the welcome text (non-interactive element)
-- tapOn:
-    text: ".*ยินดีต้อนรับ.*"
-- waitForAnimationToEnd:
-    timeout: 2000
-
-# Tap login button
-- tapOn: "เข้าสู่ระบบ"
-
-# Wait for home page to appear (login API call takes time)
-# After login, home page shows "ค้นหาการบริจาค..." instead of "ค้นหายา ร้านยา หมอ..."
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
 - extendedWaitUntil:
     visible:
-      text: ".*ค้นหาการบริจาค.*"
+      text: "ค้นหายา ร้านยา หมอ..."
     timeout: 180000
 - waitForAnimationToEnd:
     timeout: 3000
@@ -154,7 +114,7 @@ env:
     timeout: 2000
 
 # Verify we're back on home page
-- assertVisible: ".*ค้นหาการบริจาค.*"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
 
 # ═══════════════════════════════════════════
 # Step 6: (Manual Test Required) Prescription Editor Override Badge

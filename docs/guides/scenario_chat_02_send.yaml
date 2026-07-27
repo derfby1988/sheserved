@@ -1,0 +1,94 @@
+# CHAT-02: ส่งข้อความใหม่ใน ChartBoardPage
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "apisek" has password 123456, is_provider=true
+#   - At least one in_progress consultation exists
+#
+# Expected:
+#   - Type a message in the chat input
+#   - Tap send button
+#   - Message appears in the chat area
+#
+# Run:
+#   maestro test docs/guides/scenario_chat_02_send.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - chat
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+  TEST_MESSAGE: "สวัสดีครับ ทดสอบจาก Maestro"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Navigate to ChartBoardPage
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- tapOn: "คำขอโปรแกรมรักษา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: "กำลังดำเนินการ"
+    timeout: 30000
+
+- tapOn: "กำลังดำเนินการ"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าห้องแชทผู้ป่วย.*"
+    timeout: 30000
+
+- tapOn: ".*เข้าห้องแชทผู้ป่วย.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ถามผู้เชี่ยวชาญ.*|.*ส่ง.*"
+    timeout: 30000
+
+# Step 3: Type message
+- tapOn:
+    text: ".*ถามผู้เชี่ยวชาญ.*|.*พิมพ์ข้อความ.*|.*กรอกข้อความ.*"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- inputText: "${TEST_MESSAGE}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 4: Send message
+- tapOn:
+    text: ".*ส่ง.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 5: Verify message appears
+- extendedWaitUntil:
+    visible: "${TEST_MESSAGE}"
+    timeout: 10000

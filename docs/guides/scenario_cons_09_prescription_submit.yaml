@@ -1,0 +1,134 @@
+# CONS-09: ส่งใบสั่งยา (submit) และตรวจสอบ drug risk screening
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "apisek" has password 123456, is_provider=true
+#   - At least one in_progress consultation exists
+#   - Medication "Paracetamol" exists in the database
+#
+# Expected:
+#   - Open PrescriptionEditorPage, add medication
+#   - Tap "บันทึก & ส่งใบสั่งยา"
+#   - Drug risk screening dialog appears (if medication has risk data)
+#
+# Run:
+#   maestro test docs/guides/scenario_cons_09_prescription_submit.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - consultation
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+  MEDICATION_SEARCH: "Paracetamol"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Navigate to PrescriptionEditorPage
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- tapOn: "คำขอโปรแกรมรักษา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: "กำลังดำเนินการ"
+    timeout: 30000
+
+- tapOn: "กำลังดำเนินการ"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าห้องแชทผู้ป่วย.*"
+    timeout: 30000
+
+- tapOn: ".*เข้าห้องแชทผู้ป่วย.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ถามผู้เชี่ยวชาญ.*|.*ส่ง.*|.*แชท.*"
+    timeout: 30000
+
+- tapOn: "เครื่องมือแพทย์"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ออกใบสั่งยา.*"
+    timeout: 10000
+
+- tapOn: ".*ออกใบสั่งยา.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ออกใบสั่งยา.*|.*ชื่อยา.*|.*ค้นหายา.*"
+    timeout: 15000
+
+# Step 3: Add medication
+- tapOn:
+    text: ".*ชื่อยา.*"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- inputText: "${MEDICATION_SEARCH}"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*${MEDICATION_SEARCH}.*"
+    timeout: 10000
+
+- tapOn:
+    text: ".*${MEDICATION_SEARCH}.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 4: Dismiss keyboard and submit
+- tapOn:
+    id: "Done"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "บันทึก & ส่งใบสั่งยา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 5: Verify screening dialog or success message
+- extendedWaitUntil:
+    visible:
+      text: ".*${MEDICATION_SEARCH}.*|.*ความเสี่ยง.*|.*ยาอันตราย.*|.*สำเร็จ.*"
+    timeout: 15000

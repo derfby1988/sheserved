@@ -1,0 +1,106 @@
+# CONS-10: ปุ่ม "จบการรักษา" บน ChartBoardPage
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "apisek" has password 123456, is_provider=true
+#   - At least one in_progress consultation exists
+#
+# Expected:
+#   - Enter ChartBoardPage
+#   - Find and tap "จบการรักษา" or "เสร็จสิ้น" button
+#   - Consultation status changes to finished
+#
+# Note: This test may need adjustment based on actual button label and
+#   confirmation dialog behavior.
+#
+# Run:
+#   maestro test docs/guides/scenario_cons_10_finish.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - consultation
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Navigate to ChartBoardPage
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- tapOn: "คำขอโปรแกรมรักษา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible: "กำลังดำเนินการ"
+    timeout: 30000
+
+- tapOn: "กำลังดำเนินการ"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าห้องแชทผู้ป่วย.*"
+    timeout: 30000
+
+- tapOn: ".*เข้าห้องแชทผู้ป่วย.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- extendedWaitUntil:
+    visible:
+      text: ".*ถามผู้เชี่ยวชาญ.*|.*ส่ง.*|.*แชท.*"
+    timeout: 30000
+
+# Step 3: Look for "จบการรักษา" button
+# It may be at the top or bottom of ChartBoardPage
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap the finish button
+- tapOn:
+    text: ".*จบการรักษา.*|.*เสร็จสิ้น.*|.*จบ.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# If confirmation dialog appears, confirm
+- extendedWaitUntil:
+    visible:
+      text: ".*ยืนยัน.*|.*ตกลง.*|.*จบการรักษา.*"
+    timeout: 5000
+
+- tapOn:
+    text: ".*ยืนยัน.*|.*ตกลง.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Verify consultation is finished (returned to dashboard or status changed)
+- extendedWaitUntil:
+    visible:
+      text: ".*กำลังดำเนินการ.*|.*เสร็จสิ้น.*|.*คำขอโปรแกรมรักษา.*"
+    timeout: 15000

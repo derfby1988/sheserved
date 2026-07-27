@@ -40,45 +40,12 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 
-- tapOn:
-    point: "174,809"
-- waitForAnimationToEnd:
-    timeout: 3000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
 
-- extendedWaitUntil:
-    visible: ".*ยินดีต้อนรับ.*"
-    timeout: 10000
-
-- assertVisible: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
-
-- tapOn:
-    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
-- waitForAnimationToEnd:
-    timeout: 1000
-- inputText: "${PROVIDER_USERNAME}"
-- waitForAnimationToEnd:
-    timeout: 1000
-
-- tapOn:
-    below:
-      text: "รหัสผ่าน"
-- waitForAnimationToEnd:
-    timeout: 1000
-- inputText: "${PROVIDER_PASSWORD}"
-- waitForAnimationToEnd:
-    timeout: 1000
-
-- tapOn:
-    text: ".*ยินดีต้อนรับ.*"
-- waitForAnimationToEnd:
-    timeout: 2000
-
-- tapOn: "เข้าสู่ระบบ"
-
-- extendedWaitUntil:
-    visible:
-      text: ".*ค้นหาการบริจาค.*"
-    timeout: 180000
 - waitForAnimationToEnd:
     timeout: 3000
 

@@ -1,0 +1,79 @@
+appId: com.example.treeLawZoo
+tags:
+  - shared
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+---
+# Shared login flow: taps donation tab to trigger login, enters credentials,
+# dismisses BackgroundPermissionDialog, then taps Home tab to switch to home page.
+# Usage in other flows:
+#   - runFlow:
+#       file: _shared_login.yaml
+#       env:
+#         USERNAME: "apisek"
+#         PASSWORD: "123456"
+
+# Step 1: Tap donation tab to trigger login (guest gets redirected to login page)
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+# Step 2: Enter username
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 3: Enter password
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 4: Dismiss keyboard and login
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+# Step 5: Wait for login success SnackBar
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+
+# Step 6: Wait for page to settle (app redirects to donation dashboard)
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 7: Dismiss BackgroundPermissionDialog if present
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 8: Tap Home tab (leftmost in bottom nav, index 0) to switch to home page
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 9: Verify home page loaded
+- extendedWaitUntil:
+    visible:
+      text: "ค้นหายา ร้านยา หมอ..."
+    timeout: 60000

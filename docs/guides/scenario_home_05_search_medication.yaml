@@ -1,0 +1,38 @@
+# HOME-05: Search บน home page ค้นหา
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - App is in guest mode
+#
+# Expected:
+#   - Tapping search bar opens search overlay
+#   - Default suggestions are visible (ร้านยา, ปรึกษาแพทย์, นวดสปา)
+#   - Typing filters suggestions
+#
+# Run:
+#   maestro test docs/guides/scenario_home_05_search_medication.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - home
+env:
+  SEARCH_TERM: "ร้านยา"
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Tap on the search bar to open overlay
+- tapOn: "ค้นหายา ร้านยา หมอ..."
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Verify search overlay opened — should see suggestion items
+- extendedWaitUntil:
+    visible:
+      text: ".*ร้านยา.*|.*ปรึกษาแพทย์.*|.*นวดสปา.*"
+    timeout: 10000

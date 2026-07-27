@@ -1,0 +1,57 @@
+# CONS-01: HealthProgramRequestDashboard แสดงรายการคำขอ
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "apisek" has password 123456, is_provider=true
+#   - At least one health program request exists in the database
+#
+# Expected:
+#   - Navigate to HealthProgramRequestDashboard via drawer
+#   - Dashboard shows tabs (กำลังดำเนินการ, etc.)
+#   - At least one consultation entry is visible
+#
+# Run:
+#   maestro test docs/guides/scenario_cons_01_dashboard.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - consultation
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Open drawer and navigate to Health Program Request Dashboard
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- tapOn: "คำขอโปรแกรมรักษา"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 3: Verify dashboard loaded with tabs
+- extendedWaitUntil:
+    visible: "กำลังดำเนินการ"
+    timeout: 30000
+
+- assertVisible: "กำลังดำเนินการ"

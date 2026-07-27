@@ -1,0 +1,58 @@
+# GUARD-03: Route guard — provider ไม่มีสิทธิ์ admin → ไม่เห็นเมนู Admin
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "sister" has password 123456, role=provider
+#   - Provider should NOT see admin menu items in drawer
+#
+# Expected:
+#   - Login as provider succeeds
+#   - Admin menu items are NOT visible in drawer
+#
+# Run:
+#   maestro test docs/guides/scenario_guard_03_admin_provider.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - security
+  - guard
+env:
+  USERNAME: "sister"
+  PASSWORD: "123456"
+---
+# Step 1: Login as provider
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Open drawer
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: Scroll through drawer — admin items should NOT be visible
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Admin-specific menu items should not appear for provider
+- assertNotVisible: ".*จัดการอาชีพ.*"
+- assertNotVisible: ".*System Monitor.*"
+- assertNotVisible: ".*Platform Settings.*"

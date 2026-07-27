@@ -197,13 +197,10 @@ class _HomePageState extends ConsumerState<HomePage>
       }
     });
 
-    // ✅ Auto-refresh employee invitations every 30 seconds (in case first load misses)
-    _employeeInvitationRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) {
-        debugPrint('HomePage: Auto-refreshing employee invitations via timer...');
-        _loadEmployeeInvitations();
-      }
-    });
+    // ✅ Auto-refresh employee invitations only for authenticated users.
+    if (initUser != null) {
+      _startEmployeeInvitationRefresh();
+    }
   }
 
   @override
@@ -251,6 +248,15 @@ class _HomePageState extends ConsumerState<HomePage>
     // ถ้ามีการดึงพิกัด Location อย่างหนัก สามารถ pause สตรีมตรงนี้ได้เลย (ตัวอย่าง: _locationStream?.pause())
   }
 
+  void _startEmployeeInvitationRefresh() {
+    if (_employeeInvitationRefreshTimer?.isActive == true) return;
+    _employeeInvitationRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && AuthService.instance.currentUser != null) {
+        _loadEmployeeInvitations();
+      }
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -265,7 +271,6 @@ class _HomePageState extends ConsumerState<HomePage>
   void _connectWebSocket() {
     final userId = ServiceLocator.instance.currentUser?.id;
     if (userId != null) {
-      WebSocketService().resetConnectionAttempts();
       WebSocketService().connect(userId: userId);
     }
   }
@@ -1293,7 +1298,10 @@ class _HomePageState extends ConsumerState<HomePage>
       _connectWebSocket();
       _subscribeConsultationAlerts(); // ✅ re-subscribe เมื่อ login
       _loadEmployeeInvitations(); // ✅ re-load employee invitations เมื่อ login
+      _startEmployeeInvitationRefresh();
     } else {
+      _employeeInvitationRefreshTimer?.cancel();
+      _employeeInvitationRefreshTimer = null;
       // Logout — clear consultation alerts
       _consultationAlertSub?.cancel();
       _consultationPollTimer?.cancel();
@@ -2322,7 +2330,9 @@ class _HomePageState extends ConsumerState<HomePage>
 
   /// โหลดคำเชิญพนักงาน ERP ที่รอ current user ตอบรับ/ปฏิเสธ + ที่ถูกยกเลิกโดย admin
   Future<void> _loadEmployeeInvitations() async {
+    if (!mounted) return;
     await ref.read(phaseThreeProvider.notifier).loadPendingInvitationsForCurrentUser();
+    if (!mounted) return;
     await ref.read(phaseThreeProvider.notifier).loadCancelledInvitationsForCurrentUser();
   }
 

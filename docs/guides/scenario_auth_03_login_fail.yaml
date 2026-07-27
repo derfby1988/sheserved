@@ -1,0 +1,67 @@
+# AUTH-03: Login ผิดพลาด (รหัสผิด) แสดง error
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "sister" exists with password 123456
+#
+# Expected:
+#   - Login fails with wrong password
+#   - SnackBar shows "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+#   - App stays on login page
+#
+# Run:
+#   maestro test docs/guides/scenario_auth_03_login_fail.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - auth
+env:
+  USERNAME: "sister"
+  WRONG_PASSWORD: "wrongpass999"
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Tap donation tab to trigger login
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${WRONG_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for error SnackBar
+- extendedWaitUntil:
+    visible: ".*ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง.*"
+    timeout: 20000
+
+# Verify still on login page
+- assertVisible: "เข้าสู่ระบบ"

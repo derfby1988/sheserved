@@ -1,0 +1,65 @@
+# CHAT-05: กดปุ่ม "ถามผู้เชี่ยวชาญ" เพื่อเริ่มต้นคำปรึกษาใหม่
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "independent" has password 123456, role=consumer
+#
+# Expected:
+#   - Login as consumer
+#   - On home page, find "ถามผู้เชี่ยวชาญ" button
+#   - Tap it to start a new consultation request
+#   - Verify consultation request form or flow starts
+#
+# Run:
+#   maestro test docs/guides/scenario_chat_05_ask_expert.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - chat
+env:
+  USERNAME: "independent"
+  PASSWORD: "123456"
+---
+# Step 1: Login as consumer
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Look for "ถามผู้เชี่ยวชาญ" button on home page
+- swipe:
+    start: "50%, 70%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Tap "ถามผู้เชี่ยวชาญ" if visible
+- extendedWaitUntil:
+    visible:
+      text: ".*ถามผู้เชี่ยวชาญ.*|.*ปรึกษา.*|.*ขอคำปรึกษา.*"
+    timeout: 10000
+
+- tapOn:
+    text: ".*ถามผู้เชี่ยวชาญ.*|.*ปรึกษา.*|.*ขอคำปรึกษา.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 3: Verify consultation request form or expert list appears
+- extendedWaitUntil:
+    visible:
+      text: ".*ผู้เชี่ยวชาญ.*|.*เลือก.*|.*หมอ.*|.*คำถาม.*|.*อาการ.*"
+    timeout: 15000

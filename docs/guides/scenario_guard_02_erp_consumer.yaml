@@ -1,0 +1,57 @@
+# GUARD-02: Route guard — consumer เข้า /erp/dashboard → redirect ไป /home
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "independent" has password 123456, role=consumer, profession_id=NULL
+#   - Consumer role should NOT have access to ERP routes
+#
+# Expected:
+#   - Login as consumer succeeds
+#   - ERP menu is NOT visible in drawer
+#   - ERP dashboard content is NOT accessible
+#
+# Run:
+#   maestro test docs/guides/scenario_guard_02_erp_consumer.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - security
+  - guard
+env:
+  USERNAME: "independent"
+  PASSWORD: "123456"
+---
+# Step 1: Login as consumer
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Open drawer
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: Scroll through drawer — ERP menu should NOT be visible for consumer
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- assertNotVisible: ".*ERP.*|.*แดชบอร์ด ERP.*"

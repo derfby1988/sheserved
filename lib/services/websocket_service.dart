@@ -15,7 +15,10 @@ class WebSocketService {
   bool _isConnected = false;
   bool _isEnabled = true; // Flag to enable/disable WebSocket
   int _connectionAttempts = 0;
-  static const int _maxConnectionAttempts = 100; // Increased for background persistence
+  int _connectionErrorLogCount = 0;
+  DateTime? _lastConnectionErrorLogAt;
+  static const int _maxConnectionAttempts = 3;
+  static const int _socketReconnectionAttempts = 10;
   Timer? _heartbeatTimer;
   
   // Stream Controllers
@@ -111,6 +114,8 @@ class WebSocketService {
   /// Reset connection attempts (call this when user manually tries to connect)
   void resetConnectionAttempts() {
     _connectionAttempts = 0;
+    _connectionErrorLogCount = 0;
+    _lastConnectionErrorLogAt = null;
   }
   
   /// Connect to WebSocket Server
@@ -122,6 +127,11 @@ class WebSocketService {
     
     if (_isConnected) {
       debugPrint('WebSocket already connected');
+      return;
+    }
+
+    if (_socket != null) {
+      _socket!.connect();
       return;
     }
     
@@ -143,7 +153,7 @@ class WebSocketService {
             .enableReconnection()
             .setReconnectionDelay(1000)
             .setReconnectionDelayMax(5000)
-            .setReconnectionAttempts(99999) // Practically infinite for responders
+            .setReconnectionAttempts(_socketReconnectionAttempts)
             .setRandomizationFactor(0.5)
             .setAuth({'userId': userId, 'token': authToken})
             .build(),
@@ -183,8 +193,13 @@ class WebSocketService {
       
       _socket!.onConnectError((error) {
         _isConnected = false;
-        // แสดง error เฉพาะครั้งแรกๆ เพื่อลด log noise ใน terminal
-        if (_connectionAttempts <= 3) {
+        _connectionErrorLogCount++;
+        final now = DateTime.now();
+        final shouldLog = _connectionErrorLogCount <= 3 ||
+            _lastConnectionErrorLogAt == null ||
+            now.difference(_lastConnectionErrorLogAt!) >= const Duration(seconds: 30);
+        if (shouldLog) {
+          _lastConnectionErrorLogAt = now;
           debugPrint('WebSocket connection error: $error');
           debugPrint('Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)');
         }
@@ -636,6 +651,7 @@ class WebSocketService {
       _socket!.dispose();
       _socket = null;
       _isConnected = false;
+      resetConnectionAttempts();
       _connectionController.add(false);
     }
   }

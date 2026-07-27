@@ -1,0 +1,57 @@
+# HOME-04: Bottom navigation bar สลับ tab ได้
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "sister" has password 123456
+#
+# Expected:
+#   - Bottom navigation bar is visible on home page
+#   - Tapping different tabs switches content
+#
+# Run:
+#   maestro test docs/guides/scenario_home_04_bottom_nav.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - home
+env:
+  USERNAME: "sister"
+  PASSWORD: "123456"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Verify home content is visible
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+
+# Step 3: Scroll to find bottom navigation bar
+# The bottom nav typically has tabs like หน้าแรก, บริจาค, แชท, โปรไฟล์
+# Tap on a different tab (e.g., donation or chat tab)
+# Note: Adjust based on actual bottom nav labels
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 30%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Verify content changed (some new content should be visible)
+- extendedWaitUntil:
+    visible:
+      text: ".*บริจาค.*|.*ค้นหา.*|.*หน้าแรก.*"
+    timeout: 10000

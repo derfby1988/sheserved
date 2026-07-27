@@ -1,0 +1,83 @@
+# AUTH-04: Logout สำเร็จ กลับหน้า Home guest
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - User "sister" has password 123456
+#
+# Expected:
+#   - After login, open drawer and tap logout
+#   - App navigates to /login after logout
+#   - Relaunching app shows home page in guest mode
+#
+# Run:
+#   maestro test docs/guides/scenario_auth_04_logout.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - smoke
+  - auth
+env:
+  USERNAME: "sister"
+  PASSWORD: "123456"
+---
+# Step 1: Login
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Open drawer
+- tapOn:
+    point: "38,95"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: Scroll to bottom of drawer to find logout
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 20%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 4: Tap logout button
+- tapOn: "ออกจากระบบ"
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Step 5: Kill and relaunch app to verify session is cleared
+- killApp
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- launchApp:
+    appId: com.example.treeLawZoo
+
+# Step 6: Verify home page loads in guest mode (no auto-login)
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Step 7: Tap login icon to verify login page is accessible (guest mode)
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- assertVisible: "เข้าสู่ระบบ"

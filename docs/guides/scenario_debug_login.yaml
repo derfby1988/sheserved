@@ -1,0 +1,71 @@
+appId: com.example.treeLawZoo
+tags:
+  - debug
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Tap donation tab to trigger login (guest user gets redirected to login)
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn:
+    text: ".*ยินดีต้อนรับ.*"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+- tapOn: "เข้าสู่ระบบ"
+
+# Wait for login success SnackBar
+- extendedWaitUntil:
+    visible: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+
+# Wait for page to settle after login (redirects to donation dashboard)
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Dismiss BackgroundPermissionDialog if present
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Tap Home tab (leftmost in bottom nav, index 0) to switch from donation to home
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Final assertion
+- assertVisible: "ค้นหายา ร้านยา หมอ..."

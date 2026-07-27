@@ -1,0 +1,36 @@
+# HOME-06: Notification bell icon แสดง badge/count
+# Device: iPhone 16 Simulator (A692F954-72BF-4D54-9557-FB61BCB5DBA6) — iOS 18.1
+#
+# Prerequisites:
+#   - App is in guest mode (notification bell is always visible)
+#
+# Expected:
+#   - Notification bell icon is visible on home page
+#   - Tapping it shows a SnackBar message
+#
+# Run:
+#   maestro test docs/guides/scenario_home_06_notification.yaml --udid A692F954-72BF-4D54-9557-FB61BCB5DBA6
+
+appId: com.example.treeLawZoo
+tags:
+  - home
+---
+- launchApp:
+    appId: com.example.treeLawZoo
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Step 1: Tap the notification bell icon (top-right area)
+- tapOn:
+    point: "340,60"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 2: Verify SnackBar appears with notification message
+- extendedWaitUntil:
+    visible:
+      text: ".*การแจ้งเตือน.*|.*แจ้งเตือน.*"
+    timeout: 10000
