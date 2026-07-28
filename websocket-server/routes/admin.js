@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { safeExtension } = require('../utils/safe-path');
 const {
     authRateLimiter,
     strictRateLimiter,
@@ -24,7 +25,12 @@ module.exports = (pool) => {
             cb(null, dir);
         },
         filename: (req, file, cb) => {
-            cb(null, 'watermark' + path.extname(file.originalname));
+            try {
+                const ext = safeExtension(file.originalname, 'image');
+                cb(null, 'watermark' + ext);
+            } catch (err) {
+                cb(err);
+            }
         }
     });
 

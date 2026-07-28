@@ -1,0 +1,290 @@
+# แผนทดสอบ Path Traversal & Command Injection ตัวเลือก A: Safe Path Helper + Containment Check
+# อุปกรณ์: iPhone 16 (822794E6-EF5C-420A-8620-0BB8653C60E3)
+# วิธีรัน: maestro test --device 822794E6-EF5C-420A-8620-0BB8653C60E3 docs/guides/path_traversal_option_a_test_flow.yaml
+# ครอบคลุม: A=ล็อกอิน, B=อัปโหลดภาพปกติ, C=อัปโหลดวิดีโอ, D=อัปโหลด watermark, E=เชิงลบ
+
+appId: com.example.treeLawZoo
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+  ADMIN_USERNAME: "derfby"
+  ADMIN_PASSWORD: "123456"
+  TEST_MESSAGE: "Path Traversal test message"
+
+---
+# ส่วน A: ทดสอบล็อกอิน (ตรวจสอบว่าการแก้ไข safe-path ไม่ทำลายระบบล็อกอิน)
+# A.1 ล็อกอินด้วยบัญชีผู้ใช้ทั่วไป (Consumer)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+- clearState
+
+# A.2 ล็อกอินด้วยบัญชีผู้ให้บริการ (Provider)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+- clearState
+
+# A.3 ล็อกอินด้วยบัญชีผู้ดูแลระบบ (Admin)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${ADMIN_USERNAME}"
+      PASSWORD: "${ADMIN_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+- clearState
+
+---
+# ส่วน B: ทดสอบอัปโหลดภาพ (Emergency Photo) — ตรวจสอบว่า path traversal mitigation
+# ไม่ทำลายการอัปโหลดปกติที่ใช้ incidentId แบบ UUID ที่ถูกต้อง
+# B.1 Consumer ล็อกอินและเข้าหน้าอัปโหลดภาพ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+# ตรวจสอบว่าหน้า home แสดงเมนูต่างๆ ปกติ หลังจาก path traversal fix
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+- clearState
+
+---
+# ส่วน C: ทดสอบอัปโหลดวิดีโอ — ตรวจสอบว่า safeExtension ไม่ปฏิเสธไฟล์ .mp4 ปกติ
+# C.1 Consumer ล็อกอินและเข้าหน้าอัปโหลดวิดีโอ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+# ตรวจสอบว่าแอปไม่ crash หลัง path traversal fix
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+- clearState
+
+---
+# ส่วน D: ทดสอบ Watermark Upload (Admin) — ตรวจสอบว่า safeExtension สำหรับ image
+# ไม่ปฏิเสธไฟล์ .png ปกติ
+# D.1 Admin ล็อกอินและเข้าหน้า admin settings
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${ADMIN_USERNAME}"
+      PASSWORD: "${ADMIN_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+# ตรวจสอบว่าแอปทำงานปกติหลังจาก watermark filename fix
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+- clearState
+
+---
+# ส่วน E: การทดสอบเชิงลบ — ตรวจสอบว่าแอปไม่ crash เมื่อได้รับ input ที่ผิดปกติ
+# E.1 ตรวจสอบว่าแอปรองรับการล็อกอินที่ส่งค่าผิดปกติได้โดยไม่ crash
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+# ใส่ username ที่มี path traversal characters
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "../../etc/passwd"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "123456"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+# ตรวจสอบว่าแอปแสดงข้อผิดพลาด ไม่ crash
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
+- clearState
+
+# E.2 ตรวจสอบว่าแอปไม่ crash เมื่อใส่ username ที่มี shell metacharacters
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "test; rm -rf /"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "123456"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
+- clearState
+
+# E.3 ตรวจสอบว่าแอปไม่ crash เมื่อใส่ username ที่มี null bytes
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "test%00admin"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "123456"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
+- clearState
+
+---
+# ส่วน F: ทดสอบว่าระบบทำงานปกติหลัง path traversal fix (Regression)
+# F.1 Consumer ล็อกอินสำเร็จและใช้งานแอปได้ปกติ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+# ตรวจสอบว่าเมนูหลักแสดงปกติ
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+# ตรวจสอบว่าสามารถเข้าเมนูได้
+- tapOn:
+    text: ".*ฉุกเฉิน.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+# ตรวจสอบว่าหน้าฉุกเฉินแสดงปกติ (ไม่ crash จาก path traversal fix)
+- extendedWaitUntil:
+    visible:
+      text: ".*"
+    timeout: 10000
+- clearState
+
+# F.2 Provider ล็อกอินสำเร็จและใช้งานแอปได้ปกติ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+- clearState

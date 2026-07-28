@@ -108,13 +108,21 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
       );
       setState(() => _uploadProgress = 0.9);
 
-      final publicUrl = client.storage.from(widget.bucket).getPublicUrl(filePath);
+      // BOLA: Use signed URL for sensitive buckets (registration_evidence, donations, chat_attachments)
+      // Public buckets (avatars, images) can still use getPublicUrl
+      final isSensitiveBucket = ['registration_evidence', 'donations', 'chat_attachments', 'medical_images'].contains(widget.bucket);
+      String url;
+      if (isSensitiveBucket) {
+        url = await client.storage.from(widget.bucket).createSignedUrl(filePath, 3600);
+      } else {
+        url = client.storage.from(widget.bucket).getPublicUrl(filePath);
+      }
       setState(() {
-        _uploadedUrl = publicUrl;
+        _uploadedUrl = url;
         _isUploading = false;
         _uploadProgress = 1.0;
       });
-      widget.onUploaded(publicUrl);
+      widget.onUploaded(url);
     } catch (e) {
       setState(() {
         _isUploading = false;

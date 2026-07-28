@@ -56,7 +56,7 @@ class _ConsultationChatHistoryPageState
         final roomId = req.roomId ?? 'consult_${req.id}';
         // Load messages
         final chatRepo = ServiceLocator.instance.chatRepository;
-        final msgs = await chatRepo.getMessages(roomId);
+        final msgs = await chatRepo.getMessages(roomId, callerId: userId);
         if (mounted) {
           setState(() {
             _request = req;

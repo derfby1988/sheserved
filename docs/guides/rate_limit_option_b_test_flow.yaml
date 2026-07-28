@@ -1,0 +1,360 @@
+# แผนทดสอบ Rate Limiting Option B: Input Bounds Enforcement — ผลกระทบจากการแก้ไข
+# อุปกรณ์: iPhone 16 (822794E6-EF5C-420A-8620-0BB8653C60E3)
+# วิธีรัน: maestro test --device 822794E6-EF5C-420A-8620-0BB8653C60E3 docs/guides/rate_limit_option_b_test_flow.yaml
+# ครอบคลุม: A=ล็อกอิน smoke test, B=Emergency list pagination, C=Gallery pagination, D=Video upload, E=เชิงลบ
+# เชื่อมโยง: docs/secure/03_rate_limiting_resource_exhaustion.md (R1-R4)
+
+appId: com.example.treeLawZoo
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+  TEST_MESSAGE: "Rate limit test"
+
+---
+# ส่วน A: Smoke test ล็อกอิน — ตรวจสอบว่าการแก้ไขใน video.js ไม่ทำลายระบบล็อกอิน
+# A.1 ล็อกอินด้วยบัญชีผู้ใช้ทั่วไป (Consumer)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 60000
+- clearState
+
+---
+# ส่วน B: Emergency Video List — ตรวจสอบ R2 (pagination clamp) + R4 (cache key)
+# B.1 ล็อกอินและเข้าสู่หน้าวิดีโอเหตุฉุกเฉิน
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# B.2 เข้าสู่แท็บวิดีโอเหตุฉุกเฉิน
+- runFlow:
+    when:
+      visible: ".*วิดีโอ.*"
+    commands:
+      - tapOn: ".*วิดีโอ.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible: ".*เหตุฉุกเฉิน.*"
+          timeout: 15000
+
+# B.3 ตรวจสอบว่ารายการวิดีโอแสดงผล (pagination clamp ไม่ทำให้ app crash)
+- runFlow:
+    when:
+      visible: ".*เหตุฉุกเฉิน.*"
+    commands:
+      - tapOn: ".*เหตุฉุกเฉิน.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible:
+            text: ".*"
+          timeout: 15000
+
+# B.4 Scroll ลงเพื่อ trigger pagination หน้าถัดไป (page=2)
+- swipe:
+    direction: DOWN
+- waitForAnimationToEnd:
+    timeout: 3000
+- swipe:
+    direction: DOWN
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# B.5 ตรวจสอบว่า app ไม่ crash หลัง scroll (R2 clamp ทำงาน)
+- assertVisible:
+    text: ".*"
+- clearState
+
+---
+# ส่วน C: Gallery — ตรวจสอบ R2 (pagination clamp) + R4 (cache key sanitize)
+# C.1 ล็อกอินและเข้าสู่หน้าวิดีโอ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# C.2 เข้าสู่แท็บวิดีโอและเปิด gallery ของวิดีโอใดวิดีโอหนึ่ง
+- runFlow:
+    when:
+      visible: ".*วิดีโอ.*"
+    commands:
+      - tapOn: ".*วิดีโอ.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible: ".*เหตุฉุกเฉิน.*"
+          timeout: 15000
+      - tapOn: ".*เหตุฉุกเฉิน.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# C.3 ถ้ามีวิดีโอ ให้ tap เพื่อเปิด gallery
+- runFlow:
+    when:
+      visible: ".*ดูรูป.*"
+    commands:
+      - tapOn: ".*ดูรูป.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible: ".*"
+          timeout: 15000
+      - swipe:
+          direction: DOWN
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - assertVisible:
+          text: ".*"
+
+- clearState
+
+---
+# ส่วน D: Video Upload — ตรวจสอบ R1 (multer limit 20MB) + R3 (GPS tracks limit)
+# D.1 ล็อกอินและพยายามอัปโหลดวิดีโอ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# D.2 พยายามเข้าสู่หน้าอัปโหลดวิดีโอ
+- runFlow:
+    when:
+      visible: ".*วิดีโอ.*"
+    commands:
+      - tapOn: ".*วิดีโอ.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# D.3 ตรวจสอบว่าปุ่มอัปโหลดมีอยู่ (app ไม่ crash จากการแก้ไข multer config)
+- runFlow:
+    when:
+      visible: ".*อัปโหลด.*"
+    commands:
+      - assertVisible: ".*อัปโหลด.*"
+
+- clearState
+
+---
+# ส่วน E: ทดสอบเชิงลบ — ตรวจสอบว่า app ไม่ crash เมื่อ backend ส่ง 413 (file too large)
+# E.1 ล็อกอินด้วย Consumer
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn:
+    point: "50,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# E.2 ตรวจสอบว่าหน้าหลักยังแสดงผลปกติ (ไม่ crash จาก cache key sanitize)
+- assertVisible: ".*คำร้อง.*"
+- clearState

@@ -113,18 +113,23 @@ class ConsultationRepository {
         .toList();
   }
 
-  /// Update consultation request
+  /// Update consultation request (BOLA: scoped to owner or assigned provider)
   Future<ConsultationRequestModel> updateRequest(
     String id,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    required String callerId,
+  }) async {
     data['updated_at'] = DateTime.now().toIso8601String();
     final response = await _client
         .from('consultation_requests')
         .update(data)
         .eq('id', id)
+        .or('user_id.eq.$callerId,provider_id.eq.$callerId')
         .select('*, symptoms:consultation_symptoms(*)')
-        .single();
+        .maybeSingle();
+    if (response == null) {
+      throw Exception('Consultation request not found or access denied');
+    }
     return ConsultationRequestModel.fromJson(response);
   }
 
@@ -623,15 +628,20 @@ class ConsultationRepository {
     }
   }
 
-  /// Update status of a consultation request
-  Future<void> updateStatus(String requestId, String status) async {
-    await _client
+  /// Update status of a consultation request (BOLA: scoped to owner or assigned provider)
+  Future<void> updateStatus(String requestId, String status, {required String callerId}) async {
+    final result = await _client
         .from('consultation_requests')
         .update({
           'status': status,
           'updated_at': DateTime.now().toIso8601String(),
         })
-        .eq('id', requestId);
+        .eq('id', requestId)
+        .or('user_id.eq.$callerId,provider_id.eq.$callerId')
+        .select('id');
+    if (result == null || (result as List).isEmpty) {
+      throw Exception('Consultation request not found or access denied');
+    }
   }
 
   /// Get statistics for organ usage frequency

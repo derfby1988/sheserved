@@ -94,7 +94,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
       // Ensure room exists and provider is in participants
       await _ensureProviderInRoom();
 
-      final chatMessages = await _chatRepo.getMessages(widget.entry.roomId);
+      final chatMessages = await _chatRepo.getMessages(widget.entry.roomId, callerId: _currentUser?.id ?? '');
       if (mounted) {
         final myId = _currentUser?.id;
         setState(() {
@@ -119,7 +119,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
 
   void _subscribeToMessages() {
     final roomId = widget.entry.roomId;
-    _messagesSub = _chatRepo.streamMessages(roomId).listen((newMessages) {
+    _messagesSub = _chatRepo.streamMessages(roomId, callerId: _currentUser?.id ?? '').listen((newMessages) {
       if (mounted) {
         final myId = _currentUser?.id;
         setState(() {
@@ -249,7 +249,7 @@ class _ExpertChatRoomPageState extends State<ExpertChatRoomPage> {
         type: 'text',
         status: MessageStatus.sent,
       );
-      await _chatRepo.sendMessage(message);
+      await _chatRepo.sendMessage(message, callerId: _currentUser?.id ?? '');
     } catch (e) {
       debugPrint('ExpertChat: send error $e');
     }

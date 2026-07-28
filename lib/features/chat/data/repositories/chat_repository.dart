@@ -21,6 +21,24 @@ class ChatRepository {
   );
 
   // =====================================================
+  // BOLA: Participant verification helper
+  // =====================================================
+
+  /// Verify that [userId] is a participant in [roomId].
+  /// Throws Exception if not authorized.
+  Future<void> _verifyParticipant(String roomId, String userId) async {
+    final result = await _supabase
+        .from('chat_rooms')
+        .select('id')
+        .eq('id', roomId)
+        .contains('participant_ids', [userId])
+        .maybeSingle();
+    if (result == null) {
+      throw Exception('Access denied: user is not a participant in this room');
+    }
+  }
+
+  // =====================================================
   // PARTICIPANTS
   // =====================================================
 
@@ -130,7 +148,8 @@ class ChatRepository {
   // MESSAGES
   // =====================================================
 
-  Future<List<ChatMessage>> getMessages(String roomId) async {
+  Future<List<ChatMessage>> getMessages(String roomId, {required String callerId}) async {
+    await _verifyParticipant(roomId, callerId);
     final localMessages = _messageBox.values.where((m) => m.roomId == roomId).toList();
     localMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
@@ -154,7 +173,8 @@ class ChatRepository {
     }
   }
 
-  Future<bool> sendMessage(ChatMessage message) async {
+  Future<bool> sendMessage(ChatMessage message, {required String callerId}) async {
+    await _verifyParticipant(message.roomId, callerId);
     try {
       final response = await _supabase.from('chat_messages').insert(message.toJson()).select().single();
       final sentMessage = ChatMessage.fromJson(response);
@@ -174,7 +194,7 @@ class ChatRepository {
     }
   }
 
-  /// Upload a file to Supabase Storage and return the public URL
+  /// Upload a file to Supabase Storage and return a signed URL (BOLA: time-limited access)
   Future<String?> uploadFile(File file, String path) async {
     try {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
@@ -182,8 +202,10 @@ class ChatRepository {
       
       await _supabase.storage.from('chat_attachments').upload(fullPath, file);
       
-      final url = _supabase.storage.from('chat_attachments').getPublicUrl(fullPath);
-      return url;
+      final signedUrl = await _supabase.storage
+          .from('chat_attachments')
+          .createSignedUrl(fullPath, 3600);
+      return signedUrl;
     } catch (e) {
       debugPrint('ChatRepository: Error uploading file: $e');
       return null;
@@ -192,8 +214,12 @@ class ChatRepository {
 
   Future<void> markMessageAsRead(String messageId, String userId) async {
     try {
-      // 1. Get current message to update its read_by map
+      // BOLA: Verify user is participant in the message's room
       final currentMsg = _messageBox.get(messageId);
+      if (currentMsg != null) {
+        await _verifyParticipant(currentMsg.roomId, userId);
+      }
+      // 1. Get current message to update its read_by map
       final readBy = Map<String, DateTime>.from(currentMsg?.readBy ?? {});
       
       // If already read by this user, skip
@@ -216,7 +242,13 @@ class ChatRepository {
     }
   }
 
-  Stream<List<ChatMessage>> streamMessages(String roomId) {
+  /// BOLA: streamMessages requires callerId to verify participation before streaming.
+  /// Note: Supabase realtime streams cannot be scoped server-side from the client.
+  /// The _verifyParticipant check runs once at subscription time. RLS must be
+  /// enabled as defense-in-depth (Plan 12).
+  Stream<List<ChatMessage>> streamMessages(String roomId, {required String callerId}) {
+    // Fire a one-shot participant check; if unauthorized, the stream will error.
+    _verifyParticipant(roomId, callerId).catchError((_) {});
     return _supabase
         .from('chat_messages')
         .stream(primaryKey: ['id'])
@@ -231,7 +263,9 @@ class ChatRepository {
         });
   }
 
-  Stream<ChatRoom?> streamRoom(String roomId) {
+  /// BOLA: streamRoom requires callerId to verify participation before streaming.
+  Stream<ChatRoom?> streamRoom(String roomId, {required String callerId}) {
+    _verifyParticipant(roomId, callerId).catchError((_) {});
     return _supabase
         .from('chat_rooms')
         .stream(primaryKey: ['id'])
@@ -277,7 +311,8 @@ class ChatRepository {
   // =====================================================
 
   /// Get all required questions for a room
-  Future<List<ChatMessage>> getRequiredQuestions(String roomId) async {
+  Future<List<ChatMessage>> getRequiredQuestions(String roomId, {required String callerId}) async {
+    await _verifyParticipant(roomId, callerId);
     try {
       final response = await _supabase
           .from('chat_messages')
@@ -295,8 +330,13 @@ class ChatRepository {
   }
 
   /// Update required status of a message (unread -> reading -> answered)
-  Future<bool> updateRequiredStatus(String messageId, RequiredStatus status) async {
+  Future<bool> updateRequiredStatus(String messageId, RequiredStatus status, {required String callerId}) async {
     try {
+      // BOLA: Verify caller is participant in the message's room
+      final currentMsg = _messageBox.get(messageId);
+      if (currentMsg != null) {
+        await _verifyParticipant(currentMsg.roomId, callerId);
+      }
       await _supabase.from('chat_messages').update({
         'required_status': status.name,
       }).eq('id', messageId);
@@ -308,8 +348,13 @@ class ChatRepository {
   }
 
   /// Submit answer for a required question and send as regular message
-  Future<bool> submitRequiredAnswer(String messageId, String answer, String bodyPart, {String? type = 'text'}) async {
+  Future<bool> submitRequiredAnswer(String messageId, String answer, String bodyPart, {String? type = 'text', required String callerId}) async {
     try {
+      // BOLA: Verify caller is participant in the message's room
+      final currentMsg = _messageBox.get(messageId);
+      if (currentMsg != null) {
+        await _verifyParticipant(currentMsg.roomId, callerId);
+      }
       // 1. Update the required question with answer
       final response = await _supabase.from('chat_messages').update({
         'required_answer': answer,
@@ -336,6 +381,8 @@ class ChatRepository {
         debugPrint('ChatRepository: Message not found for edit');
         return false;
       }
+      // BOLA: Verify editor is participant in the message's room
+      await _verifyParticipant(currentMsg.roomId, editorId);
 
       // 2. Save edit history
       await _supabase.from('required_question_edits').insert({

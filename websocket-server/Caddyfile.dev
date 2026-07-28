@@ -2,6 +2,10 @@
 # Caddyfile.dev — Port 8080 (ไม่ต้อง sudo)
 # ใช้สำหรับ: ทดสอบเร็วบน localhost และมือถือในวง Wi-Fi เดียวกัน
 # รัน: caddy run --config Caddyfile.dev --adapter caddyfile
+#
+# Option D: Edge Rate Limiting — ต้องติดตั้ง caddy-ratelimit plugin
+#   caddy add-package github.com/mholt/caddy-ratelimit
+# หรือถ้าใช้ Caddy มาตรฐาน (ไม่มี plugin) edge limit จะทำงานที่ app layer
 # =============================================================
 
 {
@@ -21,13 +25,51 @@
 		X-Powered-By "Sheserved-Proxy"
 	}
 
+	# Option D: Edge Rate Limiting (requires caddy-ratelimit plugin)
+	# แยก zone ตามประเภท traffic — ใช้เป็น coarse defense ก่อนถึง app
+	# ถ้าไม่มี plugin ให้ comment ส่วนนี้และพึ่ง app-layer rate limiter
+	rate_limit {
+		zone api_read   10r/s 20
+		zone api_auth    2r/s  5
+		zone api_upload  1r/s  3
+		zone emergency  20r/s 50
+	}
+
+	# Auth endpoints — strict limit
+	@auth path /api/auth/* /api/login /api/register /api/otp/* /api/verify* /api/reset*
+	handle @auth {
+		rate_limit api_auth
+		reverse_proxy localhost:3000
+	}
+
+	# Upload endpoints — low rate, larger body
+	@upload path_regexp ^/api/.*upload
+	handle @upload {
+		rate_limit api_upload
+		request_body {
+			max_size 25MB
+		}
+		reverse_proxy localhost:3000
+	}
+
+	# Emergency endpoints — high burst (ต้องไม่บล็อกฉุกเฉิน)
+	@emergency path_regexp ^/api/.*emergency
+	handle @emergency {
+		rate_limit emergency
+		reverse_proxy localhost:3000
+	}
+
+	# WebSocket — no rate limit on handshake, app-layer handles events
 	handle /socket.io/* {
 		reverse_proxy localhost:3000
 	}
 
+	# Default API
 	handle {
+		rate_limit api_read
 		reverse_proxy localhost:3000 {
 			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
 		}
 	}
 }

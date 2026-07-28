@@ -802,7 +802,7 @@ class _PrescriptionEditorPageState extends State<PrescriptionEditorPage> {
         attachmentUrl: prescriptionId,
         createdAt: DateTime.now(),
       );
-      await chatRepo.sendMessage(msg);
+      await chatRepo.sendMessage(msg, callerId: userId);
       await _clearDraft();
 
       if (mounted) {

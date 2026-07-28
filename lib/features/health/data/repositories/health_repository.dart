@@ -3,6 +3,7 @@ import '../models/health_info.dart';
 import '../models/health_data_change_log.dart';
 import '../models/device_health_metric.dart';
 import '../../../auth/data/models/user_model.dart';
+import '../../../auth/services/auth_service.dart';
 
 /// Health Repository - จัดการข้อมูลสุขภาพใน Database
 class HealthRepository {
@@ -10,8 +11,18 @@ class HealthRepository {
 
   HealthRepository(this._client);
 
-  /// ดึงข้อมูลสุขภาพของผู้ใช้
+  /// BOLA: Verify that the requested userId matches the authenticated session user.
+  /// Throws Exception if the caller is not the owner.
+  Future<void> _verifyOwnership(String userId) async {
+    final currentUserId = AuthService.instance.currentUser?.id;
+    if (currentUserId == null || currentUserId != userId) {
+      throw Exception('Access denied: cannot access another user\'s health data');
+    }
+  }
+
+  /// ดึงข้อมูลสุขภาพของผู้ใช้ (BOLA: verified against session)
   Future<HealthInfo?> getHealthInfo(String userId) async {
+    await _verifyOwnership(userId);
     try {
       final response = await _client
           .from('consumer_profiles')
@@ -28,11 +39,12 @@ class HealthRepository {
     }
   }
 
-  /// อัพเดทข้อมูลสุขภาพ
+  /// อัพเดทข้อมูลสุขภาพ (BOLA: verified against session)
   Future<HealthInfo?> updateHealthInfo(
     String userId,
     HealthInfo healthInfo,
   ) async {
+    await _verifyOwnership(userId);
     try {
       // Calculate health score
       final score = HealthInfo.calculateHealthScore(
@@ -106,11 +118,12 @@ class HealthRepository {
     return true;
   }
 
-  /// ดึงประวัติการเปลี่ยนแปลงข้อมูลสุขภาพ (Real Data)
+  /// ดึงประวัติการเปลี่ยนแปลงข้อมูลสุขภาพ (Real Data) (BOLA: verified against session)
   Future<List<HealthDataChangeLog>> getHealthHistoryLog(
     String userId,
     String fieldType,
   ) async {
+    await _verifyOwnership(userId);
     try {
       final response = await _client
           .from('health_data_logs')
@@ -169,8 +182,9 @@ class HealthRepository {
     });
   }
 
-  /// ดึง Consumer Profile พร้อมข้อมูลสุขภาพ
+  /// ดึง Consumer Profile พร้อมข้อมูลสุขภาพ (BOLA: verified against session)
   Future<ConsumerProfile?> getConsumerProfileWithHealth(String userId) async {
+    await _verifyOwnership(userId);
     try {
       final response = await _client
           .from('consumer_profiles')
@@ -197,12 +211,13 @@ class HealthRepository {
   }
 
   /// อัปเดตน้ำหนักใน consumer_profiles เมื่อได้ค่าใหม่จากตาชั่งอัจฉริยะ
-  /// พร้อมคำนวณ BMI ใหม่และบันทึก Log
+  /// พร้อมคำนวณ BMI ใหม่และบันทึก Log (BOLA: verified against session)
   Future<void> updateWeightFromDevice({
     required String userId,
     required double weight,
     required String sourceName,
   }) async {
+    await _verifyOwnership(userId);
     try {
       // 1. ดึงข้อมูล health_info ปัจจุบัน
       final response = await _client
@@ -255,8 +270,9 @@ class HealthRepository {
     }
   }
 
-  /// ดึงข้อมูลเมตริกล่าสุดของวันนี้จากฐานข้อมูลจริง เพื่อใช้คำนวณคะแนนสุขภาพแบบ Dynamic
+  /// ดึงข้อมูลเมตริกล่าสุดของวันนี้จากฐานข้อมูลจริง เพื่อใช้คำนวณคะแนนสุขภาพแบบ Dynamic (BOLA: verified against session)
   Future<Map<String, dynamic>> getLatestDailyMetrics(String userId) async {
+    await _verifyOwnership(userId);
     try {
       final now = DateTime.now();
       final startOfYesterday = now

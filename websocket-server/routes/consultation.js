@@ -19,7 +19,11 @@ module.exports = () => {
     async (req, res) => {
       try {
         const authHeader = req.headers.authorization || null;
-        const result = await submitConsultationRequest(req.body, authHeader);
+        const trustedUserId = req.userId;
+        if (!trustedUserId) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        const result = await submitConsultationRequest(req.body, authHeader, trustedUserId);
 
         return res.status(202).json({
           queued: true,

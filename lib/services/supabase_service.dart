@@ -110,21 +110,38 @@ class SupabaseService {
     await client.auth.signOut();
   }
 
-  // ============ DATABASE METHODS ============
+  // ============ DATABASE METHODS (BOLA: fail-closed) ============
 
-  /// Get data from table
-  static Future<List<Map<String, dynamic>>> getAll(String table) async {
-    final response = await client.from(table).select();
+  /// Get data from table (BOLA: requires ownership scope)
+  static Future<List<Map<String, dynamic>>> getAll(
+    String table, {
+    required String ownershipColumn,
+    required String ownershipValue,
+  }) async {
+    final response = await client
+        .from(table)
+        .select()
+        .eq(ownershipColumn, ownershipValue);
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Get single record by ID
-  static Future<Map<String, dynamic>?> getById(String table, int id) async {
-    final response = await client.from(table).select().eq('id', id).single();
+  /// Get single record by ID (BOLA: requires ownership scope)
+  static Future<Map<String, dynamic>?> getById(
+    String table,
+    String id, {
+    required String ownershipColumn,
+    required String ownershipValue,
+  }) async {
+    final response = await client
+        .from(table)
+        .select()
+        .eq('id', id)
+        .eq(ownershipColumn, ownershipValue)
+        .maybeSingle();
     return response;
   }
 
-  /// Insert data
+  /// Insert data (BOLA: caller must include ownership field in data)
   static Future<Map<String, dynamic>> insert(
     String table,
     Map<String, dynamic> data,
@@ -133,22 +150,46 @@ class SupabaseService {
     return response;
   }
 
-  /// Update data
+  /// Update data (BOLA: requires ownership scope)
   static Future<Map<String, dynamic>> update(
     String table,
-    int id,
-    Map<String, dynamic> data,
-  ) async {
-    final response = await client.from(table).update(data).eq('id', id).select().single();
+    String id,
+    Map<String, dynamic> data, {
+    required String ownershipColumn,
+    required String ownershipValue,
+  }) async {
+    final response = await client
+        .from(table)
+        .update(data)
+        .eq('id', id)
+        .eq(ownershipColumn, ownershipValue)
+        .select()
+        .maybeSingle();
+    if (response == null) {
+      throw Exception('Record not found or access denied');
+    }
     return response;
   }
 
-  /// Delete data
-  static Future<void> delete(String table, int id) async {
-    await client.from(table).delete().eq('id', id);
+  /// Delete data (BOLA: requires ownership scope)
+  static Future<void> delete(
+    String table,
+    String id, {
+    required String ownershipColumn,
+    required String ownershipValue,
+  }) async {
+    final result = await client
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .eq(ownershipColumn, ownershipValue)
+        .select('id');
+    if (result == null || (result as List).isEmpty) {
+      throw Exception('Record not found or access denied');
+    }
   }
 
-  // ============ STORAGE METHODS ============
+  // ============ STORAGE METHODS (BOLA: signed URLs for sensitive files) ============
 
   /// Upload file to storage
   static Future<String> uploadFile({
@@ -168,9 +209,24 @@ class SupabaseService {
     return client.storage.from(bucket).getPublicUrl(path);
   }
 
-  /// Get public URL for file
+  /// Get public URL for file (BOLA: only for public buckets)
+  /// For sensitive files (chat_attachments, medical_images, etc.),
+  /// use [createSignedUrl] instead.
   static String getPublicUrl(String bucket, String path) {
     return client.storage.from(bucket).getPublicUrl(path);
+  }
+
+  /// Create a signed URL for sensitive file access (BOLA: time-limited access)
+  /// Use this for buckets containing private/sensitive data.
+  static Future<String> createSignedUrl({
+    required String bucket,
+    required String path,
+    int expiresIn = 3600,
+  }) async {
+    final signedUrl = await client.storage
+        .from(bucket)
+        .createSignedUrl(path, expiresIn);
+    return signedUrl;
   }
 
   /// Delete file from storage

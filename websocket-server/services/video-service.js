@@ -1,6 +1,6 @@
 const { Queue, Worker } = require('bullmq');
 const ffmpeg = require('fluent-ffmpeg');
-const { execSync } = require('child_process');
+const { spawn } = require('child_process');
 // ✅ ใช้ ENV แทน hardcoded path เพื่อรองรับ Linux/macOS/Windows
 // ตั้งค่าใน .env: FFMPEG_PATH=/usr/bin/ffmpeg (Linux) หรือ /opt/homebrew/bin/ffmpeg (macOS)
 // ถ้าไม่ตั้งค่าจะใช้ 'ffmpeg' จาก PATH ของระบบ
@@ -15,6 +15,7 @@ const thumbnailQueue = require('./thumbnail-queue');
 const { createBullmqConnection } = require('./bullmq-connection');
 const { resolveQueueOptions } = require('../utils/queue-config');
 const { invalidateCacheMany } = require('../middleware');
+const { assertUuid, safeJoin, assertAllowedCommand, resolveExecutable } = require('../utils/safe-path');
 
 // Shared BullMQ connection config (reuses the existing Redis source of truth)
 const connection = createBullmqConnection();
@@ -95,7 +96,8 @@ async function uploadToBunny(outputDir, videoId) {
 const worker = new Worker(QUEUE_NAME, async (job) => {
     const { id: videoId, userId, filePath, title } = job.data;
     const baseDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
-    const outputDir = path.join(baseDir, videoId);
+    assertUuid(videoId, 'videoId');
+    const outputDir = safeJoin(baseDir, videoId);
     const hlsPath = path.join(outputDir, 'playlist.m3u8');
 
     if (!fs.existsSync(outputDir)) {
@@ -121,14 +123,38 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
     // --- Face Blur (Open Source: deface) ---
     // รันการเบลอหน้าด้วย python-deface ก่อนแปลงไฟล์
     try {
-        const blurredPath = path.join(baseDir, `${videoId}_blurred.mp4`);
+        assertUuid(videoId, 'videoId');
+        const blurredPath = safeJoin(baseDir, `${videoId}_blurred.mp4`);
         console.log(`[Worker] Applying Face Blur to ${videoId}...`);
         
-        // Execute python-deface (assuming it's installed and in PATH)
-        // Command: deface input.mp4 -o output.mp4 --replacewith blur
-        const defaceCmd = `export PATH=$PATH:/Users/dave_macmini/Library/Python/3.9/bin && deface "${inputVideoPath}" -o "${blurredPath}" --replacewith blur --keep-audio`;
+        // ✅ Option A: ใช้ spawn แทน execSync เพื่อป้องกัน Command Injection
+        // ส่ง argument แบบ array ไม่ผ่าน shell
+        const defaceBin = resolveExecutable('DEFACE_PATH', 'deface');
+        assertAllowedCommand(defaceBin);
         
-        execSync(defaceCmd, { stdio: 'pipe' });
+        await new Promise((resolve, reject) => {
+            const defaceProc = spawn(defaceBin, [
+                inputVideoPath,
+                '-o', blurredPath,
+                '--replacewith', 'blur',
+                '--keep-audio',
+            ], { stdio: 'pipe' });
+            
+            let stderr = '';
+            defaceProc.stderr.on('data', (data) => { stderr += data.toString(); });
+            
+            defaceProc.on('error', (err) => {
+                reject(new Error(`deface spawn error: ${err.message}`));
+            });
+            
+            defaceProc.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`deface exited with code ${code}: ${stderr}`));
+                }
+            });
+        });
         
         if (fs.existsSync(blurredPath)) {
             console.log(`[Worker] Face Blur complete for ${videoId}`);
@@ -152,7 +178,7 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
               <style>.t { fill: rgba(255, 255, 255, ${opacity}); font-size: 32px; font-family: sans-serif; font-weight: bold; }</style>
               <text x="10" y="40" class="t">${text}</text>
             </svg>`;
-            tempTextImgPath = path.join(baseDir, `${videoId}_wm_text.png`);
+            tempTextImgPath = safeJoin(baseDir, `${videoId}_wm_text.png`);
             await sharp(Buffer.from(svgText)).png().toFile(tempTextImgPath);
         }
 
@@ -168,7 +194,7 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
               <style>.t { fill: rgba(255, 255, 255, 0.5); font-size: 14px; font-family: sans-serif; }</style>
               <text x="10" y="20" class="t">${forensicText}</text>
             </svg>`;
-            tempForensicImgPath = path.join(baseDir, `${videoId}_wm_forensic.png`);
+            tempForensicImgPath = safeJoin(baseDir, `${videoId}_wm_forensic.png`);
             await sharp(Buffer.from(svgForensic)).png().toFile(tempForensicImgPath);
         }
     }

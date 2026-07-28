@@ -900,7 +900,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           });
 
       // 4. Load Messages
-      final messages = await _chatRepository.getMessages(roomId);
+      final messages = await _chatRepository.getMessages(roomId, callerId: currentUserId);
 
       if (mounted) {
         _messagesNotifier.value = messages;
@@ -913,7 +913,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         );
 
         // Subscribe to messages
-        _messagesSub = _chatRepository.streamMessages(roomId).listen((updatedMessages) {
+        _messagesSub = _chatRepository.streamMessages(roomId, callerId: currentUserId).listen((updatedMessages) {
           if (mounted) {
             _messagesNotifier.value = updatedMessages;
             _scrollToBottom();
@@ -1330,7 +1330,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _scrollToBottom();
 
     try {
-      await _chatRepository.sendMessage(message);
+      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
     } catch (e) {
       debugPrint('Send error: $e');
       // Keep message shown even if send fails (offline mode)
@@ -1363,7 +1363,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _scrollToBottom();
 
     try {
-      await _chatRepository.sendMessage(message);
+      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
       if (mounted) {
         setState(() {
           _isRequiredToggle = false;
@@ -1430,7 +1430,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
 
     try {
-      await _chatRepository.sendMessage(message);
+      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
       if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
       _scrollToBottom();
     } catch (e) {
@@ -1597,7 +1597,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           attachmentType: 'image/png',
           status: MessageStatus.sent,
         );
-        await _chatRepository.sendMessage(message);
+        await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
         if (mounted) {
           _messagesNotifier.value = [..._messagesNotifier.value, message];
           if (_isProvider) _loadExpertCompletionStatus();
@@ -1642,7 +1642,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             attachmentUrl: url,
             status: MessageStatus.sent,
           );
-          await _chatRepository.sendMessage(message);
+          await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
           if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
           _scrollToBottom();
         }
@@ -2571,7 +2571,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         await repo.updateRequest(consultationId, {
           'symptoms_chart': finalSymptomsChart,
           'status': 'in_progress',
-        });
+        }, callerId: currentUserId);
       } else if (widget.request != null) {
         // Create new consultation request (provider should see it as pending)
         final newRequest = await repo.createRequest(
@@ -3140,7 +3140,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     });
 
     // Update status to reading
-    await _chatRepository.updateRequiredStatus(question.id, RequiredStatus.reading);
+    await _chatRepository.updateRequiredStatus(question.id, RequiredStatus.reading, callerId: _currentUser?.id ?? '');
 
     // Open keyboard
     Future.delayed(const Duration(milliseconds: 200), () {
@@ -3154,6 +3154,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       await _chatRepository.updateRequiredStatus(
         _activeRequiredQuestion!.id,
         RequiredStatus.unread,
+        callerId: _currentUser?.id ?? '',
       );
     }
     setState(() {
@@ -3177,6 +3178,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       question.id,
       answer,
       question.bodyPart ?? '',
+      callerId: _currentUser?.id ?? '',
     );
 
     if (mounted) {

@@ -10,6 +10,7 @@ const faceBlurService = require('../services/face-blur-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('../services/thumbnail-service');
 const thumbnailQueue = require('../services/thumbnail-queue');
 const watermarkService = require('../services/watermark-service');
+const { assertUuid, assertUuidOrNull, safeJoin, safeExtension, sanitizeCacheKey } = require('../utils/safe-path');
 const {
     strictRateLimiter,
     rateLimiter,
@@ -19,6 +20,8 @@ const {
     invalidateCachePattern,
     TTL,
     requireAuth,
+    uploadQuotaLimiter,
+    ipLimiter,
 } = require('../middleware');
 
 // ✅ Upload endpoints: 30 req/min — ลดกว่า strict แต่ยังป้องกัน abuse
@@ -26,23 +29,79 @@ const uploadRateLimiter = rateLimiter({ maxRequests: 30, windowSec: 60, keyPrefi
 
 // Configure Multer for file upload
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
+    destination: async (req, file, cb) => {
         const destDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
-        if (!fs.existsSync(destDir)) {
-            fs.mkdirSync(destDir, { recursive: true });
+        try {
+            await fs.promises.mkdir(destDir, { recursive: true });
+            cb(null, destDir);
+        } catch (err) {
+            cb(err);
         }
-        cb(null, destDir);
     },
     filename: (req, file, cb) => {
-        const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-        cb(null, uniqueName);
+        try {
+            const ext = safeExtension(file.originalname, 'video');
+            cb(null, `${uuidv4()}${ext}`);
+        } catch (err) {
+            cb(err);
+        }
     }
 });
 
+const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB — ตรงกับ business rule
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB สำหรับรูป
+const MAX_GPS_TRACKS = 5000; // R3: จำกัด GPS tracks ต่อ request
+const MAX_PAGINATION_LIMIT = 100; // R2: เพดาน limit
+const MAX_PAGINATION_PAGE = 1000; // R2: เพดาน page
+
 const upload = multer({
     storage,
-    limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+    limits: { fileSize: MAX_VIDEO_BYTES, files: 5 }, // R1: ตรงกับ business limit ตั้งแต่ multer
 });
+
+// R1: cleanup ไฟล์ที่ค้างเมื่อ reject หรือ error
+function cleanupUploadedFile(file) {
+    if (file && file.path) {
+        try { fs.unlinkSync(file.path); } catch (_) {}
+    }
+}
+function cleanupUploadedFiles(files) {
+    if (Array.isArray(files)) {
+        for (const f of files) { cleanupUploadedFile(f); }
+    } else {
+        cleanupUploadedFile(files);
+    }
+}
+
+// R2: clamp pagination ใช้ทุก endpoint
+function clampPagination(req) {
+    const page = Math.min(Math.max(parseInt(req.query.page) || 1, 1), MAX_PAGINATION_PAGE);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), MAX_PAGINATION_LIMIT);
+    return { page, limit, offset: (page - 1) * limit };
+}
+
+// R3: bulk insert GPS tracks แทน loop query แบบเดิม
+async function bulkInsertGpsTracks(pool, videoId, tracks) {
+    if (!Array.isArray(tracks) || tracks.length === 0) return 0;
+    if (tracks.length > MAX_GPS_TRACKS) {
+        const err = new Error(`GPS tracks เกินจำนวนที่กำหนด (สูงสุด ${MAX_GPS_TRACKS} จุด)`);
+        err.code = 'TOO_MANY_TRACKS';
+        err.statusCode = 413;
+        throw err;
+    }
+    const lats = [], lngs = [], offsets = [];
+    for (const t of tracks) {
+        lats.push(parseFloat(t.latitude));
+        lngs.push(parseFloat(t.longitude));
+        offsets.push(parseInt(t.timestampOffset) || 0);
+    }
+    await pool.query(
+        `INSERT INTO video_gps_tracks (video_id, latitude, longitude, timestamp_offset)
+         SELECT $1, * FROM UNNEST($2::float[], $3::float[], $4::int[])`,
+        [videoId, lats, lngs, offsets]
+    );
+    return tracks.length;
+}
 
 // Phase 1 Middleware: Redis-based rate limiting, idempotency, and duplicate check
 // are now handled by the shared middleware layer instead of in-memory Maps.
@@ -52,13 +111,13 @@ module.exports = (pool) => {
     videoService.init(pool);
 
     // Get videos List by type (Local API fallback for gallery/live stream)
-    router.get('/', async (req, res) => {
+    router.get('/', ipLimiter, async (req, res) => {
         try {
             const { type, category_id } = req.query;
-            const cacheKey = `video:list:${type || 'all'}:${category_id || 'all'}`;
+            const cacheKey = `video:list:${type || 'all'}:${category_id || 'all'}:v2`;
 
             const data = await cacheAside(cacheKey, async () => {
-                let query = 'SELECT * FROM videos WHERE 1=1';
+                let query = 'SELECT id, user_id, title, description, type, category_id, donation_request_id, status, thumbnail_url, bunny_url, photo_urls, address, road, soi, alley, village, created_at, updated_at FROM videos WHERE 1=1';
                 let params = [];
 
                 if (type) {
@@ -84,9 +143,10 @@ module.exports = (pool) => {
     });
 
     // Upload video
-    router.post('/upload', requireAuth, idempotencyMiddleware, uploadRateLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
+    router.post('/upload', requireAuth, idempotencyMiddleware, uploadRateLimiter, uploadQuotaLimiter, upload.single('video'), duplicateCheckMiddleware('video-upload', 5), async (req, res) => {
         try {
-            const { userId, title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
+            const { title, description, type, donationRequestId, address, road, soi, alley, village } = req.body;
+            const userId = req.userId;
             const file = req.file;
 
             if (!file) {
@@ -94,14 +154,18 @@ module.exports = (pool) => {
             }
 
             // 1. File Size Validation (Enforced by Multer limits as well, but double check)
-            const maxMB = 20;
-            if (file.size > maxMB * 1024 * 1024) {
+            if (file.size > MAX_VIDEO_BYTES) {
+                cleanupUploadedFile(file); // R1: cleanup เมื่อ reject
                 return res.status(413).json({
-                    error: `File too large. Max allowed: ${maxMB}MB`
+                    error: `File too large. Max allowed: ${MAX_VIDEO_BYTES / (1024 * 1024)}MB`
                 });
             }
 
             const { categoryId, gpsTracks } = req.body;
+
+            if (!userId) {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
 
             // 1. Insert into Database
             const videoId = uuidv4();
@@ -147,6 +211,7 @@ module.exports = (pool) => {
             });
         } catch (error) {
             console.error('Upload Error:', error);
+            if (req.file) cleanupUploadedFile(req.file); // R1: cleanup เมื่อ error
             res.status(500).json({ error: 'Failed to upload video' });
         }
     });
@@ -154,9 +219,9 @@ module.exports = (pool) => {
     // Upload multiple photos
     // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
     // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
-    router.post('/upload-photos', requireAuth, idempotencyMiddleware, uploadRateLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
+    router.post('/upload-photos', requireAuth, idempotencyMiddleware, uploadRateLimiter, uploadQuotaLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
         try {
-            const userIdFromRequest = req.body.userId;
+            const userIdFromRequest = req.userId;
             const files = req.files;
 
             if (!files || files.length === 0) {
@@ -171,12 +236,17 @@ module.exports = (pool) => {
             const modeName = isThaiMhung ? 'Thai Mhung' : 'Emergency';
 
             if (files.length > quota) {
+                cleanupUploadedFiles(files); // R1: cleanup เมื่อ reject
                 return res.status(400).json({
                     error: `${modeName} mode allows maximum ${quota} photos per upload`
                 });
             }
 
-            const { userId, title, description, categoryId, donationRequestId, gpsTracks, incidentId } = req.body;
+            const { title, description, categoryId, donationRequestId, gpsTracks, incidentId } = req.body;
+            const userId = req.userId;
+
+            // ✅ Option A: validate incidentId เป็น UUID ก่อนใช้กับ filesystem
+            const validatedIncidentId = assertUuidOrNull(incidentId, 'incidentId');
 
             // ✅ ใช้ type ตาม mode จริง แทนที่จะ hardcode 'emergency_photo' เสมอ
             const videoType = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
@@ -184,17 +254,17 @@ module.exports = (pool) => {
             // 2. Insert into Database first to get the videoId
             const videoId = uuidv4();
             
-            // ✅ Organize files into subfolders
+            // ✅ Organize files into subfolders — ใช้ safeJoin เพื่อ containment check
             const baseDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
             
             // Structure: 
             // - Regular: baseDir/[videoId]/photos/
             // - Thai Mhung: baseDir/[incidentId]/thaimhung/[videoId]/
             let reportDir;
-            if (isThaiMhung && incidentId) {
-                reportDir = path.join(baseDir, incidentId, 'thaimhung', videoId);
+            if (isThaiMhung && validatedIncidentId) {
+                reportDir = safeJoin(baseDir, validatedIncidentId, 'thaimhung', videoId);
             } else {
-                reportDir = path.join(baseDir, videoId);
+                reportDir = safeJoin(baseDir, videoId);
             }
 
             if (!fs.existsSync(reportDir)) {
@@ -223,8 +293,8 @@ module.exports = (pool) => {
                 // Phase 6.12: ยังไม่ blur/watermark ตอนนี้ — ทำ background หลัง respond
                 const finalFilename = path.basename(newPath);
                 let relativePath;
-                if (isThaiMhung && incidentId) {
-                    relativePath = `${incidentId}/thaimhung/${videoId}/${finalFilename}`;
+                if (isThaiMhung && validatedIncidentId) {
+                    relativePath = `${validatedIncidentId}/thaimhung/${videoId}/${finalFilename}`;
                 } else {
                     relativePath = `${videoId}/${finalFilename}`;
                 }
@@ -243,9 +313,9 @@ module.exports = (pool) => {
             let thumbnailUrl = firstPhotoUrl;
             let filesForThumbnail = [];
 
-            if (isThaiMhung && incidentId) {
+            if (isThaiMhung && validatedIncidentId) {
                 // รวบรวมภาพล่าสุด 5 ภาพจากทุกเหตุการณ์ย่อยของไทยมุงใน incident นี้
-                const thaimhungBaseDir = path.join(baseDir, incidentId, 'thaimhung');
+                const thaimhungBaseDir = safeJoin(baseDir, validatedIncidentId, 'thaimhung');
                 if (fs.existsSync(thaimhungBaseDir)) {
                     let allPhotos = [];
                     const videoDirs = fs.readdirSync(thaimhungBaseDir);
@@ -273,10 +343,10 @@ module.exports = (pool) => {
             if (filesForThumbnail.length > 0) {
                 // ✅ Recommendation #8: ใช้ Async Queue แทนการ generate แบบ Synchronous
                 // Respond ไปยัง Client ก่อน จากนั้น Worker จะ generate thumbnail แล้ว push ผ่าน WebSocket
-                const thumbFilename = `thumb_${isThaiMhung ? incidentId : videoId}.webp`;
-                const destDirForThumb = isThaiMhung ? path.join(baseDir, incidentId) : reportDir;
+                const thumbFilename = `thumb_${isThaiMhung ? validatedIncidentId : videoId}.webp`;
+                const destDirForThumb = isThaiMhung ? safeJoin(baseDir, validatedIncidentId) : reportDir;
                 const thumbLocalPath = path.join(destDirForThumb, thumbFilename);
-                const thumbTargetId = isThaiMhung ? incidentId : videoId;
+                const thumbTargetId = isThaiMhung ? validatedIncidentId : videoId;
 
                 if (!fs.existsSync(destDirForThumb)) {
                     fs.mkdirSync(destDirForThumb, { recursive: true });
@@ -292,8 +362,8 @@ module.exports = (pool) => {
                     thumbLocalPath,
                     thumbFilename,
                     thumbTargetId,
-                    isThaiMhung: isThaiMhung && !!incidentId,
-                    incidentId: incidentId || null,
+                    isThaiMhung: isThaiMhung && !!validatedIncidentId,
+                    incidentId: validatedIncidentId || null,
                     videoId,
                     userId: userId || userIdFromRequest,
                     localApiUrl,
@@ -306,38 +376,36 @@ module.exports = (pool) => {
             const result = await pool.query(
                 `INSERT INTO videos (id, user_id, title, description, type, category_id, donation_request_id, photo_urls, bunny_url, thumbnail_url, incident_id, status)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, 'processing') RETURNING *`,
-                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl, thumbnailUrl, incidentId || null]
+                [videoId, userId, title, description || '', videoType, categoryId || null, donationRequestId || null, JSON.stringify(photoUrls), firstPhotoUrl, thumbnailUrl, validatedIncidentId || null]
             );
 
             const videoRecord = result.rows[0];
 
             // ✅ อัปเดต Thumbnail ให้กับเหตุการณ์หลัก (Incident) โดยอัปเดตเสมอเพื่ออัปเดตภาพ Animated ล่าสุด
-            if (isThaiMhung && incidentId && thumbnailUrl) {
+            if (isThaiMhung && validatedIncidentId && thumbnailUrl) {
                 try {
                     await pool.query(
                         `UPDATE videos SET thumbnail_url = $1 WHERE id = $2`,
-                        [thumbnailUrl, incidentId]
+                        [thumbnailUrl, validatedIncidentId]
                     );
                 } catch (updateErr) {
                     console.error('[Thumbnail] Failed to update main incident thumbnail:', updateErr);
                 }
             }
 
-            // 3. Handle GPS Tracks if provided
+            // 3. Handle GPS Tracks if provided — R3: bulk insert แทน loop query
             if (gpsTracks) {
                 try {
                     const tracks = JSON.parse(gpsTracks);
                     if (Array.isArray(tracks)) {
-                        for (const track of tracks) {
-                            await pool.query(
-                                `INSERT INTO video_gps_tracks (video_id, latitude, longitude, timestamp_offset)
-                                 VALUES ($1, $2, $3, $4)`,
-                                 [videoId, track.latitude, track.longitude, track.timestampOffset || 0]
-                            );
-                        }
+                        await bulkInsertGpsTracks(pool, videoId, tracks);
                     }
                 } catch (gpsError) {
                     console.error('Error inserting GPS tracks for photos:', gpsError);
+                    if (gpsError.code === 'TOO_MANY_TRACKS') {
+                        cleanupUploadedFiles(files); // R1: cleanup เมื่อ reject
+                        return res.status(413).json({ error: gpsError.message });
+                    }
                 }
             }
 
@@ -347,28 +415,28 @@ module.exports = (pool) => {
 
             // Phase 6.12: Insert thai_mhung_photos with blur_status='blurring' and respond immediately
             const thaiMhungPhotoIds = [];
-            console.log(`[ThaiMhung] isThaiMhung=${isThaiMhung}, incidentId=${incidentId}, videoId=${videoId}`);
-            if (isThaiMhung && incidentId) {
+            console.log(`[ThaiMhung] isThaiMhung=${isThaiMhung}, incidentId=${validatedIncidentId}, videoId=${videoId}`);
+            if (isThaiMhung && validatedIncidentId) {
                 const latestTrack = gpsTracks ? (() => { try { const t = JSON.parse(gpsTracks); return Array.isArray(t) && t.length > 0 ? t[t.length - 1] : null; } catch(e) { return null; } })() : null;
                 for (const url of photoUrls) {
                     try {
                         // ✅ Insert with incidentId (not videoId) so gallery query can find it
-                        console.log(`[ThaiMhung] Inserting photo: incidentId=${incidentId}, url=${url}`);
+                        console.log(`[ThaiMhung] Inserting photo: incidentId=${validatedIncidentId}, url=${url}`);
                         const photoRes = await pool.query(
                             `INSERT INTO thai_mhung_photos (video_id, user_id, photo_url, latitude, longitude, blur_status)
                              VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-                            [incidentId, userId || userIdFromRequest, url, latestTrack ? latestTrack.latitude : null, latestTrack ? latestTrack.longitude : null, 'blurring']
+                            [validatedIncidentId, userId || userIdFromRequest, url, latestTrack ? latestTrack.latitude : null, latestTrack ? latestTrack.longitude : null, 'blurring']
                         );
                         const photoId = photoRes.rows[0].id;
                         thaiMhungPhotoIds.push(photoId);
-                        console.log(`[ThaiMhung] Inserted photo id=${photoId} for incidentId=${incidentId}`);
-                        socketService.broadcastNewThaiMhungPhoto(incidentId, {
+                        console.log(`[ThaiMhung] Inserted photo id=${photoId} for incidentId=${validatedIncidentId}`);
+                        socketService.broadcastNewThaiMhungPhoto(validatedIncidentId, {
                             photo_url: url,
                             user_id: userId || userIdFromRequest,
                             latitude: latestTrack ? latestTrack.latitude : null,
                             longitude: latestTrack ? latestTrack.longitude : null,
                             created_at: new Date().toISOString(),
-                            video_id: incidentId,
+                            video_id: validatedIncidentId,
                             blur_status: 'blurring',
                             photo_id: photoId,
                         });
@@ -377,7 +445,7 @@ module.exports = (pool) => {
                     }
                 }
                 // ✅ Invalidate gallery cache so fresh data appears immediately
-                invalidateCachePattern(`video:gallery:${incidentId}:*`);
+                invalidateCachePattern(`video:gallery:${sanitizeCacheKey(validatedIncidentId)}:*`);
             }
 
             // 5. ✅ Respond immediately — ไม่รอ blur/watermark
@@ -385,13 +453,13 @@ module.exports = (pool) => {
                 message: `${modeName} photos upload successful (${files.length}/${quota})`,
                 video: { ...videoRecord, photo_urls: photoUrls },
                 photo_urls: photoUrls,
-                incidentId: incidentId,
+                incidentId: validatedIncidentId,
                 status: isThaiMhung ? 'blurring' : 'ready',
                 photoIds: thaiMhungPhotoIds,
             });
 
             // Phase 6.12: Background blur + watermark (fire-and-forget)
-            if (isThaiMhung && incidentId && originalPaths.length > 0) {
+            if (isThaiMhung && validatedIncidentId && originalPaths.length > 0) {
                 (async () => {
                     const blurredUrls = [];
                     for (let i = 0; i < originalPaths.length; i++) {
@@ -418,7 +486,7 @@ module.exports = (pool) => {
                             const wmFilename = `${path.basename(finalFilePath, ext)}_wm${ext}`;
                             const wmPath = path.join(reportDir, wmFilename);
                             const wmResult = await watermarkService.applyImageWatermark(
-                                finalFilePath, wmPath, watermarkConfig, incidentId || videoId, userId || userIdFromRequest
+                                finalFilePath, wmPath, watermarkConfig, validatedIncidentId || videoId, userId || userIdFromRequest
                             );
                             if (wmResult.success) {
                                 if (finalFilePath !== originalPath) {
@@ -431,8 +499,8 @@ module.exports = (pool) => {
                         // 3. Build blurred URL
                         const finalFilename = path.basename(finalFilePath);
                         let relativePath;
-                        if (isThaiMhung && incidentId) {
-                            relativePath = `${incidentId}/thaimhung/${videoId}/${finalFilename}`;
+                        if (isThaiMhung && validatedIncidentId) {
+                            relativePath = `${validatedIncidentId}/thaimhung/${videoId}/${finalFilename}`;
                         } else {
                             relativePath = `${videoId}/${finalFilename}`;
                         }
@@ -450,7 +518,7 @@ module.exports = (pool) => {
                         }
 
                         // 5. Broadcast blur complete
-                        socketService.broadcastPhotoBlurComplete(incidentId, {
+                        socketService.broadcastPhotoBlurComplete(validatedIncidentId, {
                             photoId: photoId,
                             url: blurredUrl,
                             blurStatus: 'completed',
@@ -470,8 +538,8 @@ module.exports = (pool) => {
                     }
 
                     // ✅ Invalidate gallery cache so blurred URLs appear
-                    if (incidentId) {
-                        invalidateCachePattern(`video:gallery:${incidentId}:*`);
+                    if (validatedIncidentId) {
+                        invalidateCachePattern(`video:gallery:${sanitizeCacheKey(validatedIncidentId)}:*`);
                     }
                 })().catch(err => {
                     console.error('[ThaiMhung] Background blur error:', err);
@@ -479,16 +547,15 @@ module.exports = (pool) => {
             }
         } catch (error) {
             console.error('Upload Error:', error);
+            if (req.files) cleanupUploadedFiles(req.files); // R1: cleanup เมื่อ error
             res.status(500).json({ error: 'Failed to upload photos' });
         }
     });
 
 
     // Get emergency videos list (trending) - with user info & interaction counts
-    router.get('/emergency/list', async (req, res) => {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const offset = (page - 1) * limit;
+    router.get('/emergency/list', ipLimiter, async (req, res) => {
+        const { page, limit, offset } = clampPagination(req);
         const cacheKey = `video:emergency:list:${page}:${limit}`;
 
         console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
@@ -498,7 +565,7 @@ module.exports = (pool) => {
                 // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
                 // 2. Added LIMIT and OFFSET for infinite scrolling
                 const result = await pool.query(`
-                    SELECT v.*,
+                    SELECT v.id, v.user_id, v.title, v.description, v.type, v.category_id, v.status, v.thumbnail_url, v.bunny_url, v.photo_urls,
                         COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                         u.profile_image_url AS user_avatar,
                         dc.name AS category_name,
@@ -533,10 +600,11 @@ module.exports = (pool) => {
     router.post('/:id/accept', requireAuth, strictRateLimiter, duplicateCheckMiddleware('accept-incident', 10), async (req, res) => {
         try {
             const { id } = req.params;
-            const { responderId, latitude, longitude } = req.body;
+            const responderId = req.userId;
+            const { latitude, longitude } = req.body;
 
             if (!responderId) {
-                return res.status(400).json({ error: 'responderId is required' });
+                return res.status(401).json({ error: 'Authentication required' });
             }
 
             // ✅ ตรวจสอบวิดีโอมีอยู่ใน Local DB ก่อน
@@ -569,7 +637,7 @@ module.exports = (pool) => {
     });
 
     // Get GPS tracks for a video
-    router.get('/:id/gps-tracks', async (req, res) => {
+    router.get('/:id/gps-tracks', ipLimiter, async (req, res) => {
         try {
             const { id } = req.params;
             const data = await cacheAside(`video:gps:${id}`, async () => {
@@ -586,16 +654,14 @@ module.exports = (pool) => {
     });
     // Get gallery photos for a specific incident with pagination
     // Phase 6.12: Query thai_mhung_photos directly to get blur_status for async face blur
-    router.get('/:id/gallery', async (req, res) => {
+    router.get('/:id/gallery', ipLimiter, async (req, res) => {
         try {
             const { id } = req.params;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 20;
-            const cacheKey = `video:gallery:${id}:${page}:${limit}`;
+            const { page, limit, offset } = clampPagination(req);
+            const cacheKey = `video:gallery:${sanitizeCacheKey(id)}:${page}:${limit}`;
             console.log(`[Gallery] Querying gallery for video_id=${id}, page=${page}, limit=${limit}`);
 
             const data = await cacheAside(cacheKey, async () => {
-                const offset = (page - 1) * limit;
                 const result = await pool.query(
                     `SELECT id, photo_url, created_at, user_id, blur_status, latitude, longitude
                      FROM thai_mhung_photos
@@ -625,7 +691,7 @@ module.exports = (pool) => {
         }
     });
     // Get interaction summary for a video
-    router.get('/:id/interactions', async (req, res) => {
+    router.get('/:id/interactions', ipLimiter, async (req, res) => {
         try {
             const { id } = req.params;
             const data = await cacheAside(`video:interactions:${id}`, async () => {
@@ -650,7 +716,7 @@ module.exports = (pool) => {
         }
     });
     // ✅ [Support Analytics] Get like trend — 10-second buckets, last 5 minutes
-    router.get('/:id/likes/trend', async (req, res) => {
+    router.get('/:id/likes/trend', ipLimiter, async (req, res) => {
         if (!pool) return res.json([]);
         try {
             const { id } = req.params;
@@ -675,11 +741,11 @@ module.exports = (pool) => {
     });
 
     // ✅ [Support Analytics] Check if user already liked a video
-    router.get('/:id/likes/status', async (req, res) => {
+    router.get('/:id/likes/status', ipLimiter, async (req, res) => {
         if (!pool) return res.json({ liked: false });
         try {
             const { id } = req.params;
-            const { userId } = req.query;
+            const userId = req.userId;
             if (!userId) return res.json({ liked: false });
             const existing = await pool.query(
                 `SELECT id FROM video_interactions WHERE video_id = $1 AND user_id = $2 AND type = 'like'`,
@@ -696,7 +762,12 @@ module.exports = (pool) => {
     router.post('/:id/interactions', requireAuth, strictRateLimiter, duplicateCheckMiddleware('video-interaction', 3), async (req, res) => {
         try {
             const { id } = req.params;
-            const { user_id, type, value } = req.body;
+            const user_id = req.userId;
+            const { type, value } = req.body;
+
+            if (!user_id) {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
 
             if (type === 'like' && pool) {
                 // DB Toggle: check if like exists for this user
@@ -742,11 +813,11 @@ module.exports = (pool) => {
     });
 
     // Get video status
-    router.get('/:id', async (req, res) => {
+    router.get('/:id', ipLimiter, async (req, res) => {
         try {
             const { id } = req.params;
-            const data = await cacheAside(`video:meta:${id}`, async () => {
-                const result = await pool.query('SELECT * FROM videos WHERE id = $1', [id]);
+            const data = await cacheAside(`video:meta:${id}:v2`, async () => {
+                const result = await pool.query('SELECT id, user_id, title, description, type, category_id, donation_request_id, status, thumbnail_url, bunny_url, photo_urls, address, road, soi, alley, village, progress, created_at, updated_at FROM videos WHERE id = $1', [id]);
                 return result.rows[0] || null;
             }, TTL.DEFAULT);
 

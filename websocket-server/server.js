@@ -165,6 +165,10 @@ if (USE_DATABASE) {
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'password',
       port: process.env.DB_PORT || 5432,
+      max: parseInt(process.env.DB_POOL_MAX) || 20,           // R11: connection pool limit
+      statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT_MS) || 30000,  // R10: 30s query timeout
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
     });
 
     // Test database connection
@@ -224,7 +228,7 @@ const {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // R8: body size limit
 
 // ✅ Rate Limiter: ใช้กับ API ทั้งหมด (60 req/min per IP)
 // ยกเว้น Static Files ที่ express.static จัดการเอง
@@ -270,6 +274,7 @@ app.use('/uploads/watermarks', express.static(watermarksUploadDir));
 
 // Video Routes
 const thumbnailQueue = require('./services/thumbnail-queue');
+app.use('/api/consultations', verifyToken(pool));
 app.use('/api/consultations', consultationRoutes());
 if (pool) {
   // Phase 1 — Route Security: verify identity before protected routes
@@ -425,6 +430,28 @@ async function _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, inci
   }
 }
 
+// R12: Socket.IO Event Rate Limiter — 20 events/sec per connection
+const SOCKET_EVENT_RATE_LIMIT = 20;
+const SOCKET_EVENT_WINDOW_MS = 1000;
+const socketEventCounts = new Map();
+
+function socketRateLimit(socket, eventName) {
+  const now = Date.now();
+  const key = `${socket.id}:${Math.floor(now / SOCKET_EVENT_WINDOW_MS)}`;
+  const count = (socketEventCounts.get(key) || 0) + 1;
+  socketEventCounts.set(key, count);
+
+  if (count > SOCKET_EVENT_RATE_LIMIT) {
+    console.warn(`[SocketRateLimit] 🚫 ${socket.id} — event '${eventName}' rate-limited (${count}/${SOCKET_EVENT_RATE_LIMIT} per sec)`);
+    return false;
+  }
+
+  if (count === 1) {
+    setTimeout(() => socketEventCounts.delete(key), SOCKET_EVENT_WINDOW_MS * 2);
+  }
+  return true;
+}
+
 // WebSocket Connection Handler
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
@@ -464,6 +491,7 @@ io.on('connection', (socket) => {
 
   // Location update event
   socket.on('location-update', async (data) => {
+    if (!socketRateLimit(socket, 'location-update')) return;
     const { userId, latitude, longitude, timestamp, accuracy, speed, heading } = data;
 
     // Defense-in-depth: validate userId matches pre-authenticated socket user
@@ -667,6 +695,7 @@ io.on('connection', (socket) => {
 
   // Handle Video Interactions
   socket.on('video-interaction', async (data) => {
+    if (!socketRateLimit(socket, 'video-interaction')) return;
     // ✅ รองรับ requestId เพื่อแยกยอดบริจาคตามคำร้องแต่ละใบในวิดีโอเดียวกัน
     const { videoId, userId, type, value, requestId } = data;
 
@@ -781,6 +810,7 @@ io.on('connection', (socket) => {
   // ✅ [Support Analytics] like-toggled: Flutter emits this after HTTP toggle succeeds
   // Server broadcasts 'like-count-updated' to all clients in the video room
   socket.on('like-toggled', (data) => {
+    if (!socketRateLimit(socket, 'like-toggled')) return;
     const { videoId, count, liked, userId } = data;
     if (!videoId) return;
     console.log(`[Like] Video ${videoId}: ${liked ? '+1' : '-1'} by ${userId}, total=${count}`);
@@ -1208,6 +1238,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send-emergency-message', async (data) => {
+    if (!socketRateLimit(socket, 'send-emergency-message')) return;
     const { videoId, userId, role, userName, content, profileImageUrl, professionName } = data;
     console.log(`[Chat] Message in ${videoId} from ${userName} (${role}/${professionName || 'no-prof'}): ${content}`);
 
@@ -2234,6 +2265,33 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // ⚠️ Phase 4 — Sensor Trigger + Dead Man's Switch monitor
   emergencyHealthMonitorService.start();
+
+  // R9: Disk Cleanup Cron — ลบ temp files ที่เก่ากว่า 24h ทุก 1 ชั่วโมง
+  const tempDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
+  const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+  const CLEANUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  setInterval(() => {
+    fs.promises.readdir(tempDir).then(entries => {
+      const now = Date.now();
+      for (const entry of entries) {
+        const fullPath = path.join(tempDir, entry);
+        fs.promises.stat(fullPath).then(stat => {
+          if (now - stat.mtimeMs > CLEANUP_MAX_AGE_MS) {
+            if (stat.isDirectory()) {
+              fs.promises.rm(fullPath, { recursive: true, force: true })
+                .then(() => console.log(`[Cleanup] 🗑️  Removed old temp dir: ${entry}`))
+                .catch(err => console.warn(`[Cleanup] ⚠️  Failed to remove ${entry}:`, err.message));
+            } else {
+              fs.promises.unlink(fullPath)
+                .then(() => console.log(`[Cleanup] 🗑️  Removed old temp file: ${entry}`))
+                .catch(err => console.warn(`[Cleanup] ⚠️  Failed to remove ${entry}:`, err.message));
+            }
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, CLEANUP_INTERVAL_MS);
+  console.log(`[Cleanup] ✅ Disk cleanup cron started — interval: ${CLEANUP_INTERVAL_MS / 60000}min, max age: ${CLEANUP_MAX_AGE_MS / 3600000}h`);
 });
 
 // Graceful shutdown

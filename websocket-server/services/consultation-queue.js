@@ -61,9 +61,8 @@ const consultationQueue = new Queue(QUEUE_NAME, {
   defaultJobOptions: queueOptions.defaultJobOptions,
 });
 
-async function submitConsultationRequest(payload, authHeader) {
+async function submitConsultationRequest(payload, authHeader, trustedUserId) {
   const {
-    userId,
     packageId,
     packageName,
     price,
@@ -74,8 +73,9 @@ async function submitConsultationRequest(payload, authHeader) {
     useAI = false,
   } = payload || {};
 
+  const userId = trustedUserId;
   if (!userId) {
-    throw new Error('userId is required');
+    throw new Error('userId is required (trusted identity from verifyToken)');
   }
   if (!packageName) {
     throw new Error('packageName is required');

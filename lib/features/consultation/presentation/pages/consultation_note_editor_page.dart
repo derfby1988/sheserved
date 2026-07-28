@@ -194,7 +194,7 @@ class _ConsultationNoteEditorPageState
         attachmentUrl: noteId,
         createdAt: DateTime.now(),
       );
-      await chatRepo.sendMessage(msg);
+      await chatRepo.sendMessage(msg, callerId: userId);
 
       if (mounted) {
         Navigator.pop(context);

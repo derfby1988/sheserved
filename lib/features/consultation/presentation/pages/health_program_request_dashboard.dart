@@ -642,7 +642,7 @@ class _HealthProgramRequestDashboardState
 
       // 1.5 อัปเดตสถานะ request ให้เป็น in_progress
       debugPrint('Dashboard: updating status to in_progress');
-      await _repo.updateStatus(entry.id, 'in_progress');
+      await _repo.updateStatus(entry.id, 'in_progress', callerId: user.id);
 
       // 2. เปลี่ยนสถานะตัวเองเป็น busy + อัปเดตจำนวนงาน
       debugPrint('Dashboard: setting availability to busy');
@@ -2081,7 +2081,7 @@ class _HealthProgramRequestDashboardState
                     : null,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  await _repo.updateStatus(entry.id, s);
+                  await _repo.updateStatus(entry.id, s, callerId: _currentUser?.id ?? '');
                   await _loadCounts();
                   await _loadTab(_activeTab, refresh: true);
                 },

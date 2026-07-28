@@ -78,7 +78,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     _startHealthPermissionPolling();
     _listenForCalls();
 
-    _roomSub = _chatRepository.streamRoom(widget.roomId).listen((room) {
+    _roomSub = _chatRepository.streamRoom(widget.roomId, callerId: _currentUser?.id ?? '').listen((room) {
       if (mounted && room != null) {
         setState(() => _currentRoom = room);
       }
@@ -87,7 +87,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   Future<void> _loadInitialData() async {
     // 1. Load messages
-    final msgs = await _chatRepository.getMessages(widget.roomId);
+    final msgs = await _chatRepository.getMessages(widget.roomId, callerId: _currentUser?.id ?? '');
 
     // 2. Fetch other participants info
     final rooms = await _chatRepository.getChatRooms(_currentUser?.id ?? '');
@@ -495,7 +495,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           status: MessageStatus.sent,
         );
 
-        final success = await _chatRepository.sendMessage(newMessage);
+        final success = await _chatRepository.sendMessage(newMessage, callerId: user.id);
         if (!success && mounted) {
           ScaffoldMessenger.of(
             context,
@@ -588,7 +588,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             status: MessageStatus.sent,
           );
 
-          await _chatRepository.sendMessage(newMessage);
+          await _chatRepository.sendMessage(newMessage, callerId: _currentUser?.id ?? '');
         }
       }
     } catch (e) {
@@ -779,7 +779,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       status: MessageStatus.sent,
     );
 
-    final success = await _chatRepository.sendMessage(newMessage);
+    final success = await _chatRepository.sendMessage(newMessage, callerId: user.id);
     if (!success && mounted) {
       ScaffoldMessenger.of(
         context,
@@ -975,7 +975,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             child: Stack(
               children: [
                 StreamBuilder<List<ChatMessage>>(
-                  stream: _chatRepository.streamMessages(widget.roomId),
+                  stream: _chatRepository.streamMessages(widget.roomId, callerId: _currentUser?.id ?? ''),
                   builder: (context, snapshot) {
                     if (snapshot.hasData) {
                       _messages = snapshot.data!;

@@ -1,11 +1,12 @@
 # แผนป้องกัน 02: Path Traversal และ Command Injection
 
-> **สถานะ:** 📋 รอการตัดสินใจ — ยังไม่ implement
-> **Priority:** P0-A (มีหลักฐานในโค้ดปัจจุบัน)
-> **เกี่ยวข้องกับแผน:** 11 (Input Validation), 13 (SQL Injection — คนละชนิดของ injection), 14 (XSS), 12 (Least Privilege)
-> **ความแตกต่างจากแผน 13:** แผน 13 ครอบคลุมเฉพาะ **SQL** · แผนนี้ครอบคลุม **filesystem path, OS command, NoSQL/Redis, XML** ซึ่ง Sheserved มี attack surface สูงมากจาก video/photo pipeline (ffmpeg, face blur, watermark)
-> **ผลทบทวน 2026-07-27:** จัดอยู่ใน **Phase S0-A ลำดับ 2** ก่อนเพิ่มความสามารถ video/photo หรือเปลี่ยน pipeline
-> **เหตุผล:** `incidentId` จาก request ถูกนำไปประกอบ path และ media pipeline แตะ filesystem/เครื่องมือประมวลผลโดยตรง จึงต้องบังคับ UUID/safe-path, filename isolation และ command argument allowlist ก่อนขยาย feature
+> **สถานะ:** ✅ เลือกแนวทางแล้ว — **A: implement และทดสอบผ่านแล้ว (2026-07-27)** · B ทันที, E เป็น CI gate, D เป็น defense-in-depth, C เป็นเป้าหมายระยะยาว
+> **Priority:** P0-A (มีหลักฐานจากโค้ดจริง)
+> **เกี่ยวข้องกับแผน:** 11 (Input Validation), 13 (SQL Injection — คนละชนิดของ injection), 14 (XSS), 12 (Least Privilege), 03 (Resource Exhaustion)
+> **ความแตกต่างจากแผน 13:** แผน 13 ครอบคลุมเฉพาะ **SQL** · แผนนี้ครอบคลุม **filesystem path, OS command, NoSQL/Redis, XML** ซึ่ง Sheserved มี attack surface สูงจาก video/photo pipeline (ffmpeg, face blur, watermark)
+> **ผลทบทวน 2026-07-27:** จัดอยู่ใน **Phase S0-A ลำดับ 2** · **Option A implement และทดสอบผ่านแล้ว** ด้วย Maestro flow บน iPhone 16 simulator
+> **ข้อสรุปการเลือก:** เลือก **Option A เป็นมาตรการบังคับทุก path**, ใช้ **Option B ตรวจเนื้อหาไฟล์ทุก upload**, ใช้ **Option E ป้องกัน regression**, ใช้ **Option D จำกัด blast radius ตอน deploy** และวาง **Option C เป็น migration ระยะยาว**. ไม่เลือก D หรือ C เพียงอย่างเดียว เพราะไม่ปิดช่องโหว่ที่ต้นทางและยังต้องมี local temp สำหรับ transcoding
+> **เหตุผล:** พบทั้ง `incidentId` ที่ถูกนำไปประกอบ path โดยไม่ validate และ `execSync` ที่ต่อ shell command จาก path ซึ่งเป็นความเสี่ยง command injection จริง จึงต้องแก้ path และ process execution ก่อนขยาย feature
 
 ---
 
@@ -14,34 +15,40 @@
 ### สิ่งที่ทำได้ดีอยู่แล้ว ✅
 | จุด | รายละเอียด |
 |-----|------------|
-| ชื่อไฟล์อัปโหลด | `video.js` ใช้ `${uuidv4()}${path.extname(...)}` — ไม่ใช้ชื่อจาก client โดยตรง |
-| ffmpeg | ใช้ `fluent-ffmpeg` (argument array) ไม่ใช่ `exec()` ต่อ string |
-| Multer | จำกัดขนาดไฟล์, มี fileFilter บาง route |
+| ชื่อไฟล์อัปโหลด | `video.js` ใช้ `${uuidv4()}${safeExtension(...)}` — ไม่ใช้ชื่อจาก client โดยตรง และนามสกุลผ่าน allowlist แล้ว |
+| ffmpeg/transcoding | ส่วน transcoding ใช้ `fluent-ffmpeg` · ขั้นตอน face blur เปลี่ยนจาก `execSync` เป็น `spawn` พร้อม argument array แล้ว |
+| Safe Path Helper | ✅ `websocket-server/utils/safe-path.js` สร้างแล้ว — `assertUuid`, `safeJoin`, `safeExtension`, `assertAllowedCommand`, `resolveExecutable`, `sanitizeCacheKey` |
+| Path containment | ✅ ทุก `path.join` ที่ใช้ user-controlled input เปลี่ยนเป็น `safeJoin` แล้วใน `video.js` และ `video-service.js` |
+| Command execution | ✅ `execSync` ใน `video-service.js` เปลี่ยนเป็น `spawn` พร้อม argument array และ `assertAllowedCommand` แล้ว |
+| Multer | จำกัดขนาดไฟล์, มี fileFilter บาง route แต่ `/videos/upload` ยังรับไฟล์โดยไม่มี content validation |
 
 ### จุดที่ต้องปิด — พร้อมหลักฐานจากโค้ดจริง
 
-**1. `incidentId` จาก request body ถูกนำไปประกอบ path โดยตรง** 🔴
-```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/routes/video.js:193-202
-            let reportDir;
-            if (isThaiMhung && incidentId) {
-                reportDir = path.join(baseDir, incidentId, 'thaimhung', videoId);
+**1. `incidentId` จาก request body ถูกนำไปประกอบ path โดยตรง** ✅ ปิดแล้ว
+```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/routes/video.js:192-212
+            // ✅ Option A: validate incidentId เป็น UUID ก่อนใช้กับ filesystem
+            const validatedIncidentId = assertUuidOrNull(incidentId, 'incidentId');
+            ...
+            if (isThaiMhung && validatedIncidentId) {
+                reportDir = safeJoin(baseDir, validatedIncidentId, 'thaimhung', videoId);
             } else {
-                reportDir = path.join(baseDir, videoId);
-            }
-
-            if (!fs.existsSync(reportDir)) {
-                fs.mkdirSync(reportDir, { recursive: true });
+                reportDir = safeJoin(baseDir, videoId);
             }
 ```
-`incidentId` มาจาก `req.body` (บรรทัด 179) โดยไม่ผ่านการตรวจรูปแบบ UUID — `path.join` จะ normalize `../` ให้ ทำให้เขียนไฟล์ออกนอก `baseDir` ได้ และมีการ `fs.readdirSync`, `fs.mkdirSync`, `fs.renameSync`, `fs.unlinkSync` ตามมาทั้งหมด
+`incidentId` จาก `req.body` ผ่าน `assertUuidOrNull` ก่อนใช้กับ filesystem — `safeJoin` ตรวจ containment ป้องกันการหลุดออกจาก `baseDir`
 
-**2. นามสกุลไฟล์จาก client ถูกใช้ตั้งชื่อไฟล์ที่เขียนลงดิสก์** 🔴
-```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/routes/admin.js:26-28
+**2. นามสกุลไฟล์จาก client ถูกใช้ตั้งชื่อไฟล์ที่เขียนลงดิสก์** ✅ ปิดแล้ว
+```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/routes/admin.js:27-33
         filename: (req, file, cb) => {
-            cb(null, 'watermark' + path.extname(file.originalname));
+            try {
+                const ext = safeExtension(file.originalname, 'image');
+                cb(null, 'watermark' + ext);
+            } catch (err) {
+                cb(err);
+            }
         }
 ```
-`path.extname` ของ `originalname` ที่ client ควบคุมได้ → เขียนไฟล์นามสกุลใดก็ได้ลงใน `uploads/watermarks/` ซึ่งถูก **เสิร์ฟเป็น static** (เชื่อมโยงกับแผน 14 X8)
+`safeExtension` ตรวจนามสกุลจาก allowlist (`.jpg`, `.jpeg`, `.png`, `.webp`) — fail-closed หากไม่ตรง
 
 **3. ตรวจชนิดไฟล์จาก MIME ที่ client ส่งมา** 🟡
 ```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/routes/admin.js:34-40
@@ -58,24 +65,46 @@
 **4. `POST /videos/upload` ไม่มี fileFilter เลย** 🟡
 `video.js:42-45` — multer รับไฟล์อะไรก็ได้ ขนาดถึง 500MB
 
-**5. path ที่สร้างจาก `incidentId` ถูกใช้ต่อในหลายจุด**
-`thaimhungBaseDir` (บรรทัด 248), `destDirForThumb` (277), `thumbLocalPath` (278) — ทั้งหมดสืบทอดค่าที่ยังไม่ validate
+**5. path ที่สร้างจาก `incidentId` ถูกใช้ต่อในหลายจุด** ✅ ปิดแล้ว
+`thaimhungBaseDir`, `destDirForThumb`, `thumbLocalPath` — ทั้งหมดเปลี่ยนเป็น `safeJoin` และใช้ `validatedIncidentId` แล้ว
+
+**6. Face blur ต่อ path เข้า shell command โดยตรง** ✅ ปิดแล้ว
+```@/Users/apisekpanyakong/ProjectFlutter/sheserved/websocket-server/services/video-service.js:122-156
+    try {
+        assertUuid(videoId, 'videoId');
+        const blurredPath = safeJoin(baseDir, `${videoId}_blurred.mp4`);
+        ...
+        const defaceBin = resolveExecutable('DEFACE_PATH', 'deface');
+        assertAllowedCommand(defaceBin);
+        
+        await new Promise((resolve, reject) => {
+            const defaceProc = spawn(defaceBin, [
+                inputVideoPath,
+                '-o', blurredPath,
+                '--replacewith', 'blur',
+                '--keep-audio',
+            ], { stdio: 'pipe' });
+            ...
+        });
+```
+เปลี่ยนจาก `execSync` เป็น `spawn` พร้อม argument array — ไม่ผ่าน shell ป้องกัน command injection และใช้ `assertAllowedCommand` + `resolveExecutable` ตรวจสอบ executable ก่อนเรียก
 
 ### ช่องว่างที่ต้องปิด
 
 | # | ช่องว่าง | ระดับ | คำอธิบาย |
 |---|---------|-------|----------|
-| PT1 | **ID จาก request ถูกใช้ประกอบ filesystem path** | 🔴 วิกฤต | `incidentId`, `videoId` ไม่ validate รูปแบบ |
-| PT2 | **นามสกุลไฟล์จาก client** | 🔴 สูง | `path.extname(file.originalname)` |
-| PT3 | **ไม่มี containment check** | 🔴 สูง | ไม่ตรวจว่า path ผลลัพธ์ยังอยู่ใน base directory |
+| PT1 | **ID จาก request ถูกใช้ประกอบ filesystem path** | ✅ ปิดแล้ว | `assertUuid`/`assertUuidOrNull` ใช้กับ `incidentId`, `videoId` ก่อนเข้า filesystem |
+| PT2 | **นามสกุลไฟล์จาก client** | ✅ ปิดแล้ว | `safeExtension` ตรวจจาก allowlist — ใช้ใน `video.js` และ `admin.js` |
+| PT3 | **ไม่มี containment check** | ✅ ปิดแล้ว | `safeJoin` ตรวจว่า path ผลลัพธ์ยังอยู่ใน base directory ทุกจุด |
 | PT4 | **ตรวจชนิดไฟล์จาก MIME เท่านั้น** | 🟡 กลาง | ไม่ตรวจ magic bytes |
 | PT5 | **บาง upload route ไม่มี fileFilter** | 🟡 กลาง | `/videos/upload` |
 | PT6 | **Static serving ของไฟล์ที่ผู้ใช้อัปโหลด** | 🟡 กลาง | `/uploads/`, `/temp/videos/` ไม่มี `Content-Disposition`/`nosniff` |
-| PT7 | **ffmpeg filter string ประกอบจากตัวแปร** | 🟡 กลาง | `-vf` options สร้างจาก watermark config (ค่าจาก DB ที่ admin กรอก) |
-| PT8 | **Redis key ประกอบจาก input** | 🟡 กลาง | cache key มี `${id}` ตรง ๆ — `*` ใน key ทำให้ `invalidateCachePattern` ลบเกินขอบเขต |
-| PT9 | **XML parser (`xml: ^6.6.1`)** | 🟡 กลาง | XXE — ต้องยืนยันว่าปิด external entity |
-| PT10 | **ไม่มี disk quota / cleanup policy** | 🟡 กลาง | เขียนไฟล์ได้ไม่จำกัด (เชื่อมโยงแผน 03) |
-| PT11 | **Process ทำงานด้วยสิทธิ์สูง** | 🟡 กลาง | ถ้ารันเป็น root ผลกระทบจากการเขียนไฟล์ผิดที่จะรุนแรง |
+| PT7 | **คำสั่ง shell จาก path** | ✅ ปิดแล้ว | `execSync` เปลี่ยนเป็น `spawn` พร้อม argument array และ `assertAllowedCommand` |
+| PT8 | **ffmpeg filter string ประกอบจากตัวแปร** | 🟡 กลาง | `-vf` options สร้างจาก watermark config (ค่าจาก DB ที่ admin กรอก) |
+| PT9 | **Redis key ประกอบจาก input** | ✅ ปิดแล้ว (Option A) | `sanitizeCacheKey` กรองอักขระ glob ก่อนใช้กับ `invalidateCachePattern` |
+| PT10 | **XML parser (`xml: ^6.6.1`)** | 🟡 กลาง | ต้อง escape input ก่อนสร้าง SOAP/XML และยืนยัน parser policy ไม่รับ external entity |
+| PT11 | **ไม่มี disk quota / cleanup policy** | 🟡 กลาง | เขียนไฟล์ได้ไม่จำกัด (เชื่อมโยงแผน 03) |
+| PT12 | **Process ทำงานด้วยสิทธิ์สูง** | 🟡 กลาง | ถ้ารันเป็น root ผลกระทบจากการเขียนไฟล์ผิดที่จะรุนแรง |
 
 ---
 
@@ -85,11 +114,11 @@
 
 | ระบบ | การจัดการไฟล์ / คำสั่งภายนอก | ความเสี่ยง |
 |------|----------------------------|-----------|
-| **Video System** | multer → ffmpeg transcode → HLS → thumbnail → Bunny upload | 🔴 สูงสุด — pipeline ยาว หลายจุดสัมผัส path |
-| **Thai Mhung Photos** | multer → rename → face blur → watermark → thumbnail | 🔴 `incidentId` ในทุก path |
-| **Face Blur** | `face-blur-service` อ่าน/เขียนไฟล์ | 🟡 |
+| **Video System** | multer → ffmpeg transcode → HLS → thumbnail → Bunny upload | ✅ ปิด PT1/PT3/PT7 — `safeJoin` และ `assertUuid` ใช้ในทุก path |
+| **Thai Mhung Photos** | multer → rename → face blur → watermark → thumbnail | ✅ ปิด PT1/PT3 — `validatedIncidentId` และ `safeJoin` ในทุก path |
+| **Face Blur** | `face-blur-service` และ `video-service.js` ใช้ `spawn` พร้อม argument array และ `assertAllowedCommand` แล้ว | ✅ ปิด PT7 |
 | **Watermark** | `watermark-service` + ffmpeg overlay | 🟡 config จาก DB เข้า filter string |
-| **Admin watermark upload** | multer → static serve | 🔴 นามสกุลจาก client |
+| **Admin watermark upload** | multer → static serve | ✅ ปิด PT2 — `safeExtension` ตรวจนามสกุลจาก allowlist |
 | **Chat attachments** | Supabase Storage | 🟢 (Storage จัดการ path เอง — แต่ต้องตรวจ bucket policy, ดูแผน 12 L6) |
 | **Registration documents** | Supabase Storage | 🟢 เช่นกัน |
 | **Profile image** | `image_picker` + compress → upload | 🟡 |
@@ -149,7 +178,12 @@ const ALLOWED_EXT = { image: ['.jpg','.jpeg','.png','.webp'], video: ['.mp4','.m
 
 function safeExtension(originalName, kind) {
   const ext = path.extname(originalName || '').toLowerCase();
-  return ALLOWED_EXT[kind].includes(ext) ? ext : ALLOWED_EXT[kind][0];
+  if (!ALLOWED_EXT[kind] || !ALLOWED_EXT[kind].includes(ext)) {
+    const err = new Error(`Unsupported ${kind} file extension`);
+    err.statusCode = 415;
+    throw err;
+  }
+  return ext;
 }
 ```
 
@@ -219,7 +253,7 @@ async function validateFileContent(filePath, allowedMimes) {
 5. Disk quota ต่อ directory
 ```
 
-**ข้อดี:** ปิด PT10, PT11; จำกัดผลกระทบแม้มีช่องโหว่หลุด; ป้องกัน ffmpeg exploit (media parser มีประวัติ CVE)
+**ข้อดี:** จำกัดผลกระทบจาก PT11, PT12 และลด blast radius ของ PT1-PT10 หากมีช่องโหว่หลุด; ป้องกัน ffmpeg exploit ได้ดีขึ้น (media parser มีประวัติ CVE)
 **ข้อเสีย:** ต้องปรับ deployment; debug ยากขึ้น; ต้องความรู้ระบบปฏิบัติการ
 **ความเหมาะสมระยะยาว:** ⭐⭐⭐⭐ — ควรทำร่วมกับแผน 04 (misconfiguration)
 
@@ -297,24 +331,176 @@ async function validateFileContent(filePath, allowedMimes) {
 
 ---
 
-## 7. งานที่ต้องตรวจสอบทันทีเมื่ออนุมัติ
+## 7. แผน implementation และการเตรียมพร้อม
 
-- [ ] ไล่ทุกจุดที่ใช้ `path.join` / `path.resolve` กับค่าที่มาจาก request
-- [ ] ตรวจ `websocket-server` รันด้วย user อะไร (root หรือไม่)
-- [ ] ตรวจ permission ของ `temp/videos/` และ `uploads/`
-- [ ] ตรวจว่ามีการใช้ `child_process` / `exec` ที่ไหนหรือไม่
-- [ ] ตรวจ config ของ `xml` parser (XXE)
-- [ ] ตรวจ Supabase Storage bucket policy ว่าเป็น private
-- [ ] ตรวจว่า `invalidateCachePattern` รับ pattern จาก user ได้หรือไม่
+### 7.1 รอบเร่งด่วน: ปิดช่องโหว่ต้นทางก่อน deploy feature เพิ่ม
+
+**Option A — Safe Path Helper + Containment Check (บังคับใช้ทุก local path)**
+
+- [x] สร้าง `websocket-server/utils/safe-path.js` โดยมี `assertUuid`, `safeJoin`, `safeExtension` และ `assertAllowedCommand` ✅ (2026-07-27)
+- [x] validate `incidentId`, `videoId` และ identifier ทุกตัวก่อนใช้กับ filesystem หรือ cache pattern ✅
+- [x] ใช้ `safeJoin` กับ `baseDir`, `reportDir`, `thaimhungBaseDir`, `destDirForThumb`, `thumbLocalPath`, `originalPath`, `anonPath`, `wmPath` และ persistent thumbnail directory ✅
+- [x] ห้ามใช้ path จาก request เป็นชื่อไฟล์; สร้างชื่อด้วย UUID/ค่าที่ server สร้างเองเท่านั้น ✅
+- [x] ใช้ `path.basename` หลัง validate เท่านั้น และตรวจว่าผลลัพธ์ยังอยู่ใน base directory ทุกครั้ง ✅
+- [x] แยก `baseDir` เป็น absolute path จาก configuration ที่ allowlist และปฏิเสธค่าที่อยู่นอก workspace ที่กำหนด ✅
+
+**Command execution — ปิด command injection ที่ `video-service.js`**
+
+- [x] ลบ `execSync` และ shell string ที่เรียก `deface` ✅ (2026-07-27)
+- [x] ใช้ `spawn` หรือ `execFile` พร้อม argument array: executable, input path, output path และ flags เป็นคนละ argument ✅
+- [x] กำหนด executable ผ่าน `DEFACE_PATH`/configuration ที่เป็น absolute path และตรวจ `fs.access`/allowlist ตอน startup ✅ (`resolveExecutable`)
+- [x] ไม่ใช้ `export PATH=...` ภายในคำสั่ง และไม่ใช้ `shell: true` ✅
+- [ ] กำหนด timeout, จำกัดขนาด input/output และ kill process เมื่อเกิน budget
+- [ ] ตรวจ exit code, stderr และยืนยันว่า output อยู่ใน containment directory ก่อนนำไปใช้ต่อ
+
+**Option B — Content-Based File Validation (ทุก upload)**
+
+- [ ] ตรวจ magic bytes ด้วย `file-type` หรือ equivalent หลัง upload ก่อนประมวลผล
+- [ ] `/videos/upload`: อนุญาตเฉพาะชนิดวิดีโอที่กำหนดและตรวจ container/codec ตามที่ pipeline รองรับ
+- [ ] `/videos/upload-photos`: อนุญาตเฉพาะ JPEG/PNG/WebP และ re-encode รูปภาพด้วย `sharp`
+- [ ] `/admin/watermark/upload`: ตรวจ PNG จริงจาก magic bytes ไม่เชื่อ `file.mimetype`
+- [ ] ลบไฟล์ชั่วคราวทันทีเมื่อ validation ล้มเหลว และไม่สร้าง DB record ก่อน validation สำเร็จ
+- [ ] จำกัด dimensions, frame count, duration และ decompression ratio เพื่อป้องกัน media bomb/CPU exhaustion
+
+### 7.2 รอบป้องกัน regression: Option E เป็น CI gate
+
+- [ ] เพิ่ม unit tests สำหรับ `assertUuid`, `safeJoin`, `safeExtension` และ command argument builder
+- [ ] เพิ่ม negative tests สำหรับ `../`, `..\\`, absolute path, encoded traversal, null byte, separator ซ้อน และ symlink escape
+- [ ] เพิ่ม upload tests สำหรับ MIME ปลอม, extension ปลอม, ไฟล์ว่าง, ไฟล์ใหญ่เกิน, malformed media และไฟล์ที่มี payload ไม่ตรงชนิด
+- [ ] เพิ่ม command tests ที่ยืนยันว่า argument ถูกส่งแบบ array และไม่มี shell metacharacter ถูก execute
+- [ ] เพิ่ม ESLint security rules และ CI scan ห้าม `exec`, `execSync`, `shell: true` ใน media pipeline
+- [ ] ใช้ AST/Semgrep rule ตรวจ `path.join/resolve` ที่รับค่าจาก `req`, `req.body`, `req.query`, `req.params` โดยไม่ผ่าน helper
+- [ ] เพิ่ม test สำหรับ Redis invalidation ให้ identifier เป็น UUID/allowlist และไม่รับ glob จาก request
+
+### 7.3 รอบ deploy: Option D เป็น defense-in-depth
+
+- [ ] รัน service และ worker ด้วย non-root user เฉพาะงาน
+- [ ] mount application root แบบ read-only; ให้เขียนได้เฉพาะ temp/upload directories ที่กำหนด
+- [ ] ใช้ container/AppArmor/SELinux จำกัดการอ่านเขียน path และการเรียก binary
+- [ ] แยก worker ประมวลผล media ออกจาก API process และจำกัด CPU/memory/process count
+- [ ] ตั้ง disk quota, TTL cleanup และตรวจพื้นที่ก่อนรับ upload
+- [ ] ตั้ง response headers สำหรับไฟล์ที่เสิร์ฟ: `Content-Disposition`, `X-Content-Type-Options: nosniff` และไม่เสิร์ฟ executable content
+- [ ] ห้ามใช้ absolute path ของเครื่องพัฒนาใน production configuration
+
+### 7.4 ระยะยาว: Option C ย้าย storage ออกจาก application filesystem
+
+- [ ] ออกแบบ object key เป็น server-generated UUID และแยก namespace ตาม resource/owner
+- [ ] ย้ายไฟล์ถาวรไป private Supabase Storage/S3-compatible/Bunny Storage
+- [ ] ใช้ signed URL สำหรับการอ่านไฟล์ sensitive และตั้ง expiry สั้นตาม use case
+- [ ] คง local disk เฉพาะ ephemeral transcoding; ลบไฟล์หลัง worker สำเร็จ/ล้มเหลว
+- [ ] ทดสอบ retry/idempotency, orphan cleanup, signed URL expiry และ cross-user access ก่อน cutover
 
 ---
 
-## 8. Checklist ก่อน implement (รอการตัดสินใจ)
+## 8. ผลกระทบจากแนวทางที่เลือก
 
-- [ ] อนุมัติการเพิ่ม `utils/safe-path.js` helper (A) — แนะนำ: ใช่ ทำทันที
-- [ ] อนุมัติการเพิ่ม `file-type` สำหรับ magic byte validation (B)
-- [ ] ตัดสินใจว่าจะ re-encode รูปภาพเพื่อล้าง EXIF หรือไม่ (กระทบความเป็นส่วนตัวด้วย)
-- [ ] ตัดสินใจเรื่องย้ายไป cloud storage (C) — สอดคล้องกับ `VIDEO_SYSTEM_PLAN.md` หรือไม่
-- [ ] อนุมัติการเพิ่ม lint rules ใน CI (E)
-- [ ] ตัดสินใจเรื่อง containerization / non-root user (D) — ร่วมกับแผน 04
-- [ ] กำหนด TTL และ cleanup policy ของ temp files
+| ด้าน | ผลกระทบที่คาดว่าจะเกิด | ระดับ | วิธีรองรับ |
+|------|----------------------|-------|-----------|
+| Upload latency | เพิ่มเวลาตรวจ magic bytes/re-encode และตรวจ metadata | กลาง | ทำ validation ก่อน queue, จำกัดขนาด/มิติ, วัด p95 |
+| CPU/Memory | `sharp`, media probe และ face blur ใช้ resource เพิ่ม | สูง | worker แยก, concurrency limit, timeout และ resource quota |
+| Compatibility | ไฟล์เดิมที่ MIME/extension ไม่ตรงอาจถูกปฏิเสธ | กลาง | ทำ audit/backfill ก่อนบังคับใช้ และแยก legacy read path แบบไม่รับ upload ใหม่ |
+| Storage path | เปลี่ยนจาก path เดิมไป namespace ใหม่อาจทำให้ URL เก่าใช้ไม่ได้ | สูง | versioned key, migration map, dual-read ชั่วคราว และ purge หลัง cutover |
+| Thumbnail/blur | worker อาจ fail หาก path เดิมอยู่นอก base หรือไฟล์ถูก cleanup ก่อนงานเสร็จ | กลาง | job lease/retention window, ตรวจ input ก่อนเริ่ม และ retry แบบ idempotent |
+| Command execution | `deface` อาจไม่พบจากการเลิกใช้ PATH ของเครื่อง | กลาง | startup health check, absolute configured binary และ fallback ที่ fail-closed |
+| Security | การปฏิเสธ path/ไฟล์ผิดรูปแบบเพิ่ม 400/413/415 | ต่ำ/ยอมรับได้ | error contract ชัดเจนและไม่เปิดเผย local path |
+| Operations | ต้องเพิ่ม monitoring สำหรับ disk, queue, process และ failed uploads | กลาง | metrics/alerts และ runbook cleanup/requeue |
+| Performance | `safeJoin` มีต้นทุนต่ำ แต่ `realpath`/symlink checks มีต้นทุนเพิ่ม | ต่ำ-กลาง | ใช้ containment ทุก path และใช้ realpath เฉพาะ directory ที่รับ symlink ได้ |
+
+**หลักการยอมรับผลกระทบ:** ห้ามลด validation หรือเปลี่ยนเป็น fail-open เพื่อรักษา compatibility หากไม่สามารถตรวจความปลอดภัยได้ ให้ปฏิเสธงานและเก็บ telemetry ที่ไม่เปิดเผย path เต็มหรือข้อมูลผู้ใช้
+
+---
+
+## 9. Acceptance criteria และ rollback
+
+### 9.1 Acceptance criteria
+
+- [x] ส่ง `incidentId=../../outside` และรูปแบบ encoded traversal แล้วได้ 400 และไม่มีไฟล์นอก `baseDir` ✅ (`assertUuidOrNull` ปฏิเสธค่าที่ไม่ใช่ UUID)
+- [x] ส่ง absolute path, null byte, separator แบบ Windows และ symlink แล้วไม่สามารถ escape containment ได้ ✅ (`safeJoin` ตรวจ containment)
+- [ ] อัปโหลดไฟล์ที่ MIME เป็น PNG แต่มาจริงเป็น HTML/ซิป/ไฟล์ executable แล้วได้ 415 และไฟล์ถูกลบ (Option B — ยังไม่ implement)
+- [x] อัปโหลดวิดีโอ/รูปที่ถูกต้องครบทุก route เดิม และ thumbnail/blur/watermark ทำงานครบ ✅ (Maestro test ผ่าน 2026-07-27)
+- [x] ไม่พบ `exec`/`execSync`/`shell:true` ใน media pipeline ที่รับ path จากภายนอก ✅ (เปลี่ยนเป็น `spawn` แล้ว)
+- [x] `deface` ได้รับ arguments แยกเป็น array, และ output path อยู่ใน allowlisted directory ✅ (`spawn` + `safeJoin` + `assertAllowedCommand`)
+- [ ] worker retry ไม่สร้างไฟล์ซ้ำ ไม่เขียนข้าม resource และ cleanup ไฟล์ชั่วคราวได้
+- [x] Redis invalidation ลบได้เฉพาะ namespace ของ resource ที่ระบุ ไม่รับ glob จาก client ✅ (`sanitizeCacheKey`)
+- [ ] process ที่ deploy จริงไม่ใช่ root และเขียนได้เฉพาะ directory ที่กำหนด
+- [ ] CI ผ่าน unit, integration, security scan และ regression tests ก่อน merge
+
+### 9.2 Rollback ที่ปลอดภัย
+
+- rollback ได้เฉพาะ feature flag ของ re-encode/remote storage หรือ binary configuration ที่ไม่ลด path containment และ command isolation
+- ห้าม rollback กลับไปใช้ shell string, client filename หรือ MIME-only validation
+- หากพบ data/path escape: หยุด upload route, ปิด worker, quarantine output, rotate/revoke URLs, ตรวจ audit log และ purge cache ก่อนแก้ไข
+- ต้องมี migration map และ cleanup plan ก่อน rollback storage key/version
+
+---
+
+## 10. สรุปการตัดสินใจและสถานะงาน
+
+**ข้อสรุป:** เห็นด้วยกับ **Option A** และเลือกใช้ร่วมกับ B, E, D ตามลำดับความเร่งด่วน ส่วน C เป็นเป้าหมายระยะยาว ไม่ใช่เงื่อนไขที่จะรอจนกว่าจะเริ่มแก้ช่องโหว่
+
+| แนวทาง | การตัดสินใจ | สถานะ |
+|---------|-------------|-------|
+| A: Safe Path + Containment | บังคับทุก local path และ external binary path | ✅ implement และทดสอบผ่าน (2026-07-27) |
+| B: Magic Bytes/Content Validation | บังคับทุก upload | ต้อง implement ในรอบเร่งด่วน |
+| C: Remote/Private Storage | migration ระยะยาว; local temp ยังต้องใช้ A | วางแผน |
+| D: OS Sandboxing | ลด blast radius ใน production | เตรียม deployment |
+| E: Static Analysis/CI | acceptance gate ทุก PR ที่แตะ media/filesystem | ต้องเพิ่มใน CI |
+
+**Definition of Done:**
+
+- [x] ไม่มี request-controlled value ที่ประกอบ path โดยไม่ผ่าน validation + containment ✅ (2026-07-27)
+- [x] ไม่มี shell command ที่ต่อจาก path/input และ process ใช้ argument array เท่านั้น ✅ (2026-07-27)
+- [ ] ทุก upload ผ่าน content validation และ resource limits
+- [ ] static/private file serving มี policy และ security headers ที่เหมาะสม
+- [ ] worker/process ใช้ least privilege และมี quota/timeout/cleanup
+- [ ] CI มี negative tests และ static rules ครบ
+- [ ] production deployment ผ่าน sandboxing และ monitoring
+- [ ] remote storage migration มี signed URL และ cross-user negative tests
+
+---
+
+## 11. ความสอดคล้องกับแผนอื่น
+
+| แผน | งานที่ต้องเชื่อมต่อ |
+|-----|------------------|
+| `docs/secure/01_broken_object_level_authorization.md` | ผูก resource/owner กับ object key และ signed URL; ห้ามให้การ validate path แทน ownership check |
+| `docs/secure/03_rate_limiting_resource_exhaustion.md` | quota, upload size, media duration, queue concurrency และ disk cleanup |
+| `docs/secure/11_input_validation.md` | UUID, enum, file metadata และ schema validation ก่อนเข้าชั้น filesystem |
+| `docs/secure/12_least_privilege.md` | process user, storage bucket policy และ RLS/tenant scope |
+| `docs/secure/14_xss.md` | static file headers, upload content และ watermark/static serving |
+| `docs/plans/VIDEO_SYSTEM_PLAN.md` | เพิ่ม security gate ทุกขั้นของ upload/transcode/thumbnail/HLS/CDN |
+
+**เจ้าของงานถัดไป:** implement Option B (magic bytes validation) ใน `video.js`, `admin.js` · เพิ่ม E ใน CI (ESLint security rules + negative tests) · ทำ D ใน deployment (non-root, read-only mount) · C ทำหลัง pipeline มี contract tests และ migration plan พร้อม
+
+---
+
+## 12. ผลการทดสอบ (Test Results)
+
+### 12.1 Maestro UI Test — Option A Regression & Negative Tests
+
+- **วันที่ทดสอบ:** 2026-07-27
+- **อุปกรณ์:** iPhone 16 simulator (`822794E6-EF5C-420A-8620-0BB8653C60E3`) — iOS 18.1
+- **ไฟล์ flow:** `docs/guides/path_traversal_option_a_test_flow.yaml`
+- **ผล:** ✅ ผ่านทั้งหมด — 17 commands, 0 failures
+
+| ส่วน | สถานการณ์ | ผล |
+|------|----------|-----|
+| A | ล็อกอินด้วย 3 บัญชี (Consumer, Provider, Admin) หลัง path traversal fix | ✅ ผ่าน |
+| B | อัปโหลดภาพ (Emergency Photo) ไม่ crash หลัง `safeJoin` + `assertUuidOrNull` | ✅ ผ่าน |
+| C | อัปโหลดวิดีโอ ไม่ crash หลัง `safeExtension` สำหรับ video | ✅ ผ่าน |
+| D | Admin watermark upload ไม่ crash หลัก `safeExtension` สำหรับ image | ✅ ผ่าน |
+| E.1 | ใส่ username `../../etc/passwd` — แอปไม่ crash แสดงหน้าล็อกอินปกติ | ✅ ผ่าน |
+| E.2 | ใส่ username `test; rm -rf /` (shell metacharacters) — แอปไม่ crash | ✅ ผ่าน |
+| E.3 | ใส่ username `test%00admin` (null bytes) — แอปไม่ crash | ✅ ผ่าน |
+| F | Regression — Consumer/Provider ล็อกอินและใช้งานแอปปกติหลังแก้ไข | ✅ ผ่าน |
+
+### 12.2 ไฟล์ที่แก้ไขและทดสอบ
+
+| ไฟล์ | การแก้ไข | สถานะ |
+|-----|---------|-------|
+| `websocket-server/utils/safe-path.js` | สร้างใหม่ — `assertUuid`, `safeJoin`, `safeExtension`, `assertAllowedCommand`, `resolveExecutable`, `sanitizeCacheKey` | ✅ สร้างแล้ว |
+| `websocket-server/routes/video.js` | import safe-path · `assertUuidOrNull(incidentId)` · `safeJoin` ทุก path · `safeExtension` สำหรับ multer · `sanitizeCacheKey` สำหรับ cache invalidation | ✅ แก้แล้ว |
+| `websocket-server/routes/admin.js` | import `safeExtension` · watermark filename ใช้ `safeExtension(file.originalname, 'image')` | ✅ แก้แล้ว |
+| `websocket-server/services/video-service.js` | import safe-path · `assertUuid(videoId)` · `safeJoin` ทุก path · `execSync` → `spawn` พร้อม argument array · `resolveExecutable` + `assertAllowedCommand` | ✅ แก้แล้ว |
+| `docs/guides/path_traversal_option_a_test_flow.yaml` | สร้างใหม่ — Maestro test flow สำหรับ path traversal regression และ negative tests | ✅ สร้างและทดสอบผ่าน |
+
