@@ -36,6 +36,17 @@ if (supabaseUrl && supabaseAnonKey) {
   console.warn('⚠️  SUPABASE_URL or SUPABASE_ANON_KEY not set — Emergency Alert will use broadcast fallback');
 }
 
+// Service-role client for sync operations (bypass RLS)
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+let supabaseForSync = null;
+if (supabaseUrl && supabaseServiceKey) {
+  supabaseForSync = createClient(supabaseUrl, supabaseServiceKey);
+  console.log('✅ Supabase service-role client initialized for sync');
+} else if (supabaseUrl && supabaseAnonKey) {
+  supabaseForSync = supabase;
+  console.warn('⚠️  SUPABASE_SERVICE_KEY not set — sync will use anon key (may hit RLS)');
+}
+
 // Video System Services & Routes
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
@@ -184,7 +195,7 @@ if (USE_DATABASE) {
         thumbnailQueue.init(pool);
         // --- 4. การจัดการ State ข้ามอุปกรณ์ ด้วย WebSocket / Local Sync ---
         // Phase 2: Init sync queue and enqueue startup reconcile job
-        syncQueueService.init(pool, supabase);
+        syncQueueService.init(pool, supabaseForSync);
         if (supabase) {
            syncQueueService.enqueueSync({ syncType: 'startup' }).catch(err => {
                console.error('[Sync] Startup sync enqueue failed:', err.message);

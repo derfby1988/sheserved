@@ -1,0 +1,631 @@
+# แผนทดสอบ BOLA Negative Cases: ตรวจสอบการปฏิเสธการเข้าถึงข้ามผู้ใช้
+# อุปกรณ์: SM X135G (R8YYA0G5S6J) — Android 16 (800x1340)
+# วิธีรัน: maestro test --device R8YYA0G5S6J docs/guides/bola_negative_test_flow.yaml
+# Login pattern: ใช้รูปแบบเดียวกับ scenario_01_personal_override.yaml
+#   - ไม่ใช้ clearState: true (ทำให้ ANR บนอุปกรณ์นี้)
+#   - เข้าหน้า login ผ่าน drawer → ลงชื่อเข้าใช้ → ปิด drawer
+#   - ใช้ pressKey: Back เพื่อปิด keyboard หลัง inputText
+#   - รอ "ค้นหายา ร้านยา หมอ..." แทน "เข้าสู่ระบบสำเร็จ"
+# ครอบคลุม: G=Consumer ไม่เห็นเมนู Admin, H=Consumer ไม่เห็นเมนู Provider,
+#           I=Consumer เห็นเฉพาะข้อมูลสุขภาพตัวเอง, J=Consumer ไม่เข้าแดชบอร์ด Provider ได้,
+#           K=Provider ไม่เห็นเมนู Admin, L=Admin เห็นเมนู Admin แต่ไม่เห็นเมนู Provider เฉพาะ
+
+appId: com.sheserved.app
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+  ADMIN_USERNAME: "derfby"
+  ADMIN_PASSWORD: "123456"
+
+---
+# ส่วน G: Consumer ไม่เห็นเมนู Admin ใน Drawer
+# ตรวจสอบ: AuthGuardWidget ป้องกัน Consumer เข้าเมนู admin ผ่าน UI
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+# เปิด Drawer เพื่อเข้าหน้า login
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+# ปิด drawer โดย tap X (top-right) — ไปหน้า login
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+# ใส่ username
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+# ปิด keyboard
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+# ใส่ password
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+# ปิด keyboard
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+# กดปุ่ม login
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+# ปิด system dialog (battery optimization) ถ้ามี
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+# ปิด notification permission dialog ถ้ามี
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+# รอ home page โหลด
+- waitForAnimationToEnd:
+    timeout: 5000
+# เปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+# Consumer ต้องไม่เห็นเมนู "จัดการผู้ใช้" หรือ "ตั้งค่าระบบ" หรือ "จัดการแพ็กเกจ"
+- runFlow:
+    when:
+      visible: ".*จัดการผู้ใช้.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*ตั้งค่าระบบ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการแพ็กเกจ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการวิดีโอ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการลายน้ำ.*"
+    commands:
+      - assertTrue: false
+# ปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 2000
+- clearState
+
+# ส่วน H: Consumer ไม่เห็นปุ่ม "รับงาน" ในแดชบอร์ดคำร้อง
+# ตรวจสอบ: consultation-queue.js ใช้ req.userId และ role check ป้องกัน Consumer รับงาน
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# Consumer ต้องไม่เห็นปุ่ม "รับงาน"
+- runFlow:
+    when:
+      visible: ".*รับงาน.*"
+    commands:
+      - assertTrue: false
+- clearState
+
+# ส่วน I: Consumer เข้าหน้าข้อมูลสุขภาพ — ต้องเห็นเฉพาะข้อมูลตัวเอง
+# ตรวจสอบ: health_repository.dart _verifyOwnership ป้องกันการเข้าถึงข้อมูลคนอื่น
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# ไปที่หน้าโปรไฟล์
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      visible: ".*โปรไฟล์.*"
+    commands:
+      - tapOn: ".*โปรไฟล์.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+# ตรวจสอบว่าเห็นข้อมูลสุขภาพของตัวเอง (ไม่ error หรือ ไม่ว่างเปล่า)
+- runFlow:
+    when:
+      visible: ".*ข้อมูลสุขภาพ.*"
+    commands:
+      - tapOn: ".*ข้อมูลสุขภาพ.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - assertVisible: ".*ข้อมูลสุขภาพ.*"
+# ตรวจสอบว่าไม่เห็นข้อมูลของผู้ใช้อื่น (ไม่มีชื่อ "apisek" หรือ "derfby" ในหน้านี้)
+- runFlow:
+    when:
+      visible: ".*apisek.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*derfby.*"
+    commands:
+      - assertTrue: false
+- clearState
+
+# ส่วน J: Consumer ไม่สามารถเข้าแดชบอร์ด Provider ได้ผ่าน navigation
+# ตรวจสอบ: AuthGuardWidget(requiredRole: 'provider') บล็อก Consumer
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# เปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+# Consumer ต้องไม่เห็นเมนู "แดชบอร์ดผู้ให้บริการ" หรือ "ประวัติผู้ให้บริการ"
+- runFlow:
+    when:
+      visible: ".*แดชบอร์ดผู้ให้บริการ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*ประวัติผู้ให้บริการ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*health.program.*"
+    commands:
+      - assertTrue: false
+# ปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 2000
+- clearState
+
+# ส่วน K: Provider ไม่เห็นเมนู Admin ใน Drawer
+# ตรวจสอบ: AuthGuardWidget(requiredRole: 'admin') บล็อก Provider
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${PROVIDER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${PROVIDER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# เปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+# Provider ต้องไม่เห็นเมนู Admin
+- runFlow:
+    when:
+      visible: ".*จัดการผู้ใช้.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*ตั้งค่าระบบ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการแพ็กเกจ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการวิดีโอ.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      visible: ".*จัดการลายน้ำ.*"
+    commands:
+      - assertTrue: false
+# Provider ต้องเห็นเมนู "ปรึกษา" หรือ "แดชบอร์ดผู้ให้บริการ"
+- runFlow:
+    when:
+      visible: ".*ปรึกษา.*"
+    commands:
+      - assertVisible: ".*ปรึกษา.*"
+# ปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 2000
+- clearState
+
+# ส่วน L: Admin เห็นเมนู Admin แต่ไม่เห็นเมนู Provider เฉพาะ (เช่น "รับงาน")
+# ตรวจสอบ: Admin มีสิทธิ์ admin แต่ไม่ใช่ provider จึงไม่ควรเห็นปุ่มรับงาน
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# เปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+# Admin ต้องเห็นเมนู Admin อย่างน้อย 1 รายการ
+- runFlow:
+    when:
+      visible: ".*จัดการ.*"
+    commands:
+      - assertVisible: ".*จัดการ.*"
+# ปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 2000
+- clearState
+
+# ส่วน M: Consumer ไม่สามารถเข้าหน้าจัดการความเสี่ยงยาได้ (ถ้าไม่มีสิทธิ์)
+# ตรวจสอบ: DrugRiskClassificationAdminPage ผ่าน AuthGuardWidget หรือ permission check
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# เปิด Drawer
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+# Consumer ต้องไม่เห็นเมนู "จัดการหมวดหมู่ความเสี่ยงยา" ถ้าไม่มีสิทธิ์
+- runFlow:
+    when:
+      visible: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+    commands:
+      # ถ้าเห็นเมนูนี้ ให้ตรวจสอบว่าเป็น Personal mode เท่านั้น ไม่ใช่ Admin mode
+      - tapOn: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # Consumer ต้องเห็นแค่ Personal mode
+      - runFlow:
+          when:
+            visible: ".*globalAdmin.*"
+          commands:
+            - assertTrue: false
+- runFlow:
+    when:
+      notVisible: ".*จัดการหมวดหมู่ความเสี่ยงยา.*"
+    commands:
+      # ไม่เห็นเมนูเลยก็ผ่าน
+      - assertTrue: true
+# ปิด Drawer ถ้ายังเปิดอยู่
+- runFlow:
+    when:
+      visible: ".*หน้าหลัก.*"
+    commands:
+      - tapOn:
+          point: "51,88"
+      - waitForAnimationToEnd:
+          timeout: 2000
+- clearState

@@ -2606,3 +2606,43 @@ WebSocketService().on('photo-blur-complete', (data) {
 > **หลักการ**: รูปต้นฉบับที่มีใบหน้าชัดเจนต้องอยู่บน Server เท่านั้น ไม่มีวิธีใดที่ Client จะเข้าถึงได้โดยตรง
 
 ---
+
+## 🔄 Local-to-Cloud Sync: บทเรียนและการแก้ไข (Added 2026-07-29)
+
+> เกิดจากปัญหาจริง: Sync service ล้มเหลวทุกครั้งตอน server startup เนื่องจาก schema mismatch และ RLS policy
+
+### สาเหตุและวิธีแก้ไข
+
+| ปัญหา | สาเหตุ | วิธีแก้ | ไฟล์ |
+|-------|--------|--------|------|
+| `Video Cloud Sync failed: Could not find the 'incident_id' column` | Local DB มี `incident_id` แต่ Cloud ไม่มี — sync ส่ง column นี้ไป upsert โดยไม่ strip | เพิ่ม `'incident_id'` ใน `VIDEO_LOCAL_ONLY_COLUMNS` | `services/sync-service.js` |
+| `Video Cloud Sync failed: Could not find the 'peak_viewers' column` | เหตุผลเดียวกัน — local-only column ไม่ได้ strip | เพิ่ม `'peak_viewers'` ใน `VIDEO_LOCAL_ONLY_COLUMNS` | ข้างต้น |
+| `Video Cloud Sync failed: Could not find the 'peak_viewers_at' column` | เหตุผลเดียวกัน | เพิ่ม `'peak_viewers_at'` ใน `VIDEO_LOCAL_ONLY_COLUMNS` | ข้างต้น |
+| `Video Cloud Sync failed: Could not find the 'photo_urls' column` | เหตุผลเดียวกัน | เพิ่ม `'photo_urls'` ใน `VIDEO_LOCAL_ONLY_COLUMNS` | ข้างต้น |
+| `Interaction Cloud Sync failed: new row violates row-level security policy` | Sync ใช้ anon key ซึ่งถูก RLS บล็อก | สร้าง service-role Supabase client (`supabaseForSync`) แยกจาก anon client แล้วส่งเข้า `syncQueueService.init()` | `server.js` |
+| `Interaction Cloud Sync failed: duplicate key value violates unique constraint` | `upsert` ใช้ `onConflict: 'id'` แต่ Cloud มี partial unique index `(video_id, user_id, type) WHERE type='like'` ไม่รองรับ onConflict | เปลี่ยนจาก `upsert` เป็น `insert` ธรรมดา (pre-filter กรองซ้ำแล้ว) + catch duplicate key error แบบ graceful | `services/sync-service.js` |
+
+### รายการ Local-Only Columns ที่ต้อง strip ก่อน sync ไป Cloud
+
+```js
+const VIDEO_LOCAL_ONLY_COLUMNS = new Set([
+    'is_synced',
+    'address', 'alley', 'road', 'soi', 'village',
+    'cached_like_count', 'cached_view_count',
+    'category_id',
+    'incident_id',
+    'peak_viewers',
+    'peak_viewers_at',
+    'photo_urls',
+]);
+```
+
+> **⚠️ ป้องกันการเกิดซ้ำ:** ทุกครั้งที่เพิ่ม column ใหม่ใน local `videos` table ต้องตรวจสอบว่า Cloud schema มี column นั้นหรือไม่ ถ้าไม่มี ต้องเพิ่มใน `VIDEO_LOCAL_ONLY_COLUMNS` ทันที มิฉะนั้น sync จะล้มเหลว
+
+### จุดเสี่ยงด้านความปลอดภัย (อ้างอิง docs/secure/)
+
+- **การใช้ service_role key สำหรับ sync** ทำให้ bypass RLS ทั้งหมด — ขัดกับหลัก Least Privilege (แผน 12) และเพิ่มความเสี่ยงถ้า sync logic มีบั๊ก (แผน 01 section 9.3)
+- **ระยะสั้น:** ใช้ได้เพราะ sync เป็น server-side job ที่ไม่รับ input จากผู้ใช้
+- **ระยะยาว:** ควรสร้าง DB role เฉพาะสำหรับ sync ที่มีสิทธิ์ insert/update บน `videos` และ `video_interactions` เท่านั้น แทนการใช้ service_role key เต็มสิทธิ์
+
+---

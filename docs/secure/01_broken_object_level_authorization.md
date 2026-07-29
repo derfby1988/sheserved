@@ -667,3 +667,25 @@ Option A มีขอบเขตกว้างและอาจกระท�
 | Consumer | `firm` | A.1, B.1, C.2, D, E, F |
 | Provider | `apisek` | A.2, B.2, C.1 |
 | Admin | `derfby` | A.3 |
+
+---
+
+### 10.5 บทเรียนจาก Sync Service (Added 2026-07-29)
+
+> เกิดจากปัญหาจริง: `sync-service.js` ล้มเหลวตอน sync `video_interactions` ไป Supabase Cloud เนื่องจาก RLS policy บล็อก insert
+
+**สาเหตุ:** Sync service เดิมใช้ Supabase anon key (จาก `server.js:33`) ซึ่งถูก RLS บล็อก การแก้ไขใช้ service_role key แทน ทำให้ bypass RLS ทั้งหมด
+
+**ความเสี่ยงที่เพิ่มขึ้น:**
+- sync-service เป็น generic CRUD ตามที่ section 9.3 ระบุว่า "เป็นอันตรายที่สุดเพราะเป็น generic" — การใช้ service_role key ยิ่งเพิ่มความเสี่ยงถ้า sync logic มีบั๊ก เช่น ส่งข้อมูลผู้ใช้ผิดคนไป Cloud
+- ไม่มี `ownershipScope` check ตามแนวทางที่เสนอใน section 9.3
+
+**การแก้ไขที่ทำ (ระยะสั้น):**
+- สร้าง `supabaseForSync` client แยกใน `server.js` ใช้ `SUPABASE_SERVICE_KEY` / `SUPABASE_SERVICE_ROLE_KEY`
+- ส่ง `supabaseForSync` เข้า `syncQueueService.init(pool, supabaseForSync)` แทน anon client
+- เปลี่ยน interaction sync จาก `upsert` เป็น `insert` ธรรมดา + catch duplicate key error
+
+**งานที่ต้องทำตามแผน (ระยะยาว):**
+- [ ] สร้าง DB role เฉพาะสำหรับ sync ที่มีสิทธิ์ insert/update บน `videos` และ `video_interactions` เท่านั้น (ตามแผน 12 ตัวเลือก D)
+- [ ] เพิ่ม `ownershipScope` parameter ใน sync-service ตามแนวทาง section 9.3
+- [ ] พิจารณาแก้ RLS policy บน `video_interactions` ให้อนุญาต server-side insert ผ่าน service role โดยตรง แทนการ bypass ทั้งหมด

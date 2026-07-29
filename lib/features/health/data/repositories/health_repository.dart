@@ -3,7 +3,7 @@ import '../models/health_info.dart';
 import '../models/health_data_change_log.dart';
 import '../models/device_health_metric.dart';
 import '../../../auth/data/models/user_model.dart';
-import '../../../auth/services/auth_service.dart';
+import '../../../../services/auth_service.dart';
 
 /// Health Repository - จัดการข้อมูลสุขภาพใน Database
 class HealthRepository {

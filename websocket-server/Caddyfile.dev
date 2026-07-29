@@ -28,24 +28,24 @@
 	# Option D: Edge Rate Limiting (requires caddy-ratelimit plugin)
 	# แยก zone ตามประเภท traffic — ใช้เป็น coarse defense ก่อนถึง app
 	# ถ้าไม่มี plugin ให้ comment ส่วนนี้และพึ่ง app-layer rate limiter
-	rate_limit {
-		zone api_read   10r/s 20
-		zone api_auth    2r/s  5
-		zone api_upload  1r/s  3
-		zone emergency  20r/s 50
-	}
+	# rate_limit {
+	# 	zone api_read   10r/s 20
+	# 	zone api_auth    2r/s  5
+	# 	zone api_upload  1r/s  3
+	# 	zone emergency  20r/s 50
+	# }
 
 	# Auth endpoints — strict limit
 	@auth path /api/auth/* /api/login /api/register /api/otp/* /api/verify* /api/reset*
 	handle @auth {
-		rate_limit api_auth
+		# rate_limit api_auth
 		reverse_proxy localhost:3000
 	}
 
 	# Upload endpoints — low rate, larger body
 	@upload path_regexp ^/api/.*upload
 	handle @upload {
-		rate_limit api_upload
+		# rate_limit api_upload
 		request_body {
 			max_size 25MB
 		}
@@ -55,7 +55,7 @@
 	# Emergency endpoints — high burst (ต้องไม่บล็อกฉุกเฉิน)
 	@emergency path_regexp ^/api/.*emergency
 	handle @emergency {
-		rate_limit emergency
+		# rate_limit emergency
 		reverse_proxy localhost:3000
 	}
 
@@ -66,7 +66,7 @@
 
 	# Default API
 	handle {
-		rate_limit api_read
+		# rate_limit api_read
 		reverse_proxy localhost:3000 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}

@@ -318,3 +318,41 @@ CREATE TABLE permission_audit_log (
 - [ ] ตัดสินใจเรื่อง break-glass access สำหรับ clinical
 - [ ] ตัดสินใจเรื่อง DB role separation (D)
 - [ ] กำหนดรอบ access review (แนะนำ: รายไตรมาส)
+
+---
+
+## 9. บทเรียนจาก Sync Service: การใช้ service_role key (Added 2026-07-29)
+
+> เกิดจากปัญหาจริง: `sync-service.js` ไม่สามารถ sync `video_interactions` ไป Supabase Cloud ได้เนื่องจาก RLS policy บล็อก insert ของ anon key
+
+### สาเหตุ
+
+- Sync service เดิมใช้ Supabase anon key จาก `server.js` ซึ่งถูก RLS policy บน `video_interactions` บล็อก
+- แก้โดยสร้าง `supabaseForSync` client ที่ใช้ `SUPABASE_SERVICE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` (service_role = bypass RLS ทั้งหมด)
+
+### ความขัดกับหลัก Least Privilege
+
+- **service_role key = สิทธิ์สูงสุด** สามารถ insert/update/delete บนทุกตารางใน Supabase Cloud โดยไม่ผ่าน RLS
+- ขัดกับหลักการของแผน 12 ที่แนะนำให้ใช้สิทธิ์น้อยที่สุดเพียงพอ (ตัวเลือก D — DB role separation)
+- sync-service เป็น generic CRUD ที่ไม่มี `ownershipScope` check (อ้างอิงแผน 01 section 9.3) จึงเพิ่มความเสี่ยงถ้ามีบั๊ก
+
+### การประเมินความเสี่ยง
+
+| มิติ | ระยะสั้น | ระยะยาว |
+|-----|---------|---------|
+| แหล่งข้อมูล | sync เป็น server-side job ไม่รับ input จากผู้ใช้ — ความเสี่ยงต่ำ | ถ้ามี endpoint ใหม่ที่ส่งข้อมูลเข้า sync ความเสี่ยงจะสูง |
+| ขอบเขตสิทธิ์ | bypass RLS ทุกตาราง — กว้างเกินไป | ควรจำกัดเฉพาะ `videos` และ `video_interactions` |
+| Key management | service_role key อยู่ใน `.env` ฝั่ง server (P2 ตามแผน 07) — ถูกต้อง | ต้อง rotate ทุก 90 วันตามแผน 07 |
+
+### แนวทางแก้ไขถาวร (ตามแผน 12 ตัวเลือก D)
+
+```
+สร้าง DB role เฉพาะสำหรับ sync:
+  - sync_role: INSERT/UPDATE บน videos, video_interactions, video_gps_tracks เท่านั้น
+  - ไม่มีสิทธิ์ DELETE หรือเข้าถึงตารางอื่น
+  - ใช้ผ่าน PostgREST API แยกจาก service_role key
+```
+
+- [ ] สร้าง DB role `sync_role` ใน Supabase พร้อม grant สิทธิ์เฉพาะตารางที่จำเป็น
+- [ ] สร้าง API key สำหรับ `sync_role` แล้วใช้แทน service_role key ใน `supabaseForSync`
+- [ ] เพิ่ม `ownershipScope` check ใน sync-service ตามแผน 01 section 9.3

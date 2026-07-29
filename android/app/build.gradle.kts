@@ -15,8 +15,8 @@ android {
             force("androidx.browser:browser:1.8.0")
             force("androidx.core:core:1.15.0")
             force("androidx.core:core-ktx:1.15.0")
-            force("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
-            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
+            force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+            force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
         }
     }
 
@@ -48,12 +48,15 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
-    packagingOptions {
+    packaging {
         resources {
-            pickFirsts += "**/*"
+            pickFirsts += "lib/**"
+            merges += "META-INF/services/**"
         }
     }
 }
@@ -63,17 +66,30 @@ tasks.withType<com.android.build.gradle.internal.tasks.CheckAarMetadataTask>().c
     enabled = false
 }
 
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+}
+
 flutter {
     source = "../.."
 }
 // Ensure libraries see compileSdk and flutter extension
 subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+            force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+        }
+    }
     afterEvaluate {
         if (plugins.hasPlugin("com.android.library")) {
             extensions.configure<com.android.build.gradle.LibraryExtension> {
                 compileSdk = 36
-                // Provide the flutter extension values expected by some plugins
-                // (flutter.compileSdkVersion, flutter.minSdkVersion, etc.)
+            }
+            dependencies {
+                add("implementation", "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+                add("implementation", "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             }
         }
     }

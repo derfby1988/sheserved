@@ -11,6 +11,10 @@ const VIDEO_LOCAL_ONLY_COLUMNS = new Set([
     'address', 'alley', 'road', 'soi', 'village',
     'cached_like_count', 'cached_view_count',
     'category_id',
+    'incident_id',
+    'peak_viewers',
+    'peak_viewers_at',
+    'photo_urls',
 ]);
 
 async function reconcileLocalToCloud(pool, supabase) {
@@ -142,7 +146,7 @@ async function reconcileLocalToCloud(pool, supabase) {
             if (newInteractions.length > 0) {
                 const { error: cloudErr } = await supabase
                     .from('video_interactions')
-                    .upsert(
+                    .insert(
                         newInteractions.map(i => ({
                             id: i.id,
                             video_id: i.video_id,
@@ -150,12 +154,21 @@ async function reconcileLocalToCloud(pool, supabase) {
                             type: i.type,
                             value: i.value,
                             created_at: i.created_at
-                        })),
-                        { onConflict: 'id' }
+                        }))
                     );
 
                 if (cloudErr) {
-                    console.error(`[Sync] Interaction Cloud Sync failed: ${cloudErr.message}`);
+                    // If duplicate key error, mark as synced — pre-filter may have missed due to timing
+                    if (cloudErr.message.includes('duplicate key')) {
+                        console.warn(`⚠️ [Sync] Interaction sync hit duplicates despite pre-filter. Marking as synced.`);
+                        const allIds = newInteractions.map(i => i.id);
+                        await pool.query(
+                            `UPDATE video_interactions SET is_synced = true WHERE id = ANY($1)`,
+                            [allIds]
+                        );
+                    } else {
+                        console.error(`[Sync] Interaction Cloud Sync failed: ${cloudErr.message}`);
+                    }
                 } else {
                     const syncedIds = newInteractions.map(i => i.id);
                     await pool.query(

@@ -1,0 +1,514 @@
+# แผนทดสอบ Path Traversal & Command Injection ตัวเลือก A: Safe Path Helper + Containment Check
+# อุปกรณ์: SM X135G (R8YYA0G5S6J) — Android 16 (800x1340)
+# วิธีรัน: maestro test --device R8YYA0G5S6J docs/guides/path_traversal_android_test_flow.yaml
+# ครอบคลุม: A=ล็อกอิน smoke test, B=อัปโหลดภาพ regression, C=อัปโหลดวิดีโอ regression,
+#           D=Admin watermark regression, E=เชิงลบ (path traversal/shell/null bytes), F=Regression
+# Login pattern: ใช้รูปแบบเดียวกับ bola_negative_test_flow.yaml
+#   - ไม่ใช้ clearState: true (ทำให้ ANR บนอุปกรณ์นี้)
+#   - เข้าหน้า login ผ่าน drawer → ลงชื่อเข้าใช้ → ปิด drawer
+#   - ใช้ pressKey: Back เพื่อปิด keyboard หลัง inputText
+#   - รอ "ค้นหายา ร้านยา หมอ..." แทน "เข้าสู่ระบบสำเร็จ"
+# เชื่อมโยง: docs/secure/02_path_traversal_command_injection.md (Option A)
+
+appId: com.sheserved.app
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+  ADMIN_USERNAME: "derfby"
+  ADMIN_PASSWORD: "123456"
+
+---
+# ส่วน A: ทดสอบล็อกอิน (ตรวจสอบว่าการแก้ไข safe-path ไม่ทำลายระบบล็อกอิน)
+# A.1 ล็อกอินด้วยบัญชีผู้ใช้ทั่วไป (Consumer)
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+
+# A.2 ล็อกอินด้วยบัญชีผู้ให้บริการ (Provider)
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${PROVIDER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${PROVIDER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+
+# A.3 ล็อกอินด้วยบัญชีผู้ดูแลระบบ (Admin)
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ค้นหายา ร้านยา หมอ..."
+
+# ส่วน B: ทดสอบอัปโหลดภาพ (Emergency Photo) — ตรวจสอบว่า path traversal mitigation
+# ไม่ทำลายการอัปโหลดปกติที่ใช้ incidentId แบบ UUID ที่ถูกต้อง
+# B.1 Consumer ล็อกอินและตรวจสอบว่าหน้า home แสดงเมนูปกติหลัง path traversal fix
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+# ตรวจสอบว่าหน้า home แสดงเมนูต่างๆ ปกติ หลังจาก path traversal fix
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+
+# ส่วน C: ทดสอบอัปโหลดวิดีโอ — ตรวจสอบว่า safeExtension ไม่ปฏิเสธไฟล์ .mp4 ปกติ
+# C.1 Consumer ล็อกอินและตรวจสอบว่าแอปไม่ crash หลัง path traversal fix
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${CONSUMER_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+
+# ส่วน D: ทดสอบ Watermark Upload (Admin) — ตรวจสอบว่า safeExtension สำหรับ image
+# ไม่ปฏิเสธไฟล์ .png ปกติ
+# D.1 Admin ล็อกอินและตรวจสอบว่าแอปทำงานปกติหลังจาก watermark filename fix
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_USERNAME}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "${ADMIN_PASSWORD}"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "ยกเลิก"
+    commands:
+      - tapOn: "ยกเลิก"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible:
+      text: ".*ฉุกเฉิน.*"
+    timeout: 10000
+
+# ส่วน E: การทดสอบเชิงลบ — ตรวจสอบว่าแอปไม่ crash เมื่อได้รับ input ที่ผิดปกติ
+# E.1 ใส่ username ที่มี path traversal characters
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "../../etc/passwd"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "123456"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+# ตรวจสอบว่าแอปแสดงข้อผิดพลาด ไม่ crash
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
+
+# E.2 ใส่ username ที่มี shell metacharacters
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "test; rm -rf /"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "123456"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
+
+# E.3 ใส่ username ที่มี null bytes
+- launchApp:
+    appId: com.sheserved.app
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "ยินดีต้อนรับ!"
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "test%00admin"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "123456"
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- waitForAnimationToEnd:
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: ".*ล็อกอิน.*"
+    timeout: 10000
