@@ -10,6 +10,7 @@ title = "Sheserved Secret Scan"
     '''docs/secure/07_secret_management.md''',  # Plan doc contains example snippets
     '''docs/guides/.*\.yaml''',                  # Maestro test flows (test credentials only)
     '''\.gitleaks\.toml''',                      # This config file
+    '''config/dev\.json''',                      # Dev environment config file
   ]
 
   regexes = [

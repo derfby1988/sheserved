@@ -36,16 +36,21 @@ class AppConfig {
   // =====================================================
 
   /// Supabase Project URL
-  /// เปลี่ยนเป็น URL จริงเมื่อสร้าง Supabase Project
-  static const String supabaseUrl = 'https://psxcgdwcwjdbpaemkozq.supabase.co';
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://psxcgdwcwjdbpaemkozq.supabase.co',
+  );
 
   /// Supabase Anon Key
-  /// เปลี่ยนเป็น Key จริงเมื่อสร้าง Supabase Project
-  static const String supabaseAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU';
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
 
   /// ตรวจสอบว่า Supabase configured หรือยัง
   static bool get isSupabaseConfigured =>
+      supabaseUrl.isNotEmpty &&
+      supabaseAnonKey.isNotEmpty &&
       supabaseUrl != 'YOUR_SUPABASE_URL' &&
       supabaseAnonKey != 'YOUR_SUPABASE_ANON_KEY';
 
