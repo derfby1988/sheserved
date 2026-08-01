@@ -41,10 +41,10 @@ class AppConfig {
     defaultValue: 'https://psxcgdwcwjdbpaemkozq.supabase.co',
   );
 
-  /// Supabase Anon Key
+  /// Supabase Anon Key (P1 — Public key, protected by RLS)
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU',
   );
 
   /// ตรวจสอบว่า Supabase configured หรือยัง

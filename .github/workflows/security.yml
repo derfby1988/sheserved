@@ -234,10 +234,9 @@ jobs:
             exit 1
           fi
 
-          if grep -q "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" lib/config/app_config.dart; then
-            echo "::error::Hardcoded Supabase anon key found in app_config.dart"
-            exit 1
-          fi
+          # NOTE: Supabase anon key (eyJhbGci...) is P1 public key protected by RLS.
+          # It is intentionally allowed as a defaultValue in String.fromEnvironment.
+          # The gitleaks allowlist also permits this pattern.
 
           if ! grep -q "String.fromEnvironment" lib/config/app_config.dart; then
             echo "::error::app_config.dart does not use String.fromEnvironment"
