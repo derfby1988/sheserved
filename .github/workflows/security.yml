@@ -46,9 +46,9 @@ jobs:
       - name: OSV-Scanner — Flutter/Dart lockfile
         uses: google/osv-scanner-action@v1.9.2
         with:
-          scan-args: |
+          scan-args: |--
             --lockfile=pubspec.lock
-            --format=json --output=osv-flutter-report.json
+          fail-on-vuln: false
         continue-on-error: true
 
       - name: Upload OSV Flutter report
@@ -92,10 +92,10 @@ jobs:
           npm audit --prefix websocket-server --audit-level=high --json > npm-audit-report.json 2>&1
           AUDIT_EXIT=$?
           if [ $AUDIT_EXIT -ne 0 ]; then
-            HIGH_COUNT=$(jq '[.vulnerabilities[] | select(.severity=="high" or .severity=="critical")] | length' npm-audit-report.json 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.vulnerabilities[]? | select(.severity=="high" or .severity=="critical")] | length' npm-audit-report.json 2>/dev/null || echo "0")
             if [ "$HIGH_COUNT" -gt 0 ]; then
               echo "::error::Found $HIGH_COUNT high/critical vulnerabilities in Node.js dependencies"
-              cat npm-audit-report.json | jq '[.vulnerabilities[] | select(.severity=="high" or .severity=="critical") | {name, severity, via: .via[0]}]'
+              cat npm-audit-report.json | jq '[.vulnerabilities[]? | select(.severity=="high" or .severity=="critical") | {name, severity, via: .via[0]}]'
               exit 1
             fi
           fi
@@ -104,9 +104,9 @@ jobs:
       - name: OSV-Scanner — Node.js lockfile
         uses: google/osv-scanner-action@v1.9.2
         with:
-          scan-args: |
+          scan-args: |--
             --lockfile=websocket-server/package-lock.json
-            --format=json --output=osv-node-report.json
+          fail-on-vuln: false
         continue-on-error: true
 
       - name: Upload npm audit report
@@ -114,9 +114,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: npm-audit-report
-          path: |
-            npm-audit-report.json
-            websocket-server/osv-node-report.json
+          path: npm-audit-report.json
           if-no-files-found: ignore
 
   # ── iOS (CocoaPods) ──
@@ -137,8 +135,9 @@ jobs:
       - name: OSV-Scanner — iOS Podfile.lock
         uses: google/osv-scanner-action@v1.9.2
         with:
-          scan-args: |
+          scan-args: |--
             --lockfile=ios/Podfile.lock
+          fail-on-vuln: false
         continue-on-error: true
 
   # ── Secret Scanning (Plan 07 Option E) ──

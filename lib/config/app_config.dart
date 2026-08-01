@@ -122,8 +122,10 @@ class AppConfig {
   // =====================================================
 
   /// Google Maps API Key (ใช้สำหรับ Directions API)
-  static const String googleMapsApiKey =
-      'AIzaSyB_cex2WRkdTKElFJ-Cjgsfhm0kk1AZkcQ';
+  static const String googleMapsApiKey = String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: '',
+  );
 
   // =====================================================
   // LEGACY SUPPORT
