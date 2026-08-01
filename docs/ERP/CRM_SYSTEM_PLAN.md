@@ -1511,9 +1511,10 @@ lib/features/crm/
 
 | Phase | งาน | สถานะ |
 |-------|-----|-------|
-| **Phase 1** | สร้าง DB Schema + RLS ทั้งหมด (20 ตาราง CRM + Appointment) | ☐ TODO |
+| **Phase 1** | สร้าง DB Schema + RLS ทั้งหมด (20 ตาราง CRM + Appointment) — *ใช้กลยุทธ์ Non-Breaking Migration โดย ALTER ตารางเดิม (`clinic_appointments`, `coupons`, `loyalty_tiers`, `customers`, `loyalty_point_rules`) + สร้าง VIEWs (`appointments`, `coupon_usages`, `member_tiers`, `customer_loyalty_wallets`, `loyalty_point_transactions`) และสร้างตารางใหม่เพิ่มเติม* | ☐ TODO |
 | **Phase 2** | Feature Toggle API (`organization_feature_flags` CRUD) | ☐ TODO |
 | **Phase 3** | RBAC Integration — `get_crm_access_level()` RPC + `crmRepo.getAccessLevel()` | ☐ TODO |
+
 
 ### Loyalty & Coupon Phase
 

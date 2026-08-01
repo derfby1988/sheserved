@@ -1,0 +1,372 @@
+# แผนทดสอบ Security Misconfiguration ตัวเลือก A+B+C — ผลกระทบจากการแก้ไข
+# อุปกรณ์: iPhone 16 (822794E6-EF5C-420A-8620-0BB8653C60E3)
+# วิธีรัน: maestro test --device 822794E6-EF5C-420A-8620-0BB8653C60E3 docs/guides/security_misconfig_abc_test_flow.yaml
+# ครอบคลุม: A=Config Validation, B=Error Handler, C=Security Headers
+# ทดสอบ: login ทุกบทบาท, การปรึกษา, แชท, วิดีโอ, เชิงลบ (ไม่เห็น error detail)
+
+appId: com.example.treeLawZoo
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+  ADMIN_USERNAME: "derfby"
+  ADMIN_PASSWORD: "123456"
+  TEST_MESSAGE: "Security test message"
+
+---
+# ส่วน A: ทดสอบล็อกอิน — ตรวจสอบว่า A (config validation) ไม่ทำลายระบบล็อกอิน
+# A.1 ล็อกอินด้วยบัญชีผู้ใช้ทั่วไป (Consumer)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- clearState
+
+# A.2 ล็อกอินด้วยบัญชีผู้ให้บริการ (Provider)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+- clearState
+
+# A.3 ล็อกอินด้วยบัญชีผู้ดูแลระบบ (Admin)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${ADMIN_USERNAME}"
+      PASSWORD: "${ADMIN_PASSWORD}"
+- clearState
+
+---
+# ส่วน B: ทดสอบกระบวนการปรึกษาแพทย์ — ตรวจสอบว่า B (error handler) ไม่ทำลาย flow
+# B.1 ผู้ใช้ทั่วไปเข้าสู่แดชบอร์ดคำร้อง
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- extendedWaitUntil:
+    visible: ".*คำร้อง.*"
+    timeout: 15000
+- clearState
+
+# B.2 ผู้ให้บริการเห็นคำร้องที่รอดำเนินการ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${PROVIDER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PROVIDER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- extendedWaitUntil:
+    visible: ".*คำร้อง.*"
+    timeout: 15000
+- clearState
+
+---
+# ส่วน C: ทดสอบแชท — ตรวจสอบว่า C (security headers) ไม่ทำลาย WebSocket
+# C.1 ผู้ให้บริการเปิดแชทการปรึกษาและส่งข้อความ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${PROVIDER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PROVIDER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- extendedWaitUntil:
+    visible: ".*คำร้อง.*"
+    timeout: 15000
+- runFlow:
+    when:
+      visible: ".*in_progress.*"
+    commands:
+      - tapOn: ".*in_progress.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible: ".*ข้อความ.*"
+          timeout: 15000
+
+- runFlow:
+    when:
+      visible: ".*ส่งข้อความ.*"
+    commands:
+      - tapOn: ".*ส่งข้อความ.*"
+      - inputText: "${TEST_MESSAGE}"
+      - tapOn: ".*ส่ง.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+- runFlow:
+    when:
+      visible: "${TEST_MESSAGE}"
+    commands:
+      - assertVisible: "${TEST_MESSAGE}"
+
+- clearState
+
+# C.2 ผู้ใช้ทั่วไปเห็นข้อความของผู้ให้บริการในการปรึกษาเดียวกัน
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- runFlow:
+    when:
+      visible: ".*ปรึกษาแพทย์.*"
+    commands:
+      - tapOn: ".*ปรึกษาแพทย์.*"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - extendedWaitUntil:
+          visible: ".*ข้อความ.*"
+          timeout: 15000
+- runFlow:
+    when:
+      visible: "${TEST_MESSAGE}"
+    commands:
+      - assertVisible: "${TEST_MESSAGE}"
+
+- clearState
+
+---
+# ส่วน D: ทดสอบข้อมูลสุขภาพ — ตรวจสอบว่า headers ไม่บล็อก API
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- runFlow:
+    when:
+      visible: ".*โปรไฟล์.*"
+    commands:
+      - tapOn: ".*โปรไฟล์.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- runFlow:
+    when:
+      visible: ".*ข้อมูลสุขภาพ.*"
+    commands:
+      - tapOn: ".*ข้อมูลสุขภาพ.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+- clearState
+
+---
+# ส่วน E: ทดสอบวิดีโอ — ตรวจสอบว่า headers/CORS ไม่บล็อก video API
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+- runFlow:
+    when:
+      visible: ".*วิดีโอ.*"
+    commands:
+      - tapOn: ".*วิดีโอ.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+- clearState
+
+---
+# ส่วน F: ทดสอบเชิงลบ — ผู้ใช้ทั่วไปต้องไม่เห็นปุ่มของผู้ให้บริการ
+# และไม่ต้องเห็น error detail ภายในระบบ
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- tapOn:
+    point: "174,809"
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: ".*ยินดีต้อนรับ.*"
+    timeout: 10000
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${CONSUMER_USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${CONSUMER_PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+# หลังล็อกอิน แอปไปที่แดชบอร์ดคำร้อง — ผู้ใช้ทั่วไปต้องไม่เห็นปุ่มรับงาน
+- runFlow:
+    when:
+      visible: ".*รับงาน.*"
+    commands:
+      - assertTrue: false
+- runFlow:
+    when:
+      notVisible: ".*รับงาน.*"
+    commands:
+      - assertVisible: ".*คำร้อง.*"
+- clearState

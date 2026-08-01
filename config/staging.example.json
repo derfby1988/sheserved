@@ -1,0 +1,10 @@
+{
+  "ENV": "staging",
+  "SUPABASE_URL": "https://your-staging-project.supabase.co",
+  "SUPABASE_ANON_KEY": "your-staging-anon-key",
+  "MAIN_MACHINE_IP": "your-staging-server:8080",
+  "LOCAL_API_URL": "https://your-staging-server",
+  "WEBSOCKET_URL": "https://your-staging-server",
+  "GOOGLE_MAPS_API_KEY": "your-staging-maps-api-key",
+  "DEBUG_MODE": "false"
+}

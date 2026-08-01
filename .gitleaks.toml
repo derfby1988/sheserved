@@ -1,0 +1,50 @@
+# Gitleaks configuration — Plan 07 Option E
+# Secret scanning baseline for Sheserved
+
+title = "Sheserved Secret Scan"
+
+[allowlist]
+  description = "Allowlisted paths and patterns — public config, test fixtures, documentation only"
+
+  paths = [
+    '''docs/secure/07_secret_management.md''',  # Plan doc contains example snippets
+    '''docs/guides/.*\.yaml''',                  # Maestro test flows (test credentials only)
+    '''\.gitleaks\.toml''',                      # This config file
+  ]
+
+  regexes = [
+    # Supabase anon key is P1 (public by design, protected by RLS)
+    '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\..*''',
+    # Google Maps API key (P1, restricted by bundle ID/SHA)
+    '''AIzaSy[A-Za-z0-9_\-]{33}''',
+    # Test/mock values
+    '''DEVELOPMENT_MOCK_KEY''',
+    '''123456''',
+    '''your_api_key_here''',
+    '''YOUR_SUPABASE_URL''',
+    '''YOUR_SUPABASE_ANON_KEY''',
+  ]
+
+[[rules]]
+  id = "generic-api-key"
+  description = "Generic API key"
+  regex = '''(?i)(api[_-]?key|secret|token|password|passwd|pwd)\s*[=:]\s*["']?[A-Za-z0-9_\-]{20,}["']?'''
+  tags = ["key", "API", "secret"]
+
+[[rules]]
+  id = "database-connection-string"
+  description = "Database connection string with credentials"
+  regex = '''postgres(ql)?://[^\s:]+:[^\s@]+@[^\s]+'''
+  tags = ["database", "credentials"]
+
+[[rules]]
+  id = "jwt-secret"
+  description = "JWT signing secret"
+  regex = '''(?i)jwt[_-]?secret\s*[=:]\s*["']?[A-Za-z0-9_\-]{16,}["']?'''
+  tags = ["jwt", "secret"]
+
+[[rules]]
+  id = "private-key"
+  description = "Private key"
+  regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH |)PRIVATE KEY-----'''
+  tags = ["key", "private"]

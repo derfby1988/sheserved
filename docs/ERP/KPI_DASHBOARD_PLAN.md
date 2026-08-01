@@ -678,3 +678,11 @@ class KpiRoutes {
 > **หมายเหตุ:**
 > - `consultation_requests` table อยู่ใน `database/schemas/supabase_consultation_schema.sql` (ยังไม่มีใน supabase/migrations)
 > - `inventory_items`, `inventory_movements`, `products` tables ยังไม่มี
+
+---
+
+## ⚠️ การดึงข้อมูลและความสัมพันธ์กับ CRM System Plan
+
+- **Appointment Metrics**: ฟังก์ชัน `refresh_kpi_appointments()` ปัจจุบัน query จาก `clinic_appointments` แต่เมื่อ CRM Plan ดำเนินการ จะต้องเปลี่ยนไปอ้างอิง `appointments` (เพื่อรองรับการคำนวณ No-show rate, Utilization rate)
+- **CSAT & Churn Metrics**: metric คะแนนความพึงพอใจและสาเหตุการยกเลิกนัด รอดึงข้อมูลจากตาราง `customer_feedbacks` ใน CRM Phase 27
+

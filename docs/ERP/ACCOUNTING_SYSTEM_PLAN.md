@@ -398,3 +398,11 @@ Phase 3 (Advanced/Consolidation) — 21 รายงาน
 - **e-Filing Export (Phase 2):** สร้าง XML/JSON payload ตามมาตรฐานกรมสรรพากร
 - **Audit Trail (Phase 3):** ตาราง `transaction_audit_log` บันทึกทุกการแก้ไข
 - **Integration Tests:** End-to-end POS Sale → Outbox → Journal Entry → VAT Record
+
+---
+
+## ⚠️ การรับรู้รายได้และผลกระทบจาก CRM System Plan
+
+- **รายได้รอการรับรู้ (Deferred / Unearned Revenue)**: การขายแพ็กเกจคอร์สบริการล่วงหน้าใน CRM (`customer_packages`) จะถูกลงบัญชีเป็น `2141 รายได้รับล่วงหน้า / เงินมัดจำรับ (Unearned Revenue)` และจะรับรู้เป็นรายได้จริงเมื่อมีการตัด Session ใน `package_session_logs` → **ผลกระทบ:** หากไม่มีตารางแพ็กเกจใน CRM บัญชีจะไม่สามารถรับรู้รายได้ตามมาตรฐานบัญชีไทยได้ถูกต้อง
+- **มัดจำการนัดหมาย & ส่วนลดการตลาด**: บัญชีต้องรับรู้เงินมัดจำจากการจองนัดหมาย (`appointments.deposit_paid`) และส่วนลดจากคูปอง/แต้มสะสม (`coupons` / `loyalty_point_transactions`) เป็นค่าใช้จ่ายส่งเสริมการขาย
+

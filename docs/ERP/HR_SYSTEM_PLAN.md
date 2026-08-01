@@ -4127,3 +4127,11 @@ Future<void> _checkErpAccess() async {
 
 **ไฟล์ที่แก้ไข**: `lib/features/home/presentation/pages/home_page.dart` — แก้ `onAccept` callback ใน `_onEmployeeInvitationTapped`
 
+---
+
+## ⚠️ การเชื่อมโยงกับ CRM System Plan & Master Data ที่เกี่ยวข้องกัน
+
+- **`practitioners` vs `employees` / `users`**: CRM System Plan ต้องการตาราง `practitioners` เพื่อเก็บโปรไฟล์แพทย์/ผู้ให้บริการนัดหมาย (`display_name`, `specialty`, `max_daily_appointments`, `bio`, `avatar_url`) โดยผูก FK กับ `users.id` (ที่เป็นพนักงานใน HR) → **ผลกระทบ:** HR System ต้องรองรับการเชื่อมโยงพนักงานที่มีบทบาททางการแพทย์ส่งไปยัง `practitioners` ของ CRM
+- **การคำนวณ Workload & ค่าคอมมิชชัน**: CRM นัดหมายที่ `completed` จะส่งข้อมูลภาระงานและค่าธรรมเนียมวิชาชีพ/ค่าคอมมิชชันกลับมายังระบบ HR Payroll
+
+

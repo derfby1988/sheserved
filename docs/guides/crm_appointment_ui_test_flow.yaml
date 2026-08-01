@@ -1,0 +1,136 @@
+# แผนทดสอบ UI / UX สำหรับระบบ CRM, Prepaid Course Packages, Appointment System & CSAT Feedback
+# อุปกรณ์: iOS / Android Device / Emulator
+# วิธีรัน: maestro test docs/guides/crm_appointment_ui_test_flow.yaml
+# ครอบคลุม: CRM Dashboard, Customer Package Page, Package Deduction Dialog, Customer Profile 360°, Appointment Calendar, Booking Page, CSAT Dialog
+
+appId: com.example.treeLawZoo
+
+env:
+  CONSUMER_USERNAME: "firm"
+  CONSUMER_PASSWORD: "123456"
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+
+---
+# ส่วนที่ 1: ทดสอบล็อกอิน Provider และเปิดหน้า CRM Dashboard
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+
+# เข้าสู่เมนู ERP & CRM Dashboard
+- extendedWaitUntil:
+    visible: ".*ERP.*|.*แดชบอร์ด.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*CRM.*|.*จัดการลูกค้า.*"
+
+- extendedWaitUntil:
+    visible: "CRM Dashboard & Customer Hub"
+    timeout: 10000
+
+# ตรวจสอบการแสดงผลการ์ดสถิติ CRM 4 ช่อง
+- assertVisible: "ลูกค้าทั้งหมด"
+- assertVisible: "คอร์สที่เปิดใช้งาน"
+- assertVisible: "สมาชิกสะสมแต้ม"
+- assertVisible: "การใช้คูปองสะสม"
+
+---
+# ส่วนที่ 2: ทดสอบหน้าจัดการคอร์สแพ็กเกจ และ Dialog ตัดเซสชัน (CustomerPackagePage & PackageDeductionDialog)
+- tapOn: "จัดการคอร์สแพ็กเกจ"
+
+- extendedWaitUntil:
+    visible: "จัดการคอร์สแพ็กเกจ (Prepaid Packages)"
+    timeout: 10000
+
+- assertVisible: "ขายคอร์สใหม่"
+
+# กดตัดเซสชันแพ็กเกจ (ถ้ามีรายการ)
+- runFlow:
+    when:
+      visible: "ตัดเซสชัน"
+    commands:
+      - tapOn: "ตัดเซสชัน"
+      - extendedWaitUntil:
+          visible: "ตัดเซสชันคอร์สแพ็กเกจ"
+          timeout: 5000
+      - assertVisible: "ยืนยันตัดเซสชัน"
+      - tapOn: "ยกเลิก"
+
+- back
+
+---
+# ส่วนที่ 3: ทดสอบหน้า Customer Profile 360° (CustomerProfile360Page)
+- extendedWaitUntil:
+    visible: "CRM Dashboard & Customer Hub"
+    timeout: 5000
+
+- runFlow:
+    when:
+      visible: "ดู Profile 360°"
+    commands:
+      - tapOn: "ดู Profile 360°"
+      - extendedWaitUntil:
+          visible: ".*แต้มสะสม.*"
+          timeout: 10000
+      - assertVisible: "คอร์สแพ็กเกจ"
+      - assertVisible: "ประวัติรับบริการ"
+      - assertVisible: "ข้อมูลทั่วไป"
+      - back
+
+---
+# ส่วนที่ 4: ทดสอบระบบนัดหมาย และ Queue คลินิกฝั่งพนักงาน (AppointmentCalendarPage)
+- tapOn:
+    text: ".*นัดหมาย.*|.*คิวผู้ป่วย.*"
+
+- extendedWaitUntil:
+    visible: "นัดหมาย & คิวผู้ป่วย (Appointment Queue)"
+    timeout: 10000
+
+- assertVisible: "กรองตามสถานะ"
+
+---
+# ส่วนที่ 5: ทดสอบการจองนัดหมายฝั่งผู้ป่วย/ผู้รับบริการ (AppointmentBookingPage)
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${CONSUMER_USERNAME}"
+      PASSWORD: "${CONSUMER_PASSWORD}"
+
+# เข้าหน้าจองนัดหมายบริการ
+- extendedWaitUntil:
+    visible: ".*บริการ.*|.*จองนัดหมาย.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*จองนัดหมาย.*"
+
+- extendedWaitUntil:
+    visible: "จองนัดหมายบริการ (Patient Booking)"
+    timeout: 10000
+
+- assertVisible: "เลือกแพทย์ / ผู้ให้บริการ"
+- assertVisible: "ประเภทบริการ"
+- assertVisible: "วันที่ต้องการนัดหมาย"
+- assertVisible: "ช่วงเวลาที่ว่าง"
+- assertVisible: "ยืนยันส่งคำขอจองนัดหมาย"
+
+---
+# ส่วนที่ 6: ทดสอบ Dialog แบบประเมินความพึงพอใจ (CsatRatingDialog)
+- runFlow:
+    when:
+      visible: "ประเมินความพึงพอใจการบริการ"
+    commands:
+      - assertVisible: "กรุณาให้คะแนนความพึงพอใจการรับบริการ"
+      - assertVisible: "ส่งแบบประเมิน"
+      - tapOn: "ข้าม"

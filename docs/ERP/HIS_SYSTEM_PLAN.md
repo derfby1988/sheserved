@@ -151,3 +151,15 @@ CREATE INDEX idx_prescription_orders_queue
 *รายละเอียดการออกแบบ Database Schema และ UI ของระบบ HIS จะถูกเพิ่มเติมเมื่อเข้าใกล้ Phase สุดท้ายของการพัฒนา ERP โดยจะนำมาตรฐาน FHIR (Fast Healthcare Interoperability Resources) หรือ HL7 มาพิจารณาเพื่อการส่งต่อข้อมูลหากจำเป็นในอนาคต*
 
 > **หมายเหตุ:** Prescription Templates + Patient Selection History ถูก implement แล้วใน Chat Consultation flow ตาม `CHAT_CONSULTATION_IMPROVEMENT_PLAN.md` — HIS Pharmacy Queue รองรับรับคำสั่งยาที่ผู้ป่วยเลือกแล้วผ่าน `prescription_selection_history`*
+
+---
+
+## ⚠️ ข้อขัดแย้งและตารางที่ต้องใช้ร่วมกับ CRM System Plan
+
+- **`clinic_appointments` vs `appointments`**: ระบบ HIS (OPD/EMR Queue) ต้องเชื่อมโยงตารางนัดหมาย แต่ POS core สร้าง `clinic_appointments` ไว้แบบเรียบง่าย ขณะที่ CRM Plan กำหนดตาราง `appointments` ที่เก็บ `practitioner_id`, `room_id`, `service_type_id`, `deposit_paid` ฯลฯ → **ต้อง Extend/Migrate เป็น `appointments`**
+- **ตารางที่ HIS พึ่งพาจาก CRM Master Data**:
+  - `practitioners`: ข้อมูลแพทย์ผู้ให้บริการ (เชื่อมโยง HR `users` + สิทธิ์การตรวจ/นัด)
+  - `service_rooms`: ห้องตรวจ/สถานีบริการ
+  - `service_schedules` & `schedule_blockouts`: ตารางเวลาแพทย์และวันหยุด
+  - `appointment_service_types`: ประเภทหัตถการ/บริการและระยะเวลา Slot
+

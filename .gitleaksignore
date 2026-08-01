@@ -1,0 +1,29 @@
+# .gitleaksignore — suppress false positives from full-history audit
+# Plan 07 K7: All entries verified as placeholders or variable names, not real secrets
+
+# Variable name false positive (consultation-queue.js)
+e13bf615d0f7361f802e848fe7294080fb4b51c3:websocket-server/services/consultation-queue.js:generic-api-key:21
+
+# DEVELOPMENT_MOCK_KEY (allowlisted mock value)
+8be05a584b521e8c1c2b48bf16e3faef77d62e8e:lib/config/app_config.dart:generic-api-key:109
+
+# Google Maps API key in old commits (P1, already moved to dart-define)
+0139a72ce9c66c202f981670ee60160804306cbf:lib/config/app_config.dart:generic-api-key:117
+463b632a80eea11a38094edcf99b0ccb87430949:lib/config/app_config.dart:generic-api-key:116
+
+# JWT_SECRET placeholders in setup documentation
+ce2c5e47219edbd64c566bede83666d87bcfc37f:setup-new-machine.sh:jwt-secret:107
+ce2c5e47219edbd64c566bede83666d87bcfc37f:SETUP_NEW_MACHINE.md:jwt-secret:204
+866ae05e2285756ec17a2470d30f29e521b3b13b:SETUP_PLAN_SUMMARY.md:jwt-secret:154
+b6ce43482592c6139a28323186fb9fc11507a1c7:.cursor/plans/complete_setup_guide_for_new_machine_f478b4cf.plan.md:jwt-secret:472
+b6ce43482592c6139a28323186fb9fc11507a1c7:.cursor/plans/complete_setup_guide_for_new_machine_f478b4cf.plan.md:jwt-secret:944
+
+# PASSWORD placeholders in setup documentation
+ce2c5e47219edbd64c566bede83666d87bcfc37f:SETUP_NEW_MACHINE.md:generic-api-key:197
+fb8aac42359fd20ce424b9731a08b0b45c5c1bc6:websocket-server/QUICK_START.md:generic-api-key:39
+b6ce43482592c6139a28323186fb9fc11507a1c7:.cursor/plans/complete_setup_guide_for_new_machine_f478b4cf.plan.md:generic-api-key:465
+
+# Facebook app secret placeholders in setup documentation
+ce2c5e47219edbd64c566bede83666d87bcfc37f:SETUP_NEW_MACHINE.md:generic-api-key:210
+866ae05e2285756ec17a2470d30f29e521b3b13b:SETUP_PLAN_SUMMARY.md:generic-api-key:160
+b6ce43482592c6139a28323186fb9fc11507a1c7:.cursor/plans/complete_setup_guide_for_new_machine_f478b4cf.plan.md:generic-api-key:478

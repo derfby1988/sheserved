@@ -1,0 +1,682 @@
+# ERP Screenshot Capture Flow — All ERP Pages
+# Device: iPhone 17 Simulator (iOS) — BDFD0CA3-CEC2-435B-B707-097EA1FDFE44
+# Login: apisek / 123456
+# Purpose: Capture screenshots of every ERP page for UI review
+appId: com.example.treeLawZoo
+name: "ERP Screenshot All Pages"
+tags:
+  - erp-screenshot
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+---
+# Section 1: Login — use Profile tab to check login status and login if needed
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    stopApp: true
+- waitForAnimationToEnd:
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+# Navigate to Profile tab to check login status
+- tapOn:
+    point: "87%, 95%"
+- waitForAnimationToEnd:
+    timeout: 3000
+# If login button is visible, user is not logged in — perform login
+- runFlow:
+    when:
+      visible: "เข้าสู่ระบบ / สมัครสมาชิก"
+    commands:
+      - tapOn: "เข้าสู่ระบบ / สมัครสมาชิก"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - tapOn: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+      - inputText: "${USERNAME}"
+      - waitForAnimationToEnd:
+          timeout: 1000
+      - tapOn:
+          below:
+            text: "รหัสผ่าน"
+      - inputText: "${PASSWORD}"
+      - waitForAnimationToEnd:
+          timeout: 1000
+      # Dismiss keyboard by tapping "done" key
+      - tapOn:
+          point: "87%, 94%"
+      - waitForAnimationToEnd:
+          timeout: 2000
+      - tapOn: "เข้าสู่ระบบ"
+      - waitForAnimationToEnd:
+          timeout: 10000
+      # Dismiss BackgroundPermissionDialog if present
+      - runFlow:
+          when:
+            visible: "ไว้ทีหลัง"
+          commands:
+            - tapOn: "ไว้ทีหลัง"
+            - waitForAnimationToEnd:
+                timeout: 3000
+      # Navigate to Home tab
+      - tapOn:
+          point: "12%, 95%"
+      - waitForAnimationToEnd:
+          timeout: 5000
+# If already logged in, go to Home tab
+- runFlow:
+    when:
+      notVisible: "เข้าสู่ระบบ / สมัครสมาชิก"
+    commands:
+      - tapOn:
+          point: "12%, 95%"
+      - waitForAnimationToEnd:
+          timeout: 5000
+# Navigate to ERP Dashboard from Home page
+- scrollUntilVisible:
+    element:
+      text: ".*ERP.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "เข้า"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_01_dashboard"
+- waitForAnimationToEnd:
+    timeout: 2000
+# Section 3: Sales Group
+# 02: Counter POS
+- scrollUntilVisible:
+    element:
+      text: "Counter POS"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Counter POS"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_02_counter_pos"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 03: Clinic POS
+- scrollUntilVisible:
+    element:
+      text: "Clinic POS"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Clinic POS"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_03_clinic_pos"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 04: Delivery
+- scrollUntilVisible:
+    element:
+      text: "Delivery"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Delivery"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_04_delivery"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 05: Refunds
+- scrollUntilVisible:
+    element:
+      text: "Refunds"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Refunds"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_05_refunds"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 06: Loyalty
+- scrollUntilVisible:
+    element:
+      text: "Loyalty Rules"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Loyalty Rules"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_06_loyalty"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 07: Reports
+- scrollUntilVisible:
+    element:
+      text: "Reports"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Reports"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_07_reports"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 4: Inventory Group
+# 08: Inventory Management
+- scrollUntilVisible:
+    element:
+      text: "Inventory Management"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Inventory Management"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_08_inventory"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 09: Inventory Dashboard
+- scrollUntilVisible:
+    element:
+      text: "Inventory Dashboard"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Inventory Dashboard"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_09_inventory_dashboard"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 10: Stock Transfer
+- scrollUntilVisible:
+    element:
+      text: "Stock Transfer"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Stock Transfer"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_10_stock_transfer"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 11: Stock Adjustment
+- scrollUntilVisible:
+    element:
+      text: "Stock Adjustment"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Stock Adjustment"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_11_stock_adjustment"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 12: Stock Movements
+- scrollUntilVisible:
+    element:
+      text: "Stock Movements"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Stock Movements"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_12_stock_movements"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 13: Stocktake Config
+- scrollUntilVisible:
+    element:
+      text: "Stocktake Config"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Stocktake Config"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_13_stocktake_config"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 14: Goods Receipt
+- scrollUntilVisible:
+    element:
+      text: "Goods Receipt"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Goods Receipt"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_14_goods_receipt"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 5: Procurement Group
+# 15: Procurement
+- scrollUntilVisible:
+    element:
+      text: "Procurement Management"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Procurement Management"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_15_procurement"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 16: Vendor Contracts
+- scrollUntilVisible:
+    element:
+      text: "Vendor Contracts"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Vendor Contracts"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_16_vendor_contracts"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 17: Payment Channels
+- scrollUntilVisible:
+    element:
+      text: "Payment Channels"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Payment Channels"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_17_payment_channels"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 6: Finance Group
+# 18: GL Entries
+- scrollUntilVisible:
+    element:
+      text: "GL Entries"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "GL Entries"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_18_gl_entries"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 19: Chart of Accounts
+- scrollUntilVisible:
+    element:
+      text: "Chart of Accounts"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Chart of Accounts"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_19_chart_of_accounts"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 20: Accounts Receivable
+- scrollUntilVisible:
+    element:
+      text: "AR"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "AR"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_20_accounts_receivable"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 21: Accounts Payable
+- scrollUntilVisible:
+    element:
+      text: "AP"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "AP"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_21_accounts_payable"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 22: Analytics
+- scrollUntilVisible:
+    element:
+      text: "Analytics"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Analytics"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_22_analytics"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 7: HR Group
+# 23: Employees
+- scrollUntilVisible:
+    element:
+      text: "HR Management"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "HR Management"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_23_employees"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 24: Shifts
+- scrollUntilVisible:
+    element:
+      text: "Shifts"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Shifts"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_24_shifts"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 25: Payroll
+- scrollUntilVisible:
+    element:
+      text: "Payroll"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Payroll"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_25_payroll"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 26: HR Settings
+- scrollUntilVisible:
+    element:
+      text: "HR Settings"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "HR Settings"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_26_hr_settings"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 27: Customers
+- scrollUntilVisible:
+    element:
+      text: "CRM Management"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "CRM Management"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_27_customers"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 8: Clinical Group
+# 28: EMR
+- scrollUntilVisible:
+    element:
+      text: "EMR Records"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "EMR Records"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_28_emr"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 29: OPD
+- scrollUntilVisible:
+    element:
+      text: "OPD Visits"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "OPD Visits"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_29_opd"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 30: Prescriptions
+- scrollUntilVisible:
+    element:
+      text: "Prescriptions"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Prescriptions"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_30_prescriptions"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 31: Lab Results
+- scrollUntilVisible:
+    element:
+      text: "Lab Results"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Lab Results"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_31_lab_results"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 32: Patient Cohorts
+- scrollUntilVisible:
+    element:
+      text: "Patient Cohorts"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Patient Cohorts"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_32_patient_cohorts"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Section 9: Settings & KPI Pages
+# 33: Organization Settings (dashboard tile in admin group)
+- scrollUntilVisible:
+    element:
+      text: "Organization Settings"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Organization Settings"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_33_org_settings"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 34: Role Management (dashboard tile in admin group)
+- scrollUntilVisible:
+    element:
+      text: "Role Management"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Role Management"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_34_role_management"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# 35: Theme Settings — expand sidebar then tap ธีมสี Dashboard
+- tapOn:
+    point: "3%, 4%"
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "ธีมสี Dashboard"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_35_theme_settings"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Re-expand sidebar
+- tapOn:
+    point: "3%, 4%"
+- waitForAnimationToEnd:
+    timeout: 3000
+# 36: Glass Settings
+- tapOn: "ความโปร่งใส (Glass)"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_36_glass_settings"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Re-expand sidebar
+- tapOn:
+    point: "3%, 4%"
+- waitForAnimationToEnd:
+    timeout: 3000
+# 37: Module Layout — tap settings gear icon then จัดการกลุ่มการ์ด
+- tapOn:
+    point: "90%, 92%"
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "จัดการกลุ่มการ์ด"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_37_module_layout"
+- swipe:
+    start: "0%, 50%"
+    end: "30%, 50%"
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 3000
+# Re-expand sidebar
+- tapOn:
+    point: "3%, 4%"
+- waitForAnimationToEnd:
+    timeout: 3000
+# 38: KPI Dashboard
+- tapOn: "KPI / Analytics"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: "erp_38_kpi_dashboard"

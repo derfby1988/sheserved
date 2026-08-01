@@ -1,0 +1,292 @@
+# Dependency Security — Plan 06 Option A
+# Automated vulnerability scanning across Flutter, Node.js, and lockfiles
+# Runs on every PR + scheduled weekly scan
+# Blocking gate: Critical/High on production-reachable paths only
+
+name: Dependency Security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly Monday 02:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Flutter / Dart ──
+  flutter-audit:
+    name: Flutter Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Verify lockfile is committed
+        run: |
+          if [ ! -f pubspec.lock ]; then
+            echo "::error::pubspec.lock is missing — must be committed for reproducible builds"
+            exit 1
+          fi
+          echo "✅ pubspec.lock found"
+
+      - name: Install dependencies from lockfile
+        run: flutter pub get
+
+      - name: Check for outdated packages
+        run: flutter pub outdated --show-all || true
+
+      - name: OSV-Scanner — Flutter/Dart lockfile
+        uses: google/osv-scanner-action@v1.9.2
+        with:
+          scan-args: |
+            --lockfile=pubspec.lock
+            --format=json --output=osv-flutter-report.json
+        continue-on-error: true
+
+      - name: Upload OSV Flutter report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-flutter-report
+          path: osv-flutter-report.json
+          if-no-files-found: ignore
+
+  # ── Node.js (websocket-server) ──
+  node-audit:
+    name: Node.js Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: websocket-server/package-lock.json
+
+      - name: Verify lockfile is committed
+        run: |
+          if [ ! -f websocket-server/package-lock.json ]; then
+            echo "::error::package-lock.json is missing — must be committed for reproducible builds"
+            exit 1
+          fi
+          echo "✅ package-lock.json found"
+
+      - name: Install dependencies from lockfile (immutable)
+        run: npm ci --prefix websocket-server
+
+      - name: npm audit (report all)
+        run: npm audit --prefix websocket-server --audit-level=moderate || true
+
+      - name: npm audit (blocking — high & critical only)
+        run: |
+          set +e
+          npm audit --prefix websocket-server --audit-level=high --json > npm-audit-report.json 2>&1
+          AUDIT_EXIT=$?
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            HIGH_COUNT=$(jq '[.vulnerabilities[] | select(.severity=="high" or .severity=="critical")] | length' npm-audit-report.json 2>/dev/null || echo "0")
+            if [ "$HIGH_COUNT" -gt 0 ]; then
+              echo "::error::Found $HIGH_COUNT high/critical vulnerabilities in Node.js dependencies"
+              cat npm-audit-report.json | jq '[.vulnerabilities[] | select(.severity=="high" or .severity=="critical") | {name, severity, via: .via[0]}]'
+              exit 1
+            fi
+          fi
+          echo "✅ No high/critical vulnerabilities found"
+
+      - name: OSV-Scanner — Node.js lockfile
+        uses: google/osv-scanner-action@v1.9.2
+        with:
+          scan-args: |
+            --lockfile=websocket-server/package-lock.json
+            --format=json --output=osv-node-report.json
+        continue-on-error: true
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: |
+            npm-audit-report.json
+            websocket-server/osv-node-report.json
+          if-no-files-found: ignore
+
+  # ── iOS (CocoaPods) ──
+  ios-audit:
+    name: iOS Dependency Scan
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Podfile.lock is committed
+        run: |
+          if [ ! -f ios/Podfile.lock ]; then
+            echo "::error::Podfile.lock is missing — must be committed for reproducible builds"
+            exit 1
+          fi
+          echo "✅ Podfile.lock found"
+
+      - name: OSV-Scanner — iOS Podfile.lock
+        uses: google/osv-scanner-action@v1.9.2
+        with:
+          scan-args: |
+            --lockfile=ios/Podfile.lock
+        continue-on-error: true
+
+  # ── Secret Scanning (Plan 07 Option E) ──
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive scan
+
+      - name: Gitleaks — scan current changes
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: .gitleaks.toml
+
+      - name: Gitleaks — full history audit (report only)
+        run: |
+          set +e
+          gitleaks detect --config .gitleaks.toml --source . --log-opts="--all" --format=json --output=gitleaks-full-history-report.json
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::warning::Gitleaks found potential secrets in git history — review report"
+          fi
+          echo "✅ Gitleaks full history scan complete"
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-full-history-report.json
+          if-no-files-found: ignore
+
+  # ── Environment Guard (Plan 07 K3) ──
+  env-guard:
+    name: Environment Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate config files
+        run: |
+          set -e
+
+          echo "Checking config/dev.json..."
+          DEV_ENV=$(jq -r '.ENV' config/dev.json)
+          if [ "$DEV_ENV" != "dev" ]; then
+            echo "::error::config/dev.json has ENV='$DEV_ENV', expected 'dev'"
+            exit 1
+          fi
+
+          echo "Checking config/example.json..."
+          EXAMPLE_ENV=$(jq -r '.ENV' config/example.json)
+          if [ "$EXAMPLE_ENV" != "prod" ]; then
+            echo "::error::config/example.json has ENV='$EXAMPLE_ENV', expected 'prod'"
+            exit 1
+          fi
+
+          echo "Checking config/staging.example.json..."
+          STAGING_ENV=$(jq -r '.ENV' config/staging.example.json)
+          if [ "$STAGING_ENV" != "staging" ]; then
+            echo "::error::config/staging.example.json has ENV='$STAGING_ENV', expected 'staging'"
+            exit 1
+          fi
+
+          echo "Checking for placeholder secrets in example configs..."
+          for f in config/example.json config/staging.example.json; do
+            if [ -f "$f" ]; then
+              SUPABASE_URL=$(jq -r '.SUPABASE_URL // empty' "$f")
+              if echo "$SUPABASE_URL" | grep -qE 'https://[a-z0-9]+\.supabase\.co' | grep -v 'your-'; then
+                echo "::error::$f appears to contain a real Supabase URL"
+                exit 1
+              fi
+            fi
+          done
+
+          echo "Checking that staging/prod configs are not committed..."
+          for f in config/staging.json config/prod.json; do
+            if [ -f "$f" ]; then
+              echo "::error::$f is committed — must be in .gitignore"
+              exit 1
+            fi
+          done
+
+          echo "✅ Environment guard passed"
+
+      - name: Validate app_config.dart uses dart-define
+        run: |
+          if grep -q "AIzaSy" lib/config/app_config.dart; then
+            echo "::error::Hardcoded Google Maps API key found in app_config.dart"
+            exit 1
+          fi
+
+          if grep -q "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" lib/config/app_config.dart; then
+            echo "::error::Hardcoded Supabase anon key found in app_config.dart"
+            exit 1
+          fi
+
+          if ! grep -q "String.fromEnvironment" lib/config/app_config.dart; then
+            echo "::error::app_config.dart does not use String.fromEnvironment"
+            exit 1
+          fi
+
+          echo "✅ app_config.dart uses dart-define correctly"
+
+  # ── Summary gate ──
+  security-gate:
+    name: Security Gate Summary
+    runs-on: ubuntu-latest
+    needs: [flutter-audit, node-audit, ios-audit, secret-scan, env-guard]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          echo "Flutter audit: ${{ needs.flutter-audit.result }}"
+          echo "Node audit: ${{ needs.node-audit.result }}"
+          echo "iOS audit: ${{ needs.ios-audit.result }}"
+          echo "Secret scan: ${{ needs.secret-scan.result }}"
+          echo "Env guard: ${{ needs.env-guard.result }}"
+
+          # Secret scan is a blocking gate
+          if [ "${{ needs.secret-scan.result }}" != "success" ]; then
+            echo "::error::Secret scan failed — potential secrets detected in source"
+            exit 1
+          fi
+
+          # Environment guard is a blocking gate
+          if [ "${{ needs.env-guard.result }}" != "success" ]; then
+            echo "::error::Environment guard failed — config validation error"
+            exit 1
+          fi
+
+          # Node audit is the blocking gate (high/critical)
+          if [ "${{ needs.node-audit.result }}" != "success" ]; then
+            echo "::error::Node.js dependency scan failed — high/critical vulnerabilities detected"
+            exit 1
+          fi
+
+          # Flutter and iOS are non-blocking (report only) for now
+          if [ "${{ needs.flutter-audit.result }}" != "success" ]; then
+            echo "::warning::Flutter dependency scan had issues — review report"
+          fi
+
+          if [ "${{ needs.ios-audit.result }}" != "success" ]; then
+            echo "::warning::iOS dependency scan had issues — review report"
+          fi
+
+          echo "✅ Security gate passed — no blocking vulnerabilities detected"

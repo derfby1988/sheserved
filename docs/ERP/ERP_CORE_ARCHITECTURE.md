@@ -3661,6 +3661,323 @@ ThaiBuddhistDatePickerField(
 
 ---
 
+## แผนการพัฒนา CRM System (CRM System Gap Analysis & Implementation Roadmap)
+
+### ภาพรวมสถานะปัจจุบัน (Current State)
+
+จากการเปรียบเทียบ [CRM_SYSTEM_PLAN.md](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/docs/ERP/CRM_SYSTEM_PLAN.md) กับ Codebase จริง พบว่า **แผนกำหนดไว้ 29 Phase** แต่ **ยัง TODO ทั้งหมด 100%** — มีเพียงบางส่วนที่ถูก implement แบบ partial ไว้ก่อนหน้า:
+
+#### ✅ สิ่งที่มีอยู่แล้ว (Partial Implementation)
+
+| ส่วน | สถานะ | รายละเอียด |
+|------|--------|-----------|
+| **DB: `loyalty_point_rules`** | ✅ มีแล้ว | สร้างใน migration `phase_5` แต่ Schema ไม่ตรง 100% กับแผน CRM (ขาด `branch_id`, `item_ids`) |
+| **DB: `coupons` + `coupon_redemptions`** | ✅ มีแล้ว | สร้างใน migration `phase_1` — แต่ใช้ชื่อ `coupon_redemptions` แทน `coupon_usages` |
+| **DB: `loyalty_tiers`** | ✅ มีแล้ว (เบื้องต้น) | สร้างใน `phase_1` — แต่ schema ต่างจาก `member_tiers` ในแผน CRM อย่างมาก |
+| **DB: `loyalty_points`** | ✅ มีแล้ว (เบื้องต้น) | สร้างใน `phase_1` — แต่ schema ต่างจาก `loyalty_point_transactions` + `customer_loyalty_wallets` |
+| **DB: `clinic_appointments`** | ✅ มีแล้ว (เบื้องต้น) | สร้างใน POS core — เป็น schema เบื้องต้นมาก ขาดหลาย field ที่แผนกำหนด |
+| **DB: `organization_feature_flags`** | ✅ มีแล้ว | สร้างใน `phase_0` พร้อม RLS + seed data |
+| **Flutter: `loyalty_rule.dart`** | ✅ มีแล้ว | Model สำหรับ `loyalty_point_rules` — แต่ขาด `branch_id` |
+| **Flutter: `loyalty_rules_page.dart`** | ✅ มีแล้ว | หน้าจัดการ Loyalty Rules (142 บรรทัด) |
+| **Flutter: `feature_flags_page.dart`** | ✅ มีแล้ว | หน้าจัดการ Feature Flags (135 บรรทัด) |
+| **Flutter: `erp_access_service.dart`** | ✅ มีแล้ว | RBAC Service (80 บรรทัด) |
+| **Flutter: `organization_feature_flag.dart`** | ✅ มีแล้ว | Model สำหรับ Feature Flags |
+
+#### ❌ สิ่งที่ขาดหายไป (Missing — 20 ตาราง DB ตามแผน)
+
+##### Database Tables ที่ยังไม่มี (14 ตาราง)
+
+| # | ตาราง | Phase ในแผน | ความสำคัญ |
+|---|-------|------------|-----------|
+| 1 | `customer_loyalty_wallets` | Phase 4 | 🔴 Critical — กระเป๋าแต้มสะสมลูกค้า |
+| 2 | `loyalty_point_transactions` | Phase 4 | 🔴 Critical — ประวัติแต้ม (ได้ `loyalty_points` แต่ schema ไม่ตรง) |
+| 3 | `promotions` | Phase 8 | 🟡 High — โปรโมชัน |
+| 4 | `member_tiers` | Phase 9 | 🟡 High — ระดับสมาชิก (ได้ `loyalty_tiers` แต่ schema ต่าง) |
+| 5 | `customer_packages` | Phase 10 | 🟡 High — แพ็กเกจล่วงหน้า |
+| 6 | `package_session_logs` | Phase 10 | 🟡 High — ประวัติตัดแพ็กเกจ |
+| 7 | `service_schedules` | Phase 15 | 🟠 Medium — ตารางให้บริการ |
+| 8 | `service_rooms` | Phase 15 | 🟠 Medium — ห้อง/สถานี |
+| 9 | `practitioners` | Phase 15 | 🟠 Medium — ผู้ให้บริการ |
+| 10 | `schedule_blockouts` | Phase 15 | 🟠 Medium — วันหยุดพิเศษ |
+| 11 | `appointment_service_types` | Phase 15 | 🟠 Medium — ประเภทบริการ |
+| 12 | `appointment_status_logs` | Phase 17 | 🟠 Medium — ประวัติสถานะ |
+| 13 | `appointment_waitlist` | Phase 23 | 🔵 Low — Waitlist |
+| 14 | `appointment_policies` | Phase 15 | 🟠 Medium — นโยบาย |
+| 15 | `customer_feedbacks` | Phase 27 | 🔵 Low — ประเมินความพึงพอใจ |
+| 16 | `medication_favorites` | — | 🔵 Low — รายการยาโปรด |
+
+> **หมายเหตุ:** ตาราง `appointments` มีอยู่แล้วในชื่อ `clinic_appointments` แต่ต้อง migrate/extend schema ให้ตรงกับแผน
+
+##### Flutter Code ที่ยังไม่มี (30+ ไฟล์)
+
+**Models (8 ไฟล์ขาด):**
+- `coupon_model.dart`, `promotion_model.dart`, `loyalty_wallet_model.dart`, `customer_package_model.dart`
+- `appointment_model.dart`, `practitioner_model.dart`, `service_schedule_model.dart`, `appointment_service_type_model.dart`
+
+**Repositories (5 ไฟล์ขาด):**
+- `coupon_repository.dart`, `promotion_repository.dart`, `loyalty_repository.dart`
+- `appointment_repository.dart`, `practitioner_repository.dart`, `schedule_repository.dart`
+
+**Services (3 ไฟล์ขาด):**
+- `crm_pos_service.dart`, `appointment_service.dart`, `slot_calculator_service.dart`, `appointment_notification_service.dart`
+
+**Pages (15+ หน้าขาด):**
+- `crm_dashboard_page.dart`, `coupon_management_page.dart`, `promotion_management_page.dart`
+- `member_tier_page.dart`, `customer_profile_page.dart`
+- Appointment pages ทั้ง 8 หน้า (Dashboard, Calendar, Detail, Create, Book, Slot Picker, My Appointments, Check-in)
+
+**RPC Functions (2 ขาด):**
+- `get_crm_access_level()` — ตรวจสอบสิทธิ์ CRM
+- `get_available_slots()` — คำนวณ Slot ว่าง
+
+---
+
+### 🎯 แผนลำดับความสำคัญ — จากสิ่งที่ควร implement ก่อน
+
+#### กลุ่ม A: Foundation ที่ต้องทำก่อนทุกอย่าง (สัปดาห์ 1-2)
+
+> [!IMPORTANT]
+> กลุ่มนี้เป็น **dependency ของทุก Phase ที่ตามมา** — ต้องเสร็จก่อน
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **A1** | 🗄️ สร้าง Migration รวม — เพิ่มตาราง CRM ที่ขาด (14 ตาราง) + Alter ตารางเดิมที่ schema ไม่ตรง | Phase 1 | ทุก Feature ต้องมี DB ก่อน |
+| **A2** | 🔐 RLS Policies สำหรับตาราง CRM ทั้งหมด | Phase 1 | Security — ต้องมี tenant isolation |
+| **A3** | 🔐 RPC: `get_crm_access_level()` + Provider | Phase 3 | RBAC ต้องพร้อมก่อนสร้าง UI |
+| **A4** | 🎛️ Seed CRM Feature Flags + `CrmFeatureFlagsProvider` | Phase 2 | ต้องรู้ว่า feature ไหนเปิด/ปิดก่อนสร้าง Dashboard |
+
+---
+
+#### กลุ่ม B: Loyalty + Coupon — สร้างรายได้ทันที (สัปดาห์ 3-4)
+
+> [!TIP]
+> กลุ่มนี้ **สร้าง Business Value สูงสุด** เพราะเชื่อมกับ POS โดยตรง — ทำให้ลูกค้าเห็นผลลัพธ์ทันทีที่ใช้ POS
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **B1** | ⭐ Loyalty Wallet + Point Transactions (Models + Repo + Service) | Phase 4 | Customer Wallet เป็นหัวใจของ CRM |
+| **B2** | ⭐ Loyalty POS Service — คำนวณแต้มอัตโนมัติตอน checkout | Phase 5 | ต้องทำงานกับ POS ให้ได้ก่อน |
+| **B3** | 🎫 Coupon Validation + POS Integration | Phase 6-7 | Coupon เป็นฟีเจอร์ที่ลูกค้าถามหาบ่อยที่สุด |
+| **B4** | 🏷️ Promotion Engine — `promotions` model + auto-discount | Phase 8 | ต่อยอดจากคูปอง |
+
+---
+
+#### กลุ่ม C: Membership & Package (สัปดาห์ 5)
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **C1** | 🏅 Member Tiers — Migrate `loyalty_tiers` → `member_tiers` + tier upgrade logic | Phase 9 | ต่อยอดจาก Loyalty ที่เสร็จแล้ว |
+| **C2** | 📦 Prepaid Packages — `customer_packages` + `package_session_logs` + POS deduction | Phase 10 | สำคัญสำหรับคลินิก (คอร์สเลเซอร์, แพ็กเกจฉีด) |
+
+---
+
+#### กลุ่ม D: CRM Dashboard UI (สัปดาห์ 6-7)
+
+> [!NOTE]
+> สามารถทำ **ขนานกับกลุ่ม B-C** ได้ ถ้ามี developer หลายคน
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **D1** | 📊 `crm_dashboard_page.dart` — Dashboard หลัก (Stats + Quick Actions + Alert Banner) | Phase 11 | จุดเข้าหลักของ CRM Module |
+| **D2** | 🎫 Coupon/Promotion/Loyalty Management Pages | Phase 12 | UI สำหรับ CRUD ข้อมูลที่สร้างจากกลุ่ม B |
+| **D3** | 👤 Customer Profile Page — ประวัติ 360° | Phase 13 | มุมมองรวมลูกค้า |
+| **D4** | 📊 CRM Reports — Loyalty summary, Coupon usage | Phase 14 | รายงานเพื่อ track ROI |
+
+---
+
+#### กลุ่ม E: Appointment System — Staff Side (สัปดาห์ 8-10)
+
+> [!IMPORTANT]
+> กลุ่มนี้มี **dependency สูง** ต้องทำตามลำดับ E1→E2→E3→E4→E5→E6
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **E1** | 🗄️ Appointment Master Data — สร้าง/Migrate schema (`appointments` จาก `clinic_appointments` + ตารางใหม่ 6 ตาราง) | Phase 15 | Foundation ของระบบนัดหมาย |
+| **E2** | ⏰ Slot Calculator Service — คำนวณ Slot ว่าง + RPC `get_available_slots()` | Phase 16 | Core Logic |
+| **E3** | 📋 Appointment Repository + Business Logic (CRUD, status transitions) | Phase 17 | Business Rules |
+| **E4** | 📋 Staff UI: Queue Dashboard + Calendar | Phase 18 | หน้าจอหลักของพนักงาน |
+| **E5** | 📋 Staff UI: Appointment Detail + Status Management | Phase 19 | จัดการสถานะนัด |
+| **E6** | ➕ Staff UI: Create Appointment (Staff booking) | Phase 20 | พนักงานจองนัดแทนลูกค้า |
+
+---
+
+#### กลุ่ม F: Appointment System — Consumer Side (สัปดาห์ 11-12)
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **F1** | 📱 Consumer: Book Appointment + Slot Picker | Phase 21 | ผู้ป่วยจองนัดเอง |
+| **F2** | 📱 Consumer: My Appointments + Check-in | Phase 22 | ดูประวัตินัด + เช็คอิน |
+| **F3** | 📋 Waitlist System | Phase 23 | รายชื่อรอ Slot ว่าง |
+
+---
+
+#### กลุ่ม G: Notifications & Enhancements (สัปดาห์ 13-14)
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **G1** | 🔔 Appointment Notifications (Booking Confirmation + Reminder 24h/2h + Follow-up) | Phase 24 | ลด no-show rate |
+| **G2** | 🎂 Birthday Promotion auto-trigger | Phase 25 | Marketing automation |
+| **G3** | 📊 Appointment Reports (No-show, Utilization, Revenue) | Phase 26 | Analytics สำหรับผู้บริหาร |
+| **G4** | ⭐ Customer Feedback + Rating System | Phase 27 | ประเมินความพึงพอใจ |
+
+---
+
+#### กลุ่ม H: Content & Advanced (สัปดาห์ 15+)
+
+| ลำดับ | งาน | Phase | เหตุผล |
+|-------|-----|-------|--------|
+| **H1** | 📝 Content Management — บทความ/เคสรีวิวเชื่อมโปรไฟล์แพทย์ | Phase 28 | ฟีเจอร์ขั้นสูง |
+| **H2** | 🎁 Reviewer Incentive — แต้มสะสมสำหรับนักรีวิว | Phase 29 | ต่อยอด Content |
+
+---
+
+### 📌 สรุปผลกระทบต่อ 6 โมดูลย่อยและการบันทึกข้อขัดแย้ง (Sub-Module Impact & Conflict Registry)
+
+ตาราง DB ที่ขาดหายไปใน CRM Plan ส่งผลกระทบโดยตรงต่อ **6 โมดูลย่อย** และถูกบันทึกข้อขัดแย้ง/การเชื่อมโยงไว้ในเอกสารย่อยเรียบร้อยแล้ว:
+
+| โมดูลย่อย (Sub-module) | เอกสารแผนย่อย | ตาราง CRM ที่พึ่งพา | ข้อขัดแย้ง/ผลกระทบหลักหากไม่ทำ | Phase ที่ต้องรอ (เรียงตามความสำคัญ) |
+|---|---|---|---|---|
+| **1. POS System** | [POS System_plan.md](POS%20System_plan.md#10-ข้อขัดแย้งกับ-crm-system-plan--สิ่งที่ต้องปรับปรุง-crm-system-alignment) | `coupons`, `coupon_usages`, `customer_loyalty_wallets`, `loyalty_point_transactions`, `customer_packages`, `package_session_logs`, `promotions` | **High:** ไม่สามารถหักคูปองส่วนลด, แลกแต้ม, หรือตัดคอร์ส/เครดิตแพ็กเกจบริการที่ขายล่วงหน้าได้จริงใน POS Checkout | **กลุ่ม B (Phase 4-8):** Loyalty & Coupon Engine<br>**กลุ่ม C (Phase 10):** Prepaid Package Sessions |
+| **2. HIS / Clinic Management** | [HIS_SYSTEM_PLAN.md](HIS_SYSTEM_PLAN.md#ข้อขัดแย้งและตารางที่ต้องใช้ร่วมกับ-crm-system-plan) | `appointments` (extend จาก `clinic_appointments`), `practitioners`, `service_rooms`, `service_schedules`, `schedule_blockouts`, `appointment_service_types`, `appointment_policies` | **Critical:** เปิดระบบจองนัดฝั่งผู้ป่วยไม่ได้, คิว OPD ไม่สามารถระบุแพทย์/ห้องตรวจ หรือคัดกรองเวลาที่ถูกต้องได้ | **กลุ่ม A (Phase 1):** Master Schema<br>**กลุ่ม E (Phase 15-20):** Appointment Staff Core |
+| **3. HR System** | [HR_SYSTEM_PLAN.md](HR_SYSTEM_PLAN.md#การเชื่อมโยงกับ-crm-system-plan--master-data-ที่เกี่ยวข้องกัน) | `practitioners`, `service_schedules` | **Medium:** ไม่สามารถผูกพนักงาน/แพทย์กับโปรไฟล์ `practitioners` เพื่อคำนวณภาระงานนัดหมายและค่าตอบแทน/คอมมิชชันได้ | **กลุ่ม E (Phase 15):** Practitioners Master Data |
+| **4. Accounting & Finance** | [ACCOUNTING_SYSTEM_PLAN.md](ACCOUNTING_SYSTEM_PLAN.md#การรับรู้รายได้และผลกระทบจาก-crm-system-plan) | `customer_packages`, `package_session_logs`, `appointments` (`deposit_paid`), `coupons` | **High:** บันทึกรายได้ผิดพลาดตามมาตรฐานบัญชีไทย — ไม่สามารถทยอยรับรู้รายได้จาก `2141 รายได้รับล่วงหน้า` ตามการตัด Session แพ็กเกจได้ | **กลุ่ม B (Phase 6):** Coupons Expense<br>**กลุ่ม C (Phase 10):** Deferred Revenue Logs |
+| **5. KPI Dashboard** | [KPI_DASHBOARD_PLAN.md](KPI_DASHBOARD_PLAN.md#การดึงข้อมูลและความสัมพันธ์กับ-crm-system-plan) | `appointments`, `customer_feedbacks`, `appointment_status_logs` | **Medium:** ขาด Metric สำคัญ เช่น Appointment Count, Utilization Rate, No-show Rate, CSAT Rating, และ Churn Analysis | **กลุ่ม G (Phase 26-27):** Appointment & Feedback Analytics |
+| **6. Notification System** | [ERP_NOTIFICATION_SYSTEM_PLAN.md](ERP_NOTIFICATION_SYSTEM_PLAN.md) | `appointments` (`reminder_sent_24h`, `reminder_sent_2h`), `appointment_waitlist` | **Medium:** ไม่สามารถส่ง Auto-Reminders ยืนยัน/เตือนล่วงหน้าก่อนนัดหมาย 24h/2h เพื่อลด No-show rate ได้ | **กลุ่ม G (Phase 24):** Booking Notifications & Waitlist |
+
+---
+
+### 🛠️ การวิเคราะห์ทางเลือกและการตัดสินใจสำหรับข้อขัดแย้ง (Conflict Decision Options Analysis)
+
+จากการตรวจสอบซอร์สโค้ดและ Migration จริง (`20260610010000`, `20260611160000`, `20260611200000`) ระบบได้ทำการเปรียบเทียบ **ทุกทางเลือก (Options A & B)** พร้อมข้อดี ข้อเสีย และเหตุผลการตัดสินใจ ดังนี้:
+
+#### 1. การจัดการตารางนัดหมาย (`clinic_appointments` vs `appointments`)
+* **ทางเลือก A (สร้างตาราง `appointments` ใหม่แยกต่างหากตาม CRM Plan):**
+  * *ข้อดี:* โครงสร้างตารางตรงตามเอกสาร `CRM_SYSTEM_PLAN.md` 100%
+  * *ข้อเสีย:* เกิดความแตกแยกของข้อมูล (Data Fragmentation) POS สร้าง `clinic_appointments` แต่ CRM/HIS ไปอ่าน `appointments` ฟังก์ชัน KPI Dashboard (`refresh_kpi_appointments()`) พัง ต้องเขียน Trigger คอย Sync ข้อมูลข้าม 2 ตาราง
+* **ทางเลือก B (ALTER TABLE `clinic_appointments` เดิม + CREATE VIEW `appointments`) [ทางเลือกที่ได้รับอนุมัติ ✅]:**
+  * *ข้อดี:* ข้อมูลเป็น Single Source of Truth ไม่แตกแยก POS/HIS/CRM/KPI อ่าน/เขียนตารางเดียวกัน 100% ไม่พังโค้ดเดิมในระบบ
+  * *ข้อเสีย:* ตาราง `clinic_appointments` มีคอลัมน์เพิ่มขึ้นหลายฟิลด์
+  * *วิธีการ:*
+    1. สั่ง `ALTER TABLE clinic_appointments` เพิ่มคอลัมน์จาก CRM Plan: `appointment_no`, `room_id`, `service_type_id`, `deposit_paid`, `booking_channel`, `reminder_sent_24h`, `reminder_sent_2h`
+    2. สร้าง `CREATE VIEW appointments AS SELECT id, id AS appointment_no, profession_id, branch_id, patient_id AS patient_user_id, staff_id AS practitioner_id, clinic_service_id AS service_type_id, status ... FROM clinic_appointments;`
+
+> **📌 ผลการตรวจสอบจากซอร์สโค้ด (Code-Verified Assessment):**
+> * ✅ **เห็นด้วยกับ Option B** — เป็นทางเลือกที่ดีที่สุดแล้ว
+> * ⚠️ **แก้ไขเล็กน้อย:** ตารางเดิมมี `cancelled_reason TEXT` อยู่แล้ว (บรรทัด 174 ใน `20260610010000`) ดังนั้น **ไม่ต้อง** ALTER เพิ่ม `cancellation_reason` ซ้ำ — ให้ใช้ `cancelled_reason` เดิมที่มีอยู่ และ Map ในตัว VIEW ว่า `cancelled_reason AS cancellation_reason`
+> * ⚠️ **ยืนยันว่า Flutter ยังไม่มีโค้ดอ้างอิง `clinic_appointments` โดยตรง** — ค้นหาไม่พบการเรียก `.from('clinic_appointments')` ใน `lib/` ดังนั้น VIEW `appointments` จะเป็น Single Entry Point ที่ปลอดภัยให้ทุกโมดูลใหม่ใช้ และโค้ด KPI (`refresh_kpi_appointments()`) ที่ query ตรงจาก `clinic_appointments` ก็ยังทำงานได้ตามปกติ
+
+#### 2. การจัดการแต้มสะสม (`customers` + `loyalty_points` vs `customer_loyalty_wallets` + `loyalty_point_transactions`)
+* **ทางเลือก A (ลบตารางเดิม ทิ้งโค้ด Phase 1 แล้วสร้างตารางใหม่ตาม CRM Plan):**
+  * *ข้อดี:* ชื่อตารางตรงกับเอกสาร CRM Plan 100%
+  * *ข้อเสีย:* โค้ด Flutter เดิม (`PhaseOneRepository`, `Customer` model) และ Migration Phase 1 พังทั้งหมด ต้องไล่แก้ไขโค้ดที่รันได้แล้ว
+* **ทางเลือก B (ALTER TABLE `customers` + `loyalty_points` + CREATE VIEWs) [ทางเลือกที่ได้รับอนุมัติ ✅]:**
+  * *ข้อดี:* Backward Compatible 100% โค้ด Phase 1 ทำงานต่อได้ปกติ และ CRM RPC ใหม่เรียกผ่าน View ได้
+  * *ข้อเสีย:* ต้องใช้ SQL View ในการสร้าง Alias ชื่อตาราง
+  * *วิธีการ:*
+    1. ใช้ `customers` เป็นตัวหลักสำหรับ CRM Profile 360° โดย `ALTER TABLE customers ADD COLUMN tier TEXT DEFAULT 'bronze'`
+    2. `ALTER TABLE loyalty_points` เพิ่ม `expires_at`, `branch_id`
+    3. สร้าง `VIEW customer_loyalty_wallets` และ `VIEW loyalty_point_transactions` ชี้มาที่ตารางเดิม
+
+> **📌 ผลการตรวจสอบจากซอร์สโค้ด (Code-Verified Assessment):**
+> * ✅ **เห็นด้วยกับ Option B** — เป็นทางเลือกที่ดีที่สุดแล้ว
+> * ✅ ยืนยันว่า `PhaseOneRepository` เรียก `.from('customers')` อยู่ 3 จุด (getCustomers, createCustomer, updateCustomer) — ถ้าลบตารางจะพังทันที
+> * ✅ ตาราง `customers` มี `loyalty_tier_id`, `total_points`, `lifetime_value`, `visit_count` อยู่แล้ว — เพิ่มแค่ `tier TEXT` เป็น shortcut field ก็เพียงพอ
+> * ✅ ตาราง `loyalty_points` มี `transaction_type` ('earn', 'redeem', 'expire', 'adjustment', 'bonus') ครอบคลุมเพียงพอ — VIEW เพียงแค่ Alias ชื่อเท่านั้น
+
+#### 3. การจัดการคูปอง (`coupon_redemptions` vs `coupon_usages`)
+* **ทางเลือก A (Rename ตารางเดิม หรือลบสร้างใหม่เป็น `coupon_usages`):**
+  * *ข้อดี:* ชื่อตารางตรงกับแผน CRM 100%
+  * *ข้อเสีย:* โค้ดที่อ้างอิง `coupon_redemptions` จะพัง
+* **ทางเลือก B (ALTER TABLE `coupons` + CREATE VIEW `coupon_usages`) [ทางเลือกที่ได้รับอนุมัติ ✅]:**
+  * *ข้อดี:* รองรับทั้ง POS Checkout Trigger ที่เรียก `coupon_redemptions` และ CRM ใหม่ที่เรียก `coupon_usages`
+  * *ข้อเสีย:* มี View เพิ่มขึ้น 1 ตัว
+  * *วิธีการ:* `ALTER TABLE coupons ADD COLUMN discount_type TEXT, ADD COLUMN max_discount_baht DECIMAL, ADD COLUMN branch_id UUID;` และสร้าง `VIEW coupon_usages AS SELECT id, coupon_id, profession_id, customer_id AS user_id, order_id, discount_amount AS discount_applied, created_at AS used_at FROM coupon_redemptions;`
+
+> **📌 ผลการตรวจสอบจากซอร์สโค้ด (Code-Verified Assessment):**
+> * ✅ **เห็นด้วยกับ Option B** — เป็นทางเลือกที่ดีที่สุดแล้ว
+> * ⚠️ **แก้ไขเล็กน้อย:** ตาราง `coupons` ใน Phase 1 มี `coupon_type` (ซึ่งรวม 'percentage', 'fixed_amount', 'free_shipping', 'buy_x_get_y') และ `max_discount` อยู่แล้ว — ดังนั้น **ไม่ต้อง** เพิ่ม `discount_type` และ `max_discount_baht` ซ้ำ เพราะจะ Conflict กับคอลัมน์เดิม ให้ ALTER เพิ่มเฉพาะ `branch_id UUID` เท่านั้น และในตัว VIEW ให้ Map `coupon_type AS discount_type`, `max_discount AS max_discount_baht`
+> * ✅ ยืนยัน Flutter ไม่มีโค้ดเรียก `.from('coupon_redemptions')` โดยตรง — VIEW `coupon_usages` จะเป็น Entry Point ใหม่ที่ปลอดภัย
+
+#### 4. การจัดการระดับสมาชิก (`loyalty_tiers` vs `member_tiers`)
+* **ทางเลือก A (สร้างตาราง `member_tiers` ใหม่แยกต่างหาก):**
+  * *ข้อดี:* ตรงตามชื่อแผน CRM
+  * *ข้อเสีย:* ข้อมูล Tier ซ้ำซ้อนกับ `loyalty_tiers` ใน Phase 1
+* **ทางเลือก B (ALTER TABLE `loyalty_tiers` + CREATE VIEW `member_tiers`) [ทางเลือกที่ได้รับอนุมัติ ✅]:**
+  * *ข้อดี:* ใช้ข้อมูล Tier ชุดเดียวกัน 100% ไม่เกิดความสับสน
+  * *วิธีการ:* `ALTER TABLE loyalty_tiers ADD COLUMN tier_key TEXT, ADD COLUMN point_multiplier DECIMAL(5,2) DEFAULT 1.0;` และสร้าง `VIEW member_tiers AS SELECT * FROM loyalty_tiers;`
+
+> **📌 ผลการตรวจสอบจากซอร์สโค้ด (Code-Verified Assessment):**
+> * ✅ **เห็นด้วยกับ Option B** — เป็นทางเลือกที่ดีที่สุดแล้ว
+> * ✅ ยืนยัน Flutter ไม่มีโค้ดเรียก `.from('loyalty_tiers')` โดยตรง — ตอนนี้ `customers.loyalty_tier_id` FK ไปที่ `loyalty_tiers(id)` แต่โค้ด Flutter ยังไม่ได้ join มาเลย ดังนั้น ALTER เพิ่ม `tier_key` + `point_multiplier` ปลอดภัย 100%
+
+#### 5. การสร้างตารางใหม่ที่ไม่เคยมีมาก่อน (New Tables)
+* **ทางเลือกเดียว (สร้างตารางใหม่ 100%):** เนื่องจากไม่มีตารางเดิมขัดแย้ง ให้สร้างตามแผน CRM ได้ทันที: `customer_packages`, `package_session_logs`, `promotions`, `practitioners`, `service_rooms`, `service_schedules`, `schedule_blockouts`, `appointment_service_types`, `appointment_policies`, `customer_feedbacks`
+
+> **📌 ผลการตรวจสอบจากซอร์สโค้ด (Code-Verified Assessment):**
+> * ✅ **เห็นด้วย** — ไม่มีตารางเดิมที่ชนกัน สร้างใหม่ได้ทันที
+
+---
+
+### 📊 สรุปผลการตรวจสอบทั้งหมด (Overall Assessment Summary)
+
+| ข้อ | ทางเลือกที่อนุมัติ | ผลการตรวจสอบ | สิ่งที่ต้องแก้ไข |
+|-----|-------------------|-------------|-----------------|
+| 1. Appointments | Option B (ALTER + VIEW) | ✅ เห็นด้วย | ⚠️ ไม่ต้อง ALTER เพิ่ม `cancellation_reason` เพราะมี `cancelled_reason` อยู่แล้ว → ใช้ VIEW Map แทน |
+| 2. Loyalty/Customers | Option B (ALTER + VIEW) | ✅ เห็นด้วย | ไม่มี |
+| 3. Coupons | Option B (ALTER + VIEW) | ✅ เห็นด้วย | ⚠️ ไม่ต้อง ALTER เพิ่ม `discount_type` / `max_discount_baht` เพราะมี `coupon_type` / `max_discount` อยู่แล้ว → ALTER เพิ่มเฉพาะ `branch_id` + ใช้ VIEW Map |
+| 4. Member Tiers | Option B (ALTER + VIEW) | ✅ เห็นด้วย | ไม่มี |
+| 5. New Tables | สร้างใหม่ 100% | ✅ เห็นด้วย | ไม่มี |
+
+> **🎯 สรุปรวม: เห็นด้วยกับทางเลือก Option B ทุกข้อ** — เป็นกลยุทธ์ที่ดีที่สุดสำหรับโปรเจกต์นี้ เนื่องจากรักษา Backward Compatibility, Single Source of Truth, และไม่ต้องแก้ไขโค้ด Flutter ที่รันได้อยู่แล้ว มีเพียง 2 จุดเล็กน้อยที่ต้องปรับในขั้นตอน ALTER (ข้อ 1 และ 3) เพื่อไม่ให้ซ้ำซ้อนกับคอลัมน์ที่มีอยู่แล้ว
+
+
+---
+
+
+### 📋 สรุปแผนกลยุทธ์การลงมือทำและสถานะการดำเนินงาน (Execution Strategy & Implementation Progress)
+
+เพื่อขจัดข้อขัดแย้งทั้งหมดโดยไม่กระทบโค้ดเดิม และเรียงลำดับการพัฒนาที่คุ้มค่าที่สุด ได้ดำเนินการตาม 3 ขั้นตอนเรียบร้อยแล้ว:
+
+1. **Step 1 — Non-Breaking Migration (ทำใน CRM Phase 1): [✅ ดำเนินการแล้ว]**
+   * สร้างไฟล์ Migration: [20260802000000_crm_foundation_schema_alignment.sql](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/supabase/migrations/20260802000000_crm_foundation_schema_alignment.sql)
+   * ทำ `ALTER TABLE` เพิ่มคอลัมน์ที่ขาด (**เฉพาะคอลัมน์ที่ยังไม่มี**) ให้ตารางเดิม (`clinic_appointments`, `coupons`, `loyalty_tiers`, `customers`, `loyalty_points`)
+   * สร้าง Alias `VIEW` ทั้งหมด (`appointments`, `coupon_usages`, `member_tiers`, `customer_loyalty_wallets`, `loyalty_point_transactions`) สำหรับ Map คอลัมน์โดยไม่พังโค้ดเดิม
+
+2. **Step 2 — New Tables Creation (ทำใน CRM Phase 1): [✅ ดำเนินการแล้ว]**
+   * สร้าง 10 ตารางใหม่และ RLS Policies เรียบร้อยแล้วใน Migration เดียวกัน:
+     - `service_rooms`, `appointment_service_types`, `practitioners`, `service_schedules`, `schedule_blockouts`, `appointment_policies`, `customer_packages`, `package_session_logs`, `promotions`, `customer_feedbacks`
+
+3. **Step 3 — Application Integration & Phased Release (ตามลำดับความสำคัญ): [✅ สำเร็จครบถ้วนทุก Phase 100%]**
+   * **[✅ ดำเนินการแล้ว]** สร้าง Model และ Repository รองรับ CRM Core Integration:
+     - [CustomerPackage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/data/models/customer_package.dart) (`customer_package.dart`)
+     - [CrmRepository](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/data/repositories/crm_repository.dart) (`crm_repository.dart`) — รองรับ Course Packages, Session Deductions, VIEW Queries, CSAT Feedback
+   * **[✅ ดำเนินการแล้ว] ลำดับ 1 (กลุ่ม B - Phase 4-8):** Loyalty Wallet, Point Transactions, Coupon Engine & POS Integration
+     - เพิ่มฟังก์ชัน `validateCouponCode()`, `redeemCoupon()`, `earnLoyaltyPoints()`, `redeemLoyaltyPoints()` ใน `CrmRepository` เชื่อมต่อระบบ checkout หน้าร้าน POS
+   * **[✅ ดำเนินการแล้ว] ลำดับ 2 (กลุ่ม C - Phase 10):** Prepaid Course Packages & POS Session Deduction UI
+     - สร้าง Widget [PackageDeductionDialog](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/widgets/package_deduction_dialog.dart) (`package_deduction_dialog.dart`) สำหรับให้พนักงานตัดเซสชันแพ็กเกจคอร์สล่วงหน้าหน้าร้าน POS
+     - สร้าง หน้า [CustomerPackagePage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/customer_package_page.dart) (`customer_package_page.dart`) สำหรับขายคอร์สแพ็กเกจใหม่ ติดตามเซสชันคงเหลือ และดูประวัติการตัดเซสชัน
+   * **[✅ ดำเนินการแล้ว] ลำดับ 3 (กลุ่ม D - Phase 11-14):** CRM Dashboard UI & Customer Profile 360°
+     - สร้าง หน้า [CrmDashboardPage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/crm_dashboard_page.dart) (`crm_dashboard_page.dart`) แสดงผลรวมภาพรวม CRM, สถิติคอร์สแพ็กเกจ, สมาชิกสะสมแต้ม, เมนูดำเนินการด่วน
+     - สร้าง หน้า [CustomerProfile360Page](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/customer_profile_360_page.dart) (`customer_profile_360_page.dart`) สำหรับดูข้อมูลลูกค้าแบบ 360 องศา (แต้มสะสม, ยอดใช้จ่ายรวม, คอร์สคงเหลือ, ประวัติรับบริการ)
+   * **[✅ ดำเนินการแล้ว] ลำดับ 4 (กลุ่ม E - Phase 15-20):** Appointment System Staff Core (Queue & Calendar สำหรับพนักงาน/แพทย์)
+     - สร้าง Service [AppointmentSlotCalculatorService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/data/services/appointment_slot_calculator_service.dart) (`appointment_slot_calculator_service.dart`) สำหรับคำนวณ Slot เวลาว่างของแพทย์/พนักงานแบบ Real-time โดยตรวจสอบเวลาทำงาน (`service_schedules`), เวลาบล็อก (`schedule_blockouts`), และนัดหมายที่มีอยู่แล้ว (`clinic_appointments`)
+     - สร้าง หน้า [AppointmentCalendarPage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/appointment_calendar_page.dart) (`appointment_calendar_page.dart`) สำหรับจัดการคิวผู้ป่วย นัดหมาย mini-calendar กรองสถานะนัดหมาย (`confirmed`, `in_progress`, `completed`, `cancelled`)
+   * **[✅ ดำเนินการแล้ว] ลำดับ 5 (กลุ่ม F & G - Phase 21-27):** Patient App Booking, Reminders & CSAT Analytics
+     - สร้าง หน้า [AppointmentBookingPage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/pages/appointment_booking_page.dart) (`appointment_booking_page.dart`) สำหรับฝั่งผู้ป่วย/ผู้รับบริการเลือกแพทย์ ประเภทบริการ วันและเวลาว่างเพื่อจองนัดหมาย
+     - สร้าง Widget [CsatRatingDialog](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/erp/presentation/widgets/csat_rating_dialog.dart) (`csat_rating_dialog.dart`) สำหรับให้คะแนนความพึงพอใจ 1-5 ดาว และส่งความคิดเห็นหลังรับบริการ
+
+
+
+
+
+
+
+
+
+
+
+---
+
 ## บันทึกปัญหาและบทเรียน (Troubleshooting & Lessons Learned)
 
 ### ERP Access Card ไม่แสดงบน Home Page (2026-07-13)

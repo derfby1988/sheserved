@@ -1,0 +1,60 @@
+# Dependabot — Plan 06 Option B (security-first, controlled)
+# Approved baseline: security-only + patch/minor grouping
+# No auto-merge of major upgrades; requires CI + code-owner review
+
+version: 2
+
+updates:
+  # Flutter / Dart
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    target-branch: "develop"
+    groups:
+      patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
+    commit-message:
+      prefix: "deps(flutter)"
+      include: scope
+    labels:
+      - "dependencies"
+      - "flutter"
+
+  # Node.js (websocket-server)
+  - package-ecosystem: "npm"
+    directory: "/websocket-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    target-branch: "develop"
+    groups:
+      patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
+    commit-message:
+      prefix: "deps(node)"
+      include: scope
+    labels:
+      - "dependencies"
+      - "node"
+
+  # GitHub Actions — pin to SHA via Dependabot
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    target-branch: "develop"
+    commit-message:
+      prefix: "deps(ci)"
+      include: scope
+    labels:
+      - "dependencies"
+      - "ci"

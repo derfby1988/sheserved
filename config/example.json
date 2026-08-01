@@ -1,0 +1,10 @@
+{
+  "ENV": "prod",
+  "SUPABASE_URL": "https://your-prod-project.supabase.co",
+  "SUPABASE_ANON_KEY": "your-prod-anon-key",
+  "MAIN_MACHINE_IP": "your-prod-server:8080",
+  "LOCAL_API_URL": "https://your-prod-server",
+  "WEBSOCKET_URL": "https://your-prod-server",
+  "GOOGLE_MAPS_API_KEY": "your-restricted-maps-api-key",
+  "DEBUG_MODE": "false"
+}

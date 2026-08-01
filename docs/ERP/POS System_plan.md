@@ -1352,3 +1352,12 @@ class QrPaymentWidget extends StatelessWidget {
 - [ ] Clinic staff เห็น pending appointments ใน `ClinicAppointmentsPage`
 - [ ] Staff สามารถ confirm appointment + ระบุวันเวลานัด
 - [ ] Patient เห็น appointment status ใน order history
+
+---
+
+## 10. ⚠️ ข้อขัดแย้งกับ CRM System Plan & สิ่งที่ต้องปรับปรุง (CRM System Alignment)
+
+- **`clinic_appointments` vs `appointments`**: ใน POS System Plan อ้างอิง `clinic_appointments` (จาก POS Core Migration) แต่ใน CRM System Plan กำหนดตาราง `appointments` ที่รองรับโครงสร้างแบบสมบูรณ์ (`appointment_no`, `practitioner_id`, `room_id`, `service_type_id`, `deposit_paid` ฯลฯ) → **ผลกระทบ:** ต้องทำการ Extend หรือ Migrate `clinic_appointments` ให้สอดคล้องกับ CRM Plan
+- **`coupon_usages` vs `coupon_redemptions`**: ใน POS Plan อ้างอิงตาราง `coupon_usages` และ `customer_packages` (พร้อม `total_sessions`, `used_sessions`) ใน Trigger/Post-purchase actions แต่ใน Phase 1 Migration ถูกสร้างเป็น `coupon_redemptions` และยังไม่มีตาราง `customer_packages` → **ผลกระทบ:** POS ไม่สามารถตัดส่วนลดจากคูปอง หรือตัดเครดิตแพ็กเกจคอร์สบริการที่ลูกค้าซื้อล่วงหน้าได้จริงจนกว่าตาราง CRM จะสมบูรณ์
+- **Loyalty Points Integration**: POS Plan อ้างอิง `loyalty_points_used` แต่ใน CRM Plan ข้อมูลแต้มถูกแยกเป็น `customer_loyalty_wallets` (กระเป๋าแต้มคงเหลือ) และ `loyalty_point_transactions` (ประวัติการได้/ใช้แต้ม)
+
