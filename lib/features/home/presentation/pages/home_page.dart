@@ -128,6 +128,9 @@ class _HomePageState extends ConsumerState<HomePage>
   StreamSubscription? _consultationAlertSub;
   Timer? _consultationPollTimer;
   final List<Map<String, dynamic>> _consultationAlerts = [];
+  // === Fitness Booking Alerts ===
+  StreamSubscription? _fitnessBookingSub;
+  final List<Map<String, dynamic>> _fitnessBookingAlerts = [];
 
   // === ERP Access State ===
   bool _erpAccessChecked = false;
@@ -169,6 +172,7 @@ class _HomePageState extends ConsumerState<HomePage>
                 _pharmacyHeight <= 0)) {
           _measureHeaderSectionHeight();
         }
+
       });
       // โหลดตำแหน่ง consultation หลังจาก build แรกเสร็จ (เพื่อให้วัดความสูงได้)
       _loadConsultationPosition();
@@ -178,6 +182,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForDonationStatus(); // Donation status notification
+    _listenForFitnessBookingStatus();
     final initUser = AuthService.instance.currentUser;
     debugPrint('HomePage: initState _subscribeConsultationAlerts about to run, professionId=${initUser?.professionId}');
     _subscribeConsultationAlerts(); // ✅ Phase 5: Head sector consultation alerts
@@ -212,6 +217,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _scrollController.dispose();
     _emergencySub?.cancel();
     _donationStatusSub?.cancel();
+    _fitnessBookingSub?.cancel();
     _yieldWaySub?.cancel();
     _consultationAlertSub?.cancel();
     _consultationPollTimer?.cancel();
@@ -254,6 +260,31 @@ class _HomePageState extends ConsumerState<HomePage>
       if (mounted && AuthService.instance.currentUser != null) {
         _loadEmployeeInvitations();
       }
+    });
+  }
+
+  // ──── Fitness Booking Status Listener ────
+  void _listenForFitnessBookingStatus() {
+    _fitnessBookingSub?.cancel();
+    _fitnessBookingSub = WebSocketService().fitnessBookingAlertStream.listen((data) {
+      if (!mounted) return;
+      setState(() {
+        final bookingId = data['bookingId']?.toString() ?? data['booking_id']?.toString() ?? '';
+        final status = data['status']?.toString() ?? '';
+        final updatedAt = DateTime.now();
+        _fitnessBookingAlerts.removeWhere((a) => a['bookingId'] == bookingId);
+        _fitnessBookingAlerts.insert(0, {
+          'bookingId': bookingId,
+          'status': status,
+          'updatedAt': updatedAt,
+        });
+        Future.delayed(const Duration(seconds: 15), () {
+          if (!mounted) return;
+          setState(() {
+            _fitnessBookingAlerts.removeWhere((a) => a['bookingId'] == bookingId);
+          });
+        });
+      });
     });
   }
 
@@ -2044,6 +2075,14 @@ class _HomePageState extends ConsumerState<HomePage>
                                           _onConsultationAlertDismissed,
                                       onConsultationAlertTapped:
                                           _onConsultationAlertTapped,
+                                      fitnessBookingAlerts: _fitnessBookingAlerts,
+                                      onFitnessBookingAlertTapped: (bookingId) {
+                                        Navigator.pushNamed(
+                                          context,
+                                          '/community/find-buddies/booking',
+                                          arguments: {'id': bookingId},
+                                        );
+                                      },
                                       employeeInvitationAlerts: ref
                                           .watch(phaseThreeProvider)
                                           .pendingInvitationsForCurrentUser,

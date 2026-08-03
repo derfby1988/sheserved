@@ -14,15 +14,27 @@ env:
 #         USERNAME: "apisek"
 #         PASSWORD: "123456"
 
-# Step 1: Tap donation tab to trigger login (guest gets redirected to login page)
-- tapOn:
-    point: "174,809"
-- waitForAnimationToEnd:
-    timeout: 3000
+# Step 1: Try direct Login button if visible; otherwise fallback to donation tab to trigger login
+- runFlow:
+    when:
+      visible: "เข้าสู่ระบบ"
+    commands:
+      - tapOn: "เข้าสู่ระบบ"
+      - waitForAnimationToEnd:
+          timeout: 2000
+
+- runFlow:
+    when:
+      notVisible: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+    commands:
+      - tapOn:
+          point: "174,809"
+      - waitForAnimationToEnd:
+          timeout: 3000
 
 - extendedWaitUntil:
-    visible: ".*ยินดีต้อนรับ.*"
-    timeout: 10000
+    visible: ".*(ยินดีต้อนรับ|เข้าสู่ระบบ|กรอกชื่อผู้ใช้).*"
+    timeout: 20000
 
 # Step 2: Enter username
 - tapOn:
@@ -40,10 +52,9 @@ env:
     timeout: 1000
 
 # Step 4: Dismiss keyboard and login
-- tapOn:
-    text: ".*ยินดีต้อนรับ.*"
+- hideKeyboard
 - waitForAnimationToEnd:
-    timeout: 2000
+    timeout: 500
 
 - tapOn: "เข้าสู่ระบบ"
 

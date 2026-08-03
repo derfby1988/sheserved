@@ -118,6 +118,12 @@ import 'features/erp/presentation/pages/payroll_page.dart';
 import 'features/erp/presentation/pages/hr_settings_page.dart';
 import 'features/erp/presentation/pages/employee_role_assignment_page.dart';
 import 'features/erp/presentation/pages/my_permissions_page.dart';
+import 'features/community/find_buddies/presentation/pages/find_buddies_page.dart';
+import 'features/community/find_buddies/presentation/pages/booking_detail_page.dart';
+import 'features/community/find_buddies/presentation/pages/create_group_page.dart';
+import 'features/community/find_buddies/presentation/pages/create_session_page.dart';
+import 'features/community/find_buddies/presentation/pages/propose_sport_page.dart';
+import 'features/community/find_buddies/presentation/pages/review_proposed_sports_page.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -240,6 +246,10 @@ class SheservedApp extends StatelessWidget {
         '/admin/video-control': (context) => const AuthGuardWidget(requiredRole: 'admin', child: VideoAdminPage()),
         '/admin/watermark': (context) => const AuthGuardWidget(requiredRole: 'admin', child: WatermarkManagementPage()),
         '/admin/platform-settings': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PlatformSettingsPage()),
+        '/community/find-buddies': (context) => const FindBuddiesPage(),
+        '/community/find-buddies/group/create': (context) => const CreateGroupPage(),
+        '/community/find-buddies/sport/propose': (context) => const ProposeSportPage(),
+        '/community/find-buddies/sport/review': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ReviewProposedSportsPage()),
         
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
@@ -670,6 +680,22 @@ class SheservedApp extends StatelessWidget {
           final roomId = settings.arguments as String;
           return MaterialPageRoute(
             builder: (context) => ChatRoomPage(roomId: roomId),
+          );
+        }
+
+        if (settings.name == '/community/find-buddies/booking') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final bookingId = args?['id']?.toString() ?? '';
+          return MaterialPageRoute(
+            builder: (context) => BookingDetailPage(bookingId: bookingId),
+          );
+        }
+
+        if (settings.name == '/community/find-buddies/session/create') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final groupId = args?['groupId']?.toString() ?? '';
+          return MaterialPageRoute(
+            builder: (context) => CreateSessionPage(groupId: groupId),
           );
         }
 

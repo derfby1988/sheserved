@@ -1,0 +1,52 @@
+# แผนทดสอบ UI / UX สำหรับ Dashboard Analytics (วิเคราะห์ข้อมูล) - ป้องกัน Overflow และตรวจปุ่มเลือกช่วงเวลา
+# อุปกรณ์: iOS / Android Device / Emulator
+# วิธีรัน: maestro test docs/guides/dashboard_analytics_ui_test_flow.yaml
+# ครอบคลุม: Period Selector (รายวัน, รายสัปดาห์, รายเดือน), KPI Summary Cards (รายได้, ออเดอร์, ลูกค้า), Snapshot History List
+
+appId: com.example.treeLawZoo
+
+env:
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+
+---
+# ส่วนที่ 1: ล็อกอินผู้ให้บริการ และเปิดหน้า วิเคราะห์ข้อมูล
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+
+# เข้าสู่เมนู วิเคราะห์ข้อมูล
+- extendedWaitUntil:
+    visible: ".*วิเคราะห์ข้อมูล.*|.*Analytics.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*วิเคราะห์ข้อมูล.*|.*Analytics.*"
+
+- extendedWaitUntil:
+    visible: "วิเคราะห์ข้อมูล / Analytics"
+    timeout: 10000
+
+---
+# ส่วนที่ 2: ตรวจสอบการแสดงผลปุ่มเลือกช่วงเวลา (Period Selector Buttons)
+- assertVisible: "รายวัน"
+- assertVisible: "รายสัปดาห์"
+- assertVisible: "รายเดือน"
+
+# ทดสอบเปลี่ยนตัวเลือกช่วงเวลา
+- tapOn: "รายสัปดาห์"
+- tapOn: "รายเดือน"
+- tapOn: "รายวัน"
+
+---
+# ส่วนที่ 3: ตรวจสอบการ์ดสถิติ KPI (KPI Summary Cards) ว่าไม่มี Overflow
+- assertVisible: "รายได้"
+- assertVisible: "ออเดอร์"
+- assertVisible: "ลูกค้า"
+- assertVisible: "฿.*"

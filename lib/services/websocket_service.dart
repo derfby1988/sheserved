@@ -52,6 +52,7 @@ class WebSocketService {
   final _emergencyHealthSensorAlertController = StreamController<Map<String, dynamic>>.broadcast();
   final _emergencyHealthDeadManReminderController = StreamController<Map<String, dynamic>>.broadcast();
   final _emergencyHealthDeadManTriggeredController = StreamController<Map<String, dynamic>>.broadcast();
+  final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();
   
   // Getters
   bool get isConnected => _isConnected;
@@ -92,6 +93,7 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get emergencyHealthDeadManReminderStream => _emergencyHealthDeadManReminderController.stream;
   /// ✅ [Phase 4] Dead-man trigger notifications
   Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream => _emergencyHealthDeadManTriggeredController.stream;
+  Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;
   
   WebSocketService._(this._serverUrl);
   
@@ -308,6 +310,13 @@ class WebSocketService {
       _socket!.on('emergency-health-dead-man-triggered', (data) {
         debugPrint('[EmergencyHealth] emergency-health-dead-man-triggered received: $data');
         _emergencyHealthDeadManTriggeredController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('fitness-booking-status', (data) {
+        _fitnessBookingAlertController.add(Map<String, dynamic>.from(data));
+      });
+      _socket!.on('fitness_booking_status', (data) {
+        _fitnessBookingAlertController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {

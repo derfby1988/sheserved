@@ -51,6 +51,7 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
         title: const Text('ขายหน้าร้าน / Counter POS'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: Theme.of(context).textTheme.titleLarge?.color ?? Colors.black87,
       ),
       body: Column(
         children: [
@@ -63,7 +64,7 @@ class _CounterPosPageState extends ConsumerState<CounterPosPage> {
                     padding: const EdgeInsets.all(16),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
-                      childAspectRatio: 1.2,
+                      childAspectRatio: 0.85,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
                     ),
@@ -312,31 +313,39 @@ class _ProductGridItem extends StatelessWidget {
     return GlassCard(
       section: GlassSection.card,
       borderRadius: 16,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.medication, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              product.name,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '฿${product.salePrice.toStringAsFixed(0)}',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.green,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.medication, size: 28),
+              const SizedBox(height: 4),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                '฿${product.salePrice.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

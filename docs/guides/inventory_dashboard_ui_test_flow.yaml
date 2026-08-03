@@ -1,0 +1,59 @@
+# แผนทดสอบ UI / UX สำหรับ Inventory Dashboard (ภาพรวมคลังสินค้า) - ป้องกัน Overflow และตรวจปุ่มเมนูด่วน
+# อุปกรณ์: iOS / Android Device / Emulator
+# วิธีรัน: maestro test docs/guides/inventory_dashboard_ui_test_flow.yaml
+# ครอบคลุม: Summary Grid Cards, Quick Action Buttons (คลังสินค้า, โอนย้าย, ปรับสต็อก), Recent Alerts List
+
+appId: com.example.treeLawZoo
+
+env:
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+
+---
+# ส่วนที่ 1: ล็อกอินผู้ให้บริการ และเปิดหน้า ภาพรวมคลังสินค้า
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+
+# เข้าสู่เมนู ภาพรวมคลังสินค้า
+- extendedWaitUntil:
+    visible: ".*คลังสินค้า.*|.*ภาพรวมคลังสินค้า.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*ภาพรวมคลังสินค้า.*|.*คลังสินค้า.*"
+
+- extendedWaitUntil:
+    visible: "ภาพรวมคลังสินค้า"
+    timeout: 10000
+
+---
+# ส่วนที่ 2: ตรวจสอบการแสดงผลการ์ดสรุปสถิติ (Summary Cards)
+- assertVisible: "สินค้าทั้งหมด"
+- assertVisible: "ใกล้หมด"
+- assertVisible: "หมดสต็อก"
+- assertVisible: "แจ้งเตือน"
+- assertVisible: "โอนย้ายรอดำเนินการ"
+- assertVisible: "ตรวจนับดำเนินการ"
+
+---
+# ส่วนที่ 3: ตรวจสอบปุ่มเมนูด่วน (Quick Action Buttons)
+- assertVisible: "ทำรายการ"
+- assertVisible: "คลังสินค้า"
+- assertVisible: "โอนย้าย"
+- assertVisible: "ปรับสต็อก"
+
+# ทดสอบกดปุ่ม คลังสินค้า
+- tapOn: "คลังสินค้า"
+
+- extendedWaitUntil:
+    visible: "รายการสินค้า"
+    timeout: 10000
+
+- back

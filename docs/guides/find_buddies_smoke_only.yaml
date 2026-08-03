@@ -1,0 +1,31 @@
+# Maestro Smoke test for Find Fitness Buddies (no login required)
+# Run: maestro test --device BDFD0CA3-CEC2-435B-B707-097EA1FDFE44 docs/guides/find_buddies_smoke_only.yaml
+
+appId: com.example.treeLawZoo
+env:
+  DRAWER_TAP: "32,100"
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# Open Drawer and navigate to Find Buddies
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn:
+          point: "${DRAWER_TAP}"
+      - waitForAnimationToEnd:
+          timeout: 800
+- scrollUntilVisible:
+    element: "หาเพื่อนออกกำลังกาย"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "หาเพื่อนออกกำลังกาย"
+- extendedWaitUntil:
+    visible: "หาเพื่อนออกกำลังกาย"
+    timeout: 10000
+- takeScreenshot: "find_buddies_smoke_only.png"

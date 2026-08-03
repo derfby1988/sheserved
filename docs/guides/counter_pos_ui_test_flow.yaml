@@ -1,0 +1,59 @@
+# แผนทดสอบ UI / UX สำหรับ Counter POS (Mode B) - ป้องกัน Overflow และตรวจความคมชัด
+# อุปกรณ์: iOS / Android Device / Emulator
+# วิธีรัน: maestro test docs/guides/counter_pos_ui_test_flow.yaml
+# ครอบคลุม: Counter POS Product Grid, Product Cards Layout, Cart Items Summary, Payment Checkout Flow
+
+appId: com.example.treeLawZoo
+
+env:
+  PROVIDER_USERNAME: "apisek"
+  PROVIDER_PASSWORD: "123456"
+
+---
+# ส่วนที่ 1: ล็อกอินผู้ให้บริการ และเปิดหน้า Counter POS
+- launchApp:
+    clearState: true
+    clearKeychain: true
+
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${PROVIDER_USERNAME}"
+      PASSWORD: "${PROVIDER_PASSWORD}"
+
+# เข้าสู่เมนู Counter POS
+- extendedWaitUntil:
+    visible: ".*ขายหน้าร้าน.*|.*Counter POS.*"
+    timeout: 15000
+
+- tapOn:
+    text: ".*ขายหน้าร้าน.*|.*Counter POS.*"
+
+- extendedWaitUntil:
+    visible: "ขายหน้าร้าน / Counter POS"
+    timeout: 10000
+
+---
+# ส่วนที่ 2: ตรวจสอบการแสดงผลการ์ดสินค้า (Product Grid Items) ว่าไม่มี Overflow
+- assertVisible: "ขายหน้าร้าน / Counter POS"
+- assertVisible: "แตะสินค้าเพื่อเพิ่มลงตะกร้า"
+- assertVisible: "ชำระเงิน"
+
+# ตรวจสอบว่าสินค้าใน Grid แสดงราคาสมบูรณ์
+- assertVisible: ".*฿.*"
+
+---
+# ส่วนที่ 3: ทดสอบเพิ่มสินค้าลงตะกร้า และสั่งชำระเงิน
+- tapOn:
+    index: 0
+    text: ".*฿.*"
+
+- assertVisible: "1 รายการ"
+- assertVisible: "รวม"
+
+# กดปุ่มชำระเงิน
+- tapOn: "ชำระเงิน"
+
+- extendedWaitUntil:
+    visible: ".*สำเร็จ.*|.*Order.*"
+    timeout: 10000

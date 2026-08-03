@@ -1,0 +1,95 @@
+# Maestro flow for Find Fitness Buddies feature
+# Device example: maestro test --device BDFD0CA3-CEC2-435B-B707-097EA1FDFE44 docs/guides/find_buddies_test_flow.yaml
+# This file includes two flows: (1) Smoke navigation, (2) Create group
+
+appId: com.example.treeLawZoo
+
+env:
+  USERNAME: "apisek"
+  PASSWORD: "123456"
+
+---
+# 1) Smoke: Navigate to Find Buddies via Drawer and assert UI
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+# Open Drawer (edge swipe from left -> right), then tap community item
+- swipe:
+    start: "0%, 50%"
+    end: "60%, 50%"
+    duration: 400
+- extendedWaitUntil:
+    visible: "ชุมชน"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "หาเพื่อนออกกำลังกาย"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "หาเพื่อนออกกำลังกาย"
+- extendedWaitUntil:
+    visible: "หาเพื่อนออกกำลังกาย"
+    timeout: 10000
+- runFlow:
+    when:
+      visible: "สร้างก๊วน"
+    commands:
+      - assertVisible: "สร้างก๊วน"
+- takeScreenshot: "find_buddies_smoke.png"
+
+---
+# 2) Create Group: Open page, create a new group, and expect success
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+- runFlow:
+    file: _shared_login.yaml
+    env:
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+
+# Navigate to Find Buddies via Drawer
+- swipe:
+    start: "0%, 50%"
+    end: "60%, 50%"
+    duration: 400
+- extendedWaitUntil:
+    visible: "ชุมชน"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "หาเพื่อนออกกำลังกาย"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "หาเพื่อนออกกำลังกาย"
+- extendedWaitUntil:
+    visible: "หาเพื่อนออกกำลังกาย"
+    timeout: 10000
+
+# Create group
+- evalScript: ${output.ts = Date.now()}
+- tapOn: "สร้างก๊วน"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "ชื่อก๊วน (สูงสุด 60 ตัวอักษร)"
+- inputText: ${'Maestro Test ก๊วน ' + output.ts}
+- hideKeyboard
+- tapOn: "บันทึก"
+- extendedWaitUntil:
+    visible: ".*สร้างก๊วนสำเร็จ.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: "find_buddies_create_group_success.png"

@@ -43,6 +43,7 @@ class _DashboardAnalyticsPageState extends ConsumerState<DashboardAnalyticsPage>
         title: const Text('วิเคราะห์ข้อมูล / Analytics'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: Theme.of(context).textTheme.titleLarge?.color ?? Colors.black87,
       ),
       body: state.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -66,25 +67,42 @@ class _DashboardAnalyticsPageState extends ConsumerState<DashboardAnalyticsPage>
       _PeriodOption('monthly', 'รายเดือน'),
     ];
 
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return GlassCard(
       section: GlassSection.card,
       borderRadius: 12,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(8),
       child: Row(
         children: types.map((t) {
           final isSelected = _selectedType == t.value;
           return Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: ElevatedButton(
-                onPressed: () {
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: InkWell(
+                onTap: () {
                   setState(() => _selectedType = t.value);
                   _loadData();
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isSelected ? null : Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: isSelected ? primaryColor : Colors.grey.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      t.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(t.label),
               ),
             ),
           );
@@ -106,7 +124,7 @@ class _DashboardAnalyticsPageState extends ConsumerState<DashboardAnalyticsPage>
       crossAxisCount: 3,
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
-      childAspectRatio: 1.1,
+      childAspectRatio: 0.85,
       children: [
         _KpiCard(title: 'รายได้', value: '฿${revenue.toStringAsFixed(0)}', icon: Icons.paid, color: Colors.green),
         _KpiCard(title: 'ออเดอร์', value: orders.toStringAsFixed(0), icon: Icons.shopping_bag, color: Colors.blue),
@@ -168,20 +186,26 @@ class _KpiCard extends StatelessWidget {
     return GlassCard(
       section: GlassSection.card,
       borderRadius: 16,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 2),
           Text(
-            value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            title,
+            style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w500),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
-          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         ],
       ),
     );

@@ -30,6 +30,8 @@ class HomeHeaderSection extends StatelessWidget {
   final List<Map<String, dynamic>> cancelledEmployeeInvitationAlerts;
   /// callback เมื่อกดการ์ดคำเชิญพนักงาน → เปิด dialog ตอบรับ/ปฏิเสธ
   final Function(String token)? onEmployeeInvitationTapped;
+  final List<Map<String, dynamic>> fitnessBookingAlerts;
+  final Function(String bookingId)? onFitnessBookingAlertTapped;
 
   const HomeHeaderSection({
     super.key,
@@ -49,6 +51,8 @@ class HomeHeaderSection extends StatelessWidget {
     this.employeeInvitationAlerts = const [],
     this.cancelledEmployeeInvitationAlerts = const [],
     this.onEmployeeInvitationTapped,
+    this.fitnessBookingAlerts = const [],
+    this.onFitnessBookingAlertTapped,
   });
 
   @override
@@ -214,6 +218,14 @@ class HomeHeaderSection extends StatelessWidget {
                           });
                         }
 
+                        for (var b in fitnessBookingAlerts) {
+                          combinedItems.add({
+                            'time': b['updatedAt'] as DateTime? ?? DateTime.now(),
+                            'type': 'fitness_booking',
+                            'data': b,
+                          });
+                        }
+
                         // 3. Emergency / Thai Mhung alerts
                         for (var alert in alerts) {
                           combinedItems.add({
@@ -309,6 +321,40 @@ class HomeHeaderSection extends StatelessWidget {
                                           style: AppTextStyles.caption.copyWith(
                                             color: const Color(0xFFFF3B30),
                                             fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.right,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            } else if (item['type'] == 'fitness_booking') {
+                              final b = item['data'] as Map<String, dynamic>;
+                              final status = b['status']?.toString() ?? '';
+                              final bookingId = b['bookingId']?.toString() ?? '';
+                              final isConfirmed = status == 'confirmed';
+                              final color = isConfirmed ? const Color(0xFF2EA04B) : const Color(0xFFF5A623);
+                              final icon = isConfirmed ? Icons.event_available : Icons.event_note;
+                              final text = isConfirmed ? 'การจองยืนยันแล้ว' : 'อัปเดตการจอง';
+                              return GestureDetector(
+                                onTap: () => onFitnessBookingAlertTapped?.call(bookingId),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      Icon(icon, color: color, size: 9),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          text,
+                                          style: AppTextStyles.caption.copyWith(
+                                            color: color,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                           textAlign: TextAlign.right,
                                           maxLines: 1,

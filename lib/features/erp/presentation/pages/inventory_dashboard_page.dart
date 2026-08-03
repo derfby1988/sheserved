@@ -54,6 +54,7 @@ class _InventoryDashboardPageState extends ConsumerState<InventoryDashboardPage>
         title: const Text('ภาพรวมคลังสินค้า'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: Theme.of(context).textTheme.titleLarge?.color ?? Colors.black87,
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -123,9 +124,9 @@ class _SummaryGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.4,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1.1,
       children: [
         _SummaryCard(
           label: 'สินค้าทั้งหมด',
@@ -186,16 +187,21 @@ class _SummaryCard extends StatelessWidget {
     return GlassCard(
       section: GlassSection.card,
       borderRadius: 16,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
-          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+          Icon(icon, color: color, size: 24),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12)),
+          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -222,32 +228,69 @@ class _QuickActions extends StatelessWidget {
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: onInventory,
-                icon: const Icon(Icons.inventory_2),
-                label: const Text('คลังสินค้า'),
-              ),
+            _buildActionItem(
+              onTap: onInventory,
+              icon: Icons.inventory_2,
+              label: 'คลังสินค้า',
+              color: Colors.teal,
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: onTransfer,
-                icon: const Icon(Icons.swap_horiz),
-                label: const Text('โอนย้าย'),
-              ),
+            _buildActionItem(
+              onTap: onTransfer,
+              icon: Icons.swap_horiz,
+              label: 'โอนย้าย',
+              color: Colors.teal,
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: onAdjustment,
-                icon: const Icon(Icons.tune),
-                label: const Text('ปรับสต็อก'),
-              ),
+            _buildActionItem(
+              onTap: onAdjustment,
+              icon: Icons.tune,
+              label: 'ปรับสต็อก',
+              color: Colors.teal,
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildActionItem({
+    required VoidCallback onTap,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.teal.shade900, size: 24),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
