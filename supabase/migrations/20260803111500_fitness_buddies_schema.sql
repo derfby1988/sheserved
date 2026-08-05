@@ -44,10 +44,28 @@ CREATE TABLE IF NOT EXISTS public.fitness_groups (
   visibility VARCHAR(10) DEFAULT 'public' CHECK (visibility IN ('public','private')),
   requires_owner_approval BOOLEAN DEFAULT false,
   cover_image_url VARCHAR(500),
+  venue_photo_url VARCHAR(500),
+  gender_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (gender_preference IN ('male','female','any')),
   capacity INTEGER NOT NULL DEFAULT 5 CHECK (capacity BETWEEN 2 AND 30),
   created_by UUID REFERENCES public.users(id),
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Ensure new columns exist even if fitness_groups was created by an earlier version of this migration
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='fitness_groups' AND column_name='venue_photo_url'
+  ) THEN
+    ALTER TABLE public.fitness_groups ADD COLUMN venue_photo_url VARCHAR(500);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='fitness_groups' AND column_name='gender_preference'
+  ) THEN
+    ALTER TABLE public.fitness_groups ADD COLUMN gender_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (gender_preference IN ('male','female','any'));
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.fitness_group_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

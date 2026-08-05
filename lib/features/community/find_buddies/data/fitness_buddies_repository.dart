@@ -23,7 +23,7 @@ class FitnessBuddiesRepository {
   }
 
   Future<List<Map<String, dynamic>>> listGroups({String? sportId, String? q, String? province, String? district, String? currentUserId, int limit = 50, int offset = 0}) async {
-    final base = _client.from('fitness_groups').select('*, sport:sports(name_th)');
+    final base = _client.from('fitness_groups').select('*, sport:sports(name_th, icon)');
     var query = base;
     if (sportId != null && sportId.isNotEmpty) query = query.eq('sport_id', sportId);
     if (province != null && province.isNotEmpty) query = query.eq('province', province);
@@ -60,6 +60,7 @@ class FitnessBuddiesRepository {
             .eq('is_active', true);
         group['member_count'] = (countRes as List).length;
         group['sport_name'] = group['sport']?['name_th'];
+        group['sport_icon'] = group['sport']?['icon'];
       }
     }
     
@@ -121,6 +122,8 @@ class FitnessBuddiesRepository {
     bool requiresOwnerApproval = false,
     int capacity = 5,
     String? coverImageUrl,
+    String? venuePhotoUrl,
+    String genderPreference = 'any',
     String? province,
     String? district,
     double? lat,
@@ -134,6 +137,8 @@ class FitnessBuddiesRepository {
       'requires_owner_approval': requiresOwnerApproval,
       'capacity': capacity,
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
+      if (venuePhotoUrl != null) 'venue_photo_url': venuePhotoUrl,
+      'gender_preference': genderPreference,
       if (province != null) 'province': province,
       if (district != null) 'district': district,
       if (lat != null) 'lat': lat,
@@ -186,13 +191,14 @@ class FitnessBuddiesRepository {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  Future<void> approveSport({required String sportId, required String reviewedBy}) async {
+  Future<void> approveSport({required String sportId, required String reviewedBy, String? icon}) async {
     await _client
         .from('sports')
         .update({
           'status': 'approved',
           'reviewed_by': reviewedBy,
           'rejection_reason': null,
+          if (icon != null && icon.isNotEmpty) 'icon': icon,
         })
         .eq('id', sportId)
         .eq('status', 'proposed');

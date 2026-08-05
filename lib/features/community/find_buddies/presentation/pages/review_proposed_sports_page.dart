@@ -22,6 +22,22 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
     _load();
   }
 
+  TextStyle _emojiTextStyle(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
+      return const TextStyle(fontFamily: 'Apple Color Emoji');
+    }
+    if (platform == TargetPlatform.android) {
+      return const TextStyle(fontFamily: 'Noto Color Emoji');
+    }
+    if (platform == TargetPlatform.windows) {
+      return const TextStyle(fontFamily: 'Segoe UI Emoji');
+    }
+    return const TextStyle(
+      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+    );
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final res = await _repo.listProposedSports();
@@ -35,7 +51,25 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
   Future<void> _approve(String id) async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
-    await _repo.approveSport(sportId: id, reviewedBy: user.id);
+    final icon = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final ctrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('เลือกไอคอนประจำกีฬา (ไม่บังคับ)'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(hintText: 'วางอีโมจิ เช่น ⚽ 🏀 🎾'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, ''), child: const Text('ข้าม')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('อนุมัติ')),
+          ],
+        );
+      },
+    );
+    if (icon == null) return;
+    await _repo.approveSport(sportId: id, reviewedBy: user.id, icon: icon.isEmpty ? null : icon);
     _load();
   }
 
@@ -75,6 +109,12 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                   final s = _items[i];
                   return Card(
                     child: ListTile(
+                      leading: Text.rich(
+                        TextSpan(
+                          text: s['icon']?.toString() ?? '🏅',
+                          style: _emojiTextStyle(context).merge(const TextStyle(fontSize: 24)),
+                        ),
+                      ),
                       title: Text(s['name_th']?.toString() ?? ''),
                       subtitle: Text(s['name_en']?.toString() ?? ''),
                       trailing: Row(

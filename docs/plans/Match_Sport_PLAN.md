@@ -23,7 +23,7 @@
   - ขวา: ปุ่มค้นหา, ปุ่มตัวกรอง, ปุ่มสลับ “รายการ/แผนที่”
 - หน้า “รายการก๊วน”
   - แถบ “หมวดหมู่กีฬา” (แนวนอนแบบ Chip) + ปุ่ม “+ เพิ่มหมวดหมู่” (แสดงเฉพาะแอดมินก๊วน/ผู้ดูแลระบบ; ผู้ใช้อื่นเห็นปุ่ม “เสนอหมวดหมู่”)
-  - รายการก๊วน (การ์ด): ชื่อก๊วน, กีฬา, วันเวลา/ความถี่, พื้นที่, ระยะทาง, สมาชิกปัจจุบัน
+  - รายการก๊วน (การ์ด): ชื่อก๊วน, กีฬา, วันเวลา/ความถี่, พื้นที่, ระยะทาง, สมาชิกปัจจุบัน, รูปสนาม (thumbnail), badge เพศที่เชิญชวน (ช./ญ./เสรี)
   - ตัวกรอง: จังหวัด/อำเภอ/รัศมี, เวลา/วัน, เฉพาะก๊วนเปิดรับ
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
 - หน้า “แผนที่”
@@ -33,8 +33,12 @@
   - CTA: “เข้าร่วมก๊วน” (ถ้าเป็นสมาชิกแล้ว: “ไปที่แชทก๊วน”)
 
 ## หมวดหมู่กีฬา (เริ่มต้นในไทย)
-- ฟุตบอล, วิ่ง, ปั่นจักรยาน, ฟุตซอล, ตะกร้อ, แบดมินตัน, เทนนิส, ปิงปอง, บาสเกตบอล, วอลเลย์บอล, โยคะ, เวทเทรนนิ่ง, ปีนผา, ว่ายน้ำ, เดินป่า, มวยไทย
-- ปุ่ม “+ เพิ่มหมวดหมู่”: เฉพาะแอดมินก๊วน/ผู้ดูแลระบบสามารถเพิ่มจริง; ผู้ใช้ทั่วไปสามารถ "เสนอหมวดหมู่" เพื่อรออนุมัติ
+- Seed 63 ประเภทกีฬาพร้อม emoji icon ครอบคลุมทุกหมวด (กีฬาทีม/บอล, แร็กเก็ต, ทางน้ำ, วิ่ง/จักรยาน/กลางแจ้ง, ฟิตเนส/โยคะ, ศิลปะการต่อสู้, ความเร็ว/ยิง, อื่นๆ) — ดู migration `20260805083000_seed_sports_with_icons.sql`
+- ตัวอย่าง: ⚽ ฟุตบอล, 🏀 บาสเกตบอล, 🏸 แบดมินตัน, 🏊 ว่ายน้ำ, 🏃 วิ่ง, 🚴 ปั่นจักรยาน, 🧗 ปีนผา, 🥾 เดินป่า, 🧘 โยคะ, 🥊 มวยไทย, 🎾 เทนนิส, 🏓 ปิงปอง, 🏐 วอลเลย์บอล, 🏋️ เวทเทรนนิ่ง, 🎮 อีสปอร์ต
+- `sports.icon` (TEXT) เก็บ emoji แสดงผลใน: sport chip แถวหมวดหมู่, การ์ดก๊วน, dropdown เลือกกีฬาในหน้าสร้างก๊วน, รายการรออนุมัติ
+- กีฬาที่ผู้ใช้เสนอใหม่ (ไม่มีใน seed): admin ใส่ emoji icon ได้ตอนอนุมัติผ่าน dialog ในหน้า `ReviewProposedSportsPage`
+- ปุ่ม "+ เพิ่มหมวดหมู่": เฉพาะแอดมินก๊วน/ผู้ดูแลระบบสามารถเพิ่มจริง; ผู้ใช้ทั่วไปสามารถ "เสนอหมวดหมู่" เพื่อรออนุมัติ
+- Seed migration เป็น idempotent (`NOT EXISTS` + `UPDATE` icon สำหรับกีฬาที่มีอยู่แต่ยังไม่มี icon)
 
 ## กฎการล็อกอินและ Redirect
 - เปิดดูรายการ/รายละเอียดก๊วน: ไม่บังคับล็อกอิน
@@ -43,8 +47,11 @@
 - แนวทางเทคนิค: reuse กลไก redirect ที่แอปใช้กับ donation tab (ส่ง `{ route, args }` ไปยัง /login และ pop กลับพร้อม args)
 
 ## สถาปัตยกรรมข้อมูล (Proposed on Supabase)
-- `sports` (id, name_th, name_en, icon, status VARCHAR(10) DEFAULT 'approved' CHECK(status IN ('pending','approved','rejected')), proposed_by UUID REFERENCES users(id), proposed_at TIMESTAMPTZ, reviewed_by UUID REFERENCES users(id), reviewed_at TIMESTAMPTZ, rejection_reason VARCHAR(200))
-- `fitness_groups` (id, sport_id, name VARCHAR(60), description VARCHAR(500), province, district, lat DOUBLE PRECISION CHECK(lat BETWEEN -90 AND 90), lng DOUBLE PRECISION CHECK(lng BETWEEN -180 AND 180), visibility VARCHAR(10) DEFAULT 'public' CHECK(visibility IN ('public','private')), requires_owner_approval BOOLEAN DEFAULT false, cover_image_url VARCHAR(500), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+- `sports` (id, name_th, name_en, icon TEXT, status VARCHAR(10) DEFAULT 'approved' CHECK(status IN ('pending','approved','rejected')), proposed_by UUID REFERENCES users(id), proposed_at TIMESTAMPTZ, reviewed_by UUID REFERENCES users(id), reviewed_at TIMESTAMPTZ, rejection_reason VARCHAR(200))
+  - `icon`: emoji แสดงผลประจำกีฬา (เช่น ⚽ 🏀 🏸) — seed 63 ประเภทพร้อม icon ผ่าน migration `20260805083000_seed_sports_with_icons.sql`; กีฬาที่เสนอใหม่ได้รับ icon ตอน admin อนุมัติ
+- `fitness_groups` (id, sport_id, name VARCHAR(60), description VARCHAR(500), province, district, lat DOUBLE PRECISION CHECK(lat BETWEEN -90 AND 90), lng DOUBLE PRECISION CHECK(lng BETWEEN -180 AND 180), visibility VARCHAR(10) DEFAULT 'public' CHECK(visibility IN ('public','private')), requires_owner_approval BOOLEAN DEFAULT false, cover_image_url VARCHAR(500), venue_photo_url VARCHAR(500), gender_preference VARCHAR(10) DEFAULT 'any' CHECK(gender_preference IN ('male','female','any')), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+  - `venue_photo_url`: รูปถ่ายสนาม/สถานที่จริงที่ใช้นัดเล่น (แยกจาก `cover_image_url` ซึ่งเป็นภาพปกของก๊วน)
+  - `gender_preference`: เพศที่กำลังชวนเข้าร่วมก๊วน — `'male'` (ชาย), `'female'` (หญิง), `'any'` (เสรี/ไม่จำกัด — ค่าเริ่มต้น)
 - `fitness_group_sessions` (id, group_id UUID REFERENCES fitness_groups(id) ON DELETE CASCADE, starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, place_name VARCHAR(200), lat DOUBLE PRECISION, lng DOUBLE PRECISION, note VARCHAR(500), CHECK(ends_at > starts_at))
 - `fitness_group_members` (group_id UUID, user_id UUID REFERENCES users(id), role VARCHAR(10) CHECK(role IN ('member','admin')), is_active BOOLEAN DEFAULT true, joined_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY(group_id, user_id))
   - หมายเหตุ: แถวนี้ **สร้าง/อัปเดตอัตโนมัติโดยระบบ** เมื่อผู้ใช้จองรอบนัดครั้งแรก — ไม่มีฟอร์ม "สมัครสมาชิก" แยก (ดูหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด")
@@ -123,6 +130,8 @@
 - องค์ประกอบฟอร์ม (บนลงล่าง)
   - ชื่อกีฬา: แถว Chip แนวนอนของหมวดยอดฮิต + ปุ่ม “+ เพิ่มหมวดหมู่” (เฉพาะแอดมิน/ผู้ดูแลระบบ); ผู้ใช้ทั่วไปมีปุ่ม “เสนอหมวดหมู่”
   - ชื่อก๊วน: TextField บังคับกรอก 3–60 ตัวอักษร
+  - **ภาพถ่ายสนาม:** ปุ่ม “เพิ่มรูปสนาม” เปิด image picker (กล้อง/คลังภาพ) อัปโหลดไป Supabase Storage bucket `fitness-group-venues` (public read, insert/update เฉพาะ owner/admin ของก๊วน) แล้วบันทึก URL ลง `fitness_groups.venue_photo_url` (ไม่บังคับ, แสดง preview thumbnail หลังอัปโหลดสำเร็จ) — แยกจากภาพปกก๊วน (`cover_image_url`)
+  - **เพศที่ต้องการชวนเข้าร่วม:** แถวปุ่มเลือกแบบ segmented/Chip 3 ตัวเลือก “ช.” (ชาย), “ญ.” (หญิง), “เสรี” (ไม่จำกัด — ค่าเริ่มต้นที่เลือกไว้) บันทึกลง `fitness_groups.gender_preference` (`'male'|'female'|'any'`) — ใช้เป็นข้อมูลแสดงผลในรายการ/รายละเอียดก๊วนเพื่อให้ผู้เข้าชมทราบกลุ่มเป้าหมาย ไม่ใช่การบังคับกรองสิทธิ์เข้าร่วมระดับ DB/RLS ในรอบแรก
   - สถานที่ + แผนที่: การ์ดแผนที่พร้อมพิน (draggable) ปุ่ม “ค้นหาสถานที่”, “ใช้ตำแหน่งฉัน”, “ปักหมุด” แสดงชื่อสถานที่/ที่อยู่สรุป และลิงก์ “เปิดใน Google Maps”
     - Dev ใช้ OSM ผ่าน flutter_map (ไม่มีค่าใช้จ่าย) ด้วย MapAdapter ที่สลับไป Google Maps ได้ภายหลังเมื่อมี key
   - วันที่และเวลา: DatePicker + TimePicker ต้องเป็นอนาคต ≥ ปัจจุบัน + 30 นาที
@@ -133,6 +142,7 @@
 - สถานะ/การโต้ตอบ
   - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng, วันเวลาเป็นอนาคต
   - สิทธิ์ตำแหน่ง: ถ้าไม่อนุญาต ปุ่ม “ใช้ตำแหน่งฉัน” disabled พร้อมคำอธิบายสั้น ๆ
+  - สิทธิ์กล้อง/คลังภาพ: ถ้าไม่อนุญาต ปุ่ม “เพิ่มรูปสนาม” แสดง SnackBar อธิบายวิธีเปิดสิทธิ์ในตั้งค่าเครื่อง
   - บังคับล็อกอินเมื่อส่ง: ถ้าไม่ล็อกอิน เมื่อกด “สร้างก๊วน” → ไปหน้า Login พร้อม redirect `{ route: '/community/find-buddies/create', args: draft }` และกลับมาดำเนินการต่อ
   - ระหว่างบันทึก: ปุ่มแสดงสถานะ loading + disabled และมี SnackBar เมื่อสำเร็จ/ล้มเหลว
 
@@ -144,6 +154,8 @@ Scaffold
     child: ListView(children: [
       SportChipsRow(...),
       TextField(label: 'ชื่อก๊วน'),
+      VenuePhotoPicker(...),
+      GenderPreferenceChips(...),
       MapCard(...),
       DateTimeRow(...),
       CapacityStepper(...),
@@ -174,6 +186,8 @@ Scaffold
 ## UX Completeness เพิ่มเติม
 - **Push Notification (นอกแอป):** รอบแรกไม่ทำ — Headsector ทำงานเฉพาะตอนแอปเปิดอยู่ (WebSocket only) ผู้ใช้ที่ปิดแอปจะไม่เห็นแจ้งเตือนจนกว่าจะเปิดแอปใหม่ (ออกแบบ `payload` ของ event ไว้ล่วงหน้าให้ขยายไปต่อ FCM/APNs ได้ในเฟสถัดไปโดยไม่แก้ schema)
 - **Cover image ก๊วน:** ใช้คอลัมน์ `fitness_groups.cover_image_url` (เพิ่มใน schema แล้ว) กับ Supabase Storage bucket ใหม่ `fitness-group-covers` (public read, insert/update เฉพาะ owner/admin ของก๊วนผ่าน storage RLS policy)
+- **ภาพถ่ายสนาม:** ใช้คอลัมน์ `fitness_groups.venue_photo_url` กับ Supabase Storage bucket ใหม่ `fitness-group-venues` (public read, insert/update เฉพาะ owner/admin ของก๊วนผ่าน storage RLS policy เช่นเดียวกับ cover image) — แสดงในหน้ารายละเอียดก๊วนเพื่อให้ผู้เข้าร่วมเห็นสภาพสนามจริงก่อนตัดสินใจเข้าร่วม
+- **เพศที่เชิญชวนเข้าร่วม:** ใช้คอลัมน์ `fitness_groups.gender_preference` (`'male'|'female'|'any'`, ค่าเริ่มต้น `'any'`) แสดงเป็น badge ในการ์ดรายการก๊วนและหน้ารายละเอียด — เป็นข้อมูลประกอบการตัดสินใจเท่านั้น ไม่บังคับกรองสิทธิ์การจอง/เข้าร่วมระดับระบบในรอบแรก
 - **Province/District:** ใช้ free-text VARCHAR ต่อไปในรอบแรก (ตรวจสอบแล้วไม่มี master table province/district กลางในระบบที่ reuse ได้) — มี index `(sport_id, province, district)` รองรับการกรองแล้ว
 - **`visibility` enum:** กำหนดค่าไว้แล้วใน schema — `'public'` (ค่าเริ่มต้น, แสดงในรายการค้นหาทั่วไป) / `'private'` (แสดงเฉพาะสมาชิกที่ `is_active=true` เท่านั้น ไม่ปรากฏใน public list)
 - **สิทธิ์แก้ไข `requires_owner_approval`:** เฉพาะ `fitness_group_members.role='admin'` ของก๊วนนั้นแก้ไขได้ การเปลี่ยนค่าไม่มีผลย้อนหลังกับ booking ที่มีสถานะอยู่แล้ว มีผลกับ booking ใหม่เท่านั้น
@@ -284,7 +298,7 @@ Scaffold
 ## เกณฑ์ยอมรับงาน (Acceptance Criteria)
 - เมนู “หาเพื่อนออกกำลังกาย” อยู่ใน Drawer > ชุมชน และเปิดเข้าได้
 - ผู้ใช้ไม่ล็อกอินสามารถเปิดดูรายการ/รายละเอียดได้ แต่เมื่อกด “เข้าร่วม” จะถูกพาไป Login และถูกพากลับมาหน้าเดิมหลังสำเร็จ
-- รายการมีหมวดกีฬาเริ่มต้น + ปุ่ม “+ เพิ่มหมวดหมู่” แสดงเฉพาะแอดมินก๊วน/ผู้ดูแลระบบ; ผู้ใช้ทั่วไปเห็น “เสนอหมวดหมู่”
+- รายการมีหมวดกีฬาเริ่มต้น (63 ประเภทพร้อม emoji icon) + ปุ่ม "+ เพิ่มหมวดหมู่" แสดงเฉพาะแอดมินก๊วน/ผู้ดูแลระบบ; ผู้ใช้ทั่วไปเห็น "เสนอหมวดหมู่”
 - ตัวกรองสถานที่/รัศมีใช้งานได้ (เมื่ออนุญาตตำแหน่ง)
 - มุมมองแผนที่ทำงานได้ แสดง Marker และกดไปหน้ารายละเอียดได้
 - สมาชิกก๊วนเปิดแชทก๊วนได้ ผู้ที่ไม่เป็นสมาชิกเข้าแชทไม่ได้
@@ -305,7 +319,8 @@ Scaffold
 - Migration เพิ่ม `room_type`/`room_ref_id` ใน `chat_rooms` สำเร็จ และ `participant_ids` sync ถูกต้องเมื่อสมาชิก join/leave
 - Headsector แจ้งเตือนการจอง/อนุมัติ/ยกเลิกทำงานผ่าน WebSocket real-time (ไม่ใช่ polling) และปรากฏใน `home_header_section.dart`
 - Booking `pending` ที่ค้างเกิน 24 ชั่วโมงหรือใกล้เวลาเริ่ม session 1 ชั่วโมง ถูก auto-reject โดยระบบ
-- ข้อเสนอหมวดกีฬาใหม่ (`sports.status='pending'`) ปรากฏในรายการรออนุมัติของผู้ดูแลระบบ
+- ข้อเสนอหมวดกีฬาใหม่ (`sports.status='pending'`) ปรากฏในรายการรออนุมัติของผู้ดูแลระบบ และ admin สามารถกำหนด emoji icon ได้ตอนอนุมัติ
+- `sports.icon` แสดงผลใน sport chip, การ์ดก๊วน, dropdown สร้างก๊วน, และรายการรออนุมัติ
 
 ## คำถามเปิด (เพื่อจัดลำดับรายละเอียด)
 - กติกา moderation สำหรับก๊วนที่สร้างใหม่ (รายงาน/ปิดก๊วน/อัปเกรดเป็นแอดมิน)

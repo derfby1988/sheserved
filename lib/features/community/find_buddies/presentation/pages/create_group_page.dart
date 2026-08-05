@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../services/auth_service.dart';
+import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 
 class CreateGroupPage extends StatefulWidget {
@@ -15,11 +16,13 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _coverCtrl = TextEditingController();
+  String? _coverImageUrl;
+  String? _venuePhotoUrl;
   final _provinceCtrl = TextEditingController();
   final _districtCtrl = TextEditingController();
   String? _sportId;
   String _visibility = 'public';
+  String _genderPreference = 'any';
   bool _requiresOwnerApproval = false;
   int _capacity = 5;
   bool _submitting = false;
@@ -30,6 +33,22 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     super.initState();
     _repo = FitnessBuddiesRepository(Supabase.instance.client);
     _loadSports();
+  }
+
+  TextStyle _emojiTextStyle(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
+      return const TextStyle(fontFamily: 'Apple Color Emoji');
+    }
+    if (platform == TargetPlatform.android) {
+      return const TextStyle(fontFamily: 'Noto Color Emoji');
+    }
+    if (platform == TargetPlatform.windows) {
+      return const TextStyle(fontFamily: 'Segoe UI Emoji');
+    }
+    return const TextStyle(
+      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+    );
   }
 
   Future<void> _loadSports() async {
@@ -58,7 +77,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         visibility: _visibility,
         requiresOwnerApproval: _requiresOwnerApproval,
         capacity: _capacity,
-        coverImageUrl: _coverCtrl.text.trim().isEmpty ? null : _coverCtrl.text.trim(),
+        coverImageUrl: _coverImageUrl,
+        venuePhotoUrl: _venuePhotoUrl,
+        genderPreference: _genderPreference,
         province: _provinceCtrl.text.trim().isEmpty ? null : _provinceCtrl.text.trim(),
         district: _districtCtrl.text.trim().isEmpty ? null : _districtCtrl.text.trim(),
       );
@@ -95,7 +116,18 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   const DropdownMenuItem<String?>(value: null, child: Text('ไม่ระบุ')),
                   ..._sports.map((s) => DropdownMenuItem<String?>(
                         value: s['id'].toString(),
-                        child: Text(s['name_th']?.toString() ?? 'กีฬา'),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if ((s['icon']?.toString() ?? '').isNotEmpty)
+                                TextSpan(
+                                  text: '${s['icon']} ',
+                                  style: _emojiTextStyle(context),
+                                ),
+                              TextSpan(text: s['name_th']?.toString() ?? 'กีฬา'),
+                            ],
+                          ),
+                        ),
                       )),
                 ],
                 onChanged: (v) => setState(() => _sportId = v),
@@ -109,9 +141,45 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                 maxLength: 500,
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: _coverCtrl,
-                decoration: const InputDecoration(labelText: 'ลิงก์รูปปก (ไม่บังคับ)'),
+              ImageUploadField(
+                label: 'ภาพปกก๊วน',
+                bucket: 'fitness-group-covers',
+                pathPrefix: 'covers/',
+                initialUrl: _coverImageUrl,
+                onUploaded: (url) => setState(() => _coverImageUrl = url),
+                onRemoved: () => setState(() => _coverImageUrl = null),
+              ),
+              const SizedBox(height: 12),
+              ImageUploadField(
+                label: 'ภาพถ่ายสนาม',
+                bucket: 'fitness-group-venues',
+                pathPrefix: 'venues/',
+                initialUrl: _venuePhotoUrl,
+                onUploaded: (url) => setState(() => _venuePhotoUrl = url),
+                onRemoved: () => setState(() => _venuePhotoUrl = null),
+              ),
+              const SizedBox(height: 12),
+              const Text('เพศที่ต้องการชวนเข้าร่วม'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('ช.'),
+                    selected: _genderPreference == 'male',
+                    onSelected: (_) => setState(() => _genderPreference = 'male'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('ญ.'),
+                    selected: _genderPreference == 'female',
+                    onSelected: (_) => setState(() => _genderPreference = 'female'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('เสรี'),
+                    selected: _genderPreference == 'any',
+                    onSelected: (_) => setState(() => _genderPreference = 'any'),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Row(

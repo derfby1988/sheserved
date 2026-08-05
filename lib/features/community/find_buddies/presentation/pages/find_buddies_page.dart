@@ -163,16 +163,22 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                         children: [
                           const Text('หมายเหตุ: ก๊วนส่วนตัวจะมองเห็นเฉพาะสมาชิกของก๊วนนั้นเท่านั้น'),
                           const SizedBox(height: 8),
-                          SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildSportChip(null, 'ทั้งหมด'),
-                        ..._sports.map((s) => _buildSportChip(s['id']?.toString(), s['name_th']?.toString() ?? 'กีฬา')),
-                        _buildAddSportButton(),
-                      ],
-                    ),
-                  ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _buildSportChip(null, 'ทั้งหมด', icon: '🏅'),
+                                      ..._sports.map((s) => _buildSportChip(s['id']?.toString(), s['name_th']?.toString() ?? 'กีฬา', icon: s['icon']?.toString())),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              _buildAddSportFab(),
+                            ],
+                          ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -207,19 +213,39 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if ((g['cover_image_url']?.toString() ?? '').isNotEmpty)
+                            if ((g['venue_photo_url']?.toString() ?? g['cover_image_url']?.toString() ?? '').isNotEmpty)
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
-                                  g['cover_image_url'].toString(),
+                                  (g['venue_photo_url']?.toString().isNotEmpty ?? false)
+                                      ? g['venue_photo_url'].toString()
+                                      : g['cover_image_url'].toString(),
                                   height: 140,
                                   width: double.infinity,
                                   fit: BoxFit.cover,
                                 ),
                               ),
-                            if ((g['cover_image_url']?.toString() ?? '').isNotEmpty)
+                            if ((g['venue_photo_url']?.toString() ?? g['cover_image_url']?.toString() ?? '').isNotEmpty)
                               const SizedBox(height: 8),
-                            Text(g['name']?.toString() ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(g['name']?.toString() ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
+                                if (g['gender_preference'] != null && g['gender_preference'].toString() != 'any')
+                                  Chip(
+                                    label: Text(g['gender_preference'].toString() == 'male' ? 'ช.' : 'ญ.'),
+                                    backgroundColor: g['gender_preference'].toString() == 'male' ? Colors.blue.shade50 : Colors.pink.shade50,
+                                    visualDensity: VisualDensity.compact,
+                                  )
+                                else
+                                  Chip(
+                                    label: const Text('เสรี'),
+                                    backgroundColor: Colors.green.shade50,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                              ],
+                            ),
                             if ((g['description']?.toString() ?? '').isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 6),
@@ -229,7 +255,10 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                               children: [
                                 if (g['sport_name'] != null)
                                   Chip(
-                                    label: Text(g['sport_name'].toString()),
+                                    label: _buildSportChipLabel(
+                                      g['sport_icon']?.toString(),
+                                      g['sport_name'].toString(),
+                                    ),
                                     backgroundColor: Colors.blue.shade50,
                                   ),
                                 if ((g['province']?.toString() ?? '').isNotEmpty)
@@ -307,27 +336,16 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
         ),
         ],
       ),
-      floatingActionButton: AuthService.instance.currentUser != null
-          ? FloatingActionButton.extended(
-              onPressed: () async {
-                final createdId = await Navigator.pushNamed(context, '/community/find-buddies/group/create');
-                if (createdId != null) {
-                  _reload();
-                }
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('สร้างก๊วน'),
-            )
-          : null,
+      floatingActionButton: _buildFloatingButtons(),
     );
   }
 
-  Widget _buildSportChip(String? id, String label) {
+  Widget _buildSportChip(String? id, String label, {String? icon}) {
     final isSelected = _sportId == id;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
-        label: Text(label),
+        label: _buildSportChipLabel(icon, label),
         selected: isSelected,
         onSelected: (selected) {
           setState(() => _sportId = selected ? id : null);
@@ -339,17 +357,77 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
     );
   }
 
-  Widget _buildAddSportButton() {
+  Widget _buildSportChipLabel(String? icon, String label) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (icon != null && icon.isNotEmpty)
+            TextSpan(
+              text: '$icon ',
+              style: _emojiTextStyle(context),
+            ),
+          TextSpan(text: label),
+        ],
+      ),
+    );
+  }
+
+  TextStyle _emojiTextStyle(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
+      return const TextStyle(fontFamily: 'Apple Color Emoji');
+    }
+    if (platform == TargetPlatform.android) {
+      return const TextStyle(fontFamily: 'Noto Color Emoji');
+    }
+    if (platform == TargetPlatform.windows) {
+      return const TextStyle(fontFamily: 'Segoe UI Emoji');
+    }
+    return const TextStyle(
+      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+    );
+  }
+
+  Widget _buildAddSportFab() {
     final user = AuthService.instance.currentUser;
     final isAdmin = user?.role == 'admin';
+    if (!isAdmin) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ActionChip(
-        avatar: const Icon(Icons.add),
-        label: Text(isAdmin ? 'เพิ่มหมวดหมู่' : 'เสนอหมวดหมู่'),
-        onPressed: () {
-          Navigator.pushNamed(context, isAdmin ? '/community/find-buddies/sport/manage' : '/community/find-buddies/sport/propose');
+      padding: const EdgeInsets.only(left: 4, right: 8),
+      child: InkWell(
+        onTap: () {
+          Navigator.pushNamed(context, '/community/find-buddies/sport/manage');
         },
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.teal,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.teal, width: 1.5),
+          ),
+          child: const Icon(Icons.add, color: Colors.white, size: 24),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingButtons() {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 4, bottom: 4),
+      child: FloatingActionButton.extended(
+        heroTag: 'createGroupFab',
+        onPressed: () async {
+          final createdId = await Navigator.pushNamed(context, '/community/find-buddies/group/create');
+          if (createdId != null) {
+            _reload();
+          }
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('สร้างก๊วน'),
       ),
     );
   }
