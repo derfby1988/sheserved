@@ -88,6 +88,10 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   }
 
   Future<void> _submit() async {
+    if (_sportId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาเลือกกีฬา')));
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     final user = AuthService.instance.currentUser;
     if (user == null) {
@@ -115,6 +119,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สร้างก๊วนสำเร็จ')));
       await _saveRecentName(_nameCtrl.text.trim());
       if (!mounted) return;
+      // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId เพื่อให้หน้าเรียกใช้งาน Bottom Sheet สร้างรอบนัด
       Navigator.pop(context, groupId);
     } catch (e) {
       if (!mounted) return;
@@ -175,23 +180,20 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                             ),
                           ),
                         )
-                      : DropdownMenu<String?>(
+                      : DropdownMenu<String>(
                           key: ValueKey('${_sportId ?? 'none'}:${_sports.length}'),
                           initialSelection: _sportId,
                           width: MediaQuery.of(context).size.width * 0.5,
                           menuHeight: MediaQuery.of(context).size.height * 0.5,
-                          label: const Text('กีฬา'),
+                          label: const Text('กีฬา *'),
                           onSelected: (v) => setState(() => _sportId = v),
-                          dropdownMenuEntries: [
-                            const DropdownMenuEntry<String?>(value: null, label: 'ไม่ระบุ'),
-                            ..._sports.map((s) => DropdownMenuEntry<String?>(
-                                  value: s['id'].toString(),
-                                  label: s['name_th']?.toString() ?? 'กีฬา',
-                                  leadingIcon: (s['icon']?.toString() ?? '').isNotEmpty
-                                      ? Text(s['icon']!.toString(), style: _emojiTextStyle(context))
-                                      : null,
-                                )),
-                          ],
+                          dropdownMenuEntries: _sports.map((s) => DropdownMenuEntry<String>(
+                                value: s['id'].toString(),
+                                label: s['name_th']?.toString() ?? 'กีฬา',
+                                leadingIcon: (s['icon']?.toString() ?? '').isNotEmpty
+                                    ? Text(s['icon']!.toString(), style: _emojiTextStyle(context))
+                                    : null,
+                              )).toList(),
                         ),
                 ),
               ),

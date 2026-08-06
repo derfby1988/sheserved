@@ -137,13 +137,13 @@
   - **เพศที่ต้องการชวนเข้าร่วม:** แถวปุ่มเลือกแบบ segmented/Chip 3 ตัวเลือก “ช.” (ชาย), “ญ.” (หญิง), “เสรี” (ไม่จำกัด — ค่าเริ่มต้นที่เลือกไว้) บันทึกลง `fitness_groups.gender_preference` (`'male'|'female'|'any'`) — ใช้เป็นข้อมูลแสดงผลในรายการ/รายละเอียดก๊วนเพื่อให้ผู้เข้าชมทราบกลุ่มเป้าหมาย ไม่ใช่การบังคับกรองสิทธิ์เข้าร่วมระดับ DB/RLS ในรอบแรก
   - สถานที่ + แผนที่: การ์ดแผนที่พร้อมพิน (draggable) ปุ่ม “ค้นหาสถานที่”, “ใช้ตำแหน่งฉัน”, “ปักหมุด” แสดงชื่อสถานที่/ที่อยู่สรุป และลิงก์ “เปิดใน Google Maps”
     - Dev ใช้ OSM ผ่าน flutter_map (ไม่มีค่าใช้จ่าย) ด้วย MapAdapter ที่สลับไป Google Maps ได้ภายหลังเมื่อมี key
-  - วันที่และเวลา: DatePicker + TimePicker ต้องเป็นอนาคต ≥ ปัจจุบัน + 30 นาที
+  - ~~วันที่และเวลา: DatePicker + TimePicker ต้องเป็นอนาคต ≥ ปัจจุบัน + 30 นาที~~ → **ย้ายไป Bottom Sheet "สร้างรอบนัด" แยกต่างหาก** (ดูหัวข้อ "สร้างรอบนัด (Bottom Sheet)" ด้านล่าง)
   - จำนวนสมาชิกเป้าหมาย: Stepper/Slider ช่วง 2–30 (เริ่มต้น 5)
   - รายละเอียด: TextArea 2–5 บรรทัด (ไม่บังคับ, สูงสุด ~500 ตัวอักษร)
   - การจองและการอนุมัติ: Toggle “ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง” (ค่าเริ่มต้น: ปิด = ยอมรับอัตโนมัติ)
 
 - สถานะ/การโต้ตอบ
-  - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng, วันเวลาเป็นอนาคต
+  - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng (วันเวลาย้ายไป Bottom Sheet แยก)
   - สิทธิ์ตำแหน่ง: ถ้าไม่อนุญาต ปุ่ม “ใช้ตำแหน่งฉัน” disabled พร้อมคำอธิบายสั้น ๆ
   - สิทธิ์กล้อง/คลังภาพ: ถ้าไม่อนุญาต ปุ่ม “เพิ่มรูปสนาม” แสดง SnackBar อธิบายวิธีเปิดสิทธิ์ในตั้งค่าเครื่อง
   - บังคับล็อกอินเมื่อส่ง: ถ้าไม่ล็อกอิน เมื่อกด “สร้างก๊วน” → ไปหน้า Login พร้อม redirect `{ route: '/community/find-buddies/create', args: draft }` และกลับมาดำเนินการต่อ
@@ -164,13 +164,44 @@ Scaffold
       VenuePhotoPicker(...),
       GenderPreferenceChips(...),
       MapCard(...),
-      DateTimeRow(...),
+      // DateTimeRow ย้ายไป Bottom Sheet "สร้างรอบนัด"
       CapacityStepper(...),
       MultilineTextField(label: 'รายละเอียด')
     ])
   )
   bottomNavigationBar: PrimaryButton('สร้างก๊วน', enabled: isValid)
 ```
+
+## สร้างรอบนัด (Bottom Sheet) — Implementation (2026-08-06)
+- **โฟลว์:** หลังสร้างก๊วนสำเร็จ → เปิด Bottom Sheet สร้างรอบนัดทันที (ไม่นำทางไปหน้าแยก)
+- **ทริกเกอร์ 2 จุด:**
+  1. หลัง `createGroup()` สำเร็จใน `create_group_page.dart` → `Navigator.pushNamed('/community/find-buddies/session/create')` (คงไว้ชั่วคราว ก่อนเปลี่ยนเป็น Bottom Sheet ในอนาคต)
+  2. ปุ่ม "เพิ่มรอบนัด" ในการ์ดก๊วน (เฉพาะแอดมินของก๊วนนั้น) → เรียก `_showCreateSessionSheet(groupId)` ใน `find_buddies_page.dart`
+- **ปุ่ม "เข้าร่วมก๊วน" สำหรับผู้ใช้ทั่วไป:** แสดงแทนปุ่ม "เพิ่มรอบนัด" เมื่อไม่ใช่แอดมิน → ดึงรอบนัดที่ใกล้ที่สุด (limit=1) แล้วเรียก `_book(sessionId)` อัตโนมัติ
+- **ฟิลด์ใน Bottom Sheet:**
+  - วันที่: ใช้ `ThaiBuddhistDatePickerField` ค่าเริ่มต้น = วันปัจจุบัน
+  - เวลาเริ่มต้น: Material `showTimePicker` ค่าเริ่มต้น = ปัดขึ้นครึ่งชั่วโมงถัดไป
+  - เวลาสิ้นสุด: Material `showTimePicker` ค่าเริ่มต้น = เวลาเริ่ม + 1 ชั่วโมง
+  - หมายเหตุ (`note`): ไม่บังคับ, สูงสุด ~500 ตัวอักษร
+  - ไม่มีฟิลด์สถานที่ (`place_name`) หรือพิกัด lat/lng (พิกัดของก๊วนใช้ข้อมูลเดิมใน `fitness_groups`) เพื่อไม่ให้ซ้ำซ้อน
+- **Validation:**
+  - เวลาเริ่มต้น ≥ ตอนนี้ + 15 นาที
+  - เวลาสิ้นสุด > เวลาเริ่มต้น
+- **หลังบันทึกสำเร็จ:** ปิด Bottom Sheet, แสดง SnackBar "สร้างรอบนัดสำเร็จ", `setState()` เพื่อรีโหลด FutureBuilder รายการรอบนัด
+- **ไฟล์ที่เกี่ยวข้อง:**
+  - `lib/features/community/find_buddies/presentation/pages/find_buddies_page.dart` — `_showCreateSessionSheet()`, ปุ่ม "เพิ่มรอบนัด"/"เข้าร่วมก๊วน"
+  - `lib/features/community/find_buddies/presentation/pages/create_group_page.dart` — redirect หลังสร้างก๊วน
+  - `lib/features/community/find_buddies/data/fitness_buddies_repository.dart` — `createSession()`
+  - `lib/shared/widgets/thai_buddhist_date_picker.dart` — `ThaiBuddhistDatePickerField`
+- **อนาคต:** หากต้องการแผนที่โต้ตอบ ให้เพิ่ม dependency `flutter_map`/`latlong2` และอ้างอิงพิกัด `fitness_groups.lat/lng` โดยตรง ไม่ต้องกรอกพิกัดซ้ำในรอบนัด
+
+## ปรับตำแหน่ง TLZBottomNavigationBar บน Android (2026-08-06)
+- **สาเหตุ:** Android ที่มี gesture bar (`bottomSafeArea > 0`) ตกเงื่อนไขเดียวกับ iOS ทำให้ใช้ค่า `14.0` แทนค่า Android ที่ตั้งไว้
+- **วิธีแก้:** เปลี่ยนจากเงื่อนไข `bottomSafeArea > 0` เป็น `Platform.isAndroid` แยกจาก iOS โดยตรง
+  - Android: `bottomMargin = 26 * s` (ปรับจาก 16 → 26 → 35 → 26 ตาม feedback)
+  - iOS: `bottomMargin = 14.0` คงที่
+- **ไฟล์:** `lib/shared/widgets/tlz_bottom_navigation_bar.dart:88` และ import `dart:io` บรรทัด 1
+- **บทเรียน:** อย่าใช้ `bottomSafeArea > 0` แยกแพลตฟอร์ม เพราะ Android รุ่นใหม่มี gesture bar ที่ทำให้ค่าไม่เป็น 0; ใช้ `Platform.isAndroid`/`Platform.isIOS` แทน
 
 ## กติกาธุรกิจ — การจอง อนุมัติ และการแจ้งเตือน
 - ประเภทการจอง: ผู้ใช้จอง “เข้าร่วมรอบนัด (session)” ที่ `fitness_group_sessions`

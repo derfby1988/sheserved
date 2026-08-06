@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../../../../shared/widgets/tlz_drawer.dart';
+import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
+import '../../../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class FindBuddiesPage extends StatefulWidget {
   const FindBuddiesPage({super.key});
@@ -19,7 +22,10 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
   String? _sportId;
   String _q = '';
   bool _loading = true;
+  bool _reloadingGroups = false;
   Set<String> _myAdminGroups = {};
+  Set<String> _myJoinedGroupIds = {};
+  Set<String> _myCreatedSportIds = {};
   bool _showMapView = false;
   String? _province;
   String? _district;
@@ -49,12 +55,16 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
       final sports = await _repo.getApprovedSports(userId: userId);
       final groups = await _repo.listGroups(currentUserId: userId);
       final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
+      final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
+      final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
       if (!mounted) return;
       setState(() {
         _sports = sports;
         _groups = groups;
         _loading = false;
         _myAdminGroups = adminIds;
+        _myJoinedGroupIds = joinedGroupIds;
+        _myCreatedSportIds = createdSportIds;
       });
     } catch (_) {
       if (!mounted) return;
@@ -63,8 +73,10 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
   }
 
   Future<void> _reload() async {
+    setState(() => _reloadingGroups = true);
     final userId = AuthService.instance.currentUser?.id;
-    final groups = await _repo.listGroups(
+    try {
+      final groups = await _repo.listGroups(
       sportId: _sportId,
       q: _q,
       currentUserId: userId,
@@ -72,11 +84,18 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
       district: _district,
     );
     final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
-    if (!mounted) return;
-    setState(() {
-      _groups = groups;
-      _myAdminGroups = adminIds;
-    });
+    final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
+    final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
+      if (!mounted) return;
+      setState(() {
+        _groups = groups;
+        _myAdminGroups = adminIds;
+        _myJoinedGroupIds = joinedGroupIds;
+        _myCreatedSportIds = createdSportIds;
+      });
+    } finally {
+      if (mounted) setState(() => _reloadingGroups = false);
+    }
   }
 
   Future<void> _book(String sessionId) async {
@@ -90,6 +109,7 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
       await _repo.bookSession(sessionId, user.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งคำขอจองแล้ว')));
+      await _reload();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('จองไม่สำเร็จ: $e')));
@@ -100,7 +120,13 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.primary,
+      extendBody: true,
       drawer: TlzDrawer(),
+      bottomNavigationBar: TlzBottomNavigationBar(
+        currentIndex: -1,
+        onIndexChanged: (index) => _onNavIndexChanged(index),
+        onAddPressed: () => _onAddPressed(),
+      ),
       body: Column(
         children: [
           // Custom Header matching home page style
@@ -181,8 +207,12 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                             ],
                           ),
                   const SizedBox(height: 16),
+                  if (_reloadingGroups)
+                    for (var i = 0; i < 3; i++) _buildSkeletonCard(),
                   for (final g in _groups)
-                    Card(
+                    InkWell(
+                      onTap: () => _showGroupDetailSheet(g),
+                      child: Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -203,9 +233,29 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                             if ((g['venue_photo_url']?.toString() ?? g['cover_image_url']?.toString() ?? '').isNotEmpty)
                               const SizedBox(height: 8),
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
-                                  child: Text(g['name']?.toString() ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      if ((g['sport_name']?.toString() ?? '').isNotEmpty)
+                                        _buildSportChipLabel(
+                                          g['sport_icon']?.toString(),
+                                          g['sport_name'].toString(),
+                                        ),
+                                      if ((g['sport_name']?.toString() ?? '').isNotEmpty)
+                                        const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          g['name']?.toString() ?? '',
+                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 if (g['gender_preference'] != null && g['gender_preference'].toString() != 'any')
                                   Chip(
@@ -226,20 +276,8 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(g['description'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis),
                               ),
-                            Row(
-                              children: [
-                                if (g['sport_name'] != null)
-                                  Chip(
-                                    label: _buildSportChipLabel(
-                                      g['sport_icon']?.toString(),
-                                      g['sport_name'].toString(),
-                                    ),
-                                    backgroundColor: Colors.blue.shade50,
-                                  ),
-                                if ((g['province']?.toString() ?? '').isNotEmpty)
-                                  Text('พื้นที่: '+ g['province'].toString() + (g['district'] != null && g['district'].toString().isNotEmpty ? ' · '+ g['district'].toString() : '')),
-                              ],
-                            ),
+                            if ((g['province']?.toString() ?? '').isNotEmpty)
+                              Text('พื้นที่: '+ g['province'].toString() + (g['district'] != null && g['district'].toString().isNotEmpty ? ' · '+ g['district'].toString() : '')),
                             if (g['member_count'] != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -256,45 +294,89 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                                     child: LinearProgressIndicator(minHeight: 2),
                                   );
                                 }
-                                if (items.isEmpty) {
-                                  return const Text('ยังไม่มีรอบนัด');
+                                if (snapshot.hasError) {
+                                  return Text(
+                                    'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
+                                    style: const TextStyle(color: Colors.red),
+                                  );
                                 }
+                                if (items.isEmpty) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('ยังไม่มีรอบนัด'),
+                                      if (_myAdminGroups.contains(g['id']?.toString() ?? ''))
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: TextButton.icon(
+                                            onPressed: () => _showCreateSessionSheet(g['id'].toString()),
+                                            icon: const Icon(Icons.add_circle_outline),
+                                            label: const Text('เพิ่มรอบนัด'),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                }
+                                final isAdmin = _myAdminGroups.contains(g['id']?.toString() ?? '');
+                                final hasJoined = _myJoinedGroupIds.contains(g['id']?.toString() ?? '');
+                                final joinButton = hasJoined
+                                    ? TextButton.icon(
+                                        onPressed: null,
+                                        icon: const Icon(Icons.check_circle_outline),
+                                        label: const Text('เข้าร่วมก๊วนแล้ว'),
+                                      )
+                                    : TextButton.icon(
+                                        onPressed: () async {
+                                          final upcoming = await _repo.listUpcomingSessions(g['id'].toString(), limit: 1);
+                                          if (upcoming.isEmpty) {
+                                            if (!mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยังไม่มีรอบนัดให้เข้าร่วม')));
+                                            return;
+                                          }
+                                          final sid = upcoming.first['id'].toString();
+                                          await _book(sid);
+                                        },
+                                        icon: const Icon(Icons.event_available),
+                                        label: const Text('เข้าร่วมก๊วน'),
+                                      );
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('รอบนัดใกล้เคียง:'),
-                                    const SizedBox(height: 8),
                                     for (final s in items.take(3))
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              '${DateTime.parse(s['starts_at'].toString()).toLocal()} - ${DateTime.parse(s['ends_at'].toString()).toLocal()}',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 8),
+                                        child: Row(
+                                          children: [
+                                            const Text('ห้วง: ', style: TextStyle(fontWeight: FontWeight.w500)),
+                                            Expanded(
+                                              child: Text(
+                                                _formatThaiSessionRange(
+                                                  DateTime.parse(s['starts_at'].toString()).toLocal(),
+                                                  DateTime.parse(s['ends_at'].toString()).toLocal(),
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                          ),
-                                          TextButton(
-                                            onPressed: () => _book(s['id'].toString()),
-                                            child: const Text('เข้าร่วม/จอง'),
+                                          ],
+                                        ),
+                                      ),
+                                    if (isAdmin)
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          joinButton,
+                                          TextButton.icon(
+                                            onPressed: () => _showCreateSessionSheet(g['id'].toString()),
+                                            icon: const Icon(Icons.add_circle_outline),
+                                            label: const Text('เพิ่มรอบนัด'),
                                           ),
                                         ],
-                                      ),
-                                    if (_myAdminGroups.contains(g['id']?.toString() ?? ''))
+                                      )
+                                    else
                                       Align(
                                         alignment: Alignment.centerRight,
-                                        child: TextButton.icon(
-                                          onPressed: () {
-                                            Navigator.pushNamed(
-                                              context,
-                                              '/community/find-buddies/session/create',
-                                              arguments: {'groupId': g['id'].toString()},
-                                            );
-                                          },
-                                          icon: const Icon(Icons.add_circle_outline),
-                                          label: const Text('เพิ่มรอบนัด'),
-                                        ),
+                                        child: joinButton,
                                       ),
                                   ],
                                 );
@@ -303,7 +385,9 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                           ],
                         ),
                       ),
+                    )
                     ),
+                  const SizedBox(height: 120),
                 ],
               ),
             ),
@@ -317,17 +401,389 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
 
   Widget _buildSportChip(String? id, String label, {String? icon}) {
     final isSelected = _sportId == id;
+    final isMyCreated = id != null && _myCreatedSportIds.contains(id);
+    final borderColor = isMyCreated ? Colors.blue.shade100 : Colors.grey.shade300;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: _buildSportChipLabel(icon, label),
         selected: isSelected,
         onSelected: (selected) {
-          setState(() => _sportId = selected ? id : null);
+          setState(() {
+            _sportId = selected ? id : null;
+            _reloadingGroups = true;
+          });
           _reload();
         },
         selectedColor: Colors.blue.shade100,
         checkmarkColor: Colors.blue,
+        shape: StadiumBorder(
+          side: BorderSide(color: borderColor, width: isMyCreated ? 2.0 : 1.0),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCreateSessionSheet(String groupId) async {
+    final now = DateTime.now();
+    // ปัดขึ้นครึ่งชั่วโมงถัดไป
+    final roundedStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.minute < 30 ? now.hour : now.hour + 1,
+      now.minute < 30 ? 30 : 0,
+    );
+    DateTime selectedDate = DateTime(now.year, now.month, now.day);
+    TimeOfDay startTime = TimeOfDay(hour: roundedStart.hour, minute: roundedStart.minute);
+    TimeOfDay endTime = TimeOfDay(hour: (roundedStart.add(const Duration(hours: 1))).hour, minute: roundedStart.minute);
+    final noteCtrl = TextEditingController();
+    String? errorText;
+    bool submitting = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setModalState) {
+          Future<void> pickStartTime() async {
+            final picked = await showTimePicker(context: ctx, initialTime: startTime);
+            if (picked != null) {
+              setModalState(() => startTime = picked);
+            }
+          }
+
+          Future<void> pickEndTime() async {
+            final picked = await showTimePicker(context: ctx, initialTime: endTime);
+            if (picked != null) {
+              setModalState(() => endTime = picked);
+            }
+          }
+
+          Future<void> submit() async {
+            setModalState(() => errorText = null);
+            final startsAt = DateTime(
+              selectedDate.year,
+              selectedDate.month,
+              selectedDate.day,
+              startTime.hour,
+              startTime.minute,
+            );
+            final endsAt = DateTime(
+              selectedDate.year,
+              selectedDate.month,
+              selectedDate.day,
+              endTime.hour,
+              endTime.minute,
+            );
+            if (startsAt.isBefore(now.add(const Duration(minutes: 15)))) {
+              setModalState(() => errorText = 'เวลาเริ่มต้องไม่น้อยกว่าอีก 15 นาทีจากตอนนี้');
+              return;
+            }
+            if (!endsAt.isAfter(startsAt)) {
+              setModalState(() => errorText = 'เวลาสิ้นสุดต้องมากกว่าเวลาเริ่ม');
+              return;
+            }
+            setModalState(() => submitting = true);
+            try {
+              await _repo.createSession(
+                groupId: groupId,
+                startsAt: startsAt,
+                endsAt: endsAt,
+                placeName: null,
+                note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+              );
+              if (!mounted) return;
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สร้างรอบนัดสำเร็จ')));
+              setState(() {}); // trigger refresh of FutureBuilder
+            } catch (e) {
+              setModalState(() => submitting = false);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
+            }
+          }
+
+          final content = Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 12,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 6),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('สร้างรอบนัด', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  ThaiBuddhistDatePickerField(
+                    value: selectedDate,
+                    label: 'วันที่',
+                    onDateSelected: (d) => setModalState(() => selectedDate = d),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: pickStartTime,
+                          icon: const Icon(Icons.schedule),
+                          label: Text('เริ่ม ${startTime.format(ctx)}'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: pickEndTime,
+                          icon: const Icon(Icons.timer_off_outlined),
+                          label: Text('สิ้นสุด ${endTime.format(ctx)}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(labelText: 'หมายเหตุ (ไม่บังคับ)'),
+                    maxLines: 2,
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 8),
+                    Text(errorText!, style: const TextStyle(color: Colors.redAccent)),
+                  ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: submitting ? null : submit,
+                      icon: submitting
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.save),
+                      label: const Text('บันทึกรอบนัด'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+          return SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+              ),
+              child: content,
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  Future<void> _showGroupDetailSheet(Map<String, dynamic> group) async {
+    final groupId = group['id'].toString();
+    final isAdmin = _myAdminGroups.contains(groupId);
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: FutureBuilder<List<dynamic>>(
+                  future: Future.wait([
+                    _repo.listSessions(groupId),
+                    _repo.listGroupMembers(groupId),
+                  ]),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('โหลดข้อมูลไม่สำเร็จ: ${snapshot.error}'));
+                    }
+                    final sessions = (snapshot.data?[0] as List?)?.cast<Map<String, dynamic>>() ?? [];
+                    final members = (snapshot.data?[1] as List?)?.cast<Map<String, dynamic>>() ?? [];
+                    return SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            group['name']?.toString() ?? '',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                          ),
+                          if (group['member_count'] != null)
+                            Text('สมาชิก: ${group['member_count']} คน'),
+                          const SizedBox(height: 12),
+                          const Text('รอบนัด', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          if (sessions.isEmpty)
+                            const Text('ยังไม่มีรอบนัด')
+                          else
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: sessions.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (ctx, i) {
+                                final s = sessions[i];
+                                return Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'ห้วง: ${_formatThaiSessionRange(
+                                          DateTime.parse(s['starts_at'].toString()).toLocal(),
+                                          DateTime.parse(s['ends_at'].toString()).toLocal(),
+                                        )}',
+                                      ),
+                                    ),
+                                    if (isAdmin)
+                                      TextButton(
+                                        onPressed: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: ctx,
+                                            builder: (ctx2) => AlertDialog(
+                                              title: const Text('ยกเลิกรอบนัด'),
+                                              content: const Text('ต้องการลบรอบนัดนี้ใช่หรือไม่?'),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.of(ctx2).pop(false), child: const Text('ยกเลิก')),
+                                                TextButton(onPressed: () => Navigator.of(ctx2).pop(true), child: const Text('ยืนยัน')),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm != true) return;
+                                          try {
+                                            await _repo.cancelSession(s['id'].toString());
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกรอบนัดแล้ว')));
+                                            setSheetState(() {});
+                                          } catch (e) {
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ยกเลิกไม่สำเร็จ: $e')));
+                                          }
+                                        },
+                                        child: const Text('ยกเลิก', style: TextStyle(color: Colors.red)),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 16),
+                          const Text('รายชื่อผู้เข้าร่วมก๊วน', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          if (members.isEmpty)
+                            const Text('ยังไม่มีสมาชิก')
+                          else
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: members.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (ctx, i) {
+                                final m = members[i];
+                                final user = (m['user'] as Map?) ?? {};
+                                final fullName = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+                                final image = user['profile_image_url']?.toString() ?? '';
+                                final role = (m['role']?.toString() == 'admin') ? 'ผู้ดูแล' : 'สมาชิก';
+                                final active = m['is_active'] == true ? 'กำลังเข้าร่วม' : 'หยุดพัก';
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: CircleAvatar(
+                                    backgroundImage: image.isNotEmpty ? NetworkImage(image) : null,
+                                    child: image.isEmpty ? const Icon(Icons.person) : null,
+                                  ),
+                                  title: Text(fullName.isNotEmpty ? fullName : 'ไม่ระบุชื่อ'),
+                                  subtitle: Text('$role · $active'),
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static const _thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+  String _formatThaiTime(DateTime d) => '${d.hour.toString().padLeft(2, '0')}.${d.minute.toString().padLeft(2, '0')}';
+
+  String _formatThaiBuddhistDateTime(DateTime d) {
+    final beShort = ((d.year + 543) % 100).toString();
+    return '${d.day} ${_thaiMonths[d.month - 1]} $beShort ${_formatThaiTime(d)} น.';
+  }
+
+  String _formatThaiSessionRange(DateTime start, DateTime end) {
+    final beShort = ((start.year + 543) % 100).toString();
+    if (start.year == end.year && start.month == end.month && start.day == end.day) {
+      return '${start.day} ${_thaiMonths[start.month - 1]} $beShort ${_formatThaiTime(start)}-${_formatThaiTime(end)} น.';
+    }
+    return '${_formatThaiBuddhistDateTime(start)} - ${_formatThaiBuddhistDateTime(end)}';
+  }
+
+  TextStyle _emojiTextStyle(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
+      return const TextStyle(fontFamily: 'Apple Color Emoji');
+    }
+    if (platform == TargetPlatform.android) {
+      return const TextStyle(fontFamily: 'Noto Color Emoji');
+    }
+    if (platform == TargetPlatform.windows) {
+      return const TextStyle(fontFamily: 'Segoe UI Emoji');
+    }
+    return const TextStyle(
+      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Shimmer.fromColors(
+          baseColor: Colors.grey.shade300,
+          highlightColor: Colors.grey.shade100,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(width: 120, height: 14, color: Colors.white),
+              const SizedBox(height: 8),
+              Container(width: double.infinity, height: 18, color: Colors.white),
+              const SizedBox(height: 8),
+              Container(width: double.infinity, height: 12, color: Colors.white),
+              const SizedBox(height: 6),
+              Container(width: 180, height: 12, color: Colors.white),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -344,22 +800,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
           TextSpan(text: label),
         ],
       ),
-    );
-  }
-
-  TextStyle _emojiTextStyle(BuildContext context) {
-    final platform = Theme.of(context).platform;
-    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
-      return const TextStyle(fontFamily: 'Apple Color Emoji');
-    }
-    if (platform == TargetPlatform.android) {
-      return const TextStyle(fontFamily: 'Noto Color Emoji');
-    }
-    if (platform == TargetPlatform.windows) {
-      return const TextStyle(fontFamily: 'Segoe UI Emoji');
-    }
-    return const TextStyle(
-      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
     );
   }
 
@@ -406,6 +846,8 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
             arguments: {'sportId': _sportId},
           );
           if (createdId != null) {
+            final String groupId = createdId.toString();
+            await _showCreateSessionSheet(groupId);
             _reload();
           }
         },
@@ -413,6 +855,22 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
         label: const Text('สร้างก๊วน'),
       ),
     );
+  }
+
+  void _onNavIndexChanged(int index) {
+    final routes = <int, String>{
+      0: '/home',
+      1: '/volunteer',
+      3: '/pharmacy',
+      4: '/profile',
+    };
+    final route = routes[index];
+    if (route == null) return;
+    Navigator.pushReplacementNamed(context, route);
+  }
+
+  void _onAddPressed() {
+    Navigator.pushNamed(context, '/emergency');
   }
 
   void _showSearchDialog() {

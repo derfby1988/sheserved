@@ -133,8 +133,31 @@ class FitnessBuddiesRepository {
         .toSet();
   }
 
+  Future<Set<String>> listMyJoinedGroupIds(String userId) async {
+    final res = await _client
+        .from('fitness_group_members')
+        .select('group_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+    return (res as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<Set<String>> listMyCreatedSportIds(String userId) async {
+    final res = await _client
+        .from('fitness_groups')
+        .select('sport_id')
+        .eq('created_by', userId);
+    return (res as List)
+        .map((e) => e['sport_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Future<List<Map<String, dynamic>>> listGroups({String? sportId, String? q, String? province, String? district, String? currentUserId, int limit = 50, int offset = 0}) async {
-    final base = _client.from('fitness_groups').select('*, sport:sports(name_th, icon)');
+    final base = _client.from('fitness_groups').select('*');
     var query = base;
     if (sportId != null && sportId.isNotEmpty) query = query.eq('sport_id', sportId);
     if (province != null && province.isNotEmpty) query = query.eq('province', province);
@@ -159,8 +182,27 @@ class FitnessBuddiesRepository {
 
     final res = await query.order('created_at', ascending: false).range(offset, offset + limit - 1);
     final groups = List<Map<String, dynamic>>.from(res);
-    
-    // Add member count for each group
+
+    // Batch fetch all sports referenced by groups in a single query
+    final sportIds = groups
+        .map((g) => g['sport_id']?.toString())
+        .where((id) => id != null && id.isNotEmpty)
+        .toSet();
+    final sportsMap = <String, Map<String, dynamic>>{};
+    if (sportIds.isNotEmpty) {
+      final sportsRes = await _client
+          .from('sports')
+          .select('id, name_th, icon')
+          .inFilter('id', sportIds.toList());
+      for (final s in sportsRes as List) {
+        final id = s['id']?.toString();
+        if (id != null) {
+          sportsMap[id] = Map<String, dynamic>.from(s);
+        }
+      }
+    }
+
+    // Add member count and attach sport data for each group
     for (var group in groups) {
       final groupId = group['id']?.toString();
       if (groupId != null) {
@@ -170,11 +212,13 @@ class FitnessBuddiesRepository {
             .eq('group_id', groupId)
             .eq('is_active', true);
         group['member_count'] = (countRes as List).length;
-        group['sport_name'] = group['sport']?['name_th'];
-        group['sport_icon'] = group['sport']?['icon'];
       }
+      final sid = group['sport_id']?.toString();
+      final sport = sportsMap[sid];
+      group['sport_name'] = sport?['name_th']?.toString();
+      group['sport_icon'] = sport?['icon']?.toString();
     }
-    
+
     return groups;
   }
 
@@ -188,6 +232,41 @@ class FitnessBuddiesRepository {
         .order('starts_at', ascending: true)
         .limit(limit);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> listSessions(String groupId, {int limit = 50}) async {
+    final res = await _client
+        .from('fitness_group_sessions')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('starts_at', ascending: true)
+        .limit(limit);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> listGroupMembers(String groupId) async {
+    final res = await _client
+        .from('fitness_group_members')
+        .select('*, user:users(first_name, last_name, profile_image_url, is_active, verification_status)')
+        .eq('group_id', groupId)
+        .eq('is_active', true)
+        .order('joined_at', ascending: false);
+    return (res as List).map((e) {
+      final member = Map<String, dynamic>.from(e);
+      final userData = member['user'];
+      if (userData is List && userData.isNotEmpty) {
+        member['user'] = userData.first;
+      } else if (userData is Map) {
+        member['user'] = userData;
+      } else {
+        member['user'] = <String, dynamic>{};
+      }
+      return member;
+    }).toList();
+  }
+
+  Future<void> cancelSession(String sessionId) async {
+    await _client.from('fitness_group_sessions').delete().eq('id', sessionId);
   }
 
   Future<String> bookSession(String sessionId, String userId) async {

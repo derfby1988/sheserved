@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -83,9 +84,8 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
     final radius = (40 * s).clamp(28.0, 40.0);
     
     // ดึงค่าพื้นที่ปลอดภัยด้านล่าง (เช่น แถบ Home ของ iOS)
-    final bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    // ปรับให้ iOS สูง 14px แบบคงที่ (ตามที่ผู้ใช้ต้องการ) ส่วน Android ใช้ 16px (คูณ scale)
-    final bottomMargin = bottomSafeArea > 0 ? 14.0 : 16 * s;
+    // ปรับให้ iOS สูง 14px คงที่ ส่วน Android ยกขึ้น 26px (คูณ scale) โดยไม่สนว่ามี gesture bar หรือไม
+    final bottomMargin = Platform.isAndroid ? 26 * s : 14.0;
 
     return AnimatedSlide(
       duration: const Duration(milliseconds: 300),
