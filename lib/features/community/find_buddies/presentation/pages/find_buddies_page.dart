@@ -34,10 +34,19 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
     _init();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Ensure we reflect latest ordering/data if dependencies change after hot reload.
+    if (_sports.isEmpty && !_loading) {
+      _init();
+    }
+  }
+
   Future<void> _init() async {
     try {
-      final sports = await _repo.getApprovedSports();
       final userId = AuthService.instance.currentUser?.id;
+      final sports = await _repo.getApprovedSports(userId: userId);
       final groups = await _repo.listGroups(currentUserId: userId);
       final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
       if (!mounted) return;
@@ -54,7 +63,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
   }
 
   Future<void> _reload() async {
-    setState(() => _loading = true);
     final userId = AuthService.instance.currentUser?.id;
     final groups = await _repo.listGroups(
       sportId: _sportId,
@@ -67,7 +75,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
     if (!mounted) return;
     setState(() {
       _groups = groups;
-      _loading = false;
       _myAdminGroups = adminIds;
     });
   }
@@ -134,10 +141,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                   onPressed: () => _showSearchDialog(),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.filter_list, color: Colors.white),
-                  onPressed: () => _showFilterDialog(),
-                ),
-                IconButton(
                   icon: Icon(_showMapView ? Icons.list : Icons.map, color: Colors.white),
                   onPressed: () => setState(() => _showMapView = !_showMapView),
                 ),
@@ -161,8 +164,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                       child: ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          const Text('หมายเหตุ: ก๊วนส่วนตัวจะมองเห็นเฉพาะสมาชิกของก๊วนนั้นเท่านั้น'),
-                          const SizedBox(height: 8),
                           Row(
                             children: [
                               Expanded(
@@ -179,32 +180,6 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
                               _buildAddSportFab(),
                             ],
                           ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          decoration: const InputDecoration(hintText: 'ค้นหาก๊วน / สถานที่'),
-                          onChanged: (v) => _q = v,
-                          onSubmitted: (_) => _reload(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_province != null || _district != null || _filterOpenOnly)
-                        Chip(
-                          label: const Text('ตัวกรองใช้งาน'),
-                          deleteIcon: const Icon(Icons.clear),
-                          onDeleted: () {
-                            setState(() {
-                              _province = null;
-                              _district = null;
-                              _filterOpenOnly = false;
-                            });
-                            _reload();
-                          },
-                        ),
-                    ],
-                  ),
                   const SizedBox(height: 16),
                   for (final g in _groups)
                     Card(
@@ -392,7 +367,11 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
     final user = AuthService.instance.currentUser;
     final isAdmin = user?.role == 'admin';
     if (!isAdmin) return const SizedBox.shrink();
-    return Padding(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
       padding: const EdgeInsets.only(left: 4, right: 8),
       child: InkWell(
         onTap: () {
@@ -421,7 +400,11 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
       child: FloatingActionButton.extended(
         heroTag: 'createGroupFab',
         onPressed: () async {
-          final createdId = await Navigator.pushNamed(context, '/community/find-buddies/group/create');
+          final createdId = await Navigator.pushNamed(
+            context,
+            '/community/find-buddies/group/create',
+            arguments: {'sportId': _sportId},
+          );
           if (createdId != null) {
             _reload();
           }
@@ -433,79 +416,34 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
   }
 
   void _showSearchDialog() {
+    final qController = TextEditingController(text: _q);
+    final provinceController = TextEditingController(text: _province ?? '');
+    final districtController = TextEditingController(text: _district ?? '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('ค้นหาก๊วน'),
-        content: TextField(
-          decoration: const InputDecoration(hintText: 'ค้นหาก๊วน / สถานที่'),
-          onChanged: (v) => _q = v,
-          onSubmitted: (_) {
-            Navigator.pop(context);
-            _reload();
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _reload();
-            },
-            child: const Text('ค้นหา'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showFilterDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('ตัวกรอง'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Text('ค้นหา'),
+              TextField(
+                controller: qController,
+                decoration: const InputDecoration(hintText: 'ค้นหาก๊วน / สถานที่'),
+              ),
+              const SizedBox(height: 16),
               const Text('จังหวัด'),
               TextField(
+                controller: provinceController,
                 decoration: const InputDecoration(hintText: 'จังหวัด'),
-                onChanged: (v) => _province = v.isEmpty ? null : v,
               ),
               const SizedBox(height: 16),
               const Text('อำเภอ'),
               TextField(
+                controller: districtController,
                 decoration: const InputDecoration(hintText: 'อำเภอ'),
-                onChanged: (v) => _district = v.isEmpty ? null : v,
-              ),
-              const SizedBox(height: 16),
-              const Text('รัศมี (กม.)'),
-              TextField(
-                decoration: const InputDecoration(hintText: 'รัศมี'),
-                keyboardType: TextInputType.number,
-                onChanged: (v) => _radiusKm = double.tryParse(v),
-              ),
-              const SizedBox(height: 16),
-              const Text('วันที่'),
-              TextField(
-                decoration: const InputDecoration(hintText: 'วันที่'),
-                keyboardType: TextInputType.datetime,
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (date != null) {
-                    _filterDate = date;
-                  }
-                },
               ),
               const SizedBox(height: 16),
               CheckboxListTile(
@@ -523,10 +461,13 @@ class _FindBuddiesPageState extends State<FindBuddiesPage> {
           ),
           TextButton(
             onPressed: () {
+              _q = qController.text;
+              _province = provinceController.text.isEmpty ? null : provinceController.text;
+              _district = districtController.text.isEmpty ? null : districtController.text;
               Navigator.pop(context);
               _reload();
             },
-            child: const Text('ใช้ตัวกรอง'),
+            child: const Text('ค้นหา'),
           ),
         ],
       ),

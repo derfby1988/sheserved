@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
@@ -27,12 +28,31 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   int _capacity = 5;
   bool _submitting = false;
   List<Map<String, dynamic>> _sports = [];
+  bool _didReadInitialArgs = false;
+  bool _isSportsLoading = true;
+  List<String> _recentGroupNames = [];
+  static const _prefsRecentGroupNamesKey = 'recent_group_names';
 
   @override
   void initState() {
     super.initState();
     _repo = FitnessBuddiesRepository(Supabase.instance.client);
     _loadSports();
+    _loadRecentNames();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didReadInitialArgs) return;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['sportId'] is String?) {
+      // Set initial selected sport if provided from previous page
+      setState(() {
+        _sportId = args['sportId'] as String?;
+      });
+    }
+    _didReadInitialArgs = true;
   }
 
   TextStyle _emojiTextStyle(BuildContext context) {
@@ -52,11 +72,19 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   }
 
   Future<void> _loadSports() async {
+    setState(() => _isSportsLoading = true);
     try {
-      final sports = await _repo.getApprovedSports();
+      final userId = AuthService.instance.currentUser?.id;
+      final sports = await _repo.getApprovedSports(userId: userId);
       if (!mounted) return;
-      setState(() => _sports = sports);
-    } catch (_) {}
+      setState(() {
+        _sports = sports;
+        _isSportsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSportsLoading = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -85,12 +113,38 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สร้างก๊วนสำเร็จ')));
+      await _saveRecentName(_nameCtrl.text.trim());
+      if (!mounted) return;
       Navigator.pop(context, groupId);
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('สร้างก๊วนไม่สำเร็จ: $e')));
     }
+  }
+
+  Future<void> _loadRecentNames() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_prefsRecentGroupNamesKey) ?? [];
+      if (!mounted) return;
+      setState(() => _recentGroupNames = list);
+    } catch (_) {}
+  }
+
+  Future<void> _saveRecentName(String name) async {
+    if (name.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_prefsRecentGroupNamesKey) ?? [];
+      final updated = [name, ...list.where((n) => n != name)];
+      if (updated.length > 10) {
+        updated.removeRange(10, updated.length);
+      }
+      await prefs.setStringList(_prefsRecentGroupNamesKey, updated);
+      if (!mounted) return;
+      setState(() => _recentGroupNames = updated);
+    } catch (_) {}
   }
 
   @override
@@ -103,6 +157,45 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              Center(
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.5,
+                  child: _isSportsLoading
+                      ? TextField(
+                          enabled: false,
+                          decoration: InputDecoration(
+                            labelText: 'กีฬา',
+                            suffixIcon: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          ),
+                        )
+                      : DropdownMenu<String?>(
+                          key: ValueKey('${_sportId ?? 'none'}:${_sports.length}'),
+                          initialSelection: _sportId,
+                          width: MediaQuery.of(context).size.width * 0.5,
+                          menuHeight: MediaQuery.of(context).size.height * 0.5,
+                          label: const Text('กีฬา'),
+                          onSelected: (v) => setState(() => _sportId = v),
+                          dropdownMenuEntries: [
+                            const DropdownMenuEntry<String?>(value: null, label: 'ไม่ระบุ'),
+                            ..._sports.map((s) => DropdownMenuEntry<String?>(
+                                  value: s['id'].toString(),
+                                  label: s['name_th']?.toString() ?? 'กีฬา',
+                                  leadingIcon: (s['icon']?.toString() ?? '').isNotEmpty
+                                      ? Text(s['icon']!.toString(), style: _emojiTextStyle(context))
+                                      : null,
+                                )),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 8),
               TextFormField(
                 controller: _nameCtrl,
                 decoration: const InputDecoration(labelText: 'ชื่อก๊วน (สูงสุด 60 ตัวอักษร)'),
@@ -110,30 +203,30 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'กรุณาระบุชื่อก๊วน' : null,
               ),
               const SizedBox(height: 8),
-              DropdownButtonFormField<String?>(
-                value: _sportId,
-                items: [
-                  const DropdownMenuItem<String?>(value: null, child: Text('ไม่ระบุ')),
-                  ..._sports.map((s) => DropdownMenuItem<String?>(
-                        value: s['id'].toString(),
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              if ((s['icon']?.toString() ?? '').isNotEmpty)
-                                TextSpan(
-                                  text: '${s['icon']} ',
-                                  style: _emojiTextStyle(context),
-                                ),
-                              TextSpan(text: s['name_th']?.toString() ?? 'กีฬา'),
-                            ],
-                          ),
-                        ),
-                      )),
-                ],
-                onChanged: (v) => setState(() => _sportId = v),
-                decoration: const InputDecoration(labelText: 'กีฬา'),
-              ),
-              const SizedBox(height: 8),
+              if (_recentGroupNames.isNotEmpty)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _recentGroupNames
+                        .take(8)
+                        .map((n) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ActionChip(
+                                label: Text(n, overflow: TextOverflow.ellipsis),
+                                onPressed: () {
+                                  setState(() {
+                                    _nameCtrl.text = n;
+                                    _nameCtrl.selection = TextSelection.fromPosition(
+                                      TextPosition(offset: n.length),
+                                    );
+                                  });
+                                },
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              if (_recentGroupNames.isNotEmpty) const SizedBox(height: 8),
               TextFormField(
                 controller: _descCtrl,
                 decoration: const InputDecoration(labelText: 'คำอธิบาย (ไม่บังคับ)'),

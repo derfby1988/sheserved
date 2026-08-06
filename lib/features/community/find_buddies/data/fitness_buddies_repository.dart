@@ -4,10 +4,121 @@ class FitnessBuddiesRepository {
   final SupabaseClient _client;
   FitnessBuddiesRepository(this._client);
 
-  Future<List<Map<String, dynamic>>> getApprovedSports() async {
-    final res = await _client.from('sports').select('*').eq('status', 'approved').order('name_th');
-    return List<Map<String, dynamic>>.from(res);
+  /// Thai consonants in dictionary order (ก → ฮ)
+  static const _thaiConsonants = 'กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ';
+
+  /// Leading vowels that appear before the first consonant in Thai
+  static const _thaiLeadingVowels = 'เแโใไ';
+
+  /// Returns the index of the first *consonant* in [text] within the Thai
+  /// consonant alphabet. Leading vowels (เ แ โ ใ ไ) are skipped so that
+  /// "แฮนด์บอล" sorts by "ฮ", not "แ". Returns -1 when no consonant is found.
+  static int _thaiFirstConsonantIndex(String text) {
+    for (final ch in text.runes) {
+      final c = String.fromCharCode(ch);
+      if (_thaiLeadingVowels.contains(c)) continue;
+      final idx = _thaiConsonants.indexOf(c);
+      if (idx >= 0) return idx;
+      // Non-Thai/non-consonant char — break so we don't skip past real content
+      break;
     }
+    return -1;
+  }
+
+  /// Comparator that sorts Thai sport names by first consonant, ascending
+  /// (ก → ฮ). Falls back to plain string comparison for non-Thai or when
+  /// no consonant is found.
+  static int _compareThaiAsc(String a, String b) {
+    final ia = _thaiFirstConsonantIndex(a);
+    final ib = _thaiFirstConsonantIndex(b);
+    if (ia >= 0 && ib >= 0) {
+      final cmp = ia.compareTo(ib); // ascending
+      if (cmp != 0) return cmp;
+    }
+    // Tie-break: full string ascending
+    return a.compareTo(b);
+  }
+
+  /// Returns a map of sport_id → usage count for [userId], counting both
+  /// groups the user created and groups they joined as a member.
+  Future<Map<String, int>> getUserSportFrequency(String userId) async {
+    final memberRows = await _client
+        .from('fitness_group_members')
+        .select('group_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+    final memberGroupIds = (memberRows as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    final createdRows = await _client
+        .from('fitness_groups')
+        .select('id')
+        .eq('created_by', userId);
+    final createdGroupIds = (createdRows as List)
+        .map((e) => e['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    final allGroupIds = <String>{...memberGroupIds, ...createdGroupIds};
+    if (allGroupIds.isEmpty) return {};
+
+    final groupRows = await _client
+        .from('fitness_groups')
+        .select('sport_id')
+        .inFilter('id', allGroupIds.toList());
+
+    final freq = <String, int>{};
+    for (final row in groupRows as List) {
+      final sportId = row['sport_id']?.toString();
+      if (sportId != null && sportId.isNotEmpty) {
+        freq[sportId] = (freq[sportId] ?? 0) + 1;
+      }
+    }
+    return freq;
+  }
+
+  /// Fetches approved sports sorted by:
+  /// 1. Sports the user has used (created/joined groups), by frequency desc
+  /// 2. Remaining sports by Thai first-consonant ascending (ก → ฮ)
+  /// When [userId] is null or empty, all sports are sorted by ก → ฮ only.
+  Future<List<Map<String, dynamic>>> getApprovedSports({String? userId}) async {
+    final res = await _client.from('sports').select('*').eq('status', 'approved').order('name_th');
+    final list = List<Map<String, dynamic>>.from(res);
+
+    Map<String, int> freq = {};
+    if (userId != null && userId.isNotEmpty) {
+      freq = await getUserSportFrequency(userId);
+    }
+
+    list.sort((a, b) {
+      final aId = a['id']?.toString() ?? '';
+      final bId = b['id']?.toString() ?? '';
+      final aFreq = freq[aId] ?? 0;
+      final bFreq = freq[bId] ?? 0;
+      final aUsed = aFreq > 0;
+      final bUsed = bFreq > 0;
+
+      // Used sports first
+      if (aUsed && !bUsed) return -1;
+      if (!aUsed && bUsed) return 1;
+
+      // Within used group: sort by frequency desc
+      if (aUsed && bUsed) {
+        final cmp = bFreq.compareTo(aFreq);
+        if (cmp != 0) return cmp;
+      }
+
+      // Within same group (or both unused): sort by ก → ฮ
+      return _compareThaiAsc(
+        a['name_th']?.toString() ?? '',
+        b['name_th']?.toString() ?? '',
+      );
+    });
+
+    return list;
+  }
 
   Future<Set<String>> listMyAdminGroupIds(String userId) async {
     final res = await _client

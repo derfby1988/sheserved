@@ -15,16 +15,17 @@
 - เส้นทาง (proposed routes):
   - `/community/find-buddies` (รายการ/ตัวกรอง/สลับมุมมองแผนที่)
   - `/community/find-buddies/group/:id` (รายละเอียดก๊วน + CTA เข้าร่วม/เปิดแชท)
+  - `/community/find-buddies/group/create` (สร้างก๊วน; รับ args ทางเลือก `{ sportId }` เพื่อกำหนดค่าเริ่มต้นของ dropdown กีฬา)
 
 ## หน้าจอและ UI (ใช้ `tlz_app_top_bar.dart`)
 - Top bar ทั่วไป: 
   - ซ้าย: ปุ่มเปิด Drawer/ย้อนกลับ (ตาม context)
-  - กลาง: ชื่อหน้า “หาเพื่อนออกกำลังกาย” หรือชื่อก๊วน
-  - ขวา: ปุ่มค้นหา, ปุ่มตัวกรอง, ปุ่มสลับ “รายการ/แผนที่”
-- หน้า “รายการก๊วน”
-  - แถบ “หมวดหมู่กีฬา” (แนวนอนแบบ Chip) + ปุ่ม “+ เพิ่มหมวดหมู่” (แสดงเฉพาะแอดมินก๊วน/ผู้ดูแลระบบ; ผู้ใช้อื่นเห็นปุ่ม “เสนอหมวดหมู่”)
+  - กลาง: ชื่อหน้า "หาเพื่อนออกกำลังกาย" หรือชื่อก๊วน
+  - ขวา: ปุ่มค้นหา (รวมตัวกรองใน dialog เดียว), ปุ่มสลับ "รายการ/แผนที่"
+- หน้า "รายการก๊วน"
+  - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม (เฉพาะ admin `role == 'admin'`; ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้) — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
   - รายการก๊วน (การ์ด): ชื่อก๊วน, กีฬา, วันเวลา/ความถี่, พื้นที่, ระยะทาง, สมาชิกปัจจุบัน, รูปสนาม (thumbnail), badge เพศที่เชิญชวน (ช./ญ./เสรี)
-  - ตัวกรอง: จังหวัด/อำเภอ/รัศมี, เวลา/วัน, เฉพาะก๊วนเปิดรับ
+  - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนเปิดรับ"
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
 - หน้า “แผนที่”
   - แสดง Marker ของก๊วนตามตัวกรอง, คลิก Marker เปิดแผ่นสรุปและนำทางไปหน้ารายละเอียด
@@ -37,7 +38,9 @@
 - ตัวอย่าง: ⚽ ฟุตบอล, 🏀 บาสเกตบอล, 🏸 แบดมินตัน, 🏊 ว่ายน้ำ, 🏃 วิ่ง, 🚴 ปั่นจักรยาน, 🧗 ปีนผา, 🥾 เดินป่า, 🧘 โยคะ, 🥊 มวยไทย, 🎾 เทนนิส, 🏓 ปิงปอง, 🏐 วอลเลย์บอล, 🏋️ เวทเทรนนิ่ง, 🎮 อีสปอร์ต
 - `sports.icon` (TEXT) เก็บ emoji แสดงผลใน: sport chip แถวหมวดหมู่, การ์ดก๊วน, dropdown เลือกกีฬาในหน้าสร้างก๊วน, รายการรออนุมัติ
 - กีฬาที่ผู้ใช้เสนอใหม่ (ไม่มีใน seed): admin ใส่ emoji icon ได้ตอนอนุมัติผ่าน dialog ในหน้า `ReviewProposedSportsPage`
-- ปุ่ม "+ เพิ่มหมวดหมู่": เฉพาะแอดมินก๊วน/ผู้ดูแลระบบสามารถเพิ่มจริง; ผู้ใช้ทั่วไปสามารถ "เสนอหมวดหมู่" เพื่อรออนุมัติ
+- ปุ่ม "+" ทรงกลม: เฉพาะ admin (`role == 'admin'`) เท่านั้น ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้ (`SizedBox.shrink()`); ปุ่มอยู่นอก scroll area ติดขวาของแถบ chip
+- การเรียงลำดับ chip กีฬา: เรียงตามพยัญชนะหลักตัวแรกของชื่อไทยแบบ ascending (ก → ฮ) โดยข้ามสระนำหน้า (เ แ โ ใ ไ) ผ่าน `_thaiFirstConsonantIndex()` และ `_compareThaiAsc()` ใน `fitness_buddies_repository.dart`; chip "ทั้งหมด" เป็นตัวแรกเสมอ (hardcoded ใน UI)
+- **เรียงตามความถี่ใช้งาน (สำหรับผู้ใช้ที่ล็อกอิน):** ประเภทกีฬาที่ผู้ใช้เคยสร้างก๊วนหรือเข้าร่วมก๊วน จะถูกจัดวางซ้ายสุดก่อน เรียงตามความถี่จากมากไปน้อย (ผ่าน `getUserSportFrequency()`) ส่วนประเภทที่ไม่เคยใช้เรียง ก → ฮ ตามหลัง; ผู้ใช้ที่ยังไม่ล็อกอินเรียง ก → ฮ ทั้งหมด
 - Seed migration เป็น idempotent (`NOT EXISTS` + `UPDATE` icon สำหรับกีฬาที่มีอยู่แต่ยังไม่มี icon)
 
 ## กฎการล็อกอินและ Redirect
@@ -121,15 +124,15 @@
 - แผนที่ + การคำนวณระยะทางจากตำแหน่งผู้ใช้ (opt-in; ถ้าไม่อนุญาตแสดงผลเชิงพื้นที่ตามจังหวัดแทน)
 
 ## UX/UI — หน้าสร้างก๊วนกีฬา (Create Group)
-- เส้นทางที่แนะนำ: `/community/find-buddies/create` (เปิดดูได้โดยไม่ล็อกอิน แต่ส่งฟอร์มต้องล็อกอิน)
+- เส้นทางที่ใช้: `/community/find-buddies/group/create` (เปิดดูได้โดยไม่ล็อกอิน แต่ส่งฟอร์มต้องล็อกอิน)
 
 - โครงร่างหน้า
   - AppBar: ใช้ `tlz_app_top_bar.dart` ชื่อหน้า “สร้างก๊วนกีฬา” ปุ่มซ้าย Back
   - ปุ่มหลัก: “สร้างก๊วน” ตรึงล่าง (enabled เมื่อกรอกครบขั้นต่ำ)
 
 - องค์ประกอบฟอร์ม (บนลงล่าง)
-  - ชื่อกีฬา: แถว Chip แนวนอนของหมวดยอดฮิต + ปุ่ม “+ เพิ่มหมวดหมู่” (เฉพาะแอดมิน/ผู้ดูแลระบบ); ผู้ใช้ทั่วไปมีปุ่ม “เสนอหมวดหมู่”
-  - ชื่อก๊วน: TextField บังคับกรอก 3–60 ตัวอักษร
+  - กีฬา: DropdownMenu อยู่ก่อน "ชื่อก๊วน" จัดกึ่งกลาง หน้ากว้าง 50% ของจอ เมนูสูงไม่เกิน 50% ของจอ; ระหว่างโหลดรายการกีฬา แสดง CircularProgressIndicator ภายในช่อง; เรียงลำดับกีฬาตามความถี่การใช้งานของผู้ใช้ (desc) แล้วตามพยัญชนะไทย (ก → ฮ); ถ้าเข้าหน้านี้จากหน้า "หาเพื่อนฯ" พร้อมเลือกหมวดไว้ ให้ default เป็นกีฬานั้น (อ่านจาก args `{ sportId }`)
+  - ชื่อก๊วน: TextField บังคับกรอก สูงสุด 60 ตัวอักษร
   - **ภาพถ่ายสนาม:** ปุ่ม “เพิ่มรูปสนาม” เปิด image picker (กล้อง/คลังภาพ) อัปโหลดไป Supabase Storage bucket `fitness-group-venues` (public read, insert/update เฉพาะ owner/admin ของก๊วน) แล้วบันทึก URL ลง `fitness_groups.venue_photo_url` (ไม่บังคับ, แสดง preview thumbnail หลังอัปโหลดสำเร็จ) — แยกจากภาพปกก๊วน (`cover_image_url`)
   - **เพศที่ต้องการชวนเข้าร่วม:** แถวปุ่มเลือกแบบ segmented/Chip 3 ตัวเลือก “ช.” (ชาย), “ญ.” (หญิง), “เสรี” (ไม่จำกัด — ค่าเริ่มต้นที่เลือกไว้) บันทึกลง `fitness_groups.gender_preference` (`'male'|'female'|'any'`) — ใช้เป็นข้อมูลแสดงผลในรายการ/รายละเอียดก๊วนเพื่อให้ผู้เข้าชมทราบกลุ่มเป้าหมาย ไม่ใช่การบังคับกรองสิทธิ์เข้าร่วมระดับ DB/RLS ในรอบแรก
   - สถานที่ + แผนที่: การ์ดแผนที่พร้อมพิน (draggable) ปุ่ม “ค้นหาสถานที่”, “ใช้ตำแหน่งฉัน”, “ปักหมุด” แสดงชื่อสถานที่/ที่อยู่สรุป และลิงก์ “เปิดใน Google Maps”
@@ -152,8 +155,12 @@ Scaffold
   appBar: TLZAppTopBar(title: 'สร้างก๊วนกีฬา')
   body: SafeArea(
     child: ListView(children: [
-      SportChipsRow(...),
-      TextField(label: 'ชื่อก๊วน'),
+      Center(
+        child: SizedBox(width: 0.5 * screenWidth,
+          child: DropdownMenu(label: 'กีฬา')
+        )
+      ),
+      TextField(label: 'ชื่อก๊วน (สูงสุด 60 ตัวอักษร)'),
       VenuePhotoPicker(...),
       GenderPreferenceChips(...),
       MapCard(...),
@@ -321,6 +328,25 @@ Scaffold
 - Booking `pending` ที่ค้างเกิน 24 ชั่วโมงหรือใกล้เวลาเริ่ม session 1 ชั่วโมง ถูก auto-reject โดยระบบ
 - ข้อเสนอหมวดกีฬาใหม่ (`sports.status='pending'`) ปรากฏในรายการรออนุมัติของผู้ดูแลระบบ และ admin สามารถกำหนด emoji icon ได้ตอนอนุมัติ
 - `sports.icon` แสดงผลใน sport chip, การ์ดก๊วน, dropdown สร้างก๊วน, และรายการรออนุมัติ
+
+## บันทึกปัญหาและวิธีแก้ไขระหว่าทดสอบ (Troubleshooting Notes)
+
+### 1. 42501 `new row violates row-level security policy for table "fitness_groups"`
+- สาเหตุ: Migration `20260803111500_fitness_buddies_schema.sql` เปิด RLS และสร้างแค่ SELECT policy (`..._select_all`) แต่ไม่มี INSERT/UPDATE/DELETE policy; ทำให้ `INSERT` ล้มเหลว
+- วิธีแก้: สร้าง `supabase/migrations/20260806120000_fitness_buddies_rls_writes.sql` เพิ่ม `FOR ALL USING (true) WITH CHECK (true)` ให้ `sports`, `fitness_groups`, `fitness_group_sessions`, `fitness_group_members`, `fitness_group_bookings`, `fitness_group_blocklist`, `chat_rooms` พร้อม `NOTIFY pgrst, 'reload schema'`
+- หลักการ: โปรเจกต์ไม่ใช้ Supabase Auth จึงใช้ App-Layer enforcement แบบ Phase 1
+
+### 2. 42703 `column "room_ref_id" of relation "chat_rooms" does not exist`
+- สาเหตุ: Migration `20260803111500_fitness_buddies_schema.sql` เพิ่ม `room_type`/`room_ref_id` ภายใน `DO $$ IF NOT EXISTS (room_type ...)` ซึ่งตรวจเฉพาะ `room_type`; แต่ `room_type` มีอยู่แล้วจาก migration แชทเก่า (`20260513133000_chat_consultation_phase_1.sql`) ทำให้ `room_ref_id` ไม่ถูกสร้าง
+- นอกจากนี้ `chat_rooms.id` เป็น `TEXT` ส่วน `fitness_groups.id` เป็น `UUID`; trigger เดิมสร้าง id ไม่สอดคล้องกับชนิดข้อมูล
+- วิธีแก้:
+  - `supabase/migrations/20260806121500_fix_chat_rooms_room_ref_id.sql` เพิ่ม `room_ref_id UUID` และ index
+  - `supabase/migrations/20260806122500_update_create_fitness_group_side_effects.sql` ปรับ trigger ให้ `v_room_id := 'group_' || NEW.id::text` แล้ว INSERT `chat_rooms(id, room_type='fitness_group', room_ref_id=NEW.id)`
+
+### ข้อควรระวังเพื่อป้องกันการเกิดซ้ำ
+- หลีกเลี่ยงการเพิ่มหลายคอลัมน์ภายใต้เงื่อนไข `IF NOT EXISTS` เดียว; ให้ใช้ `ADD COLUMN IF NOT EXISTS` แยกคอลัมน์หรือตรวจเงื่อนไขเฉพาะคอลัมน์นั้น
+- ตรวจชนิดข้อมูลของ `chat_rooms.id` ทุกครั้งที่สร้าง/อ้างอิง (TEXT) เนื่องจากไม่ใช่ UUID
+- หลัง apply migration ให้ `NOTIFY pgrst, 'reload schema'` เพื่อ PostgREST โหลด schema cache ใหม่
 
 ## คำถามเปิด (เพื่อจัดลำดับรายละเอียด)
 - กติกา moderation สำหรับก๊วนที่สร้างใหม่ (รายงาน/ปิดก๊วน/อัปเกรดเป็นแอดมิน)
