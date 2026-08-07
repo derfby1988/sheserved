@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -13,6 +14,7 @@ import '../../data/models/health_data_change_log.dart';
 import '../../data/repositories/health_repository.dart';
 import '../widgets/health_history_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../providers/health_provider.dart';
 
 /// Health Page - Health Dashboard
@@ -29,6 +31,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
   int _selectedTabIndex = 0;
   ConsumerProfile? _profile;
   bool _isLoadingProfile = false;
+  bool _isNavBarVisible = true;
 
   late AnimationController _scoreController;
   late Animation<double> _scoreAnimation;
@@ -626,6 +629,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
 
     return Scaffold(
       backgroundColor: Colors.white, // พื้นหลังสีขาว
+      extendBody: true,
       drawer: const TlzDrawer(),
       body: Stack(
         children: [
@@ -645,6 +649,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
           // Layer 2: Content
           Positioned.fill(
             child: SafeArea(
+              bottom: false,
               child: Column(
                 children: [
                   // Top Navigation Bar - อยู่กับที่
@@ -657,63 +662,81 @@ class _HealthPageState extends ConsumerState<HealthPage>
 
                   // Content Section - Make it scrollable and center components
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: constraints.maxHeight,
-                            ),
-                            child: IntrinsicHeight(
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 16),
-
-                                  // Connected Devices Section
-                                  _isLoadingProfile
-                                      ? _buildShimmerDevicesSection(context)
-                                      : _buildConnectedDevicesSection(
-                                          context,
-                                          healthState,
-                                        ),
-
-                                  // Dynamic Spacer to push Health Score to center of remaining space
-                                  const Spacer(),
-
-                                  // Health Score Section
-                                  _isLoadingProfile
-                                      ? _buildShimmerScoreSection(context)
-                                      : _buildHealthScoreSection(
-                                          context,
-                                          healthState,
-                                        ),
-
-                                  // Dynamic Spacer at bottom to keep it centered
-                                  const Spacer(),
-
-                                  const SizedBox(height: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
+                    child: NotificationListener<UserScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.direction == ScrollDirection.reverse) {
+                          if (_isNavBarVisible) {
+                            setState(() => _isNavBarVisible = false);
+                          }
+                        } else if (notification.direction == ScrollDirection.forward) {
+                          if (!_isNavBarVisible) {
+                            setState(() => _isNavBarVisible = true);
+                          }
+                        }
+                        return false;
                       },
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Column(
+                          children: [
+                          const SizedBox(height: 16),
+
+                          // Connected Devices Section
+                          _isLoadingProfile
+                              ? _buildShimmerDevicesSection(context)
+                              : _buildConnectedDevicesSection(
+                                  context,
+                                  healthState,
+                                ),
+
+                          const SizedBox(height: 24),
+
+                          // Health Score Section
+                          _isLoadingProfile
+                              ? _buildShimmerScoreSection(context)
+                              : _buildHealthScoreSection(
+                                  context,
+                                  healthState,
+                                ),
+
+                          const SizedBox(height: 24),
+
+                          // Bottom Tabs - ใน scroll
+                          Container(
+                            color: Colors.white,
+                            child: _buildBottomTabs(context),
+                          ),
+
+                          const SizedBox(height: 120),
+                        ],
+                      ),
+                    ),
                     ),
                   ),
-
-                  // Bottom Tabs - อยู่กับที่ (ไม่ scroll)
-                  Container(
-                    color: Colors.white,
-                    child: _buildBottomTabs(context),
-                  ),
-
-                  const SizedBox(height: 16),
                 ],
               ),
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: TlzBottomNavigationBar(
+        isVisible: _isNavBarVisible,
+        currentIndex: -1,
+        onIndexChanged: (index) {
+          if (index == 2) return;
+          Navigator.pushReplacementNamed(
+            context,
+            '/main-app',
+            arguments: {'index': index},
+          );
+        },
+        onAddPressed: () async {
+          if (AuthService.instance.currentUser == null) {
+            Navigator.pushNamed(context, '/login', arguments: '/emergency-live');
+            return;
+          }
+          Navigator.pushNamed(context, '/emergency-live');
+        },
       ),
     );
   }
@@ -874,10 +897,24 @@ class _HealthPageState extends ConsumerState<HealthPage>
                         ),
                       ],
                     ),
-                    child: Icon(
-                      Icons.person,
-                      size: 32,
-                      color: AppColors.textHint,
+                    child: ClipOval(
+                      child: (AuthService.instance.currentUser?.profileImageUrl?.isNotEmpty ?? false)
+                          ? Image.network(
+                              AuthService.instance.currentUser!.profileImageUrl!,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Icon(
+                                Icons.person,
+                                size: 32,
+                                color: AppColors.textHint,
+                              ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: 32,
+                              color: AppColors.textHint,
+                            ),
                     ),
                   ),
                 ),
@@ -1830,7 +1867,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
     return GestureDetector(
       onTap: () {
         if (index == 3) {
-          Navigator.pushNamed(context, '/health/article');
+          Navigator.pushNamed(context, '/articles', arguments: 'แนะนำ');
         } else {
           setState(() {
             _selectedTabIndex = index;

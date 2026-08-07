@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
@@ -9,6 +10,7 @@ import '../../../../services/auth_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../shared/widgets/tlz_drawer.dart';
 import '../../../../shared/widgets/tlz_app_top_bar.dart';
+import '../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../health/data/models/health_article_models.dart';
 import '../../../health/presentation/pages/health_article_page.dart';
 import '../../../pharmacy/data/models/medication_models.dart';
@@ -64,6 +66,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
   final ImagePicker _picker = ImagePicker();
   String _selectedFilter = 'ล่าสุด';
   String _searchQuery = '';
+  bool _isNavBarVisible = true;
   final List<String> _filters = ['ล่าสุด', 'ยอดนิยม', 'แนะนำ'];
 
   final List<HealthArticle> _articles = [];
@@ -293,6 +296,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor: _bgPage,
+        extendBody: true,
         drawer: const TlzDrawer(),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
@@ -316,8 +320,21 @@ class _ArticlesPageState extends State<ArticlesPage> {
               child: RefreshIndicator(
                 onRefresh: _loadInitialArticles,
                 color: _blue,
-                child: CustomScrollView(
-                  controller: _scrollController,
+                child: NotificationListener<UserScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification.direction == ScrollDirection.reverse) {
+                      if (_isNavBarVisible) {
+                        setState(() => _isNavBarVisible = false);
+                      }
+                    } else if (notification.direction == ScrollDirection.forward) {
+                      if (!_isNavBarVisible) {
+                        setState(() => _isNavBarVisible = true);
+                      }
+                    }
+                    return false;
+                  },
+                  child: CustomScrollView(
+                    controller: _scrollController,
                   slivers: [
                     // Page Title
                     SliverToBoxAdapter(child: _buildPageHeader(context)),
@@ -348,12 +365,32 @@ class _ArticlesPageState extends State<ArticlesPage> {
                       ),
 
                     // Bottom spacing
-                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
                   ],
+                ),
                 ),
               ),
             ),
           ],
+        ),
+        bottomNavigationBar: TlzBottomNavigationBar(
+          isVisible: _isNavBarVisible,
+          currentIndex: -1,
+          onIndexChanged: (index) {
+            if (index == 2) return;
+            Navigator.pushReplacementNamed(
+              context,
+              '/main-app',
+              arguments: {'index': index},
+            );
+          },
+          onAddPressed: () async {
+            if (AuthService.instance.currentUser == null) {
+              Navigator.pushNamed(context, '/login', arguments: '/emergency-live');
+              return;
+            }
+            Navigator.pushNamed(context, '/emergency-live');
+          },
         ),
       ),
     );
@@ -1762,20 +1799,46 @@ class _ArticlesPageState extends State<ArticlesPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'บทความเพื่อสุขภาพ',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E293B), // Dark text for white bg
-              letterSpacing: -0.5,
-            ),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _bgPage,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back,
+                    color: Color(0xFF1E293B),
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: const Text(
+                    'บทความเพื่อสุขภาพ',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B), // Dark text for white bg
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+              ),
+           
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'รวบรวมสาระดีๆ จากผู้เชี่ยวชาญเพื่อคุณ',
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-          ),
+         
+ 
         ],
       ),
     );
