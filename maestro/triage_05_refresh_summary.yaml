@@ -1,0 +1,68 @@
+# ═══════════════════════════════════════════════════════════
+# Triage System E2E Test — Scenario 5: รีเฟรชและตรวจสอบ Summary
+# ขั้นตอน: login → เปิด Triage Sheet → ตรวจสอบ summary bar → กดรีเฟรช → ตรวจสอบ
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+---
+# Step 1: Login
+- runFlow:
+    file: triage_test_login.yaml
+
+# Step 2: รอหน้าหลัก
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: เปิด Triage Sheet
+- extendedWaitUntil:
+    visible: ".*(คัดแยก|Triage|ผู้ป่วย).*"
+    timeout: 10000
+- tapOn: ".*คัดแยก.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 4: รอรายชื่อโหลด
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 5: ตรวจสอบว่ามีปุ่มรีเฟรช (ไอคอน refresh)
+- extendedWaitUntil:
+    visible: "รีเฟรช"
+    timeout: 5000
+
+# Step 6: กดปุ่มรีเฟรช
+- tapOn: "รีเฟรช"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 7: ตรวจสอบว่า Triage Sheet ยังแสดงอยู่
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 8: ตรวจสอบ summary bar — ถ้ามีผู้ป่วยจะแสดง chip สรุป
+# ตรวจสอบ "รวม" chip ที่แสดงจำนวนรวม
+- runFlow:
+    when:
+      notVisible: "ยังไม่มีรายชื่อผู้ป่วย"
+    commands:
+      - extendedWaitUntil:
+          visible: ".*รวม.*"
+          timeout: 5000
+
+# Step 9: ปิด Triage Sheet โดย swipe ลง
+- swipe:
+    start: "50%, 80%"
+    end: "50%, 95%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 10: ตรวจสอบว่า Triage Sheet ปิด
+- extendedWaitUntil:
+    notVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+    timeout: 5000

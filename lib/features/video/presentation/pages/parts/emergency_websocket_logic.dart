@@ -199,6 +199,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     if (_currentVideoId != null) {
       _subscribeToVideoEvents(_currentVideoId!);
+      _refreshTriageBadge();
     }
 
     _emergencySub?.cancel();
@@ -302,6 +303,44 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
         _handleEmergencyHealthReleased(payload);
       }
     });
+
+    // ✅ Triage System — victim real-time events
+    ws.socket?.on('victim-inserted', (data) {
+      if (!mounted || _currentVideoId == null) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        setState(() => _triageBadgeCount++);
+      }
+    });
+
+    ws.socket?.on('victim-triage-updated', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        // Refresh triage summary badge
+        _refreshTriageBadge();
+      }
+    });
+
+    ws.socket?.on('victim-deleted', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        setState(() {
+          if (_triageBadgeCount > 0) _triageBadgeCount--;
+        });
+      }
+    });
+  }
+
+  Future<void> _refreshTriageBadge() async {
+    if (_currentVideoId == null) return;
+    try {
+      final summary = await _victimRepository.getTriageSummary(_currentVideoId!);
+      if (mounted) {
+        setState(() => _triageBadgeCount = summary.total);
+      }
+    } catch (_) {}
   }
 
   void _subscribeToVideoEvents(String videoId) {

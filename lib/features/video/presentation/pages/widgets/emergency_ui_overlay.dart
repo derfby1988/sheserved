@@ -25,6 +25,8 @@ class EmergencyUiOverlay extends StatelessWidget {
   final VoidCallback onToggleChat;
   final VoidCallback onDeclineRescue;
   final bool isChatVisible;
+  final int triageBadgeCount;
+  final VoidCallback? onTriageTabSelected;
 
   const EmergencyUiOverlay({
     super.key,
@@ -46,6 +48,8 @@ class EmergencyUiOverlay extends StatelessWidget {
     required this.onToggleChat,
     required this.onDeclineRescue,
     this.isChatVisible = false,
+    this.triageBadgeCount = 0,
+    this.onTriageTabSelected,
   });
 
   @override
@@ -104,6 +108,8 @@ class EmergencyUiOverlay extends StatelessWidget {
                     isEligibleResponder: isEligibleResponder,
                     isThaiMhungReporting: isThaiMhungReporting,
                     showEmergency: hasVideo,
+                    triageBadgeCount: triageBadgeCount,
+                    onTriageTabSelected: onTriageTabSelected,
                   ),
                   if (!hasVideo && selectedTab == 0) ...[
                     const SizedBox(height: 48),

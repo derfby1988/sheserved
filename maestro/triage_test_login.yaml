@@ -1,0 +1,72 @@
+# Login subflow สำหรับ Triage System Test
+# ใช้ derfby / 123456
+# ถูกเรียกโดย runFlow จากไฟล์ทดสอบหลัก
+
+appId: com.sheserved.app
+---
+# เปิดแอป (ไม่ใช้ clearState เพื่อหลีกเลี่ยง ANR)
+- launchApp:
+    appId: com.sheserved.app
+
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# รอหน้า consumer home โหลด
+- extendedWaitUntil:
+    visible: "ค้นหายา ร้านยา หมอ..."
+    timeout: 30000
+
+# เปิด drawer โดยกด hamburger icon (ซ้ายบน)
+- tapOn:
+    point: "51,88"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# รอตัวเลือก login ใน drawer
+- extendedWaitUntil:
+    visible: "ลงชื่อเข้าใช้"
+    timeout: 5000
+
+# ปิด drawer โดยกดปุ่ม X (ขวาบน) — trigger navigation ไปหน้า login
+- tapOn:
+    point: "375,91"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# ตรวจสอบหน้า login ปรากฏ
+- assertVisible: "ยินดีต้อนรับ!"
+
+# กรอกชื่อผู้ใช้
+- tapOn:
+    text: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "apisek"
+
+# ปิด keyboard เพื่อเข้าถึงช่องรหัสผ่าน
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# กรอกรหัสผ่าน
+- tapOn:
+    point: "400,914"
+- waitForAnimationToEnd:
+    timeout: 1000
+- inputText: "123456"
+
+# ปิด keyboard
+- pressKey: Back
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# กดปุ่มเข้าสู่ระบบ
+- tapOn: "เข้าสู่ระบบ"
+
+# รอหน้าหลักโหลดหลัง login (snackbar หายไวเกิน ใช้หน้าหลักแทน)
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 5000

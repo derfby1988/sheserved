@@ -2657,7 +2657,7 @@ const VIDEO_LOCAL_ONLY_COLUMNS = new Set([
 
 | # | หัวข้อ | ข้อสรุป |
 |:--|:---|:---|
-| 1 | Entry Point | **แทนที่** `RelationshipViewWidget` เดิมด้วย Triage Bottom Sheet ครึ่งจอ (กดจากปุ่ม "เกี่ยวดอง") |
+| 1 | Entry Point | **แทนที่** `RelationshipViewWidget` เดิมด้วย Triage Bottom Sheet ครึ่งจอ (กดจากปุ่ม "เกี่ยวดอง") — **ผู้ใช้ทุกคนเห็นปุ่มและเปิด Sheet ได้** ส่วนสิทธิ์การกระทำภายใน (ระบุสี/ลบ/dispute) ควบคุมโดย Backend ตาม Permission Matrix (12.4) |
 | 2 | Cardinality | 1 incident : N victims — **ทุกคนแจ้งชื่อได้** |
 | 3 | สิทธิลบ/ปฏิเสธความถูกต้อง | **เฉพาะทีมจิตอาสาที่เข้าช่วยเหลือ** เท่านั้น |
 | 4 | ชื่อย่อ | `prefix + พยัญชนะตัวแรก` (ไทย: `นาย ก` / อังกฤษ: `Mr. J`) — mask ที่ **Backend** |
@@ -2888,6 +2888,11 @@ CREATE TABLE incident_victims (
     health_data_consent_verified BOOLEAN NOT NULL DEFAULT FALSE,
     health_data_unlocked_at      TIMESTAMPTZ,
 
+    -- ── Retention Countdown (ปิดข้อ 12.13 #12 — ข้อมูลค้างในระบบ) ──
+    -- เริ่มนับเมื่อเหตุการณ์จบ ไม่ใช่ตอนสร้าง record เพื่อไม่ให้ตัดข้อมูลระหว่างเหตุการณ์ยังดำเนินอยู่
+    -- ครอบคลุมทั้ง record ที่ยังไม่ถูกประเมิน (white/triaged_at IS NULL — รวมชื่อที่ถูกแจ้งมั่ว) และที่ถูกประเมินแล้ว
+    retention_countdown_started_at TIMESTAMPTZ,
+
     is_synced         BOOLEAN NOT NULL DEFAULT FALSE,  -- สำหรับ Cloud Sync
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -2899,6 +2904,9 @@ CREATE INDEX idx_victims_deceased      ON incident_victims(incident_id)
     WHERE is_deleted = FALSE AND triage_level = 'deceased';
 CREATE INDEX idx_victims_sync          ON incident_victims(is_synced) WHERE is_synced = FALSE;
 CREATE INDEX idx_victims_linked_user   ON incident_victims(linked_user_id) WHERE linked_user_id IS NOT NULL;
+-- ใช้โดย anonymize cron job (12.16) เพื่อหา record ที่ครบกำหนดลบ
+CREATE INDEX idx_victims_retention     ON incident_victims(retention_countdown_started_at)
+    WHERE is_deleted = FALSE AND retention_countdown_started_at IS NOT NULL;
 
 -- ป้องกันแจ้งชื่อซ้ำในเหตุการณ์เดียวกัน (เฉพาะที่กรอกชื่อจริง)
 CREATE UNIQUE INDEX idx_victims_no_dup
@@ -2949,6 +2957,36 @@ ALTER TABLE incident_victim_triage_logs DISABLE ROW LEVEL SECURITY;
 
 > **Last-write-wins + History**: ทุกครั้งที่เปลี่ยนสี ระบบ `INSERT` log ใหม่เสมอ ไม่ทับของเดิม → ตรวจสอบย้อนหลังได้ว่าใครเปลี่ยนอะไรเมื่อไร (สำคัญมากหากเกิดข้อพิพาททางกฎหมาย)
 
+#### 12.3.4 ตาราง Audit Logs
+
+```sql
+-- บันทึก consent ตอนแจ้งชื่อ (PDPA)
+CREATE TABLE victim_report_consent_logs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    victim_id       UUID NOT NULL REFERENCES incident_victims(id) ON DELETE CASCADE,
+    reported_by     UUID NOT NULL REFERENCES users(id),
+    consented       BOOLEAN NOT NULL DEFAULT TRUE,
+    ip_address      INET,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_victim_consent_victim ON victim_report_consent_logs(victim_id, created_at DESC);
+ALTER TABLE victim_report_consent_logs DISABLE ROW LEVEL SECURITY;
+
+-- บันทึกทุกครั้งทีเปิดดูข้อมูลสุขภาพ (12.10)
+CREATE TABLE health_data_access_logs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    victim_id       UUID NOT NULL REFERENCES incident_victims(id) ON DELETE CASCADE,
+    accessed_by     UUID NOT NULL REFERENCES users(id),
+    session_id      UUID,  -- emergency_health_release_sessions.id (ถ้ามี)
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_health_access_victim ON health_data_access_logs(victim_id, created_at DESC);
+CREATE INDEX idx_health_access_user   ON health_data_access_logs(accessed_by, created_at DESC);
+ALTER TABLE health_data_access_logs DISABLE ROW LEVEL SECURITY;
+```
+
 #### 12.3.3 Cloud Sync Schema
 
 > **⚠️ บทเรียนจาก Section 11 (Local-to-Cloud Sync)**: ต้องกำหนด local-only columns ตั้งแต่แรก มิฉะนั้น sync จะพัง
@@ -2974,7 +3012,7 @@ const VICTIM_LOCAL_ONLY_COLUMNS = new Set([
 -- ทางเลือก C: เข้ารหัสก่อน sync
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- Cloud เก็บเป็น BYTEA แทน VARCHAR
-first_name_enc  BYTEA,   -- pgp_sym_encrypt(first_name, current_setting('app.victim_key'))
+first_name_enc  BYTEA,   -- pgp_sym_encrypt(first_name, $2) เมื่อ sync; $2 มาจาก process.env.VICTIM_NAME_ENC_KEY
 last_name_enc   BYTEA,
 masked_name     VARCHAR(120) NOT NULL,  -- ตัวนี้ plaintext ได้ ไม่ระบุตัวตน
 ```
@@ -3004,22 +3042,31 @@ masked_name     VARCHAR(120) NOT NULL,  -- ตัวนี้ plaintext ได�
 
 **ฟังก์ชันตรวจสิทธิ์ฝั่ง Backend:**
 
+> **⚠️ แก้ไข 2026-08-09 — ปิด conflict กับ `01_broken_object_level_authorization.md` (O1: เชื่อ userId จาก request โดยไม่ verify)**
+> ห้ามส่ง `userId` ที่มาจาก `req.query`/`req.body`/header ดิบเข้าฟังก์ชันนี้โดยตรง — ต้องผ่าน middleware `verifyToken` + `requireAuth` (มีอยู่แล้วใน `websocket-server/middleware/auth.js`) ก่อนเสมอ ซึ่งจะ verify `x-user-id` กับตาราง `users` จริง (เช็ค `is_active`) แล้วเซ็ต `req.userId` ที่เชื่อถือได้ — **รูปแบบเดียวกับที่ `video.js` ใช้อยู่แล้ว** (`const userId = req.userId` ไม่ใช่จาก `req.body`)
+> Flutter ฝั่ง client ส่ง `x-user-id` จาก `ServiceLocator.instance.currentUser?.id` ตาม `auth_data_guidelines.md` อยู่แล้ว (ดูตัวอย่างใน `watermark_repository.dart`) — chain นี้จึงสอดคล้องกับ interim pattern ที่ทั้งระบบใช้ ไม่ใช่การเชื่อ header แบบ raw
+
 ```javascript
+// websocket-server/routes/victims.js
+// ทุก route ต้องผ่าน requireAuth ก่อนเข้าถึง handler:
+// router.get('/api/incidents/:incidentId/victims', requireAuth, async (req, res) => { ... })
+// router.patch('/api/victims/:victimId/triage', requireAuth, strictRateLimiter, async (req, res) => { ... })
+
 // websocket-server/services/victim-permission-service.js
 async function getVictimPermissions(userId, incidentId) {
+  // userId ต้องเป็น req.userId ที่ผ่าน verifyToken แล้วเท่านั้น — ไม่ใช่ req.query.userId/req.body.userId
   if (!userId) return { canViewFull: false, isResponder: false, isAdmin: false };
 
   const [responderRes, adminRes] = await Promise.all([
     pool.query(
       `SELECT 1 FROM incident_responses
-        WHERE video_id = $1 AND responder_id = $2
+        WHERE video_id = $1 AND volunteer_id = $2
           AND status IN ('accepted','en_route','arrived') LIMIT 1`,
       [incidentId, userId]
     ),
     pool.query(
-      `SELECT 1 FROM users u
-         JOIN professions p ON p.id = u.profession_id
-        WHERE u.id = $1 AND (u.is_admin = TRUE OR u.is_super_admin = TRUE) LIMIT 1`,
+      `SELECT 1 FROM users
+        WHERE id = $1 AND role = 'admin' AND is_active = TRUE LIMIT 1`,
       [userId]
     ),
   ]);
@@ -3086,16 +3133,198 @@ function canEditVictim(victim, perms, userId) {
 
 ### 12.6 API Endpoints (Node.js — `websocket-server/routes/victims.js`)
 
-| Method | Path | สิทธิ์ | คำอธิบาย |
-|:---|:---|:---|:---|
-| `GET` | `/api/incidents/:incidentId/victims` | ทุกคน | รายชื่อ (masked ตามสิทธิ) + สรุปนับแต่ละสี |
-| `POST` | `/api/incidents/:incidentId/victims` | ทุกคน (login แล้ว) | เพิ่มรายชื่อผู้อยู่ในเหตุการณ์ |
-| `PATCH` | `/api/victims/:victimId` | ผู้กรอก (ก่อนระบุสี) / จิตอาสา | แก้ไขชื่อ-สกุล |
-| `PATCH` | `/api/victims/:victimId/triage` | **จิตอาสาเท่านั้น** | กำหนด/เปลี่ยนสีคัดแยก |
-| `POST` | `/api/victims/:victimId/dispute` | **จิตอาสาเท่านั้น** | ปฏิเสธความถูกต้องของชื่อ |
-| `DELETE` | `/api/victims/:victimId` | **จิตอาสาเท่านั้น** | Soft delete (ต้องระบุเหตุผล) |
-| `GET` | `/api/victims/:victimId/history` | จิตอาสา / Admin | ประวัติการเปลี่ยนสี |
-| `GET` | `/api/incidents/:incidentId/triage-summary` | ทุกคน | สรุปนับสำหรับ Map Badge (เบา ไม่มีชื่อเลย) |
+| Method | Path | Middleware | สิทธิ์ | คำอธิบาย |
+|:---|:---|:---|:---|:---|
+| `GET` | `/api/incidents/:incidentId/victims` | `verifyToken` (identity ไม่บังคับ) | ทุกคน | รายชื่อ (masked ตามสิทธิ) + สรุปนับแต่ละสี — ไม่ login ก็ดูชื่อย่อได้ |
+| `POST` | `/api/incidents/:incidentId/victims` | `requireAuth` | ทุกคน (login แล้ว) | เพิ่มรายชื่อผู้อยู่ในเหตุการณ์ |
+| `PATCH` | `/api/victims/:victimId` | `requireAuth` | ผู้กรอก (ก่อนระบุสี) / จิตอาสา | แก้ไขชื่อ-สกุล |
+| `PATCH` | `/api/victims/:victimId/triage` | `requireAuth` + `strictRateLimiter` | **จิตอาสาเท่านั้น** | กำหนด/เปลี่ยนสีคัดแยก |
+| `POST` | `/api/victims/:victimId/dispute` | `requireAuth` | **จิตอาสาเท่านั้น** | ปฏิเสธความถูกต้องของชื่อ |
+| `DELETE` | `/api/victims/:victimId` | `requireAuth` | **จิตอาสาเท่านั้น** | Soft delete (ต้องระบุเหตุผล) |
+| `GET` | `/api/victims/:victimId/history` | `requireAuth` | จิตอาสา / Admin | ประวัติการเปลี่ยนสี |
+| `GET` | `/api/incidents/:incidentId/triage-summary` | ไม่บังคับ login | ทุกคน | สรุปนับสำหรับ Map Badge (เบา ไม่มีชื่อเลย) |
+
+> **⚠️ ทุก route ที่ต้อง login ต้องใส่ `requireAuth` (จาก `middleware/auth.js`) — ห้ามอ่าน `userId` เองจาก `req.body`/`req.query` แล้วส่งเข้า service function ตรงๆ (ปิด O1 ตาม `01_broken_object_level_authorization.md`)**
+
+#### 12.6.1 DB Functions (Atomic Mutation)
+
+ทุก mutation จับคู่กับ API endpoints ด้านบน โดย route handler เรียก DB function เพื่อความ atomic และ audit:
+
+```sql
+-- 1. insert_victim(...) — เรียกจาก POST /api/incidents/:id/victims
+-- คำนวณ masked_name + บันทึก consent log ในธุรกรรมเดียว
+CREATE OR REPLACE FUNCTION insert_victim(
+    p_incident_id UUID,
+    p_prefix      VARCHAR(20),
+    p_first_name  VARCHAR(100),
+    p_last_name   VARCHAR(100),
+    p_masked_name VARCHAR(120),  -- คำนวณโดย utils/victim-name-mask.js ก่อนเรียก
+    p_reported_by UUID,
+    p_consent     BOOLEAN
+) RETURNS incident_victims AS $$
+DECLARE
+    v_limit   INT;
+    v_count   INT;
+    v_victim  incident_victims;
+BEGIN
+    -- ตรวจ Rate Limit (per incident / per reporter)
+    SELECT (value->>'victimReportRateLimitPerIncident')::INT INTO v_limit
+    FROM app_settings WHERE key = 'video_system_config';
+    v_limit := COALESCE(v_limit, 0);
+
+    IF v_limit > 0 THEN
+        SELECT COUNT(*) INTO v_count
+        FROM incident_victims
+        WHERE incident_id = p_incident_id
+          AND reported_by = p_reported_by
+          AND is_deleted = FALSE;
+
+        IF v_count >= v_limit THEN
+            RAISE EXCEPTION 'VICTIM_REPORT_RATE_LIMIT_EXCEEDED';
+        END IF;
+    END IF;
+
+    INSERT INTO incident_victims (
+        incident_id, prefix, first_name, last_name, masked_name,
+        reported_by, verify_status
+    ) VALUES (
+        p_incident_id, p_prefix, p_first_name, p_last_name, p_masked_name,
+        p_reported_by, 'unverified'
+    ) RETURNING * INTO v_victim;
+
+    -- บันทึก consent log
+    INSERT INTO victim_report_consent_logs (victim_id, reported_by, consented)
+    VALUES (v_victim.id, p_reported_by, p_consent);
+
+    RETURN v_victim;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+```sql
+-- 2. dispute_victim(...) — เรียกจาก POST /api/victims/:id/dispute
+CREATE OR REPLACE FUNCTION dispute_victim(
+    p_victim_id UUID,
+    p_disputed_by UUID,
+    p_reason TEXT
+) RETURNS incident_victims AS $$
+DECLARE
+    v_victim incident_victims;
+BEGIN
+    SELECT * INTO v_victim FROM incident_victims
+     WHERE id = p_victim_id AND is_deleted = FALSE
+     FOR UPDATE;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'VICTIM_NOT_FOUND'; END IF;
+
+    IF v_victim.verify_status = 'disputed' THEN
+        RAISE EXCEPTION 'ALREADY_DISPUTED';
+    END IF;
+
+    IF p_reason IS NULL OR char_length(p_reason) < 10 THEN
+        RAISE EXCEPTION 'DISPUTE_REASON_TOO_SHORT';
+    END IF;
+
+    UPDATE incident_victims SET
+        verify_status   = 'disputed',
+        disputed_by     = p_disputed_by,
+        disputed_reason = p_reason,
+        disputed_at     = NOW(),
+        is_synced       = FALSE,
+        updated_at      = NOW()
+     WHERE id = p_victim_id
+    RETURNING * INTO v_victim;
+
+    RETURN v_victim;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+```sql
+-- 3. edit_victim_name(...) — เรียกจาก PATCH /api/victims/:id
+-- จิตอาสาแก้ชื่อหลัง dispute → เปลี่ยน verify_status กลับเป็น 'confirmed' อัตโนมัติ
+CREATE OR REPLACE FUNCTION edit_victim_name(
+    p_victim_id UUID,
+    p_editor_id UUID,
+    p_prefix     VARCHAR(20),
+    p_first_name VARCHAR(100),
+    p_last_name  VARCHAR(100),
+    p_masked_name VARCHAR(120)  -- คำนวณโดย utils/victim-name-mask.js ก่อนเรียก
+) RETURNS incident_victims AS $$
+DECLARE
+    v_victim incident_victims;
+BEGIN
+    SELECT * INTO v_victim FROM incident_victims
+     WHERE id = p_victim_id AND is_deleted = FALSE
+     FOR UPDATE;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'VICTIM_NOT_FOUND'; END IF;
+
+    UPDATE incident_victims SET
+        prefix        = p_prefix,
+        first_name    = p_first_name,
+        last_name     = p_last_name,
+        masked_name   = p_masked_name,
+        verify_status = 'confirmed',
+        is_synced     = FALSE,
+        updated_at    = NOW()
+     WHERE id = p_victim_id
+    RETURNING * INTO v_victim;
+
+    RETURN v_victim;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+```sql
+-- 4. soft_delete_victim(...) — เรียกจาก DELETE /api/victims/:id
+CREATE OR REPLACE FUNCTION soft_delete_victim(
+    p_victim_id UUID,
+    p_deleted_by UUID,
+    p_reason TEXT
+) RETURNS incident_victims AS $$
+DECLARE
+    v_victim incident_victims;
+BEGIN
+    SELECT * INTO v_victim FROM incident_victims
+     WHERE id = p_victim_id AND is_deleted = FALSE
+     FOR UPDATE;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'VICTIM_NOT_FOUND'; END IF;
+
+    IF p_reason IS NULL OR char_length(p_reason) < 10 THEN
+        RAISE EXCEPTION 'DELETE_REASON_TOO_SHORT';
+    END IF;
+
+    UPDATE incident_victims SET
+        is_deleted     = TRUE,
+        deleted_by     = p_deleted_by,
+        deleted_at     = NOW(),
+        deleted_reason = p_reason,
+        is_synced      = FALSE,
+        updated_at     = NOW()
+     WHERE id = p_victim_id
+    RETURNING * INTO v_victim;
+
+    RETURN v_victim;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+```sql
+-- 5. ตัวอย่าง helper SQL สำหรับ permission service
+CREATE OR REPLACE FUNCTION is_victim_responder(p_user_id UUID, p_incident_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM incident_responses
+         WHERE video_id = p_incident_id
+           AND volunteer_id = p_user_id
+           AND status IN ('accepted','en_route','arrived')
+    );
+END;
+$$ LANGUAGE plpgsql;
+```
 
 **ตัวอย่าง Response — `GET /api/incidents/:id/victims` (ผู้ชมทั่วไป):**
 
@@ -3155,8 +3384,10 @@ CREATE OR REPLACE FUNCTION update_victim_triage(
     p_user_id UUID, p_note TEXT
 ) RETURNS incident_victims AS $$
 DECLARE
-    v_old   incident_victims;
-    v_role  VARCHAR(100);
+    v_old        incident_victims;
+    v_role       VARCHAR(100);
+    v_prof_id    UUID;
+    v_prof_cat   VARCHAR(50);
 BEGIN
     SELECT * INTO v_old FROM incident_victims
      WHERE id = p_victim_id AND is_deleted = FALSE
@@ -3164,25 +3395,46 @@ BEGIN
 
     IF NOT FOUND THEN RAISE EXCEPTION 'VICTIM_NOT_FOUND'; END IF;
 
-    SELECT p.name INTO v_role FROM users u
-      LEFT JOIN professions p ON p.id = u.profession_id WHERE u.id = p_user_id;
+    SELECT p.name, p.id, p.category
+      INTO v_role, v_prof_id, v_prof_cat
+      FROM users u
+      LEFT JOIN professions p ON p.id = u.profession_id
+     WHERE u.id = p_user_id;
+
+    -- ⚫ เคสดำ: ต้องเป็น profession category = 'provider' + บังคับเหตุผล ≥ 10 ตัวอักษร
+    IF p_new_level = 'deceased' THEN
+        IF v_prof_cat IS NULL OR v_prof_cat <> 'provider' THEN
+            RAISE EXCEPTION 'DECEASED_REQUIRES_PROVIDER_PROFESSION';
+        END IF;
+        IF COALESCE(p_note, '') = '' OR char_length(p_note) < 10 THEN
+            RAISE EXCEPTION 'DECEASED_REASON_TOO_SHORT';
+        END IF;
+    END IF;
 
     -- Last-write-wins: ทับค่าเดิมเสมอ
     UPDATE incident_victims SET
-        triage_level  = p_new_level,
-        triaged_by    = p_user_id,
-        triaged_at    = NOW(),
-        triage_note   = COALESCE(p_note, triage_note),
-        verify_status = 'confirmed',
-        is_synced     = FALSE,
-        updated_at    = NOW()
+        triage_level                   = p_new_level,
+        triaged_by                     = p_user_id,
+        triaged_at                     = NOW(),
+        triage_note                    = COALESCE(p_note, triage_note),
+        triaged_by_profession_id       = v_prof_id,
+        triaged_by_profession_category = v_prof_cat,
+        verify_status                  = 'confirmed',
+        is_synced                      = FALSE,
+        updated_at                     = NOW(),
+        -- เคสดำ: บันทึกคนยืนยันพร้อมกัน (trigger DB constraint ตรวจอีกชั้น)
+        deceased_confirmed_by          = CASE WHEN p_new_level = 'deceased' THEN p_user_id ELSE deceased_confirmed_by END,
+        deceased_confirmed_at          = CASE WHEN p_new_level = 'deceased' THEN NOW()        ELSE deceased_confirmed_at END,
+        deceased_reason                = CASE WHEN p_new_level = 'deceased' THEN p_note         ELSE deceased_reason END
      WHERE id = p_victim_id;
 
     -- History: INSERT ใหม่เสมอ ไม่ทับ
     INSERT INTO incident_victim_triage_logs
-        (victim_id, incident_id, from_level, to_level, changed_by, changed_by_role, note)
+        (victim_id, incident_id, from_level, to_level, changed_by, changed_by_role,
+         changed_by_profession_id, changed_by_profession_category, note)
     VALUES
-        (p_victim_id, v_old.incident_id, v_old.triage_level, p_new_level, p_user_id, v_role, p_note);
+        (p_victim_id, v_old.incident_id, v_old.triage_level, p_new_level, p_user_id, v_role,
+         v_prof_id, v_prof_cat, p_note);
 
     RETURN (SELECT * FROM incident_victims WHERE id = p_victim_id);
 END;
@@ -3234,14 +3486,17 @@ function broadcastTriageUpdate(io, incidentId, payload, summary) {
 
 #### 12.8.1 Entry Point — แก้ไข `bottom_tabs_widget.dart`
 
-> **⚠️ ปัญหาปัจจุบัน**: ปุ่ม "เกี่ยวดอง" มีเงื่อนไข `!isEligibleResponder` ทำให้ **จิตอาสาที่รับงานแล้วมองไม่เห็นปุ่มนี้** แต่จิตอาสาคือคนที่ต้องใช้ฟีเจอร์นี้มากที่สุด
+> **✅ แก้ไขแล้ว (2026-08-10)**: ปุ่ม "เกี่ยวดอง" มองเห็นได้โดย **ผู้ใช้ทุกคน** (ไม่กรองด้วย `isEligibleResponder`) และเปิด Triage Bottom Sheet แทนที่จะสลับแท็บเต็มจอ ปุ่ม "คัดแยก" แยกต่างหากถูกลบออก เพราะ "เกี่ยวดอง" ทำหน้าที่เป็น entry point เดียว ส่วนสิทธิ์การกระทำ (ระบุสี/ลบ/dispute) ถูกควบคุมในระดับ Backend ตาม Permission Matrix (12.4) ไม่ใช่ควบคุมที่การมองเห็นปุ่ม
 
 ```dart
-// ❌ เดิม — บรรทัด 81 ของ bottom_tabs_widget.dart
-if (!isEligibleResponder && showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
-
-// ✅ ใหม่ — ตัด !isEligibleResponder ออก เพื่อให้จิตอาสาเห็นด้วย
+// ✅ แก้ไขแล้ว — ตัด !isEligibleResponder ออกจากทุกปุ่ม
+// ทุกคนเห็น ไทยมุง / เกี่ยวดอง / แจ้งเหตุ
 if (showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
+
+// เกี่ยวดอง เปิด Triage Sheet แทนสลับแท็บ
+onTap: onTriageTabSelected ?? () => onTabSelected(1)
+
+// ปุ่ม "คัดแยก" แยกต่างหาก — ลบออกแล้ว (รวมเข้ากับเกี่ยวดอง)
 ```
 
 **เปลี่ยนพฤติกรรมจาก Tab เป็น Bottom Sheet:**
@@ -3363,6 +3618,55 @@ void _showTriageSheet() {
 **กรณีเปลี่ยนสีที่คนอื่นเคยประเมินไว้** → แสดงเตือนก่อน:
 > *"นาย ก ถูกประเมินเป็น 🔴 วิกฤต โดย พยาบาลวิชาชีพ เมื่อ 14:32 — การเปลี่ยนของคุณจะแทนที่ค่าเดิม"*
 
+#### 12.8.5 Dialog โต้แย้งความถูกต้องของชื่อ (เฉพาะจิตอาสา)
+
+> **Trigger**: ปัดซ้ายบนการ์ด → กด `[โต้แย้ง]` หรือกดที่ ⚠️ badge บนการ์ดที่ disputed แล้ว (เพื่อโต้แย้งเพิ่ม/แก้ไขเหตุผล)
+> **สิทธิ์**: เฉพาะจิตอาสาที่ `status IN ('accepted','en_route','arrived')` ในเหตุการณ์นั้น
+
+```text
+┌─────────────────────────────────────────┐
+│  ⚠️ โต้แย้งความถูกต้องของชื่อ             │
+├─────────────────────────────────────────┤
+│  ชื่อที่แจ้ง:  นาย สมชาย ใจดี            │  ← แสดงชื่อเต็ม (จิตอาสาเห็น)
+│  แจ้งโดย:    ผู้ใช้ทั่วไป · 14:28       │
+├─────────────────────────────────────────┤
+│  เหตุผลที่โต้แย้ง (บังคับ ≥ 10 อักขระ)    │
+│  ┌─────────────────────────────────┐    │
+│  │ ชื่อ-สกุล ไม่ตรงกับบัตรประชาชน     │    │
+│  │ ของผู้ประสบเหตุ ตัวจริงชื่อ...    │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+│  ℹ️ การโต้แย้งจะ:                        │
+│     • ทำเครื่องหมาย ⚠️ บนการ์ด         │
+│     • แจ้งเตือนทุกคนในห้อง              │
+│     • ชื่อยังคงแสดง แต่มีสถานะ disputed │
+│     • จิตอาสาสามารถแก้ไขชื่อได้หลัง     │
+│       โต้แย้ง (แก้ไข → verify: confirmed)│
+│                                         │
+│        [ยกเลิก]      [โต้แย้ง]           │
+└─────────────────────────────────────────┘
+```
+
+**หลังโต้แย้งแล้ว (Post-Dispute Flow):**
+
+```text
+โต้แย้ง (verify_status = 'disputed')
+     │
+     ├── จิตอาสาคนเดิม/คนอื่น → กด [แก้ไขชื่อ]
+     │   → PATCH /api/victims/:id (first_name, last_name)
+     │   → verify_status กลับเป็น 'confirmed' (อัตโนมัติ)
+     │   → WebSocket: victim-name-updated + victim-disputed(resolved)
+     │
+     ├── จิตอาสา → กด [ลบ] (ถ้าชื่อเป็นคนละคน/ไม่เกี่ยวข้อง)
+     │   → DELETE /api/victims/:id (soft delete + reason)
+     │
+     └── ไม่มีใครแก้ → ค้างเป็น disputed
+         → ไม่ถูกลบโดย retention anonymizer (ยกเว้นเคสดำ)
+         → รอจิตอาสาตัดสินใจ
+```
+
+> **สำคัญ**: เมื่อจิตอาสาแก้ไขชื่อหลังโต้แย้ง → `verify_status` เปลี่ยนกลับเป็น `confirmed` อัตโนมัติ (เพราะจิตอาสายืนยันว่าชื่อใหม่ถูกต้องแล้ว) ไม่ต้องมีปุ่มยืนยันแยก
+
 ---
 
 ### 12.9 Map Badge — สรุปสถานะเหนือหมุดเหตุการณ์
@@ -3446,9 +3750,11 @@ Future<BitmapDescriptor> buildTriageBadgeMarker(TriageSummary s) async {
 #### Database Migrations
 ```
 supabase/migrations/
-├── 20260809xxxxxx_create_incident_victims.sql          (ตารางหลัก + enum + index)
+├── 20260809xxxxxx_create_incident_victims.sql          (ตารางหลัก + enum + index + retention_countdown_started_at)
 ├── 20260809xxxxxx_create_victim_triage_logs.sql        (history)
 ├── 20260809xxxxxx_create_update_victim_triage_fn.sql   (DB function + FOR UPDATE)
+├── 20260809xxxxxx_create_victim_mutation_fns.sql       [ใหม่] insert/dispute/edit/delete functions
+├── 20260809xxxxxx_create_victim_audit_tables.sql       [ใหม่] consent log + health data access log
 └── 20260809xxxxxx_cloud_victims_encrypted.sql          (Cloud schema + pgcrypto)
 ```
 > ต้องรัน migration เดียวกันทั้ง **Local PostgreSQL** และ **Supabase Cloud**
@@ -3456,13 +3762,15 @@ supabase/migrations/
 #### Backend (Node.js)
 ```
 websocket-server/
-├── routes/victims.js                          [ใหม่] REST endpoints ทั้ง 8 ตัว
-├── services/victim-permission-service.js      [ใหม่] getVictimPermissions()
+├── routes/victims.js                          [ใหม่] REST endpoints ทั้ง 8 ตัว — ทุก route ที่ต้อง login ใช้ requireAuth (12.6)
+├── services/victim-permission-service.js      [ใหม่] getVictimPermissions() — รับเฉพาะ req.userId ที่ verify แล้ว
 ├── services/victim-broadcast-service.js       [ใหม่] WebSocket broadcast + masking
 ├── services/victim-health-link-service.js     [ใหม่] ตรวจ 3 เงื่อนไขปลดล็อก
 ├── utils/victim-name-mask.js                  [ใหม่] maskVictimName()
+├── jobs/victim-retention-countdown-starter.js [ใหม่] cron รายชั่วโมง — รัน SQL 3 ชั้นเพื่อเซ็ต `retention_countdown_started_at` (12.16.1)
+├── jobs/victim-retention-anonymizer.js        [ใหม่] cron รายวัน — อ่าน victimRetentionDays แล้วลบ record ที่ครบกำหนด (12.16.1)
 ├── services/sync-service.js                   [แก้]  + syncVictimsToCloud()
-└── server.js                                  [แก้]  + app.use('/api', victimsRouter)
+└── server.js                                  [แก้]  + app.use('/api', victimsRouter) + start ทั้ง 2 victim cron jobs พร้อม graceful shutdown
 ```
 
 #### Flutter
@@ -3483,20 +3791,55 @@ lib/features/video/
 
 ---
 
-### 12.12 Implementation Phases
+### 12.11.1 ⚠️ Pre-Implementation Checklist (ต้องทำก่อนเริ่ม Phase 1)
+
+| # | รายการ | รายละเอียด | เหตุผล |
+|:--|:---|:---|:---|
+| 1 | **Seed `app_settings.video_system_config`** | ต้องมี row `key = 'video_system_config'` พร้อม default JSON `{"victimRetentionDays":0,"victimReportRateLimitPerIncident":0,"incidentRetentionMaxWaitHours":72}` ก่อน deploy migration ที่มี DB function อ่านค่านี้ (`insert_victim`, cron jobs) | ถ้าไม่มี row จะได้ `NULL` และ query `(value->>'x')::INT` อาจ error หรือ fallback ผิดพลาด |
+| 2 | **Implement `utils/victim-name-mask.js` ก่อน DB functions** | ต้องมีฟังก์ชัน `maskVictimName(prefix, firstName, lastName)` ตาม algorithm ใน 12.2 (รองรับชื่อไทย/อังกฤษ + เติมลำดับเมื่อชื่อย่อซ้ำ) เพราะ `insert_victim()`/`edit_victim_name()` รับ `p_masked_name` เป็น parameter จาก Node ไม่ได้คำนวณเองใน SQL | DB function ไม่ได้ implement masking logic เอง — ต้องคำนวณฝั่ง Node ก่อนเรียก |
+| 3 | **เติม Cloud Sync migration ฉบับเต็มก่อน Phase 8** | `12.3.3` มีแค่ตัวอย่าง column (`first_name_enc`, `last_name_enc`) ยังไม่มี `CREATE TABLE` เต็มสำหรับ Cloud — ต้องเขียน migration แยกที่มีคอลัมน์ครบเหมือน Local ยกเว้น `is_synced` (ตาม `VICTIM_LOCAL_ONLY_COLUMNS`) ก่อนรัน `syncVictimsToCloud()` | ถ้าข้าม Phase 8 ในรอบแรกสามารถเลื่อนข้อนี้ไปทำทีหลังได้ |
+
+> **หมายเหตุ**: ถ้ายังไม่ implement Cloud Sync (Phase 8) ในรอบแรก สามารถข้ามข้อ 3 ไปก่อนได้ แต่ข้อ 1-2 **ต้องทำก่อน Phase 1** เพราะ DB function ใน migration แรกพึ่งพาโดยตรง
+
+---
+
+### 12.12 Implementation Phases (จัดเรียงตามลำดับความสำคัญ)
+
+> **หลักการจัดลำดับ**: ระบบนี้เกี่ยวข้องกับความปลอดภัยชีวิต (life-safety) — จึงให้ความสำคัญกับ **แกนหลักที่ใช้งานได้จริงในภาคสนาม (P0)** ก่อน ตามด้วย **การประสานงานแบบ real-time (P1)** จากนั้นจึงเป็น **ส่วนเสริม/compliance (P2)** และปิดท้ายด้วย **การทดสอบยืนยัน (P3)**
+
+#### 🔴 P0 — Critical Path (แกนหลักที่ต้องทำงานได้ก่อนใช้จริงในภาคสนาม)
 
 | Phase | ขอบเขต | ผลลัพธ์ที่ตรวจสอบได้ |
 |:---|:---|:---|
-| **1. Database** | Migration ทั้ง 4 ไฟล์ (Local + Cloud) + DB function | `\d incident_victims` แสดงครบ, เรียก `update_victim_triage()` ได้ |
-| **2. Backend Core** | `victim-name-mask.js` + `victim-permission-service.js` + `routes/victims.js` | `curl` ด้วย user 3 แบบ (viewer/responder/admin) ได้ผลต่างกันถูกต้อง |
-| **3. Backend Realtime** | `victim-broadcast-service.js` + register events | เปิด 2 client ทดสอบ — ทั้งคู่เห็นสีเปลี่ยนพร้อมกัน และ viewer เห็นชื่อย่อ |
-| **4. Flutter Models + Repo** | `triage_models.dart` + `victim_repository.dart` | Unit test parse JSON ทั้ง masked/unmasked |
-| **5. Flutter UI — อ่าน** | `triage_sheet_widget.dart` + `triage_victim_card.dart` + แก้ `bottom_tabs_widget.dart` | กดปุ่มเกี่ยวดอง → Sheet ขึ้นครึ่งจอ แสดงรายชื่อถูกต้อง |
-| **6. Flutter UI — เขียน** | `add_victim_dialog.dart` + `assign_triage_dialog.dart` | Viewer เพิ่มชื่อได้, Responder ระบุสีได้, Viewer ไม่เห็นปุ่มระบุสี |
+| **1. Database** | Migration ทั้งหมด (ตาราง + enum + DB functions + audit tables) | `\d incident_victims` แสดงครบ, เรียก `update_victim_triage()`/`insert_victim()` ได้ |
+| **2. Backend Core** | `victim-name-mask.js` + `victim-permission-service.js` + `routes/victims.js` | `curl` ด้วย user 3 แบบ (viewer/responder/admin) ได้ผลต่างกันถูกต้อง — ปิด PDPA + BOLA |
+| **3. Flutter Models + Repo** | `triage_models.dart` + `victim_repository.dart` | Unit test parse JSON ทั้ง masked/unmasked |
+| **4. Flutter UI — อ่าน** | `triage_sheet_widget.dart` + `triage_victim_card.dart` + แก้ `bottom_tabs_widget.dart` | กดปุ่มเกี่ยวดอง → Sheet ขึ้นครึ่งจอ แสดงรายชื่อถูกต้อง |
+| **5. Flutter UI — เขียน** | `add_victim_dialog.dart` + `assign_triage_dialog.dart` | Viewer เพิ่มชื่อได้, Responder ระบุสีได้, Viewer ไม่เห็นปุ่มระบุสี |
+
+> เมื่อครบ P0 ระบบใช้งานได้จริงในภาคสนามแล้ว (เพิ่มชื่อ/คัดแยกสี/ดูรายชื่อ) แม้ยังไม่มี real-time sync — ผู้ใช้ต้อง refresh เองเพื่อดูข้อมูลล่าสุด
+
+#### 🟠 P1 — Real-time & Field Coordination (สำคัญรองลงมา — ทีมภาคสนามต้องเห็นข้อมูลพร้อมกัน)
+
+| Phase | ขอบเขต | ผลลัพธ์ที่ตรวจสอบได้ |
+|:---|:---|:---|
+| **6. Backend Realtime** | `victim-broadcast-service.js` + register events | เปิด 2 client ทดสอบ — ทั้งคู่เห็นสีเปลี่ยนพร้อมกัน และ viewer เห็นชื่อย่อ |
 | **7. Map Badge** | `triage_badge_marker.dart` + integration | Badge ขึ้นเหนือหมุด + อัปเดต real-time + ไม่ค้าง frame |
+
+#### 🟡 P2 — Compliance & Extended Integration (ทำได้หลัง core ใช้งานได้แล้ว)
+
+| Phase | ขอบเขต | ผลลัพธ์ที่ตรวจสอบได้ |
+|:---|:---|:---|
 | **8. Cloud Sync** | `syncVictimsToCloud()` + pgcrypto | ปิดเน็ต → เพิ่มชื่อ → เปิดเน็ต → ข้อมูลขึ้น Cloud แบบเข้ารหัส |
 | **9. Health Data Link** | `victim-health-link-service.js` + UI ปุ่มดูข้อมูล | ครบ 3 เงื่อนไข → ปุ่มขึ้น, ขาดข้อใดข้อหนึ่ง → ปุ่มไม่ขึ้น |
-| **10. E2E Test** | Maestro flow | ดู 12.14 |
+
+> ทั้งสอง Phase นี้ไม่บล็อกการใช้งานคัดแยกหลัก — เลื่อนไปทำหลัง P0/P1 เสร็จสมบูรณ์ได้โดยไม่กระทบภาคสนาม
+
+#### 🟢 P3 — Validation (ทำคู่ขนานตลอด แต่เป็น gate สุดท้ายก่อน Production)
+
+| Phase | ขอบเขต | ผลลัพธ์ที่ตรวจสอบได้ |
+|:---|:---|:---|
+| **10. E2E Test** | Maestro flow + PDPA Checklist | ดู 12.14 — ต้องผ่านครบก่อนเปิดใช้งานจริง |
 
 ---
 
@@ -3515,14 +3858,20 @@ lib/features/video/
 | 9 | **Map Badge วาด Bitmap ทุก frame** | 🟡 แอปกระตุก | Cache BitmapDescriptor ตาม summary key (12.9) |
 | 10 | **FK ชี้ `auth.users`** | 🔴 บันทึกไม่ได้เลย | ใช้ `REFERENCES users(id)` เสมอ (กฎ Section 11.5) |
 | 11 | **ผู้กรอกลบชื่อตัวเองหลังจิตอาสาประเมินแล้ว** | 🟠 ข้อมูลภาคสนามหาย | Edit Lock บังคับที่ Backend ไม่ใช่แค่ซ่อนปุ่ม (12.5) |
-| 12 | **ข้อมูลผู้ป่วยค้างในระบบหลังเหตุการณ์จบ** | 🟠 เก็บข้อมูลเกินจำเป็น (PDPA) | Retention Policy **อ่านจากตารางจริง** (`app_settings.video_system_config.victimRetentionDays`) — default `0` = ยังไม่กำหนดวัน (ไม่ anonymize) → Admin กำหนดเองที่หน้า Video System Admin (ดู 12.16) |
+| 12 | **ข้อมูลผู้ป่วยค้างในระบบหลังเหตุการณ์จบ (รวมชื่อที่ถูกแจ้งมั่ว/ไม่มีจิตอาสาระบุสี)** | 🟠 เก็บข้อมูลเกินจำเป็น (PDPA) | Retention Countdown เริ่มนับเมื่อ**เหตุการณ์จบ** (ไม่ใช่ตอนสร้าง record) โดยไม่สนว่าถูกประเมินสีแล้วหรือไม่ — อ่านจำนวนวันจากตารางจริง (`app_settings.video_system_config.victimRetentionDays`) แล้วลบทิ้งอัตโนมัติเมื่อครบกำหนด (ดู 12.16) |
 
 ---
 
 ### 12.14 Testing Plan
 
 **Backend (curl / integration):**
+> **หมายเหตุ**: `X-User-Id` ใน curl ด้านล่างต้องเป็น ID ของ user ที่ **มีอยู่จริงและ `is_active = TRUE`** ในตาราง `users` เท่านั้น — เพราะ `verifyToken` middleware จะ query DB จริงเพื่อยืนยันก่อนเซ็ต `req.userId` (เหมือน endpoint อื่นในระบบ) การส่ง ID ปลอมที่ไม่มีในตารางจะได้ `401 Unauthorized` ทันที ไม่ใช่การ "เชื่อ header" ตรงๆ แบบที่ `01_broken_object_level_authorization.md` เตือน
 ```bash
+# 0. ทดสอบว่า verifyToken ปฏิเสธ ID ที่ไม่มีในตาราง users จริง
+curl -H "X-User-Id: 00000000-0000-0000-0000-000000000000" \
+  http://localhost:3000/api/incidents/$INCIDENT_ID/victims
+# คาดหวัง: 401 Unauthorized (ไม่ใช่การเชื่อ header เปล่าๆ)
+
 # 1. Viewer ทั่วไป — ต้องได้ชื่อย่อเท่านั้น
 curl -H "X-User-Id: $VIEWER_ID" \
   http://localhost:3000/api/incidents/$INCIDENT_ID/victims | jq '.victims[0]'
@@ -3539,7 +3888,13 @@ curl -X PATCH -H "X-User-Id: $VIEWER_ID" -H "Content-Type: application/json" \
   http://localhost:3000/api/victims/$VICTIM_ID/triage
 # คาดหวัง: 403 Forbidden
 
-# 4. ตรวจ history หลังเปลี่ยนสี 2 ครั้ง
+# 4. Object-level check (BOLA) — พยายามส่ง userId อื่นทาง body เพื่อสวมรอย ต้องไม่มีผล
+curl -X PATCH -H "X-User-Id: $VIEWER_ID" -H "Content-Type: application/json" \
+  -d '{"userId":"'$ADMIN_ID'","triageLevel":"critical"}' \
+  http://localhost:3000/api/victims/$VICTIM_ID/triage
+# คาดหวัง: 403 Forbidden เหมือนเดิม — พิสูจน์ว่า route ใช้ req.userId ไม่ใช่ req.body.userId
+
+# 5. ตรวจ history หลังเปลี่ยนสี 2 ครั้ง
 psql -c "SELECT from_level, to_level, changed_by_role FROM incident_victim_triage_logs
          WHERE victim_id = '$VICTIM_ID' ORDER BY created_at;"
 # คาดหวัง: 2 แถว
@@ -3591,6 +3946,27 @@ psql -c "SELECT from_level, to_level, changed_by_role FROM incident_victim_triag
 - Sync service เข้ารหัสก่อนส่งขึ้น Cloud (`pgp_sym_encrypt`) — Cloud เก็บ `BYTEA`
 - เพิ่มขั้นตอน rotation ของ key นี้ใน `docs/secure/secret_rotation_runbook.md`
 
+#### 12.15.2 Identity Chain — ความสอดคล้องกับ `auth_data_guidelines.md` (ปิด conflict ทางอ้อม)
+
+> **ปัญหาเดิม**: แผนนี้ระบุแค่ "ตรวจ `userId`" โดยไม่ได้บอกว่า `userId` มาจากไหน ทำให้ดูเหมือนตัดตอนจาก custom AuthService ไปเชื่อ header ตรงๆ ซึ่งขัดกับหลักการของ `auth_data_guidelines.md` (ห้ามใช้ `Supabase.instance.client.auth.currentUser`, ต้องใช้ session จาก custom AuthService เท่านั้น)
+
+**Chain ที่ถูกต้อง (สอดคล้องกับรูปแบบที่ `watermark_repository.dart`/`consultation_repository.dart` ใช้อยู่แล้ว):**
+
+```text
+1. Flutter: ServiceLocator.instance.currentUser?.id
+   (มาจาก custom AuthService session — ไม่ใช่ Supabase.instance.client.auth.currentUser)
+                         ▼
+2. Flutter: ส่ง header 'x-user-id': userId ไปกับทุก request ของ victim_repository.dart
+                         ▼
+3. Backend: verifyToken(pool) middleware — query ตาราง users จริง
+   ตรวจ id มีอยู่จริง + is_active = TRUE → เซ็ต req.userId (เชื่อถือได้)
+                         ▼
+4. Route handler: ใช้ req.userId เท่านั้น (ไม่ใช่ req.body.userId/req.query.userId)
+   → ส่งเข้า getVictimPermissions(req.userId, incidentId)
+```
+
+> **สรุป**: เมื่อ implement ตามข้อ 12.4/12.6 ที่แก้ไขแล้ว (ใช้ `requireAuth` + `req.userId`) แผนนี้จะสอดคล้องกับ `auth_data_guidelines.md` ทันที เพราะ identity ที่ backend เห็นย้อนกลับไปหา custom AuthService session ได้เสมอ ไม่มีจุดใดที่ client ควบคุม `userId` ที่ใช้ authorization ได้โดยตรง
+
 ---
 
 ### 12.16 Admin Configuration — Retention & Rate Limit (ตารางจริง)
@@ -3601,33 +3977,239 @@ psql -c "SELECT from_level, to_level, changed_by_role FROM incident_victim_triag
 
 | Field (JSONB) | หน้าจอ Admin | Default | ความหมายของ `0` |
 |:---|:---|:---:|:---|
-| `victimRetentionDays` | ระยะเก็บชื่อผู้ประสบเหตุ (วัน) | `0` | **ยังไม่กำหนด** — ไม่รัน anonymize job |
+| `victimRetentionDays` | ระยะเก็บชื่อผู้ประสบเหตุหลังเริ่มนับถอยหลัง (วัน) | `0` | **ยังไม่กำหนด** — ไม่รัน anonymize job |
 | `victimReportRateLimitPerIncident` | จำกัดจำนวนการแจ้งชื่อ/คน/เหตุการณ์ | `0` | **ไม่จำกัด** — ข้ามการตรวจ rate limit |
+| `incidentRetentionMaxWaitHours` | รอสูงสุดกี่ชม. ก่อนเริ่มนับถอยหลัง (แม้จิตอาสาไม่ครบ) | `72` | **ไม่จำกัดเวลารอ** — รอจนกว่าจิตอาสาจะครบตามอาชีพที่กำหนด |
 
 ```text
-┌─ Victim & PDPA Controls ──────────────────────┐
-│ ระยะเก็บชื่อผู้ประสบเหตุ (วัน)                │
-│ [ 0                                    ]        │
-│ 0 = ยังไม่กำหนด (ไม่ลบ/anonymize อัตโนมัติ)      │
-├──────────────────────────────────────────────┤
-│ จำกัดการแจ้งชื่อ/คน/เหตุการณ์               │
-│ [ 0                                    ]        │
-│ 0 = ไม่จำกัด                                   │
-└──────────────────────────────────────────────┘
+┌─ Victim & PDPA Controls ──────────────────────────────┐
+│ ระยะเก็บชื่อผู้ประสบเหตุหลังเริ่มนับถอยหลัง (วัน)        │
+│ [ 0                                              ]      │
+│ 0 = ยังไม่กำหนด (ไม่ลบ/anonymize อัตโนมัติ)              │
+├──────────────────────────────────────────────────────┤
+│ จำกัดการแจ้งชื่อ/คน/เหตุการณ์                          │
+│ [ 0                                              ]      │
+│ 0 = ไม่จำกัด                                          │
+├──────────────────────────────────────────────────────┤
+│ รอสูงสุดกี่ชม. ก่อนเริ่มนับถอยหลัง (แม้จิตอาสาไม่ครบ)    │
+│ [ 72                                             ]      │
+│ 0 = รอจนกว่าจิตอาสาจะครบตามอาชีพที่กำหนด                │
+└──────────────────────────────────────────────────────┘
            [ บันทึกการตั้งค่า (Apply Now) ]
 ```
+
+#### 12.16.1 กลไก Retention Countdown — รวมชื่อที่ถูกแจ้งมั่ว/ไม่มีจิตอาสาระบุสี
+
+> **เป้าหมาย**: แม้มีคนแจ้งชื่อมั่วๆ (ไม่ผ่าน rate limit เพราะยังตั้งเป็น `0`, หรือแจ้งจริงแต่ไม่มีจิตอาสาเข้ามาระบุสีให้เลย) ข้อมูลนั้นต้อง**ไม่ค้างอยู่ในระบบตลอดไป** — ต้องเริ่มนับถอยหลังทันทีที่เหตุการณ์พร้อมปิด ไม่ว่าจะถูกประเมินสีหรือไม่
+
+> **แนวทางที่เลือก: ใช้ `donation_categories.volunteer_profession_ids` + `incident_responses` (ใช้ตารางจริงที่มีอยู่แล้ว)**
+> ผู้ใช้สร้าง UI และตารางสำหรับระบุอาชีพที่เข้าร่วมเหตุการณ์แต่ละประเภทไว้แล้ว (`donation_categories.volunteer_profession_ids` — แก้ไขได้ที่หน้า Donation Admin) จึงไม่ต้องเพิ่ม column ใหม่บน `videos`
+> โครงสร้างที่ใช้:
+> - `videos.category_id` → `donation_categories.id` (หมวดหมู่เหตุการณ์)
+> - `donation_categories.volunteer_profession_ids` (TEXT[]) — อาชีพที่กำหนดให้เหตุการณ์ประเภทนี้
+> - `incident_responses.volunteer_id` + `status` IN ('accepted','en_route','arrived') — จิตอาสาที่รับงาน
+> - `user_group_roles.user_id` → `profession_id` — อาชีพของจิตอาสาแต่ละคน
+
+**3 ชั้นการเริ่มนับ (เรียงตามลำดับการทำงาน):**
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ ชั้นที่ 1 (หลัก): จิตอาสาครบตามอาชีพที่กำหนด                  │
+│ เมื่อ: ทุก profession_id ใน volunteer_profession_ids          │
+│       มี ≥1 responder ที่ status IN ('accepted','en_route',  │
+│       'arrived') ใน incident_responses                       │
+│ → SET retention_countdown_started_at = NOW()                │
+├─────────────────────────────────────────────────────────────┤
+│ ชั้นที่ 2 (สำรอง): หมวดหมู่ไม่กำหนดอาชีพ                      │
+│ เมื่อ: volunteer_profession_ids = '{}' (ว่าง)                 │
+│ → เริ่มนับทันทีเมื่อมี responder แรก accept (≥1 คน)            │
+├─────────────────────────────────────────────────────────────┤
+│ ชั้นที่ 3 (สำรองสูงสุด): รอเกิน 72 ชั่วโมง                    │
+│ เมื่อ: NOW() - videos.created_at >= 72 ชม.                   │
+│ → เริ่มนับไม่ว่าจิตอาสาจะครบหรือไม่ (กันข้อมูลค้างตลอดไป)       │
+│ → ค่า 72 ชม. อ่านจาก app_settings.video_system_config       │
+│    .incidentRetentionMaxWaitHours (default 72)              │
+└─────────────────────────────────────────────────────────────┘
+                         ▼
+   Cron job (ทุกชั่วโมง) ตรวจเงื่อนไขข้างต้น:
+   ถ้า retention_countdown_started_at IS NULL และเข้าเงื่อนไข → SET NOW()
+                         ▼
+   Cron job (ทุกวัน) อ่าน victimRetentionDays จาก app_settings:
+      ถ้า victimRetentionDays = 0  → skip (ยังไม่กำหนด)
+      ถ้า victimRetentionDays > 0  →
+        anonymize record ที่ครบกำหนด (null-out PII): SET first_name=NULL, last_name=NULL,
+          masked_name='(ไม่ระบุตัวตน)', disputed_reason=NULL, deleted_reason=NULL
+          WHERE retention_countdown_started_at <= NOW() - (victimRetentionDays || ' days')::interval
+            AND is_deleted = FALSE
+            AND triage_level <> 'deceased'
+            AND verify_status <> 'disputed'
+```
+
+```sql
+-- websocket-server/migrations: ไม่ต้องเพิ่ม column ใหม่บน videos — ใช้ category_id ที่มีอยู่
+-- ต้องเพิ่มเฉพาะ retention_countdown_started_at บน incident_victims (อยู่ใน 12.3.1 แล้ว)
+
+-- Cron job ตรวจเงื่อนไขการเริ่มนับ (รันทุกชั่วโมง):
+-- websocket-server/jobs/victim-retention-countdown-starter.js
+
+-- ตัวอย่าง SQL ที่ cron job รัน:
+-- ชั้นที่ 1: ครบตามอาชีพ
+UPDATE incident_victims v
+SET retention_countdown_started_at = NOW()
+WHERE v.is_deleted = FALSE
+  AND v.retention_countdown_started_at IS NULL
+  AND EXISTS (
+    -- ทุก profession_id ใน volunteer_profession_ids มี ≥1 responder รับแล้ว
+    SELECT 1 FROM videos vid
+    JOIN donation_categories dc ON dc.id::text = vid.category_id::text
+    WHERE vid.id = v.incident_id
+      AND dc.volunteer_profession_ids <> '{}'
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest(dc.volunteer_profession_ids) AS required_pid
+        WHERE NOT EXISTS (
+          SELECT 1 FROM incident_responses ir
+          JOIN user_group_roles ugr ON ugr.user_id = ir.volunteer_id
+          WHERE ir.video_id = vid.id
+            AND ir.status IN ('accepted','en_route','arrived')
+            AND ugr.profession_id::text = required_pid
+        )
+      )
+  );
+
+-- ชั้นที่ 2: หมวดหมู่ไม่กำหนดอาชีพ → มี ≥1 responder รับ
+UPDATE incident_victims v
+SET retention_countdown_started_at = NOW()
+WHERE v.is_deleted = FALSE
+  AND v.retention_countdown_started_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM videos vid
+    JOIN donation_categories dc ON dc.id::text = vid.category_id::text
+    WHERE vid.id = v.incident_id
+      AND (dc.volunteer_profession_ids = '{}' OR dc.volunteer_profession_ids IS NULL)
+      AND EXISTS (
+        SELECT 1 FROM incident_responses ir
+        WHERE ir.video_id = vid.id
+          AND ir.status IN ('accepted','en_route','arrived')
+      )
+  );
+
+-- ชั้นที่ 3: รอเกิน max wait hours (ค่าจาก app_settings — default 72)
+-- ถ้า incidentRetentionMaxWaitHours = 0 → ข้ามชั้นนี้ทั้งหมด (รอจนกว่าจิตอาสาจะครบ)
+-- ตัวอย่าง: maxWaitHours = 72
+UPDATE incident_victims v
+SET retention_countdown_started_at = NOW()
+WHERE v.is_deleted = FALSE
+  AND v.retention_countdown_started_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM videos vid
+    WHERE vid.id = v.incident_id
+      AND vid.created_at <= NOW() - make_interval(hours => $1)  -- $1 = maxWaitHours (72)
+  );
+```
+
+> **⚠️ กรณีเคสดำ (deceased)**: ไม่ลบตาม retention ปกติ — ต้องเก็บถาวรเพื่อการตรวจสอบทางกฎหมาย (ยกเว้นจาก anonymize job เสมอ ไม่ว่า `victimRetentionDays` จะเป็นเท่าไร)
+> **กรณี Dispute ค้าง**: record ที่ `verify_status = 'disputed'` ให้เก็บไว้จนกว่าจิตอาสาจะตัดสินใจ — ไม่ถูกลบทั้งที่มีข้อพิพาทค้าง
 
 **งานที่ต้องเพิ่ม (ต่อยอดของเดิม):**
 
 | ไฟล์ | สิ่งที่เพิ่ม |
 |:---|:---|
-| `lib/config/sync_config.dart` | 2 static fields + อ่าน/เขียนใน `loadFromSupabase()` / `saveToSupabase()` (ต่อจาก `maxEmergencyRecordingSeconds`) |
-| `lib/features/admin/presentation/pages/video_admin_page.dart` | เพิ่ม section "Victim & PDPA Controls" 2 ช่อง |
-| `websocket-server` (victim report endpoint) | อ่านค่าจาก `app_settings` → ข้ามตรวจเมื่อค่าเป็น `0` |
-| anonymize job (cron) | อ่าน `victimRetentionDays` → ค่า `0` = skip job ทั้งหมด |
+| `lib/config/sync_config.dart` | 3 static fields: `victimRetentionDays`, `victimReportRateLimitPerIncident`, `incidentRetentionMaxWaitHours` (default 72) + อ่าน/เขียนใน `loadFromSupabase()` / `saveToSupabase()` |
+| `lib/features/admin/presentation/pages/video_admin_page.dart` | เพิ่ม section "Victim & PDPA Controls" 3 ช่อง (เพิ่ม max wait hours) |
+| `websocket-server` (victim report endpoint) | อ่าน `victimReportRateLimitPerIncident` จาก `app_settings` → ข้ามตรวจ rate limit เมื่อค่าเป็น `0` |
+| `websocket-server/jobs/victim-retention-countdown-starter.js` | [ใหม่] cron รายชั่วโมง — รัน SQL 3 ชั้นเพื่อเซ็ต `retention_countdown_started_at` |
+| `websocket-server/jobs/victim-retention-anonymizer.js` | [ใหม่] cron รายวัน — อ่าน `victimRetentionDays` แล้ว **anonymize** record ที่ครบกำหนด (null-out PII) ยกเว้น `triage_level = 'deceased'` และ `verify_status = 'disputed'` |
+| `websocket-server/server.js` | [แก้] start ทั้ง 2 cron jobs พร้อม graceful shutdown |
+| `supabase/migrations/` | เพิ่ม `retention_countdown_started_at` column + index บน `incident_victims` (อยู่ใน 12.3.1 แล้ว) — **ไม่ต้องเพิ่ม column บน `videos`** |
 
-> **⚠️ ก่อน Production**: ค่า `0` ทั้งสองตัว**ขัดกับ**แผน `03_rate_limiting_resource_exhaustion.md` และ PDPA data minimization
-> → ต้องตั้งค่าจริงที่หน้า Admin ก่อนเปิดใช้จริง (ค่าที่แนะนำเป็นจุดตั้งต้น: retention 90 วัน, rate limit 5 ชื่อ)
+```sql
+-- SQL ตัวอย่างที cron job รัน (anonymization)
+UPDATE incident_victims
+SET first_name      = NULL,
+    last_name       = NULL,
+    masked_name     = '(ไม่ระบุตัวตน)',
+    disputed_reason = NULL,
+    deleted_reason  = NULL,
+    is_synced       = FALSE,
+    updated_at      = NOW()
+WHERE is_deleted = FALSE
+  AND triage_level <> 'deceased'
+  AND verify_status <> 'disputed'
+  AND retention_countdown_started_at <= NOW() - (victimRetentionDays || ' days')::interval;
+```
+
+> **หมายเหตุ**: ล้าง `disputed_reason`/`deleted_reason` ด้วยเพราะอาจมีชื่อเต็มในข้อความอิสระ (PDPA)
 
 ---
+
+#### 12.16.2 กลไก Rate Limit — การแจ้งชื่อ/คน/เหตุการณ์
+
+หลักการที่เลือก: **SQL COUNT แบบ per-incident + per-reporter** (ทางเลือก A) — ไม่ใช้ Redis time-window เพราะ quota นี้คือ "จำนวนครั้งทั้งหมดต่อเหตุการณ์" ไม่รีเซ็ต
+
+```sql
+-- ตรวจก่อน insert ใน `insert_victim()`
+SELECT COUNT(*) INTO v_count
+FROM incident_victims
+WHERE incident_id = p_incident_id
+  AND reported_by = p_reported_by
+  AND is_deleted = FALSE;
+
+IF v_limit > 0 AND v_count >= v_limit THEN
+    RAISE EXCEPTION 'VICTIM_REPORT_RATE_LIMIT_EXCEEDED';
+END IF;
+```
+
+Flow ใน `POST /api/incidents/:incidentId/victims`:
+1. อ่าน `victimReportRateLimitPerIncident` จาก `app_settings.video_system_config` (default `0`)
+2. ถ้าค่า = `0` → ข้ามตรวจ
+3. ถ้าค่า > `0` → query count ตาม SQL ข้างบน
+4. ถ้าเกิา → ตอบ `429 Too Many Requests`
+
+> **⚠️ ก่อน Production**: ค่า `0` ทั้งสองตัว**ขัดกับ**แผน `03_rate_limiting_resource_exhaustion.md` และ PDPA data minimization
+> → ต้องตั้งค่าจริงที่หน้า Admin ก่อนเปิดใช้จริง (ค่าที่แนะนำเป็นจุดตั้งต้น: retention 90 วัน, rate limit 5 ชื่อ, max wait 72 ชม.)
+> **แต่** cron job เริ่มนับถอยหลังทำงานเสมอไม่ว่าตั้งค่า Admin หรือยัง — เพียงแค่ยังไม่มีการ anonymize จริงจนกว่า `victimRetentionDays > 0`
+
+---
+
+## 13. Runbook: การ์ดวีดีโอไม่โหลดบนอุปกรณ์ Android
+
+### 13.1 สาเหตุ
+
+เมื่อ Flutter app พยายามดึงรายการวิดีโอฉุกเฉิน (`VideoRepository.getEmergencyVideos`) จะลองเรียก Local API (`AppConfig.localApiUrl`) ก่อน แล้วค่อย fallback ไป Supabase ถ้า Local API timeout หรือ error
+
+ในกรณีทีพบปัญหา ค่า `mainMachineIp` ของ Flutter (`lib/config/app_config.dart`) ชี้ไปที่ `172.20.10.13:8080` ซึ่งผ่าน **Caddy reverse proxy** บน port 8080 ไปยัง **websocket-server** บน `localhost:3000` แต่ websocket-server ดังกล่าวไม่ได้รันอยู่ ทำให้ Caddy ตอบ **502 Bad Gateway** แอปจึง timeout แล้ว fallback ไป Supabase แต่ข้อมูล emergency video ไม่ปรากฏในรูปแบบทีต้องการ
+
+### 13.2 อาการ
+
+- หน้าเหตุการณ์/การ์ดวีดีโอไม่โหลด/ไม่แสดงบน Android
+- Logcat แสดง `VideoRepository: Local emergency list failed - TimeoutException after 0:00:10.000000`
+- `curl http://<mainMachineIp>:8080/api/videos` หรือ `/api/videos/emergency/list` ตอบ `HTTP 502 Bad Gateway`
+
+### 13.3 วิธีแก้ไข
+
+1. ตรวจสอบว่า `websocket-server` รันอยู่บน `localhost:3000`:
+   ```bash
+   lsof -nP -iTCP:3000 -sTCP:LISTEN
+   ```
+2. ถ้าไม่มี process ฟัง port 3000 ให้รันใหม่:
+   ```bash
+   cd /Users/dave_macmini/sheserved/websocket-server
+   node server.js
+   ```
+3. ตรวจสอบ Caddy รันอยู่บน port 8080 และ reverse proxy ไป `localhost:3000`:
+   ```bash
+   lsof -nP -iTCP:8080 -sTCP:LISTEN
+   ```
+4. ตรวจสอบ `AppConfig.mainMachineIp` ใน `lib/config/app_config.dart` ให้ตรงกับ IP ที `websocket-server` แจ้งตอน start เช่น `172.20.10.13:8080`
+5. ทดสอบ endpoint ผ่าน Caddy:
+   ```bash
+   curl "http://172.20.10.13:8080/api/videos/emergency/list?page=1&limit=20"
+   ```
+6. ถ้า API ตอบ 200 พร้อมข้อมูล ให้ hot-restart หรือ pull-to-refresh แอป Android เพื่อให้ `VideoRepository` ดึงข้อมูลจาก Local API ใหม่อีกครั้ง
+
+### 13.4 บทเรียน
+
+- Local API เป้น fast-path หลักสำหรับ Video System; ถ้า backend ล้ม การ์ดวีดีโอจะไม่แสดงแม้ Supabase ยังทำงาน
+- ควรตรวจสอบ `lsof` ทั้ง `localhost:3000` และ `:8080` ก่อนรัน Maestro หรือ demo video system
+- หาก IP ของเครื่องหลักเปลี่ยน (e.g. เปลี่ยน Wi-Fi) ต้องอัปเดต `mainMachineIp` ใน `lib/config/app_config.dart` ให้ตรง
 

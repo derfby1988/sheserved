@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════════
+# Triage System E2E Test — Scenario 3: ระบุสีคัดแยก (Assign Triage)
+# ขั้นตอน: login → เปิด Triage Sheet → กดไอคอนสี → เลือกสี → ตรวจสอบสีเปลี่ยน
+# หมายเหตุ: ผู้ใช้ derfby ต้องเป็น responder (provider/volunteer) เพื่อกดระบุสีได้
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+---
+# Step 1: Login
+- runFlow:
+    file: triage_test_login.yaml
+
+# Step 2: รอหน้าหลัก
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: เปิด Triage Sheet
+- extendedWaitUntil:
+    visible: ".*(คัดแยก|Triage|ผู้ป่วย).*"
+    timeout: 10000
+- tapOn: ".*คัดแยก.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 4: รอรายชื่อผู้ป่วยโหลด
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 5: ตรวจสอบว่ามีรายชื่อผู้ป่วย (ถ้าไม่มี ให้เพิ่มก่อน)
+- runFlow:
+    when:
+      visible: "ยังไม่มีรายชื่อผู้ป่วย"
+    commands:
+      - tapOn: "แจ้งชื่อผู้ป่วย"
+      - waitForAnimationToEnd:
+          timeout: 2000
+      - tapOn:
+          text: "คำนำหน้า"
+      - tapOn: "นาย"
+      - tapOn:
+          text: "ชื่อ"
+      - setClipboard: "ทดสอบสี"
+      - pasteText
+      - hideKeyboard
+      - tapOn:
+          text: ".*ยินยอมให้จิตอาสา.*"
+      - tapOn: "บันทึก"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# Step 6: หาไอคอน "ระบุสีคัดแยก" (color_lens icon) บนการ์ดผู้ป่วย
+# ไอคอนอยู่ทางขวาของการ์ด — ใช้ tooltip text
+- extendedWaitUntil:
+    visible: "ระบุสีคัดแยก"
+    timeout: 10000
+
+# Step 7: กดไอคอนระบุสี
+- tapOn: "ระบุสีคัดแยก"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 8: ตรวจสอบ dialog เปิดขึ้น
+- assertVisible: ".*(ระบุสี|เลือกสี|Triage Level).*"
+
+# Step 9: เลือกสีแดง (Critical / วิกฤต)
+- tapOn: ".*(วิกฤต|Critical|แดง|🔴).*"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 10: กรอกหมายเหตุ (ถ้ามีช่อง)
+- runFlow:
+    when:
+      visible: "หมายเหตุ"
+    commands:
+      - tapOn:
+          text: "หมายเหตุ"
+      - setClipboard: "ทดสอบระบุสีแดง"
+      - pasteText
+      - hideKeyboard
+      - waitForAnimationToEnd:
+          timeout: 1000
+
+# Step 11: กดยืนยัน
+- tapOn: ".*(ยืนยัน|บันทึก|ตกลง).*"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 12: ตรวจสอบว่าสีบนการ์ดเปลี่ยนเป็นแดง
+- extendedWaitUntil:
+    visible: ".*(วิกฤต|Critical|🔴).*"
+    timeout: 10000

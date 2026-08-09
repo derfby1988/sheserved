@@ -52,7 +52,10 @@ const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
 const adminRoutes = require('./routes/admin');
 const consultationRoutes = require('./routes/consultation');
+const victimsRoutes = require('./routes/victims');
 const { shutdown: shutdownConsultationQueue } = require('./services/consultation-queue');
+const victimRetentionCountdownStarter = require('./jobs/victim-retention-countdown-starter');
+const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
 
 // Phase 1 — Route Security Middleware
 const { verifyToken, requireRole, requireAuth } = require('./middleware/auth');
@@ -295,6 +298,14 @@ if (pool) {
   // Write endpoints on videos require auth; reads remain open
   app.use('/api/videos', verifyToken(pool));
   app.use('/api/videos', videoRoutes(pool));
+
+  // Triage System — victims routes (verifyToken for identity, requireAuth per-route inside)
+  app.use('/api', verifyToken(pool));
+  app.use('/api', victimsRoutes(pool));
+
+  // Start victim retention cron jobs
+  victimRetentionCountdownStarter.start(pool);
+  victimRetentionAnonymizer.start(pool);
 }
 
 // Phase 2: Health Check Endpoint for BullMQ Queues
@@ -2312,6 +2323,8 @@ process.on('SIGTERM', () => {
   inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
+  victimRetentionCountdownStarter.stop();
+  victimRetentionAnonymizer.stop();
   queueRegistry.shutdownAll().catch((err) => {
     console.error('[Server] Queue registry shutdown failed:', err.message);
   }).finally(() => {
@@ -2325,6 +2338,8 @@ process.on('SIGINT', () => {
   inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();
   emergencyHealthMonitorService.stop();
+  victimRetentionCountdownStarter.stop();
+  victimRetentionAnonymizer.stop();
   queueRegistry.shutdownAll().catch((err) => {
     console.error('[Server] Queue registry shutdown failed:', err.message);
   }).finally(() => {

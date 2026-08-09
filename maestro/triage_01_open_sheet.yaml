@@ -1,0 +1,73 @@
+# ═══════════════════════════════════════════════════════════
+# Triage System E2E Test — Scenario 1: เปิด Triage Sheet และดูรายชื่อ
+# อุปกรณ์: SM X135G (Android 16, API 36)
+# ผู้ใช้: derfby / 123456
+# ขั้นตอน: login → เข้าหน้าเหตุการณ์ → กดปุ่มคัดแยก → ตรวจสอบ Triage Sheet
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+---
+# Step 1: Login
+- runFlow:
+    file: triage_test_login.yaml
+
+# Step 2: รอหน้าหลักโหลดเสร็จ
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: กดปุ่ม Emergency (ไอคอนแดงตรงกลาง bottom nav) เพื่อเข้า EmergencyLivePage
+- tapOn:
+    point: "50%, 95%"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 4: รอ EmergencyLivePage โหลด (แผนที่ปรากฏ)
+- extendedWaitUntil:
+    visible: ".*(คัดแยก|Triage|ผู้ป่วย|เหตุการณ์|Emergency|แจ้งเหตุ|รับงาน).*"
+    timeout: 30000
+
+# Step 5: ถ้ามีหน้าจอรับงาน (Accept Panel) ให้กดรับงานก่อน
+- runFlow:
+    when:
+      visible: ".*รับงาน.*"
+    commands:
+      - tapOn: ".*รับงาน.*"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 6: รอปุ่ม "คัดแยก" ปรากฏ (แสดงเฉพาะ responder ที่เข้าร่วมเหตุการณ์แล้ว)
+- extendedWaitUntil:
+    visible: "คัดแยก"
+    timeout: 15000
+
+# Step 7: กดปุ่ม "คัดแยก" ใน bottom tabs ของ EmergencyLivePage
+- tapOn: "คัดแยก"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 5: ตรวจสอบ Triage Sheet ปรากฏ
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 6: ตรวจสอบปุ่ม "แจ้งชื่อผู้ป่วย"
+- assertVisible: "แจ้งชื่อผู้ป่วย"
+
+# Step 7: ตรวจสอบ summary bar (ถ้ามีผู้ป่วยในระบบ)
+# ถ้ายังไม่มีผู้ป่วย จะเห็น "ยังไม่มีรายชื่อผู้ป่วย"
+- runFlow:
+    when:
+      visible: "ยังไม่มีรายชื่อผู้ป่วย"
+    commands:
+      - assertVisible: "ยังไม่มีรายชื่อผู้ป่วย"
+
+# หรือถ้ามีผู้ป่วย จะเห็นรายชื่อ
+- runFlow:
+    when:
+      notVisible: "ยังไม่มีรายชื่อผู้ป่วย"
+    commands:
+      - extendedWaitUntil:
+          visible: ".*(รวม|🔴|🟡|🟢|⚪|⚫).*"
+          timeout: 5000

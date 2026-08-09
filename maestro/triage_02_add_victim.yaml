@@ -1,0 +1,93 @@
+# ═══════════════════════════════════════════════════════════
+# Triage System E2E Test — Scenario 2: เพิ่มชื่อผู้ป่วย
+# ขั้นตอน: login → เปิด Triage Sheet → กด "แจ้งชื่อผู้ป่วย" → กรอกชื่อ → ยินยอม → บันทึก
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+---
+# Step 1: Login
+- runFlow:
+    file: triage_test_login.yaml
+
+# Step 2: รอหน้าหลัก
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: กดปุ่มคัดแยก
+- extendedWaitUntil:
+    visible: ".*(คัดแยก|Triage|ผู้ป่วย).*"
+    timeout: 10000
+- tapOn: ".*คัดแยก.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 4: ตรวจสอบ Triage Sheet
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 5: กดปุ่ม "แจ้งชื่อผู้ป่วย"
+- tapOn: "แจ้งชื่อผู้ป่วย"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 6: ตรวจสอบ dialog เปิดขึ้น
+- assertVisible: "แจ้งชื่อผู้ป่วย"
+
+# Step 7: เลือกคำนำหน้า "นาย"
+- tapOn:
+    text: "คำนำหน้า"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn: "นาย"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 8: กรอกชื่อ
+- tapOn:
+    text: "ชื่อ"
+- waitForAnimationToEnd:
+    timeout: 500
+- setClipboard: "ทดสอบ"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 500
+
+# Step 9: กรอกนามสกุล
+- tapOn:
+    text: "สกุล"
+- waitForAnimationToEnd:
+    timeout: 500
+- setClipboard: "ผู้ป่วย"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 500
+
+# Step 10: ปิด keyboard
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 11: ติ๊กยินยอม (consent)
+- tapOn:
+    text: ".*ยินยอมให้จิตอาสา.*"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 12: กดบันทึก
+- tapOn: "บันทึก"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 13: ตรวจสอบว่า dialog ปิดและกลับเข้า Triage Sheet
+- extendedWaitUntil:
+    visible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+    timeout: 10000
+
+# Step 14: ตรวจสอบว่าชื่อผู้ป่วยใหม่ปรากฏในรายการ
+# ชื่อที่แสดงจะเป็น masked name (เช่น "นาย ท.**")
+- extendedWaitUntil:
+    visible: ".*(นาย|ท\\.\\*\\*|ผู้ป่วย).*"
+    timeout: 10000

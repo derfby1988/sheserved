@@ -193,6 +193,14 @@ async function reconcileLocalToCloud(pool, supabase) {
     } catch (error) {
         console.error('❌ [Sync] Reconciliation error:', error.message);
     }
+
+    // Sync unsynced victims to cloud (pgcrypto encrypted)
+    try {
+        const { syncVictimsToCloud } = require('./victim-sync-service');
+        await syncVictimsToCloud(pool, supabase);
+    } catch (victimSyncErr) {
+        console.error('[Sync] Victim sync error:', victimSyncErr.message);
+    }
 }
 
 module.exports = {

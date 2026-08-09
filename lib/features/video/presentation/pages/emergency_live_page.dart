@@ -42,6 +42,8 @@ import 'widgets/floating_back_button.dart';
 import 'widgets/emergency_chat_widget.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
 import 'widgets/rescue_control_panel_widget.dart';
+import 'widgets/triage_sheet_widget.dart';
+import '../../data/repositories/victim_repository.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:intl/intl.dart';
 
@@ -69,6 +71,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   double _trendingPanelBottom = 0;
   bool _isOverlayVisible = false;
   int _selectedTab = 0;
+  int _triageBadgeCount = 0;
+  final VictimRepository _victimRepository = VictimRepository();
   int _viewerCount = 0;
   int _likeCount = 0;
   bool _hasLiked = false;    // ✅ [Support Analytics] DB Toggle state
@@ -418,7 +422,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
              onToggleChat: () => setState(() => _isChatVisible = !_isChatVisible),
              isChatVisible: _isChatVisible,
              onDeclineRescue: _declineRescueDialog,
-             content: _buildMainContent(),
+            triageBadgeCount: _triageBadgeCount,
+            onTriageTabSelected: () {
+              if (_currentVideoId != null) {
+                TriageSheetWidget.show(context, _currentVideoId!, _victimRepository);
+              }
+            },
+            content: _buildMainContent(),
            ),
 
           // Layer 3: Top Bar (Back Button and Custom Video Controls)

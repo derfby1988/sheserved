@@ -11,6 +11,8 @@ class BottomTabsWidget extends StatelessWidget {
   final bool isEligibleResponder;
   final bool isThaiMhungReporting;
   final bool showEmergency;
+  final int triageBadgeCount;
+  final VoidCallback? onTriageTabSelected;
 
   const BottomTabsWidget({
     super.key,
@@ -23,6 +25,8 @@ class BottomTabsWidget extends StatelessWidget {
     this.isEligibleResponder = false,
     this.isThaiMhungReporting = false,
     this.showEmergency = true,
+    this.triageBadgeCount = 0,
+    this.onTriageTabSelected,
   });
 
   @override
@@ -32,9 +36,9 @@ class BottomTabsWidget extends StatelessWidget {
     final maxButtonSize = screenHeight * 0.1; // จำกัดขนาดไม่เกิน 10% ของจอ
     
     int totalButtons = 0;
-    if (showThaiMhung && !isEligibleResponder && !isThaiMhungReporting) totalButtons++;
-    if (!isEligibleResponder && showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting)) totalButtons++;
-    if (!isEligibleResponder && showEmergency && !isThaiMhungReporting) totalButtons++;
+    if (showThaiMhung && !isThaiMhungReporting) totalButtons++;
+    if (showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting)) totalButtons++;
+    if (showEmergency && !isThaiMhungReporting) totalButtons++;
     
     // คำนวณความกว้างของแต่ละช่อง (เมื่อไม่เปิดแชท ให้แบ่งเท่าๆ กัน)
     final double cellWidth = totalButtons > 0 ? screenWidth / totalButtons : screenWidth;
@@ -49,7 +53,7 @@ class BottomTabsWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Live Tab (ไทยมุง)
-          if (showThaiMhung && !isEligibleResponder && !isThaiMhungReporting)
+          if (showThaiMhung && !isThaiMhungReporting)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -77,8 +81,8 @@ class BottomTabsWidget extends StatelessWidget {
               ),
             ),
 
-          // ความสัมพันธ์ Tab (เกี่ยวดอง)
-          if (!isEligibleResponder && showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
+          // ความสัมพันธ์ Tab (เกี่ยวดอง) — เปิด Triage Sheet, ทุกคนเห็นได้
+          if (showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -86,16 +90,42 @@ class BottomTabsWidget extends StatelessWidget {
               alignment: isChatVisible ? Alignment.centerLeft : Alignment.center,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: maxButtonSize, maxWidth: maxButtonSize),
-                child: GlassTabButton(
-                  label: 'เกี่ยวดอง',
-                  isActive: selectedTab == 1,
-                  onTap: () => onTabSelected(1),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GlassTabButton(
+                      label: 'เกี่ยวดอง',
+                      isActive: selectedTab == 1,
+                      onTap: onTriageTabSelected ?? () => onTabSelected(1),
+                    ),
+                    if (triageBadgeCount > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white, width: 1),
+                          ),
+                          child: Text(
+                            '$triageBadgeCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
 
           // แจ้งเหตุ Tab (ซ่อนเมื่ออยู่โหมดแชท)
-          if (!isEligibleResponder && showEmergency && !isThaiMhungReporting)
+          if (showEmergency && !isThaiMhungReporting)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -121,6 +151,7 @@ class BottomTabsWidget extends StatelessWidget {
                 ),
               ),
             ),
+
         ],
       ),
     );

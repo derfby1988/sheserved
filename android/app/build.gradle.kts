@@ -17,6 +17,10 @@ android {
             force("androidx.core:core-ktx:1.15.0")
             force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
             force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+            force("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20")
         }
     }
 
@@ -80,6 +84,10 @@ subprojects {
         resolutionStrategy {
             force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
             force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+            force("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
+            force("org.jetbrains.kotlin:kotlin-build-tools-impl:2.3.20")
         }
     }
     afterEvaluate {

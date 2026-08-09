@@ -1,0 +1,146 @@
+# ═══════════════════════════════════════════════════════════
+# Triage System E2E Test — Scenario 4: โต้แย้งและลบรายชื่อ (Dispute & Delete)
+# ขั้นตอน: login → เปิด Triage Sheet → swipe การ์ด → โต้แย้ง → swipe → ลบ
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+---
+# Step 1: Login
+- runFlow:
+    file: triage_test_login.yaml
+
+# Step 2: รอหน้าหลัก
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา|เภสัชกร|จิตอาสา).*"
+    timeout: 30000
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 3: เปิด Triage Sheet
+- extendedWaitUntil:
+    visible: ".*(คัดแยก|Triage|ผู้ป่วย).*"
+    timeout: 10000
+- tapOn: ".*คัดแยก.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- assertVisible: "ระบบคัดแยกผู้ป่วย.*Triage.*"
+
+# Step 4: รอรายชื่อโหลด
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 5: ตรวจสอบว่ามีรายชื่อ (ถ้าไม่มี ให้เพิ่มก่อน)
+- runFlow:
+    when:
+      visible: "ยังไม่มีรายชื่อผู้ป่วย"
+    commands:
+      - tapOn: "แจ้งชื่อผู้ป่วย"
+      - waitForAnimationToEnd:
+          timeout: 2000
+      - tapOn:
+          text: "คำนำหน้า"
+      - tapOn: "นาย"
+      - tapOn:
+          text: "ชื่อ"
+      - setClipboard: "ทดสอบโต้แย้ง"
+      - pasteText
+      - hideKeyboard
+      - tapOn:
+          text: ".*ยินยอมให้จิตอาสา.*"
+      - tapOn: "บันทึก"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# ═══════════════════════════════════════════════════════════
+# Part A: โต้แย้ง (Dispute)
+# ═══════════════════════════════════════════════════════════
+
+# Step 6: Swipe การ์ดผู้ป่วยไปทางซ้าย เพื่อเปิด action pane
+- swipe:
+    start: "80%, 50%"
+    end: "20%, 50%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 7: กดปุ่ม "โต้แย้ง"
+- extendedWaitUntil:
+    visible: "โต้แย้ง"
+    timeout: 5000
+- tapOn: "โต้แย้ง"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 8: ตรวจสอบ dialog โต้แย้ง
+- assertVisible: "โต้แย้งความถูกต้องของชื่อ"
+
+# Step 9: กรอกเหตุผล (อย่างน้อย 10 อักขระ)
+- tapOn:
+    text: ".*ระบุเหตุผลที่โต้แย้ง.*"
+- waitForAnimationToEnd:
+    timeout: 500
+- setClipboard: "ชื่อนี้ไม่ถูกต้อง ผู้ป่วยไม่ใช่คนนี้"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 500
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 10: กดยืนยัน
+- tapOn: "ยืนยัน"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 11: ตรวจสอบว่าการ์ดแสดงสถานะโต้แย้ง (ไอคอน warning)
+- extendedWaitUntil:
+    visible: ".*โต้แย้ง.*"
+    timeout: 10000
+
+# ═══════════════════════════════════════════════════════════
+# Part B: ลบรายชื่อ (Delete)
+# ═══════════════════════════════════════════════════════════
+
+# Step 12: Swipe การ์ดอีกครั้ง
+- swipe:
+    start: "80%, 50%"
+    end: "20%, 50%"
+    duration: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 13: กดปุ่ม "ลบ"
+- extendedWaitUntil:
+    visible: "ลบ"
+    timeout: 5000
+- tapOn: "ลบ"
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Step 14: ตรวจสอบ dialog ลบ
+- assertVisible: "ลบรายชื่อ"
+
+# Step 15: กรอกเหตุผลการลบ
+- tapOn:
+    text: ".*ระบุเหตุผลที่ลบ.*"
+- waitForAnimationToEnd:
+    timeout: 500
+- setClipboard: "รายชื่อนี้ไม่ถูกต้องและโต้แย้งแล้ว"
+- pasteText
+- waitForAnimationToEnd:
+    timeout: 500
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 16: กดยืนยันลบ
+- tapOn: "ยืนยัน"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 17: ตรวจสอบว่ารายชื่อหายไป
+- extendedWaitUntil:
+    notVisible: ".*ทดสอบโต้แย้ง.*"
+    timeout: 10000
