@@ -215,11 +215,29 @@ Scaffold
   - Backend (`websocket-server`): เพิ่ม event `fitness_booking_status` ที่ emit ไปยัง `userId` ที่เกี่ยวข้อง (ผู้จอง และ/หรือ เจ้าของก๊วน) ทันทีที่มีการ confirm/reject/cancel booking
   - `lib/services/websocket_service.dart`: เพิ่ม `final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();` และ getter `Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;` (เหมือน `_donationStatusController`/`_yieldWayAlertController`)
   - `lib/features/home/presentation/pages/home_page.dart`: เพิ่ม state `_fitnessBookingAlerts` + subscription ที่ listen ใน method รูปแบบเดียวกับ `_listenForDonationStatus()` พร้อม auto-clear หลัง ~15 วินาที
-  - `lib/features/home/presentation/widgets/home_header_section.dart`: เพิ่ม branch ใหม่ `item['type'] == 'fitness_booking'` ใน `combinedItems` (ตาม pattern ของ `donation_update`/`yield_way`) พร้อม callback `onFitnessBookingAlertTapped` นำไปหน้า `/community/find-buddies/booking/:id`
+  - `lib/features/home/presentation/widgets/home_header_section.dart`: เพิ่ม branch ใหม่ `item['type'] == 'fitness_booking'` ใน `combinedItems` (ตาม pattern ของ `donation_update`/`yield_way`) พร้อม callback `onFitnessBookingAlertTapped` นำไปหน้า `/community/sport-club/booking/:id` (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
   - แสดงเป็นฟีดใหม่→เก่า คลิกเข้าหน้า "รายละเอียดการจอง"
 - **Timeout สำหรับ pending booking:** ถ้า booking สถานะ `pending` ไม่ได้รับอนุมัติภายใน 24 ชั่วโมง หรือถึงเวลาก่อนเริ่ม session 1 ชั่วโมง (แล้วแต่ถึงก่อน) ระบบ auto-reject (`status='rejected', cancelled_by='system'`) ผ่าน BullMQ delayed job ที่ enqueue ตอนสร้าง booking (สอดคล้องกับ `architecture_analysis.md` ที่ใช้ BullMQ queue อยู่แล้ว) และแจ้งเตือนทั้งผู้จองและเจ้าของก๊วนผ่าน event `fitness_booking_status` ด้านบน
 - ป้องกันการจองซ้ำซ้อน: ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) — ปฏิเสธพร้อมแสดงเหตุผลให้ทราบในขั้นตอนขอร่วมก๊วน
 - บล็อกผู้ใช้: เจ้าของก๊วนสามารถบล็อกผู้ใช้ (ห้ามจองก๊วนนี้) และดูประวัติการถูกบล็อก/การจองย้อนหลังจาก dialog ที่เปิดจากโปรไฟล์ผู้จอง
+
+## อนุมัติคำขอเข้าร่วม (Owner Approval UI — Bottom Sheet)
+- ทริกเกอร์: ปุ่ม "จัดการ" เฉพาะแอดมินก๊วน แสดงด้านขวาของแถวรอบนัด (session) ในแผ่นรายละเอียดก๊วน
+- รูปแบบ Bottom Sheet:
+  - Header แถบลากปิด + ชื่อส่วน "จัดการผู้เข้าร่วมรอบนี้"
+  - ส่วนที่ 1: "คำขอเข้าร่วม (รออนุมัติ)" — แสดงรายการผู้ขอ (avatar, ชื่อเต็ม) พร้อมปุ่ม "อนุมัติ" และ "ปฏิเสธ" ต่อรายการ
+  - ส่วนที่ 2: "ผู้เข้าร่วมแล้ว" — แสดงรายการผู้ที่สถานะ `confirmed`
+- ปุ่ม/พฤติกรรม:
+  - อนุมัติ: เรียก `approveBooking(bookingId, ownerId)` แสดง SnackBar เมื่อสำเร็จ และรีโหลดรายการในแผ่น
+  - ปฏิเสธ: เปิด dialog ใส่เหตุผล (ไม่บังคับ) แล้วเรียก `rejectBooking(bookingId, ownerId, reason)` แสดง SnackBar เมื่อสำเร็จ และรีโหลดรายการ
+  - ซ่อนปุ่มอนุมัติ/ปฏิเสธเมื่อ session สิ้นสุดแล้ว (ป้องกันจัดการย้อนหลัง)
+- Repository/เมธอดที่ใช้ (Flutter):
+  - `listSessionBookings(sessionId)` → ดึงรายการ booking ทั้งหมดของ session รวมข้อมูลผู้ใช้พื้นฐาน
+  - `approveBooking({ bookingId, ownerId })` → อัปเดตสถานะเป็น `confirmed` (เฉพาะแถวที่ยัง `pending`)
+  - `rejectBooking({ bookingId, ownerId, reason? })` → อัปเดตสถานะเป็น `rejected` (เฉพาะแถวที่ยัง `pending`) และบันทึก `cancelled_by='owner'` พร้อม `cancel_reason` ถ้ามี
+- ข้อควรทราบ (MVP):
+  - ปัจจุบันใช้การ `update` ตารางโดยตรง คล้าย `cancelBooking()`; ในเฟสถัดไปควรย้ายไปใช้ RPC ฝั่ง DB ตามส่วน "Data Integrity Guards" เพื่อรวม capacity/overlap validation ไว้ใน transaction เดียว
+  - Realtime/WebSocket: เมื่อเชื่อมต่อในอนาคตให้ emit event `fitness_booking_status` ไปยังผู้จองเมื่ออนุมัติ/ปฏิเสธสำเร็จ
 
 ## UX Completeness เพิ่มเติม
 - **Push Notification (นอกแอป):** รอบแรกไม่ทำ — Headsector ทำงานเฉพาะตอนแอปเปิดอยู่ (WebSocket only) ผู้ใช้ที่ปิดแอปจะไม่เห็นแจ้งเตือนจนกว่าจะเปิดแอปใหม่ (ออกแบบ `payload` ของ event ไว้ล่วงหน้าให้ขยายไปต่อ FCM/APNs ได้ในเฟสถัดไปโดยไม่แก้ schema)

@@ -118,7 +118,7 @@ import 'features/erp/presentation/pages/payroll_page.dart';
 import 'features/erp/presentation/pages/hr_settings_page.dart';
 import 'features/erp/presentation/pages/employee_role_assignment_page.dart';
 import 'features/erp/presentation/pages/my_permissions_page.dart';
-import 'features/community/find_buddies/presentation/pages/find_buddies_page.dart';
+import 'features/community/find_buddies/presentation/pages/sport_club_page.dart';
 import 'features/community/find_buddies/presentation/pages/booking_detail_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_group_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_session_page.dart';
@@ -246,10 +246,10 @@ class SheservedApp extends StatelessWidget {
         '/admin/video-control': (context) => const AuthGuardWidget(requiredRole: 'admin', child: VideoAdminPage()),
         '/admin/watermark': (context) => const AuthGuardWidget(requiredRole: 'admin', child: WatermarkManagementPage()),
         '/admin/platform-settings': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PlatformSettingsPage()),
-        '/community/find-buddies': (context) => const FindBuddiesPage(),
-        '/community/find-buddies/group/create': (context) => const CreateGroupPage(),
-        '/community/find-buddies/sport/propose': (context) => const ProposeSportPage(),
-        '/community/find-buddies/sport/review': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ReviewProposedSportsPage()),
+        '/community/sport-club': (context) => const SportClubPage(),
+        '/community/sport-club/group/create': (context) => const CreateGroupPage(),
+        '/community/sport-club/sport/propose': (context) => const ProposeSportPage(),
+        '/community/sport-club/sport/review': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ReviewProposedSportsPage()),
         
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
@@ -261,6 +261,16 @@ class SheservedApp extends StatelessWidget {
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
       },
       onGenerateRoute: (settings) {
+        // Community: Sport Club booking details (with legacy alias)
+        if (settings.name == '/community/sport-club/booking' ||
+            settings.name == '/community/find-buddies/booking') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final bookingId = args?['id']?.toString() ?? '';
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => BookingDetailPage(bookingId: bookingId),
+          );
+        }
         // ERP Shell Routes (Drawer + AppBar + Branch Selector)
         if (settings.name == '/erp' || settings.name == '/erp/dashboard') {
           return MaterialPageRoute(

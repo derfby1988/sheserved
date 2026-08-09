@@ -96,7 +96,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     final user = AuthService.instance.currentUser;
     if (user == null) {
       if (!mounted) return;
-      Navigator.pushNamed(context, '/login', arguments: {'redirect': '/community/find-buddies/group/create'});
+      Navigator.pushNamed(context, '/login', arguments: {'redirect': '/community/sport-club/group/create'});
       return;
     }
     setState(() => _submitting = true);

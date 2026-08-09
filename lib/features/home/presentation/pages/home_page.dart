@@ -2079,7 +2079,7 @@ class _HomePageState extends ConsumerState<HomePage>
                                       onFitnessBookingAlertTapped: (bookingId) {
                                         Navigator.pushNamed(
                                           context,
-                                          '/community/find-buddies/booking',
+                                          '/community/sport-club/booking',
                                           arguments: {'id': bookingId},
                                         );
                                       },

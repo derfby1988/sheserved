@@ -303,6 +303,53 @@ class FitnessBuddiesRepository {
         .eq('user_id', userId);
   }
 
+  /// List bookings for a given session (both pending and confirmed),
+  /// including basic user profile fields for display.
+  Future<List<Map<String, dynamic>>> listSessionBookings(String sessionId) async {
+    final res = await _client
+        .from('fitness_group_bookings')
+        .select('*, user:users(first_name, last_name, profile_image_url), session:fitness_group_sessions(ends_at)')
+        .eq('session_id', sessionId)
+        .order('created_at', ascending: true);
+    return (res as List).map((e) {
+      final b = Map<String, dynamic>.from(e);
+      final userData = b['user'];
+      if (userData is List && userData.isNotEmpty) {
+        b['user'] = userData.first;
+      } else if (userData is Map) {
+        b['user'] = userData;
+      } else {
+        b['user'] = <String, dynamic>{};
+      }
+      return b;
+    }).toList();
+  }
+
+  /// Approve a pending booking (owner action). Minimal update: set status to 'confirmed'.
+  Future<void> approveBooking({required String bookingId, required String ownerId}) async {
+    await _client
+        .from('fitness_group_bookings')
+        .update({
+          'status': 'confirmed',
+        })
+        .eq('id', bookingId)
+        .eq('status', 'pending');
+  }
+
+  /// Reject a pending booking (owner action). Minimal update: set status to 'rejected'.
+  /// Optionally records a cancel_reason with cancelled_by='owner' for audit consistency.
+  Future<void> rejectBooking({required String bookingId, required String ownerId, String? reason}) async {
+    await _client
+        .from('fitness_group_bookings')
+        .update({
+          'status': 'rejected',
+          'cancelled_by': 'owner',
+          if (reason != null && reason.isNotEmpty) 'cancel_reason': reason,
+        })
+        .eq('id', bookingId)
+        .eq('status', 'pending');
+  }
+
   Future<String> createGroup({
     required String userId,
     required String name,

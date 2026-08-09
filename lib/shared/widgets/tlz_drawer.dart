@@ -580,7 +580,7 @@ class _TlzDrawerState extends State<TlzDrawer>
                                         title: 'หาเพื่อนออกกำลังกาย',
                                         icon: Icons.group,
                                         onTap: () =>
-                                            _navigateTo(context, '/community/find-buddies'),
+                                            _navigateTo(context, '/community/sport-club'),
                                         isSubItem: true,
                                       ),
                                       _buildMenuItem(

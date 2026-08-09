@@ -28,7 +28,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
     final user = AuthService.instance.currentUser;
     if (user == null) {
       if (!mounted) return;
-      Navigator.pushNamed(context, '/login', arguments: {'redirect': '/community/find-buddies/sport/propose'});
+      Navigator.pushNamed(context, '/login', arguments: {'redirect': '/community/sport-club/sport/propose'});
       return;
     }
     setState(() => _submitting = true);

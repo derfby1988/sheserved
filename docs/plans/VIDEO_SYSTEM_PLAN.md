@@ -2646,3 +2646,988 @@ const VIDEO_LOCAL_ONLY_COLUMNS = new Set([
 - **ระยะยาว:** ควรสร้าง DB role เฉพาะสำหรับ sync ที่มีสิทธิ์ insert/update บน `videos` และ `video_interactions` เท่านั้น แทนการใช้ service_role key เต็มสิทธิ์
 
 ---
+
+## 12. ระบบคัดแยกระดับภาวะคุกคามต่อชีวิต (Triage System) — 📋 แผน (ยังไม่ implement)
+
+> **สถานะ**: 📋 ออกแบบเสร็จ รอเริ่ม implement
+> *Created: 2026-08-09*
+> **ที่มา**: ทีมอาสาที่เข้าร่วมช่วยเหลือต้องประเมินผู้ป่วยเพื่อจัดกลุ่มตามความวิกฤต ตามหลัก START Triage สากล
+
+### 12.0 สรุปข้อกำหนดที่ยืนยันแล้ว (Confirmed Requirements)
+
+| # | หัวข้อ | ข้อสรุป |
+|:--|:---|:---|
+| 1 | Entry Point | **แทนที่** `RelationshipViewWidget` เดิมด้วย Triage Bottom Sheet ครึ่งจอ (กดจากปุ่ม "เกี่ยวดอง") |
+| 2 | Cardinality | 1 incident : N victims — **ทุกคนแจ้งชื่อได้** |
+| 3 | สิทธิลบ/ปฏิเสธความถูกต้อง | **เฉพาะทีมจิตอาสาที่เข้าช่วยเหลือ** เท่านั้น |
+| 4 | ชื่อย่อ | `prefix + พยัญชนะตัวแรก` (ไทย: `นาย ก` / อังกฤษ: `Mr. J`) — mask ที่ **Backend** |
+| 5 | ที่เก็บ | Local PostgreSQL + **Sync ขึ้น Supabase Cloud** |
+| 6 | ผู้เห็นชื่อเต็ม | ทีมอาสา (`status IN ('accepted','en_route','arrived')`) + Admin/Super Admin + **ผู้กรอกเฉพาะ record ที่ตนเองกรอก** ✅ยืนยัน |
+| 7 | ผู้ให้สี | **เฉพาะจิตอาสาที่เข้าช่วยเหลือ** (ยกเว้นสีดำ — ดูข้อ 13) |
+| 8 | Conflict Resolution | **Last-write-wins** + เก็บ history ทุกครั้ง |
+| 9 | Map Badge | แสดง `⚫1 🔴2 🟡1 🟢3` เหนือหมุดเหตุการณ์ |
+| 10 | Real-time | WebSocket `victim-triage-updated` → room `video-{incidentId}` |
+| 11 | Health Data Link | เชื่อมได้เมื่อ **(ก)** ผู้ประสบเหตุตั้งค่าอนุญาตล่วงหน้า **และ (ข)** ถูกระบุสีโดยจิตอาสาแล้ว |
+| 12 | Edit Lock | ผู้กรอก**แก้ไขไม่ได้**หลังถูกระบุสีแล้ว — จิตอาสาแก้ได้เสมอ |
+| 13 | **สีดำ (Deceased)** | **มี 4 ระดับ** — ผู้ระบุสีดำต้องเป็น **จิตอาสาในเหตุการณ์ AND อาชีพอยู่ในหมวด `provider`** (ผู้ให้บริการสุขภาพ) |
+| 14 | Reporter ผู้ถ่ายวิดีโอ | **ไม่เห็นชื่อเต็ม** (นอกจากเป็นจิตอาสาในเหตุการณ์นั้นด้วย) ✅ยืนยัน |
+
+---
+
+### 12.1 ระดับการคัดแยก (Triage Levels)
+
+| ระดับ | สี | ชื่อไทย | ความหมาย | Enum Value | Sort Order | ผู้มีสิทธิระบุ |
+|:---|:---|:---|:---|:---|:---|:---|
+| 1 | ⚫ **ดำ** | **เคสดำ / เสียชีวิต** | เสียชีวิตแล้ว หรือบาดเจ็บรุนแรงเกินศักยภาพ/ทรัพยากรที่จะช่วยชีวิตไว้ได้ | `deceased` | 1 | **จิตอาสา + อาชีพหมวด `provider`** 🔒 |
+| 2 | 🔴 แดง | ผู้ป่วยวิกฤต | ต้องช่วยเหลือทันที มีภาวะคุกคามต่อชีวิต | `critical` | 2 | จิตอาสาในเหตุการณ์ |
+| 3 | 🟡 เหลือง | ผู้ป่วยรีบด่วน | ต้องช่วยเหลือเร็ว แต่รอได้ระยะสั้น | `urgent` | 3 | จิตอาสาในเหตุการณ์ |
+| 4 | 🟢 เขียว | ผู้ป่วยไม่รีบด่วน | อาการเล็กน้อย รอได้ | `non_urgent` | 4 | จิตอาสาในเหตุการณ์ |
+| 5 | ⚪ **ขาว** | **ผู้ป่วยทั่วไป / ยังไม่ประเมิน** | ป่วยทั่วไป เช่น เป็นหวัด มีไข้ ไอ — และรวมกรณีที่ยังไม่ถูกจิตอาสาประเมิน | `white` | 5 | **(ค่าเริ่มต้น)** — จิตอาสาเปลี่ยนได้ |
+
+> **⚪ ขาว = ค่า Default เดียวของระบบ** ✅ยืนยัน — ไม่มีสถานะ "เทา/unassessed" แยกอีกต่อไป
+> ทุก record ที่ถูกแจ้งชื่อเริ่มที่ `white` และแยกกรณี "ยังไม่ประเมิน" กับ "ประเมินแล้วว่าเป็นผู้ป่วยทั่วไป" ด้วยฟิลด์ `triaged_at`:
+>
+> | เงื่อนไข | ความหมาย | แสดงบน UI |
+> |:---|:---|:---|
+> | `triage_level='white'` AND `triaged_at IS NULL` | ยังไม่ถูกประเมิน | `⚪ ยังไม่ประเมิน` |
+> | `triage_level='white'` AND `triaged_at IS NOT NULL` | ประเมินแล้ว = ผู้ป่วยทั่วไป | `⚪ ผู้ป่วยทั่วไป` |
+
+> **⚠️ หมายเหตุ**: ⚫ ดำ ถูกจัด **Sort Order = 1** เพื่อให้ทีมอาสาเห็นภาพรวมทรัพยากรก่อน (หลัก START Triage — เคสดำไม่ต้องใช้ทรัพยากรช่วยชีวิตแล้ว) หากต้องการให้ 🔴 แดงขึ้นบนสุดเพราะเป็นเคสที่ต้องรีบที่สุด ให้สลับเป็น `critical=1, deceased=2` แล้วแก้ `TRIAGE_SORT_ORDER` ที่จุดเดียว
+
+#### 12.1.1 เงื่อนไขพิเศษของเคสดำ (Black Tag Authorization)
+
+> **หลักการ**: การชี้ว่าบุคคลเสียชีวิตเป็นข้อมูลที่มีผลทางกฎหมายและกระทบครอบครัวโดยตรง — เงื่อนไขต้อง**รัดกุมกว่าสีอื่นทั้งหมด**
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  สิทธิระบุเคสดำ = ต้องผ่านทั้ง 2 เงื่อนไขพร้อมกัน (AND)        │
+├──────────────────────────────────────────────────────────────┤
+│ ① เป็นจิตอาสาที่เข้าร่วมช่วยเหลือในเหตุการณ์นั้น              │
+│    incident_responses.status IN ('accepted','en_route','arrived') │
+│                            AND                               │
+│ ② อาชีพอยู่ในหมวดหมู่ผู้ให้บริการสุขภาพ                       │
+│    professions.category = 'provider'                         │
+│    (FK → user_categories.id — ยืนยันแล้วว่ามีค่านี้จริง)       │
+└──────────────────────────────┬───────────────────────────────┘
+                               ▼
+            canTriageBlack = true  → ปุ่ม ⚫ เปิดใช้งาน
+            canTriageBlack = false → ปุ่ม ⚫ แสดงแบบ disabled
+                                      + ข้อความอธิบายเหตุผล
+```
+
+**ข้อกำหนดเพิ่มเติมของเคสดำ:**
+
+| ข้อ | ข้อกำหนด | เหตุผล |
+|:--|:---|:---|
+| 1 | **บังคับกรอก `triage_note`** (อย่างน้อย 10 อักขระ) | ต้องมีเหตุผลทางคลินิกบันทึกไว้ |
+| 2 | **Double Confirm** — พิมพ์คำว่า `ยืนยัน` ก่อนบันทึก | ป้องกันกดพลาด |
+| 3 | **บันทึก snapshot อาชีพ + หมวดหมู่** ณ เวลาที่ระบุ | ตรวจย้อนหลังได้ว่าผู้ระบุมีสิทธิจริง |
+| 4 | **ห้าม auto-unlock ข้อมูลสุขภาพ** สำหรับเคสดำ | ผู้เสียชีวิตไม่ได้ให้ความยินยอมเพื่อการนี้ (ดู 12.10) |
+| 5 | **ไม่แสดงจำนวนเคสดำต่อผู้ชมทั่วไป** — ซ่อนทั้ง list และ Map Badge | ป้องกันข่าวลือ/ความตื่นตระหนก ก่อนแจ้งญาติอย่างเป็นทางการ |
+| 6 | **เปลี่ยนออกจากดำได้** แต่ต้องเป็น `provider` เช่นกัน + บังคับเหตุผล | กรณีประเมินผิด (เช่น พบว่ายังมีชีพจร) |
+| 7 | **System Message ใน Live Chat** — แจ้งเฉพาะทีมอาสา ไม่ broadcast ทั้งห้อง | PDPA + ความอ่อนไหว |
+
+> **⚠️ ข้อจำกัดที่ต้องยอมรับ**: หมวด `provider` ในระบบนี้ครอบคลุมกว้าง — รวม `ผู้เชี่ยวชาญ/ผู้ขาย/ร้านค้า` และ `คลินิก/ศูนย์` ด้วย ไม่ใช่แค่แพทย์/พยาบาล
+> หากต้องการรัดกุมกว่านี้ ให้เปลี่ยนเงื่อนไข ② เป็นการเช็ค `professions.profession_code IN ('doctor_gp','doctor_family','doctor_specialist','nurse',...)` แทน — **ดูข้อ 12.15 #1**
+
+---
+
+### 12.2 PDPA — การปกปิดชื่อ (Name Masking Architecture)
+
+> **⚠️ หลักการเด็ดขาด**: การ mask ต้องทำที่ **Backend** เท่านั้น
+> ห้ามส่งชื่อเต็มลง Client แล้วซ่อนใน UI เพราะผู้ใช้สามารถดักจับ Network Response ได้ = ข้อมูลรั่วไหลตาม PDPA มาตรา 37
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Client ขอรายชื่อ: GET /api/incidents/{id}/victims       │
+│         Header: Authorization + X-User-Id               │
+└───────────────────────┬─────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│ Backend: canViewFullName(userId, incidentId, victimRow)? │
+│   ├── เป็น Responder ใน incident_responses              │
+│   │   status IN ('accepted','en_route','arrived')  → ✅  │
+│   ├── เป็น Admin / Super Admin                     → ✅  │
+│   ├── เป็นผู้กรอก record นั้นเอง (reported_by)      → ✅* │
+│   └── อื่นๆ ทั้งหมด (รวม Reporter ผู้ถ่ายวิดีโอ)     → ❌  │
+└───────────────────────┬─────────────────────────────────┘
+                        ▼
+        ┌───────────────┴────────────────┐
+        ▼ ✅ มีสิทธิ                      ▼ ❌ ไม่มีสิทธิ
+┌──────────────────────┐      ┌────────────────────────────┐
+│ { prefix: "นาย",     │      │ { prefix: "นาย",           │
+│   firstName: "สมชาย",│      │   firstName: null,   ← ตัดทิ้ง│
+│   lastName: "ใจดี",  │      │   lastName: null,    ← ตัดทิ้ง│
+│   displayName:       │      │   displayName: "นาย ก",     │
+│     "นาย สมชาย ใจดี",│      │   isMasked: true }          │
+│   isMasked: false }  │      └────────────────────────────┘
+└──────────────────────┘
+```
+
+> **✅\* = เห็นเฉพาะ record ที่ตนเองกรอกเท่านั้น** — เป็นการตรวจ **รายแถว (per-row)** ไม่ใช่ต่อ 1 request
+> ในชุดข้อมูลเดียวกัน ผู้กรอกอาจเห็นชื่อเต็มบางแถว และเห็นชื่อย่อในแถวที่คนอื่นกรอก
+
+**อัลกอริทึมย่อชื่อ (`maskVictimName`):**
+
+```javascript
+// websocket-server/utils/victim-name-mask.js
+const THAI_PREFIX_MAP = {
+  'นาย': 'นาย', 'นาง': 'นาง', 'นางสาว': 'นางสาว',
+  'ด.ช.': 'ด.ช.', 'ด.ญ.': 'ด.ญ.', 'ไม่ระบุ': 'บุคคล',
+};
+const EN_PREFIX_MAP = {
+  'นาย': 'Mr.', 'นาง': 'Mrs.', 'นางสาว': 'Ms.',
+  'ด.ช.': 'Master', 'ด.ญ.': 'Miss', 'ไม่ระบุ': 'Person',
+};
+
+function isThaiText(s) { return /[\u0E00-\u0E7F]/.test(s || ''); }
+
+function maskVictimName(prefix, firstName) {
+  const name = (firstName || '').trim();
+  if (!name) return `${THAI_PREFIX_MAP[prefix] || 'บุคคล'} (ไม่ทราบชื่อ)`;
+
+  if (isThaiText(name)) {
+    // ไทย: พยัญชนะตัวแรก — ต้องข้ามสระนำหน้า (เ แ โ ไ ใ) เช่น "เอกชัย" → "อ"
+    const LEADING_VOWELS = ['เ', 'แ', 'โ', 'ไ', 'ใ'];
+    let ch = name[0];
+    if (LEADING_VOWELS.includes(ch) && name.length > 1) ch = name[1];
+    return `${THAI_PREFIX_MAP[prefix] || 'บุคคล'} ${ch}`;
+  }
+  // อังกฤษ: ตัวอักษรแรกพิมพ์ใหญ่ → "Mr. J"
+  return `${EN_PREFIX_MAP[prefix] || 'Person'} ${name[0].toUpperCase()}`;
+}
+```
+
+> **⚠️ กับดักภาษาไทย**: ชื่อ "เอกชัย" ถ้าใช้ `name[0]` ตรงๆ จะได้ "เ" ซึ่งเป็นสระ ไม่ใช่พยัญชนะ — ต้องข้ามสระนำหน้า (เ แ โ ไ ใ) เสมอ
+
+**ป้องกันการเดาชื่อซ้ำ (De-anonymization Risk):**
+หากในเหตุการณ์เดียวมี "นาย ก" หลายคน ให้เติมลำดับต่อท้าย: `นาย ก (1)`, `นาย ก (2)` — คำนวณที่ Backend จาก sort order ของ `created_at`
+
+**การ mask แบบรายแถว (Row-level Masking):**
+
+```javascript
+// websocket-server/services/victim-permission-service.js
+function serializeVictim(row, ctx) {
+  // ctx = { isResponder, isAdmin, userId, canTriageBlack }
+  const canSeeFull = ctx.isResponder || ctx.isAdmin || row.reported_by === ctx.userId;
+
+  // ⚫ เคสดำ: ห้ามส่งออกต่อผู้ที่ไม่ใช่ทีมอาสา/Admin (12.1.1 ข้อ 5)
+  const hideBlack = row.triage_level === 'deceased' && !(ctx.isResponder || ctx.isAdmin);
+  if (hideBlack) return null; // กรองออกจากผลลัพธ์ทั้งแถว
+
+  return {
+    id: row.id,
+    prefix: row.prefix,
+    firstName: canSeeFull ? row.first_name : null,
+    lastName:  canSeeFull ? row.last_name  : null,
+    displayName: canSeeFull
+      ? `${row.prefix} ${row.first_name} ${row.last_name}`.trim()
+      : row.masked_name,
+    isMasked: !canSeeFull,
+    triageLevel: row.triage_level,
+    // triage_note เห็นเฉพาะทีมอาสา/Admin เท่านั้น — ผู้กรอกก็ไม่เห็น
+    triageNote: (ctx.isResponder || ctx.isAdmin) ? row.triage_note : null,
+  };
+}
+```
+
+> **⚠️ สิทธิผู้กรอกไม่เท่ากับจิตอาสา**: ผู้กรอกเห็นแค่**ชื่อเต็มที่ตนเองกรอก** — ไม่เห็น `triage_note` และไม่เห็นเคสดำ
+
+---
+
+### 12.3 Database Schema
+
+#### 12.3.1 ตารางหลัก `incident_victims`
+
+```sql
+-- migration: 20260809xxxxxx_create_incident_victims.sql
+-- ⚠️ FK ต้องชี้ public.users ไม่ใช่ auth.users (ดู Section 11.5)
+
+-- ⚫ ดำ เพิ่มเข้าเป็นค่าที่ 1 เพื่อให้ ORDER BY triage_level เรียงตามลำดับที่ต้องการโดยตรง
+CREATE TYPE triage_level AS ENUM ('deceased', 'critical', 'urgent', 'non_urgent', 'white');
+CREATE TYPE victim_verify_status AS ENUM ('unverified', 'confirmed', 'disputed');
+
+CREATE TABLE incident_victims (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id       UUID NOT NULL,          -- อ้างถึง videos.id (incident หลัก)
+
+    -- ── ข้อมูลบุคคล (PDPA Sensitive) ──
+    prefix            VARCHAR(20) NOT NULL DEFAULT 'ไม่ระบุ',
+    first_name        VARCHAR(100),
+    last_name         VARCHAR(100),
+    masked_name       VARCHAR(120) NOT NULL,  -- pre-computed ตอน insert เพื่อไม่ต้องคำนวณทุก request
+    linked_user_id    UUID REFERENCES users(id) ON DELETE SET NULL, -- ถ้าเป็นผู้ใช้ในระบบ
+
+    -- ── การคัดแยก ──
+    triage_level      triage_level NOT NULL DEFAULT 'white',   -- ⚪ ขาว = ผู้ป่วยทั่วไป/ยังไม่ประเมิน
+    triaged_by        UUID REFERENCES users(id) ON DELETE SET NULL,
+    triaged_at        TIMESTAMPTZ,
+    triage_note       TEXT,                   -- อาการที่พบ (เห็นเฉพาะทีมอาสา)
+    triaged_by_profession_id       UUID REFERENCES professions(id) ON DELETE SET NULL, -- snapshot
+    triaged_by_profession_category VARCHAR(50),  -- snapshot: 'provider' / 'consumer' / ...
+
+    -- ── ⚫ เคสดำ (Deceased) — ต้องรัดกุมกว่าสีอื่น ──
+    deceased_confirmed_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    deceased_confirmed_at     TIMESTAMPTZ,
+    deceased_reason           TEXT,           -- บังคับกรอก ≥ 10 อักขระ
+
+    -- ── การยืนยัน / ปฏิเสธ ──
+    verify_status     victim_verify_status NOT NULL DEFAULT 'unverified',
+    disputed_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+    disputed_reason   TEXT,
+    disputed_at       TIMESTAMPTZ,
+
+    -- ── ที่มา ──
+    reported_by       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_deleted        BOOLEAN NOT NULL DEFAULT FALSE,  -- Soft delete เท่านั้น (audit)
+    deleted_by        UUID REFERENCES users(id) ON DELETE SET NULL,
+    deleted_at        TIMESTAMPTZ,
+    deleted_reason    TEXT,
+
+    -- ── Health Data Link ──
+    health_data_consent_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    health_data_unlocked_at      TIMESTAMPTZ,
+
+    is_synced         BOOLEAN NOT NULL DEFAULT FALSE,  -- สำหรับ Cloud Sync
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_victims_incident      ON incident_victims(incident_id) WHERE is_deleted = FALSE;
+CREATE INDEX idx_victims_triage        ON incident_victims(incident_id, triage_level) WHERE is_deleted = FALSE;
+CREATE INDEX idx_victims_deceased      ON incident_victims(incident_id)
+    WHERE is_deleted = FALSE AND triage_level = 'deceased';
+CREATE INDEX idx_victims_sync          ON incident_victims(is_synced) WHERE is_synced = FALSE;
+CREATE INDEX idx_victims_linked_user   ON incident_victims(linked_user_id) WHERE linked_user_id IS NOT NULL;
+
+-- ป้องกันแจ้งชื่อซ้ำในเหตุการณ์เดียวกัน (เฉพาะที่กรอกชื่อจริง)
+CREATE UNIQUE INDEX idx_victims_no_dup
+    ON incident_victims(incident_id, lower(first_name), lower(last_name))
+    WHERE is_deleted = FALSE AND first_name IS NOT NULL AND last_name IS NOT NULL;
+
+-- บังคับที่ระดับ DB: เคสดำต้องมีคนยืนยัน + เหตุผลเสมอ
+ALTER TABLE incident_victims ADD CONSTRAINT chk_deceased_requires_confirmation
+    CHECK (
+        triage_level <> 'deceased'
+        OR (deceased_confirmed_by IS NOT NULL
+            AND deceased_confirmed_at IS NOT NULL
+            AND char_length(coalesce(deceased_reason, '')) >= 10)
+    );
+
+-- เคสดำห้ามปลดล็อกข้อมูลสุขภาพ (12.1.1 ข้อ 4)
+ALTER TABLE incident_victims ADD CONSTRAINT chk_deceased_no_health_unlock
+    CHECK (NOT (triage_level = 'deceased' AND health_data_consent_verified = TRUE));
+
+ALTER TABLE incident_victims DISABLE ROW LEVEL SECURITY; -- backend ใช้ service role
+```
+
+> **⚠️ ทำไมต้องบังคับที่ระดับ DB ด้วย**: การตรวจที่ Backend อย่างเดียวอาจพลาดได้หากมี code path ใหม่ — เคสดำมีผลทางกฎหมาย จึงต้องมี defense-in-depth
+
+#### 12.3.2 ตาราง History `incident_victim_triage_logs`
+
+```sql
+CREATE TABLE incident_victim_triage_logs (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    victim_id      UUID NOT NULL REFERENCES incident_victims(id) ON DELETE CASCADE,
+    incident_id    UUID NOT NULL,
+    from_level     triage_level,
+    to_level       triage_level NOT NULL,
+    changed_by     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    changed_by_role VARCHAR(100),      -- snapshot ชื่ออาชีพ ณ เวลานั้น
+    changed_by_profession_id       UUID REFERENCES professions(id) ON DELETE SET NULL,
+    changed_by_profession_category VARCHAR(50),  -- สำคัญสำหรับ audit เคสดำ
+    note           TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_triage_logs_victim ON incident_victim_triage_logs(victim_id, created_at DESC);
+-- ดึงประวัติการระบุเคสดำทั้งหมดเพื่อการตรวจสอบ
+CREATE INDEX idx_triage_logs_deceased ON incident_victim_triage_logs(incident_id, created_at DESC)
+    WHERE to_level = 'deceased';
+ALTER TABLE incident_victim_triage_logs DISABLE ROW LEVEL SECURITY;
+```
+
+> **Last-write-wins + History**: ทุกครั้งที่เปลี่ยนสี ระบบ `INSERT` log ใหม่เสมอ ไม่ทับของเดิม → ตรวจสอบย้อนหลังได้ว่าใครเปลี่ยนอะไรเมื่อไร (สำคัญมากหากเกิดข้อพิพาททางกฎหมาย)
+
+#### 12.3.3 Cloud Sync Schema
+
+> **⚠️ บทเรียนจาก Section 11 (Local-to-Cloud Sync)**: ต้องกำหนด local-only columns ตั้งแต่แรก มิฉะนั้น sync จะพัง
+
+```javascript
+// websocket-server/services/sync-service.js
+const VICTIM_LOCAL_ONLY_COLUMNS = new Set([
+    'is_synced',
+]);
+```
+
+**Cloud table `incident_victims` ต้องมี column เหมือน Local ทุกตัว ยกเว้น `is_synced`**
+
+**ประเด็นความปลอดภัยของการ Sync ชื่อจริงขึ้น Cloud:**
+
+| ทางเลือก | ข้อดี | ข้อเสีย | คำแนะนำ |
+|:---|:---|:---|:---|
+| **A. Sync ชื่อเต็ม plaintext** | ง่าย query ได้ | ชื่อจริงผู้บาดเจ็บอยู่บน Cloud แบบอ่านได้ | ❌ ไม่แนะนำ |
+| **B. Sync เฉพาะ `masked_name`** | ปลอดภัยสูงสุด | ทีมอาสาดูย้อนหลังจาก Cloud ไม่ได้ | ⚠️ ถ้าไม่ต้องดูย้อนหลัง |
+| **C. เข้ารหัสชื่อด้วย `pgcrypto`** | ปลอดภัย + ยังกู้คืนได้ | ต้องจัดการ key | ✅ **แนะนำ** |
+
+```sql
+-- ทางเลือก C: เข้ารหัสก่อน sync
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Cloud เก็บเป็น BYTEA แทน VARCHAR
+first_name_enc  BYTEA,   -- pgp_sym_encrypt(first_name, current_setting('app.victim_key'))
+last_name_enc   BYTEA,
+masked_name     VARCHAR(120) NOT NULL,  -- ตัวนี้ plaintext ได้ ไม่ระบุตัวตน
+```
+
+---
+
+### 12.4 Permission Matrix (ตารางสิทธิ์)
+
+| การกระทำ | ผู้ชมทั่วไป / ไทยมุง | ผู้กรอกข้อมูล (Reporter of victim) | Reporter เหตุการณ์ | ทีมอาสา (accepted/en_route/arrived) | Admin |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| ดูรายชื่อ (ชื่อย่อ) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ดูชื่อเต็ม | ❌ | ✅* เฉพาะที่ตนกรอก | ❌ | ✅ ทั้งหมด | ✅ ทั้งหมด |
+| ดูสีคัดแยก | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ดู `triage_note` (อาการ) | ❌ | ❌ | ❌ | ✅ | ✅ |
+| เพิ่มรายชื่อ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| แก้ไขชื่อ (ก่อนระบุสี) | ❌ | ✅ เฉพาะของตน | ❌ | ✅ | ✅ |
+| แก้ไขชื่อ (หลังระบุสีแล้ว) | ❌ | ❌ **ล็อก** | ❌ | ✅ | ✅ |
+| **กำหนด/เปลี่ยนสีคัดแยก** | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **ลบรายชื่อ** | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **ปฏิเสธความถูกต้อง (Dispute)** | ❌ | ❌ | ❌ | ✅ | ✅ |
+| ดู History การเปลี่ยนสี | ❌ | ❌ | ❌ | ✅ | ✅ |
+| ดูข้อมูลสุขภาพที่ปลดล็อก | ❌ | ❌ | ❌ | ✅ (ตามเงื่อนไข 12.7) | ✅ |
+
+> **✅ ยืนยันแล้ว (\*)**: **ผู้กรอกเห็นชื่อเต็มเฉพาะ record ที่ตนเองกรอกเท่านั้น** (per-row ไม่ใช่ per-request)
+> เหตุผล: เป็นข้อมูลที่ตนพิมพ์เข้าไปเอง การ mask กลับไม่มีความหมายเชิงความปลอดภัย
+> **บังคับที่ Backend**: ตรวจ `victim.reported_by === userId` ทีละแถวก่อนตัดสินใจ mask — `canViewFull` ระดับ request **ยังเป็น `false`** สำหรับผู้กรอก
+
+**ฟังก์ชันตรวจสิทธิ์ฝั่ง Backend:**
+
+```javascript
+// websocket-server/services/victim-permission-service.js
+async function getVictimPermissions(userId, incidentId) {
+  if (!userId) return { canViewFull: false, isResponder: false, isAdmin: false };
+
+  const [responderRes, adminRes] = await Promise.all([
+    pool.query(
+      `SELECT 1 FROM incident_responses
+        WHERE video_id = $1 AND responder_id = $2
+          AND status IN ('accepted','en_route','arrived') LIMIT 1`,
+      [incidentId, userId]
+    ),
+    pool.query(
+      `SELECT 1 FROM users u
+         JOIN professions p ON p.id = u.profession_id
+        WHERE u.id = $1 AND (u.is_admin = TRUE OR u.is_super_admin = TRUE) LIMIT 1`,
+      [userId]
+    ),
+  ]);
+
+  const isResponder = responderRes.rowCount > 0;
+  const isAdmin = adminRes.rowCount > 0;
+  return {
+    isResponder,
+    isAdmin,
+    canViewFull:  isResponder || isAdmin,  // ผู้กรอกตรวจแยกรายแถว
+    canTriage:    isResponder || isAdmin,
+    canDelete:    isResponder || isAdmin,
+    canDispute:   isResponder || isAdmin,
+    canViewNote:  isResponder || isAdmin,
+  };
+}
+```
+
+> **⚠️ ต้องตรวจสอบก่อน implement**: ชื่อ table/column จริงของ `incident_responses` และ flag admin ใน `users` — แผนนี้อ้างอิงจากเอกสาร Section 5 แต่ยังไม่ได้ verify กับ schema จริง
+
+---
+
+### 12.5 State Machine & Edit Lock
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                    วงจรชีวิตของ Victim Record                 │
+└──────────────────────────────────────────────────────────────┘
+
+   [ใครก็ได้กรอกชื่อ]
+          │
+          ▼
+   ┌─────────────────────┐
+   │  ⚪ white            │  ← ผู้กรอก แก้ไข/ลบชื่อตนเองได้
+   │  triaged_at: NULL   │     (ยังไม่ล็อก)
+   └──────────┬──────────┘
+              │ จิตอาสาระบุสี  (canTriage = true)
+              ▼
+   ┌─────────────────────────────────────────┐
+   │  🔴 critical / 🟡 urgent / 🟢 non_urgent │  🔒 ผู้กรอกล็อก
+   │  verify: confirmed                      │     แก้/ลบไม่ได้อีก
+   └──────────┬──────────────────────────────┘
+              │
+     ┌────────┴─────────┬──────────────────┐
+     ▼                  ▼                  ▼
+ [เปลี่ยนสีซ้ำ]     [Dispute]          [ลบ]
+ Last-write-wins   verify: disputed   is_deleted = TRUE
+ + INSERT log      + เหตุผลบังคับ     + เหตุผลบังคับ
+ (จิตอาสาเท่านั้น)  (จิตอาสาเท่านั้น)   (จิตอาสาเท่านั้น)
+```
+
+**เงื่อนไข Edit Lock (บังคับที่ Backend ไม่ใช่แค่ซ่อนปุ่ม):**
+
+```javascript
+function canEditVictim(victim, perms, userId) {
+  if (victim.is_deleted) return false;
+  if (perms.isResponder || perms.isAdmin) return true;       // จิตอาสาแก้ได้เสมอ
+  if (victim.reported_by !== userId) return false;           // ไม่ใช่ของตน
+  return victim.triaged_at === null;                          // 🔒 ล็อกหลังจิตอาสาประเมิน
+}
+```
+
+---
+
+### 12.6 API Endpoints (Node.js — `websocket-server/routes/victims.js`)
+
+| Method | Path | สิทธิ์ | คำอธิบาย |
+|:---|:---|:---|:---|
+| `GET` | `/api/incidents/:incidentId/victims` | ทุกคน | รายชื่อ (masked ตามสิทธิ) + สรุปนับแต่ละสี |
+| `POST` | `/api/incidents/:incidentId/victims` | ทุกคน (login แล้ว) | เพิ่มรายชื่อผู้อยู่ในเหตุการณ์ |
+| `PATCH` | `/api/victims/:victimId` | ผู้กรอก (ก่อนระบุสี) / จิตอาสา | แก้ไขชื่อ-สกุล |
+| `PATCH` | `/api/victims/:victimId/triage` | **จิตอาสาเท่านั้น** | กำหนด/เปลี่ยนสีคัดแยก |
+| `POST` | `/api/victims/:victimId/dispute` | **จิตอาสาเท่านั้น** | ปฏิเสธความถูกต้องของชื่อ |
+| `DELETE` | `/api/victims/:victimId` | **จิตอาสาเท่านั้น** | Soft delete (ต้องระบุเหตุผล) |
+| `GET` | `/api/victims/:victimId/history` | จิตอาสา / Admin | ประวัติการเปลี่ยนสี |
+| `GET` | `/api/incidents/:incidentId/triage-summary` | ทุกคน | สรุปนับสำหรับ Map Badge (เบา ไม่มีชื่อเลย) |
+
+**ตัวอย่าง Response — `GET /api/incidents/:id/victims` (ผู้ชมทั่วไป):**
+
+```json
+{
+  "success": true,
+  "summary": { "critical": 2, "urgent": 1, "non_urgent": 3, "white": 1, "total": 7 },
+  "viewerPermissions": { "canTriage": false, "canDelete": false, "canViewFull": false },
+  "victims": [
+    {
+      "id": "uuid-1",
+      "displayName": "นาย ก",
+      "isMasked": true,
+      "firstName": null,
+      "lastName": null,
+      "triageLevel": "critical",
+      "triagedAt": "2026-08-09T14:32:00+07:00",
+      "triagedByName": "พยาบาลวิชาชีพ",
+      "verifyStatus": "confirmed",
+      "canEdit": false,
+      "hasHealthData": false
+    }
+  ]
+}
+```
+
+**ตัวอย่าง Response — ผู้ใช้ที่เป็นจิตอาสาในเหตุการณ์นั้น:**
+
+```json
+{
+  "viewerPermissions": { "canTriage": true, "canDelete": true, "canViewFull": true },
+  "victims": [
+    {
+      "id": "uuid-1",
+      "displayName": "นาย สมชาย ใจดี",
+      "isMasked": false,
+      "firstName": "สมชาย",
+      "lastName": "ใจดี",
+      "triageLevel": "critical",
+      "triageNote": "หมดสติ ชีพจรเบา",
+      "verifyStatus": "confirmed",
+      "canEdit": true,
+      "hasHealthData": true,
+      "healthDataSessionId": "uuid-session"
+    }
+  ]
+}
+```
+
+**Atomic Triage Update (ป้องกัน Race Condition):**
+
+```sql
+-- DB Function: update_victim_triage(victim_id, new_level, user_id, note)
+-- ใช้ SELECT ... FOR UPDATE ตามหลักเดียวกับ Escrow (Section 11.1)
+CREATE OR REPLACE FUNCTION update_victim_triage(
+    p_victim_id UUID, p_new_level triage_level,
+    p_user_id UUID, p_note TEXT
+) RETURNS incident_victims AS $$
+DECLARE
+    v_old   incident_victims;
+    v_role  VARCHAR(100);
+BEGIN
+    SELECT * INTO v_old FROM incident_victims
+     WHERE id = p_victim_id AND is_deleted = FALSE
+     FOR UPDATE;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'VICTIM_NOT_FOUND'; END IF;
+
+    SELECT p.name INTO v_role FROM users u
+      LEFT JOIN professions p ON p.id = u.profession_id WHERE u.id = p_user_id;
+
+    -- Last-write-wins: ทับค่าเดิมเสมอ
+    UPDATE incident_victims SET
+        triage_level  = p_new_level,
+        triaged_by    = p_user_id,
+        triaged_at    = NOW(),
+        triage_note   = COALESCE(p_note, triage_note),
+        verify_status = 'confirmed',
+        is_synced     = FALSE,
+        updated_at    = NOW()
+     WHERE id = p_victim_id;
+
+    -- History: INSERT ใหม่เสมอ ไม่ทับ
+    INSERT INTO incident_victim_triage_logs
+        (victim_id, incident_id, from_level, to_level, changed_by, changed_by_role, note)
+    VALUES
+        (p_victim_id, v_old.incident_id, v_old.triage_level, p_new_level, p_user_id, v_role, p_note);
+
+    RETURN (SELECT * FROM incident_victims WHERE id = p_victim_id);
+END;
+$$ LANGUAGE plpgsql;
+```
+
+---
+
+### 12.7 WebSocket Events (Real-time)
+
+Broadcast เข้า room `video-{incidentId}` เหมือน Thai Mhung (Section 11.6)
+
+| Event | ทิศทาง | Payload | ผู้รับ |
+|:---|:---|:---|:---|
+| `victim-added` | S→C | `{ victimId, displayName, triageLevel, summary }` | ทุกคนในห้อง (ชื่อย่อเสมอ) |
+| `victim-triage-updated` | S→C | `{ victimId, fromLevel, toLevel, triagedByName, summary }` | ทุกคนในห้อง |
+| `victim-name-updated` | S→C | `{ victimId, displayName }` | ทุกคนในห้อง (ชื่อย่อเสมอ) |
+| `victim-deleted` | S→C | `{ victimId, summary }` | ทุกคนในห้อง |
+| `victim-disputed` | S→C | `{ victimId, disputedByName, summary }` | ทุกคนในห้อง |
+| `victim-health-unlocked` | S→C | `{ victimId, sessionId }` | **เฉพาะ socket ของจิตอาสา** |
+
+> **⚠️ กฎ PDPA สำหรับ WebSocket**: Broadcast **ต้องส่งชื่อย่อเสมอ** ห้ามส่งชื่อเต็มผ่าน broadcast เด็ดขาด เพราะทุกคนในห้องรับได้
+> ผู้ที่มีสิทธิ์เห็นชื่อเต็ม ให้ **re-fetch ผ่าน REST API** ที่ตรวจสิทธิ์รายคน หรือใช้ `io.to(socketId).emit()` ยิงตรงเฉพาะ socket ที่ยืนยันสิทธิแล้ว
+
+```javascript
+// websocket-server/services/victim-broadcast-service.js
+function broadcastTriageUpdate(io, incidentId, payload, summary) {
+  // 1. ทุกคน — ชื่อย่อเท่านั้น
+  io.to(`video-${incidentId}`).emit('victim-triage-updated', {
+    victimId: payload.victimId,
+    displayName: payload.maskedName,   // ← masked เสมอ
+    fromLevel: payload.fromLevel,
+    toLevel: payload.toLevel,
+    triagedByName: payload.triagedByName,
+    summary,
+  });
+  // 2. จิตอาสา — ยิงตรงพร้อมชื่อเต็ม
+  for (const socketId of getResponderSocketIds(incidentId)) {
+    io.to(socketId).emit('victim-triage-updated:full', {
+      ...payload, fullName: payload.fullName, triageNote: payload.triageNote,
+    });
+  }
+}
+```
+
+---
+
+### 12.8 UI Specification
+
+#### 12.8.1 Entry Point — แก้ไข `bottom_tabs_widget.dart`
+
+> **⚠️ ปัญหาปัจจุบัน**: ปุ่ม "เกี่ยวดอง" มีเงื่อนไข `!isEligibleResponder` ทำให้ **จิตอาสาที่รับงานแล้วมองไม่เห็นปุ่มนี้** แต่จิตอาสาคือคนที่ต้องใช้ฟีเจอร์นี้มากที่สุด
+
+```dart
+// ❌ เดิม — บรรทัด 81 ของ bottom_tabs_widget.dart
+if (!isEligibleResponder && showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
+
+// ✅ ใหม่ — ตัด !isEligibleResponder ออก เพื่อให้จิตอาสาเห็นด้วย
+if (showThaiMhung && !(selectedTab == 2 || isThaiMhungReporting))
+```
+
+**เปลี่ยนพฤติกรรมจาก Tab เป็น Bottom Sheet:**
+
+```dart
+// เดิม: onTap: () => onTabSelected(1)  → เปลี่ยน _selectedTab = 1 (เต็มจอ)
+// ใหม่: onTap: onTriageTap             → เปิด showModalBottomSheet ครึ่งจอ
+
+// ใน emergency_live_page.dart
+void _showTriageSheet() {
+  if (_currentVideoId == null) return;
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.5,   // ครึ่งจอตามที่ต้องการ
+      minChildSize: 0.3,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (ctx, scrollController) => TriageSheetWidget(
+        incidentId: _currentVideoId!,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
+```
+
+> **การจัดการ `_selectedTab == 1`**: หลังเปลี่ยนเป็น Bottom Sheet แล้ว case นี้ใน `_buildMainContent()` (บรรทัด ~812) จะไม่ถูกเรียกอีก → **ลบ `RelationshipViewWidget` และ import ทิ้ง** พร้อมลบไฟล์ `relationship_view_widget.dart`
+
+**ป้ายเตือนบนปุ่ม**: หากมีผู้ประสบเหตุกลุ่มสีแดง ให้แสดง badge แดงกระพริบมุมขวาบนของปุ่ม "เกี่ยวดอง"
+
+#### 12.8.2 Layout — `triage_sheet_widget.dart`
+
+```text
+╔═══════════════════════════════════════════════╗
+║              ──── handle bar ────             ║  ← ลากปรับความสูงได้
+║                                               ║
+║  ผู้อยู่ในเหตุการณ์                    7 คน   ║
+║  ┌─────┬─────┬─────┬─────┐                    ║
+║  │🔴 2 │🟡 1 │🟢 3 │⚪ 1 │  ← กดกรองได้       ║
+║  └─────┴─────┴─────┴─────┘                    ║
+╠═══════════════════════════════════════════════╣
+║  ▼ เรียงตามความวิกฤต (แดง → เขียว)            ║
+║ ┌───────────────────────────────────────────┐ ║
+║ │ 🔴 │ นาย สมชาย ใจดี              [เปลี่ยน]│ ║ ← จิตอาสา: ชื่อเต็ม
+║ │    │ วิกฤต · หมดสติ ชีพจรเบา              │ ║   + note
+║ │    │ ประเมินโดย พยาบาลวิชาชีพ · 14:32     │ ║
+║ │    │ 💊 มีข้อมูลสุขภาพ  [ดู]              │ ║ ← ปลดล็อกแล้ว
+║ ├───────────────────────────────────────────┤ ║
+║ │ 🟡 │ นางสาว ข                             │ ║ ← Viewer: ชื่อย่อ
+║ │    │ รีบด่วน · ประเมินแล้ว 14:35          │ ║
+║ ├───────────────────────────────────────────┤ ║
+║ │ ⚪ │ นาย ค                    [ระบุกลุ่ม] │ ║ ← ยังไม่ประเมิน
+║ │    │ ยังไม่ประเมิน · แจ้งโดย ผู้ใช้ทั่วไป  │ ║
+║ ├───────────────────────────────────────────┤ ║
+║ │ 🟢 │ ด.ช. ง            ⚠️ ข้อมูลถูกโต้แย้ง│ ║ ← disputed
+║ └───────────────────────────────────────────┘ ║
+╠═══════════════════════════════════════════════╣
+║      [ ➕ แจ้งชื่อผู้อยู่ในเหตุการณ์ ]         ║ ← ทุกคนกดได้
+╚═══════════════════════════════════════════════╝
+```
+
+**การจัดเรียง**: `critical` → `urgent` → `non_urgent` → `white` แล้วเรียงตาม `triaged_at DESC` ในแต่ละกลุ่ม (ภายในกลุ่ม `white` ให้ `triaged_at IS NULL` อยู่ท้ายสุด)
+
+**Swipe Actions (เฉพาะจิตอาสา)**: ปัดซ้ายบนการ์ด → `[โต้แย้ง]` `[ลบ]`
+
+#### 12.8.3 Dialog เพิ่มรายชื่อ
+
+```text
+┌─────────────────────────────────────┐
+│  แจ้งชื่อผู้อยู่ในเหตุการณ์          │
+├─────────────────────────────────────┤
+│  คำนำหน้า  [ นาย        ▼]          │  ← dropdown: นาย/นาง/นางสาว/
+│  ชื่อ       [_________________]      │     ด.ช./ด.ญ./ไม่ระบุ
+│  นามสกุล    [_________________]      │
+│                                     │
+│  ℹ️ ผู้ชมทั่วไปจะเห็นเป็น "นาย ก"    │  ← preview แบบ real-time
+│     เฉพาะทีมอาสาที่เข้าช่วยเหลือ     │
+│     เท่านั้นที่เห็นชื่อเต็ม           │
+│                                     │
+│  ☑️ ข้าพเจ้ายืนยันว่าข้อมูลถูกต้อง   │  ← บังคับติ๊กก่อนส่ง (PDPA)
+│     และยินยอมให้ใช้เพื่อการช่วยเหลือ │
+│                                     │
+│        [ยกเลิก]      [บันทึก]        │
+└─────────────────────────────────────┘
+```
+
+> **PDPA Consent**: ต้องมี checkbox ยินยอมทุกครั้ง และบันทึกลง log ว่าใครเป็นผู้แจ้ง เวลาใด — เพราะเป็นการเปิดเผยข้อมูลส่วนบุคคลของ**บุคคลที่สาม**
+
+#### 12.8.4 Dialog ระบุกลุ่มสี (เฉพาะจิตอาสา)
+
+```text
+┌─────────────────────────────────────┐
+│  ประเมินระดับความวิกฤต               │
+│  นาย สมชาย ใจดี                     │
+├─────────────────────────────────────┤
+│ ┌─────────────────────────────────┐ │
+│ │ 🔴  วิกฤต                        │ │  ← การ์ดใหญ่ กดง่ายด้วยมือเดียว
+│ │     ต้องช่วยเหลือทันที           │ │     (จิตอาสาอาจใส่ถุงมืออยู่)
+│ ├─────────────────────────────────┤ │
+│ │ 🟡  รีบด่วน                      │ │
+│ │     ต้องช่วยเหลือเร็ว รอได้สั้นๆ  │ │
+│ ├─────────────────────────────────┤ │
+│ │ 🟢  ไม่รีบด่วน                   │ │
+│ │     อาการเล็กน้อย รอได้          │ │
+│ └─────────────────────────────────┘ │
+│                                     │
+│  บันทึกอาการ (ไม่บังคับ)             │
+│  [_____________________________]    │  ← เห็นเฉพาะทีมอาสา
+│                                     │
+│  ⚠️ การประเมินนี้จะถูกบันทึกในชื่อคุณ │
+│                                     │
+│        [ยกเลิก]      [ยืนยัน]        │
+└─────────────────────────────────────┘
+```
+
+**กรณีเปลี่ยนสีที่คนอื่นเคยประเมินไว้** → แสดงเตือนก่อน:
+> *"นาย ก ถูกประเมินเป็น 🔴 วิกฤต โดย พยาบาลวิชาชีพ เมื่อ 14:32 — การเปลี่ยนของคุณจะแทนที่ค่าเดิม"*
+
+---
+
+### 12.9 Map Badge — สรุปสถานะเหนือหมุดเหตุการณ์
+
+```text
+                ┌─────────────────┐
+                │ 🔴2  🟡1  🟢3   │  ← Custom Marker Widget
+                └────────┬────────┘
+                         ▼
+                        📍  (หมุดเหตุการณ์เดิม)
+```
+
+**การ implement**: Google Maps ไม่รองรับ Widget เป็น Marker โดยตรง ต้องแปลงเป็น Bitmap
+
+```dart
+// lib/features/video/presentation/pages/utils/triage_badge_marker.dart
+Future<BitmapDescriptor> buildTriageBadgeMarker(TriageSummary s) async {
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  // วาดกล่องพื้นหลัง + จุดสี + ตัวเลข
+  // ...
+  final img = await recorder.endRecording().toImage(width, height);
+  final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+  return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+}
+```
+
+**กฎการแสดงผล:**
+- ซ่อน badge ทั้งหมดเมื่อ `total == 0`
+- ซ่อนสีที่มีค่า `0` (เช่น มีแค่แดง 2 → แสดง `🔴2` อย่างเดียว)
+- ไม่แสดง `white` บน map (ลด noise)
+- **Cache Bitmap** ตาม key `"${c}-${u}-${n}"` เพื่อไม่ต้องวาดใหม่ทุก frame — สำคัญมากด้าน performance
+- อัปเดตเมื่อได้รับ WebSocket `victim-triage-updated` เท่านั้น ไม่ poll
+
+---
+
+### 12.10 การเชื่อมกับ Emergency Health Data (Section 9)
+
+> **เงื่อนไขปลดล็อก — ต้องครบ 3 ข้อพร้อมกัน:**
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│ ① ผู้ประสบเหตุเป็นผู้ใช้ในระบบ                            │
+│    victim.linked_user_id IS NOT NULL                     │
+│                          AND                             │
+│ ② เจ้าตัวเปิด Auto-Release ไว้ล่วงหน้า + session released │
+│    emergency_health_release_sessions.status = 'released'  │
+│    AND user_id = victim.linked_user_id                   │
+│    AND incident_id = victim.incident_id                  │
+│                          AND                             │
+│ ③ ถูกระบุสีโดยจิตอาสาแล้ว (ยืนยันตัวตนภาคสนาม)            │
+│    victim.triaged_at IS NOT NULL                         │
+│    AND victim.verify_status = 'confirmed'                │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+      health_data_consent_verified = TRUE
+      health_data_unlocked_at = NOW()
+                         ▼
+      emit 'victim-health-unlocked' → เฉพาะ socket จิตอาสา
+                         ▼
+      แสดงปุ่ม [💊 ดูข้อมูลสุขภาพ] บนการ์ดผู้ประสบเหตุ
+      → เปิด EmergencyHealthDataDialog เดิม (Section 9)
+      → บันทึก health_data_access_logs ทุกครั้งที่เปิด
+```
+
+**การจับคู่ `linked_user_id`:**
+
+| วิธี | ความแม่นยำ | หมายเหตุ |
+|:---|:---|:---|
+| จับคู่จากชื่อ-สกุลตรงกับ `users` | ⚠️ ต่ำ | ชื่อซ้ำได้ **ห้ามใช้เป็นวิธีเดียว** |
+| จับคู่จาก `emergency_health_release_sessions` ที่ active ใน incident เดียวกัน | ✅ สูง | **แนะนำ** — เพราะ session ผูกกับ incident อยู่แล้ว |
+| จิตอาสายืนยันด้วยตนเอง (เลือกจาก dropdown session ที่ released) | ✅ สูงสุด | เพิ่มขั้นตอน แต่ปลอดภัยสุด |
+
+> **⚠️ ความเสี่ยงร้ายแรง**: หากจับคู่ผิดคน = **เปิดเผยข้อมูลสุขภาพของคนที่ไม่เกี่ยวข้อง**
+> **แนะนำใช้วิธีที่ 2 + 3 ร่วมกัน** — ระบบเสนอรายชื่อ session ที่ released ใน incident นั้น แล้วให้จิตอาสากดยืนยันว่าเป็นคนเดียวกัน
+
+---
+
+### 12.11 Implementation Files
+
+#### Database Migrations
+```
+supabase/migrations/
+├── 20260809xxxxxx_create_incident_victims.sql          (ตารางหลัก + enum + index)
+├── 20260809xxxxxx_create_victim_triage_logs.sql        (history)
+├── 20260809xxxxxx_create_update_victim_triage_fn.sql   (DB function + FOR UPDATE)
+└── 20260809xxxxxx_cloud_victims_encrypted.sql          (Cloud schema + pgcrypto)
+```
+> ต้องรัน migration เดียวกันทั้ง **Local PostgreSQL** และ **Supabase Cloud**
+
+#### Backend (Node.js)
+```
+websocket-server/
+├── routes/victims.js                          [ใหม่] REST endpoints ทั้ง 8 ตัว
+├── services/victim-permission-service.js      [ใหม่] getVictimPermissions()
+├── services/victim-broadcast-service.js       [ใหม่] WebSocket broadcast + masking
+├── services/victim-health-link-service.js     [ใหม่] ตรวจ 3 เงื่อนไขปลดล็อก
+├── utils/victim-name-mask.js                  [ใหม่] maskVictimName()
+├── services/sync-service.js                   [แก้]  + syncVictimsToCloud()
+└── server.js                                  [แก้]  + app.use('/api', victimsRouter)
+```
+
+#### Flutter
+```
+lib/features/video/
+├── models/triage_models.dart                                    [ใหม่] IncidentVictim, TriageLevel, TriageSummary
+├── data/repositories/victim_repository.dart                     [ใหม่] เรียก Local API
+├── presentation/pages/widgets/triage_sheet_widget.dart          [ใหม่] Bottom Sheet ครึ่งจอ
+├── presentation/pages/widgets/triage_victim_card.dart           [ใหม่] การ์ดรายคน + swipe actions
+├── presentation/pages/widgets/add_victim_dialog.dart            [ใหม่] ฟอร์มแจ้งชื่อ + consent
+├── presentation/pages/widgets/assign_triage_dialog.dart         [ใหม่] เลือกสี (จิตอาสา)
+├── presentation/pages/utils/triage_badge_marker.dart            [ใหม่] วาด Bitmap สำหรับ Map
+├── presentation/pages/widgets/bottom_tabs_widget.dart           [แก้]  ตัด !isEligibleResponder + badge
+├── presentation/pages/emergency_live_page.dart                  [แก้]  _showTriageSheet() + subscribe events
+├── presentation/pages/widgets/relationship_view_widget.dart     [ลบ]   แทนที่ด้วย Triage Sheet
+└── services/websocket_service.dart                              [แก้]  + victimTriageStream
+```
+
+---
+
+### 12.12 Implementation Phases
+
+| Phase | ขอบเขต | ผลลัพธ์ที่ตรวจสอบได้ |
+|:---|:---|:---|
+| **1. Database** | Migration ทั้ง 4 ไฟล์ (Local + Cloud) + DB function | `\d incident_victims` แสดงครบ, เรียก `update_victim_triage()` ได้ |
+| **2. Backend Core** | `victim-name-mask.js` + `victim-permission-service.js` + `routes/victims.js` | `curl` ด้วย user 3 แบบ (viewer/responder/admin) ได้ผลต่างกันถูกต้อง |
+| **3. Backend Realtime** | `victim-broadcast-service.js` + register events | เปิด 2 client ทดสอบ — ทั้งคู่เห็นสีเปลี่ยนพร้อมกัน และ viewer เห็นชื่อย่อ |
+| **4. Flutter Models + Repo** | `triage_models.dart` + `victim_repository.dart` | Unit test parse JSON ทั้ง masked/unmasked |
+| **5. Flutter UI — อ่าน** | `triage_sheet_widget.dart` + `triage_victim_card.dart` + แก้ `bottom_tabs_widget.dart` | กดปุ่มเกี่ยวดอง → Sheet ขึ้นครึ่งจอ แสดงรายชื่อถูกต้อง |
+| **6. Flutter UI — เขียน** | `add_victim_dialog.dart` + `assign_triage_dialog.dart` | Viewer เพิ่มชื่อได้, Responder ระบุสีได้, Viewer ไม่เห็นปุ่มระบุสี |
+| **7. Map Badge** | `triage_badge_marker.dart` + integration | Badge ขึ้นเหนือหมุด + อัปเดต real-time + ไม่ค้าง frame |
+| **8. Cloud Sync** | `syncVictimsToCloud()` + pgcrypto | ปิดเน็ต → เพิ่มชื่อ → เปิดเน็ต → ข้อมูลขึ้น Cloud แบบเข้ารหัส |
+| **9. Health Data Link** | `victim-health-link-service.js` + UI ปุ่มดูข้อมูล | ครบ 3 เงื่อนไข → ปุ่มขึ้น, ขาดข้อใดข้อหนึ่ง → ปุ่มไม่ขึ้น |
+| **10. E2E Test** | Maestro flow | ดู 12.14 |
+
+---
+
+### 12.13 Risk Analysis
+
+| # | ความเสี่ยง | ผลกระทบ | แนวทางป้องกัน |
+|:--|:---|:---|:---|
+| 1 | **ชื่อเต็มรั่วผ่าน WebSocket broadcast** | 🔴 ละเมิด PDPA | Broadcast ส่ง masked เสมอ, ชื่อเต็มยิงตรงเฉพาะ socket ที่ตรวจสิทธิแล้ว (12.7) |
+| 2 | **จับคู่ Health Data ผิดคน** | 🔴 เปิดเผยข้อมูลสุขภาพผู้อื่น | ใช้ session-based matching + จิตอาสายืนยันด้วยตนเอง (12.10) |
+| 3 | **แจ้งชื่อมั่ว / กลั่นแกล้ง** | 🟡 ข้อมูลปลอมในระบบ | จิตอาสา Dispute/ลบได้, บันทึก `reported_by` ทุก record, Rate Limit **อ่านจากตารางจริง** (`app_settings.video_system_config.victimReportRateLimitPerIncident`) — default `0` = ยังไม่กำหนด (ดู 12.16) |
+| 4 | **Last-write-wins ทำให้สีวิกฤตถูกลดโดยพลการ** | 🟠 ผู้ป่วยวิกฤตถูกมองข้าม | เก็บ history 100% + แสดง dialog เตือนก่อนเปลี่ยน + System Message ใน Live Chat เมื่อลดระดับจากแดง |
+| 5 | **De-anonymization จากชื่อย่อ** | 🟡 เดาตัวตนได้ | เติมลำดับเมื่อชื่อย่อซ้ำ (12.2) + ไม่แสดงนามสกุลย่อเลย |
+| 6 | **Race condition — 2 จิตอาสาระบุสีพร้อมกัน** | 🟡 log ไม่ครบ | `SELECT ... FOR UPDATE` ใน DB function (12.6) |
+| 7 | **Cloud Sync พังเพราะ schema mismatch** | 🟠 ข้อมูลไม่ขึ้น Cloud | กำหนด `VICTIM_LOCAL_ONLY_COLUMNS` ตั้งแต่แรก + ตรวจก่อนเพิ่ม column ใหม่ (บทเรียน Section 11) |
+| 8 | **จิตอาสาออกจากเหตุการณ์แต่ยังเห็นชื่อเต็ม** | 🟡 สิทธิค้าง | ตรวจสิทธิ**ทุก request** ไม่ cache ฝั่ง Client — เมื่อ status เปลี่ยนเป็น `completed`/`cancelled` ให้ตัดสิทธิทันที |
+| 9 | **Map Badge วาด Bitmap ทุก frame** | 🟡 แอปกระตุก | Cache BitmapDescriptor ตาม summary key (12.9) |
+| 10 | **FK ชี้ `auth.users`** | 🔴 บันทึกไม่ได้เลย | ใช้ `REFERENCES users(id)` เสมอ (กฎ Section 11.5) |
+| 11 | **ผู้กรอกลบชื่อตัวเองหลังจิตอาสาประเมินแล้ว** | 🟠 ข้อมูลภาคสนามหาย | Edit Lock บังคับที่ Backend ไม่ใช่แค่ซ่อนปุ่ม (12.5) |
+| 12 | **ข้อมูลผู้ป่วยค้างในระบบหลังเหตุการณ์จบ** | 🟠 เก็บข้อมูลเกินจำเป็น (PDPA) | Retention Policy **อ่านจากตารางจริง** (`app_settings.video_system_config.victimRetentionDays`) — default `0` = ยังไม่กำหนดวัน (ไม่ anonymize) → Admin กำหนดเองที่หน้า Video System Admin (ดู 12.16) |
+
+---
+
+### 12.14 Testing Plan
+
+**Backend (curl / integration):**
+```bash
+# 1. Viewer ทั่วไป — ต้องได้ชื่อย่อเท่านั้น
+curl -H "X-User-Id: $VIEWER_ID" \
+  http://localhost:3000/api/incidents/$INCIDENT_ID/victims | jq '.victims[0]'
+# คาดหวัง: firstName = null, isMasked = true, displayName = "นาย ก"
+
+# 2. Responder — ต้องได้ชื่อเต็ม
+curl -H "X-User-Id: $RESPONDER_ID" \
+  http://localhost:3000/api/incidents/$INCIDENT_ID/victims | jq '.victims[0]'
+# คาดหวัง: firstName = "สมชาย", isMasked = false
+
+# 3. Viewer พยายามระบุสี — ต้องถูกปฏิเสธ
+curl -X PATCH -H "X-User-Id: $VIEWER_ID" -H "Content-Type: application/json" \
+  -d '{"triageLevel":"critical"}' \
+  http://localhost:3000/api/victims/$VICTIM_ID/triage
+# คาดหวัง: 403 Forbidden
+
+# 4. ตรวจ history หลังเปลี่ยนสี 2 ครั้ง
+psql -c "SELECT from_level, to_level, changed_by_role FROM incident_victim_triage_logs
+         WHERE victim_id = '$VICTIM_ID' ORDER BY created_at;"
+# คาดหวัง: 2 แถว
+```
+
+**Maestro E2E** — `tests/maestro/scenario_triage.yaml`
+1. Login เป็น Viewer → เปิดเหตุการณ์ → กด "เกี่ยวดอง" → Sheet ขึ้นครึ่งจอ
+2. กด "แจ้งชื่อ" → กรอก `นาย/สมชาย/ใจดี` → ติ๊ก consent → บันทึก
+3. `assertVisible: "นาย ก"` และ `assertNotVisible: "สมชาย"` ← **ทดสอบ PDPA**
+4. `assertNotVisible: "ระบุกลุ่ม"` ← Viewer ไม่มีสิทธิระบุสี
+5. Login เป็น Responder ที่ accepted → เปิดเหตุการณ์เดียวกัน → กด "เกี่ยวดอง"
+6. `assertVisible: "นาย สมชาย ใจดี"` ← เห็นชื่อเต็ม
+7. กด "ระบุกลุ่ม" → เลือก 🔴 วิกฤต → ยืนยัน
+8. `assertVisible: "วิกฤต"` + กลับไปที่จอ Viewer → `assertVisible: "🔴 1"` ← real-time
+
+**PDPA Checklist (ต้องผ่านครบก่อน Production):**
+- [ ] ดัก Network Response ด้วย Charles/mitmproxy ในฐานะ Viewer → **ต้องไม่พบชื่อเต็มใน payload ใดๆ**
+- [ ] ดัก WebSocket frame ในฐานะ Viewer → **ต้องไม่พบชื่อเต็ม**
+- [ ] มี consent checkbox ก่อนบันทึกทุกครั้ง
+- [ ] มี audit log ครบทุกการเข้าถึงข้อมูลสุขภาพ
+- [ ] ตั้งค่า `victimRetentionDays` > 0 ที่หน้า Video System Admin (ดู 12.16) และ anonymize job ทำงานจริง
+- [ ] ตั้งค่า `victimReportRateLimitPerIncident` > 0 ที่หน้า Video System Admin (ดู 12.16)
+
+---
+
+### 12.15 ประเด็นที่ยืนยันแล้ว (Resolved — 2026-08-09)
+
+| # | ประเด็น | ข้อสรุปที่ยืนยัน |
+|:--|:---|:---|
+| 1 | ผู้กรอกเห็นชื่อเต็มหรือไม่ | ✅ **เห็นชื่อเต็มเฉพาะ record ที่ตนเองกรอก** (per-row check ที่ Backend — 12.4) |
+| 2 | Reporter ผู้ถ่ายวิดีโอไม่เห็นชื่อเต็ม | ✅ **ถูกต้อง** — เว้นเมื่อเขาเป็นจิตอาสาในเหตุการณ์นั้นด้วย |
+| 3 | ทางเลือก Cloud Sync | ✅ **เลือก C (pgcrypto)** — ยืนยันแล้วว่าไม่มีค่าใช้จ่ายเพิ่ม และไม่ขัดกับ `docs/secure` (ดู 12.15.1) |
+| 4 | Retention Policy | ✅ **default ยังไม่กำหนดวัน** (`victimRetentionDays = 0` = ปิด) — Admin กำหนดเองที่ Video System Admin, **ดึงค่าจากตารางจริง** `app_settings` (12.16) |
+| 5 | Rate Limit การแจ้งชื่อ | ✅ **default ยังไม่กำหนด** (`victimReportRateLimitPerIncident = 0` = ไม่จำกัด) — Admin กำหนดเอง, **ดึงค่าจากตารางจริง** `app_settings` (12.16) |
+| 6 | Schema จริงของ `incident_responses` / admin flag | ⏳ ยังต้อง verify ก่อนเขียนโค้ด (หมายเหตุใน 12.4) |
+| 7 | Default Triage Level | ✅ **⚪ ขาว (`white`)** — ผู้ป่วยทั่วไป/ยังไม่ประเมิน — ยกเลิกสีเทา/`unassessed` (12.1) |
+
+#### 12.15.1 การตรวจทางเลือก C (pgcrypto) — ค่าใช้จ่าย + ความสอดคล้องกับ `docs/secure`
+
+| หัวข้อตรวจ | ผล |
+|:---|:---|
+| **ค่าใช้จ่ายเพิ่ม** | ✅ **ไม่มี** — `pgcrypto` เป็น extension มาตรฐานที่มากับ PostgreSQL/Supabase อยู่แล้ว ไม่ต้องชื้อ KMS/HSM ภายนอก |
+| **ขัดกับ `07_secret_management.md`?** | ✅ **ไม่ขัด — แต่เพิ่มหน้าที่** ตาม K4/K6: key ต้องอยู่ใน `.env` ของ `websocket-server` เท่านั้น + เพิ่มใน `.env.example` + เพิ่มใน `secret_rotation_runbook.md` |
+| **ขัดกับ `12_least_privilege.md`?** | ✅ ไม่ขัด — การถอดรหัสทำที่ server เท่านั้น Client (Flutter) **ไม่เคยมี key** |
+| **ข้อห้ามเด็ดขาด** | ❌ ห้าม hardcode key ใน SQL/migration, ห้ามส่ง key มาที่ Client, ห้าม log ค่าที่ decrypt แล้ว (ตาม `05_logging_audit_monitoring.md`) |
+
+**งานที่เพิ่มจากการเลือก C:**
+- เพิ่ม `VICTIM_NAME_ENC_KEY` ใน `websocket-server/.env` + `.env.example`
+- Sync service เข้ารหัสก่อนส่งขึ้น Cloud (`pgp_sym_encrypt`) — Cloud เก็บ `BYTEA`
+- เพิ่มขั้นตอน rotation ของ key นี้ใน `docs/secure/secret_rotation_runbook.md`
+
+---
+
+### 12.16 Admin Configuration — Retention & Rate Limit (ตารางจริง)
+
+> **หน้าจอ**: `Video System Admin` — `lib/features/admin/presentation/pages/video_admin_page.dart`
+> **ที่เก็บ**: `app_settings` (key = `video_system_config`, JSONB) — ตารางจริงที่มีอยู่แล้ว
+> **ตัวอ่านค่า**: `SyncConfig.loadFromSupabase()` ใน `main()` → ใช้ค่าจากตารางเสมอ ไม่ hardcode
+
+| Field (JSONB) | หน้าจอ Admin | Default | ความหมายของ `0` |
+|:---|:---|:---:|:---|
+| `victimRetentionDays` | ระยะเก็บชื่อผู้ประสบเหตุ (วัน) | `0` | **ยังไม่กำหนด** — ไม่รัน anonymize job |
+| `victimReportRateLimitPerIncident` | จำกัดจำนวนการแจ้งชื่อ/คน/เหตุการณ์ | `0` | **ไม่จำกัด** — ข้ามการตรวจ rate limit |
+
+```text
+┌─ Victim & PDPA Controls ──────────────────────┐
+│ ระยะเก็บชื่อผู้ประสบเหตุ (วัน)                │
+│ [ 0                                    ]        │
+│ 0 = ยังไม่กำหนด (ไม่ลบ/anonymize อัตโนมัติ)      │
+├──────────────────────────────────────────────┤
+│ จำกัดการแจ้งชื่อ/คน/เหตุการณ์               │
+│ [ 0                                    ]        │
+│ 0 = ไม่จำกัด                                   │
+└──────────────────────────────────────────────┘
+           [ บันทึกการตั้งค่า (Apply Now) ]
+```
+
+**งานที่ต้องเพิ่ม (ต่อยอดของเดิม):**
+
+| ไฟล์ | สิ่งที่เพิ่ม |
+|:---|:---|
+| `lib/config/sync_config.dart` | 2 static fields + อ่าน/เขียนใน `loadFromSupabase()` / `saveToSupabase()` (ต่อจาก `maxEmergencyRecordingSeconds`) |
+| `lib/features/admin/presentation/pages/video_admin_page.dart` | เพิ่ม section "Victim & PDPA Controls" 2 ช่อง |
+| `websocket-server` (victim report endpoint) | อ่านค่าจาก `app_settings` → ข้ามตรวจเมื่อค่าเป็น `0` |
+| anonymize job (cron) | อ่าน `victimRetentionDays` → ค่า `0` = skip job ทั้งหมด |
+
+> **⚠️ ก่อน Production**: ค่า `0` ทั้งสองตัว**ขัดกับ**แผน `03_rate_limiting_resource_exhaustion.md` และ PDPA data minimization
+> → ต้องตั้งค่าจริงที่หน้า Admin ก่อนเปิดใช้จริง (ค่าที่แนะนำเป็นจุดตั้งต้น: retention 90 วัน, rate limit 5 ชื่อ)
+
+---
+
