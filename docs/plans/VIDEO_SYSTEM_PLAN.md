@@ -3528,6 +3528,48 @@ void _showTriageSheet() {
 
 > **การจัดการ `_selectedTab == 1`**: หลังเปลี่ยนเป็น Bottom Sheet แล้ว case นี้ใน `_buildMainContent()` (บรรทัด ~812) จะไม่ถูกเรียกอีก → **ลบ `RelationshipViewWidget` และ import ทิ้ง** พร้อมลบไฟล์ `relationship_view_widget.dart`
 
+> **ซ่อน Top Bar ขณะเปิด Triage Sheet**: เนื่องจาก tab เกี่ยวดองแสดงเนื้อหาเป็น `SizedBox.shrink()` แล้วเปิด `TriageSheetWidget` ครึ่งจอด้านหน้า ปุ่ม **Back (`FloatingBackButton`)** และ **ปุ่มควบคุมวิดีโอ (`GlassmorphismVideoControls`)** บน `emergency_live_page.dart` ต้องถูกซ่อนขณะ `_selectedTab == 1` เพื่อไม่ให้ผู้ใช้กดผิดขณะ focus กับรายการผู้ป่วย และเพื่อหลีกเลี่ยงปุ่มควบคุมวิดีโอลอยทับหน้า Triage Sheet โดยไม่จำเป็น
+>
+> ```dart
+> // emergency_live_page.dart — Layer 3 (Top Bar)
+> FloatingBackButton(
+>   visible: _isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting,
+>   onTap: () => Navigator.of(context).pop(),
+> ),
+> if (_isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting && _chewieController != null && !_isOverlayVisible) ...[
+>   GlassmorphismVideoControls(
+>     controller: _chewieController!.videoPlayerController,
+>   ),
+> ]
+> ```
+
+> **ซ่อน Floating "ข้อมูลสุขภาพ" ขณะเปิด Triage Sheet**: ในเหตุการณ์ที่มีผู้ป่วยฉุกเฉินหลายคน ปุ่ม Floating "ข้อมูลสุขภาพ" ระดับหน้าเหตุการณ์ (`FloatingActionButton.extended` ใน `emergency_live_page.dart` Layer 5) จะไม่ชัดว่าเปิดข้อมูลของผู้ป่วยคนใด จึงต้อง **ซ่อนขณะ `_selectedTab == 1`** และให้ผู้ใช้เข้าถึงข้อมูลสุขภาพรายบุคคลผ่าน **ปุ่ม "ดูข้อมูลสุขภาพ" ในแต่ละการ์ดผู้ป่วยใน `TriageSheetWidget`** แทน (ซึ่งมีอยู่แล้วใน `TriageVictimCard` ตามเงื่อนไข `victim.hasHealthData && (canTriage || canViewFull)`)
+>
+> ```dart
+> // emergency_live_page.dart — Layer 5 (Floating Health Data Button)
+> // เดิม: if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable)
+> // ใหม่: เพิ่ม _selectedTab != 1 เพื่อซ่อนขณะอยู่ในโหมดเกี่ยวดอง
+> if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable && _selectedTab != 1)
+> ```
+
+> **ซ่อน Dead Man Check-in chip ขณะเปิด Triage Sheet**: Dead Man Check-in chip เป็นกลไก Dead Man's Switch สำหรับ **ข้อมูลสุขภาพของตัวผู้ใช้เอง** (โหลดจาก `fetchCheckin(userId)`) ไม่เกี่ยวข้องกับผู้ป่วยในเหตุการณ์ จึงไม่จำเป็นต้องแสดงในโหมดเกี่ยวดองที่ผู้ใช้กำลังจัดการผู้ป่วยคนอื่น ต้อง **ซ่อนขณะ `_selectedTab == 1`**
+>
+> ```dart
+> // emergency_live_page.dart — Dead Man Check-in chip
+> // เดิม: if (_isUiVisible && _deadManCheckin?.isEnabled == true)
+> // ใหม่: เพิ่ม _selectedTab != 1
+> if (_isUiVisible && _deadManCheckin?.isEnabled == true && _selectedTab != 1)
+> ```
+
+> **ซ่อน Emergency Health Panic Overlay ขณะเปิด Triage Sheet**: Panic Overlay เป็นหน้าจอเต็มที่เตือน **เจ้าของข้อมูลสุขภาพ** ว่าข้อมูลของตัวเองกำลังจะถูกปลดล็อกอัตโนมัติ (counting → released) ไม่เกี่ยวข้องกับผู้ป่วยในเหตุการณ์ จึงไม่จำเป็นต้องแสดงในโหมดเกี่ยวดอง ต้อง **ซ่อนขณะ `_selectedTab == 1`**
+>
+> ```dart
+> // emergency_live_page.dart — Emergency Health Panic Overlay
+> // เดิม: if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null)
+> // ใหม่: เพิ่ม _selectedTab != 1
+> if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null && _selectedTab != 1)
+> ```
+
 **ป้ายเตือนบนปุ่ม**: หากมีผู้ประสบเหตุกลุ่มสีแดง ให้แสดง badge แดงกระพริบมุมขวาบนของปุ่ม "เกี่ยวดอง"
 
 #### 12.8.2 Layout — `triage_sheet_widget.dart`
@@ -3541,27 +3583,45 @@ void _showTriageSheet() {
 ║  │🔴 2 │🟡 1 │🟢 3 │⚪ 1 │  ← กดกรองได้       ║
 ║  └─────┴─────┴─────┴─────┘                    ║
 ╠═══════════════════════════════════════════════╣
-║  ▼ เรียงตามความวิกฤต (แดง → เขียว)            ║
+║  แบ่งกลุ่มตามความวิกฤต (แดง → เขียว)         ║
+║  และเรียงภายในแต่ละกลุ่มตามเวลาแจ้งล่าสุด    ║
+║  (ล่าสุดอยู่ด้านบนสุด)                         ║
+║                                               ║
+║  🔴 วิกฤต 2 คน                                 ║
 ║ ┌───────────────────────────────────────────┐ ║
 ║ │ 🔴 │ นาย สมชาย ใจดี              [เปลี่ยน]│ ║ ← จิตอาสา: ชื่อเต็ม
 ║ │    │ วิกฤต · หมดสติ ชีพจรเบา              │ ║   + note
 ║ │    │ ประเมินโดย พยาบาลวิชาชีพ · 14:32     │ ║
 ║ │    │ 💊 มีข้อมูลสุขภาพ  [ดู]              │ ║ ← ปลดล็อกแล้ว
-║ ├───────────────────────────────────────────┤ ║
+║ └───────────────────────────────────────────┘ ║
+║                                               ║
+║  🟡 รีบด่วน 1 คน                               ║
+║ ┌───────────────────────────────────────────┐ ║
 ║ │ 🟡 │ นางสาว ข                             │ ║ ← Viewer: ชื่อย่อ
 ║ │    │ รีบด่วน · ประเมินแล้ว 14:35          │ ║
-║ ├───────────────────────────────────────────┤ ║
-║ │ ⚪ │ นาย ค                    [ระบุกลุ่ม] │ ║ ← ยังไม่ประเมิน
-║ │    │ ยังไม่ประเมิน · แจ้งโดย ผู้ใช้ทั่วไป  │ ║
-║ ├───────────────────────────────────────────┤ ║
+║ └───────────────────────────────────────────┘ ║
+║                                               ║
+║  🟢 ไม่รีบด่วน 3 คน                            ║
+║ ┌───────────────────────────────────────────┐ ║
 ║ │ 🟢 │ ด.ช. ง            ⚠️ ข้อมูลถูกโต้แย้ง│ ║ ← disputed
+║ └───────────────────────────────────────────┘ ║
+║                                               ║
+║  ⚪ ยังไม่ประเมิน 1 คน                         ║
+║ ┌───────────────────────────────────────────┐ ║
+║ │ ⚪ │ นาย ค                                   ║ ← ค่าเริ่มต้น = ขาว
+║ │    │ ยังไม่ประเมิน · แจ้งโดย ผู้ใช้ทั่วไป  │ ║
+║ │    │ [⚫ ดำ] [🔴 แดง] [🟡 เหลือง] [🟢 เขียว]│ ║ ← เฉพาะผู้มีสิทธิ
 ║ └───────────────────────────────────────────┘ ║
 ╠═══════════════════════════════════════════════╣
 ║      [ ➕ แจ้งชื่อผู้อยู่ในเหตุการณ์ ]         ║ ← ทุกคนกดได้
 ╚═══════════════════════════════════════════════╝
 ```
 
-**การจัดเรียง**: `critical` → `urgent` → `non_urgent` → `white` แล้วเรียงตาม `triaged_at DESC` ในแต่ละกลุ่ม (ภายในกลุ่ม `white` ให้ `triaged_at IS NULL` อยู่ท้ายสุด)
+**การแสดงผล**: แบ่งเป็นกลุ่มตามความวิกฤต (`critical` → `urgent` → `non_urgent` → `white`) และแสดงจำนวนสรุปของแต่ละกลุ่ม
+
+**การจัดเรียงภายในกลุ่ม**: เรียงตามเวลาแจ้งรายชื่อ/อัปเดตล่าสุดแบบ `DESC` (รายการล่าสุดอยู่ด้านบนสุด)
+
+**สถานะยังไม่ประเมิน**: ถ้า `triage_level='white'` และ `triaged_at IS NULL` ให้แสดงเป็น `⚪ ยังไม่ประเมิน` พร้อมชุดปุ่มเปลี่ยนระดับ 4 ปุ่มสำหรับผู้มีสิทธิ (`⚫ ดำ`, `🔴 แดง`, `🟡 เหลือง`, `🟢 เขียว`)
 
 **Swipe Actions (เฉพาะจิตอาสา)**: ปัดซ้ายบนการ์ด → `[โต้แย้ง]` `[ลบ]`
 
@@ -3588,34 +3648,29 @@ void _showTriageSheet() {
 
 > **PDPA Consent**: ต้องมี checkbox ยินยอมทุกครั้ง และบันทึกลง log ว่าใครเป็นผู้แจ้ง เวลาใด — เพราะเป็นการเปิดเผยข้อมูลส่วนบุคคลของ**บุคคลที่สาม**
 
-#### 12.8.4 Dialog ระบุกลุ่มสี (เฉพาะจิตอาสา)
+#### 12.8.4 Inline Triage Action + Dialog เฉพาะเคสดำ (เฉพาะจิตอาสา)
+
+**หลักการ UI**: การเปลี่ยน triage level ปกติให้ทำได้ **ทันทีจาก bottom sheet** โดยกดปุ่มสีของการ์ดนั้นเลย ไม่ต้องเปิด dialog เพิ่ม
+
+**การบันทึก audit trail**: ทุกครั้งที่กดเปลี่ยนสี ระบบต้องบันทึก `triaged_by`, `triaged_at` และค่าเดิม/ค่าใหม่ลงตารางจริงเหมือนเดิม
+
+**เคสดำ (`deceased`)**: ให้เปิด **dialog เฉพาะกรณีที่กด [เพิ่มหมายเหตุ]** เท่านั้น เพื่อบังคับให้ผู้ใช้ยืนยันเหตุผล/หมายเหตุเพิ่มเติมก่อนบันทึก
 
 ```text
-┌─────────────────────────────────────┐
-│  ประเมินระดับความวิกฤต               │
-│  นาย สมชาย ใจดี                     │
-├─────────────────────────────────────┤
-│ ┌─────────────────────────────────┐ │
-│ │ 🔴  วิกฤต                        │ │  ← การ์ดใหญ่ กดง่ายด้วยมือเดียว
-│ │     ต้องช่วยเหลือทันที           │ │     (จิตอาสาอาจใส่ถุงมืออยู่)
-│ ├─────────────────────────────────┤ │
-│ │ 🟡  รีบด่วน                      │ │
-│ │     ต้องช่วยเหลือเร็ว รอได้สั้นๆ  │ │
-│ ├─────────────────────────────────┤ │
-│ │ 🟢  ไม่รีบด่วน                   │ │
-│ │     อาการเล็กน้อย รอได้          │ │
-│ └─────────────────────────────────┘ │
-│                                     │
-│  บันทึกอาการ (ไม่บังคับ)             │
-│  [_____________________________]    │  ← เห็นเฉพาะทีมอาสา
-│                                     │
-│  ⚠️ การประเมินนี้จะถูกบันทึกในชื่อคุณ │
-│                                     │
-│        [ยกเลิก]      [ยืนยัน]        │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  รายการเปลี่ยนระดับความวิกฤต                │
+│  นาย สมชาย ใจดี                              │
+├──────────────────────────────────────────────┤
+│  [⚫ ดำ]   [🔴 แดง]   [🟡 เหลือง]   [🟢 เขียว] │  ← กดเปลี่ยนได้ทันที
+│                                              │
+│  ถ้าเลือก ⚫ ดำ → แสดงเฉพาะปุ่ม [เพิ่มหมายเหตุ] │
+│  แล้วค่อยเปิด dialog สำหรับกรอกหมายเหตุ      │
+│                                              │
+│  [เพิ่มหมายเหตุ]                              │
+└──────────────────────────────────────────────┘
 ```
 
-**กรณีเปลี่ยนสีที่คนอื่นเคยประเมินไว้** → แสดงเตือนก่อน:
+**กรณีเปลี่ยนสีที่คนอื่นเคยประเมินไว้** → แสดงเตือนสั้นๆ ก่อนบันทึก:
 > *"นาย ก ถูกประเมินเป็น 🔴 วิกฤต โดย พยาบาลวิชาชีพ เมื่อ 14:32 — การเปลี่ยนของคุณจะแทนที่ค่าเดิม"*
 
 #### 12.8.5 Dialog โต้แย้งความถูกต้องของชื่อ (เฉพาะจิตอาสา)
@@ -3779,9 +3834,8 @@ lib/features/video/
 ├── models/triage_models.dart                                    [ใหม่] IncidentVictim, TriageLevel, TriageSummary
 ├── data/repositories/victim_repository.dart                     [ใหม่] เรียก Local API
 ├── presentation/pages/widgets/triage_sheet_widget.dart          [ใหม่] Bottom Sheet ครึ่งจอ
-├── presentation/pages/widgets/triage_victim_card.dart           [ใหม่] การ์ดรายคน + swipe actions
+├── presentation/pages/widgets/triage_victim_card.dart           [ใหม่] การ์ดรายคน + inline triage actions + swipe actions
 ├── presentation/pages/widgets/add_victim_dialog.dart            [ใหม่] ฟอร์มแจ้งชื่อ + consent
-├── presentation/pages/widgets/assign_triage_dialog.dart         [ใหม่] เลือกสี (จิตอาสา)
 ├── presentation/pages/utils/triage_badge_marker.dart            [ใหม่] วาด Bitmap สำหรับ Map
 ├── presentation/pages/widgets/bottom_tabs_widget.dart           [แก้]  ตัด !isEligibleResponder + badge
 ├── presentation/pages/emergency_live_page.dart                  [แก้]  _showTriageSheet() + subscribe events
@@ -3815,7 +3869,7 @@ lib/features/video/
 | **2. Backend Core** | `victim-name-mask.js` + `victim-permission-service.js` + `routes/victims.js` | `curl` ด้วย user 3 แบบ (viewer/responder/admin) ได้ผลต่างกันถูกต้อง — ปิด PDPA + BOLA |
 | **3. Flutter Models + Repo** | `triage_models.dart` + `victim_repository.dart` | Unit test parse JSON ทั้ง masked/unmasked |
 | **4. Flutter UI — อ่าน** | `triage_sheet_widget.dart` + `triage_victim_card.dart` + แก้ `bottom_tabs_widget.dart` | กดปุ่มเกี่ยวดอง → Sheet ขึ้นครึ่งจอ แสดงรายชื่อถูกต้อง |
-| **5. Flutter UI — เขียน** | `add_victim_dialog.dart` + `assign_triage_dialog.dart` | Viewer เพิ่มชื่อได้, Responder ระบุสีได้, Viewer ไม่เห็นปุ่มระบุสี |
+| **5. Flutter UI — เขียน** | `add_victim_dialog.dart` + `triage_victim_card.dart` | Viewer เพิ่มชื่อได้, Responder เปลี่ยนระดับจาก bottom sheet ได้, Viewer ไม่เห็นปุ่มเปลี่ยนระดับ |
 
 > เมื่อครบ P0 ระบบใช้งานได้จริงในภาคสนามแล้ว (เพิ่มชื่อ/คัดแยกสี/ดูรายชื่อ) แม้ยังไม่มี real-time sync — ผู้ใช้ต้อง refresh เองเพื่อดูข้อมูลล่าสุด
 
@@ -4212,4 +4266,47 @@ Flow ใน `POST /api/incidents/:incidentId/victims`:
 - Local API เป้น fast-path หลักสำหรับ Video System; ถ้า backend ล้ม การ์ดวีดีโอจะไม่แสดงแม้ Supabase ยังทำงาน
 - ควรตรวจสอบ `lsof` ทั้ง `localhost:3000` และ `:8080` ก่อนรัน Maestro หรือ demo video system
 - หาก IP ของเครื่องหลักเปลี่ยน (e.g. เปลี่ยน Wi-Fi) ต้องอัปเดต `mainMachineIp` ใน `lib/config/app_config.dart` ให้ตรง
+
+## 14. Runbook: ไม่สามารถเพิ่มอาชีพใหม่ (Admin → เพิ่มอาชีพใหม่)
+
+### 14.1 สาเหตุ
+
+ตาราง `public.professions` เปิดใช้ **Row Level Security (RLS)** และนโยบายเริ่มต้น (`INSERT WITH CHECK (true)`) ถูกปรับคุ้มครองให้เข้มงวดขึ้นบนโปรเจคจริง ทำให้การ `INSERT` ผ่าน `SupabaseClient` จาก Flutter — แม้ผู้ใช้จะ authenticated แล้ว — ถูกปฏิเสธด้วย `42501`
+
+นอกจากนี้ ฟิลด์ `approval_required_license_types` ในตาราง `professions` เป็น `text[]` แต่ข้อมูลส่งจาก Dart มาในรูปแบบ JSON array ผ่าน `JSONB` ทำให้เกิดข้อผิดพลาด `42804: column "approval_required_license_types" is of type text[] but expression is of type jsonb`
+
+### 14.2 อาการ
+
+- กด `เพิ่ม` ในหน้าจอ `เพิ่มอาชีพใหม่` แล้วไม่สำเร็จ
+- Log แสดง:
+  - `RPC create failed: PostgrestException ... column "approval_required_license_types" is of type text[] but expression is of type jsonb, code: 42804`
+  - `Error saving profession: PostgrestException ... new row violates row-level security policy for table "professions", code: 42501`
+- แป้นพิมพ์บังข้อความ error ด้านล่างจอ
+
+### 14.3 วิธีแก้ไข
+
+1. **ฝั่งฐานข้อมูล:** สร้างหรืออัปเดต RPC function `create_profession_bypass_rls` แบบ `SECURITY DEFINER` เพื่อข้าม RLS และแปลง `approval_required_license_types` จาก JSONB เป็น `text[]`
+   - ไฟล์ migration: `supabase/migrations/20260810100000_create_profession_bypass_rls.sql`
+   - หลักการ: เหมือนกับ RPC `update_profession_bypass_rls` ที่มีอยู่แล้วสำหรับ update
+2. **ฝั่ง Flutter:** `ProfessionRepository.createProfession` เรียก RPC ก่อน ถ้าล้มเหลวจึง fallback ไป `INSERT` ตรง (เพื่อ local dev ที่ยังไม่มี RLS จำกัด)
+   - ไฟล์: `lib/features/admin/data/repositories/profession_repository.dart`
+3. **ฝั่ง UI:** ครอบเนื้อหา dialog ด้วย `GestureDetector` พร้อม `FocusScope.of(context).unfocus()` เมื่อแตะพื้นที่นอกช่อง input แป้นพิมพ์จะหายและมองเห็นข้อความ error
+   - ไฟล์: `lib/features/admin/presentation/pages/profession_admin_page.dart`
+
+### 14.4 วิธี deploy
+
+```bash
+cd /Users/apisekpanyakong/ProjectFlutter/sheserved
+supabase db push
+```
+
+หรือเปิด **Supabase Dashboard → SQL Editor** แล้วรันเนื้อหาใน `supabase/migrations/20260810100000_create_profession_bypass_rls.sql`
+
+### 14.5 บทเรียน
+
+- ห้ามอัปเดต RLS ของ `professions` บน Supabase dashboard โดยไม่มี migration สำรอง — มิฉะนั้นเครื่อง dev หรือ teammate จะไม่ทราบว่า policy เปลี่ยนไป
+- ทุกครั้งที่ต้องส่ง `List<String>` จาก Flutter ไป Postgres RPC ให้ตรวจสอบว่า column เป้าหมายเป็น `text[]` หรือ `jsonb` — ถ้าเป็น `text[]` ให้แปลงด้วย `jsonb_array_elements_text` หรือ cast ก่อน insert
+- ถ้ามี RPC บายพาสสำหรับ `UPDATE` แล้ว ต้องสร้าง RPC คู่ขนานสำหรับ `INSERT` เสมอ เมื่อ RLS บังคับใช้
+- Flutter ไม่ควรพึ่ง service role key เพื่อข้าม RLS บน client — ต้องข้ามที่ RPC ฝั่ง Supabase เท่านั้น
+
 

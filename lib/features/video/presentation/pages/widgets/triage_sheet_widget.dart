@@ -184,18 +184,49 @@ class _TriageSheetWidgetState extends State<TriageSheetWidget> {
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      itemCount: _response!.victims.length,
-      itemBuilder: (context, index) {
-        final victim = _response!.victims[index];
-        return TriageVictimCard(
+    final victims = List<IncidentVictim>.from(_response!.victims);
+    // แบ่งกลุ่มตามระดับ triage ตามลำดับ critical → urgent → non_urgent → white
+    final order = [TriageLevel.critical, TriageLevel.urgent, TriageLevel.nonUrgent, TriageLevel.white, TriageLevel.deceased];
+    final widgets = <Widget>[];
+    for (final level in order) {
+      final group = victims.where((v) => v.triageLevel == level).toList()
+        ..sort((a, b) {
+          final aTime = a.triagedAt ?? a.createdAt;
+          final bTime = b.triagedAt ?? b.createdAt;
+          return bTime.compareTo(aTime);
+        });
+      if (group.isEmpty) continue;
+      widgets.add(_buildGroupHeader(level, group.length));
+      for (final victim in group) {
+        widgets.add(TriageVictimCard(
           victim: victim,
           permissions: _response!.viewerPermissions,
           repository: widget.repository,
           onChanged: _loadVictims,
-        );
-      },
+        ));
+      }
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      children: widgets,
+    );
+  }
+
+  Widget _buildGroupHeader(TriageLevel level, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Row(
+        children: [
+          Text(
+            '${level.emoji} ${level.displayName} $count คน',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(level.colorValue),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

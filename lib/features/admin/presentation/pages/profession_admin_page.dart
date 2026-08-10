@@ -732,10 +732,12 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
       title: Text(isEditing ? 'แก้ไขอาชีพ' : 'เพิ่มอาชีพใหม่'),
       content: SizedBox(
         width: MediaQuery.of(context).size.width * 0.9,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
             TextField(
               controller: _nameController,
@@ -1067,6 +1069,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
           ],
         ),
       ),
+    ),
     ),
       actions: [
         TextButton(

@@ -218,9 +218,21 @@ class ProfessionRepository {
       'updated_at': now.toIso8601String(),
     };
 
-    final response =
-        await _client.from('professions').insert(data).select().single();
-    return Profession.fromJson(response);
+    try {
+      final response = await _client.rpc(
+        'create_profession_bypass_rls',
+        params: {'p_data': data},
+      );
+      if (response == null) {
+        throw Exception('ไม่สามารถสร้างอาชีพได้ (RPC ส่งค่าว่างกลับมา)');
+      }
+      return Profession.fromJson(response as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('RPC create failed: $e, falling back to direct insert');
+      final response =
+          await _client.from('professions').insert(data).select().single();
+      return Profession.fromJson(response);
+    }
   }
 
   /// อัพเดทอาชีพ

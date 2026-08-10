@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../../models/triage_models.dart';
 import '../../../data/repositories/victim_repository.dart';
-import 'assign_triage_dialog.dart';
 
 class TriageVictimCard extends StatelessWidget {
   final IncidentVictim victim;
@@ -20,6 +19,7 @@ class TriageVictimCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isUnassessed = victim.triageLevel == TriageLevel.white && victim.triagedAt == null;
     return Slidable(
       key: ValueKey(victim.id),
       endActionPane: ActionPane(
@@ -46,32 +46,54 @@ class TriageVictimCard extends StatelessWidget {
       ),
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        child: ListTile(
-          leading: _buildTriageBadge(),
-          title: Row(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  victim.displayName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: victim.isMasked ? Colors.grey[600] : Colors.black87,
+              Row(
+                children: [
+                  _buildTriageBadge(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: victim.canEdit ? () => _showEditDialog(context) : null,
+                                child: Text(
+                                  victim.displayName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: victim.isMasked ? Colors.grey[600] : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (victim.verifyStatus == VictimVerifyStatus.disputed)
+                              const Icon(Icons.warning, color: Colors.orange, size: 18),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        _buildSubtitle(),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
-              if (victim.verifyStatus == VictimVerifyStatus.disputed)
-                const Icon(Icons.warning, color: Colors.orange, size: 18),
+              if (victim.hasHealthData && (permissions.canTriage || permissions.canViewFull)) ...[
+                const SizedBox(height: 6),
+                _buildHealthDataButton(context),
+              ],
+              if (permissions.canTriage) ...[
+                const SizedBox(height: 8),
+                _buildInlineTriageButtons(context, isUnassessed),
+              ],
             ],
           ),
-          subtitle: _buildSubtitle(),
-          trailing: permissions.canTriage
-              ? IconButton(
-                  icon: const Icon(Icons.color_lens),
-                  onPressed: () => _showAssignTriageDialog(context),
-                  tooltip: 'ระบุสีคัดแยก',
-                )
-              : null,
-          onTap: victim.canEdit ? () => _showEditDialog(context) : null,
         ),
       ),
     );
@@ -116,15 +138,164 @@ class TriageVictimCard extends StatelessWidget {
     );
   }
 
-  Future<void> _showAssignTriageDialog(BuildContext context) async {
-    await AssignTriageDialog.show(
-      context,
-      victimId: victim.id,
-      currentLevel: victim.triageLevel,
-      canTriageBlack: permissions.canTriageBlack,
-      repository: repository,
+  Widget _buildInlineTriageButtons(BuildContext context, bool isUnassessed) {
+    return Row(
+      children: [
+        if (!isUnassessed)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              'เปลี่ยนระดับ:',
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
+          ),
+        ...TriageLevel.values.where((l) => l != TriageLevel.white).map((level) {
+          final isDeceased = level == TriageLevel.deceased;
+          final isDisabled = isDeceased && !permissions.canTriageBlack;
+          final isCurrent = victim.triageLevel == level;
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: InkWell(
+              onTap: isDisabled ? null : () => _onTriageButtonPressed(context, level),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isCurrent ? Color(level.colorValue) : Color(level.colorValue).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isCurrent ? Color(level.colorValue) : Color(level.colorValue).withOpacity(0.4),
+                    width: isCurrent ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(level.emoji, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 3),
+                    Text(
+                      level.displayName,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isCurrent ? Colors.white : Color(level.colorValue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+        if (permissions.canTriageBlack == false && !isUnassessed)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Tooltip(
+              message: 'เฉพาะผู้ให้บริการสุขภาพ (provider)',
+              child: Icon(Icons.lock, size: 14, color: Colors.grey[400]),
+            ),
+          ),
+      ],
     );
-    onChanged();
+  }
+
+  Widget _buildHealthDataButton(BuildContext context) {
+    return InkWell(
+      onTap: () => _onHealthDataPressed(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.medical_services, size: 14, color: Colors.blue),
+            SizedBox(width: 4),
+            Text('ดูข้อมูลสุขภาพ', style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onTriageButtonPressed(BuildContext context, TriageLevel level) async {
+    if (level == TriageLevel.deceased) {
+      await _showDeceasedDialog(context);
+      return;
+    }
+    if (victim.triageLevel != TriageLevel.white && victim.triagedAt != null && victim.triageLevel != level) {
+      final confirmed = await _showChangeWarning(context, level);
+      if (confirmed != true) return;
+    }
+    try {
+      await repository.assignTriage(victimId: victim.id, level: level);
+      onChanged();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<bool?> _showChangeWarning(BuildContext context, TriageLevel newLevel) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ยืนยันการเปลี่ยนระดับ'),
+        content: Text(
+          '${victim.displayName} ถูกประเมินเป็น ${victim.triageLevel.emoji} ${victim.triageLevel.displayName}'
+          '${victim.triagedByName != null ? ' โดย ${victim.triagedByName}' : ''}'
+          '${victim.triagedAt != null ? ' เมื่อ ${_formatTime(victim.triagedAt!)}' : ''}'
+          ' — การเปลี่ยนของคุณจะแทนที่ค่าเดิม',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('เปลี่ยน')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDeceasedDialog(BuildContext context) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const _DeceasedConfirmDialog(),
+    );
+    if (result == null) return;
+    try {
+      await repository.assignTriage(
+        victimId: victim.id,
+        level: TriageLevel.deceased,
+        note: result['note'] as String,
+      );
+      onChanged();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  String _formatTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _onHealthDataPressed(BuildContext context) async {
+    try {
+      final result = await repository.unlockHealthData(victim.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ปลดล็อกข้อมูลสุขภาพสำเร็จ')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
   }
 
   Future<void> _showEditDialog(BuildContext context) async {
@@ -319,6 +490,73 @@ class _ReasonDialogState extends State<_ReasonDialog> {
         ElevatedButton(
           onPressed: _isValid ? () => Navigator.pop(context, _controller.text.trim()) : null,
           child: const Text('ยืนยัน'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DeceasedConfirmDialog extends StatefulWidget {
+  const _DeceasedConfirmDialog();
+
+  @override
+  State<_DeceasedConfirmDialog> createState() => _DeceasedConfirmDialogState();
+}
+
+class _DeceasedConfirmDialogState extends State<_DeceasedConfirmDialog> {
+  final _noteController = TextEditingController();
+  final _confirmController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final noteValid = _noteController.text.length >= 10;
+    final confirmValid = _confirmController.text.trim() == 'ยืนยัน';
+    return AlertDialog(
+      title: const Text('ยืนยันเคสดำ (เสียชีวิต)'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'การระบุเคสดำเป็นการตัดสินใจที่สำคัญ '
+              'โปรดยืนยันด้วยเหตุผลทางคลินิก',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'เหตุผลทางคลินิก (บังคับ ≥ 10 อักขระ)',
+                counterText: '${_noteController.text.length} ตัวอักษร',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _confirmController,
+              decoration: const InputDecoration(
+                labelText: 'พิมพ์ "ยืนยัน" เพื่อยืนยัน',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+        ElevatedButton(
+          onPressed: noteValid && confirmValid
+              ? () => Navigator.pop(context, {'note': _noteController.text.trim()})
+              : null,
+          child: const Text('บันทึก'),
         ),
       ],
     );

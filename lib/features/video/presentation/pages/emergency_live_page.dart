@@ -33,7 +33,6 @@ import 'widgets/live_view_widget.dart';
 import 'widgets/thai_mhung_ruler_gallery_widget.dart';
 import 'widgets/glassmorphism_video_controls.dart';
 import 'widgets/incident_report_widget.dart';
-import 'widgets/relationship_view_widget.dart';
 import 'widgets/donation_sheet_widget.dart';
 import 'widgets/thai_mhung_gallery_widget.dart';
 import 'widgets/emergency_map_section.dart';
@@ -44,6 +43,7 @@ import 'widgets/rescue_accept_panel_widget.dart';
 import 'widgets/rescue_control_panel_widget.dart';
 import 'widgets/triage_sheet_widget.dart';
 import '../../data/repositories/victim_repository.dart';
+import '../../models/triage_models.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:intl/intl.dart';
 
@@ -440,10 +440,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 FloatingBackButton(
-                  visible: _isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting,
+                  visible: _isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting,
                   onTap: () => Navigator.of(context).pop(),
                 ),
-                if (_isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting && _chewieController != null && !_isOverlayVisible) ...[
+                if (_isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting && _chewieController != null && !_isOverlayVisible) ...[
                   const SizedBox(width: 12),
                   GlassmorphismVideoControls(
                     controller: _chewieController!.videoPlayerController,
@@ -508,7 +508,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             ),
 
           // ✅ [Phase 3a] Floating button to view patient health data
-          if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable)
+          if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable && _selectedTab != 1)
             Positioned(
               right: 16,
               bottom: MediaQuery.of(context).padding.bottom + 160,
@@ -527,14 +527,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
               ),
             ),
 
-          if (_isUiVisible && _deadManCheckin?.isEnabled == true)
+          if (_isUiVisible && _deadManCheckin?.isEnabled == true && _selectedTab != 1)
             Positioned(
               left: 16,
               top: MediaQuery.of(context).padding.top + 88,
               child: _buildDeadManCheckInChip(),
             ),
 
-          if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null)
+          if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null && _selectedTab != 1)
             Positioned.fill(
               child: _buildEmergencyHealthPanicOverlay(),
             ),
@@ -820,19 +820,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
       );
       }
     } else if (_selectedTab == 1) {
-      return RelationshipViewWidget(
-        currentVideo: _currentVideo,
-        onCategorySelected: (cat) => setState(() {
-          _selectedTab = 2;
-          _selectedEmergencyCategoryId = cat.id;
-          _selectedEmergencyCategory = cat;
-        }),
-        onBackTap: () => setState(() {
-          _selectedTab = 0;
-          _isThaiMhungReporting = false;
-          _isUiVisible = true;
-        }),
-      );
+      return const SizedBox.shrink();
     } else {
       return SizedBox(
         height: MediaQuery.of(context).size.height * 0.8,

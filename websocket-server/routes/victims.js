@@ -104,7 +104,7 @@ module.exports = (pool) => {
 
       const victim = result.rows[0];
 
-      victimBroadcastService.broadcastVictimInserted(pool, incidentId, victim);
+      await victimBroadcastService.broadcastVictimInserted(pool, incidentId, victim);
 
       res.status(201).json({
         success: true,
@@ -153,7 +153,7 @@ module.exports = (pool) => {
 
       const updated = result.rows[0];
 
-      victimBroadcastService.broadcastVictimUpdated(pool, victim.incident_id, updated);
+      await victimBroadcastService.broadcastVictimUpdated(pool, victim.incident_id, updated);
 
       res.json({
         success: true,
@@ -204,7 +204,7 @@ module.exports = (pool) => {
 
       const updated = result.rows[0];
 
-      victimBroadcastService.broadcastVictimTriageUpdated(pool, victim.incident_id, updated);
+      await victimBroadcastService.broadcastVictimTriageUpdated(pool, victim.incident_id, updated);
 
       res.json({
         success: true,
@@ -256,7 +256,7 @@ module.exports = (pool) => {
 
       const updated = result.rows[0];
 
-      victimBroadcastService.broadcastVictimDisputed(pool, victim.incident_id, updated);
+      await victimBroadcastService.broadcastVictimDisputed(pool, victim.incident_id, updated);
 
       res.json({
         success: true,
@@ -306,7 +306,7 @@ module.exports = (pool) => {
         [victimId, userId, reason]
       );
 
-      victimBroadcastService.broadcastVictimDeleted(pool, victim.incident_id, victimId);
+      await victimBroadcastService.broadcastVictimDeleted(pool, victim.incident_id, victimId);
 
       res.json({ success: true, message: 'Victim deleted' });
     } catch (error) {

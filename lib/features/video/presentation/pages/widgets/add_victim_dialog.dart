@@ -45,6 +45,13 @@ class _AddVictimDialogState extends State<AddVictimDialog> {
     'ด.ญ.',
   ];
 
+  String _buildMaskedPreview() {
+    final first = _firstNameController.text.trim();
+    if (first.isEmpty) return '$_prefix ...';
+    final firstChar = first[0];
+    return '$_prefix $firstChar';
+  }
+
   @override
   void dispose() {
     _firstNameController.dispose();
@@ -77,6 +84,32 @@ class _AddVictimDialogState extends State<AddVictimDialog> {
             TextField(
               controller: _lastNameController,
               decoration: const InputDecoration(labelText: 'สกุล'),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.visibility_off, size: 16, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ValueListenableBuilder(
+                      valueListenable: _firstNameController,
+                      builder: (context, value, _) {
+                        return Text(
+                          'ผู้ชมทั่วไปจะเห็นเป็น "${_buildMaskedPreview()}" เฉพาะทีมอาสาที่เข้าช่วยเหลือเท่านั้นที่เห็นชื่อเต็ม',
+                          style: const TextStyle(fontSize: 11, color: Colors.blue),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             CheckboxListTile(

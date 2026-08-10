@@ -309,7 +309,13 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (!mounted || _currentVideoId == null) return;
       final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
       if (payload['incidentId']?.toString() == _currentVideoId) {
-        setState(() => _triageBadgeCount++);
+        final summaryJson = payload['summary'] as Map<String, dynamic>?;
+        if (summaryJson != null) {
+          final summary = TriageSummary.fromJson(summaryJson);
+          setState(() => _triageBadgeCount = summary.total);
+        } else {
+          setState(() => _triageBadgeCount++);
+        }
       }
     });
 
@@ -317,7 +323,28 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (!mounted) return;
       final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
       if (payload['incidentId']?.toString() == _currentVideoId) {
-        // Refresh triage summary badge
+        final summaryJson = payload['summary'] as Map<String, dynamic>?;
+        if (summaryJson != null) {
+          final summary = TriageSummary.fromJson(summaryJson);
+          setState(() => _triageBadgeCount = summary.total);
+        } else {
+          _refreshTriageBadge();
+        }
+      }
+    });
+
+    ws.socket?.on('victim-name-updated', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        _refreshTriageBadge();
+      }
+    });
+
+    ws.socket?.on('victim-disputed', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
         _refreshTriageBadge();
       }
     });
@@ -326,9 +353,23 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       if (!mounted) return;
       final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
       if (payload['incidentId']?.toString() == _currentVideoId) {
-        setState(() {
-          if (_triageBadgeCount > 0) _triageBadgeCount--;
-        });
+        final summaryJson = payload['summary'] as Map<String, dynamic>?;
+        if (summaryJson != null) {
+          final summary = TriageSummary.fromJson(summaryJson);
+          setState(() => _triageBadgeCount = summary.total);
+        } else {
+          setState(() {
+            if (_triageBadgeCount > 0) _triageBadgeCount--;
+          });
+        }
+      }
+    });
+
+    ws.socket?.on('victim-health-unlocked', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      if (payload['incidentId']?.toString() == _currentVideoId) {
+        setState(() {});
       }
     });
   }
