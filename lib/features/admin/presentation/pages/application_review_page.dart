@@ -26,6 +26,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   bool _isLoading = true;
   VerificationStatus _selectedStatus = VerificationStatus.pending;
   Set<String> _usersWithPendingBeneficiary = {};
+  bool _showSheservedOnly = false;
 
   List<OwnerOnboardingTracking> _ownerTracking = [];
   bool _isLoadingOwnerTracking = true;
@@ -108,72 +109,6 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     }
   }
 
-  List<RegistrationApplication> _getMockApplications() {
-    final now = DateTime.now();
-    return [
-      RegistrationApplication(
-        id: '1',
-        oderId: 'user-1',
-        professionId: Profession.expertProfessionId,
-        profession: Profession.defaultProfessions[1],
-        firstName: 'สมชาย',
-        lastName: 'ใจดี',
-        username: 'somchai_shop',
-        phone: '081-234-5678',
-        registrationData: {
-          'business_name': 'ร้านสมชายพืชผัก',
-          'specialty': 'ผักออร์แกนิค',
-          'business_phone': '081-234-5678',
-          'id_card_image': 'uploaded',
-        },
-        status: VerificationStatus.pending,
-        createdAt: now.subtract(const Duration(hours: 2)),
-        updatedAt: now.subtract(const Duration(hours: 2)),
-      ),
-      RegistrationApplication(
-        id: '2',
-        oderId: 'user-2',
-        professionId: Profession.clinicProfessionId,
-        profession: Profession.defaultProfessions[2],
-        firstName: 'หมอ',
-        lastName: 'ดี',
-        username: 'doctor_dee',
-        phone: '082-345-6789',
-        registrationData: {
-          'clinic_name': 'คลินิกหมอดี',
-          'license_number': 'CL-12345',
-          'business_phone': '082-345-6789',
-          'license_image': 'uploaded',
-          'id_card_image': 'uploaded',
-        },
-        status: VerificationStatus.pending,
-        createdAt: now.subtract(const Duration(hours: 5)),
-        updatedAt: now.subtract(const Duration(hours: 5)),
-      ),
-      RegistrationApplication(
-        id: '3',
-        oderId: 'user-3',
-        professionId: Profession.expertProfessionId,
-        profession: Profession.defaultProfessions[1],
-        firstName: 'วิชัย',
-        lastName: 'ช่างฝีมือ',
-        username: 'wichai_craft',
-        phone: '083-456-7890',
-        registrationData: {
-          'business_name': 'งานฝีมือวิชัย',
-          'specialty': 'เครื่องเงิน',
-          'business_phone': '083-456-7890',
-          'id_card_image': 'uploaded',
-        },
-        status: VerificationStatus.approved,
-        reviewNote: 'ข้อมูลครบถ้วน',
-        reviewedAt: now.subtract(const Duration(days: 1)),
-        createdAt: now.subtract(const Duration(days: 2)),
-        updatedAt: now.subtract(const Duration(days: 1)),
-      ),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -199,7 +134,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 isScrollable: true,
                 indicatorColor: AppColors.textOnPrimary,
                 labelColor: AppColors.textOnPrimary,
-                unselectedLabelColor: AppColors.textOnPrimary.withOpacity(0.6),
+                unselectedLabelColor: AppColors.textOnPrimary.withValues(alpha:0.6),
                 tabs: [
                   Tab(
                     child: Row(
@@ -278,49 +213,131 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 
   Widget _buildApplicationList() {
-    final filteredApps =
+    var filteredApps =
         _applications.where((a) => a.status == _selectedStatus).toList();
 
+    // Sheserved approval filter (only meaningful in pending tab)
+    final isPendingTab = _selectedStatus == VerificationStatus.pending;
+    if (isPendingTab && _showSheservedOnly) {
+      filteredApps = filteredApps
+          .where((a) => a.profession?.requiresSheservedApproval == true)
+          .toList();
+    }
+
+    // Sheserved approval count for chip badge
+    final sheservedCount = _applications
+        .where((a) =>
+            a.status == VerificationStatus.pending &&
+            a.profession?.requiresSheservedApproval == true)
+        .length;
+
     if (filteredApps.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _selectedStatus == VerificationStatus.pending
-                  ? Icons.inbox_outlined
-                  : _selectedStatus == VerificationStatus.approved
-                      ? Icons.check_circle_outline
-                      : _selectedStatus == VerificationStatus.rejected
-                          ? Icons.cancel_outlined
-                          : Icons.remove_circle_outline,
-              size: 64,
-              color: AppColors.textHint,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _selectedStatus == VerificationStatus.pending
-                  ? 'ไม่มีผู้สมัครรอตรวจสอบ'
-                  : _selectedStatus == VerificationStatus.approved
-                      ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
-                      : _selectedStatus == VerificationStatus.rejected
-                          ? 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ'
-                          : 'ยังไม่มีใบสมัครที่ถูกยกเลิก',
-              style: AppTextStyles.bodyLarge.copyWith(
-                color: AppColors.textSecondary,
+      return Column(
+        children: [
+          if (isPendingTab) _buildSheservedFilterChips(sheservedCount),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _selectedStatus == VerificationStatus.pending
+                        ? Icons.inbox_outlined
+                        : _selectedStatus == VerificationStatus.approved
+                            ? Icons.check_circle_outline
+                            : _selectedStatus == VerificationStatus.rejected
+                                ? Icons.cancel_outlined
+                                : Icons.remove_circle_outline,
+                    size: 64,
+                    color: AppColors.textHint,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _showSheservedOnly && isPendingTab
+                        ? 'ไม่มีผู้สมัครที่ต้องอนุมัติจาก Sheserved'
+                        : _selectedStatus == VerificationStatus.pending
+                            ? 'ไม่มีผู้สมัครรอตรวจสอบ'
+                            : _selectedStatus == VerificationStatus.approved
+                                ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
+                                : _selectedStatus == VerificationStatus.rejected
+                                    ? 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ'
+                                    : 'ยังไม่มีใบสมัครที่ถูกยกเลิก',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: filteredApps.length,
-      itemBuilder: (context, index) {
-        return _buildApplicationCard(filteredApps[index]);
-      },
+    return Column(
+      children: [
+        if (isPendingTab) _buildSheservedFilterChips(sheservedCount),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadApplications,
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: filteredApps.length,
+              itemBuilder: (context, index) {
+                return _buildApplicationCard(filteredApps[index]);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheservedFilterChips(int sheservedCount) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          FilterChip(
+            label: const Text('ทั้งหมด'),
+            selected: !_showSheservedOnly,
+            onSelected: (_) {
+              setState(() => _showSheservedOnly = false);
+            },
+            selectedColor: AppColors.primary.withValues(alpha:0.15),
+            checkmarkColor: AppColors.primary,
+            labelStyle: AppTextStyles.bodySmall.copyWith(
+              color: !_showSheservedOnly ? AppColors.primary : AppColors.textSecondary,
+              fontWeight: !_showSheservedOnly ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilterChip(
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.fact_check_outlined, size: 14, color: Colors.deepOrange),
+                const SizedBox(width: 4),
+                Text('ต้องอนุมัติ Sheserved'),
+                if (sheservedCount > 0) ...[
+                  const SizedBox(width: 4),
+                  _buildBadge(sheservedCount),
+                ],
+              ],
+            ),
+            selected: _showSheservedOnly,
+            onSelected: (_) {
+              setState(() => _showSheservedOnly = true);
+            },
+            selectedColor: Colors.deepOrange.withValues(alpha:0.15),
+            checkmarkColor: Colors.deepOrange,
+            labelStyle: AppTextStyles.bodySmall.copyWith(
+              color: _showSheservedOnly ? Colors.deepOrange : AppColors.textSecondary,
+              fontWeight: _showSheservedOnly ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -400,7 +417,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.1),
+                      color: AppColors.error.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -416,7 +433,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.grey.withOpacity(0.1),
+                      color: Colors.grey.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -432,7 +449,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.15),
+                      color: Colors.orange.withValues(alpha:0.15),
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: Colors.orange.shade600, width: 0.5),
                     ),
@@ -457,7 +474,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
+                      color: AppColors.success.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -512,7 +529,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                         height: 2,
                         color: leftStepDone
                             ? AppColors.success
-                            : AppColors.textHint.withOpacity(0.3),
+                            : AppColors.textHint.withValues(alpha:0.3),
                       ),
                     );
                   }
@@ -609,7 +626,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: AppColors.primary.withValues(alpha:0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -654,7 +671,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
+                                color: AppColors.primary.withValues(alpha:0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -665,6 +682,33 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                 ),
                               ),
                             ),
+                            if (application.profession?.requiresSheservedApproval == true)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.deepOrange.withValues(alpha:0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.deepOrange.shade300, width: 0.5),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.fact_check_outlined, size: 10, color: Colors.deepOrange),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      'ต้องอนุมัติ Sheserved',
+                                      style: TextStyle(
+                                        color: Colors.deepOrange.shade700,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             if (application.registrationData['is_owner_request'] == 'true' ||
                                 application.registrationData['is_owner_request'] == true)
                               Container(
@@ -673,7 +717,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.15),
+                                  color: Colors.amber.withValues(alpha:0.15),
                                   borderRadius: BorderRadius.circular(4),
                                   border: Border.all(color: Colors.amber.shade600, width: 0.5),
                                 ),
@@ -728,7 +772,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withOpacity(0.1),
+                    color: AppColors.error.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -865,7 +909,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -903,20 +947,20 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 
   void _showApplicationDetail(RegistrationApplication application) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ApplicationDetailPage(
-          application: application,
-          onApprove: () {
-            _approveApplication(application);
-            Navigator.pop(context);
-          },
-          onReject: (note) {
-            _rejectApplication(application, note);
-            Navigator.pop(context);
-          },
-        ),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ApplicationDetailSheet(
+        application: application,
+        onApprove: () {
+          Navigator.pop(context);
+          _approveApplication(application);
+        },
+        onReject: (note) {
+          Navigator.pop(context);
+          _rejectApplication(application, note);
+        },
       ),
     );
   }
@@ -1071,24 +1115,23 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   }
 }
 
-/// หน้าแสดงรายละเอียดผู้สมัคร
-class ApplicationDetailPage extends StatefulWidget {
+/// Bottom sheet แสดงรายละเอียดผู้สมัคร
+class _ApplicationDetailSheet extends StatefulWidget {
   final RegistrationApplication application;
   final VoidCallback onApprove;
   final Function(String note) onReject;
 
-  const ApplicationDetailPage({
-    super.key,
+  const _ApplicationDetailSheet({
     required this.application,
     required this.onApprove,
     required this.onReject,
   });
 
   @override
-  State<ApplicationDetailPage> createState() => _ApplicationDetailPageState();
+  State<_ApplicationDetailSheet> createState() => _ApplicationDetailSheetState();
 }
 
-class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
+class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
   List<Map<String, dynamic>> _attachments = [];
   bool _isLoadingAttachments = true;
 
@@ -1167,18 +1210,53 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textOnPrimary,
-        title: const Text('รายละเอียดผู้สมัคร'),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint.withValues(alpha:0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Title row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  'รายละเอียดผู้สมัคร',
+                  style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Scrollable content
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             // Owner Highlight Alert
             if (widget.application.registrationData['is_owner_request'] == 'true' ||
                 widget.application.registrationData['is_owner_request'] == true) ...[
@@ -1235,7 +1313,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primary.withValues(alpha:0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Center(
@@ -1263,22 +1341,55 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        widget.application.profession?.name ?? 'ไม่ระบุ',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha:0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            widget.application.profession?.name ?? 'ไม่ระบุ',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (widget.application.profession?.requiresSheservedApproval == true)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.deepOrange.withValues(alpha:0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.deepOrange.shade300, width: 0.5),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.fact_check_outlined, size: 12, color: Colors.deepOrange),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'ต้องอนุมัติ Sheserved',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.deepOrange.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -1528,10 +1639,13 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
               ),
             ],
             const SizedBox(height: 24),
-          ],
+            ],
+          ),
         ),
       ),
-    );
+    ],
+  ),
+);
   }
 
   Widget _buildAttachmentPreview(BuildContext context, Map<String, dynamic> attachment) {
@@ -1605,7 +1719,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: hasAttachment ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
+              color: hasAttachment ? AppColors.success.withValues(alpha:0.1) : AppColors.error.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(

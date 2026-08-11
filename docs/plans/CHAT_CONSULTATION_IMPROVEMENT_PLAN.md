@@ -3894,6 +3894,36 @@ Phase 3 (PDPA) → Phase 4 (Follow-up) → Phase 5 (Chat List) → Phase 6 (Repl
 
 สร้างระบบกำหนดอาชีพที่ต้องผ่านการอนุมัติจาก Sheserved, กำหนดฟิลด์บังคับในขั้นตอนสมัครอาชีพ, บังคับแนบรูปภาพเมื่อผู้สมัครแจ้งว่ามีใบอนุญาตตามข้อ E, และผูกสิทธิ์สั่งจ่าย/จ่ายยากับใบอนุญาตจริงของผู้ให้บริการ โดย **ไม่กระทบ flow ลงทะเบียนหลักเดิม**
 
+> หมายเหตุเชิงแผน: Phase 6.5 ควรถูกออกแบบให้รองรับทางเลือก B: *Make it formal* ในอนาคต โดยเตรียมโครงสร้างข้อมูล/สถานะ/role สำหรับ workflow อนุมัติหลายชั้นไว้ล่วงหน้า แต่ **ยังไม่ implement** จนกว่าจะมี requirement ชัดเจน
+
+> หมายเหตุเชิง UX: เพื่อให้หน้าตรวจสอบไม่ซับซ้อนเกินไป ให้มอง `Sheserved Approval` เป็น **queue/filter ภายในประสบการณ์ตรวจสอบเดิม** มากกว่าการแตกเป็นหลายแท็บ และเมื่อผู้ใช้กดรายการให้เปิด **bottom sheet** สำหรับดูรายละเอียด/ตัดสินใจแทนการนำทางไปหน้า review แยก
+
+### 🧱 Phase Breakdown
+
+#### Phase A — UX Queue & Current Flow (ทำตอนนี้)
+
+- ใช้ `requiresVerification` เป็น flow หลักสำหรับ registration/application approval ที่มีอยู่แล้ว
+- ใช้ `requiresSheservedApproval` เป็น policy flag / UI badge / trigger สำหรับการเตรียมข้อมูลและการตรวจเอกสารในอนาคต
+- แสดง `Sheserved Approval` เป็น queue/filter ภายใน `ApplicationReviewPage`
+- เปิดรายละเอียดผ่าน bottom sheet แทนการแตกหน้า review ใหม่
+- เตรียม schema, field config, และ permission matrix ให้รองรับการขยาย workflow
+
+#### Phase B — Formal Approval Workflow (รออนาคต)
+
+- ยังไม่สร้าง state machine ใหม่ เช่น `pending_admin`, `pending_sheserved`, `sheserved_approved`
+- ยังไม่แยก role reviewer ของ Sheserved ออกจาก admin ปัจจุบัน
+- ยังไม่เปลี่ยน current approval flow ให้เป็น multi-stage จริง
+- ถ้าวันหนึ่งต้องทำแบบ formal จริง จะเพิ่มชั้นอนุมัติได้โดยไม่ต้องรื้อ registration flow เดิม
+- ลดการแก้ไขโค้ดซ้ำซ้อนใน `RegisterWizardPage`, `registration_repository.dart`, และ permission matrix
+
+### 🧩 UI Direction (UX-balanced)
+
+- **Entry point เดียว** — ใช้ `ApplicationReviewPage` เป็นหน้าหลักสำหรับ inbox/review ทั้งหมด ไม่เพิ่มแท็บเฉพาะทางจนหน้าแน่นเกินไป
+- **Sheserved queue as filter** — แสดงรายการที่ `requiresSheservedApproval = true` ผ่าน chip/filter หรือ section เด่นในแท็บรอตรวจสอบ แทนการสร้างแท็บใหม่หลายชั้น
+- **Bottom sheet for detail** — กดรายการแล้วเปิด bottom sheet เพื่อดูรายละเอียด, เอกสาร, สถานะ, และ action สำคัญ
+- **No navigation fatigue** — หลีกเลี่ยงการพาผู้ใช้สลับหน้าไปมาบ่อย ๆ เพื่อให้ reviewer ตรวจรายการจำนวนมากได้เร็ว
+- **Progressive disclosure** — แสดงข้อมูลสรุปใน card ก่อน แล้วค่อยเผยรายละเอียดเพิ่มเติมใน bottom sheet เมื่อจำเป็น
+
 ### 🧭 Design Principles
 
 - **Immutable identity first** — `id` ของ profession และ field config ต้องเป็น UUID ที่แก้ไม่ได้
@@ -3901,6 +3931,7 @@ Phase 3 (PDPA) → Phase 4 (Follow-up) → Phase 5 (Chat List) → Phase 6 (Repl
 - **Evidence-based verification** — หากมีใบอนุญาตต้องมีรูปหลักฐานแนบเสมอ
 - **Capability-based permission** — สิทธิ์สั่งยา/จ่ายยา/จัดการ drug risk ควรผูกกับ capability ไม่ใช่ชื่ออาชีพอย่างเดียว
 - **Backward compatible** — หากยังไม่มี config ใหม่ ให้ fallback ไปใช้ default fields เดิมใน `RegisterWizardPage`
+- **Future-proof approval flow** — เตรียมพื้นที่สำหรับ staged approval status, reviewer-role separation, และ audit trail เพื่อรองรับ workflow แบบ formal ในอนาคต โดยยังไม่เปลี่ยนพฤติกรรมระบบปัจจุบัน
 
 ### 🗃️ Canonical Profession IDs / Codes (Locked)
 
