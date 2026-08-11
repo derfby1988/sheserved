@@ -518,7 +518,7 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
             '/profile',
             (route) => route.isFirst,
             arguments: {
-              'tabIndex': 0,
+              'tab': 'profile',
               'highlightRequestId': newRequestId,
             },
           );

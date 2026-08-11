@@ -39,6 +39,13 @@ import 'package:sheserved/features/donation/presentation/widgets/donation_approv
 import 'package:sheserved/features/donation/presentation/widgets/donation_request_management_panel.dart';
 import 'package:sheserved/features/donation/presentation/pages/leader_verification_page.dart';
 
+enum ProfileTab {
+  profile,
+  volunteer,
+  donationApprove,
+  history,
+}
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -54,6 +61,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   final Map<String, dynamic> _dynamicValues = {};
   final GlobalKey<ProviderHistoryPageState> _historyPageKey =
       GlobalKey<ProviderHistoryPageState>();
+  final GlobalKey<MyConsultationsPageState> _myConsultationsKey =
+      GlobalKey<MyConsultationsPageState>();
 
   UserModel? _user;
   prof.Profession? _profession;
@@ -68,8 +77,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   int _yieldWayRadius = 1000; // รัศมีการให้ทาง (เมตร)
   File? _tempProfileImage;
   bool _isUploadingAvatar = false;
-  int _selectedTabIndex =
-      0; // 0: Profile, 1: Volunteer, 2: Approve, 3: Requests
+  ProfileTab _selectedTab = ProfileTab.profile;
   bool _isNavBarVisible = true; // ควบคุมการแสดงผล Navigation Bar ตอนเลื่อนจอ
 
   // สิทธิ์อนุมัติบริจาค (ดึงจากหมวดหมู่ user_categories.can_approve_donation)
@@ -120,8 +128,29 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     dashboardRouteObserver.subscribe(this, ModalRoute.of(context)!);
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map<String, dynamic>) {
-      if (args['tabIndex'] != null && _selectedTabIndex != args['tabIndex']) {
-        _selectedTabIndex = args['tabIndex'] as int;
+      // Support both new 'tab' (string) and legacy 'tabIndex' (int)
+      if (args['tab'] is String) {
+        final tabName = args['tab'] as String;
+        final mapped = ProfileTab.values.firstWhere(
+          (t) => t.name == tabName,
+          orElse: () => ProfileTab.profile,
+        );
+        if (_selectedTab != mapped) {
+          _selectedTab = mapped;
+        }
+      } else if (args['tabIndex'] != null) {
+        // Legacy int index support
+        final idx = args['tabIndex'] as int;
+        final baseCount = _canApproveDonation ? 3 : 2;
+        if (idx == 0) {
+          _selectedTab = ProfileTab.profile;
+        } else if (idx == 1) {
+          _selectedTab = ProfileTab.volunteer;
+        } else if (idx == 2 && _canApproveDonation) {
+          _selectedTab = ProfileTab.donationApprove;
+        } else if (idx == baseCount) {
+          _selectedTab = ProfileTab.history;
+        }
       }
       if (args['highlightRequestId'] != null) {
         _highlightRequestId = args['highlightRequestId'] as String;
@@ -332,10 +361,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   @override
   void didPopNext() {
     debugPrint('[ProfilePage] didPopNext → refreshing history if on history tab');
-    final int baseTabCount = _canApproveDonation ? 3 : 2;
-    final int historyTabIndex = baseTabCount;
-    if (_selectedTabIndex == historyTabIndex) {
-      _historyPageKey.currentState?.loadHistory();
+    if (_selectedTab == ProfileTab.history) {
+      final bool isConsumer = !(_user?.isProvider ?? false);
+      if (isConsumer) {
+        _myConsultationsKey.currentState?.loadHistory();
+      } else {
+        _historyPageKey.currentState?.loadHistory();
+      }
     }
   }
 
@@ -604,8 +636,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   Widget _buildContent() {
     final bool isConsumer = !(_user?.isProvider ?? false);
     final bool isProvider = !isConsumer;
-    final int baseTabCount = _canApproveDonation ? 3 : 2;
-    final int historyTabIndex = baseTabCount;
 
     return CustomScrollView(
       slivers: [
@@ -641,32 +671,32 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                     _buildTabItem(
                       icon: Icons.person_outline,
                       text: _profession?.name ?? 'โปรไฟล์',
-                      isActive: _selectedTabIndex == 0,
+                      isActive: _selectedTab == ProfileTab.profile,
                       activeColor: AppColors.primary,
-                      onTap: () => setState(() => _selectedTabIndex = 0),
+                      onTap: () => setState(() => _selectedTab = ProfileTab.profile),
                     ),
                     _buildTabItem(
                       icon: Icons.volunteer_activism_outlined,
                       text: 'จิตอาสา',
-                      isActive: _selectedTabIndex == 1,
+                      isActive: _selectedTab == ProfileTab.volunteer,
                       activeColor: const Color(0xFFF5A623),
-                      onTap: () => setState(() => _selectedTabIndex = 1),
+                      onTap: () => setState(() => _selectedTab = ProfileTab.volunteer),
                     ),
                     if (_canApproveDonation)
                       _buildTabItem(
                         icon: Icons.admin_panel_settings_outlined,
                         text: 'อนุมัติบริจาค',
-                        isActive: _selectedTabIndex == 2,
+                        isActive: _selectedTab == ProfileTab.donationApprove,
                         activeColor: Colors.teal,
-                        onTap: () => setState(() => _selectedTabIndex = 2),
+                        onTap: () => setState(() => _selectedTab = ProfileTab.donationApprove),
                       ),
                     if (isConsumer)
                       _buildTabItem(
                         icon: Icons.medical_services_outlined,
                         text: 'ประวัติปรึกษา',
-                        isActive: _selectedTabIndex == historyTabIndex,
+                        isActive: _selectedTab == ProfileTab.history,
                         activeColor: AppColors.primary,
-                        onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
+                        onTap: () => setState(() => _selectedTab = ProfileTab.history),
                       ),
                     if (isProvider) ...[
                       _buildTabItem(
@@ -679,9 +709,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       _buildTabItem(
                         icon: Icons.history_edu_outlined,
                         text: 'ประวัติให้บริการ',
-                        isActive: _selectedTabIndex == historyTabIndex,
+                        isActive: _selectedTab == ProfileTab.history,
                         activeColor: Colors.green,
-                        onTap: () => setState(() => _selectedTabIndex = historyTabIndex),
+                        onTap: () => setState(() => _selectedTab = ProfileTab.history),
                       ),
                     ],
                   ],
@@ -690,74 +720,78 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              if (_selectedTabIndex == 0) ...[
-                _buildHeader(),
-                const SizedBox(height: 24),
-                _buildCoreInfo(),
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 16),
-                Text(
-                  'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
-                  style: AppTextStyles.heading3.copyWith(
-                    color: AppColors.primary,
+        if (_selectedTab == ProfileTab.history) ...[
+          SliverFillRemaining(
+            child: isConsumer
+                ? MyConsultationsPage(
+                    key: _myConsultationsKey,
+                    isEmbedded: true,
+                  )
+                : ProviderHistoryPage(
+                    key: _historyPageKey,
+                    isEmbedded: true,
                   ),
-                ),
-                const SizedBox(height: 16),
-                ..._buildDynamicFields(),
-              ] else if (_selectedTabIndex == 1) ...[
-                _buildNotificationSettings(),
-              ] else if (_selectedTabIndex == 2 && _canApproveDonation) ...[
-                DonationApproverSettingsWidget(
-                  repository: _donationRepository,
-                  userId: _user?.id,
-                ),
-                const SizedBox(height: 16),
-                _buildBeneficiaryRegistrationEntry(),
-                const SizedBox(height: 16),
-                const LeaderVerificationPage(),
-                const SizedBox(height: 24),
-              ] else if (_selectedTabIndex == historyTabIndex) ...[
-                SizedBox(
-                  height: MediaQuery.of(context).size.height - 120,
-                  child: isConsumer
-                      ? const MyConsultationsPage(isEmbedded: true)
-                      : ProviderHistoryPage(
-                          key: _historyPageKey,
-                          isEmbedded: true,
-                        ),
-                ),
-              ],
-              if (_isEditing && _selectedTabIndex == 0) ...[
-                const SizedBox(height: 32),
-                TlzButton(
-                  text: 'บันทึกข้อมูล',
-                  onPressed: _isSaving ? null : _handleSave,
-                  isLoading: _isSaving,
-                ),
-              ],
-              if (_selectedTabIndex == 0) ...[
-                const SizedBox(height: 40),
-                const Divider(thickness: 1.5, color: Color(0xFFEEEEEE)),
-                const SizedBox(height: 16),
-                DonationRequestManagementPanel(
-                  repository: _donationRepository,
-                  userId: _user?.id,
-                  showCreateButton: true,
-                  maxHeight:
-                      550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
-                  highlightRequestId: _highlightRequestId,
-                ),
-              ],
-              // เว้นที่ว่างด้านล่างเพื่อให้เนื้อหาไม่ถูก Bottom Navigation Bar บัง
-              const SizedBox(height: 120),
-            ]),
           ),
-        ),
+        ] else ...[
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                if (_selectedTab == ProfileTab.profile) ...[
+                  _buildHeader(),
+                  const SizedBox(height: 24),
+                  _buildCoreInfo(),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  Text(
+                    'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
+                    style: AppTextStyles.heading3.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ..._buildDynamicFields(),
+                ] else if (_selectedTab == ProfileTab.volunteer) ...[
+                  _buildNotificationSettings(),
+                ] else if (_selectedTab == ProfileTab.donationApprove && _canApproveDonation) ...[
+                  DonationApproverSettingsWidget(
+                    repository: _donationRepository,
+                    userId: _user?.id,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildBeneficiaryRegistrationEntry(),
+                  const SizedBox(height: 16),
+                  const LeaderVerificationPage(),
+                  const SizedBox(height: 24),
+                ],
+                if (_isEditing && _selectedTab == ProfileTab.profile) ...[
+                  const SizedBox(height: 32),
+                  TlzButton(
+                    text: 'บันทึกข้อมูล',
+                    onPressed: _isSaving ? null : _handleSave,
+                    isLoading: _isSaving,
+                  ),
+                ],
+                if (_selectedTab == ProfileTab.profile) ...[
+                  const SizedBox(height: 40),
+                  const Divider(thickness: 1.5, color: Color(0xFFEEEEEE)),
+                  const SizedBox(height: 16),
+                  DonationRequestManagementPanel(
+                    repository: _donationRepository,
+                    userId: _user?.id,
+                    showCreateButton: true,
+                    maxHeight:
+                        550, // จำกัดความสูงเพื่อให้ Scroll ได้หากมีมากกว่า 3 รายการ
+                    highlightRequestId: _highlightRequestId,
+                  ),
+                ],
+                // เว้นที่ว่างด้านล่างเพื่อให้เนื้อหาไม่ถูก Bottom Navigation Bar บัง
+                const SizedBox(height: 120),
+              ]),
+            ),
+          ),
+        ],
       ],
     );
   }

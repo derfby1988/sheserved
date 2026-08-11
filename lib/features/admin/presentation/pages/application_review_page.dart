@@ -19,12 +19,18 @@ class ApplicationReviewPage extends StatefulWidget {
 class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     with SingleTickerProviderStateMixin {
   static const int _ownerTrackingTabIndex = 4;
+  static const List<VerificationStatus> _tabStatusOrder = [
+    VerificationStatus.approved,
+    VerificationStatus.rejected,
+    VerificationStatus.cancelled,
+    VerificationStatus.pending,
+  ];
 
   late TabController _tabController;
   final _repo = ServiceLocator.instance.registrationRepository;
   List<RegistrationApplication> _applications = [];
   bool _isLoading = true;
-  VerificationStatus _selectedStatus = VerificationStatus.pending;
+  VerificationStatus _selectedStatus = VerificationStatus.approved;
   Set<String> _usersWithPendingBeneficiary = {};
   bool _showSheservedOnly = false;
 
@@ -41,7 +47,8 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
           _loadOwnerTracking();
         } else {
           setState(() {
-            _selectedStatus = VerificationStatus.values[_tabController.index];
+            _selectedStatus = _tabStatusOrder[_tabController.index];
+            _showSheservedOnly = _selectedStatus == VerificationStatus.pending;
           });
           _loadApplications();
         }
@@ -136,19 +143,19 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 labelColor: AppColors.textOnPrimary,
                 unselectedLabelColor: AppColors.textOnPrimary.withValues(alpha:0.6),
                 tabs: [
+                  const Tab(text: 'อนุมัติแล้ว'),
+                  const Tab(text: 'ถูกปฏิเสธ'),
+                  const Tab(text: 'ยกเลิกแล้ว'),
                   Tab(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('รอตรวจสอบ'),
+                        const Text('คัดกรองชั้น 2'),
                         const SizedBox(width: 4),
-                        _buildBadge(_getPendingCount()),
+                        _buildBadge(_getSheservedQueueCount()),
                       ],
                     ),
                   ),
-                  const Tab(text: 'อนุมัติแล้ว'),
-                  const Tab(text: 'ถูกปฏิเสธ'),
-                  const Tab(text: 'ยกเลิกแล้ว'),
                   Tab(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -206,9 +213,11 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     );
   }
 
-  int _getPendingCount() {
+  int _getSheservedQueueCount() {
     return _applications
-        .where((a) => a.status == VerificationStatus.pending)
+        .where((a) =>
+            a.status == VerificationStatus.pending &&
+            a.profession?.requiresSheservedApproval == true)
         .length;
   }
 
@@ -225,11 +234,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     }
 
     // Sheserved approval count for chip badge
-    final sheservedCount = _applications
-        .where((a) =>
-            a.status == VerificationStatus.pending &&
-            a.profession?.requiresSheservedApproval == true)
-        .length;
+    final sheservedCount = _getSheservedQueueCount();
 
     if (filteredApps.isEmpty) {
       return Column(
@@ -256,7 +261,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     _showSheservedOnly && isPendingTab
                         ? 'ไม่มีผู้สมัครที่ต้องอนุมัติจาก Sheserved'
                         : _selectedStatus == VerificationStatus.pending
-                            ? 'ไม่มีผู้สมัครรอตรวจสอบ'
+                            ? 'ไม่มีผู้สมัครคัดกรองชั้น 2'
                             : _selectedStatus == VerificationStatus.approved
                                 ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
                                 : _selectedStatus == VerificationStatus.rejected
@@ -318,7 +323,12 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
               children: [
                 Icon(Icons.fact_check_outlined, size: 14, color: Colors.deepOrange),
                 const SizedBox(width: 4),
-                Text('ต้องอนุมัติ Sheserved'),
+                Flexible(
+                  child: Text(
+                    'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved)',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 if (sheservedCount > 0) ...[
                   const SizedBox(width: 4),
                   _buildBadge(sheservedCount),
@@ -698,12 +708,15 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                   children: [
                                     Icon(Icons.fact_check_outlined, size: 10, color: Colors.deepOrange),
                                     const SizedBox(width: 3),
-                                    Text(
-                                      'ต้องอนุมัติ Sheserved',
-                                      style: TextStyle(
-                                        color: Colors.deepOrange.shade700,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
+                                    Flexible(
+                                      child: Text(
+                                        'คัดกรองชั้น 2/sheserved',
+                                        style: TextStyle(
+                                          color: Colors.deepOrange.shade700,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -1379,11 +1392,15 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
                               children: [
                                 Icon(Icons.fact_check_outlined, size: 12, color: Colors.deepOrange),
                                 const SizedBox(width: 4),
-                                Text(
-                                  'ต้องอนุมัติ Sheserved',
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: Colors.deepOrange.shade700,
-                                    fontWeight: FontWeight.w600,
+                                Flexible(
+                                  child: Text(
+                                    'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved) ระบบ Consultation',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.deepOrange.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
                                   ),
                                 ),
                               ],

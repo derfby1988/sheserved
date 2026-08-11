@@ -1717,7 +1717,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             context,
             '/profile',
             (route) => route.isFirst,
-            arguments: {'tabIndex': 2}, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
+            arguments: {'tab': 'history'}, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
           );
         }
         if (isProviderActive && !didPop) {
@@ -1752,7 +1752,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     context,
                     '/profile',
                     (route) => route.isFirst,
-                    arguments: {'tabIndex': 2},
+                    arguments: {'tab': 'history'},
                   );
                   return;
                 }

@@ -2401,13 +2401,25 @@ CREATE POLICY "Provider sees own history"
 
 ### โครงสร้าง Tab ปัจจุบันใน `profile_page.dart`
 
-ปัจจุบัน `_selectedTabIndex` มี 3 tabs:
+> **Refactored:** ใช้ `ProfileTab` enum แทน `_selectedTabIndex` (int) เพื่อป้องกันการชนกันเมื่อ tab order เปลี่ยนหรือมี role ผสม
 
-| Index | Tab | แสดงเมื่อ |
+```dart
+enum ProfileTab {
+  profile,       // โปรไฟล์
+  volunteer,     // จิตอาสา
+  donationApprove, // อนุมัติบริจาค (เฉพาะ _canApproveDonation)
+  history,       // ประวัติปรึกษา / ประวัติให้บริการ
+}
+```
+
+| ProfileTab | Tab | แสดงเมื่อ |
 |---|---|---|
-| 0 | โปรไฟล์ (ชื่ออาชีพ) | ทุกคน |
-| 1 | จิตอาสา | ทุกคน |
-| 2 | อนุมัติบริจาค | `_canApproveDonation == true` เท่านั้น |
+| `ProfileTab.profile` | โปรไฟล์ (ชื่ออาชีพ) | ทุกคน |
+| `ProfileTab.volunteer` | จิตอาสา | ทุกคน |
+| `ProfileTab.donationApprove` | อนุมัติบริจาค | `_canApproveDonation == true` เท่านั้น |
+| `ProfileTab.history` | ประวัติปรึกษา/ให้บริการ | consumer หรือ provider |
+
+**การนำทางจากภายนอก:** ใช้ `arguments: {'tab': 'history'}` หรือ `{'tab': 'profile'}` (รองรับ `tabIndex` เดิมแบบ backward-compatible)
 
 ### Tab ใหม่ที่ต้องเพิ่ม
 
@@ -2422,32 +2434,25 @@ Tab: "ประวัติการปรึกษา" (Icons.medical_services_
   → ตำแหน่ง: แถบ Tab ใน profile ถัดจาก "จิตอาสา"
 ```
 
-**ตัวอย่างโค้ด Tab ที่ต้องเพิ่มใน `_buildContent()`:**
+**ตัวอย่างโค้ด Tab ใน `_buildContent()`:**
 
 ```dart
-// เพิ่มเงื่อนไขตรวจว่าเป็น consumer หรือเปล่า
-bool get _isConsumer =>
-    _user?.professionId == null ||
-    _user?.professionId == '00000000-0000-0000-0000-000000000001';
-
-bool get _isProvider => !_isConsumer;
-
-// ใน Tab Row:
-if (_isConsumer)
-  SizedBox(
-    width: MediaQuery.of(context).size.width / tabCount,
-    child: _buildTabItem(
-      icon: Icons.medical_services_outlined,
-      text: 'ประวัติปรึกษา',
-      isActive: _selectedTabIndex == _consultationTabIndex,
-      activeColor: AppColors.primary,
-      onTap: () => setState(() => _selectedTabIndex = _consultationTabIndex),
-    ),
+if (isConsumer)
+  _buildTabItem(
+    icon: Icons.medical_services_outlined,
+    text: 'ประวัติปรึกษา',
+    isActive: _selectedTab == ProfileTab.history,
+    activeColor: AppColors.primary,
+    onTap: () => setState(() => _selectedTab = ProfileTab.history),
   ),
 
-// ใน SliverList content:
-if (_isConsumer && _selectedTabIndex == _consultationTabIndex)
-  const MyConsultationsPage(isEmbedded: true),
+// ใน SliverFillRemaining:
+if (_selectedTab == ProfileTab.history)
+  SliverFillRemaining(
+    child: isConsumer
+        ? MyConsultationsPage(key: _myConsultationsKey, isEmbedded: true)
+        : ProviderHistoryPage(key: _historyPageKey, isEmbedded: true),
+  )
 ```
 
 ---
@@ -2466,21 +2471,15 @@ Tab: "ประวัติให้บริการ" (Icons.history_edu_outli
 **ตัวอย่างโค้ด:**
 
 ```dart
-if (_isProvider)
-  SizedBox(
-    width: MediaQuery.of(context).size.width / tabCount,
-    child: _buildTabItem(
-      icon: Icons.history_edu_outlined,
-      text: 'ประวัติให้บริการ',
-      isActive: _selectedTabIndex == _providerHistoryTabIndex,
-      activeColor: Colors.indigo,
-      onTap: () => setState(() => _selectedTabIndex = _providerHistoryTabIndex),
-    ),
+if (isProvider) ...[
+  _buildTabItem(
+    icon: Icons.history_edu_outlined,
+    text: 'ประวัติให้บริการ',
+    isActive: _selectedTab == ProfileTab.history,
+    activeColor: Colors.green,
+    onTap: () => setState(() => _selectedTab = ProfileTab.history),
   ),
-
-// ใน SliverList content:
-if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
-  const ProviderHistoryPage(isEmbedded: true),
+]
 ```
 
 ---
@@ -2503,28 +2502,28 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 ```
 [โปรไฟล์] [จิตอาสา] [ประวัติปรึกษา]
-    0           1            2
+ profile    volunteer    history
 ```
 
 #### แพทย์/ผู้เชี่ยวชาญ (Provider)
 
 ```
 [โปรไฟล์] [จิตอาสา] [ประวัติให้บริการ]
-    0           1             2
+ profile    volunteer      history
 ```
 
 #### แพทย์ + อนุมัติบริจาค (Provider + Approver)
 
 ```
 [โปรไฟล์] [จิตอาสา] [อนุมัติบริจาค] [ประวัติให้บริการ]
-    0           1            2                  3
+ profile    volunteer  donationApprove    history
 ```
 
 #### ผู้ป่วย + อนุมัติบริจาค (Consumer + Approver)
 
 ```
 [โปรไฟล์] [จิตอาสา] [อนุมัติบริจาค] [ประวัติปรึกษา]
-    0           1            2                3
+ profile    volunteer  donationApprove    history
 ```
 
 ---
@@ -2533,11 +2532,13 @@ if (_isProvider && _selectedTabIndex == _providerHistoryTabIndex)
 
 | ไฟล์ | การเปลี่ยนแปลง | สถานะ |
 |---|---|---|
-| `profile_page.dart` | เพิ่ม Tab + getter `_isConsumer` / `_isProvider` และระบบ Scrollbar | ✅ เสร็จสิ้น |
-| `my_consultations_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` (ไม่มี AppBar เมื่อ embed) | ✅ เสร็จสิ้น |
-| `provider_history_page.dart` | สร้างใหม่ — รองรับ `isEmbedded: true` | ✅ เสร็จสิ้น |
+| `profile_page.dart` | เพิ่ม Tab + `ProfileTab` enum (แทน `_selectedTabIndex`) + `SliverFillRemaining` + `RouteAware` refresh + `GlobalKey` | ✅ เสร็จสิ้น |
+| `my_consultations_page.dart` | รองรับ `isEmbedded: true`, `loadHistory()` public, เพิ่ม `awaiting_payment`/`expired` statuses, ลบ `active`, ใช้ `withValues(alpha:)`, เพิ่ม refresh button ใน empty state | ✅ เสร็จสิ้น |
+| `provider_history_page.dart` | รองรับ `isEmbedded: true`, `ProviderHistoryPageState` public, `loadHistory()` public, เพิ่ม `awaiting_payment`/`expired` statuses, ลบ `active`, ใช้ `withValues(alpha:)`, เพิ่ม refresh button ใน empty state | ✅ เสร็จสิ้น |
 | `consultation_chat_history_page.dart` | สร้างใหม่ — Read-Only chat viewer | ✅ เสร็จสิ้น |
-| `main.dart` | เพิ่ม route สำหรับ History และ Read-Only Chat | ✅ เสร็จสิ้น |
+| `main.dart` | เพิ่ม route สำหรับ History และ Read-Only Chat, รองรับ `request`/`readOnly`/`hasFinished` arguments | ✅ เสร็จสิ้น |
+| `chart_board_page.dart` | อัปเดต navigation กลับไป profile ใช้ `{'tab': 'history'}` แทน `{'tabIndex': 2}` | ✅ เสร็จสิ้น |
+| `donation_create_page.dart` | อัปเดต navigation กลับไป profile ใช้ `{'tab': 'profile'}` แทน `{'tabIndex': 0}` | ✅ เสร็จสิ้น |
 
 ---
 
@@ -4255,8 +4256,9 @@ ProviderHistoryPage(
 ### Files ที่แก้ไข
 | File | การเปลี่ยนแปลง |
 |---|---|
-| `profile_page.dart` | เพิ่ม `RouteAware`, `GlobalKey<ProviderHistoryPageState>`, `didPopNext()` |
+| `profile_page.dart` | เพิ่ม `RouteAware`, `GlobalKey<ProviderHistoryPageState>`, `GlobalKey<MyConsultationsPageState>`, `didPopNext()` ใช้ `ProfileTab` enum |
 | `provider_history_page.dart` | ทำ `ProviderHistoryPageState` public, `loadHistory()` public, `RouteAware` mixin |
+| `my_consultations_page.dart` | ทำ `MyConsultationsPageState` public, `loadHistory()` public |
 
 ### Lesson Learned
 - `RouteAware.didPopNext()` ทำงานเฉพาะบน widget ที่เป็น **top-level route** เท่านั้น
@@ -4266,8 +4268,9 @@ ProviderHistoryPage(
   - `ValueNotifier` / `Stream`
   - `EventBus`
 - ถ้าต้องการให้หลายหน้ารีเฟรชพร้อมกัน → ใช้ `Provider`/`Bloc` กับ stream จาก repository แทนการพึ่ง `RouteAware` แยกต่อหน้า
+- **Tab state refactor:** การใช้ `ProfileTab` enum แทน `_selectedTabIndex` (int) ป้องกันปัญหา index ชนกันเมื่อ tab order เปลี่ยน หรือมี role ผสมในอนาคต (admin ดูโปรไฟล์คนอื่น, multi-role user) — `didPopNext()` ตรวจด้วย `_selectedTab == ProfileTab.history` แทนการเทียบ index ตรงๆ
 
-*Last Updated: 2026-06-16* — แก้ไขปัญหาการ์ดประวัติไม่อัปเดตหลังกลับจากห้องแชท
+*Last Updated: 2026-06-26* — แก้ไขปัญหาการ์ดประวัติไม่อัปเดตหลังกลับจากห้องแชท + refactor ProfileTab enum
 
 ---
 

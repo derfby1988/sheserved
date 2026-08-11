@@ -194,7 +194,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                 return Material(
                   color: Colors.transparent,
                   elevation: 6,
-                  shadowColor: AppColors.primary.withOpacity(0.2),
+                  shadowColor: AppColors.primary.withValues(alpha:0.2),
                   child: child,
                 );
               },
@@ -215,7 +215,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: profession.isBuiltIn
-              ? AppColors.primary.withOpacity(0.3)
+              ? AppColors.primary.withValues(alpha:0.3)
               : AppColors.border,
           width: 1,
         ),
@@ -238,7 +238,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                     decoration: BoxDecoration(
                       color: (profession.colorHex != null 
                         ? Color(int.parse(profession.colorHex!.replaceFirst('#', '0xFF')))
-                        : _getCategoryColor(profession.category)).withOpacity(0.1),
+                        : _getCategoryColor(profession.category)).withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -291,7 +291,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
+                              color: AppColors.primary.withValues(alpha:0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -805,7 +805,7 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
                           width: 50,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? AppColors.primary.withOpacity(0.1)
+                                ? AppColors.primary.withValues(alpha:0.1)
                                 : AppColors.background,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
@@ -937,8 +937,10 @@ class _ProfessionEditorDialogState extends State<ProfessionEditorDialog> {
               contentPadding: EdgeInsets.zero,
             ),
             SwitchListTile(
-              title: const Text('ต้องผ่านการอนุมัติจาก Sheserved'),
-              subtitle: const Text('เปิดใช้กับอาชีพที่ต้องมีการคัดกรอง/อนุมัติพิเศษ'),
+              title: const Text(
+                'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved) ระบบ Consultation',
+                softWrap: true,
+              ),
               value: _requiresSheservedApproval,
               onChanged: (value) {
                 setState(() {

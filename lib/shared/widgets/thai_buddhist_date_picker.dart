@@ -10,6 +10,11 @@ class ThaiDateUtils {
     return '${date.day} ${getThaiShortMonth(date.month)} ${date.year + 543}';
   }
 
+  static String formatShortDateBE2Digit(DateTime date) {
+    final beYear = (date.year + 543) % 100;
+    return '${date.day} ${getThaiShortMonth(date.month)} $beYear';
+  }
+
   static String formatFullDateBE(DateTime date) {
     return '${date.day} ${getThaiFullMonth(date.month)} พ.ศ. ${date.year + 543}';
   }

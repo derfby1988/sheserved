@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
-import 'package:intl/intl.dart';
+import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import 'health_program_request_dashboard.dart' show dashboardRouteObserver;
 
 class ProviderHistoryPage extends StatefulWidget {
@@ -75,16 +76,18 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
 
   String _formatStatus(String status) {
     switch (status) {
+      case 'awaiting_payment':
+        return 'รอชำระเงิน';
       case 'pending':
         return 'รอดำเนินการ';
-      case 'active':
-        return 'กำลังให้คำปรึกษา';
       case 'in_progress':
         return 'กำลังให้คำปรึกษา';
       case 'completed':
         return 'เสร็จสิ้น';
       case 'cancelled':
         return 'ยกเลิก';
+      case 'expired':
+        return 'หมดเวลา';
       default:
         return status;
     }
@@ -92,15 +95,18 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
 
   Color _getStatusColor(String status) {
     switch (status) {
+      case 'awaiting_payment':
+        return Colors.amber;
       case 'pending':
         return Colors.orange;
-      case 'active':
       case 'in_progress':
         return Colors.blue;
       case 'completed':
         return Colors.green;
       case 'cancelled':
         return Colors.red;
+      case 'expired':
+        return Colors.grey;
       default:
         return Colors.grey;
     }
@@ -109,7 +115,7 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
   @override
   Widget build(BuildContext context) {
     final body = _isLoading
-        ? const Center(child: CircularProgressIndicator())
+        ? _buildShimmerLoading()
         : _requests.isEmpty
             ? _buildEmptyState()
             : RefreshIndicator(
@@ -148,6 +154,79 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
     );
   }
 
+  Widget _buildShimmerLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: 5,
+        physics: const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, index) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 2,
+            shadowColor: Colors.black12,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        width: 160,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      Container(
+                        width: 80,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 140,
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -159,6 +238,17 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
             'ยังไม่มีประวัติการให้คำปรึกษา',
             style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'เมื่อรับเคสแล้วประวัติจะปรากฏที่นี่',
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: loadHistory,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('รีเฟรช'),
+          ),
         ],
       ),
     );
@@ -166,9 +256,7 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
 
   Widget _buildHistoryCard(ConsultationRequestModel req) {
     final statusColor = _getStatusColor(req.status);
-    final dateStr = req.createdAt != null
-        ? DateFormat('dd/MM/yyyy HH:mm').format(req.createdAt!)
-        : '-';
+    final dateStr = ThaiDateUtils.formatShortDateBE2Digit(req.createdAt.toLocal());
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -213,7 +301,7 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
+                      color: statusColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -238,6 +326,19 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
                   ),
                 ],
               ),
+              if (req.status == 'completed') ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline, size: 16, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Text(
+                      'เสร็จสิ้นเมื่อ: ${ThaiDateUtils.formatShortDateBE2Digit(req.updatedAt.toLocal())}',
+                      style: const TextStyle(color: Colors.green, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
