@@ -32,12 +32,19 @@ class _SportClubPageState extends State<SportClubPage> {
   double? _radiusKm;
   DateTime? _filterDate;
   bool _filterOpenOnly = false;
+  final _listScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _repo = FitnessBuddiesRepository(Supabase.instance.client);
     _init();
+  }
+
+  @override
+  void dispose() {
+    _listScrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _showManageSessionSheet(String sessionId) async {
@@ -232,10 +239,20 @@ class _SportClubPageState extends State<SportClubPage> {
       final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
       final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
       final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
+
+      // Filter out groups with no upcoming sessions for non-admin, non-joined users
+      final allGroupIds = groups.map((g) => g['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
+      final groupIdsWithSessions = await _repo.filterGroupIdsWithUpcomingSessions(allGroupIds);
+      final filteredGroups = groups.where((g) {
+        final gid = g['id']?.toString() ?? '';
+        if (adminIds.contains(gid) || joinedGroupIds.contains(gid)) return true;
+        return groupIdsWithSessions.contains(gid);
+      }).toList();
+
       if (!mounted) return;
       setState(() {
         _sports = sports;
-        _groups = groups;
+        _groups = filteredGroups;
         _loading = false;
         _myAdminGroups = adminIds;
         _myJoinedGroupIds = joinedGroupIds;
@@ -261,9 +278,19 @@ class _SportClubPageState extends State<SportClubPage> {
     final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
     final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
     final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
+
+      // Filter out groups with no upcoming sessions for non-admin, non-joined users
+      final allGroupIds = groups.map((g) => g['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
+      final groupIdsWithSessions = await _repo.filterGroupIdsWithUpcomingSessions(allGroupIds);
+      final filteredGroups = groups.where((g) {
+        final gid = g['id']?.toString() ?? '';
+        if (adminIds.contains(gid) || joinedGroupIds.contains(gid)) return true;
+        return groupIdsWithSessions.contains(gid);
+      }).toList();
+
       if (!mounted) return;
       setState(() {
-        _groups = groups;
+        _groups = filteredGroups;
         _myAdminGroups = adminIds;
         _myJoinedGroupIds = joinedGroupIds;
         _myCreatedSportIds = createdSportIds;
@@ -363,6 +390,7 @@ class _SportClubPageState extends State<SportClubPage> {
                   : RefreshIndicator(
                       onRefresh: _reload,
                       child: ListView(
+                        controller: _listScrollController,
                         padding: const EdgeInsets.all(16),
                         children: [
                           Row(
@@ -456,7 +484,7 @@ class _SportClubPageState extends State<SportClubPage> {
                             if (g['member_count'] != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
-                                child: Text('สมาชิก: ${g['member_count']} คน'),
+                                child: Text('ว่าง: ${((g['capacity'] as num?)?.toInt() ?? 0) - ((g['member_count'] as num?)?.toInt() ?? 0)} คน'),
                               ),
                             const SizedBox(height: 8),
                             FutureBuilder<List<Map<String, dynamic>>>(
@@ -479,7 +507,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text('ยังไม่มีรอบนัด'),
+                                      const Text('รอบล่าสุดสิ้นสุดแล้ว'),
                                       if (_myAdminGroups.contains(g['id']?.toString() ?? ''))
                                         Align(
                                           alignment: Alignment.centerRight,
@@ -533,13 +561,6 @@ class _SportClubPageState extends State<SportClubPage> {
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            if (isAdmin)
-                                              TextButton.icon(
-                                                onPressed: () => _showManageSessionSheet(s['id'].toString()),
-                                                icon: const Icon(Icons.groups_2_outlined),
-                                                label: const Text('จัดการ'),
-                                              ),
                                           ],
                                         ),
                                       ),
@@ -805,17 +826,19 @@ class _SportClubPageState extends State<SportClubPage> {
                     }
                     final sessions = (snapshot.data?[0] as List?)?.cast<Map<String, dynamic>>() ?? [];
                     final members = (snapshot.data?[1] as List?)?.cast<Map<String, dynamic>>() ?? [];
-                    return SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            group['name']?.toString() ?? '',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    return Scrollbar(
+                      thumbVisibility: members.length > 10,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                          Center(
+                            child: Text(
+                              'ก๊วน ${group['name']?.toString() ?? ''}',
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                            ),
                           ),
-                          if (group['member_count'] != null)
-                            Text('สมาชิก: ${group['member_count']} คน'),
                           const SizedBox(height: 12),
                           const Text('รอบนัด', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
@@ -840,48 +863,55 @@ class _SportClubPageState extends State<SportClubPage> {
                                       ),
                                     ),
                                     if (isAdmin)
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          TextButton.icon(
-                                            onPressed: () => _showManageSessionSheet(s['id'].toString()),
-                                            icon: const Icon(Icons.groups_2_outlined),
-                                            label: const Text('จัดการ'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () async {
-                                              final confirm = await showDialog<bool>(
-                                                context: ctx,
-                                                builder: (ctx2) => AlertDialog(
-                                                  title: const Text('ยกเลิกรอบนัด'),
-                                                  content: const Text('ต้องการลบรอบนัดนี้ใช่หรือไม่?'),
-                                                  actions: [
-                                                    TextButton(onPressed: () => Navigator.of(ctx2).pop(false), child: const Text('ยกเลิก')),
-                                                    TextButton(onPressed: () => Navigator.of(ctx2).pop(true), child: const Text('ยืนยัน')),
-                                                  ],
-                                                ),
-                                              );
-                                              if (confirm != true) return;
-                                              try {
-                                                await _repo.cancelSession(s['id'].toString());
-                                                if (!context.mounted) return;
-                                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกรอบนัดแล้ว')));
-                                                setSheetState(() {});
-                                              } catch (e) {
-                                                if (!context.mounted) return;
-                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ยกเลิกไม่สำเร็จ: $e')));
-                                              }
-                                            },
-                                            child: const Text('ยกเลิก', style: TextStyle(color: Colors.red)),
-                                          ),
-                                        ],
+                                      TextButton(
+                                        onPressed: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: ctx,
+                                            builder: (ctx2) => AlertDialog(
+                                              title: const Text('ยกเลิกรอบนัด'),
+                                              content: const Text('ต้องการลบรอบนัดนี้ใช่หรือไม่?'),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.of(ctx2).pop(false), child: const Text('ยกเลิก')),
+                                                TextButton(onPressed: () => Navigator.of(ctx2).pop(true), child: const Text('ยืนยัน')),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm != true) return;
+                                          try {
+                                            await _repo.cancelSession(s['id'].toString());
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกรอบนัดแล้ว')));
+                                            setSheetState(() {});
+                                          } catch (e) {
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ยกเลิกไม่สำเร็จ: $e')));
+                                          }
+                                        },
+                                        child: const Text('ยกเลิก', style: TextStyle(color: Colors.red)),
                                       ),
                                   ],
                                 );
                               },
                             ),
                           const SizedBox(height: 16),
-                          const Text('รายชื่อผู้เข้าร่วมก๊วน', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          Row(
+                            children: [
+                              const Text('เข้าร่วมแล้ว', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              if (group['member_count'] != null) ...[
+                                const SizedBox(width: 8),
+                                Text('${group['member_count']} คน', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 8),
+                                Text('ว่าง: ${((group['capacity'] as num?)?.toInt() ?? 0) - ((group['member_count'] as num?)?.toInt() ?? 0)} คน', style: const TextStyle(fontSize: 16)),
+                              ],
+                              const Spacer(),
+                              if (isAdmin)
+                                TextButton.icon(
+                                  onPressed: () => _showManageSessionSheet(group['id'].toString()),
+                                  icon: const Icon(Icons.groups_2_outlined),
+                                  label: const Text('จัดการ'),
+                                ),
+                            ],
+                          ),
                           const SizedBox(height: 8),
                           if (members.isEmpty)
                             const Text('ยังไม่มีสมาชิก')
@@ -912,8 +942,9 @@ class _SportClubPageState extends State<SportClubPage> {
                           const SizedBox(height: 20),
                         ],
                       ),
-                    );
-                  },
+                    ),
+                  );
+                },
                 ),
               ),
             ),
@@ -1032,16 +1063,32 @@ class _SportClubPageState extends State<SportClubPage> {
       child: FloatingActionButton.extended(
         heroTag: 'createGroupFab',
         onPressed: () async {
-          final createdId = await Navigator.pushNamed(
+          final result = await Navigator.pushNamed(
             context,
             '/community/sport-club/group/create',
             arguments: {'sportId': _sportId},
           );
-          if (createdId != null) {
-            final String groupId = createdId.toString();
+          if (result is! Map) return;
+          final String groupId = result['groupId']?.toString() ?? '';
+          final String? newSportId = result['sportId']?.toString();
+          if (groupId.isNotEmpty) {
             await _showCreateSessionSheet(groupId);
-            _reload();
           }
+          if (newSportId != null && _sportId != newSportId) {
+            setState(() => _sportId = newSportId);
+          }
+          await _reload();
+          if (!mounted) return;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_listScrollController.hasClients) {
+              _listScrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+          });
         },
         icon: const Icon(Icons.add),
         label: const Text('สร้างก๊วน'),

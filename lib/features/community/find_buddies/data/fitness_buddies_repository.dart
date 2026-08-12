@@ -234,6 +234,22 @@ class FitnessBuddiesRepository {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Returns a set of group IDs (from [groupIds]) that have at least one
+  /// upcoming session (ends_at >= now). Uses a single query for efficiency.
+  Future<Set<String>> filterGroupIdsWithUpcomingSessions(List<String> groupIds, {DateTime? from}) async {
+    if (groupIds.isEmpty) return {};
+    final nowIso = (from ?? DateTime.now()).toUtc().toIso8601String();
+    final res = await _client
+        .from('fitness_group_sessions')
+        .select('group_id')
+        .inFilter('group_id', groupIds)
+        .gte('ends_at', nowIso);
+    return (res as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Future<List<Map<String, dynamic>>> listSessions(String groupId, {int limit = 50}) async {
     final res = await _client
         .from('fitness_group_sessions')

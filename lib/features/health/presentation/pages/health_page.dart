@@ -38,7 +38,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
   double _targetScore = 0;
 
   final List<String> _tabs = [
-    'ทั่วไป',
+    'หาก๊วน\nออกกำลังกาย',
     'ออกแบบ\nโปรแกรม',
     'คอร์ส\nVIP',
     'บทความ\nสุขภาพ',
@@ -1866,7 +1866,9 @@ class _HealthPageState extends ConsumerState<HealthPage>
 
     return GestureDetector(
       onTap: () {
-        if (index == 3) {
+        if (index == 0) {
+          Navigator.pushNamed(context, '/sport-club');
+        } else if (index == 3) {
           Navigator.pushNamed(context, '/articles', arguments: 'แนะนำ');
         } else {
           setState(() {

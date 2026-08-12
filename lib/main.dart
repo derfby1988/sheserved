@@ -24,6 +24,7 @@ import 'features/consultation/presentation/pages/health_program_request_dashboar
 import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
+import 'features/community/find_buddies/presentation/pages/sport_club_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
@@ -809,6 +810,12 @@ class SheservedApp extends StatelessWidget {
           final initialFilter = settings.arguments as String?;
           return MaterialPageRoute(
             builder: (context) => ArticlesPage(initialFilter: initialFilter),
+          );
+        }
+
+        if (settings.name == '/sport-club') {
+          return MaterialPageRoute(
+            builder: (context) => const SportClubPage(),
           );
         }
 

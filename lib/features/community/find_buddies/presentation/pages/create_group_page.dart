@@ -119,8 +119,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สร้างก๊วนสำเร็จ')));
       await _saveRecentName(_nameCtrl.text.trim());
       if (!mounted) return;
-      // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId เพื่อให้หน้าเรียกใช้งาน Bottom Sheet สร้างรอบนัด
-      Navigator.pop(context, groupId);
+      // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId + sportId เพื่อให้หน้า SportClub เลือกแถบกีฬาและ scroll ไปการ์ดใหม่
+      Navigator.pop(context, {'groupId': groupId, 'sportId': _sportId});
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
