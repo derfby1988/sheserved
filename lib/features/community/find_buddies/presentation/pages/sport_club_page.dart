@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../services/auth_service.dart';
@@ -30,6 +33,9 @@ class _SportClubPageState extends State<SportClubPage> {
   String? _province;
   String? _district;
   double? _radiusKm;
+  double? _userLat;
+  double? _userLng;
+  bool _locationEnabled = false;
   DateTime? _filterDate;
   bool _filterOpenOnly = false;
   final _listScrollController = ScrollController();
@@ -235,7 +241,7 @@ class _SportClubPageState extends State<SportClubPage> {
     try {
       final userId = AuthService.instance.currentUser?.id;
       final sports = await _repo.getApprovedSports(userId: userId);
-      final groups = await _repo.listGroups(currentUserId: userId);
+      final groups = _applyLocationFilter(await _repo.listGroups(openOnly: _filterOpenOnly));
       final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
       final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
       final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
@@ -268,16 +274,17 @@ class _SportClubPageState extends State<SportClubPage> {
     setState(() => _reloadingGroups = true);
     final userId = AuthService.instance.currentUser?.id;
     try {
-      final groups = await _repo.listGroups(
-      sportId: _sportId,
-      q: _q,
-      currentUserId: userId,
-      province: _province,
-      district: _district,
-    );
-    final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
-    final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
-    final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
+      var groups = await _repo.listGroups(
+        sportId: _sportId,
+        q: _q,
+        openOnly: _filterOpenOnly,
+        province: _province,
+        district: _district,
+      );
+      groups = _applyLocationFilter(groups);
+      final adminIds = userId != null ? await _repo.listMyAdminGroupIds(userId) : <String>{};
+      final joinedGroupIds = userId != null ? await _repo.listMyJoinedGroupIds(userId) : <String>{};
+      final createdSportIds = userId != null ? await _repo.listMyCreatedSportIds(userId) : <String>{};
 
       // Filter out groups with no upcoming sessions for non-admin, non-joined users
       final allGroupIds = groups.map((g) => g['id']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
@@ -300,7 +307,7 @@ class _SportClubPageState extends State<SportClubPage> {
     }
   }
 
-  Future<void> _book(String sessionId) async {
+  Future<void> _book(String sessionId, {required bool requiresOwnerApproval}) async {
     final user = AuthService.instance.currentUser;
     if (user == null) {
       if (!mounted) return;
@@ -310,7 +317,15 @@ class _SportClubPageState extends State<SportClubPage> {
     try {
       await _repo.bookSession(sessionId, user.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งคำขอจองแล้ว')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            requiresOwnerApproval
+                ? 'ส่งคำขอเข้าร่วมแล้ว รอให้แอดมินอนุมัติ'
+                : 'เข้าร่วมก๊วนสำเร็จ',
+          ),
+        ),
+      );
       await _reload();
     } catch (e) {
       if (!mounted) return;
@@ -387,9 +402,11 @@ class _SportClubPageState extends State<SportClubPage> {
               ),
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : RefreshIndicator(
-                      onRefresh: _reload,
-                      child: ListView(
+                  : _showMapView
+                      ? _buildMapView()
+                      : RefreshIndicator(
+                          onRefresh: _reload,
+                          child: ListView(
                         controller: _listScrollController,
                         padding: const EdgeInsets.all(16),
                         children: [
@@ -460,6 +477,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 6),
                                 if (g['gender_preference'] != null && g['gender_preference'].toString() != 'any')
                                   Chip(
                                     label: Text(g['gender_preference'].toString() == 'male' ? 'ช.' : 'ญ.'),
@@ -522,6 +540,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                 }
                                 final isAdmin = _myAdminGroups.contains(g['id']?.toString() ?? '');
                                 final hasJoined = _myJoinedGroupIds.contains(g['id']?.toString() ?? '');
+                                final requiresOwnerApproval = g['requires_owner_approval'] == true;
                                 final joinButton = hasJoined
                                     ? TextButton.icon(
                                         onPressed: null,
@@ -537,10 +556,10 @@ class _SportClubPageState extends State<SportClubPage> {
                                             return;
                                           }
                                           final sid = upcoming.first['id'].toString();
-                                          await _book(sid);
+                                          await _book(sid, requiresOwnerApproval: requiresOwnerApproval);
                                         },
                                         icon: const Icon(Icons.event_available),
-                                        label: const Text('เข้าร่วมก๊วน'),
+                                        label: Text(requiresOwnerApproval ? 'ขอเข้าร่วมก๊วน' : 'เข้าร่วมก๊วน'),
                                       );
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -839,6 +858,23 @@ class _SportClubPageState extends State<SportClubPage> {
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                             ),
                           ),
+                          if (group['requires_owner_approval'] == true) ...[
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.lock, size: 14, color: Colors.orange),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'ต้องรออนุมัติ',
+                                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           const Text('รอบนัด', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
@@ -971,22 +1007,6 @@ class _SportClubPageState extends State<SportClubPage> {
     return '${_formatThaiBuddhistDateTime(start)} - ${_formatThaiBuddhistDateTime(end)}';
   }
 
-  TextStyle _emojiTextStyle(BuildContext context) {
-    final platform = Theme.of(context).platform;
-    if (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS) {
-      return const TextStyle(fontFamily: 'Apple Color Emoji');
-    }
-    if (platform == TargetPlatform.android) {
-      return const TextStyle(fontFamily: 'Noto Color Emoji');
-    }
-    if (platform == TargetPlatform.windows) {
-      return const TextStyle(fontFamily: 'Segoe UI Emoji');
-    }
-    return const TextStyle(
-      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
-    );
-  }
-
   Widget _buildSkeletonCard() {
     return Card(
       child: Padding(
@@ -1011,18 +1031,23 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
+  TextStyle _emojiTextStyle(BuildContext context, {double fontSize = 16}) {
+    return TextStyle(
+      fontSize: fontSize,
+      fontFamilyFallback: const ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+    );
+  }
+
   Widget _buildSportChipLabel(String? icon, String label) {
-    return Text.rich(
-      TextSpan(
-        children: [
-          if (icon != null && icon.isNotEmpty)
-            TextSpan(
-              text: '$icon ',
-              style: _emojiTextStyle(context),
-            ),
-          TextSpan(text: label),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null && icon.isNotEmpty) ...[
+          Text(icon, style: _emojiTextStyle(context)),
+          const SizedBox(width: 4),
         ],
-      ),
+        Text(label),
+      ],
     );
   }
 
@@ -1112,61 +1137,281 @@ class _SportClubPageState extends State<SportClubPage> {
     Navigator.pushNamed(context, '/emergency');
   }
 
+  double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
+    return const Distance().as(
+      LengthUnit.Kilometer,
+      LatLng(lat1, lng1),
+      LatLng(lat2, lng2),
+    );
+  }
+
+  List<Map<String, dynamic>> _applyLocationFilter(List<Map<String, dynamic>> groups) {
+    if (!_locationEnabled || _userLat == null || _userLng == null || _radiusKm == null) {
+      return groups;
+    }
+    return groups.where((g) {
+      final lat = g['lat'];
+      final lng = g['lng'];
+      if (lat == null || lng == null) return false;
+      return _distanceKm(_userLat!, _userLng!, (lat as num).toDouble(), (lng as num).toDouble()) <= _radiusKm!;
+    }).toList();
+  }
+
+  Future<bool> _requestLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return false;
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      _userLat = pos.latitude;
+      _userLng = pos.longitude;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Widget _buildMapView() {
+    final markers = _groups
+        .where((g) => g['lat'] != null && g['lng'] != null)
+        .map((g) {
+          final lat = (g['lat'] as num).toDouble();
+          final lng = (g['lng'] as num).toDouble();
+          return Marker(
+            point: LatLng(lat, lng),
+            width: 44,
+            height: 44,
+            alignment: Alignment.topCenter,
+            child: GestureDetector(
+              onTap: () => _showMapMarkerSheet(g),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.teal,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                alignment: Alignment.center,
+                child: Text(g['sport_icon']?.toString() ?? '🏅', style: const TextStyle(fontSize: 18)),
+              ),
+            ),
+          );
+        })
+        .toList();
+
+    final center = _userLat != null && _userLng != null
+        ? LatLng(_userLat!, _userLng!)
+        : const LatLng(13.7563, 100.5018); // กรุงเทพฯ (ค่าเริ่มต้น)
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: center,
+          initialZoom: _userLat != null ? 12 : 6,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.treeLawZoo',
+          ),
+          if (_userLat != null && _userLng != null && _radiusKm != null)
+            CircleLayer(
+              circles: [
+                CircleMarker(
+                  point: LatLng(_userLat!, _userLng!),
+                  radius: _radiusKm! * 1000,
+                  useRadiusInMeter: true,
+                  color: Colors.teal.withValues(alpha: 0.08),
+                  borderColor: Colors.teal.withValues(alpha: 0.35),
+                  borderStrokeWidth: 1,
+                ),
+              ],
+            ),
+          MarkerLayer(markers: markers),
+          if (markers.isEmpty)
+            const Center(
+              child: Text('ไม่มีก๊วนในพื้นที่นี้', style: TextStyle(color: Colors.grey)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMapMarkerSheet(Map<String, dynamic> group) async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if ((group['sport_icon']?.toString() ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(group['sport_icon'].toString(), style: const TextStyle(fontSize: 18)),
+                    ),
+                  Expanded(
+                    child: Text(
+                      group['name']?.toString() ?? '',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              if ((group['province']?.toString() ?? '').isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'พื้นที่: ${group['province']}${(group['district']?.toString() ?? '').isNotEmpty ? ' · ${group['district']}' : ''}',
+                  ),
+                ),
+              if (group['member_count'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'ว่าง: ${((group['capacity'] as num?)?.toInt() ?? 0) - ((group['member_count'] as num?)?.toInt() ?? 0)} คน',
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('ปิด'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showGroupDetailSheet(group);
+                    },
+                    icon: const Icon(Icons.info_outline),
+                    label: const Text('ดูรายละเอียด'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showSearchDialog() {
     final qController = TextEditingController(text: _q);
     final provinceController = TextEditingController(text: _province ?? '');
     final districtController = TextEditingController(text: _district ?? '');
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('ค้นหาก๊วน'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('ค้นหา'),
-              TextField(
-                controller: qController,
-                decoration: const InputDecoration(hintText: 'ค้นหาก๊วน / สถานที่'),
-              ),
-              const SizedBox(height: 16),
-              const Text('จังหวัด'),
-              TextField(
-                controller: provinceController,
-                decoration: const InputDecoration(hintText: 'จังหวัด'),
-              ),
-              const SizedBox(height: 16),
-              const Text('อำเภอ'),
-              TextField(
-                controller: districtController,
-                decoration: const InputDecoration(hintText: 'อำเภอ'),
-              ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                title: const Text('เฉพาะก๊วนเปิดรับ'),
-                value: _filterOpenOnly,
-                onChanged: (v) => setState(() => _filterOpenOnly = v ?? false),
-              ),
-            ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('ค้นหาก๊วน'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('ค้นหา'),
+                TextField(
+                  controller: qController,
+                  decoration: const InputDecoration(hintText: 'ค้นหาก๊วน / สถานที่'),
+                ),
+                const SizedBox(height: 16),
+                const Text('จังหวัด'),
+                TextField(
+                  controller: provinceController,
+                  decoration: const InputDecoration(hintText: 'จังหวัด'),
+                ),
+                const SizedBox(height: 16),
+                const Text('อำเภอ'),
+                TextField(
+                  controller: districtController,
+                  decoration: const InputDecoration(hintText: 'อำเภอ'),
+                ),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  title: const Text('เฉพาะก๊วนที่เข้าร่วมได้ทันที'),
+                  subtitle: const Text('กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก'),
+                  value: _filterOpenOnly,
+                  onChanged: (v) => setDialogState(() => _filterOpenOnly = v ?? false),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('ใช้ตำแหน่งปัจจุบัน'),
+                  subtitle: const Text('กรองก๊วนตามระยะทางจากคุณ'),
+                  value: _locationEnabled,
+                  onChanged: (v) async {
+                    if (v) {
+                      final ok = await _requestLocation();
+                      if (!ok) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง')),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    setDialogState(() {
+                      _locationEnabled = v;
+                      if (v) _radiusKm ??= 10;
+                    });
+                  },
+                ),
+                if (_locationEnabled) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        const Text('รัศมี'),
+                        Expanded(
+                          child: Slider(
+                            value: (_radiusKm ?? 10).clamp(1, 50).toDouble(),
+                            min: 1,
+                            max: 50,
+                            divisions: 49,
+                            label: '${(_radiusKm ?? 10).round()} กม.',
+                            onChanged: (v) => setDialogState(() => _radiusKm = v),
+                          ),
+                        ),
+                        Text('${(_radiusKm ?? 10).round()} กม.'),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
+            ),
+            TextButton(
+              onPressed: () {
+                _q = qController.text;
+                _province = provinceController.text.isEmpty ? null : provinceController.text;
+                _district = districtController.text.isEmpty ? null : districtController.text;
+                Navigator.pop(context);
+                _reload();
+              },
+              child: const Text('ค้นหา'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            onPressed: () {
-              _q = qController.text;
-              _province = provinceController.text.isEmpty ? null : provinceController.text;
-              _district = districtController.text.isEmpty ? null : districtController.text;
-              Navigator.pop(context);
-              _reload();
-            },
-            child: const Text('ค้นหา'),
-          ),
-        ],
       ),
     );
   }

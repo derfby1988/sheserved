@@ -85,6 +85,7 @@ dependencies:
   google_mlkit_face_detection: ^0.13.2
   health: ^13.3.1
   shared_preferences: ^2.5.5
+  flutter_map: ^8.3.1
 
 dev_dependencies:
   flutter_test:

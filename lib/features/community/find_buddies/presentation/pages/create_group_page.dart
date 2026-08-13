@@ -22,7 +22,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   final _provinceCtrl = TextEditingController();
   final _districtCtrl = TextEditingController();
   String? _sportId;
-  String _visibility = 'public';
   String _genderPreference = 'any';
   bool _requiresOwnerApproval = false;
   int _capacity = 5;
@@ -106,7 +105,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         name: _nameCtrl.text.trim(),
         sportId: _sportId,
         description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-        visibility: _visibility,
         requiresOwnerApproval: _requiresOwnerApproval,
         capacity: _capacity,
         coverImageUrl: _coverImageUrl,
@@ -276,29 +274,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: RadioListTile<String>(
-                      title: const Text('สาธารณะ'),
-                      value: 'public',
-                      groupValue: _visibility,
-                      onChanged: (v) => setState(() => _visibility = v ?? 'public'),
-                    ),
-                  ),
-                  Expanded(
-                    child: RadioListTile<String>(
-                      title: const Text('ส่วนตัว'),
-                      value: 'private',
-                      groupValue: _visibility,
-                      onChanged: (v) => setState(() => _visibility = v ?? 'public'),
-                    ),
-                  ),
-                ],
-              ),
               SwitchListTile(
-                title: const Text('ต้องการการอนุมัติจากเจ้าของก๊วน'),
+                title: const Text('ก๊วนส่วนตัว (ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง)'),
+                subtitle: const Text('ปิด = ก๊วนเปิด (ยอมรับอัตโนมัติ) · เปิด = ก๊วนส่วนตัว (รออนุมัติ)'),
                 value: _requiresOwnerApproval,
                 onChanged: (v) => setState(() => _requiresOwnerApproval = v),
               ),

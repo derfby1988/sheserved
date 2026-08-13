@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../services/websocket_service.dart';
 
 class FitnessBuddiesRepository {
   final SupabaseClient _client;
@@ -156,28 +157,24 @@ class FitnessBuddiesRepository {
         .toSet();
   }
 
-  Future<List<Map<String, dynamic>>> listGroups({String? sportId, String? q, String? province, String? district, String? currentUserId, int limit = 50, int offset = 0}) async {
+  Future<List<Map<String, dynamic>>> listGroups({
+    String? sportId,
+    String? q,
+    String? province,
+    String? district,
+    bool openOnly = false,
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final base = _client.from('fitness_groups').select('*');
     var query = base;
     if (sportId != null && sportId.isNotEmpty) query = query.eq('sport_id', sportId);
     if (province != null && province.isNotEmpty) query = query.eq('province', province);
     if (district != null && district.isNotEmpty) query = query.eq('district', district);
     if (q != null && q.isNotEmpty) query = query.ilike('name', '%$q%');
-    if (currentUserId == null || currentUserId.isEmpty) {
-      query = query.eq('visibility', 'public');
-    } else {
-      final ids = await _client
-          .from('fitness_group_members')
-          .select('group_id')
-          .eq('user_id', currentUserId)
-          .eq('is_active', true);
-      final memberGroupIds = List<String>.from((ids as List).map((e) => e['group_id'].toString()));
-      if (memberGroupIds.isEmpty) {
-        query = query.eq('visibility', 'public');
-      } else {
-        final quoted = memberGroupIds.map((e) => '"$e"').join(',');
-        query = query.or('visibility.eq.public,id.in.($quoted)');
-      }
+    // ทุกก๊วน (รวมก๊วนส่วนตัว) แสดงในรายการเปิดรับ; openOnly = เฉพาะก๊วนที่เข้าร่วมได้ทันที
+    if (openOnly) {
+      query = query.eq('requires_owner_approval', false);
     }
 
     final res = await query.order('created_at', ascending: false).range(offset, offset + limit - 1);
@@ -281,6 +278,88 @@ class FitnessBuddiesRepository {
     }).toList();
   }
 
+  Future<Map<String, dynamic>?> _getSessionWithGroup(String sessionId) async {
+    final res = await _client
+        .from('fitness_group_sessions')
+        .select('id, group_id, starts_at, ends_at, place_name, group:fitness_groups(id, name, created_by)')
+        .eq('id', sessionId)
+        .maybeSingle();
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<List<String>> _getGroupAdminUserIds(String groupId, {String? fallbackUserId}) async {
+    final res = await _client
+        .from('fitness_group_members')
+        .select('user_id, role, is_active')
+        .eq('group_id', groupId)
+        .eq('is_active', true);
+
+    final adminIds = (res as List)
+        .where((row) => row['role']?.toString() == 'admin')
+        .map((row) => row['user_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (fallbackUserId != null && fallbackUserId.isNotEmpty) {
+      adminIds.add(fallbackUserId);
+    }
+
+    return adminIds.toSet().toList();
+  }
+
+  Future<String> _getUserDisplayName(String userId) async {
+    final res = await _client
+        .from('users')
+        .select('first_name, last_name')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (res == null) return 'ผู้ใช้';
+
+    final firstName = (res['first_name']?.toString() ?? '').trim();
+    final lastName = (res['last_name']?.toString() ?? '').trim();
+    final fullName = '$firstName $lastName'.trim();
+    return fullName.isNotEmpty ? fullName : 'ผู้ใช้';
+  }
+
+  void _emitFitnessBookingStatus({
+    required List<String> recipientUserIds,
+    required String bookingId,
+    required String sessionId,
+    required String groupId,
+    required String groupName,
+    required String status,
+    required String message,
+    String? requesterId,
+    String? requesterName,
+    String? reason,
+  }) {
+    final socket = WebSocketService().socket;
+    if (socket == null || recipientUserIds.isEmpty) return;
+
+    for (final recipientUserId in recipientUserIds.toSet()) {
+      socket.emit('fitness_booking_status', {
+        'userId': recipientUserId,
+        'bookingId': bookingId,
+        'booking_id': bookingId,
+        'sessionId': sessionId,
+        'session_id': sessionId,
+        'groupId': groupId,
+        'group_id': groupId,
+        'groupName': groupName,
+        'group_name': groupName,
+        'status': status,
+        'message': message,
+        if (requesterId != null) 'requesterUserId': requesterId,
+        if (requesterId != null) 'requester_user_id': requesterId,
+        if (requesterName != null) 'requesterName': requesterName,
+        if (requesterName != null) 'requester_name': requesterName,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
+    }
+  }
+
   Future<void> cancelSession(String sessionId) async {
     await _client.from('fitness_group_sessions').delete().eq('id', sessionId);
   }
@@ -290,8 +369,34 @@ class FitnessBuddiesRepository {
       'p_session_id': sessionId,
       'p_user_id': userId,
     });
-    if (result is String) return result;
-    if (result is Map && result['book_fitness_session'] is String) return result['book_fitness_session'] as String;
+    final bookingId = result is String
+        ? result
+        : (result is Map && result['book_fitness_session'] is String
+            ? result['book_fitness_session'] as String
+            : null);
+    if (bookingId != null) {
+      final session = await _getSessionWithGroup(sessionId);
+      if (session != null) {
+        final groupId = session['group_id']?.toString() ?? '';
+        final group = session['group'];
+        final groupName = group is Map ? (group['name']?.toString() ?? 'ก๊วนกีฬา') : 'ก๊วนกีฬา';
+        final groupCreatedBy = group is Map ? group['created_by']?.toString() : null;
+        final requesterName = await _getUserDisplayName(userId);
+        final recipientUserIds = await _getGroupAdminUserIds(groupId, fallbackUserId: groupCreatedBy);
+        _emitFitnessBookingStatus(
+          recipientUserIds: recipientUserIds,
+          bookingId: bookingId,
+          sessionId: sessionId,
+          groupId: groupId,
+          groupName: groupName,
+          status: 'pending',
+          message: 'มีคำขอเข้าร่วมก๊วนใหม่',
+          requesterId: userId,
+          requesterName: requesterName,
+        );
+      }
+      return bookingId;
+    }
     throw Exception('ไม่สามารถจองรอบได้');
   }
 
@@ -341,15 +446,41 @@ class FitnessBuddiesRepository {
     }).toList();
   }
 
-  /// Approve a pending booking (owner action). Minimal update: set status to 'confirmed'.
+  /// Approve a pending booking (owner action) via RPC with server-side overlap validation.
   Future<void> approveBooking({required String bookingId, required String ownerId}) async {
-    await _client
+    await _client.rpc('approve_fitness_session_booking', params: {
+      'p_booking_id': bookingId,
+      'p_owner_id': ownerId,
+    });
+
+    final booking = await _client
         .from('fitness_group_bookings')
-        .update({
-          'status': 'confirmed',
-        })
+        .select('user_id, session_id, session:fitness_group_sessions(id, group_id, group:fitness_groups(id, name, created_by))')
         .eq('id', bookingId)
-        .eq('status', 'pending');
+        .maybeSingle();
+
+    if (booking == null) return;
+
+    final requesterId = booking['user_id']?.toString();
+    final session = booking['session'];
+    final sessionId = booking['session_id']?.toString() ?? '';
+    if (requesterId == null || requesterId.isEmpty || session is! Map) return;
+
+    final group = session['group'];
+    final groupId = session['group_id']?.toString() ?? '';
+    final groupName = group is Map ? (group['name']?.toString() ?? 'ก๊วนกีฬา') : 'ก๊วนกีฬา';
+    final requesterName = await _getUserDisplayName(requesterId);
+    _emitFitnessBookingStatus(
+      recipientUserIds: [requesterId],
+      bookingId: bookingId,
+      sessionId: sessionId,
+      groupId: groupId,
+      groupName: groupName,
+      status: 'confirmed',
+      message: 'คำขอเข้าร่วมก๊วนของคุณได้รับการอนุมัติแล้ว',
+      requesterId: ownerId,
+      requesterName: requesterName,
+    );
   }
 
   /// Reject a pending booking (owner action). Minimal update: set status to 'rejected'.
@@ -364,6 +495,36 @@ class FitnessBuddiesRepository {
         })
         .eq('id', bookingId)
         .eq('status', 'pending');
+
+    final booking = await _client
+        .from('fitness_group_bookings')
+        .select('user_id, session_id, session:fitness_group_sessions(id, group_id, group:fitness_groups(id, name, created_by))')
+        .eq('id', bookingId)
+        .maybeSingle();
+
+    if (booking == null) return;
+
+    final requesterId = booking['user_id']?.toString();
+    final session = booking['session'];
+    final sessionId = booking['session_id']?.toString() ?? '';
+    if (requesterId == null || requesterId.isEmpty || session is! Map) return;
+
+    final group = session['group'];
+    final groupId = session['group_id']?.toString() ?? '';
+    final groupName = group is Map ? (group['name']?.toString() ?? 'ก๊วนกีฬา') : 'ก๊วนกีฬา';
+    final requesterName = await _getUserDisplayName(requesterId);
+    _emitFitnessBookingStatus(
+      recipientUserIds: [requesterId],
+      bookingId: bookingId,
+      sessionId: sessionId,
+      groupId: groupId,
+      groupName: groupName,
+      status: 'rejected',
+      message: 'คำขอเข้าร่วมก๊วนของคุณถูกปฏิเสธ',
+      requesterId: ownerId,
+      requesterName: requesterName,
+      reason: reason,
+    );
   }
 
   Future<String> createGroup({
@@ -371,7 +532,6 @@ class FitnessBuddiesRepository {
     required String name,
     String? sportId,
     String? description,
-    String visibility = 'public',
     bool requiresOwnerApproval = false,
     int capacity = 5,
     String? coverImageUrl,
@@ -386,7 +546,6 @@ class FitnessBuddiesRepository {
       'name': name,
       if (sportId != null) 'sport_id': sportId,
       if (description != null) 'description': description,
-      'visibility': visibility,
       'requires_owner_approval': requiresOwnerApproval,
       'capacity': capacity,
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,

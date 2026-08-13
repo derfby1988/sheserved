@@ -25,7 +25,7 @@
 - หน้า "รายการก๊วน"
   - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม (เฉพาะ admin `role == 'admin'`; ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้) — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
   - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **จำนวนว่าง (capacity − member_count)**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / เพิ่มรอบนัดสำหรับแอดมิน)
-  - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนเปิดรับ"
+  - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนที่เข้าร่วมได้ทันที" (กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก; ก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ)
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
 - หน้า “แผนที่”
   - แสดง Marker ของก๊วนตามตัวกรอง, คลิก Marker เปิดแผ่นสรุปและนำทางไปหน้ารายละเอียด
@@ -55,7 +55,8 @@
 ## สถาปัตยกรรมข้อมูล (Proposed on Supabase)
 - `sports` (id, name_th, name_en, icon TEXT, status VARCHAR(10) DEFAULT 'approved' CHECK(status IN ('pending','approved','rejected')), proposed_by UUID REFERENCES users(id), proposed_at TIMESTAMPTZ, reviewed_by UUID REFERENCES users(id), reviewed_at TIMESTAMPTZ, rejection_reason VARCHAR(200))
   - `icon`: emoji แสดงผลประจำกีฬา (เช่น ⚽ 🏀 🏸) — seed 63 ประเภทพร้อม icon ผ่าน migration `20260805083000_seed_sports_with_icons.sql`; กีฬาที่เสนอใหม่ได้รับ icon ตอน admin อนุมัติ
-- `fitness_groups` (id, sport_id, name VARCHAR(60), description VARCHAR(500), province, district, lat DOUBLE PRECISION CHECK(lat BETWEEN -90 AND 90), lng DOUBLE PRECISION CHECK(lng BETWEEN -180 AND 180), visibility VARCHAR(10) DEFAULT 'public' CHECK(visibility IN ('public','private')), requires_owner_approval BOOLEAN DEFAULT false, cover_image_url VARCHAR(500), venue_photo_url VARCHAR(500), gender_preference VARCHAR(10) DEFAULT 'any' CHECK(gender_preference IN ('male','female','any')), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+- `fitness_groups` (id, sport_id, name VARCHAR(60), description VARCHAR(500), province, district, lat DOUBLE PRECISION CHECK(lat BETWEEN -90 AND 90), lng DOUBLE PRECISION CHECK(lng BETWEEN -180 AND 180), requires_owner_approval BOOLEAN DEFAULT false, cover_image_url VARCHAR(500), venue_photo_url VARCHAR(500), gender_preference VARCHAR(10) DEFAULT 'any' CHECK(gender_preference IN ('male','female','any')), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+  - **นิยาม “ก๊วนส่วนตัว”:** คือก๊วนที่ `requires_owner_approval = true` — ยังแสดงในรายการเปิดรับเหมือนก๊วนทั่วไป แต่ผู้เข้าร่วมต้องรอเจ้าของก๊วนอนุมัติก่อนเข้าร่วม (ไม่ใช้ฟิลด์ `visibility` แยกอีกต่อไป; `public`/`private` เป็นสิ่งเดียวกันกับ toggle อนุมัติ)
   - `venue_photo_url`: รูปถ่ายสนาม/สถานที่จริงที่ใช้นัดเล่น (แยกจาก `cover_image_url` ซึ่งเป็นภาพปกของก๊วน)
   - `gender_preference`: เพศที่กำลังชวนเข้าร่วมก๊วน — `'male'` (ชาย), `'female'` (หญิง), `'any'` (เสรี/ไม่จำกัด — ค่าเริ่มต้น)
 - `fitness_group_sessions` (id, group_id UUID REFERENCES fitness_groups(id) ON DELETE CASCADE, starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, place_name VARCHAR(200), lat DOUBLE PRECISION, lng DOUBLE PRECISION, note VARCHAR(500), CHECK(ends_at > starts_at))
@@ -110,7 +111,7 @@
 | ตาราง | SELECT Policy | INSERT/UPDATE/DELETE Policy |
 |-------|--------------|---------------------------|
 | `sports` | `USING(true)` (public reference) | service_role เท่านั้น |
-| `fitness_groups` | `USING(true)` (ตาม visibility filter ฝั่ง App) | App Layer ตรวจสิทธิ์: created_by หรือ admin ของก๊วน |
+| `fitness_groups` | `USING(true)` (ก๊วนทั้งหมดแสดงในรายการเปิดรับ รวมก๊วนส่วนตัว) | App Layer ตรวจสิทธิ์: created_by หรือ admin ของก๊วน |
 | `fitness_group_sessions` | `USING(true)` | App Layer: เฉพาะ admin ของก๊วน |
 | `fitness_group_members` | `USING(true)` | App Layer: สมาชิกเข้าร่วมเอง / admin จัดการ |
 | `fitness_group_bookings` | `USING(true)` | App Layer: ผู้จองสร้าง/ยกเลิกของตน; เจ้าของอนุมัติ/ยกเลิก |
@@ -143,7 +144,7 @@
   - ~~วันที่และเวลา: DatePicker + TimePicker ต้องเป็นอนาคต ≥ ปัจจุบัน + 30 นาที~~ → **ย้ายไป Bottom Sheet "สร้างรอบนัด" แยกต่างหาก** (ดูหัวข้อ "สร้างรอบนัด (Bottom Sheet)" ด้านล่าง)
   - จำนวนสมาชิกเป้าหมาย: Stepper/Slider ช่วง 2–30 (เริ่มต้น 5)
   - รายละเอียด: TextArea 2–5 บรรทัด (ไม่บังคับ, สูงสุด ~500 ตัวอักษร)
-  - การจองและการอนุมัติ: Toggle “ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง” (ค่าเริ่มต้น: ปิด = ยอมรับอัตโนมัติ)
+  - การจองและการอนุมัติ: Toggle “ก๊วนส่วนตัว (ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง)” — ค่าเริ่มต้น: ปิด = ก๊วนเปิด (ยอมรับอัตโนมัติ); เปิด = ก๊วนส่วนตัว (รออนุมัติ) — ฟิลด์เดียวนี้คือตัวกำหนดสถานะก๊วนส่วนตัว ไม่มีฟิลด์ visibility แยก
 
 - สถานะ/การโต้ตอบ
   - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng (วันเวลาย้ายไป Bottom Sheet แยก)
@@ -221,7 +222,7 @@ Scaffold
   - `lib/features/home/presentation/widgets/home_header_section.dart`: เพิ่ม branch ใหม่ `item['type'] == 'fitness_booking'` ใน `combinedItems` (ตาม pattern ของ `donation_update`/`yield_way`) พร้อม callback `onFitnessBookingAlertTapped` นำไปหน้า `/community/sport-club/booking/:id` (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
   - แสดงเป็นฟีดใหม่→เก่า คลิกเข้าหน้า "รายละเอียดการจอง"
 - **Timeout สำหรับ pending booking:** ถ้า booking สถานะ `pending` ไม่ได้รับอนุมัติภายใน 24 ชั่วโมง หรือถึงเวลาก่อนเริ่ม session 1 ชั่วโมง (แล้วแต่ถึงก่อน) ระบบ auto-reject (`status='rejected', cancelled_by='system'`) ผ่าน BullMQ delayed job ที่ enqueue ตอนสร้าง booking (สอดคล้องกับ `architecture_analysis.md` ที่ใช้ BullMQ queue อยู่แล้ว) และแจ้งเตือนทั้งผู้จองและเจ้าของก๊วนผ่าน event `fitness_booking_status` ด้านบน
-- ป้องกันการจองซ้ำซ้อน: ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) — ปฏิเสธพร้อมแสดงเหตุผลให้ทราบในขั้นตอนขอร่วมก๊วน
+- ป้องกันการจองซ้ำซ้อน: ก๊วนเปิด (`requires_owner_approval=false`) ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) ในขั้นตอนขอร่วมก๊วน; ก๊วนส่วนตัว (`requires_owner_approval=true`) ให้สร้างคำขอ `pending` ก่อน แล้วตรวจ overlap ตอนแอดมินอนุมัติผ่าน `approve_fitness_session_booking()` RPC เพื่อไม่ให้คำขอค้างถูกตัดด้วย `OVERLAP_BOOKING` ตั้งแต่ต้น
 - บล็อกผู้ใช้: เจ้าของก๊วนสามารถบล็อกผู้ใช้ (ห้ามจองก๊วนนี้) และดูประวัติการถูกบล็อก/การจองย้อนหลังจาก dialog ที่เปิดจากโปรไฟล์ผู้จอง
 
 ## อนุมัติคำขอเข้าร่วม (Owner Approval UI — Bottom Sheet)
@@ -236,10 +237,9 @@ Scaffold
   - ซ่อนปุ่มอนุมัติ/ปฏิเสธเมื่อ session สิ้นสุดแล้ว (ป้องกันจัดการย้อนหลัง)
 - Repository/เมธอดที่ใช้ (Flutter):
   - `listSessionBookings(sessionId)` → ดึงรายการ booking ทั้งหมดของ session รวมข้อมูลผู้ใช้พื้นฐาน
-  - `approveBooking({ bookingId, ownerId })` → อัปเดตสถานะเป็น `confirmed` (เฉพาะแถวที่ยัง `pending`)
+  - `approveBooking({ bookingId, ownerId })` → เรียก RPC `approve_fitness_session_booking()` เพื่ออัปเดตสถานะเป็น `confirmed` พร้อมตรวจ overlap และสิทธิ์แอดมิน
   - `rejectBooking({ bookingId, ownerId, reason? })` → อัปเดตสถานะเป็น `rejected` (เฉพาะแถวที่ยัง `pending`) และบันทึก `cancelled_by='owner'` พร้อม `cancel_reason` ถ้ามี
 - ข้อควรทราบ (MVP):
-  - ปัจจุบันใช้การ `update` ตารางโดยตรง คล้าย `cancelBooking()`; ในเฟสถัดไปควรย้ายไปใช้ RPC ฝั่ง DB ตามส่วน "Data Integrity Guards" เพื่อรวม capacity/overlap validation ไว้ใน transaction เดียว
   - Realtime/WebSocket: เมื่อเชื่อมต่อในอนาคตให้ emit event `fitness_booking_status` ไปยังผู้จองเมื่ออนุมัติ/ปฏิเสธสำเร็จ
 
 ## UX Completeness เพิ่มเติม
@@ -248,7 +248,7 @@ Scaffold
 - **ภาพถ่ายสนาม:** ใช้คอลัมน์ `fitness_groups.venue_photo_url` กับ Supabase Storage bucket ใหม่ `fitness-group-venues` (public read, insert/update เฉพาะ owner/admin ของก๊วนผ่าน storage RLS policy เช่นเดียวกับ cover image) — แสดงในหน้ารายละเอียดก๊วนเพื่อให้ผู้เข้าร่วมเห็นสภาพสนามจริงก่อนตัดสินใจเข้าร่วม
 - **เพศที่เชิญชวนเข้าร่วม:** ใช้คอลัมน์ `fitness_groups.gender_preference` (`'male'|'female'|'any'`, ค่าเริ่มต้น `'any'`) แสดงเป็น badge ในการ์ดรายการก๊วนและหน้ารายละเอียด — เป็นข้อมูลประกอบการตัดสินใจเท่านั้น ไม่บังคับกรองสิทธิ์การจอง/เข้าร่วมระดับระบบในรอบแรก
 - **Province/District:** ใช้ free-text VARCHAR ต่อไปในรอบแรก (ตรวจสอบแล้วไม่มี master table province/district กลางในระบบที่ reuse ได้) — มี index `(sport_id, province, district)` รองรับการกรองแล้ว
-- **`visibility` enum:** กำหนดค่าไว้แล้วใน schema — `'public'` (ค่าเริ่มต้น, แสดงในรายการค้นหาทั่วไป) / `'private'` (แสดงเฉพาะสมาชิกที่ `is_active=true` เท่านั้น ไม่ปรากฏใน public list)
+- **ก๊วนส่วนตัว = ต้องอนุมัติก่อนเข้าร่วม:** ไม่มีฟิลด์ `visibility` แยก — ก๊วนทุกก๊วน (รวมก๊วนส่วนตัว) แสดงในรายการค้นหาทั่วไป; ความต่างอยู่ที่ `requires_owner_approval` ซึ่งถ้าเปิด ก๊วนนั้นคือ “ก๊วนส่วนตัว” และผู้เข้าร่วมต้องรอเจ้าของอนุมัติก่อนเข้าร่วม
 - **สิทธิ์แก้ไข `requires_owner_approval`:** เฉพาะ `fitness_group_members.role='admin'` ของก๊วนนั้นแก้ไขได้ การเปลี่ยนค่าไม่มีผลย้อนหลังกับ booking ที่มีสถานะอยู่แล้ว มีผลกับ booking ใหม่เท่านั้น
 
 ## ไม่ใช่ขอบเขต (รอบแรก)
@@ -256,7 +256,7 @@ Scaffold
 - ระบบชำระเงิน/จองสนาม
 
 ## ความปลอดภัยและสิทธิ์
-- อ่านข้อมูล: public (ตาม visibility)
+- อ่านข้อมูล: public (ทุกก๊วนแสดงในรายการเปิดรับ รวมก๊วนส่วนตัว)
 - สร้างก๊วน: ผู้ใช้ที่ล็อกอินทุกคน
 - แก้ไข/จัดการก๊วน: เฉพาะแอดมินของก๊วน
 - เพิ่ม/แก้ไขหมวดหมู่กีฬา: เฉพาะแอดมินก๊วน/ผู้ดูแลระบบ
@@ -363,7 +363,7 @@ Scaffold
 - สมาชิกก๊วนเปิดแชทก๊วนได้ ผู้ที่ไม่เป็นสมาชิกเข้าแชทไม่ได้
 - ผู้ใช้ที่ล็อกอินสามารถ “สร้างก๊วน” ได้ตามสิทธิ์ และแก้ไขได้เฉพาะแอดมินของก๊วน
 - Dev build ใช้แผนที่จากผู้ให้บริการไม่มีค่าใช้จ่าย และสามารถสลับไป Google Maps ผ่าน config/env
-- Toggle การอนุมัติการจองแสดงในหน้าสร้างก๊วน (ค่าเริ่มต้น: ปิด = ยอมรับอัตโนมัติ)
+- Toggle “ก๊วนส่วนตัว” แสดงในหน้าสร้างก๊วน (ค่าเริ่มต้น: ปิด = ก๊วนเปิด ยอมรับอัตโนมัติ; เปิด = ก๊วนส่วนตัว ต้องรออนุมัติ) — ฟิลด์เดียวนี้คือตัวกำหนดสถานะก๊วนส่วนตัว และก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ
 - เมื่อจองสำเร็จ ระบบแจ้งเตือนผู้จอง (headsector), ถ้ายกเลิกให้แจ้งเจ้าของก๊วน; ถ้าเจ้าของยกเลิกรอบ/ก๊วน ให้แจ้งผู้จองทั้งหมด
 - ป้องกันการจองซ้ำซ้อนตามช่วงเวลา หากทับซ้อนต้องอธิบายเหตุผลและไม่อนุญาต
 - หน้ารายละเอียดการจองมีปุ่ม “ยกเลิกจอง”; เจ้าของก๊วนเปิด dialog จากโปรไฟล์ผู้จองเพื่อดูประวัติและ “บล็อกผู้ใช้” ได้

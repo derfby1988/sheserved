@@ -335,10 +335,32 @@ class HomeHeaderSection extends StatelessWidget {
                               final b = item['data'] as Map<String, dynamic>;
                               final status = b['status']?.toString() ?? '';
                               final bookingId = b['bookingId']?.toString() ?? '';
+                              final groupName = b['groupName']?.toString() ?? '';
+                              final requesterName = b['requesterName']?.toString() ?? '';
+                              final message = b['message']?.toString() ?? '';
                               final isConfirmed = status == 'confirmed';
-                              final color = isConfirmed ? const Color(0xFF2EA04B) : const Color(0xFFF5A623);
-                              final icon = isConfirmed ? Icons.event_available : Icons.event_note;
-                              final text = isConfirmed ? 'การจองยืนยันแล้ว' : 'อัปเดตการจอง';
+                              final isPending = status == 'pending';
+                              final isRejected = status == 'rejected';
+                              final color = isConfirmed
+                                  ? const Color(0xFF2EA04B)
+                                  : isRejected
+                                      ? const Color(0xFF9E9E9E)
+                                      : const Color(0xFFF5A623);
+                              final icon = isConfirmed
+                                  ? Icons.event_available
+                                  : isRejected
+                                      ? Icons.event_busy
+                                      : Icons.event_note;
+                              final text = message.isNotEmpty
+                                  ? message
+                                  : isConfirmed
+                                      ? 'การจองยืนยันแล้ว'
+                                      : isPending
+                                          ? 'มีคำขอเข้าร่วมก๊วนใหม่'
+                                          : 'อัปเดตการจอง';
+                              final detailParts = <String>[];
+                              if (groupName.isNotEmpty) detailParts.add(groupName);
+                              if (requesterName.isNotEmpty) detailParts.add(requesterName);
                               return GestureDetector(
                                 onTap: () => onFitnessBookingAlertTapped?.call(bookingId),
                                 child: Padding(
@@ -351,7 +373,7 @@ class HomeHeaderSection extends StatelessWidget {
                                       const SizedBox(width: 4),
                                       Flexible(
                                         child: Text(
-                                          text,
+                                          detailParts.isEmpty ? text : '$text • ${detailParts.join(' • ')}',
                                           style: AppTextStyles.caption.copyWith(
                                             color: color,
                                             fontWeight: FontWeight.w600,

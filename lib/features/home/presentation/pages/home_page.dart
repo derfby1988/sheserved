@@ -271,11 +271,17 @@ class _HomePageState extends ConsumerState<HomePage>
       setState(() {
         final bookingId = data['bookingId']?.toString() ?? data['booking_id']?.toString() ?? '';
         final status = data['status']?.toString() ?? '';
+        final message = data['message']?.toString() ?? '';
+        final groupName = data['groupName']?.toString() ?? data['group_name']?.toString() ?? '';
+        final requesterName = data['requesterName']?.toString() ?? data['requester_name']?.toString() ?? '';
         final updatedAt = DateTime.now();
         _fitnessBookingAlerts.removeWhere((a) => a['bookingId'] == bookingId);
         _fitnessBookingAlerts.insert(0, {
           'bookingId': bookingId,
           'status': status,
+          'message': message,
+          'groupName': groupName,
+          'requesterName': requesterName,
           'updatedAt': updatedAt,
         });
         Future.delayed(const Duration(seconds: 15), () {
