@@ -146,6 +146,22 @@ class FitnessBuddiesRepository {
         .toSet();
   }
 
+  /// Returns group IDs where [userId] has at least one pending booking.
+  Future<Set<String>> listMyPendingGroupIds(String userId) async {
+    final res = await _client
+        .from('fitness_group_bookings')
+        .select('session:fitness_group_sessions!inner(group_id)')
+        .eq('user_id', userId)
+        .eq('status', 'pending');
+    return res
+        .map((r) {
+          final session = (r['session'] as Map?) ?? {};
+          return session['group_id']?.toString() ?? '';
+        })
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Future<Set<String>> listMyCreatedSportIds(String userId) async {
     final res = await _client
         .from('fitness_groups')
@@ -411,6 +427,18 @@ class FitnessBuddiesRepository {
     return Map<String, dynamic>.from(res);
   }
 
+  /// Check if [userId] has any pending bookings for sessions in [groupId].
+  /// Returns the list of pending booking rows (empty if none).
+  Future<List<Map<String, dynamic>>> listMyPendingBookingsForGroup(String groupId, String userId) async {
+    final res = await _client
+        .from('fitness_group_bookings')
+        .select('id, status, session_id, session:fitness_group_sessions!inner(group_id)')
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .eq('session.group_id', groupId);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   Future<void> cancelBooking(String bookingId, String userId, {String? reason}) async {
     await _client
         .from('fitness_group_bookings')
@@ -626,5 +654,175 @@ class FitnessBuddiesRepository {
         })
         .eq('id', sportId)
         .eq('status', 'proposed');
+  }
+
+  // ── Phase 4: Update group ──
+  Future<void> updateGroup({
+    required String groupId,
+    required String userId,
+    String? name,
+    String? description,
+    bool? requiresOwnerApproval,
+    int? capacity,
+    String? coverImageUrl,
+    String? venuePhotoUrl,
+    String? genderPreference,
+    String? province,
+    String? district,
+    double? lat,
+    double? lng,
+  }) async {
+    final data = <String, dynamic>{};
+    if (name != null) data['name'] = name;
+    if (description != null) data['description'] = description;
+    if (requiresOwnerApproval != null) data['requires_owner_approval'] = requiresOwnerApproval;
+    if (capacity != null) data['capacity'] = capacity;
+    if (coverImageUrl != null) data['cover_image_url'] = coverImageUrl;
+    if (venuePhotoUrl != null) data['venue_photo_url'] = venuePhotoUrl;
+    if (genderPreference != null) data['gender_preference'] = genderPreference;
+    if (province != null) data['province'] = province;
+    if (district != null) data['district'] = district;
+    if (lat != null) data['lat'] = lat;
+    if (lng != null) data['lng'] = lng;
+    if (data.isEmpty) return;
+    await _client.from('fitness_groups').update(data).eq('id', groupId).eq('created_by', userId);
+  }
+
+  // ── Phase 4: Update session ──
+  Future<void> updateSession({
+    required String sessionId,
+    DateTime? startsAt,
+    DateTime? endsAt,
+    String? placeName,
+    double? lat,
+    double? lng,
+    String? note,
+  }) async {
+    final data = <String, dynamic>{};
+    if (startsAt != null) data['starts_at'] = startsAt.toUtc().toIso8601String();
+    if (endsAt != null) data['ends_at'] = endsAt.toUtc().toIso8601String();
+    if (placeName != null) data['place_name'] = placeName;
+    if (lat != null) data['lat'] = lat;
+    if (lng != null) data['lng'] = lng;
+    if (note != null) data['note'] = note;
+    if (data.isEmpty) return;
+    await _client.from('fitness_group_sessions').update(data).eq('id', sessionId);
+  }
+
+  // ── Phase 4: Leave group (RPC for atomic cascade) ──
+  Future<void> leaveGroup({required String groupId, required String userId}) async {
+    await _client.rpc('leave_fitness_group', params: {
+      'p_group_id': groupId,
+      'p_user_id': userId,
+    });
+  }
+
+  // ── Phase 4: Blocklist (per-group; table: fitness_group_blocklist) ──
+  Future<void> blockUser({
+    required String groupId,
+    required String blockedUserId,
+    required String blockedBy,
+    String? reason,
+  }) async {
+    await _client.from('fitness_group_blocklist').upsert({
+      'group_id': groupId,
+      'blocked_user_id': blockedUserId,
+      'blocked_by': blockedBy,
+      'is_active': true,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'group_id,blocked_user_id');
+  }
+
+  Future<void> unblockUser({required String groupId, required String blockedUserId}) async {
+    await _client
+        .from('fitness_group_blocklist')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('blocked_user_id', blockedUserId);
+  }
+
+  Future<List<Map<String, dynamic>>> listBlockedUsers(String groupId) async {
+    final res = await _client
+        .from('fitness_group_blocklist')
+        .select('blocked_user_id, reason, created_at, blocked_user:users!fitness_group_blocklist_blocked_user_id_fkey(first_name, last_name, profile_image_url)')
+        .eq('group_id', groupId)
+        .eq('is_active', true)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<bool> isUserBlocked({required String groupId, required String targetUserId}) async {
+    final res = await _client
+        .from('fitness_group_blocklist')
+        .select('group_id')
+        .eq('group_id', groupId)
+        .eq('blocked_user_id', targetUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+    return res != null;
+  }
+
+  // ── Phase 3: Check group membership ──
+  Future<bool> isGroupMember({required String groupId, required String userId}) async {
+    final res = await _client
+        .from('fitness_group_members')
+        .select('user_id')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+    return res != null;
+  }
+
+  // ── Phase 4: List my groups (created + joined) with booking history ──
+  Future<List<Map<String, dynamic>>> listMyGroups(String userId) async {
+    final memberRows = await _client
+        .from('fitness_group_members')
+        .select('group_id, role, joined_at, is_active')
+        .eq('user_id', userId)
+        .order('joined_at', ascending: false);
+    final groupIds = (memberRows as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (groupIds.isEmpty) return [];
+
+    final groupsRes = await _client
+        .from('fitness_groups')
+        .select('*, sport:sports(id, name_th, icon)')
+        .inFilter('id', groupIds);
+
+    final groups = List<Map<String, dynamic>>.from(groupsRes);
+    final memberMap = <String, Map<String, dynamic>>{};
+    for (final m in memberRows) {
+      final gid = m['group_id']?.toString() ?? '';
+      if (gid.isNotEmpty) memberMap[gid] = Map<String, dynamic>.from(m);
+    }
+
+    for (final g in groups) {
+      final gid = g['id']?.toString() ?? '';
+      final m = memberMap[gid];
+      g['my_role'] = m?['role']?.toString();
+      g['my_joined_at'] = m?['joined_at']?.toString();
+      g['my_is_active'] = m?['is_active'] == true;
+      final sport = g['sport'];
+      if (sport is Map) {
+        g['sport_name'] = sport['name_th']?.toString();
+        g['sport_icon'] = sport['icon']?.toString();
+      }
+    }
+    return groups;
+  }
+
+  Future<List<Map<String, dynamic>>> listMyBookings(String userId, {int limit = 50}) async {
+    final res = await _client
+        .from('fitness_group_bookings')
+        .select('*, session:fitness_group_sessions(*, group:fitness_groups(*, sport:sports(id, name_th, icon)))')
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return List<Map<String, dynamic>>.from(res);
   }
 }

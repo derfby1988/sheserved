@@ -23,7 +23,16 @@ import '../widgets/session_timer_widget.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final String roomId;
-  const ChatRoomPage({super.key, required this.roomId});
+  final bool isPopup;
+  final String? titleOverride;
+  final String? subtitleOverride;
+  const ChatRoomPage({
+    super.key,
+    required this.roomId,
+    this.isPopup = false,
+    this.titleOverride,
+    this.subtitleOverride,
+  });
 
   @override
   State<ChatRoomPage> createState() => _ChatRoomPageState();
@@ -91,7 +100,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
     // 2. Fetch other participants info
     final rooms = await _chatRepository.getChatRooms(_currentUser?.id ?? '');
-    final room = rooms.firstWhere((r) => r.id == widget.roomId);
+    final room = rooms.firstWhere((r) => r.id == widget.roomId, orElse: () => ChatRoom(id: widget.roomId, participantIds: [], updatedAt: DateTime.now()));
     final otherIds = room.participantIds
         .where((id) => id != _currentUser?.id)
         .toList();
@@ -790,123 +799,145 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: !widget.isPopup,
       backgroundColor: const Color(0xFFF5F5F7),
       appBar: AppBar(
-        title: Row(
-          children: [
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.white24,
-                  backgroundImage:
-                      (_otherParticipants.isNotEmpty &&
-                          _otherParticipants.first.profileImageUrl != null)
-                      ? NetworkImage(_otherParticipants.first.profileImageUrl!)
-                      : null,
-                  child:
-                      (_otherParticipants.isEmpty ||
-                          _otherParticipants.first.profileImageUrl == null)
-                      ? const Icon(Icons.group, color: Colors.white, size: 20)
-                      : null,
-                ),
-                if (_otherParticipants.length == 1 &&
-                    (_otherParticipants.first.isOnline ||
-                        _otherParticipants.first.isBusy))
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _otherParticipants.first.isBusy
-                            ? Colors.orange
-                            : Colors.greenAccent,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.primary,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+        leading: widget.isPopup
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        title: widget.isPopup && widget.titleOverride != null
+            ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _otherParticipants.length > 1
-                        ? 'แชทกลุ่ม (${_otherParticipants.length + 1})'
-                        : _otherParticipants.isNotEmpty
-                        ? _otherParticipants.first.fullName
-                        : 'Expert Chat',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    widget.titleOverride!,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    _isOtherTyping
-                        ? 'ใครบางคนกำลังพิมพ์...'
-                        : _otherParticipants.length > 1
-                        ? _otherParticipants.map((p) => p.firstName).join(', ')
-                        : _otherParticipants.isNotEmpty
-                        ? (_otherParticipants.first.isOnline
-                              ? 'พร้อมให้บริการ'
-                              : (_otherParticipants.first.isBusy
-                                    ? 'ไม่ว่าง'
-                                    : 'ออฟไลน์'))
-                        : 'กำลังโหลด...',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _isOtherTyping
-                          ? Colors.white
-                          : (_otherParticipants.isNotEmpty &&
-                                    _otherParticipants.first.isOnline
-                                ? Colors.greenAccent
-                                : Colors.white70),
-                      fontStyle: _isOtherTyping
-                          ? FontStyle.italic
-                          : FontStyle.normal,
+                  if (widget.subtitleOverride != null)
+                    Text(
+                      widget.subtitleOverride!,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
+                ],
+              )
+            : Row(
+                children: [
+                  Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.white24,
+                        backgroundImage:
+                            (_otherParticipants.isNotEmpty &&
+                                _otherParticipants.first.profileImageUrl != null)
+                            ? NetworkImage(_otherParticipants.first.profileImageUrl!)
+                            : null,
+                        child:
+                            (_otherParticipants.isEmpty ||
+                                _otherParticipants.first.profileImageUrl == null)
+                            ? const Icon(Icons.group, color: Colors.white, size: 20)
+                            : null,
+                      ),
+                      if (_otherParticipants.length == 1 &&
+                          (_otherParticipants.first.isOnline ||
+                              _otherParticipants.first.isBusy))
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: _otherParticipants.first.isBusy
+                                  ? Colors.orange
+                                  : Colors.greenAccent,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppColors.primary,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _otherParticipants.length > 1
+                              ? 'แชทกลุ่ม (${_otherParticipants.length + 1})'
+                              : _otherParticipants.isNotEmpty
+                              ? _otherParticipants.first.fullName
+                              : 'Expert Chat',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          _isOtherTyping
+                              ? 'ใครบางคนกำลังพิมพ์...'
+                              : _otherParticipants.length > 1
+                              ? _otherParticipants.map((p) => p.firstName).join(', ')
+                              : _otherParticipants.isNotEmpty
+                              ? (_otherParticipants.first.isOnline
+                                    ? 'พร้อมให้บริการ'
+                                    : (_otherParticipants.first.isBusy
+                                          ? 'ไม่ว่าง'
+                                          : 'ออฟไลน์'))
+                              : 'กำลังโหลด...',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _isOtherTyping
+                                ? Colors.white
+                                : (_otherParticipants.isNotEmpty &&
+                                          _otherParticipants.first.isOnline
+                                      ? Colors.greenAccent
+                                      : Colors.white70),
+                            fontStyle: _isOtherTyping
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          if (_currentRoom?.roomType == 'consultation' &&
-              _currentRoom?.startedAt != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: SessionTimerWidget(
-                  startedAt: _currentRoom!.startedAt!,
-                  sessionMinutes: _currentRoom!.sessionMinutes ?? 15,
-                  onExpire: () {
-                    // Lock room if expired
-                    if (_currentRoom!.isActive) {
-                      // Call RPC to end session or just setState if we have a local flag
-                      // (The server cron will actually do it, but we lock UI immediately)
-                    }
-                  },
+        actions: widget.isPopup
+            ? null
+            : [
+                if (_currentRoom?.roomType == 'consultation' &&
+                    _currentRoom?.startedAt != null)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: SessionTimerWidget(
+                        startedAt: _currentRoom!.startedAt!,
+                        sessionMinutes: _currentRoom!.sessionMinutes ?? 15,
+                        onExpire: () {
+                          if (_currentRoom!.isActive) {}
+                        },
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  onPressed: _startVideoCall,
+                  icon: const Icon(Icons.videocam),
+                  tooltip: 'วิดีโอคอล',
                 ),
-              ),
-            ),
-          IconButton(
-            onPressed: _startVideoCall,
-            icon: const Icon(Icons.videocam),
-            tooltip: 'วิดีโอคอล',
-          ),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.more_vert)),
-        ],
+                IconButton(onPressed: () {}, icon: const Icon(Icons.more_vert)),
+              ],
         backgroundColor: AppColors.primary,
         elevation: 0,
       ),

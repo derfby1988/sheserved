@@ -123,6 +123,7 @@ import 'features/community/find_buddies/presentation/pages/sport_club_page.dart'
 import 'features/community/find_buddies/presentation/pages/booking_detail_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_group_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_session_page.dart';
+import 'features/community/find_buddies/presentation/pages/my_groups_page.dart';
 import 'features/community/find_buddies/presentation/pages/propose_sport_page.dart';
 import 'features/community/find_buddies/presentation/pages/review_proposed_sports_page.dart';
 
@@ -251,7 +252,8 @@ class SheservedApp extends StatelessWidget {
         '/community/sport-club/group/create': (context) => const CreateGroupPage(),
         '/community/sport-club/sport/propose': (context) => const ProposeSportPage(),
         '/community/sport-club/sport/review': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ReviewProposedSportsPage()),
-        
+        '/community/sport-club/my-groups': (context) => const MyGroupsPage(),
+
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),

@@ -139,6 +139,25 @@ function broadcastEmergencyHealthDeadManTriggered(userId, payload) {
 }
 
 /**
+ * Broadcast fitness booking status to the relevant user rooms.
+ * Supports both snake_case and kebab-case event names to match app listeners.
+ * @param {string[]} recipientUserIds
+ * @param {object} payload
+ */
+function broadcastFitnessBookingStatus(recipientUserIds, payload) {
+    if (!io || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0) return;
+
+    const uniqueUserIds = [...new Set(recipientUserIds.map((id) => `${id}`.trim()).filter(Boolean))];
+    if (uniqueUserIds.length === 0) return;
+
+    console.log(`[FitnessBuddies] Broadcasting booking status to ${uniqueUserIds.length} recipient(s)`);
+    uniqueUserIds.forEach((userId) => {
+        io.to(`user-${userId}`).emit('fitness_booking_status', payload);
+        io.to(`user-${userId}`).emit('fitness-booking-status', payload);
+    });
+}
+
+/**
  * Broadcast photo blur completion to all viewers in the incident room
  * Phase 6.12: Async Thai Mhung Face Blur — Gallery refreshes when blur completes
  * @param {string} incidentId
@@ -165,6 +184,7 @@ module.exports = {
     broadcastEmergencyHealthSensorAlert,
     broadcastEmergencyHealthDeadManReminder,
     broadcastEmergencyHealthDeadManTriggered,
+    broadcastFitnessBookingStatus,
     broadcastPhotoBlurComplete,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,

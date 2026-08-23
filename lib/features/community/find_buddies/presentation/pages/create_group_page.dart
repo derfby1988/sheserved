@@ -1,4 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../../services/auth_service.dart';
@@ -25,12 +30,17 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   String _genderPreference = 'any';
   bool _requiresOwnerApproval = false;
   int _capacity = 5;
+  double? _lat;
+  double? _lng;
+  bool _isGettingLocation = false;
   bool _submitting = false;
   List<Map<String, dynamic>> _sports = [];
   bool _didReadInitialArgs = false;
   bool _isSportsLoading = true;
   List<String> _recentGroupNames = [];
   static const _prefsRecentGroupNamesKey = 'recent_group_names';
+  static const _prefsDraftKey = 'create_group_draft';
+  static const _draftTtlHours = 1;
 
   @override
   void initState() {
@@ -38,6 +48,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     _repo = FitnessBuddiesRepository(Supabase.instance.client);
     _loadSports();
     _loadRecentNames();
+    _restoreDraft();
   }
 
   @override
@@ -86,6 +97,36 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     }
   }
 
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isGettingLocation = true);
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง')),
+        );
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _lat = pos.latitude;
+        _lng = pos.longitude;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ไม่สามารถดึงตำแหน่ง: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isGettingLocation = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (_sportId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาเลือกกีฬา')));
@@ -94,6 +135,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     if (!_formKey.currentState!.validate()) return;
     final user = AuthService.instance.currentUser;
     if (user == null) {
+      if (!mounted) return;
+      await _saveDraft();
       if (!mounted) return;
       Navigator.pushNamed(context, '/login', arguments: {'redirect': '/community/sport-club/group/create'});
       return;
@@ -112,9 +155,12 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         genderPreference: _genderPreference,
         province: _provinceCtrl.text.trim().isEmpty ? null : _provinceCtrl.text.trim(),
         district: _districtCtrl.text.trim().isEmpty ? null : _districtCtrl.text.trim(),
+        lat: _lat,
+        lng: _lng,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สร้างก๊วนสำเร็จ')));
+      await _clearDraft();
       await _saveRecentName(_nameCtrl.text.trim());
       if (!mounted) return;
       // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId + sportId เพื่อให้หน้า SportClub เลือกแถบกีฬาและ scroll ไปการ์ดใหม่
@@ -147,6 +193,68 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       await prefs.setStringList(_prefsRecentGroupNamesKey, updated);
       if (!mounted) return;
       setState(() => _recentGroupNames = updated);
+    } catch (_) {}
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final draft = {
+        'name': _nameCtrl.text,
+        'description': _descCtrl.text,
+        'sportId': _sportId,
+        'genderPreference': _genderPreference,
+        'requiresOwnerApproval': _requiresOwnerApproval,
+        'province': _provinceCtrl.text,
+        'district': _districtCtrl.text,
+        'capacity': _capacity,
+        'lat': _lat,
+        'lng': _lng,
+        'coverImageUrl': _coverImageUrl,
+        'venuePhotoUrl': _venuePhotoUrl,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      };
+      await prefs.setString(_prefsDraftKey, jsonEncode(draft));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsDraftKey);
+      if (raw == null || raw.isEmpty) return;
+      final draft = jsonDecode(raw) as Map<String, dynamic>;
+      final ts = draft['timestamp'] as int?;
+      if (ts != null) {
+        final age = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ts));
+        if (age.inHours >= _draftTtlHours) {
+          await prefs.remove(_prefsDraftKey);
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _nameCtrl.text = draft['name']?.toString() ?? '';
+        _descCtrl.text = draft['description']?.toString() ?? '';
+        if (draft['sportId'] != null) _sportId = draft['sportId'].toString();
+        _genderPreference = draft['genderPreference']?.toString() ?? 'any';
+        _requiresOwnerApproval = draft['requiresOwnerApproval'] == true;
+        _provinceCtrl.text = draft['province']?.toString() ?? '';
+        _districtCtrl.text = draft['district']?.toString() ?? '';
+        _capacity = (draft['capacity'] as int?) ?? 5;
+        _lat = (draft['lat'] as num?)?.toDouble();
+        _lng = (draft['lng'] as num?)?.toDouble();
+        _coverImageUrl = draft['coverImageUrl']?.toString();
+        _venuePhotoUrl = draft['venuePhotoUrl']?.toString();
+      });
+      await prefs.remove(_prefsDraftKey);
+    } catch (_) {}
+  }
+
+  Future<void> _clearDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsDraftKey);
     } catch (_) {}
   }
 
@@ -297,6 +405,76 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('ตำแหน่งสนาม (ไม่บังคับ)', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                            icon: _isGettingLocation
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.my_location, size: 18),
+                            label: const Text('ใช้ตำแหน่งฉัน'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        height: 200,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: FlutterMap(
+                            options: MapOptions(
+                              initialCenter: _lat != null && _lng != null
+                                  ? LatLng(_lat!, _lng!)
+                                  : const LatLng(13.7563, 100.5018),
+                              initialZoom: _lat != null ? 15 : 6,
+                              onTap: (tapPosition, point) {
+                                setState(() {
+                                  _lat = point.latitude;
+                                  _lng = point.longitude;
+                                });
+                              },
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.example.treeLawZoo',
+                              ),
+                              if (_lat != null && _lng != null)
+                                MarkerLayer(
+                                  markers: [
+                                    Marker(
+                                      point: LatLng(_lat!, _lng!),
+                                      width: 40,
+                                      height: 40,
+                                      alignment: Alignment.topCenter,
+                                      child: const Icon(Icons.location_on, color: Colors.red, size: 36),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_lat != null && _lng != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'พิกัด: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               Row(

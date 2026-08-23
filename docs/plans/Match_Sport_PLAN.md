@@ -414,3 +414,127 @@ Scaffold
 ## คำถามเปิด (เพื่อจัดลำดับรายละเอียด)
 - กติกา moderation สำหรับก๊วนที่สร้างใหม่ (รายงาน/ปิดก๊วน/อัปเกรดเป็นแอดมิน)
 - ต้องการผูกปฏิทิน/การแจ้งเตือนงานนัดหมายไหม (เฟสถัดไป)?
+
+## Roadmap ปรับปรุงจากผลวิเคราะห์ Gap (2026-08-22) — เรียงตามความสำคัญ
+
+> ผลตรวจสอบโค้ดจริง ณ 2026-08-23: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage ทำครบแล้ว — ช่องว่างที่เหลือแบ่งเป็น 7 phase (Phase 1-5 ✅ เสร็จแล้ว, Phase 7.1 ✅, 7.2 ✅, 7.3 ⏳, 7.4 ✅, Phase 6 รอทำ)
+
+### Phase 1 — ปักหมุดพิกัดตอนสร้างก๊วน + Pagination ✅ เสร็จแล้ว (2026-08-22)
+- ปัญหา: ฟอร์ม `create_group_page.dart` ไม่มีการเก็บ `lat/lng` เลย → ก๊วนใหม่ไม่มีพิกัด, มุมมองแผนที่ใน `sport_club_page.dart` ไม่มี marker, ตัวกรองรัศมี (กม.) ไม่ทำงานจริง
+- งาน:
+  - เพิ่ม MapCard ใน create group: `flutter_map` (OSM) พร้อมพินลากได้ + ปุ่ม "ใช้ตำแหน่งฉัน" (geolocator, opt-in) + แสดงพิกัดสรุป
+  - บันทึก `lat/lng` ผ่าน `createGroup()` (คอลัมน์ `fitness_groups.lat/lng` มีอยู่แล้วพร้อม CHECK constraint)
+  - Validation: ถ้าเปิดใช้ตัวกรองรัศมี ก๊วนที่ไม่มีพิกัดให้ fallback แสดงตามจังหวัด
+  - **Pagination / infinite scroll:** เพิ่ม limit+offset ใน `listGroups()` + `ScrollController` ดึงเพิ่มเมื่อ scroll ใกล้สุด (ปัจจุบันโหลดทั้งหมดในครั้งเดียว)
+- สถานะ: ✅ ทำครบ — `MapCard` + ปุ่ม "ใช้ตำแหน่งฉัน" + สรุปพิกัดใน `create_group_page.dart`, ส่ง `lat/lng` ผ่าน `createGroup()`, `listGroups()` รองรับ `limit/offset` (default 50), `sport_club_page.dart` มี `ScrollController` + `_loadMore()` infinite scroll + `_hasMore` flag
+
+### Phase 2 — Join flow สมบูรณ์ ✅ เสร็จแล้ว (2026-08-22)
+- **เลือกรอบนัดเอง (ตัดสินใจแล้ว 2026-08-22):** เปลี่ยนปุ่ม "เข้าร่วมก๊วน" จากจองรอบใกล้สุดอัตโนมัติ → เปิด bottom sheet รายการรอบนัดให้ผู้ใช้เลือกรอบก่อน แล้วค่อยเรียก `bookSession()`
+- **สถานะ "รออนุมัติ" บน CTA:** ผู้จองก๊วนส่วนตัวที่ booking ยัง `pending` ให้การ์ด/bottom sheet แสดง "รออนุมัติ" (disabled) แทน "เข้าร่วมก๊วนแล้ว"
+- **Redirect + intent:** หลัง login สำเร็จ ให้กลับมาที่ก๊วนเดิมพร้อม `intent=join_group` เพื่อเปิด sheet เลือกรอบต่อทันที (ปัจจุบัน redirect กลับแค่ `/community/sport-club` ระดับ list)
+- **Draft ฟอร์มสร้างก๊วน:** ถ้าโดนพาไป login ระหว่างกด "บันทึก" ให้ serialize text/scalar fields (ชื่อ, คำอธิบาย, sportId, เพศ, toggle, จังหวัด/อำเภอ, capacity, lat/lng, coverImageUrl, venuePhotoUrl) ลง `SharedPreferences` key `create_group_draft` เป็น JSON — บันทึกเฉพาะตอน redirect ไป login (ไม่ auto-save ทุก keystroke) — restore ใน `initState`/`didChangeDependencies` เมื่อกลับจาก login — ลบ draft ทันทีหลังสร้างสำเร็จหรือ restore แล้ว — ใส่ TTL 1 ชั่วโมงกัน draft ค้าง
+- สถานะ: ✅ ทำครบ — `_showSessionPickerSheet()` เปิดรายการรอบนัดก่อนจอง, CTA แสดง "รออนุมัติ" disabled (ไอคอน hourglass) จาก `_myPendingGroupIds`, `_handleIntent()` อ่าน `intent=join_group` เปิด sheet ต่อหลัง login, `_saveDraft()`/`_restoreDraft()`/`_clearDraft()` ใน `create_group_page.dart` (TTL 1 ชม.)
+
+### Phase 3 — แชทก๊วน (Milestone 4 เดิม) ✅ เสร็จแล้ว
+- DB side พร้อมแล้ว (trigger สร้าง `chat_rooms` id=`group_<uuid>` ตอนสร้างก๊วน)
+- งาน:
+  - ปุ่ม "แชทก๊วน" ใน bottom sheet รายละเอียด แสดงเฉพาะสมาชิก `is_active=true`
+  - ตรวจสิทธิ์ก่อนเข้าห้อง (ไม่ใช่สมาชิก → ซ่อนปุ่ม/แจ้งเตือน)
+  - ตรวจสอบ trigger `sync_fitness_chat_participants()` ว่า sync `participant_ids` ตอน join/leave ครบ
+  - Badge จำนวนข้อความใหม่ (ถ้าโครงแชทเดิมรองรับ)
+- สถานะ: ✅ ปุ่ม "แชทก๊วน" อยู่ใน `_buildGroupActionButtons()` ของ `sport_club_page.dart` แสดงเฉพาะ `isMember` → `Navigator.push` ไป `ChatRoomPage(roomId: 'group_$groupId')`
+
+### Phase 4 — จัดการก๊วน + หน้าก๊วนของฉัน ✅ เสร็จแล้ว (2026-08-23)
+- **แก้ไขก๊วน:** หน้า/sheet แก้ไข (ชื่อ, คำอธิบาย, ภาพ, เพศ, toggle `requires_owner_approval`, พิกัด, capacity) เฉพาะแอดมินก๊วน — เพิ่ม `updateGroup()` ใน repository
+- **แก้ไขรอบนัด:** แอดมินแก้ไขเวลาเริ่ม/สิ้นสุด และหมายเหตุของรอบนัดที่มีอยู่แล้ว — เพิ่ม `updateSession()` ใน repository
+- **ออกจากก๊วน:** เพิ่ม `leaveGroup()` — ตั้ง `fitness_group_members.is_active=false` + ยกเลิก booking `pending/confirmed` ทั้งหมดแบบ cascade ใน transaction เดียว (RPC) ตามหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด"
+- **Blocklist UI:** dialog จากโปรไฟล์ผู้จอง (ประวัติการจอง + ปุ่มบล็อก/ปลดบล็อก) + เมธอด `blockUser()`/`unblockUser()`/`listBlockedUsers()` + ตรวจ blocklist ใน `book_fitness_session()` RPC
+- **หน้า "ก๊วนของฉัน":** หน้ารวมก๊วนที่ผู้ใช้สร้าง/เข้าร่วม + ประวัติการจองทั้งหมด (ปัจจุบันไม่มีที่ดูรวม — ดูได้เฉพาะ booking detail ทีละรายการ) — เพิ่ม route `/community/sport-club/my-groups`
+- **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, blocklist sheet, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
+
+### Phase 5 — Auto-reject pending timeout (Supabase scheduled cleanup) ✅ เสร็จแล้ว (2026-08-23)
+- **เหตุผลที่เลือกแนวนี้ (Option A):** booking ถูกสร้างจาก Flutter → Supabase RPC โดยตรง ไม่ผ่าน backend request lifecycle การใช้ BullMQ delayed job enqueue ตอนสร้าง booking จะเกิด dual-write risk และเพิ่ม coupling กับ websocket-server โดยไม่จำเป็น DB เป็น source of truth อยู่แล้ว เงื่อนไข timeout ทั้งหมด (`status`, `starts_at`, `created_at`, `requires_owner_approval`) อยู่ในฐานข้อมูล — ให้ DB/RPC จัดการ atomic ปลอดภัยกว่า
+- **งาน:**
+  - สร้าง RPC `auto_reject_expired_fitness_bookings()` ใน Supabase migration
+  - เงื่อนไข reject: `status = 'pending'` และเลย deadline (`created_at + interval '24 hours'` หรือ `starts_at - interval '1 hour'` แล้วแต่เงื่อนไขใดถึงก่อน)
+  - update เป็น `status = 'rejected'`, `cancelled_by = 'system'`, `cancel_reason = 'AUTO_TIMEOUT'`
+  - ใช้ Supabase scheduled job (`pg_cron` หรือ `pg_net`) เรียก RPC ทุก 5-15 นาที
+  - Notification: ✅ ใช้ `pg_notify('fitness_booking_status_updates', ...)` จาก RPC แล้ว `websocket-server` ฟัง `LISTEN` แล้ว broadcast ผ่าน `fitness_booking_status` ไปยังผู้ใช้ที่เกี่ยวข้อง
+- หมายเหตุ: ไม่เพิ่ม backend proxy/rate limiting/idempotency ในรอบนี้ — ใช้ RPC + RLS ป้องกันระดับ DB ตาม pattern เดิมของโปรเจกต์ (ดูหัวข้อ Data Integrity Guards)
+
+### Phase 6 — Maestro UI Tests ⏳ รอทำ
+- สร้าง test flows ตาม Milestone 5 เดิม:
+  - `view_groups.yaml` — เปิดดูรายการก๊วน, สลับหมวดกีฬา, เปิด filter dialog, สลับมุมมองแผนที่
+  - `join_group.yaml` — กดเข้าร่วมก๊วน (ต้องล็อกอิน), เลือกรอบนัด, ยืนยันการจอง
+  - `create_group.yaml` — สร้างก๊วนใหม่ + สร้างรอบนัดแรก
+  - `owner_approval.yaml` — เจ้าของก๊วนอนุมัติ/ปฏิเสธคำขอเข้าร่วม
+
+---
+
+## Phase 7 — เปลี่ยน UI แชทก๊วนเป็น Popup ลอยเหนือหน้าเดิม
+
+### เป้าหมาย
+แทนที่การ `Navigator.push` เปิด `ChatRoomPage` เต็มหน้า → เปิดเป็น **popup ลอยกลางหน้าจอ** เหนือหน้าปัจจุบัน ผู้ใช้ยังเห็น context ของหน้าก๊วนด้านหลัง ปิดแล้วกลับมาที่เดิมทันทีโดยไม่เสีย scroll position
+
+### ข้อตกลงที่ยืนยันแล้ว (2026-08-23)
+| หัวข้อ | การตัดสินใจ |
+|---|---|
+| ขนาด | **สูง 50% แบบ responsive** — มือถือ: กว้าง 92% สูง 55-60% / แท็บเล็ต-เดสก์ท็อป: `maxWidth` ~480-560px สูง 50-60% |
+| ขอบเขต | `sport_club_page.dart` + `my_groups_page.dart` (จุดอื่นในแอปคงเปิดเต็มหน้าเหมือนเดิม) |
+| คีย์บอร์ด | **เลื่อน popup ขึ้นด้านบน** — คงขนาดเดิม เลื่อนตำแหน่งให้พ้นคีย์บอร์ด |
+| ปุ่มวิดีโอคอล | **ซ่อน** ในโหมด popup (แชทก๊วนเป็นกลุ่มหลายคน วิดีโอคอล 1:1 ไม่เหมาะ) |
+| ปิดด้วยแตะนอกพื้นที่ | **เปิดใช้** (`barrierDismissible: true`) |
+| header | แสดง **ชื่อก๊วน + จำนวนสมาชิก active** แทนชื่อคู่สนทนาแบบ 1:1 |
+| ปุ่มขยายเต็มหน้า | **ไม่ทำ** — popup อย่างเดียว |
+
+### สภาพปัจจุบันที่ต้องแก้
+- `sport_club_page.dart` `_buildGroupActionButtons()` → `Navigator.push(MaterialPageRoute(builder: (_) => ChatRoomPage(roomId: 'group_$groupId')))`
+- `ChatRoomPage` เป็น `Scaffold` เต็มหน้า มี `AppBar` (avatar + ชื่อคู่สนทนา + ปุ่มวิดีโอคอล + `more_vert`) — ออกแบบมาสำหรับ consultation 1:1
+- `my_groups_page.dart` **ยังไม่มีปุ่มแชทเลย** — `_buildGroupCard()` มีแค่ `onTap` ไป `/community/sport-club`
+
+### งานที่ต้องทำ
+
+**7.1 ✅ เพิ่ม popup mode ให้ `ChatRoomPage`** (`lib/features/chat/presentation/pages/chat_room_page.dart`)
+- เพิ่ม optional params (default = พฤติกรรมเดิมทั้งหมด ไม่กระทบจุดเรียกอื่น):
+  - `bool isPopup = false` — ซ่อนปุ่มวิดีโอคอล, เปลี่ยนไอคอน back เป็น `Icons.close`, ลด `toolbarHeight`
+  - `String? titleOverride` — ชื่อก๊วน
+  - `String? subtitleOverride` — เช่น `"สมาชิก 12 คน"`
+- `Scaffold(resizeToAvoidBottomInset: false)` เมื่อ `isPopup == true` เพื่อไม่ให้ Scaffold ด้านในย่อซ้ำซ้อนกับการเลื่อน popup ด้านนอก
+
+**7.2 ✅ สร้าง helper `showGroupChatPopup()`** (ไฟล์ `lib/features/community/find_buddies/presentation/widgets/group_chat_popup.dart`)
+- signature: `Future<void> showGroupChatPopup(BuildContext context, {required String groupId, required String groupName, int? memberCount})`
+- ใช้ `showDialog(barrierDismissible: true, barrierColor: Colors.black54)`
+- คำนวณขนาด responsive จาก `MediaQuery.sizeOf(context)`:
+  - `width  = min(size.width * 0.92, 560)`
+  - `height = size.height * (size.width < 600 ? 0.58 : 0.55)`
+- เลื่อนหนีคีย์บอร์ด: อ่าน `MediaQuery.viewInsetsOf(context).bottom` แล้วห่อด้วย `AnimatedPadding` ยกขึ้นเท่าส่วนที่ทับกัน (ไม่เกิน top safe area)
+- ห่อเนื้อหาด้วย `ClipRRect(borderRadius: 20)` + `Material(elevation)` แล้วใส่ `ChatRoomPage(roomId: 'group_$groupId', isPopup: true, titleOverride: groupName, subtitleOverride: ...)`
+
+**7.3 ⏳ แก้จุดเรียกใน `sport_club_page.dart`**
+- `_buildGroupActionButtons()` เปลี่ยนจาก `Navigator.push` → `showGroupChatPopup(...)`
+- **ไม่ต้อง `Navigator.pop(ctx)` ปิด bottom sheet ก่อน** — ให้ popup ลอยเหนือ sheet รายละเอียดก๊วน ปิดแล้วกลับมาที่ sheet เดิมทันที (นี่คือประโยชน์หลักของการเปลี่ยนเป็น popup)
+- `memberCount` ดึงจาก field ที่ `listGroups()` ใส่มาให้ในแต่ละ group map อยู่แล้ว
+
+**7.4 ✅ เพิ่มปุ่มแชทใน `my_groups_page.dart`** (2026-08-23)
+- `_buildGroupCard()` เปลี่ยน `trailing` จาก `Icon(Icons.chevron_right)` เดี่ยว → `Row(mainAxisSize: min)` ที่มี `IconButton(Icons.chat_bubble_outline)` + `chevron_right`
+- ทุกก๊วนในหน้านี้ผู้ใช้เป็นสมาชิกอยู่แล้ว จึงแสดงปุ่มแชทได้ทุกใบ
+- `listMyGroups()` ไม่มี member count → ส่ง `memberCount: null` → header แสดงแค่ชื่อก๊วน (เพิ่ม count ใน query ภายหลังถ้าต้องการ)
+
+### ความเสี่ยง / จุดที่ต้องระวัง
+- **`Navigator.push` ภายใน `ChatRoomPage`** — โค้ดมี push ไป `ConsultationNoteEditorPage`, `PrescriptionEditorPage`, `pushNamed('/live-vdo')` ซึ่งจะเปิดทับ popup เต็มหน้าจอ แต่ path เหล่านี้เป็นของ consultation ไม่เกิดใน group chat จึงไม่กระทบจริง
+- **`_loadInitialData()` ใช้ `rooms.firstWhere((r) => r.id == widget.roomId)`** — ถ้าห้อง `group_<uuid>` ยังไม่ถูก sync เข้า `chat_rooms` จะ throw ทำให้ popup ค้างที่ loading ควรเพิ่ม `orElse` guard
+- **`barrierDismissible: true` ขณะพิมพ์** — ผู้ใช้อาจแตะพลาดแล้วข้อความที่พิมพ์ค้างหาย พิจารณา `PopScope` เตือนถ้า `_msgController.text` ไม่ว่าง
+- **ปุ่ม `more_vert` ใน AppBar** — ปัจจุบัน `onPressed: () {}` (ยังไม่ทำอะไร) ควรซ่อนในโหมด popup ด้วยเพื่อไม่ให้เปลืองพื้นที่ header ที่แคบอยู่แล้ว
+- **แนบรูป/อัดเสียง** — ยังใช้ได้ปกติ แต่ image picker/bottom sheet จะเปิดทับ popup ให้ทดสอบว่ากลับมาแล้ว popup ยังอยู่
+- **ห้องแชทลอยทับหน้ารายการก๊วน (regression สำคัญ)** — ภาพหน้าจอ `test13` แสดงห้องแชทลอยเหนือนหน้า “หาเพื่อนออกกำลังกาย” แทนที่จะลอยเหนือน bottom sheet รายละเอียดก๊วน ทำให้ผู้ใช้งงและพื้นหลังไม่ถูก dim
+  - สาเหตุ: เรียก `ChatRoomPage` ด้วย `Navigator.push` หรือเปิด widget บน `Overlay`/ root navigator โดยไม่มี `Dialog` / modal barrier ทำให้หน้าเดิมยังแสดงอยู่ด้านหลัง หรือใช้ `BuildContext` ผิด (context ของหน้ารายการแทน context ใน sheet) จึงเปิด popup ทับหน้ารายการแทน sheet
+  - วิธีแก้: เปิดแชทกลุ่มด้วย `showDialog`/`showGeneralDialog` ผ่าน `showGroupChatPopup()` เท่านั้น ใช้ `barrierColor: Colors.black54` + `barrierDismissible: true` เพื่อให้พื้นหลังถูก dim และย้อนกลับมาที่ bottom sheet ก๊วนเดิมได้ถูกต้อง
+  - ข้อห้ามป้องกัน: ห้ามเรียก `ChatRoomPage` โดยตรงด้วย `Navigator.push(MaterialPageRoute(...))` หรือ `Overlay.of(context).insert(...)` จาก `_buildGroupActionButtons()` หรือ `my_groups_page.dart` นอกเหนือจาก helper popup
+
+### Definition of Done
+- กด "แชทก๊วน" จาก `sport_club_page` → popup ลอยกลางจอสูง ~50-58% เห็นหน้าก๊วนจางๆ ด้านหลัง
+- พิมพ์ข้อความ → popup เลื่อนขึ้นพ้นคีย์บอร์ด ส่งได้ ข้อความขึ้นทันที
+- ปิด popup ด้วยปุ่ม X หรือแตะพื้นหลัง → กลับมาที่ bottom sheet ก๊วนเดิม
+- กดไอคอนแชทใน `my_groups_page` → popup เดียวกันเปิดได้
+- จุดเปิดแชทอื่น (`chat_list_page`, `contact_list_page`, `/chat-room`) ยังเปิดเต็มหน้าเหมือนเดิม ไม่ regression
+- `flutter analyze` ผ่านไม่มี error ใหม่

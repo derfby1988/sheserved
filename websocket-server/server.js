@@ -169,6 +169,8 @@ io.use(async (socket, next) => {
 
 // Database configuration (optional - can work without database)
 let pool = null;
+let fitnessBookingNotificationListenerClient = null;
+let fitnessBookingNotificationListenerStarted = false;
 const USE_DATABASE = process.env.USE_DATABASE !== 'false'; // Default to true
 
 if (USE_DATABASE) {
@@ -199,6 +201,9 @@ if (USE_DATABASE) {
         // --- 4. การจัดการ State ข้ามอุปกรณ์ ด้วย WebSocket / Local Sync ---
         // Phase 2: Init sync queue and enqueue startup reconcile job
         syncQueueService.init(pool, supabaseForSync);
+        startFitnessBookingNotificationListener().catch(err => {
+          console.error('[FitnessBuddies] Failed to start booking notification listener:', err.message);
+        });
         if (supabase) {
            syncQueueService.enqueueSync({ syncType: 'startup' }).catch(err => {
                console.error('[Sync] Startup sync enqueue failed:', err.message);
@@ -472,6 +477,47 @@ function socketRateLimit(socket, eventName) {
     setTimeout(() => socketEventCounts.delete(key), SOCKET_EVENT_WINDOW_MS * 2);
   }
   return true;
+}
+
+async function startFitnessBookingNotificationListener() {
+  if (!pool || fitnessBookingNotificationListenerStarted) return;
+
+  const client = await pool.connect();
+  fitnessBookingNotificationListenerClient = client;
+
+  client.on('error', (error) => {
+    console.error('[FitnessBuddies] Booking notification listener error:', error.message);
+    fitnessBookingNotificationListenerStarted = false;
+    if (fitnessBookingNotificationListenerClient === client) {
+      fitnessBookingNotificationListenerClient = null;
+    }
+  });
+
+  client.on('notification', (msg) => {
+    if (!msg || msg.channel !== 'fitness_booking_status_updates' || !msg.payload) return;
+
+    let payload;
+    try {
+      payload = JSON.parse(msg.payload);
+    } catch (error) {
+      console.warn('[FitnessBuddies] Ignoring invalid booking notification payload:', error.message);
+      return;
+    }
+
+    const recipientUserIds = Array.isArray(payload.recipientUserIds)
+      ? payload.recipientUserIds
+      : Array.isArray(payload.recipient_user_ids)
+        ? payload.recipient_user_ids
+        : payload.userId || payload.user_id
+          ? [payload.userId || payload.user_id]
+          : [];
+
+    socketService.broadcastFitnessBookingStatus(recipientUserIds, payload);
+  });
+
+  await client.query('LISTEN fitness_booking_status_updates');
+  fitnessBookingNotificationListenerStarted = true;
+  console.log('✅ Fitness booking notification listener initialized');
 }
 
 // WebSocket Connection Handler

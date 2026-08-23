@@ -34,6 +34,56 @@ class _BookingDetailPageState extends State<BookingDetailPage> {
     });
   }
 
+  Widget _buildStatus() {
+    final status = _booking!['status']?.toString() ?? '';
+    final cancelledBy = _booking!['cancelled_by']?.toString() ?? '';
+    final cancelReason = _booking!['cancel_reason']?.toString() ?? '';
+
+    String label;
+    Color color;
+
+    if (status == 'rejected' && cancelledBy == 'system' && cancelReason == 'AUTO_TIMEOUT') {
+      label = 'ถูกยกเลิกอัตโนมัติ (ครบกำหนดอนุมัติ)';
+      color = Colors.orange;
+    } else {
+      switch (status) {
+        case 'pending':
+          label = 'รออนุมัติ';
+          color = Colors.amber;
+          break;
+        case 'confirmed':
+          label = 'ยืนยันแล้ว';
+          color = Colors.green;
+          break;
+        case 'rejected':
+          label = 'ถูกปฏิเสธ';
+          color = Colors.red;
+          break;
+        case 'cancelled':
+          label = 'ยกเลิกแล้ว';
+          color = Colors.grey;
+          break;
+        default:
+          label = status;
+          color = Colors.black87;
+      }
+    }
+
+    return Row(
+      children: [
+        const Text('สถานะ: '),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        ),
+      ],
+    );
+  }
+
   Future<void> _cancel() async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
@@ -61,7 +111,7 @@ class _BookingDetailPageState extends State<BookingDetailPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('สถานะ: ${_booking!['status']}'),
+                      _buildStatus(),
                       const SizedBox(height: 8),
                       if (_booking!['session'] != null)
                         Text('เวลา: ${DateTime.parse(_booking!['session']['starts_at'].toString()).toLocal()} - ${DateTime.parse(_booking!['session']['ends_at'].toString()).toLocal()}'),
@@ -70,17 +120,23 @@ class _BookingDetailPageState extends State<BookingDetailPage> {
                           padding: const EdgeInsets.only(top: 8),
                           child: Text('ก๊วน: ${_booking!['session']['group']['name']}'),
                         ),
+                      if (_booking!['cancel_reason'] != null && (_booking!['cancel_reason'] as String).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('เหตุผล: ${_booking!['cancel_reason']}', style: const TextStyle(color: Colors.grey)),
+                        ),
                       const Spacer(),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _cancel,
-                              child: const Text('ยกเลิกการจอง'),
+                      if (_booking!['cancelled_by'] != 'system')
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _cancel,
+                                child: const Text('ยกเลิกการจอง'),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
