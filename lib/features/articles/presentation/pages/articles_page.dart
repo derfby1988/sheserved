@@ -416,7 +416,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: TlzAppTopBar.onPrimary(
             searchHintText: 'ค้นหาบทความสุขภาพ...',
-            notificationCount: 0,
+            notificationCategory: 'articles',
             onSearch: _onSearch,
             onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

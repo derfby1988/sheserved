@@ -25,7 +25,14 @@ class TlzNotificationButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notificationState = ref.watch(notificationProvider);
-    final count = badgeCount ?? notificationState.unreadCount;
+    final categoryCount = category == null
+        ? null
+        : ref.watch(notificationUnreadCountProvider(category)).when(
+              data: (count) => count,
+              loading: () => 0,
+              error: (_, _) => 0,
+            );
+    final count = badgeCount ?? categoryCount ?? notificationState.unreadCount;
     return Stack(
       clipBehavior: Clip.none,
       children: [

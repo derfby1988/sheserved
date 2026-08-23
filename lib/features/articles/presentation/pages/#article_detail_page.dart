@@ -120,7 +120,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
         children: [
           // Search Bar Row
           TlzAppTopBar.onPrimary(
-            notificationCount: 0,
+            notificationCategory: 'articles',
             searchHintText: 'ค้นหา...',
             onQRTap: () {},
             onNotificationTap: () {},

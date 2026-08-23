@@ -105,6 +105,44 @@ class ChatRepository {
     }
   }
 
+  Future<int> getUnreadCount(String userId) async {
+    final localRoomIds = _roomBox.values
+        .where((room) => room.participantIds.contains(userId))
+        .map((room) => room.id)
+        .toSet();
+
+    int localUnreadCount() => _messageBox.values.where((message) {
+      return localRoomIds.contains(message.roomId) &&
+          message.senderId != userId &&
+          !message.readBy.containsKey(userId);
+    }).length;
+
+    try {
+      final roomResponse = await _supabase
+          .from('chat_rooms')
+          .select('id')
+          .contains('participant_ids', [userId]);
+      final roomIds = (roomResponse as List)
+          .map((room) => room['id']?.toString())
+          .whereType<String>()
+          .toList();
+      if (roomIds.isEmpty) return 0;
+
+      final messageResponse = await _supabase
+          .from('chat_messages')
+          .select('sender_id, read_by')
+          .inFilter('room_id', roomIds)
+          .neq('sender_id', userId);
+      return (messageResponse as List).where((message) {
+        final readBy = message['read_by'];
+        return readBy is! Map || !readBy.containsKey(userId);
+      }).length;
+    } catch (e) {
+      debugPrint('ChatRepository: Error fetching unread count: $e');
+      return localUnreadCount();
+    }
+  }
+
   /// Check for existing room or create new one
   Future<ChatRoom?> getOrCreateRoom(List<String> participantIds) async {
     participantIds.sort(); // Consistent order

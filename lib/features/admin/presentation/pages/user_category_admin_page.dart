@@ -57,7 +57,12 @@ class _UserCategoryAdminPageState extends State<UserCategoryAdminPage> {
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: Container(
           color: AppColors.primary,
-          child: SafeArea(child: TlzAppTopBar.onPrimary(showQRButton: false)),
+          child: SafeArea(
+            child: TlzAppTopBar.onPrimary(
+              showQRButton: false,
+              notificationCategory: 'admin',
+            ),
+          ),
         ),
       ),
       body: _isLoading

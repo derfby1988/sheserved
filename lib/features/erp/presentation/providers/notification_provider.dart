@@ -72,3 +72,10 @@ final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
   return NotificationNotifier(ref.read(notificationRepositoryProvider));
 });
+
+final notificationUnreadCountProvider =
+    StreamProvider.family<int, String?>((ref, category) {
+  return ref
+      .watch(notificationRepositoryProvider)
+      .watchUnreadCount(category: category);
+});

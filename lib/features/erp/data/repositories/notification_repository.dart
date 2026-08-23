@@ -60,6 +60,17 @@ class NotificationRepository {
     }
   }
 
+  Stream<int> watchUnreadCount({String? category}) {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return Stream.value(0);
+
+    return _client
+        .from('app_notifications')
+        .stream(primaryKey: ['id'])
+        .eq('recipient_id', userId)
+        .asyncMap((_) => getUnreadCount(category: category));
+  }
+
   Future<bool> markAsRead(String notificationId) async {
     try {
       final userId = _client.auth.currentUser?.id;

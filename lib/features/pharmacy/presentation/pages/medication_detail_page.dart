@@ -66,7 +66,7 @@ class _MedicationDetailPageState extends State<MedicationDetailPage> {
           children: [
             // Header Bar
             TlzAppTopBar.onPrimary(
-              notificationCount: 0,
+              notificationCategory: 'pharmacy',
               searchHintText: 'ค้นหายา...',
               onQRTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(

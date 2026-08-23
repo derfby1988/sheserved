@@ -208,6 +208,7 @@ class _DonationDashboardPageState extends State<DonationDashboardPage> {
                             child: TlzAppTopBar.onLight(
                               onMenuPressed: () => Scaffold.of(context).openDrawer(),
                               searchHintText: 'ค้นหาการบริจาค...',
+                              notificationCategory: 'donation',
                               showQRButton: false,
                             ),
                           ),

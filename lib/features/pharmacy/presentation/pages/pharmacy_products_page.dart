@@ -166,7 +166,7 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: TlzAppTopBar.onPrimary(
-                notificationCount: 0,
+                notificationCategory: 'pharmacy',
                 searchHintText: _searchQuery ?? 'ค้นหาสินค้า...',
                 onQRTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังเปิดสแกน...')));

@@ -862,6 +862,9 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
   }) async {
+    if (capacity != null && (capacity < 2 || capacity > 30)) {
+      throw ArgumentError('capacity must be between 2 and 30');
+    }
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (description != null) data['description'] = description;

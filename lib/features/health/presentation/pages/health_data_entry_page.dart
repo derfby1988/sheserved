@@ -703,6 +703,7 @@ class _HealthDataEntryPageState extends State<HealthDataEntryPage> {
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     searchHintText: 'ค้นหาเมนูอาหารเพื่อสุขภาพ...',
+                    notificationCategory: 'health',
                     onQRTap: () {},
                     onNotificationTap: () {},
                     onCartTap: () {},

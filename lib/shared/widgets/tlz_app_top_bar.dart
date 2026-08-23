@@ -13,7 +13,8 @@ class TlzAppTopBar extends StatelessWidget {
   final VoidCallback? onNotificationTap;
   final VoidCallback? onCartTap;
   final String? searchHintText;
-  final int notificationCount;
+  final int? notificationCount;
+  final String? notificationCategory;
   final int? cartItemCount;
   
   /// ธีมสีของ Search Bar
@@ -53,7 +54,8 @@ class TlzAppTopBar extends StatelessWidget {
     this.onNotificationTap,
     this.onCartTap,
     this.searchHintText,
-    this.notificationCount = 0,
+    this.notificationCount,
+    this.notificationCategory,
     this.cartItemCount,
     this.searchBarTheme = TlzSearchTheme.onPrimary,
     this.showQRButton = true,
@@ -75,7 +77,8 @@ class TlzAppTopBar extends StatelessWidget {
     VoidCallback? onNotificationTap,
     VoidCallback? onCartTap,
     String? searchHintText,
-    int notificationCount = 0,
+    int? notificationCount,
+    String? notificationCategory,
     int? cartItemCount,
     bool showQRButton = true,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
@@ -95,6 +98,7 @@ class TlzAppTopBar extends StatelessWidget {
       onCartTap: onCartTap,
       searchHintText: searchHintText,
       notificationCount: notificationCount,
+      notificationCategory: notificationCategory,
       cartItemCount: cartItemCount,
       searchBarTheme: TlzSearchTheme.onPrimary,
       showQRButton: showQRButton,
@@ -117,7 +121,8 @@ class TlzAppTopBar extends StatelessWidget {
     VoidCallback? onNotificationTap,
     VoidCallback? onCartTap,
     String? searchHintText,
-    int notificationCount = 0,
+    int? notificationCount,
+    String? notificationCategory,
     int? cartItemCount,
     bool showQRButton = true,
     Function(String query, List<Map<String, dynamic>> results)? onSearch,
@@ -137,6 +142,7 @@ class TlzAppTopBar extends StatelessWidget {
       onCartTap: onCartTap,
       searchHintText: searchHintText,
       notificationCount: notificationCount,
+      notificationCategory: notificationCategory,
       cartItemCount: cartItemCount,
       searchBarTheme: TlzSearchTheme.onLight,
       showQRButton: showQRButton,
@@ -188,6 +194,7 @@ class TlzAppTopBar extends StatelessWidget {
         TlzNotificationButton(
           badgeCount: notificationCount,
           onPressed: onNotificationTap,
+          category: notificationCategory,
         ),
         
         const SizedBox(width: 8),

@@ -281,6 +281,7 @@ class _BodyRegionAdminPageState extends State<BodyRegionAdminPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: TlzAppTopBar.onPrimary(
                 searchHintText: 'ค้นหาอวัยวะ...',
+                notificationCategory: 'admin',
               ),
             ),
           ),

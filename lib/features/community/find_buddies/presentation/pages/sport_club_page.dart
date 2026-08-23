@@ -2010,6 +2010,7 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     String genderPref = group['gender_preference']?.toString() ?? 'any';
     bool requiresApproval = group['requires_owner_approval'] == true;
+    String? capacityError;
 
     await showModalBottomSheet(
       context: context,
@@ -2026,129 +2027,163 @@ class _SportClubPageState extends State<SportClubPage> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'แก้ไขก๊วน',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(height: 12),
+                      const Text(
+                        'แก้ไขก๊วน',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'ชื่อก๊วน',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'ชื่อก๊วน',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: descCtrl,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'คำอธิบาย',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'คำอธิบาย',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: capacityCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'จำนวนสมาชิกเป้าหมาย',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: genderPref,
-                      decoration: const InputDecoration(
-                        labelText: 'เพศที่ต้องการชวน',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'any', child: Text('ทุกเพศ')),
-                        DropdownMenuItem(value: 'male', child: Text('ชาย')),
-                        DropdownMenuItem(value: 'female', child: Text('หญิง')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          setSheetState(() => genderPref = v);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('ก๊วนส่วนตัว (ต้องรออนุมัติ)'),
-                      value: requiresApproval,
-                      onChanged: (v) =>
-                          setSheetState(() => requiresApproval = v),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final name = nameCtrl.text.trim();
-                          if (name.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text('กรุณากรอกชื่อก๊วน'),
-                              ),
-                            );
-                            return;
-                          }
-                          try {
-                            await _repo.updateGroup(
-                              groupId: group['id'].toString(),
-                              userId: userId,
-                              name: name,
-                              description: descCtrl.text.trim().isEmpty
-                                  ? null
-                                  : descCtrl.text.trim(),
-                              capacity: int.tryParse(capacityCtrl.text.trim()),
-                              genderPreference: genderPref,
-                              requiresOwnerApproval: requiresApproval,
-                            );
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('อัปเดตก๊วนแล้ว')),
-                            );
-                            Navigator.pop(ctx);
-                            _init();
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
-                            );
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: capacityCtrl,
+                        keyboardType: TextInputType.number,
+                        onChanged: (_) {
+                          if (capacityError != null) {
+                            setSheetState(() => capacityError = null);
                           }
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
+                        decoration: InputDecoration(
+                          labelText: 'จำนวนสมาชิกเป้าหมาย',
+                          border: const OutlineInputBorder(),
+                          errorText: capacityError,
                         ),
-                        child: const Text('บันทึก'),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: genderPref,
+                        decoration: const InputDecoration(
+                          labelText: 'เพศที่ต้องการชวน',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'any', child: Text('ทุกเพศ')),
+                          DropdownMenuItem(value: 'male', child: Text('ชาย')),
+                          DropdownMenuItem(
+                            value: 'female',
+                            child: Text('หญิง'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setSheetState(() => genderPref = v);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ก๊วนส่วนตัว (ต้องรออนุมัติ)'),
+                        value: requiresApproval,
+                        onChanged: (v) =>
+                            setSheetState(() => requiresApproval = v),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final name = nameCtrl.text.trim();
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('กรุณากรอกชื่อก๊วน'),
+                                ),
+                              );
+                              return;
+                            }
+                            final capacity = int.tryParse(
+                              capacityCtrl.text.trim(),
+                            );
+                            if (capacity == null ||
+                                capacity < 2 ||
+                                capacity > 30) {
+                              setSheetState(
+                                () => capacityError =
+                                    'จำนวนสมาชิกต้องอยู่ระหว่าง 2–30 คน',
+                              );
+                              return;
+                            }
+                            final currentMemberCount =
+                                (group['member_count'] as num?)?.toInt() ?? 0;
+                            if (capacity < currentMemberCount) {
+                              setSheetState(
+                                () => capacityError =
+                                    'จำนวนสมาชิกเป้าหมายต้องไม่น้อยกว่าสมาชิกปัจจุบัน ($currentMemberCount คน)',
+                              );
+                              return;
+                            }
+                            try {
+                              await _repo.updateGroup(
+                                groupId: group['id'].toString(),
+                                userId: userId,
+                                name: name,
+                                description: descCtrl.text.trim().isEmpty
+                                    ? null
+                                    : descCtrl.text.trim(),
+                                capacity: capacity,
+                                genderPreference: genderPref,
+                                requiresOwnerApproval: requiresApproval,
+                              );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('อัปเดตก๊วนแล้ว')),
+                              );
+                              Navigator.pop(ctx);
+                              _init();
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('บันทึก'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2182,148 +2217,159 @@ class _SportClubPageState extends State<SportClubPage> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'แก้ไขรอบนัด',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 16),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('เวลาเริ่ม'),
-                    subtitle: Text(_formatThaiBuddhistDateTime(editStart)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: ctx,
-                        initialDate: editStart,
-                        firstDate: DateTime.now().subtract(
-                          const Duration(days: 1),
-                        ),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (date != null) {
-                        final time = TimeOfDay.fromDateTime(editStart);
-                        setSheetState(
-                          () => editStart = DateTime(
-                            date.year,
-                            date.month,
-                            date.day,
-                            time.hour,
-                            time.minute,
+                    const SizedBox(height: 12),
+                    const Text(
+                      'แก้ไขรอบนัด',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('เวลาเริ่ม'),
+                      subtitle: Text(_formatThaiBuddhistDateTime(editStart)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: ctx,
+                          initialDate: editStart,
+                          firstDate: DateTime.now().subtract(
+                            const Duration(days: 1),
+                          ),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
                           ),
                         );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('เวลาสิ้นสุด'),
-                    subtitle: Text(_formatThaiBuddhistDateTime(editEnd)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: ctx,
-                        initialDate: editEnd,
-                        firstDate: DateTime.now().subtract(
-                          const Duration(days: 1),
-                        ),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (date != null) {
-                        final time = TimeOfDay.fromDateTime(editEnd);
-                        setSheetState(
-                          () => editEnd = DateTime(
-                            date.year,
-                            date.month,
-                            date.day,
-                            time.hour,
-                            time.minute,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: placeNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'สถานที่',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'หมายเหตุ',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (editEnd.isBefore(editStart) ||
-                            editEnd.isAtSameMomentAs(editStart)) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(
-                              content: Text('เวลาสิ้นสุดต้องมาหลังเวลาเริ่ม'),
+                        if (date != null) {
+                          final time = TimeOfDay.fromDateTime(editStart);
+                          setSheetState(
+                            () => editStart = DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              time.hour,
+                              time.minute,
                             ),
-                          );
-                          return;
-                        }
-                        try {
-                          await _repo.updateSession(
-                            sessionId: session['id'].toString(),
-                            startsAt: editStart,
-                            endsAt: editEnd,
-                            placeName: placeNameCtrl.text.trim().isEmpty
-                                ? null
-                                : placeNameCtrl.text.trim(),
-                            note: noteCtrl.text.trim().isEmpty
-                                ? null
-                                : noteCtrl.text.trim(),
-                          );
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('อัปเดตรอบนัดแล้ว')),
-                          );
-                          Navigator.pop(ctx);
-                          _init();
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
                           );
                         }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('บันทึก'),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('เวลาสิ้นสุด'),
+                      subtitle: Text(_formatThaiBuddhistDateTime(editEnd)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: ctx,
+                          initialDate: editEnd,
+                          firstDate: DateTime.now().subtract(
+                            const Duration(days: 1),
+                          ),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
+                          ),
+                        );
+                        if (date != null) {
+                          final time = TimeOfDay.fromDateTime(editEnd);
+                          setSheetState(
+                            () => editEnd = DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              time.hour,
+                              time.minute,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: placeNameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'สถานที่',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'หมายเหตุ',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (editEnd.isBefore(editStart) ||
+                              editEnd.isAtSameMomentAs(editStart)) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                content: Text('เวลาสิ้นสุดต้องมาหลังเวลาเริ่ม'),
+                              ),
+                            );
+                            return;
+                          }
+                          try {
+                            await _repo.updateSession(
+                              sessionId: session['id'].toString(),
+                              startsAt: editStart,
+                              endsAt: editEnd,
+                              placeName: placeNameCtrl.text.trim().isEmpty
+                                  ? null
+                                  : placeNameCtrl.text.trim(),
+                              note: noteCtrl.text.trim().isEmpty
+                                  ? null
+                                  : noteCtrl.text.trim(),
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('อัปเดตรอบนัดแล้ว')),
+                            );
+                            Navigator.pop(ctx);
+                            _init();
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('บันทึก'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
               ),
             ),
           ),

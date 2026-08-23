@@ -133,6 +133,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: TlzAppTopBar.onPrimary(
                     searchHintText: 'ค้นหาผู้สมัคร...',
+                    notificationCategory: 'admin',
                   ),
                 ),
               ),

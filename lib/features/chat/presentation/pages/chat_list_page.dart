@@ -96,7 +96,7 @@ class _ChatListPageState extends State<ChatListPage> {
                 onMenuPressed: () => Scaffold.of(context).openDrawer(),
                 searchHintText: 'ค้นหาการสนทนา...',
                 onSearch: _onSearch,
-                notificationCount: 0,
+                notificationCategory: 'chat',
               ),
             ),
 

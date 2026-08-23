@@ -651,6 +651,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TlzAppTopBar.onPrimary(
               searchHintText: 'ค้นหา...',
+              notificationCategory: 'profile',
               leading: const TlzHamburgerMenu(),
               actions: const [],
             ),

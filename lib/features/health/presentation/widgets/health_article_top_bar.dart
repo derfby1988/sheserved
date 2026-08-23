@@ -19,7 +19,7 @@ class HealthArticleTopBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: TlzAppTopBar.onPrimary(
-        notificationCount: 0,
+        notificationCategory: 'health',
         onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้')),
         ),

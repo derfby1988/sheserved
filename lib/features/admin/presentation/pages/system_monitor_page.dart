@@ -130,6 +130,7 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               child: TlzAppTopBar.onPrimary(
                 leading: const TlzHamburgerMenu(),
                 searchHintText: 'ค้นหาสถานะระบบ, queue, cost guardrail...',
+                notificationCategory: 'admin',
                 actions: [
                   IconButton(
                     onPressed: _isLoading ? null : _loadData,

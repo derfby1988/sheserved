@@ -29,6 +29,8 @@ import '../../../consultation/presentation/pages/health_program_request_dashboar
 import '../../../../services/platform_service.dart';
 import '../../../erp/data/services/erp_access_service.dart';
 import '../../../erp/presentation/providers/phase_three_provider.dart';
+import '../../../erp/presentation/providers/notification_provider.dart';
+import '../../../chat/presentation/chat_unread_provider.dart';
 
 /// ตำแหน่งที่ปุ่มปรึกษาสามารถ Snap ไปวางได้ (8 ตำแหน่ง + กลาง)
 enum ConsultationPosition {
@@ -179,6 +181,7 @@ class _HomePageState extends ConsumerState<HomePage>
     });
 
     _loadHomeData();
+    _refreshTopBarNotificationCounts();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForDonationStatus(); // Donation status notification
@@ -239,6 +242,7 @@ class _HomePageState extends ConsumerState<HomePage>
   void _onResumeFromTab() {
     debugPrint('HomePage: Resumed from tab switch');
     _loadActiveAlerts();
+    _refreshTopBarNotificationCounts();
     if (_refreshTimer == null || !_refreshTimer!.isActive) {
       _refreshTimer = Timer.periodic(const Duration(seconds: 90), (_) {
         if (mounted && widget.isActive) {
@@ -301,6 +305,7 @@ class _HomePageState extends ConsumerState<HomePage>
         'HomePage: App resumed, refreshing data and checking WebSocket...',
       );
       _connectWebSocket(); // Ensure connection is alive
+      _refreshTopBarNotificationCounts();
       _loadHomeData(); // Full refresh including alerts
     }
   }
@@ -1352,6 +1357,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _loadConsultationPosition();
     _loadHealthScore();
     ref.read(healthProvider.notifier).loadMetricsFromDatabase();
+    _refreshTopBarNotificationCounts();
     _loadHomeData();
   }
 
@@ -1490,6 +1496,13 @@ class _HomePageState extends ConsumerState<HomePage>
         setState(() => _healthScore = 0);
       }
     }
+  }
+
+  Future<void> _refreshTopBarNotificationCounts() async {
+    await Future.wait([
+      ref.read(chatUnreadProvider.notifier).refresh(),
+      ref.read(notificationProvider.notifier).refreshUnreadCount(),
+    ]);
   }
 
   Future<void> _loadHomeData() async {
@@ -2503,6 +2516,10 @@ class _HomePageState extends ConsumerState<HomePage>
   // ==================== Top Navigation Bar ====================
 
   Widget _buildTopNavigationBar(BuildContext context) {
+    final chatCount = ref.watch(chatUnreadProvider);
+    final erpCount = ref.watch(notificationProvider).unreadCount;
+    final total = chatCount + erpCount;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
@@ -2527,7 +2544,7 @@ class _HomePageState extends ConsumerState<HomePage>
             : null,
       ),
       child: TlzAppTopBar.onPrimary(
-        notificationCount: 0,
+        notificationCount: total,
         searchHintText: 'ค้นหายา ร้านยา หมอ...',
         onQRTap: () =>
             _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),

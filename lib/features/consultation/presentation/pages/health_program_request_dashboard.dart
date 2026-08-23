@@ -797,7 +797,7 @@ class _HealthProgramRequestDashboardState
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: TlzAppTopBar.onPrimary(
             searchHintText: 'ค้นหาคำร้องขอ...',
-            notificationCount: 0,
+            notificationCategory: 'consultation',
             leading: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new_rounded,

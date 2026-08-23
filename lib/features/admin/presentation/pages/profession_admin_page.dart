@@ -94,6 +94,7 @@ class _ProfessionAdminPageState extends State<ProfessionAdminPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: TlzAppTopBar.onPrimary(
                 searchHintText: 'ค้นหาอาชีพ...',
+                notificationCategory: 'admin',
               ),
             ),
           ),
