@@ -11,6 +11,10 @@ enum TlzSearchBarColorTheme {
   custom,
 }
 
+/// NOTE: Widget นี้ยังไม่ถูกเรียกใช้งานจริงในแอปในขณะนี้
+/// หน้า Home และหน้าอื่น ๆ ในแอปใช้ TlzAnimatedSearchBar ผ่าน TlzAppTopBar แทน
+/// หากต้องการใช้ TlzSearchBar โดยตรง ควรตรวจสอบว่าแทนที่ TlzAnimatedSearchBar แล้ว
+///
 /// Search Bar Widget with QR Code Scanner
 /// Rounded search bar with search icon and QR code scanner
 /// รองรับหลายธีมสีเพื่อใช้งานได้ทุกหน้า

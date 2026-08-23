@@ -31,9 +31,11 @@
   - แสดง Marker ของก๊วนตามตัวกรอง, คลิก Marker เปิดแผ่นสรุปและนำทางไปหน้ารายละเอียด
 - หน้า “รายละเอียดก๊วน” (เปิดเป็น Bottom Sheet `sport_club_page.dart`)
   - Header: ชื่อก๊วนกึ่งกลาง
-  - รายการรอบนัด: แต่ละรอบแสดงช่วงวันเวลา (`ห้วง: ...`); แอดมินเห็นปุ่ม “ยกเลิก” ต่อรอบ
-  - แถวจำนวนสมาชิก: `เข้าร่วมแล้ว N คน · ว่าง: N คน` (capacity − member_count) โดยมีปุ่ม **“จัดการ”** ของแอดมินอยู่ในบรรทัดเดียวกันทางขวา
-  - รายชื่อสมาชิก: avatar, ชื่อ-นามสกุล, บทบาท (ผู้ดูแล/สมาชิก), สถานะ (กำลังเข้าร่วม/หยุดพัก)
+  - รายการรอบนัด: แต่ละรอบแสดงช่วงวันเวลา (`ห้วง: ...`); แอดมินปัดซ้ายเพื่อเปิดปุ่ม **“แก้ไข”** และ **“ยกเลิก”**
+  - แถวจำนวนสมาชิก: `เข้าร่วมแล้ว N คน · ว่าง: N คน` (capacity − member_count) — ไม่มีปุ่ม “จัดการ” แยกแล้ว
+  - รายชื่อสมาชิก: avatar, ชื่อ-นามสกุล, บทบาท (ผู้ดูแล/สมาชิก), สถานะ (เข้าร่วมแล้ว/หยุดพัก); แอดมินปัดซ้ายเพื่อเปิดเมนูจัดการ และผู้ที่ถูกบล็อกต้องไม่อยู่ใน section นี้
+  - คำขอรออนุมัติ: แสดงเป็น section แยกเหนือรายชื่อสมาชิกสำหรับแอดมิน และปัดซ้ายเพื่ออนุมัติ/ปฏิเสธ/บล็อก
+  - Section “ถูกบล็อก”: แสดงแยกจากสมาชิก เฉพาะเจ้าของก๊วนและ admin Sheserved เท่านั้น
   - CTA: “เข้าร่วมก๊วน” หรือ “เข้าร่วมก๊วนแล้ว”
 
 ## หมวดหมู่กีฬา (เริ่มต้นในไทย)
@@ -69,9 +71,10 @@
 
 ### เข้าร่วมก๊วน = จองรอบนัด (Unified Action)
 - sheserved ไม่มีขั้นตอน "สมัครสมาชิกก๊วน" แยกจาก "จองรอบนัด" — ทั้งสองคำมีความหมายเดียวกัน: กด **"เข้าร่วมก๊วน"** = สร้าง `fitness_group_bookings` สำหรับรอบนัดถัดไปโดยตรง (สมาชิก sheserved จองได้อิสระ ไม่ต้องผ่านขั้นตอนสมัครสมาชิกก่อน)
-- เมื่อ booking แรกของผู้ใช้ในก๊วนนั้นถูกสร้าง (ไม่ว่า `pending` หรือ `confirmed`) ระบบ **upsert** แถวใน `fitness_group_members` (`role='member', is_active=true`) อัตโนมัติภายใน transaction เดียวกับการสร้าง booking (ผ่าน RPC function — ดูหัวข้อ Data Integrity Guards)
+- เมื่อ booking แรกถูกสร้าง RPC ปัจจุบันยัง **upsert** `fitness_group_members` (`role='member', is_active=true`) ทั้งกรณี `pending` และ `confirmed`; แต่ App Layer จะถือว่า “เข้าร่วมแล้ว” เฉพาะ admin ของก๊วนหรือผู้ที่มี booking `confirmed` อย่างน้อยหนึ่งรายการเท่านั้น
+- booking `pending` ของก๊วนที่ต้องอนุมัติ: แสดง CTA “รออนุมัติ”, อยู่เฉพาะ section คำขอรออนุมัติ, ไม่แสดงในรายชื่อ/จำนวน “เข้าร่วมแล้ว” และไม่แสดงก๊วนเป็น joined ของผู้ขอ
 - **ออกจากก๊วน:** ตั้ง `fitness_group_members.is_active = false` และยกเลิก booking ที่ `pending`/`confirmed` ทั้งหมดของผู้ใช้ในก๊วนนั้นแบบ cascade (`status='cancelled', cancelled_by='user'`) ภายใน transaction เดียว
-- สิทธิ์เข้าแชทกลุ่ม: ตรวจจาก `fitness_group_members.is_active = true` เท่านั้น
+- สิทธิ์เข้าแชทกลุ่มใน App Layer: `isGroupMember()` ต้องพบ membership active, ไม่ถูกบล็อก และเป็น admin หรือมี booking `confirmed`
 - แอดมินก๊วน (`role='admin'`): ผู้สร้างก๊วนเป็นแอดมินคนแรกอัตโนมัติ; เพิ่ม/ถอดแอดมินคนอื่นทำได้เฉพาะแอดมินปัจจุบัน
 
 ### Chat Room Integration (ต้องมี Migration ใหม่)
@@ -84,7 +87,7 @@
   CREATE INDEX idx_chat_rooms_ref ON chat_rooms(room_type, room_ref_id);
   ```
 - สร้างห้องแชท (`room_type='fitness_group', room_ref_id=group_id`) อัตโนมัติตอนสร้างก๊วนสำเร็จ (1 ก๊วน = 1 ห้องแชท)
-- Sync `participant_ids`: ทุกครั้งที่ `fitness_group_members` เปลี่ยนแปลง (join ผ่านการจอง / leave) ให้ Postgres trigger `sync_fitness_chat_participants()` อัปเดต `chat_rooms.participant_ids` ให้ตรงกับสมาชิก `is_active=true` ปัจจุบันของก๊วนนั้นแบบ atomic
+- Sync `participant_ids`: trigger `sync_fitness_chat_participants()` ปัจจุบัน sync จาก `fitness_group_members.is_active=true`; App Layer จึงต้องตรวจ confirmed/admin ซ้ำก่อนเปิดแชท — งาน DB follow-up คือปรับ trigger ให้รวมเฉพาะ admin หรือผู้มี booking `confirmed` และให้ booking status update trigger sync ห้องอีกครั้ง
 - ⚠️ Tech debt เดิมที่ต้องรับทราบ: `chat_messages.sender_id REFERENCES auth.users(id)` อ้าง Supabase Auth ที่ไม่ได้ใช้งานจริงในโปรเจกต์นี้ — ไม่แก้ในรอบนี้ แต่ FK นี้จะไม่ enforce ความสัมพันธ์กับ `public.users.id` จริง (ความเสี่ยงเดิมที่มีอยู่แล้วในระบบ)
 
 ### Data Integrity Guards (ป้องกัน Race Condition ระดับ DB)
@@ -94,6 +97,7 @@
   2. นับสมาชิก `is_active=true` ปัจจุบันเทียบกับ capacity เป้าหมาย
   3. ถ้าเกิน → return error `GROUP_FULL`
   4. ถ้าไม่เกิน → insert/reactivate booking + upsert `fitness_group_members` ในธุรกรรมเดียว
+- **ข้อควรระวังจาก Approval Filtering Regression:** ห้ามใช้ `fitness_group_members.is_active=true` เพียงอย่างเดียวเพื่อแสดงผลว่าเข้าร่วมแล้ว เพราะ RPC สร้างแถวนี้ตั้งแต่สถานะ `pending`; UI/query ต้องตรวจ `role='admin'` หรือ booking `status='confirmed'` ร่วมด้วย
 - **ป้องกันจองซ้อนเวลา (overlap):** สร้าง Postgres function `check_booking_overlap(p_user_id, p_starts_at, p_ends_at)` ตรวจ `fitness_group_bookings JOIN fitness_group_sessions` ที่ status ไม่ใช่ `cancelled`/`rejected` และช่วงเวลาทับซ้อน — เรียกจากภายใน `book_fitness_session()` ก่อน insert เพื่อความ atomic
 - ทุก mutation (จอง/ยกเลิก/อนุมัติ) เรียกผ่าน Supabase RPC จาก Flutter แทนการทำ SELECT แล้ว INSERT แยกฝั่ง client เพื่อปิดช่องว่าง race condition
 
@@ -223,24 +227,20 @@ Scaffold
   - แสดงเป็นฟีดใหม่→เก่า คลิกเข้าหน้า "รายละเอียดการจอง"
 - **Timeout สำหรับ pending booking:** ถ้า booking สถานะ `pending` ไม่ได้รับอนุมัติภายใน 24 ชั่วโมง หรือถึงเวลาก่อนเริ่ม session 1 ชั่วโมง (แล้วแต่ถึงก่อน) ระบบ auto-reject (`status='rejected', cancelled_by='system'`) ผ่าน BullMQ delayed job ที่ enqueue ตอนสร้าง booking (สอดคล้องกับ `architecture_analysis.md` ที่ใช้ BullMQ queue อยู่แล้ว) และแจ้งเตือนทั้งผู้จองและเจ้าของก๊วนผ่าน event `fitness_booking_status` ด้านบน
 - ป้องกันการจองซ้ำซ้อน: ก๊วนเปิด (`requires_owner_approval=false`) ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) ในขั้นตอนขอร่วมก๊วน; ก๊วนส่วนตัว (`requires_owner_approval=true`) ให้สร้างคำขอ `pending` ก่อน แล้วตรวจ overlap ตอนแอดมินอนุมัติผ่าน `approve_fitness_session_booking()` RPC เพื่อไม่ให้คำขอค้างถูกตัดด้วย `OVERLAP_BOOKING` ตั้งแต่ต้น
-- บล็อกผู้ใช้: เจ้าของก๊วนสามารถบล็อกผู้ใช้ (ห้ามจองก๊วนนี้) และดูประวัติการถูกบล็อก/การจองย้อนหลังจาก dialog ที่เปิดจากโปรไฟล์ผู้จอง
+- บล็อกผู้ใช้: แอดมินก๊วนสามารถบล็อกจาก swipe ของสมาชิกหรือผู้ขอ pending (ห้ามจองก๊วนนี้); เจ้าของก๊วน/admin Sheserved ดูรายชื่อใน section “ถูกบล็อก” และปัดซ้ายเพื่อปลด
 
-## อนุมัติคำขอเข้าร่วม (Owner Approval UI — Bottom Sheet)
-- ทริกเกอร์: ปุ่ม "จัดการ" เฉพาะแอดมินก๊วน อยู่ในบรรทัดเดียวกับข้อมูลสมาชิก (`เข้าร่วมแล้ว N คน · ว่าง: N คน`) ทางด้านขวา ในแผ่นรายละเอียดก๊วน
-- รูปแบบ Bottom Sheet:
-  - Header แถบลากปิด + ชื่อส่วน "จัดการผู้เข้าร่วมรอบนี้"
-  - ส่วนที่ 1: "คำขอเข้าร่วม (รออนุมัติ)" — แสดงรายการผู้ขอ (avatar, ชื่อเต็ม) พร้อมปุ่ม "อนุมัติ" และ "ปฏิเสธ" ต่อรายการ
-  - ส่วนที่ 2: "ผู้เข้าร่วมแล้ว" — แสดงรายการผู้ที่สถานะ `confirmed`
-- ปุ่ม/พฤติกรรม:
-  - อนุมัติ: เรียก `approveBooking(bookingId, ownerId)` แสดง SnackBar เมื่อสำเร็จ และรีโหลดรายการในแผ่น
-  - ปฏิเสธ: เปิด dialog ใส่เหตุผล (ไม่บังคับ) แล้วเรียก `rejectBooking(bookingId, ownerId, reason)` แสดง SnackBar เมื่อสำเร็จ และรีโหลดรายการ
-  - ซ่อนปุ่มอนุมัติ/ปฏิเสธเมื่อ session สิ้นสุดแล้ว (ป้องกันจัดการย้อนหลัง)
+## อนุมัติคำขอเข้าร่วม (Owner Approval UI — ปรับเป็น Swipe)
+- ทริกเกอร์เดิมคือปุ่ม "จัดการ" ในรายละเอียดก๊วน แต่ปุ่มนี้ถูกยกเลิกแล้วตาม Phase 8
+- ปัจจุบัน admin เห็น section **"คำขอรออนุมัติ"** แยกเหนือรายชื่อสมาชิกใน `_showGroupDetailSheet()`; ผู้ที่มีเฉพาะ booking `pending` ไม่ถือว่าเข้าร่วมแล้ว
+- แต่ละรายการแสดง avatar, ชื่อ และจำนวนรอบที่ขอ จากนั้นปัดซ้ายเพื่อเปิด **อนุมัติ / ปฏิเสธ / บล็อก**
+- อนุมัติหรือปฏิเสธ: เปิด dialog ให้เลือก booking pending เป็นรายรอบ แล้วเรียก `approveBooking()`/`rejectBooking()` เดิม; เมื่อเสร็จแล้ว refresh ด้วย `setSheetState()`
+- Blocklist: `blockUser()` upsert blocklist แล้วเรียก `leaveGroup()` เพื่อตั้งสมาชิก inactive และยกเลิก booking `pending/confirmed`; ผู้ถูกบล็อกจึงถูกนำออกจากทั้ง section pending และ “เข้าร่วมแล้ว”
 - Repository/เมธอดที่ใช้ (Flutter):
-  - `listSessionBookings(sessionId)` → ดึงรายการ booking ทั้งหมดของ session รวมข้อมูลผู้ใช้พื้นฐาน
+  - `listGroupPendingBookings(groupId)` → ดึง pending booking ของทุก session ในก๊วน พร้อมข้อมูล user/session แล้ว group ตามผู้ใช้ฝั่ง client
   - `approveBooking({ bookingId, ownerId })` → เรียก RPC `approve_fitness_session_booking()` เพื่ออัปเดตสถานะเป็น `confirmed` พร้อมตรวจ overlap และสิทธิ์แอดมิน
-  - `rejectBooking({ bookingId, ownerId, reason? })` → อัปเดตสถานะเป็น `rejected` (เฉพาะแถวที่ยัง `pending`) และบันทึก `cancelled_by='owner'` พร้อม `cancel_reason` ถ้ามี
-- ข้อควรทราบ (MVP):
-  - Realtime/WebSocket: เมื่อเชื่อมต่อในอนาคตให้ emit event `fitness_booking_status` ไปยังผู้จองเมื่ออนุมัติ/ปฏิเสธสำเร็จ
+  - `rejectBooking({ bookingId, ownerId, reason? })` → อัปเดตสถานะเป็น `rejected` เฉพาะแถวที่ยัง `pending` และบันทึก `cancelled_by='owner'` พร้อม `cancel_reason` ถ้ามี
+- รอบนัดที่มีอยู่: admin ปัดซ้ายแต่ละรอบเพื่อเปิด **แก้ไข / ยกเลิก**; ผู้ใช้ทั่วไปไม่มี action pane
+- Realtime/WebSocket: เมื่อเชื่อมต่อให้ emit event `fitness_booking_status` ไปยังผู้จองเมื่ออนุมัติ/ปฏิเสธสำเร็จ
 
 ## UX Completeness เพิ่มเติม
 - **Push Notification (นอกแอป):** รอบแรกไม่ทำ — Headsector ทำงานเฉพาะตอนแอปเปิดอยู่ (WebSocket only) ผู้ใช้ที่ปิดแอปจะไม่เห็นแจ้งเตือนจนกว่าจะเปิดแอปใหม่ (ออกแบบ `payload` ของ event ไว้ล่วงหน้าให้ขยายไปต่อ FCM/APNs ได้ในเฟสถัดไปโดยไม่แก้ schema)
@@ -263,7 +263,9 @@ Scaffold
 - เข้าร่วม: ผู้ใช้ล็อกอินเท่านั้น
 - แชท: เฉพาะสมาชิกก๊วน (ตรวจสิทธิ์ก่อนเข้าห้อง)
 - แผนที่: ระหว่างพัฒนาใช้ผู้ให้บริการไม่มีค่าใช้จ่าย (OSM + flutter_map); เตรียม config สำหรับสลับ Google Maps ได้โดยไม่แก้โค้ด
-- การบล็อก: ผู้ใช้ที่ถูกบล็อกในก๊วนจะไม่สามารถทำการจองใหม่ในก๊วนนั้นได้ จนกว่าจะถูกยกเลิกบล็อก
+- การบล็อก: ผู้ใช้ที่ถูกบล็อกจะถูกถอดจากสมาชิก active และยกเลิก booking `pending/confirmed` ผ่าน `leave_fitness_group`; ไม่สามารถจองใหม่ในก๊วนนั้นได้จนกว่าจะปลดบล็อก
+- การมองเห็นรายชื่อผู้ถูกบล็อก: เฉพาะ `fitness_groups.created_by` (เจ้าของก๊วน) หรือผู้ใช้ `users.role='admin'` ของ Sheserved; UI และ repository `listBlockedUsers(..., requesterUserId)` ตรวจสิทธิ์ก่อนคืนข้อมูลโปรไฟล์
+- ข้อจำกัด security ปัจจุบัน: เนื่องจากระบบยังไม่ใช้ Supabase Auth และ RLS เป็น `USING(true)` การจำกัดนี้เป็น App-Layer guard; เมื่อ migrate auth ตาม Phase 2/3 ต้องย้าย enforcement ไป RLS/RPC ฝั่ง server
 
 ## การปฏิบัติตามแนวทาง Security & Infrastructure
 
@@ -400,15 +402,19 @@ Scaffold
 - ตรวจชนิดข้อมูลของ `chat_rooms.id` ทุกครั้งที่สร้าง/อ้างอิง (TEXT) เนื่องจากไม่ใช่ UUID
 - หลัง apply migration ให้ `NOTIFY pgrst, 'reload schema'` เพื่อ PostgREST โหลด schema cache ใหม่
 
-## การเปลี่ยนแปลง UI/Flow ล่าสุด (2026-08-12)
+## การเปลี่ยนแปลง UI/Flow ล่าสุด (2026-08-23)
 - การ์ดรายการก๊วน: แสดงเฉพาะ **จำนวนว่าง** (`capacity − member_count`) ไม่แสดงจำนวนสมาชิกทั้งหมด; รูปสนาม/ปก, กีฬา, badge เพศ, คำอธิบาย, พื้นที่, รอบนัดถัดไปสูงสุด 3 รอบ
 - CTA ในการ์ด:
-  - ผู้ใช้ทั่วไป: ปุ่ม "เข้าร่วมก๊วน" (จองรอบนัดใกล้ที่สุดอัตโนมัติ) หรือ "เข้าร่วมก๊วนแล้ว"
+  - ผู้ใช้ทั่วไป: ปุ่ม "เข้าร่วมก๊วน" (เปิดรายการรอบนัดให้เลือก) หรือ "เข้าร่วมก๊วนแล้ว"
+  - ผู้ร้องขอที่ถูกบล็อก: แสดงสถานะ **"รอคิว"** แบบ disabled เพื่อใช้ถ้อยคำสุภาพและป้องกันการส่งคำขอซ้ำ (สถานะภายในยังเป็น `blocked`)
   - แอดมิน: แถวปุ่ม "เข้าร่วมก๊วนแล้ว" + "เพิ่มรอบนัด" ชิดขวา
 - แผ่นรายละเอียดก๊วน (Bottom Sheet):
-  - แสดงรายการรอบนัด โดยแอดมินเห็นปุ่ม "ยกเลิก" ต่อรอบ
-  - แถวสมาชิก: `เข้าร่วมแล้ว N คน · ว่าง: N คน` พร้อมปุ่ม **"จัดการ"** ของแอดมินในบรรทัดเดียวกัน
-  - ด้านล่าง: รายชื่อสมาชิกพร้อม avatar, บทบาท, สถานะ
+  - รายการรอบนัด: admin ปัดซ้ายเพื่อเปิด **แก้ไข/ยกเลิก**; action ปรับขนาดไอคอนและข้อความด้วย responsive `FittedBox`
+  - แถวจำนวนสมาชิก: `เข้าร่วมแล้ว N คน · ว่าง: N คน` ไม่มีปุ่ม "จัดการ" แยกแล้ว
+  - Section "คำขอรออนุมัติ" แยกเหนือรายชื่อสมาชิก: admin ปัดซ้ายเพื่อ **อนุมัติ/ปฏิเสธ/บล็อก** และเลือก booking เป็นรายรอบ
+  - รายชื่อสมาชิก: avatar, บทบาท, สถานะ; admin ปัดซ้ายเพื่อ **แชท/บล็อก/ถอดออก**, สมาชิกทั่วไปปัดแถวตนเองเพื่อแชท; ผู้ถูกบล็อกถูกกรองออก
+  - Section “ถูกบล็อก” แยกต่างหากและเห็นได้เฉพาะเจ้าของก๊วน/admin Sheserved; ปัดรายชื่อไปทางซ้ายเพื่อเปิดปุ่ม “ปลด”
+  - นำปุ่ม "จัดการบล็อกลิสต์" และ Blocklist Sheet แยกออกจาก UI
 - ไฟล์หลักของหน้า: `lib/features/community/find_buddies/presentation/pages/sport_club_page.dart` (ไม่ใช่ `find_buddies_page.dart`)
 
 ## คำถามเปิด (เพื่อจัดลำดับรายละเอียด)
@@ -417,7 +423,7 @@ Scaffold
 
 ## Roadmap ปรับปรุงจากผลวิเคราะห์ Gap (2026-08-22) — เรียงตามความสำคัญ
 
-> ผลตรวจสอบโค้ดจริง ณ 2026-08-23: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage ทำครบแล้ว — ช่องว่างที่เหลือแบ่งเป็น 7 phase (Phase 1-5 ✅ เสร็จแล้ว, Phase 7.1 ✅, 7.2 ✅, 7.3 ⏳, 7.4 ✅, Phase 6 รอทำ)
+> ผลตรวจสอบโค้ดจริง ณ 2026-08-23: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage และ swipe actions ในรายละเอียดก๊วนทำครบแล้ว — ช่องว่างที่เหลือคือการทดสอบ E2E (Phase 6) และการทดสอบ regression ตาม Definition of Done
 
 ### Phase 1 — ปักหมุดพิกัดตอนสร้างก๊วน + Pagination ✅ เสร็จแล้ว (2026-08-22)
 - ปัญหา: ฟอร์ม `create_group_page.dart` ไม่มีการเก็บ `lat/lng` เลย → ก๊วนใหม่ไม่มีพิกัด, มุมมองแผนที่ใน `sport_club_page.dart` ไม่มี marker, ตัวกรองรัศมี (กม.) ไม่ทำงานจริง
@@ -442,15 +448,15 @@ Scaffold
   - ตรวจสิทธิ์ก่อนเข้าห้อง (ไม่ใช่สมาชิก → ซ่อนปุ่ม/แจ้งเตือน)
   - ตรวจสอบ trigger `sync_fitness_chat_participants()` ว่า sync `participant_ids` ตอน join/leave ครบ
   - Badge จำนวนข้อความใหม่ (ถ้าโครงแชทเดิมรองรับ)
-- สถานะ: ✅ ปุ่ม "แชทก๊วน" อยู่ใน `_buildGroupActionButtons()` ของ `sport_club_page.dart` แสดงเฉพาะ `isMember` → `Navigator.push` ไป `ChatRoomPage(roomId: 'group_$groupId')`
+- สถานะ: ✅ แชทก๊วนเปิดผ่าน `showGroupChatPopup()` จาก swipe action ของรายชื่อสมาชิกใน `sport_club_page.dart` และจากปุ่มแชทใน `my_groups_page.dart`; ปุ่มแชทใน `_buildGroupActionButtons()` ถูกย้ายออกตาม Phase 8
 
 ### Phase 4 — จัดการก๊วน + หน้าก๊วนของฉัน ✅ เสร็จแล้ว (2026-08-23)
 - **แก้ไขก๊วน:** หน้า/sheet แก้ไข (ชื่อ, คำอธิบาย, ภาพ, เพศ, toggle `requires_owner_approval`, พิกัด, capacity) เฉพาะแอดมินก๊วน — เพิ่ม `updateGroup()` ใน repository
 - **แก้ไขรอบนัด:** แอดมินแก้ไขเวลาเริ่ม/สิ้นสุด และหมายเหตุของรอบนัดที่มีอยู่แล้ว — เพิ่ม `updateSession()` ใน repository
 - **ออกจากก๊วน:** เพิ่ม `leaveGroup()` — ตั้ง `fitness_group_members.is_active=false` + ยกเลิก booking `pending/confirmed` ทั้งหมดแบบ cascade ใน transaction เดียว (RPC) ตามหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด"
-- **Blocklist UI:** dialog จากโปรไฟล์ผู้จอง (ประวัติการจอง + ปุ่มบล็อก/ปลดบล็อก) + เมธอด `blockUser()`/`unblockUser()`/`listBlockedUsers()` + ตรวจ blocklist ใน `book_fitness_session()` RPC
+- **Blocklist UI:** รายชื่อสมาชิก/pending มี swipe ปุ่มบล็อก; ผู้ถูกบล็อกถูกถอดจากสมาชิก active และย้ายไป section “ถูกบล็อก” ซึ่งมองเห็นเฉพาะเจ้าของก๊วน/admin Sheserved; ปัดแถวผู้ถูกบล็อกเพื่อเปิดปุ่ม “ปลด”; ไม่มีปุ่ม/Blocklist Sheet แยกแล้ว; repository guard อยู่ใน `listBlockedUsers(..., requesterUserId)` และ `book_fitness_session()` RPC ตรวจ blocklist
 - **หน้า "ก๊วนของฉัน":** หน้ารวมก๊วนที่ผู้ใช้สร้าง/เข้าร่วม + ประวัติการจองทั้งหมด (ปัจจุบันไม่มีที่ดูรวม — ดูได้เฉพาะ booking detail ทีละรายการ) — เพิ่ม route `/community/sport-club/my-groups`
-- **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, blocklist sheet, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
+- **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, section ผู้ถูกบล็อกแบบ swipe, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
 
 ### Phase 5 — Auto-reject pending timeout (Supabase scheduled cleanup) ✅ เสร็จแล้ว (2026-08-23)
 - **เหตุผลที่เลือกแนวนี้ (Option A):** booking ถูกสร้างจาก Flutter → Supabase RPC โดยตรง ไม่ผ่าน backend request lifecycle การใช้ BullMQ delayed job enqueue ตอนสร้าง booking จะเกิด dual-write risk และเพิ่ม coupling กับ websocket-server โดยไม่จำเป็น DB เป็น source of truth อยู่แล้ว เงื่อนไข timeout ทั้งหมด (`status`, `starts_at`, `created_at`, `requires_owner_approval`) อยู่ในฐานข้อมูล — ให้ DB/RPC จัดการ atomic ปลอดภัยกว่า
@@ -467,11 +473,12 @@ Scaffold
   - `view_groups.yaml` — เปิดดูรายการก๊วน, สลับหมวดกีฬา, เปิด filter dialog, สลับมุมมองแผนที่
   - `join_group.yaml` — กดเข้าร่วมก๊วน (ต้องล็อกอิน), เลือกรอบนัด, ยืนยันการจอง
   - `create_group.yaml` — สร้างก๊วนใหม่ + สร้างรอบนัดแรก
-  - `owner_approval.yaml` — เจ้าของก๊วนอนุมัติ/ปฏิเสธคำขอเข้าร่วม
+  - `owner_approval.yaml` — เจ้าของก๊วนปัดคำขอเข้าร่วมเพื่ออนุมัติ/ปฏิเสธ/บล็อก และเลือก booking เป็นรายรอบ
+  - `session_swipe_actions.yaml` — admin ปัดรอบนัดเพื่อแก้ไข/ยกเลิก และตรวจ action responsive บนหน้าจอแคบ
 
 ---
 
-## Phase 7 — เปลี่ยน UI แชทก๊วนเป็น Popup ลอยเหนือหน้าเดิม
+## Phase 7 — เปลี่ยน UI แชทก๊วนเป็น Popup ลอยเหนือหน้าเดิม ✅ เสร็จแล้ว (2026-08-23)
 
 ### เป้าหมาย
 แทนที่การ `Navigator.push` เปิด `ChatRoomPage` เต็มหน้า → เปิดเป็น **popup ลอยกลางหน้าจอ** เหนือหน้าปัจจุบัน ผู้ใช้ยังเห็น context ของหน้าก๊วนด้านหลัง ปิดแล้วกลับมาที่เดิมทันทีโดยไม่เสีย scroll position
@@ -481,16 +488,16 @@ Scaffold
 |---|---|
 | ขนาด | **สูง 50% แบบ responsive** — มือถือ: กว้าง 92% สูง 55-60% / แท็บเล็ต-เดสก์ท็อป: `maxWidth` ~480-560px สูง 50-60% |
 | ขอบเขต | `sport_club_page.dart` + `my_groups_page.dart` (จุดอื่นในแอปคงเปิดเต็มหน้าเหมือนเดิม) |
-| คีย์บอร์ด | **เลื่อน popup ขึ้นด้านบน** — คงขนาดเดิม เลื่อนตำแหน่งให้พ้นคีย์บอร์ด |
+| คีย์บอร์ด | **เลื่อน popup ขึ้นด้านบน** — ใช้ `viewInsets.bottom` จัด popup ให้อยู่ในพื้นที่เหนือ keyboard และแตะพื้นที่ว่างของข้อความ/นอกช่องกรอกเพื่อซ่อน keyboard |
 | ปุ่มวิดีโอคอล | **ซ่อน** ในโหมด popup (แชทก๊วนเป็นกลุ่มหลายคน วิดีโอคอล 1:1 ไม่เหมาะ) |
 | ปิดด้วยแตะนอกพื้นที่ | **เปิดใช้** (`barrierDismissible: true`) |
 | header | แสดง **ชื่อก๊วน + จำนวนสมาชิก active** แทนชื่อคู่สนทนาแบบ 1:1 |
 | ปุ่มขยายเต็มหน้า | **ไม่ทำ** — popup อย่างเดียว |
 
-### สภาพปัจจุบันที่ต้องแก้
-- `sport_club_page.dart` `_buildGroupActionButtons()` → `Navigator.push(MaterialPageRoute(builder: (_) => ChatRoomPage(roomId: 'group_$groupId')))`
-- `ChatRoomPage` เป็น `Scaffold` เต็มหน้า มี `AppBar` (avatar + ชื่อคู่สนทนา + ปุ่มวิดีโอคอล + `more_vert`) — ออกแบบมาสำหรับ consultation 1:1
-- `my_groups_page.dart` **ยังไม่มีปุ่มแชทเลย** — `_buildGroupCard()` มีแค่ `onTap` ไป `/community/sport-club`
+### สภาพก่อนปรับปรุง
+- เดิม `sport_club_page.dart` `_buildGroupActionButtons()` ใช้ `Navigator.push` เปิด `ChatRoomPage` เต็มหน้า
+- เดิม `ChatRoomPage` มี header และ action ที่ออกแบบมาสำหรับ consultation 1:1
+- เดิม `my_groups_page.dart` ยังไม่มีปุ่มแชทใน card
 
 ### งานที่ต้องทำ
 
@@ -499,20 +506,23 @@ Scaffold
   - `bool isPopup = false` — ซ่อนปุ่มวิดีโอคอล, เปลี่ยนไอคอน back เป็น `Icons.close`, ลด `toolbarHeight`
   - `String? titleOverride` — ชื่อก๊วน
   - `String? subtitleOverride` — เช่น `"สมาชิก 12 คน"`
-- `Scaffold(resizeToAvoidBottomInset: false)` เมื่อ `isPopup == true` เพื่อไม่ให้ Scaffold ด้านในย่อซ้ำซ้อนกับการเลื่อน popup ด้านนอก
+  - `String? mentionTargetName` — ชื่อสมาชิกที่เลือกจาก swipe action เพื่อกล่าวถึงในข้อความใหม่; ถ้าเปิดจากรายชื่อตนเองให้เป็น `null`
+- `Scaffold(resizeToAvoidBottomInset: !widget.isPopup)` — popup ไม่ย่อซ้ำกับการจัดตำแหน่งเหนือ keyboard ส่วนหน้าเต็มยัง resize ตามปกติ
 
 **7.2 ✅ สร้าง helper `showGroupChatPopup()`** (ไฟล์ `lib/features/community/find_buddies/presentation/widgets/group_chat_popup.dart`)
-- signature: `Future<void> showGroupChatPopup(BuildContext context, {required String groupId, required String groupName, int? memberCount})`
+- signature: `Future<void> showGroupChatPopup(BuildContext context, {required String groupId, required String groupName, int? memberCount, String? mentionTargetName})`
 - ใช้ `showDialog(barrierDismissible: true, barrierColor: Colors.black54)`
 - คำนวณขนาด responsive จาก `MediaQuery.sizeOf(context)`:
   - `width  = min(size.width * 0.92, 560)`
   - `height = size.height * (size.width < 600 ? 0.58 : 0.55)`
-- เลื่อนหนีคีย์บอร์ด: อ่าน `MediaQuery.viewInsetsOf(context).bottom` แล้วห่อด้วย `AnimatedPadding` ยกขึ้นเท่าส่วนที่ทับกัน (ไม่เกิน top safe area)
-- ห่อเนื้อหาด้วย `ClipRRect(borderRadius: 20)` + `Material(elevation)` แล้วใส่ `ChatRoomPage(roomId: 'group_$groupId', isPopup: true, titleOverride: groupName, subtitleOverride: ...)`
+- เลื่อนหนีคีย์บอร์ด: อ่าน `MediaQuery.viewInsetsOf(context).bottom` แล้วใช้ `AnimatedPadding(padding: EdgeInsets.only(bottom: bottomInset))` จัด popup ในพื้นที่เหนือ keyboard
+- `ChatRoomPage` ห่อด้วย `ClipRRect(borderRadius: 20)` + `Material(elevation)` และรับ `mentionTargetName` เพื่อแสดงสมาชิกเป้าหมายในข้อความใหม่
+- ชื่อ header แสดงรูปแบบ `ก๊วน <ชื่อก๊วน>`
 
-**7.3 ⏳ แก้จุดเรียกใน `sport_club_page.dart`**
-- `_buildGroupActionButtons()` เปลี่ยนจาก `Navigator.push` → `showGroupChatPopup(...)`
-- **ไม่ต้อง `Navigator.pop(ctx)` ปิด bottom sheet ก่อน** — ให้ popup ลอยเหนือ sheet รายละเอียดก๊วน ปิดแล้วกลับมาที่ sheet เดิมทันที (นี่คือประโยชน์หลักของการเปลี่ยนเป็น popup)
+**7.3 ✅ แก้จุดเรียกใน `sport_club_page.dart`**
+- แชทก๊วนเปิดผ่าน `showGroupChatPopup(...)` จาก swipe action ของรายชื่อสมาชิก (และปุ่มแชทใน `my_groups_page.dart`)
+- **ไม่เรียก `Navigator.pop(ctx)` ก่อนเปิด popup** — popup ลอยเหนือ Bottom Sheet รายละเอียดก๊วน ปิดแล้วกลับมาที่ sheet เดิมทันที
+- เมื่อเปิดจากสมาชิกคนอื่น ส่ง `mentionTargetName` เข้า popup; เมื่อเปิดจากแถวตนเองไม่ส่งชื่อเป้าหมาย
 - `memberCount` ดึงจาก field ที่ `listGroups()` ใส่มาให้ในแต่ละ group map อยู่แล้ว
 
 **7.4 ✅ เพิ่มปุ่มแชทใน `my_groups_page.dart`** (2026-08-23)
@@ -520,12 +530,23 @@ Scaffold
 - ทุกก๊วนในหน้านี้ผู้ใช้เป็นสมาชิกอยู่แล้ว จึงแสดงปุ่มแชทได้ทุกใบ
 - `listMyGroups()` ไม่มี member count → ส่ง `memberCount: null` → header แสดงแค่ชื่อก๊วน (เพิ่ม count ใน query ภายหลังถ้าต้องการ)
 
+### รายละเอียด UI ข้อความแชทก๊วน (Implementation)
+- Header ของ popup แสดง `ก๊วน <ชื่อก๊วน>` และจำนวนสมาชิก active
+- แสดงชื่อผู้ส่งในรูปแบบ `ชื่อ + อักษรแรกของนามสกุล` เหนือข้อความและอยู่นอก bubble
+- เมื่อเปิดแชทจากสมาชิกเป้าหมาย ข้อความใหม่จะบันทึก mention ในรูปแบบ `@ชื่อ น.\nข้อความ` และแสดง `@ชื่อ น.` อยู่นอก bubble ในแถวเดียวกับ bubble; ฝั่งข้อความของเราอยู่ด้านซ้าย/ขวาตาม layout ที่กำหนด
+- เปิดแชทจากแถวของตนเองหรือจากหน้า `my_groups_page.dart` โดยไม่มีเป้าหมาย จะไม่เพิ่ม mention
+- เวลาและสถานะอ่าน (`✓`/`✓✓`) แสดงอยู่นอก bubble ใต้ข้อความ
+- ข้อความ `อ่านโดย` เปลี่ยนเป็น `<รายชื่อผู้อ่าน> อ่าน` สีเทา
+- มีระยะห่างระหว่างชุดข้อความแต่ละชุด 12 px
+- Composer ใช้ปุ่มส่งข้อความตลอดเวลาแทนปุ่มอัดเสียง
+
 ### ความเสี่ยง / จุดที่ต้องระวัง
 - **`Navigator.push` ภายใน `ChatRoomPage`** — โค้ดมี push ไป `ConsultationNoteEditorPage`, `PrescriptionEditorPage`, `pushNamed('/live-vdo')` ซึ่งจะเปิดทับ popup เต็มหน้าจอ แต่ path เหล่านี้เป็นของ consultation ไม่เกิดใน group chat จึงไม่กระทบจริง
 - **`_loadInitialData()` ใช้ `rooms.firstWhere((r) => r.id == widget.roomId)`** — ถ้าห้อง `group_<uuid>` ยังไม่ถูก sync เข้า `chat_rooms` จะ throw ทำให้ popup ค้างที่ loading ควรเพิ่ม `orElse` guard
-- **`barrierDismissible: true` ขณะพิมพ์** — ผู้ใช้อาจแตะพลาดแล้วข้อความที่พิมพ์ค้างหาย พิจารณา `PopScope` เตือนถ้า `_msgController.text` ไม่ว่าง
-- **ปุ่ม `more_vert` ใน AppBar** — ปัจจุบัน `onPressed: () {}` (ยังไม่ทำอะไร) ควรซ่อนในโหมด popup ด้วยเพื่อไม่ให้เปลืองพื้นที่ header ที่แคบอยู่แล้ว
-- **แนบรูป/อัดเสียง** — ยังใช้ได้ปกติ แต่ image picker/bottom sheet จะเปิดทับ popup ให้ทดสอบว่ากลับมาแล้ว popup ยังอยู่
+- **`barrierDismissible: true` ขณะพิมพ์** — ผู้ใช้อาจแตะพลาดแล้วข้อความที่พิมพ์ค้างหาย; พฤติกรรมปัจจุบันยังปิด popup เมื่อแตะนอก dialog ตามข้อตกลง
+- **การซ่อนคีย์บอร์ด** — แตะพื้นที่ว่างของรายการข้อความหรือแตะนอกช่องกรอกใน dialog จะ `unfocus()` โดยไม่ปิด dialog (กรณีแตะนอก popup จะปิด popup ตาม `barrierDismissible`)
+- **ปุ่ม `more_vert` ใน AppBar** — ซ่อนในโหมด popup แล้ว (`actions: null`) เพื่อไม่ให้เปลืองพื้นที่ header
+- **แนบรูป/อัดเสียง** — ปุ่มอัดเสียงถูกแทนที่ด้วยปุ่มส่งข้อความใน composer แล้ว; โค้ดอัดเสียงเดิมยังคงอยู่แต่ไม่มีปุ่มเรียกใช้จาก UI ปัจจุบัน ส่วน image picker/bottom sheet ต้องทดสอบว่ากลับมาแล้ว popup ยังอยู่
 - **ห้องแชทลอยทับหน้ารายการก๊วน (regression สำคัญ)** — ภาพหน้าจอ `test13` แสดงห้องแชทลอยเหนือนหน้า “หาเพื่อนออกกำลังกาย” แทนที่จะลอยเหนือน bottom sheet รายละเอียดก๊วน ทำให้ผู้ใช้งงและพื้นหลังไม่ถูก dim
   - สาเหตุ: เรียก `ChatRoomPage` ด้วย `Navigator.push` หรือเปิด widget บน `Overlay`/ root navigator โดยไม่มี `Dialog` / modal barrier ทำให้หน้าเดิมยังแสดงอยู่ด้านหลัง หรือใช้ `BuildContext` ผิด (context ของหน้ารายการแทน context ใน sheet) จึงเปิด popup ทับหน้ารายการแทน sheet
   - วิธีแก้: เปิดแชทกลุ่มด้วย `showDialog`/`showGeneralDialog` ผ่าน `showGroupChatPopup()` เท่านั้น ใช้ `barrierColor: Colors.black54` + `barrierDismissible: true` เพื่อให้พื้นหลังถูก dim และย้อนกลับมาที่ bottom sheet ก๊วนเดิมได้ถูกต้อง
@@ -537,4 +558,131 @@ Scaffold
 - ปิด popup ด้วยปุ่ม X หรือแตะพื้นหลัง → กลับมาที่ bottom sheet ก๊วนเดิม
 - กดไอคอนแชทใน `my_groups_page` → popup เดียวกันเปิดได้
 - จุดเปิดแชทอื่น (`chat_list_page`, `contact_list_page`, `/chat-room`) ยังเปิดเต็มหน้าเหมือนเดิม ไม่ regression
+- `flutter analyze` ผ่านไม่มี error ใหม่
+
+---
+
+## Phase 8 — Redesign Bottom Sheet รายละเอียดก๊วนเป็น Swipe Actions ✅ UI implement แล้ว (2026-08-23)
+
+### เป้าหมาย
+แทนที่ Bottom Sheet "จัดการ" ผู้เข้าร่วมรอบนัด (`_showManageSessionSheet`) ด้วย **swipe actions บนรอบนัดและรายชื่อสมาชิกโดยตรง** ใน Bottom Sheet รายละเอียดก๊วน (`_showGroupDetailSheet`) — แอดมินปัดรายการเพื่อเปิดเมนูจัดการ ไม่ต้องเปิด sheet จัดการผู้เข้าร่วมซ้อนอีกชั้น
+
+### ข้อตกลงที่ยืนยันแล้ว (2026-08-23)
+| หัวข้อ | การตัดสินใจ |
+|---|---|
+| ทิศทางสไลด์ | **ปัดซ้าย ปุ่มโผล่ด้านขวา** (`flutter_slidable` `endActionPane` — pattern มาตรฐาน iOS/Android) |
+| ปุ่มใน swipe ของรอบนัด (admin) | **แก้ไข** (สีหลัก) + **ยกเลิก** (แดง); action pane responsive และย่อไอคอน/ข้อความอัตโนมัติเมื่อพื้นที่แคบ |
+| คำขอรออนุมัติ (pending) | **แยก section "คำขอรออนุมัติ"** เหนือรายชื่อสมาชิก ใน sheet รายละเอียดก๊วนเดียวกัน |
+| ผู้ถูกบล็อก | ไม่แสดงใน pending/“เข้าร่วมแล้ว”; แสดงใน section **“ถูกบล็อก”** เฉพาะเจ้าของก๊วนและ admin Sheserved |
+| ปุ่มใน swipe ของสมาชิก (admin) | **แชทก๊วน** (ฟ้า) + **บล็อก** (เทา) + **ถอดออกจากก๊วน** (แดง) |
+| ปุ่มใน swipe ของสมาชิก (ไม่ใช่ admin) | **แชทก๊วน** (ฟ้า) — แถวอื่นปัดไม่ได้, แถวตัวเองปัดได้แค่แชท |
+| ปุ่มใน swipe ของคน pending | **อนุมัติ** (เขียว) + **ปฏิเสธ** (แดง) + **บล็อก** (เทา) |
+| ขอบเขตการอนุมัติ | **เลือกรอบนัดก่อนอนุมัติ** — กดอนุมัติแล้วแสดง dialog รายการ booking pending ของผู้ใช้คนนั้น (รายรอบนัด) ให้เลือกอนุมัติ/ปฏิเสธเป็นรายรอบ |
+| Bottom Sheet "จัดการ" เดิม | **ยกเลิก** — ลบ `_showManageSessionSheet()` และปุ่ม "จัดการ" ออก |
+
+### สภาพปัจจุบันหลังปรับ UI
+- `_showManageSessionSheet(sessionId, groupId)` — **ถูกลบ**; การอนุมัติ/ปฏิเสธผู้เข้าร่วมย้ายมาอยู่ใน section pending ของ Bottom Sheet รายละเอียดก๊วน
+- ปุ่ม "จัดการ" ในแถวจำนวนสมาชิก (`_showGroupDetailSheet`) — **ถูกลบ**
+- รายชื่อสมาชิก (`listGroupMembers`) แสดงเฉพาะ `is_active=true` — คน pending ถูกดึงแยกด้วย `listGroupPendingBookings(groupId)` แล้ว group ตามผู้ใช้ฝั่ง client
+- รายการรอบนัดของ admin ใช้ `Slidable` พร้อม `แก้ไข`/`ยกเลิก`; รายชื่อสมาชิกและ pending ใช้ swipe actions เช่นกัน
+- `flutter_slidable: ^4.0.3` มีใน `pubspec.yaml` แล้ว (ตัวอย่างการใช้: `triage_victim_card.dart`, `health_article_comment_item.dart`)
+
+### รายการที่ implement แล้ว
+
+**8.1 ✅ เพิ่ม repository method `listGroupPendingBookings(groupId)`** (`fitness_buddies_repository.dart`)
+- ดึง `fitness_group_bookings` ที่ `status='pending'` ของทุกรอบนัดในก๊วน (join `fitness_group_sessions` และ filter ตาม `group_id`) พร้อม user profile (id, first_name, last_name, profile_image_url) และข้อมูลรอบนัด (id, group_id, starts_at, ends_at)
+- group by ผู้ใช้ฝั่ง client: 1 คนอาจมีหลาย booking pending หลายรอบ
+
+**8.2 ✅ Section "คำขอรออนุมัติ" ใน `_showGroupDetailSheet`** (เฉพาะ admin เห็น)
+- แสดงเหนือ section รายชื่อสมาชิก มีหัวข้อ "คำขอรออนุมัติ" + จำนวน
+- แต่ละแถว: avatar + ชื่อ + จำนวนรอบที่ขอ (badge "รออนุมัติ")
+- swipe (`endActionPane`): **อนุมัติ** (เขียว) / **ปฏิเสธ** (แดง) / **บล็อก** (เทา)
+- กดอนุมัติ/ปฏิเสธ → เปิด dialog รายการรอบนัด pending ของคนนั้นให้เลือกจัดการเป็นรายรอบ (เรียก `approveBooking()`/`rejectBooking()` เดิม) → `setSheetState()` รีเฟรช
+- ไม่มีคำขอ → ซ่อน section ทั้งหมด (ไม่แสดงหัวข้อเปล่า)
+
+**8.3 ✅ Swipe actions บนรายการรอบนัด** (admin เท่านั้น)
+- ห่อแถวรอบนัดด้วย `Slidable` (`endActionPane`, `motion: ScrollMotion`)
+- ปัดซ้ายเพื่อเปิด **แก้ไข** และ **ยกเลิก** ทางขวา
+- กด "แก้ไข" เปิด `_showEditSessionSheet()`; กด "ยกเลิก" แสดง dialog ยืนยันก่อนเรียก `cancelSession()`
+- ผู้ใช้ทั่วไปเห็นรอบนัดแบบปกติและไม่มี action pane
+- ใช้ custom responsive action (`CustomSlidableAction` + `FittedBox`) เพื่อให้ไอคอน/ข้อความปรับขนาดพอดีกับพื้นที่บนหน้าจอแต่ละขนาด
+
+**8.4 ✅ Swipe actions บนรายชื่อสมาชิก** (ทุกคนปัดแถวตัวเองได้, admin ปัดแถวคนอื่นได้)
+- ห่อ `ListTile` สมาชิกด้วย `Slidable` (`endActionPane`, `motion: ScrollMotion`)
+- **แถวตัวเอง** (ทุกคน ไม่ว่าจะเป็น admin หรือสมาชิกทั่วไป):
+  - ปุ่ม: **แชทก๊วน** (ฟ้า, `Icons.chat_bubble_outline` → `showGroupChatPopup(...)`)
+- **แถวสมาชิกคนอื่น** (เฉพาะ admin, `memberUserId != currentUserId` และ member ไม่ใช่ admin):
+  - ปุ่ม: **แชทก๊วน** (ฟ้า) + **บล็อก** (เทา, `Icons.block` → `_blockUserDialog`) / **ถอดออกจากก๊วน** (แดง, `Icons.person_remove` → confirm dialog → `leaveGroup(groupId, memberUserId)`)
+  - ห้ามถอดแอดมินคนอื่น (`role != 'admin'`)
+- **สมาชิกทั่วไปปัดแถวคนอื่น**: ไม่มี action (`Slidable` ไม่แสดง action pane หรือ `enabled: false`)
+- ลบ `IconButton` block ใน `trailing` ที่เพิ่มไว้ชั่วคราว (แทนด้วย swipe)
+- **ลบปุ่ม "แชทก๊วน" ออกจาก `_buildGroupActionButtons`** — แทนด้วย swipe (ดู 8.6)
+
+**8.5 ✅ ลบ Bottom Sheet "จัดการ" เดิม**
+- ลบ `_showManageSessionSheet()` ทั้งฟังก์ชัน
+- ลบปุ่ม "จัดการ" ในแถวจำนวนสมาชิกของ `_showGroupDetailSheet`
+
+**8.6 ✅ ลบปุ่ม "แชทก๊วน" ออกจาก `_buildGroupActionButtons`**
+- ปุ่ม `ElevatedButton.icon` (แชทก๊วน) ถูกลบ — แทนด้วย swipe action ใน 8.4
+- `_buildGroupActionButtons` เหลือแค่: **แก้ไขก๊วน** (admin) และ **ออกจากก๊วน** (สมาชิกทั่วไป)
+
+**8.7 ✅ ปลดบล็อกแบบ Swipe ในรายละเอียดก๊วน**
+- นำปุ่ม "จัดการบล็อกลิสต์" ออกจาก `_buildGroupActionButtons`
+- รายชื่อใน section “ถูกบล็อก” ห่อด้วย `Slidable` และปัดซ้ายเพื่อเปิดปุ่ม **“ปลด”** สีเขียว
+- กด “ปลด” ต้องเรียก `getUnblockCapacityStatus()` เพื่อตรวจข้อมูลสดจาก DB ก่อน: อนุญาตเมื่อ `member_count + 1 <= capacity` เท่านั้น
+- ถ้า `member_count + 1 > capacity` ให้คง blocklist ไว้ ไม่เรียก `unblockUser()` และแสดง dialog “ไม่สามารถปลดบล็อกได้” พร้อมจำนวนปัจจุบัน/จำนวนที่เปิดรับ
+- ข้อความ dialog ต้องแนะนำให้เจ้าของก๊วนเข้าไป “แก้ไขก๊วน” และเพิ่มจำนวนที่เปิดรับให้เสร็จก่อนลองปลดอีกครั้ง
+- เมื่อผ่านเงื่อนไขจึงเรียก `unblockUser()` แล้ว refresh Bottom Sheet/รายการก๊วนทันที
+- ไม่มี Blocklist Sheet แยกใน flow ปัจจุบัน
+
+**8.8 ✅ แยกผู้ถูกบล็อกออกจากสมาชิก active**
+- `listGroupMembers()`, `listGroupPendingBookings()`, `listMyJoinedGroupIds()` และ member count กรอง `fitness_group_blocklist.is_active=true` ออก
+- เมื่อบล็อกสำเร็จ `blockUser()` เรียก `leaveGroup()` ต่อเพื่อ deactivate membership และยกเลิก booking `pending/confirmed`
+- Bottom Sheet รายละเอียดก๊วนคำนวณ `เข้าร่วมแล้ว/ว่าง` จากสมาชิกที่ผ่านการกรอง
+- Section “ถูกบล็อก” แสดง avatar, ชื่อ, เหตุผล และสถานะบล็อก แยกจาก “เข้าร่วมแล้ว”; แต่ละแถวปัดซ้ายเพื่อปลดบล็อก
+- เฉพาะเจ้าของก๊วน (`fitness_groups.created_by`) หรือ admin Sheserved (`users.role='admin'`) เท่านั้นที่เห็น section “ถูกบล็อก”; `listBlockedUsers()` ตรวจสิทธิ์จาก DB ก่อนคืนข้อมูลโปรไฟล์
+
+**8.9 ✅ กรองผู้รออนุมัติออกจากสมาชิกที่เข้าร่วมแล้ว**
+- `listMyJoinedGroupIds()` คืนก๊วนเฉพาะ membership role admin หรือผู้มี booking `confirmed`; pending-only จึงไม่ทำให้ CTA เป็น “เข้าร่วมก๊วนแล้ว”
+- เพิ่ม `listMyBlockedGroupIds()` เพื่อระบุก๊วนที่ผู้ใช้ถูกบล็อกก่อนประเมิน `joined/pending`
+- ผู้ร้องขอที่ถูกบล็อกเห็น CTA **“รอคิว”** แบบ disabled เป็นถ้อยคำสุภาพ; ไม่เปิดเผยคำว่า “ถูกบล็อก” และไม่สามารถส่งคำขอซ้ำ
+- `listGroupMembers()` และ member count แสดงเฉพาะ admin หรือ user ที่มี booking `confirmed`
+- `listMyGroups()` ไม่แสดงก๊วน pending-only ในรายการก๊วนที่เข้าร่วม แต่ประวัติ booking ยังคงแสดง “รออนุมัติ”
+- `isGroupMember()` ใช้เงื่อนไข confirmed/admin + active + ไม่ถูกบล็อกก่อนอนุญาตเข้าแชท
+- Section pending ไม่ตัดผู้ใช้ออกเพียงเพราะมี confirmed booking อื่นอยู่แล้ว เพื่อให้ admin ยังเห็นคำขอรายรอบครบถ้วน
+
+### บันทึกบทเรียน: Approval Filtering Regression
+- **อาการ:** ผู้ใช้ส่งคำขอเข้าก๊วนส่วนตัวแล้ว แต่หน้า card/Bottom Sheet แสดง “เข้าร่วมก๊วนแล้ว” และแสดงชื่อในรายชื่อสมาชิก ทั้งที่ booking ยังเป็น `pending` ตามภาพทดสอบบน iOS/Android
+- **สาเหตุหลัก:** `book_fitness_session()` ตั้ง booking เป็น `pending` แต่ยัง upsert แถว `fitness_group_members` เป็น `is_active=true`; การใช้ `fitness_group_members.is_active` เพียงอย่างเดียวจึงทำให้ pending ถูกนับเป็นสมาชิกแล้ว
+- **วิธีป้องกันที่ implement แล้ว:** ให้สถานะ effective member ใน App Layer อ้างอิง `role='admin'` หรือมี booking `status='confirmed'`; ใช้ filter เดียวกันใน `listGroupMembers()`, `listMyJoinedGroupIds()`, `listMyGroups()`, `isGroupMember()` และ member count
+- **กฎ UI:** pending-only ต้องอยู่ใน section “คำขอรออนุมัติ” และ CTA เป็น “รออนุมัติ”; หลัง `approve_fitness_session_booking()` เปลี่ยนเป็น `confirmed` จึงย้ายไป “เข้าร่วมแล้ว” และเปิดสิทธิ์แชท
+- **Regression checklist:** ทดสอบอย่างน้อย 3 สถานะ — (1) ก่อนจอง, (2) หลังส่งคำขอ pending, (3) หลัง admin approve — ตรวจ CTA, รายชื่อสมาชิก, member count, หน้า “ก๊วนของฉัน” และสิทธิ์แชทให้ตรงกัน
+- **DB follow-up:** trigger `sync_fitness_chat_participants()` ยังใช้ `is_active=true`; ต้องปรับให้รวมเฉพาะ admin/confirmed และเพิ่มการ sync เมื่อ booking status เปลี่ยน เพื่อให้ DB participant list สอดคล้องกับ App Layer
+
+### ความเสี่ยง / จุดที่ต้องระวัง
+- **Discoverability:** มี hint text เล็กๆ ใต้หัวข้อรอบนัด/สมาชิก เช่น "ปัด...ไปทางซ้ายเพื่อจัดการ" (แสดงเฉพาะ admin) แต่ยังต้องทดสอบว่าผู้ใช้ค้นพบ gesture ได้จริง
+- **Slidable ใน ListView ที่อยู่ใน SingleChildScrollView:** gesture แนวนอนของ Slidable ไม่ชนกับ scroll แนวตั้ง แต่ต้องทดสอบใน bottom sheet ที่ drag ปิดได้
+- **Responsive action labels:** ใช้ `CustomSlidableAction` + `FittedBox` และกำหนด `extentRatio` ตามจำนวน action เพื่อป้องกันไอคอน/ข้อความล้นบนหน้าจอแคบ
+- **การบล็อกสมาชิก/pending:** `blockUser()` เรียก `leaveGroup()` ต่อทันทีเพื่อถอดสมาชิกและยกเลิก booking; repository ยังกรอง blocklist ออกจาก `listGroupMembers()`, `listGroupPendingBookings()`, `listMyJoinedGroupIds()` และ member count เพื่อรองรับข้อมูลเก่าก่อนการแก้ไข
+- **`leaveGroup` โดย admin แทนผู้ใช้:** RPC `leave_fitness_group` รับ `p_user_id` ตรงๆ (RLS เป็น `USING(true)` + App Layer enforce ตาม pattern โปรเจกต์) — UI gate ให้เฉพาะ admin และไม่แสดง action สำหรับแถวตัวเอง/แอดมินคนอื่น
+- **Unblock swipe:** ตรวจ capacity แบบ fresh ทุกครั้งก่อนปลดและห้ามใช้ค่าจาก snapshot UI ที่อาจ stale; ต้องทดสอบกรณี `member_count + 1 == capacity` (ผ่าน) และ `> capacity` (ไม่ผ่าน) รวมถึงยืนยันว่าผู้ที่ปลดบล็อกยังไม่กลับเป็นสมาชิก active จนกว่าจะจองเข้าร่วมใหม่
+- **Maestro test เดิม (`owner_approval.yaml`):** flow อนุมัติผ่านปุ่ม "จัดการ" ยังต้องอัปเดตเป็น swipe (`swipe` command ใน Maestro)
+
+### Definition of Done
+- Admin เปิด sheet รายละเอียดก๊วน → เห็น section "คำขอรออนุมัติ" (ถ้ามี) + รายชื่อสมาชิก
+- ปัดรอบนัดไปทางซ้าย → เห็นปุ่ม **แก้ไข/ยกเลิก** ที่ไอคอนและข้อความพอดีใน action pane และใช้งานได้จริง
+- ปัดรายชื่อคน pending ไปทางซ้าย → เห็นปุ่ม อนุมัติ/ปฏิเสธ/บล็อก ใช้งานได้จริง (เลือกรอบนัดก่อนอนุมัติ)
+- Admin ปัดรายชื่อสมาชิกคนอื่น → เห็นปุ่ม แชทก๊วน/บล็อก/ถอดออกจากก๊วน ใช้งานได้จริง
+- สมาชิกทั่วไปปัดแถวตัวเอง → เห็นปุ่ม แชทก๊วน ใช้งานได้จริง
+- สมาชิกทั่วไปปัดแถวคนอื่น → ไม่มี action
+- ปุ่ม "แชทก๊วน" ใน `_buildGroupActionButtons` ถูกลบแล้ว
+- ปุ่ม "จัดการ" และ `_showManageSessionSheet` ถูกลบแล้ว ไม่มีโค้ดตาย
+- ปุ่ม "จัดการบล็อกลิสต์" ถูกนำออก; ปัดแถวใน section “ถูกบล็อก” → เห็นปุ่ม “ปลด”
+- กด “ปลด” เมื่อ `member_count + 1 > capacity` → ไม่ปลดบล็อกและเห็น dialog แนะนำให้เจ้าของแก้ไขจำนวนที่เปิดรับก่อน; เมื่อไม่เกินจึงปลดได้จริง
+- ผู้ถูกบล็อกไม่ปรากฏใน pending/“เข้าร่วมแล้ว” และไม่ถูกนับในจำนวนสมาชิก/จำนวนว่าง
+- เจ้าของก๊วนและ admin Sheserved เห็น section “ถูกบล็อก”; group admin คนอื่นและสมาชิกทั่วไปไม่เห็นข้อมูลรายชื่อผู้ถูกบล็อก
+- บล็อกสมาชิกแล้ว membership เป็น inactive และ booking `pending/confirmed` ถูกยกเลิก
+- ผู้ใช้ที่ส่งคำขอเข้าก๊วนส่วนตัวเห็น CTA “รออนุมัติ” และยังไม่ปรากฏใน “เข้าร่วมแล้ว”/member count/ก๊วนของฉัน/สิทธิ์แชท
+- ผู้ร้องขอที่ถูกบล็อกเห็น CTA “รอคิว” แบบ disabled และไม่สามารถส่งคำขอซ้ำ
+- หลัง admin อนุมัติ booking ผู้ใช้จึงปรากฏใน “เข้าร่วมแล้ว” และได้รับสิทธิ์สมาชิกตามปกติ
 - `flutter analyze` ผ่านไม่มี error ใหม่

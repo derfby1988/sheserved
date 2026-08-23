@@ -2527,7 +2527,7 @@ class _HomePageState extends ConsumerState<HomePage>
             : null,
       ),
       child: TlzAppTopBar.onPrimary(
-        notificationCount: 1,
+        notificationCount: 0,
         searchHintText: 'ค้นหายา ร้านยา หมอ...',
         onQRTap: () =>
             _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),

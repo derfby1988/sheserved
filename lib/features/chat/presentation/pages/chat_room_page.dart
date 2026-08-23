@@ -26,12 +26,14 @@ class ChatRoomPage extends StatefulWidget {
   final bool isPopup;
   final String? titleOverride;
   final String? subtitleOverride;
+  final String? mentionTargetName;
   const ChatRoomPage({
     super.key,
     required this.roomId,
     this.isPopup = false,
     this.titleOverride,
     this.subtitleOverride,
+    this.mentionTargetName,
   });
 
   @override
@@ -78,6 +80,35 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     return roomId.isEmpty ? null : roomId;
   }
 
+  bool get _isGroupChat => widget.roomId.startsWith('group_');
+
+  String? _senderDisplayName(ChatMessage message) {
+    String firstName = '';
+    String lastName = '';
+    if (message.senderId == _currentUser?.id) {
+      final appUser = AuthService.instance.currentUser;
+      firstName = appUser?.firstName ?? '';
+      lastName = appUser?.lastName ?? '';
+    } else {
+      ChatParticipant? sender;
+      for (final participant in _otherParticipants) {
+        if (participant.id == message.senderId) {
+          sender = participant;
+          break;
+        }
+      }
+      if (sender == null) return null;
+      firstName = sender.firstName;
+      lastName = sender.lastName;
+    }
+    final trimmedFirstName = firstName.trim();
+    final trimmedLastName = lastName.trim();
+    if (trimmedFirstName.isEmpty) return null;
+    if (trimmedLastName.isEmpty) return trimmedFirstName;
+    final lastNameInitial = String.fromCharCode(trimmedLastName.runes.first);
+    return '$trimmedFirstName $lastNameInitial.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -87,20 +118,32 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     _startHealthPermissionPolling();
     _listenForCalls();
 
-    _roomSub = _chatRepository.streamRoom(widget.roomId, callerId: _currentUser?.id ?? '').listen((room) {
-      if (mounted && room != null) {
-        setState(() => _currentRoom = room);
-      }
-    });
+    _roomSub = _chatRepository
+        .streamRoom(widget.roomId, callerId: _currentUser?.id ?? '')
+        .listen((room) {
+          if (mounted && room != null) {
+            setState(() => _currentRoom = room);
+          }
+        });
   }
 
   Future<void> _loadInitialData() async {
     // 1. Load messages
-    final msgs = await _chatRepository.getMessages(widget.roomId, callerId: _currentUser?.id ?? '');
+    final msgs = await _chatRepository.getMessages(
+      widget.roomId,
+      callerId: _currentUser?.id ?? '',
+    );
 
     // 2. Fetch other participants info
     final rooms = await _chatRepository.getChatRooms(_currentUser?.id ?? '');
-    final room = rooms.firstWhere((r) => r.id == widget.roomId, orElse: () => ChatRoom(id: widget.roomId, participantIds: [], updatedAt: DateTime.now()));
+    final room = rooms.firstWhere(
+      (r) => r.id == widget.roomId,
+      orElse: () => ChatRoom(
+        id: widget.roomId,
+        participantIds: [],
+        updatedAt: DateTime.now(),
+      ),
+    );
     final otherIds = room.participantIds
         .where((id) => id != _currentUser?.id)
         .toList();
@@ -145,13 +188,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   void _startHealthPermissionPolling() {
     if (_isProvider) return;
     _healthPermissionPollTimer?.cancel();
-    _healthPermissionPollTimer = Timer.periodic(
-      const Duration(seconds: 8),
-      (_) {
-        if (!mounted || _isProvider) return;
-        _loadLatestHealthPermission();
-      },
-    );
+    _healthPermissionPollTimer = Timer.periodic(const Duration(seconds: 8), (
+      _,
+    ) {
+      if (!mounted || _isProvider) return;
+      _loadLatestHealthPermission();
+    });
   }
 
   void _subscribeHealthPermissionUpdates() {
@@ -239,7 +281,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       'labs': true,
       'medications': true,
     };
-    final grantedFromRequest = request['granted_fields'] as Map<String, dynamic>?;
+    final grantedFromRequest =
+        request['granted_fields'] as Map<String, dynamic>?;
     Map<String, bool> fields = grantedFromRequest != null
         ? grantedFromRequest.map((key, value) => MapEntry(key, value == true))
         : Map<String, bool>.from(defaultFields);
@@ -256,9 +299,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
               ),
               child: Wrap(
                 children: [
-                  const ListTile(
-                    title: Text('อนุญาตดูข้อมูลสุขภาพ'),
-                  ),
+                  const ListTile(title: Text('อนุญาตดูข้อมูลสุขภาพ')),
                   SwitchListTile(
                     title: const Text('ข้อมูลทั่วไป'),
                     value: fields['general']!,
@@ -280,19 +321,25 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                     onChanged: (v) => setState(() => fields['medications'] = v),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Column(
                       children: [
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () async {
-                              final granted = fields.map((k, v) => MapEntry(k, v));
-                              await _healthPermissionRepository.respondPermission(
-                                requestId: request['id'] as String,
-                                granted: true,
-                                grantedFields: granted,
+                              final granted = fields.map(
+                                (k, v) => MapEntry(k, v),
                               );
+                              await _healthPermissionRepository
+                                  .respondPermission(
+                                    requestId: request['id'] as String,
+                                    granted: true,
+                                    grantedFields: granted,
+                                  );
                               if (mounted) {
                                 setState(() {
                                   _healthPermissionRequest = null;
@@ -504,7 +551,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           status: MessageStatus.sent,
         );
 
-        final success = await _chatRepository.sendMessage(newMessage, callerId: user.id);
+        final success = await _chatRepository.sendMessage(
+          newMessage,
+          callerId: user.id,
+        );
         if (!success && mounted) {
           ScaffoldMessenger.of(
             context,
@@ -597,7 +647,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             status: MessageStatus.sent,
           );
 
-          await _chatRepository.sendMessage(newMessage, callerId: _currentUser?.id ?? '');
+          await _chatRepository.sendMessage(
+            newMessage,
+            callerId: _currentUser?.id ?? '',
+          );
         }
       }
     } catch (e) {
@@ -776,7 +829,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     final user = _currentUser;
     if (_msgController.text.trim().isEmpty || user == null) return;
 
-    final content = _msgController.text.trim();
+    final rawContent = _msgController.text.trim();
+    final mentionTargetName = widget.mentionTargetName?.trim();
+    final content = mentionTargetName != null && mentionTargetName.isNotEmpty
+        ? '@$mentionTargetName\n$rawContent'
+        : rawContent;
     _msgController.clear();
 
     final newMessage = ChatMessage(
@@ -788,7 +845,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       status: MessageStatus.sent,
     );
 
-    final success = await _chatRepository.sendMessage(newMessage, callerId: user.id);
+    final success = await _chatRepository.sendMessage(
+      newMessage,
+      callerId: user.id,
+    );
     if (!success && mounted) {
       ScaffoldMessenger.of(
         context,
@@ -813,14 +873,20 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.titleOverride!,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    'ก๊วน ${widget.titleOverride!}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (widget.subtitleOverride != null)
                     Text(
                       widget.subtitleOverride!,
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white70,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                 ],
@@ -834,13 +900,21 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                         backgroundColor: Colors.white24,
                         backgroundImage:
                             (_otherParticipants.isNotEmpty &&
-                                _otherParticipants.first.profileImageUrl != null)
-                            ? NetworkImage(_otherParticipants.first.profileImageUrl!)
+                                _otherParticipants.first.profileImageUrl !=
+                                    null)
+                            ? NetworkImage(
+                                _otherParticipants.first.profileImageUrl!,
+                              )
                             : null,
                         child:
                             (_otherParticipants.isEmpty ||
-                                _otherParticipants.first.profileImageUrl == null)
-                            ? const Icon(Icons.group, color: Colors.white, size: 20)
+                                _otherParticipants.first.profileImageUrl ==
+                                    null)
+                            ? const Icon(
+                                Icons.group,
+                                color: Colors.white,
+                                size: 20,
+                              )
                             : null,
                       ),
                       if (_otherParticipants.length == 1 &&
@@ -887,7 +961,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                           _isOtherTyping
                               ? 'ใครบางคนกำลังพิมพ์...'
                               : _otherParticipants.length > 1
-                              ? _otherParticipants.map((p) => p.firstName).join(', ')
+                              ? _otherParticipants
+                                    .map((p) => p.firstName)
+                                    .join(', ')
                               : _otherParticipants.isNotEmpty
                               ? (_otherParticipants.first.isOnline
                                     ? 'พร้อมให้บริการ'
@@ -1006,7 +1082,10 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             child: Stack(
               children: [
                 StreamBuilder<List<ChatMessage>>(
-                  stream: _chatRepository.streamMessages(widget.roomId, callerId: _currentUser?.id ?? ''),
+                  stream: _chatRepository.streamMessages(
+                    widget.roomId,
+                    callerId: _currentUser?.id ?? '',
+                  ),
                   builder: (context, snapshot) {
                     if (snapshot.hasData) {
                       _messages = snapshot.data!;
@@ -1018,26 +1097,37 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    return ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 20,
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () =>
+                          FocusManager.instance.primaryFocus?.unfocus(),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 20,
+                        ),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          final user = _currentUser;
+                          final isMe = msg.senderId == user?.id;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _MessageBubble(
+                              message: msg,
+                              isMe: isMe,
+                              senderDisplayName: _isGroupChat
+                                  ? _senderDisplayName(msg)
+                                  : null,
+                              otherParticipants: _otherParticipants,
+                              consultationId: _consultationId ?? '',
+                              isProvider: _isProvider,
+                              currentUserId: _currentUser?.id ?? '',
+                            ),
+                          );
+                        },
                       ),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = _messages[index];
-                        final user = _currentUser;
-                        final isMe = msg.senderId == user?.id;
-                        return _MessageBubble(
-                          message: msg,
-                          isMe: isMe,
-                          otherParticipants: _otherParticipants,
-                          consultationId: _consultationId ?? '',
-                          isProvider: _isProvider,
-                          currentUserId: _currentUser?.id ?? '',
-                        );
-                      },
                     );
                   },
                 ),
@@ -1141,45 +1231,27 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
               ),
             ),
             const SizedBox(width: 8),
-            if (_msgController.text.isEmpty)
-              GestureDetector(
-                onLongPressStart: (_) => _startRecording(),
-                onLongPressEnd: (_) => _stopRecording(),
-                child: Container(
-                  height: 48,
-                  width: 48,
-                  decoration: BoxDecoration(
-                    color: _isRecording ? Colors.red : AppColors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isRecording ? Icons.stop : Icons.mic,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  onPressed: () {
-                    _sendMessage();
-                    final user = _currentUser;
-                    if (user != null) {
-                      _chatRepository.sendTypingStatus(
-                        widget.roomId,
-                        user.id,
-                        false,
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                ),
+            Container(
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
               ),
+              child: IconButton(
+                onPressed: () {
+                  _sendMessage();
+                  final user = _currentUser;
+                  if (user != null) {
+                    _chatRepository.sendTypingStatus(
+                      widget.roomId,
+                      user.id,
+                      false,
+                    );
+                  }
+                },
+                tooltip: 'ส่งข้อความ',
+                icon: const Icon(Icons.send, color: Colors.white, size: 20),
+              ),
+            ),
           ],
         ),
       ),
@@ -1207,6 +1279,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
+  final String? senderDisplayName;
   final List<ChatParticipant> otherParticipants;
   final String consultationId;
   final bool isProvider;
@@ -1215,120 +1288,181 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     required this.isMe,
+    this.senderDisplayName,
     required this.otherParticipants,
     required this.consultationId,
     required this.isProvider,
     required this.currentUserId,
   });
 
+  String? get _mentionTargetName {
+    if (message.type != 'text' || !message.content.startsWith('@')) return null;
+    final separatorIndex = message.content.indexOf('\n');
+    if (separatorIndex <= 1) return null;
+    return message.content.substring(1, separatorIndex).trim();
+  }
+
+  String get _displayContent {
+    final mentionTargetName = _mentionTargetName;
+    if (mentionTargetName == null) return message.content;
+    return message.content.substring(message.content.indexOf('\n') + 1);
+  }
+
+  Widget _buildMentionLabel() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        '@${_mentionTargetName!}',
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          gradient: isMe ? AppColors.primaryGradient : null,
-          color: isMe ? null : Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(20),
-            topRight: const Radius.circular(20),
-            bottomLeft: Radius.circular(isMe ? 20 : 4),
-            bottomRight: Radius.circular(isMe ? 4 : 20),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isMe
-                  ? AppColors.primary.withOpacity(0.25)
-                  : Colors.black.withOpacity(0.05),
-              offset: const Offset(0, 4),
-              blurRadius: 10,
-            ),
-          ],
-          border: isMe
-              ? null
-              : Border.all(color: Colors.grey.shade100, width: 1),
-        ),
-        child: Column(
-          crossAxisAlignment: isMe
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
-          children: [
-            if (message.type == 'image' && message.attachmentUrl != null)
-              _buildImageContent(context),
-            if (message.type == 'voice' && message.attachmentUrl != null)
-              _VoiceMessageBubble(url: message.attachmentUrl!, isMe: isMe),
-            if (message.type == 'note')
-              _buildMedicalCard(
-                context,
-                icon: Icons.edit_document,
-                title: 'บันทึกการตรวจ',
-                color: Colors.blue,
-                isMe: isMe,
-              ),
-            if (message.type == 'prescription')
-              _buildMedicalCard(
-                context,
-                icon: Icons.medication,
-                title: 'ใบสั่งยา',
-                color: Colors.green,
-                isMe: isMe,
-                onTap: () {
-                  final prescriptionId = message.attachmentUrl;
-                  if (prescriptionId == null || prescriptionId.isEmpty) return;
-                  if (isProvider) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (ctx) => PrescriptionEditorPage(
-                          consultationId: consultationId,
-                          patientId: currentUserId,
-                        ),
-                      ),
-                    );
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (ctx) => PrescriptionChoicePage(
-                          consultationId: consultationId,
-                          patientId: currentUserId,
-                          prescriptionId: prescriptionId,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            if (message.type == 'text' ||
-                (message.type != 'note' &&
-                    message.type != 'prescription' &&
-                    message.content.isNotEmpty &&
-                    message.content != '[รูปภาพ]' &&
-                    message.content != '[ข้อความเสียง]'))
-              Text(
-                message.content,
+      child: Column(
+        crossAxisAlignment: isMe
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          if (senderDisplayName != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3, left: 4, right: 4),
+              child: Text(
+                senderDisplayName!,
                 style: TextStyle(
-                  color: isMe ? Colors.white : Colors.black87,
-                  fontSize: 15,
+                  color: isMe ? AppColors.primary : AppColors.primary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            const SizedBox(height: 4),
-            Row(
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (isMe && _mentionTargetName != null) _buildMentionLabel(),
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.75,
+                ),
+                decoration: BoxDecoration(
+                  gradient: isMe ? AppColors.primaryGradient : null,
+                  color: isMe ? null : Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isMe ? 20 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 20),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isMe
+                          ? AppColors.primary.withOpacity(0.25)
+                          : Colors.black.withOpacity(0.05),
+                      offset: const Offset(0, 4),
+                      blurRadius: 10,
+                    ),
+                  ],
+                  border: isMe
+                      ? null
+                      : Border.all(color: Colors.grey.shade100, width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: isMe
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    if (message.type == 'image' &&
+                        message.attachmentUrl != null)
+                      _buildImageContent(context),
+                    if (message.type == 'voice' &&
+                        message.attachmentUrl != null)
+                      _VoiceMessageBubble(
+                        url: message.attachmentUrl!,
+                        isMe: isMe,
+                      ),
+                    if (message.type == 'note')
+                      _buildMedicalCard(
+                        context,
+                        icon: Icons.edit_document,
+                        title: 'บันทึกการตรวจ',
+                        color: Colors.blue,
+                        isMe: isMe,
+                      ),
+                    if (message.type == 'prescription')
+                      _buildMedicalCard(
+                        context,
+                        icon: Icons.medication,
+                        title: 'ใบสั่งยา',
+                        color: Colors.green,
+                        isMe: isMe,
+                        onTap: () {
+                          final prescriptionId = message.attachmentUrl;
+                          if (prescriptionId == null || prescriptionId.isEmpty)
+                            return;
+                          if (isProvider) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (ctx) => PrescriptionEditorPage(
+                                  consultationId: consultationId,
+                                  patientId: currentUserId,
+                                ),
+                              ),
+                            );
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (ctx) => PrescriptionChoicePage(
+                                  consultationId: consultationId,
+                                  patientId: currentUserId,
+                                  prescriptionId: prescriptionId,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    if (message.type == 'text' ||
+                        (message.type != 'note' &&
+                            message.type != 'prescription' &&
+                            message.content.isNotEmpty &&
+                            message.content != '[รูปภาพ]' &&
+                            message.content != '[ข้อความเสียง]'))
+                      Text(
+                        _displayContent,
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black87,
+                          fontSize: 15,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!isMe && _mentionTargetName != null) _buildMentionLabel(),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    color: (isMe ? Colors.white : Colors.black54).withOpacity(
-                      0.6,
-                    ),
-                    fontSize: 10,
-                  ),
+                  style: const TextStyle(color: Colors.black45, fontSize: 10),
                 ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
@@ -1337,25 +1471,25 @@ class _MessageBubble extends StatelessWidget {
                     size: 12,
                     color: message.readBy.isNotEmpty
                         ? Colors.blueAccent
-                        : Colors.white70,
+                        : Colors.black45,
                   ),
                 ],
               ],
             ),
-            if (isMe && message.readBy.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(
-                  'อ่านโดย: ${_getReaderNames()}',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: Colors.blueAccent,
-                    fontWeight: FontWeight.bold,
-                  ),
+          ),
+          if (isMe && message.readBy.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+              child: Text(
+                '${_getReaderNames()} อ่าน',
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: Colors.black45,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -1383,11 +1517,13 @@ class _MessageBubble extends StatelessWidget {
     VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: onTap ?? () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เปิดดู $title (ระบบดูข้อมูลกำลังพัฒนา)')),
-        );
-      },
+      onTap:
+          onTap ??
+          () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('เปิดดู $title (ระบบดูข้อมูลกำลังพัฒนา)')),
+            );
+          },
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.all(12),

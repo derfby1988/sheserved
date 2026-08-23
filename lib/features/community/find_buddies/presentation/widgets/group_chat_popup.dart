@@ -6,6 +6,7 @@ Future<void> showGroupChatPopup(
   required String groupId,
   required String groupName,
   int? memberCount,
+  String? mentionTargetName,
 }) {
   return showDialog(
     context: context,
@@ -17,16 +18,11 @@ Future<void> showGroupChatPopup(
       final width = size.width * 0.92 > 560 ? 560.0 : size.width * 0.92;
       final height = size.height * (isCompact ? 0.58 : 0.55);
       final bottomInset = MediaQuery.viewInsetsOf(dialogCtx).bottom;
-      final topSafeArea = MediaQuery.paddingOf(dialogCtx).top;
-      final maxShift = (size.height - height) / 2 - topSafeArea;
-      final shift = bottomInset > 0
-          ? (bottomInset > maxShift ? maxShift : bottomInset)
-          : 0.0;
 
       return AnimatedPadding(
         duration: const Duration(milliseconds: 150),
         curve: Curves.easeOut,
-        padding: EdgeInsets.only(bottom: shift < 0 ? 0 : shift),
+        padding: EdgeInsets.only(bottom: bottomInset),
         child: Center(
           child: SizedBox(
             width: width,
@@ -40,7 +36,10 @@ Future<void> showGroupChatPopup(
                   roomId: 'group_$groupId',
                   isPopup: true,
                   titleOverride: groupName,
-                  subtitleOverride: memberCount != null ? 'สมาชิก $memberCount คน' : null,
+                  subtitleOverride: memberCount != null
+                      ? 'สมาชิก $memberCount คน'
+                      : null,
+                  mentionTargetName: mentionTargetName,
                 ),
               ),
             ),

@@ -749,7 +749,7 @@ class _HealthPageState extends ConsumerState<HealthPage>
         color: Colors.transparent, // ทำให้โปร่งใสเพื่อโชว์พื้นหลังไล่สีด้านหลัง
       ),
       child: TlzAppTopBar.onPrimary(
-        notificationCount: 1,
+        notificationCount: 0,
         searchHintText: 'ค้นหาข้อมูลสุขภาพ...',
         onQRTap: () {
           ScaffoldMessenger.of(
