@@ -20,7 +20,8 @@ class NotificationRepository {
       var query = _client
           .from('app_notifications')
           .select()
-          .eq('recipient_id', userId);
+          .eq('recipient_id', userId)
+          .isFilter('dismissed_at', null);
 
       if (category != null) {
         query = query.eq('category', category);
@@ -86,6 +87,25 @@ class NotificationRepository {
       return result as bool? ?? false;
     } catch (e) {
       debugPrint('[NotificationRepo] markAsRead error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> dismissNotification(String notificationId) async {
+    try {
+      final userId = _client.auth.currentUser?.id;
+      if (userId == null) return false;
+
+      final result = await _client.rpc(
+        'dismiss_notification',
+        params: {
+          'p_notification_id': notificationId,
+          'p_user_id': userId,
+        },
+      );
+      return result as bool? ?? false;
+    } catch (e) {
+      debugPrint('[NotificationRepo] dismissNotification error: $e');
       return false;
     }
   }

@@ -29,6 +29,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   String? _sportId;
   String _genderPreference = 'any';
   bool _requiresOwnerApproval = false;
+  bool _ownerAutoJoin = true;
   int _capacity = 5;
   double? _lat;
   double? _lng;
@@ -162,6 +163,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
             ? null
             : _descCtrl.text.trim(),
         requiresOwnerApproval: _requiresOwnerApproval,
+        ownerAutoJoin: _ownerAutoJoin,
         capacity: _capacity,
         coverImageUrl: _coverImageUrl,
         venuePhotoUrl: _venuePhotoUrl,
@@ -226,6 +228,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         'sportId': _sportId,
         'genderPreference': _genderPreference,
         'requiresOwnerApproval': _requiresOwnerApproval,
+        'ownerAutoJoin': _ownerAutoJoin,
         'province': _provinceCtrl.text,
         'district': _districtCtrl.text,
         'capacity': _capacity,
@@ -262,6 +265,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         if (draft['sportId'] != null) _sportId = draft['sportId'].toString();
         _genderPreference = draft['genderPreference']?.toString() ?? 'any';
         _requiresOwnerApproval = draft['requiresOwnerApproval'] == true;
+        _ownerAutoJoin = draft['ownerAutoJoin'] != false;
         _provinceCtrl.text = draft['province']?.toString() ?? '';
         _districtCtrl.text = draft['district']?.toString() ?? '';
         _capacity = (draft['capacity'] as int?) ?? 5;
@@ -443,6 +447,14 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   value: _requiresOwnerApproval,
                   onChanged: (v) => setState(() => _requiresOwnerApproval = v),
                 ),
+                SwitchListTile(
+                  title: const Text('เข้าร่วมก๊วนอัตโนมัติ'),
+                  subtitle: const Text(
+                    'เปิด = เจ้าของก๊วนเป็นสมาชิกคนแรก · ปิด = เจ้าของไม่นับเป็นสมาชิก',
+                  ),
+                  value: _ownerAutoJoin,
+                  onChanged: (v) => setState(() => _ownerAutoJoin = v),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -565,9 +577,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                 ),
                 Slider(
                   value: _capacity.toDouble(),
-                  min: 2,
+                  min: 1,
                   max: 30,
-                  divisions: 28,
+                  divisions: 29,
                   label: '$_capacity',
                   onChanged: (v) => setState(() => _capacity = v.toInt()),
                 ),

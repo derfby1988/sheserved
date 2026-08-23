@@ -756,11 +756,6 @@ class _HealthPageState extends ConsumerState<HealthPage>
             context,
           ).showSnackBar(const SnackBar(content: Text('QR Scanner')));
         },
-        onNotificationTap: () {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Notifications')));
-        },
         onCartTap: () {
           ScaffoldMessenger.of(
             context,

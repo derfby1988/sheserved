@@ -24,4 +24,29 @@ class ChatUnreadNotifier extends StateNotifier<int> {
       _isRefreshing = false;
     }
   }
+
+  Future<List<Map<String, dynamic>>> getUnreadRoomSummaries() async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return [];
+    return _repository.getUnreadRoomSummaries(userId);
+  }
+
+  Future<bool> markRoomAsRead(String roomId) async {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return false;
+    final success = await _repository.markRoomAsRead(roomId, userId);
+    if (success) await refresh();
+    return success;
+  }
+
+  Future<void> markAllAsRead() async {
+    final rooms = await getUnreadRoomSummaries();
+    for (final room in rooms) {
+      final roomId = room['roomId']?.toString();
+      if (roomId != null && roomId.isNotEmpty) {
+        await markRoomAsRead(roomId);
+      }
+    }
+    state = 0;
+  }
 }

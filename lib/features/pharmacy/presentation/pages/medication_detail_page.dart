@@ -73,11 +73,6 @@ class _MedicationDetailPageState extends State<MedicationDetailPage> {
                   const SnackBar(content: Text('QR Scanner จะเปิดใช้งานเร็วๆ นี้')),
                 );
               },
-              onNotificationTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้')),
-                );
-              },
               onCartTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้')),

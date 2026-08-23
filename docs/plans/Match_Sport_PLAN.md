@@ -469,14 +469,14 @@ Scaffold
 
 ### Phase 4 — จัดการก๊วน + หน้าก๊วนของฉัน ✅ เสร็จแล้ว (2026-08-23)
 - **แก้ไขก๊วน:** หน้า/sheet แก้ไข (ชื่อ, คำอธิบาย, ภาพ, เพศ, toggle `requires_owner_approval`, พิกัด, capacity) เฉพาะแอดมินก๊วน — เพิ่ม `updateGroup()` ใน repository
-- **Validation ตอนแก้ไข capacity (policy ใหม่ใน Phase 9):** ต้องรองรับช่วง 1–30 และห้ามตั้ง capacity ต่ำกว่าจำนวนสมาชิกที่ effective ปัจจุบัน; ปัจจุบันโค้ดเดิมยังใช้ช่วง 2–30 จนกว่าจะ apply migration/ปรับ UI ตาม Phase 9
+- **Validation ตอนแก้ไข capacity (policy ใหม่ใน Phase 9):** รองรับช่วง 1–30 พร้อมตรวจ owner participation แบบ fresh จาก DB; ปิดเข้าร่วมอัตโนมัติได้เฉพาะเมื่อไม่มีสมาชิกอื่น
 - **Owner participation:** เพิ่ม toggle “เข้าร่วมก๊วนอัตโนมัติ” ใน create/edit ค่าเริ่มต้นเปิด; ปิดภายหลังได้เฉพาะเมื่อไม่มีสมาชิก active/confirmed อื่นที่ไม่ใช่ owner และ owner ต้องยังคงสิทธิ์จัดการผ่าน `created_by`
 - **แก้ไขรอบนัด:** แอดมินแก้ไขเวลาเริ่ม/สิ้นสุด และหมายเหตุของรอบนัดที่มีอยู่แล้ว — เพิ่ม `updateSession()` ใน repository
 - **ออกจากก๊วน:** เพิ่ม `leaveGroup()` — ตั้ง `fitness_group_members.is_active=false` + ยกเลิก booking `pending/confirmed` ทั้งหมดแบบ cascade ใน transaction เดียว (RPC) ตามหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด"
 - **Blocklist UI:** รายชื่อสมาชิก/pending มี swipe ปุ่มบล็อก; ผู้ถูกบล็อกถูกถอดจากสมาชิก active และย้ายไป section “ถูกบล็อก” ซึ่งมองเห็นเฉพาะเจ้าของก๊วน/admin Sheserved; ปัดแถวผู้ถูกบล็อกเพื่อเปิดปุ่ม “ปลด”; ไม่มีปุ่ม/Blocklist Sheet แยกแล้ว; repository guard อยู่ใน `listBlockedUsers(..., requesterUserId)` และ `book_fitness_session()` RPC ตรวจ blocklist
 - **หน้า "ก๊วนของฉัน":** หน้ารวมก๊วนที่ผู้ใช้สร้าง/เข้าร่วม + ประวัติการจองทั้งหมด (ปัจจุบันไม่มีที่ดูรวม — ดูได้เฉพาะ booking detail ทีละรายการ) — เพิ่ม route `/community/sport-club/my-groups`
 - **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, section ผู้ถูกบล็อกแบบ swipe, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
-- **บันทึกสาเหตุปัญหาการบันทึกแก้ไขก๊วน:** เดิม DB กำหนด `fitness_groups.capacity CHECK (capacity BETWEEN 2 AND 30)` และฟอร์มแก้ไขไม่ validate ให้สอดคล้อง จึงเกิด constraint error เมื่อข้อมูลเก่าเป็น `1`; policy ใหม่เปลี่ยนเป็นช่วง 1–30 และต้อง apply migration พร้อมปรับ UI/repository validation ให้ตรงกันใน Phase 9
+- **บันทึกสาเหตุปัญหาการบันทึกแก้ไขก๊วน:** เดิม DB กำหนด `fitness_groups.capacity CHECK (capacity BETWEEN 2 AND 30)` จึงเกิด constraint error เมื่อข้อมูลเก่าเป็น `1`; Phase 9 เปลี่ยนเป็น 1–30, เพิ่ม `owner_auto_join` และปรับ UI/repository/migration เรียบร้อยแล้ว
 
 ### Phase 5 — Auto-reject pending timeout (Supabase scheduled cleanup) ✅ เสร็จแล้ว (2026-08-23)
 - **เหตุผลที่เลือกแนวนี้ (Option A):** booking ถูกสร้างจาก Flutter → Supabase RPC โดยตรง ไม่ผ่าน backend request lifecycle การใช้ BullMQ delayed job enqueue ตอนสร้าง booking จะเกิด dual-write risk และเพิ่ม coupling กับ websocket-server โดยไม่จำเป็น DB เป็น source of truth อยู่แล้ว เงื่อนไข timeout ทั้งหมด (`status`, `starts_at`, `created_at`, `requires_owner_approval`) อยู่ในฐานข้อมูล — ให้ DB/RPC จัดการ atomic ปลอดภัยกว่า
@@ -709,7 +709,7 @@ Scaffold
 
 ---
 
-## Phase 9 — Owner Participation + Capacity 1–30 ⏳ ปรับแผนแล้ว รอ implement
+## Phase 9 — Owner Participation + Capacity 1–30 ✅ implement แล้ว (2026-08-23)
 
 ### ข้อตกลงที่ยืนยันแล้ว
 - `capacity` หมายถึงจำนวนสมาชิก active สูงสุด **รวม owner เมื่อ owner auto-join**
@@ -722,7 +722,7 @@ Scaffold
 - การปิด toggle ภายหลังทำได้เฉพาะเมื่อไม่มีสมาชิก active/confirmed อื่นที่ไม่ใช่ owner; ถ้ามีสมาชิกอื่นอยู่ต้องไม่อนุญาต
 - หากเปิด toggle กลับภายหลัง ต้องมี capacity ว่างสำหรับ owner 1 คน มิฉะนั้นให้แจ้งเพิ่ม capacity ก่อน
 
-### งานที่ต้อง implement
+### งานที่ implement แล้ว
 - Migration: เปลี่ยน `fitness_groups.capacity` constraint จาก `BETWEEN 2 AND 30` เป็น `BETWEEN 1 AND 30`
 - Migration: เพิ่ม `owner_auto_join BOOLEAN NOT NULL DEFAULT true` และ backfill กลุ่มเดิมเป็น `true` เพื่อรักษาพฤติกรรมเดิม
 - Create UI: เปลี่ยน Slider/validation เป็น 1–30 และเพิ่ม owner auto-join toggle ค่าเริ่มต้นเปิด

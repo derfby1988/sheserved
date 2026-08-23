@@ -9,6 +9,7 @@ class AppNotification {
   final Map<String, dynamic> payload;
   final bool isRead;
   final DateTime? readAt;
+  final DateTime? dismissedAt;
   final DateTime createdAt;
 
   const AppNotification({
@@ -22,6 +23,7 @@ class AppNotification {
     this.payload = const {},
     this.isRead = false,
     this.readAt,
+    this.dismissedAt,
     required this.createdAt,
   });
 
@@ -39,6 +41,9 @@ class AppNotification {
       readAt: json['read_at'] != null
           ? DateTime.parse(json['read_at'] as String)
           : null,
+      dismissedAt: json['dismissed_at'] != null
+          ? DateTime.parse(json['dismissed_at'] as String)
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -55,6 +60,7 @@ class AppNotification {
       'payload': payload,
       'is_read': isRead,
       'read_at': readAt?.toIso8601String(),
+      'dismissed_at': dismissedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
   }

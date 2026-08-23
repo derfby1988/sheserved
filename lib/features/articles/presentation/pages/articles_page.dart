@@ -418,11 +418,6 @@ class _ArticlesPageState extends State<ArticlesPage> {
             searchHintText: 'ค้นหาบทความสุขภาพ...',
             notificationCategory: 'articles',
             onSearch: _onSearch,
-            onNotificationTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้'),
-              ),
-            ),
             onCartTap: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้'),

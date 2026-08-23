@@ -19,6 +19,8 @@ class GlassCard extends ConsumerWidget {
   final double? height;
   final BoxBorder? customBorder;
   final List<BoxShadow>? customShadows;
+  final double? glassOpacity;
+  final double? glassBlur;
 
   const GlassCard({
     Key? key,
@@ -32,6 +34,8 @@ class GlassCard extends ConsumerWidget {
     this.height,
     this.customBorder,
     this.customShadows,
+    this.glassOpacity,
+    this.glassBlur,
   }) : super(key: key);
 
   @override
@@ -39,23 +43,41 @@ class GlassCard extends ConsumerWidget {
     final theme = ref.watch(dashboardThemeProvider).theme;
     if (theme == null) {
       // Fallback: ไม่มี theme → ใช้ solid color
-      return Container(
-        width: width,
-        height: height,
-        margin: margin,
-        padding: padding,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.25),
+      final fallbackOpacity = (glassOpacity ?? 0.25).clamp(0.15, 0.50);
+      final fallbackBlur = glassBlur ?? 12.0;
+      return RepaintBoundary(
+        child: ClipRRect(
           borderRadius: BorderRadius.circular(borderRadius),
-          border: Border.all(color: Colors.white.withOpacity(0.35), width: 2),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(
+              sigmaX: fallbackBlur,
+              sigmaY: fallbackBlur,
+            ),
+            child: Container(
+              width: width,
+              height: height,
+              margin: margin,
+              padding: padding,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(fallbackOpacity),
+                borderRadius: BorderRadius.circular(borderRadius),
+                border: customBorder ??
+                    Border.all(
+                      color: Colors.white.withOpacity(0.45),
+                      width: 1.5,
+                    ),
+                boxShadow: customShadows,
+              ),
+              child: child,
+            ),
+          ),
         ),
-        child: child,
       );
     }
 
-    final rawOpacity = theme.getOpacityFor(section);
+    final rawOpacity = glassOpacity ?? theme.getOpacityFor(section);
     final opacity = rawOpacity.clamp(0.15, 0.50);
-    final blur = theme.glassBlurLevel.toDouble();
+    final blur = glassBlur ?? theme.glassBlurLevel.toDouble();
     final isDark = theme.isDarkMode;
 
     final baseColor = isDark ? Colors.black : Colors.white;

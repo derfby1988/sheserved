@@ -123,7 +123,6 @@ class _ArticleDetailPageState extends State<ArticleDetailPage>
             notificationCategory: 'articles',
             searchHintText: 'ค้นหา...',
             onQRTap: () {},
-            onNotificationTap: () {},
             onCartTap: () {},
           ),
           

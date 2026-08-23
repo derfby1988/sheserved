@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/notification_provider.dart';
 import '../widgets/glass_card.dart';
-import '../../data/models/dashboard_theme.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
+import '../../../../shared/widgets/tlz_notification_panel.dart';
 
 class NotificationListPage extends ConsumerStatefulWidget {
   final String? category;
@@ -122,12 +122,38 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
                                   ),
                               ],
                             ),
-                            onTap: () {
-                              if (!notif.isRead) {
-                                ref
-                                    .read(notificationProvider.notifier)
-                                    .markAsRead(notif.id);
+                            onTap: () async {
+                              final opened =
+                                  await openTlzNotificationDestination(
+                                context,
+                                notif,
+                              );
+                              if (!context.mounted) return;
+                              if (!opened) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'ยังไม่พบหน้าปลายทางของการแจ้งเตือนนี้',
+                                    ),
+                                  ),
+                                );
+                                return;
                               }
+
+                              final dismissed = await ref
+                                  .read(notificationProvider.notifier)
+                                  .dismissNotification(
+                                    notif.id,
+                                    category: widget.category,
+                                  );
+                              if (!context.mounted || dismissed) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'ไม่สามารถซ่อนการแจ้งเตือนได้ กรุณาลองใหม่',
+                                  ),
+                                ),
+                              );
                             },
                           ),
                         ),
@@ -144,8 +170,12 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
       'inventory' => Icons.inventory_2_outlined,
       'kpi' => Icons.analytics_outlined,
       'hr' => Icons.people_outlined,
+      'chat' => Icons.chat_bubble_outline,
+      'consultation' => Icons.medical_services_outlined,
       'donation' => Icons.volunteer_activism_outlined,
       'health' => Icons.health_and_safety_outlined,
+      'articles' => Icons.article_outlined,
+      'pharmacy' => Icons.local_pharmacy_outlined,
       _ => Icons.notifications_outlined,
     };
     return Icon(icon);

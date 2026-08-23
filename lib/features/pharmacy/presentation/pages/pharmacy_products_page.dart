@@ -191,7 +191,6 @@ class _PharmacyProductsPageState extends State<PharmacyProductsPage> {
                   });
                   _fetchMedications(); // Refresh with new search
                 },
-                onNotificationTap: () {},
                 onCartTap: () {},
               ),
             ),

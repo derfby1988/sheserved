@@ -731,6 +731,7 @@ class FitnessBuddiesRepository {
     String? sportId,
     String? description,
     bool requiresOwnerApproval = false,
+    bool ownerAutoJoin = true,
     int capacity = 5,
     String? coverImageUrl,
     String? venuePhotoUrl,
@@ -740,11 +741,15 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
   }) async {
+    if (capacity < 1 || capacity > 30) {
+      throw ArgumentError('capacity must be between 1 and 30');
+    }
     final data = {
       'name': name,
       if (sportId != null) 'sport_id': sportId,
       if (description != null) 'description': description,
       'requires_owner_approval': requiresOwnerApproval,
+      'owner_auto_join': ownerAutoJoin,
       'capacity': capacity,
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
       if (venuePhotoUrl != null) 'venue_photo_url': venuePhotoUrl,
@@ -853,6 +858,7 @@ class FitnessBuddiesRepository {
     String? name,
     String? description,
     bool? requiresOwnerApproval,
+    bool? ownerAutoJoin,
     int? capacity,
     String? coverImageUrl,
     String? venuePhotoUrl,
@@ -862,14 +868,15 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
   }) async {
-    if (capacity != null && (capacity < 2 || capacity > 30)) {
-      throw ArgumentError('capacity must be between 2 and 30');
+    if (capacity != null && (capacity < 1 || capacity > 30)) {
+      throw ArgumentError('capacity must be between 1 and 30');
     }
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (description != null) data['description'] = description;
     if (requiresOwnerApproval != null)
       data['requires_owner_approval'] = requiresOwnerApproval;
+    if (ownerAutoJoin != null) data['owner_auto_join'] = ownerAutoJoin;
     if (capacity != null) data['capacity'] = capacity;
     if (coverImageUrl != null) data['cover_image_url'] = coverImageUrl;
     if (venuePhotoUrl != null) data['venue_photo_url'] = venuePhotoUrl;
@@ -1125,6 +1132,10 @@ class FitnessBuddiesRepository {
           .select('group_id')
           .eq('blocked_user_id', userId)
           .eq('is_active', true),
+      _client
+          .from('fitness_groups')
+          .select('id, owner_auto_join')
+          .eq('created_by', userId),
     ]);
     final confirmedGroupIds = (results[1] as List)
         .map((row) {
@@ -1143,11 +1154,18 @@ class FitnessBuddiesRepository {
       return !blockedGroupIds.contains(groupId) &&
           (isAdmin || confirmedGroupIds.contains(groupId));
     }).toList();
-    final groupIds = memberRows
+    final memberGroupIds = memberRows
         .map((e) => e['group_id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
-        .toSet()
+        .toSet();
+    final ownedGroups = (results[3] as List)
+        .map((row) => Map<String, dynamic>.from(row))
         .toList();
+    final ownedGroupIds = ownedGroups
+        .map((row) => row['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final groupIds = {...memberGroupIds, ...ownedGroupIds}.toList();
     if (groupIds.isEmpty) return [];
 
     final groupsRes = await _client
@@ -1161,13 +1179,26 @@ class FitnessBuddiesRepository {
       final gid = m['group_id']?.toString() ?? '';
       if (gid.isNotEmpty) memberMap[gid] = Map<String, dynamic>.from(m);
     }
+    final ownerAutoJoinMap = <String, bool>{};
+    for (final row in ownedGroups) {
+      final gid = row['id']?.toString() ?? '';
+      if (gid.isNotEmpty) {
+        ownerAutoJoinMap[gid] = row['owner_auto_join'] == true;
+      }
+    }
 
     for (final g in groups) {
       final gid = g['id']?.toString() ?? '';
       final m = memberMap[gid];
-      g['my_role'] = m?['role']?.toString();
-      g['my_joined_at'] = m?['joined_at']?.toString();
-      g['my_is_active'] = m?['is_active'] == true;
+      final isOwner = ownedGroupIds.contains(gid);
+      if (m != null) {
+        g['my_role'] = m['role']?.toString();
+        g['my_joined_at'] = m['joined_at']?.toString();
+        g['my_is_active'] = m['is_active'] == true;
+      } else if (isOwner) {
+        g['my_role'] = 'admin';
+        g['my_is_active'] = ownerAutoJoinMap[gid] ?? true;
+      }
       final sport = g['sport'];
       if (sport is Map) {
         g['sport_name'] = sport['name_th']?.toString();

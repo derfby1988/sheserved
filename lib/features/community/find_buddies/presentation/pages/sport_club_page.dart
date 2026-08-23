@@ -2010,6 +2010,7 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     String genderPref = group['gender_preference']?.toString() ?? 'any';
     bool requiresApproval = group['requires_owner_approval'] == true;
+    bool ownerAutoJoin = group['owner_auto_join'] != false;
     String? capacityError;
 
     await showModalBottomSheet(
@@ -2114,6 +2115,14 @@ class _SportClubPageState extends State<SportClubPage> {
                         onChanged: (v) =>
                             setSheetState(() => requiresApproval = v),
                       ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('เข้าร่วมก๊วนอัตโนมัติ'),
+                        value: ownerAutoJoin,
+                        onChanged: (v) =>
+                            setSheetState(() => ownerAutoJoin = v),
+                      ),
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
@@ -2132,20 +2141,38 @@ class _SportClubPageState extends State<SportClubPage> {
                               capacityCtrl.text.trim(),
                             );
                             if (capacity == null ||
-                                capacity < 2 ||
+                                capacity < 1 ||
                                 capacity > 30) {
                               setSheetState(
                                 () => capacityError =
-                                    'จำนวนสมาชิกต้องอยู่ระหว่าง 2–30 คน',
+                                    'จำนวนสมาชิกต้องอยู่ระหว่าง 1–30 คน',
                               );
                               return;
                             }
-                            final currentMemberCount =
-                                (group['member_count'] as num?)?.toInt() ?? 0;
-                            if (capacity < currentMemberCount) {
+                            final members = await _repo.listGroupMembers(
+                              group['id'].toString(),
+                            );
+                            if (!ctx.mounted) return;
+                            final ownerId =
+                                group['created_by']?.toString() ?? '';
+                            final otherEffective = members
+                                .where(
+                                  (m) => m['user_id']?.toString() != ownerId,
+                                )
+                                .length;
+                            final targetCount =
+                                otherEffective + (ownerAutoJoin ? 1 : 0);
+                            if (capacity < targetCount) {
                               setSheetState(
                                 () => capacityError =
-                                    'จำนวนสมาชิกเป้าหมายต้องไม่น้อยกว่าสมาชิกปัจจุบัน ($currentMemberCount คน)',
+                                    'จำนวนสมาชิกเป้าหมายต้องไม่น้อยกว่าสมาชิกปัจจุบัน ($targetCount คน)',
+                              );
+                              return;
+                            }
+                            if (!ownerAutoJoin && otherEffective > 0) {
+                              setSheetState(
+                                () => capacityError =
+                                    'ไม่อาจปิดเข้าร่วมอัตโนมัติได้ขณะยังมีสมาชิกอื่นในก๊วน',
                               );
                               return;
                             }
@@ -2158,18 +2185,19 @@ class _SportClubPageState extends State<SportClubPage> {
                                     ? null
                                     : descCtrl.text.trim(),
                                 capacity: capacity,
+                                ownerAutoJoin: ownerAutoJoin,
                                 genderPreference: genderPref,
                                 requiresOwnerApproval: requiresApproval,
                               );
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(content: Text('อัปเดตก๊วนแล้ว')),
                               );
                               Navigator.pop(ctx);
                               _init();
                             } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
                               );
                             }

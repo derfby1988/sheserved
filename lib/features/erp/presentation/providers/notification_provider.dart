@@ -57,14 +57,27 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     state = state.copyWith(unreadCount: count);
   }
 
-  Future<void> markAsRead(String notificationId) async {
+  Future<void> markAsRead(String notificationId, {String? category}) async {
     await _repo.markAsRead(notificationId);
-    await loadNotifications();
+    await loadNotifications(category: category);
+  }
+
+  Future<bool> dismissNotification(String notificationId, {String? category}) async {
+    final success = await _repo.dismissNotification(notificationId);
+    if (!success) return false;
+
+    state = state.copyWith(
+      notifications: state.notifications
+          .where((notification) => notification.id != notificationId)
+          .toList(),
+    );
+    await refreshUnreadCount(category: category);
+    return true;
   }
 
   Future<void> markAllAsRead({String? category}) async {
     await _repo.markAllAsRead(category: category);
-    await loadNotifications();
+    await loadNotifications(category: category);
   }
 }
 

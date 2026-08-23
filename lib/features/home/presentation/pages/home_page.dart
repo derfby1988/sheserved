@@ -2548,8 +2548,6 @@ class _HomePageState extends ConsumerState<HomePage>
         searchHintText: 'ค้นหายา ร้านยา หมอ...',
         onQRTap: () =>
             _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),
-        onNotificationTap: () =>
-            _showSnackBar(context, 'การแจ้งเตือนจะเปิดใช้งานเร็วๆ นี้'),
         onCartTap: () =>
             _showSnackBar(context, 'ตะกร้าสินค้าจะเปิดใช้งานเร็วๆ นี้'),
         onResultTap: (item) =>

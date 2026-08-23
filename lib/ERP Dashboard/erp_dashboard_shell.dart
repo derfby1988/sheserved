@@ -7,6 +7,7 @@ import '../features/erp/presentation/providers/dashboard_theme_provider.dart';
 import '../features/admin/models/organization_settings.dart';
 import '../features/erp/data/services/erp_access_service.dart';
 import '../services/auth_service.dart';
+import '../shared/widgets/tlz_notification_button.dart';
 import 'erp_mini_sidebar.dart';
 
 /// ERP Dashboard Shell — Collapsible Mini Sidebar + AppBar + Branch Selector
@@ -136,13 +137,7 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
               ref.read(dashboardThemeProvider.notifier).toggleDarkMode();
             },
           ),
-          // Notification bell
-          IconButton(
-            icon: Icon(Icons.notifications_outlined, color: iconColor),
-            onPressed: () {
-              // TODO: navigate to notifications
-            },
-          ),
+          TlzNotificationButton(iconColor: iconColor),
         ],
       ),
       drawer: null,

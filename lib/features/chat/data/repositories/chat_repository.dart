@@ -143,6 +143,91 @@ class ChatRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getUnreadRoomSummaries(String userId) async {
+    try {
+      final roomResponse = await _supabase
+          .from('chat_rooms')
+          .select('id, title, last_message')
+          .contains('participant_ids', [userId]);
+      final roomRows = (roomResponse as List)
+          .map((room) => Map<String, dynamic>.from(room))
+          .toList();
+      final roomIds = roomRows
+          .map((room) => room['id']?.toString())
+          .whereType<String>()
+          .toList();
+      if (roomIds.isEmpty) return [];
+
+      final messageResponse = await _supabase
+          .from('chat_messages')
+          .select('room_id, sender_id, content, created_at, read_by')
+          .inFilter('room_id', roomIds)
+          .neq('sender_id', userId)
+          .order('created_at', ascending: false);
+      final roomById = {
+        for (final room in roomRows) room['id'].toString(): room,
+      };
+      final unreadByRoom = <String, Map<String, dynamic>>{};
+
+      for (final rawMessage in messageResponse as List) {
+        final message = Map<String, dynamic>.from(rawMessage);
+        final readBy = message['read_by'];
+        if (readBy is Map && readBy.containsKey(userId)) continue;
+
+        final roomId = message['room_id']?.toString();
+        if (roomId == null || roomId.isEmpty) continue;
+        final current = unreadByRoom[roomId];
+        if (current == null) {
+          final room = roomById[roomId] ?? const <String, dynamic>{};
+          unreadByRoom[roomId] = {
+            'roomId': roomId,
+            'title': room['title']?.toString() ?? 'ห้องสนทนา',
+            'preview': message['content']?.toString() ?? '',
+            'createdAt': message['created_at']?.toString(),
+            'unreadCount': 1,
+          };
+        } else {
+          current['unreadCount'] = (current['unreadCount'] as int) + 1;
+        }
+      }
+
+      return unreadByRoom.values.toList();
+    } catch (e) {
+      debugPrint('ChatRepository: Error fetching unread room summaries: $e');
+      return [];
+    }
+  }
+
+  Future<bool> markRoomAsRead(String roomId, String userId) async {
+    try {
+      await _verifyParticipant(roomId, userId);
+      final response = await _supabase
+          .from('chat_messages')
+          .select('id, sender_id, read_by')
+          .eq('room_id', roomId)
+          .neq('sender_id', userId);
+      final readAt = DateTime.now().toIso8601String();
+
+      for (final rawMessage in response as List) {
+        final message = Map<String, dynamic>.from(rawMessage);
+        final rawReadBy = message['read_by'];
+        final readBy = rawReadBy is Map
+            ? Map<String, dynamic>.from(rawReadBy)
+            : <String, dynamic>{};
+        if (readBy.containsKey(userId)) continue;
+        readBy[userId] = readAt;
+        await _supabase
+            .from('chat_messages')
+            .update({'read_by': readBy})
+            .eq('id', message['id']);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('ChatRepository: Error marking room as read: $e');
+      return false;
+    }
+  }
+
   /// Check for existing room or create new one
   Future<ChatRoom?> getOrCreateRoom(List<String> participantIds) async {
     participantIds.sort(); // Consistent order

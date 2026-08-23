@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
+import 'tlz_notification_panel.dart';
 
 /// Notification Button Widget with Badge
 /// Shows notification icon with badge count from NotificationProvider
@@ -45,11 +46,7 @@ class TlzNotificationButton extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
           onPressed: onPressed ?? () {
-            Navigator.pushNamed(
-              context,
-              '/erp/notifications',
-              arguments: category != null ? {'category': category} : null,
-            );
+            showTlzNotificationPanel(context, category: category);
           },
         ),
         if (count > 0)
