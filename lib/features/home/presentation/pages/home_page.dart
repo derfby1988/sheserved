@@ -162,6 +162,7 @@ class _HomePageState extends ConsumerState<HomePage>
         ? initialHealthState.healthScore.toDouble()
         : null;
     ref.read(healthProvider.notifier).loadMetricsFromDatabase();
+    unawaited(_loadHealthScore());
 
     // วัดความสูงของ Header Section หลังจาก build เสร็จ
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -174,7 +175,6 @@ class _HomePageState extends ConsumerState<HomePage>
                 _pharmacyHeight <= 0)) {
           _measureHeaderSectionHeight();
         }
-
       });
       // โหลดตำแหน่ง consultation หลังจาก build แรกเสร็จ (เพื่อให้วัดความสูงได้)
       _loadConsultationPosition();
@@ -182,18 +182,22 @@ class _HomePageState extends ConsumerState<HomePage>
 
     _loadHomeData();
     _refreshTopBarNotificationCounts();
+    _listenForFitnessBookingStatus();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForDonationStatus(); // Donation status notification
-    _listenForFitnessBookingStatus();
     final initUser = AuthService.instance.currentUser;
-    debugPrint('HomePage: initState _subscribeConsultationAlerts about to run, professionId=${initUser?.professionId}');
+    debugPrint(
+      'HomePage: initState _subscribeConsultationAlerts about to run, professionId=${initUser?.professionId}',
+    );
     _subscribeConsultationAlerts(); // ✅ Phase 5: Head sector consultation alerts
 
     // ✅ Load pending employee invitations for current user (invitee side)
     // ทำที่นี่โดยตรง ไม่ผูกกับ _checkErpAccess เพราะผู้ถูกเชิญอาจยังไม่มี ERP access
     if (initUser != null) {
-      debugPrint('HomePage: initState loading employee invitations for user=${initUser.id}');
+      debugPrint(
+        'HomePage: initState loading employee invitations for user=${initUser.id}',
+      );
       _loadEmployeeInvitations();
     }
 
@@ -260,39 +264,82 @@ class _HomePageState extends ConsumerState<HomePage>
 
   void _startEmployeeInvitationRefresh() {
     if (_employeeInvitationRefreshTimer?.isActive == true) return;
-    _employeeInvitationRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && AuthService.instance.currentUser != null) {
-        _loadEmployeeInvitations();
-      }
-    });
+    _employeeInvitationRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) {
+        if (mounted && AuthService.instance.currentUser != null) {
+          _loadEmployeeInvitations();
+        }
+      },
+    );
   }
 
   // ──── Fitness Booking Status Listener ────
   void _listenForFitnessBookingStatus() {
     _fitnessBookingSub?.cancel();
-    _fitnessBookingSub = WebSocketService().fitnessBookingAlertStream.listen((data) {
+    _fitnessBookingSub = WebSocketService().fitnessBookingAlertStream.listen((
+      data,
+    ) {
       if (!mounted) return;
+
+      final currentUserId = AuthService.instance.currentUser?.id;
+      if (currentUserId == null) return;
+
+      final rawRecipientIds =
+          data['recipientUserIds'] ?? data['recipient_user_ids'];
+      final recipientIds = rawRecipientIds is Iterable
+          ? rawRecipientIds
+                .map((id) => id.toString())
+                .where((id) => id.isNotEmpty)
+                .toSet()
+          : <String>{};
+      final targetUserId =
+          data['userId']?.toString() ?? data['user_id']?.toString();
+      if ((recipientIds.isNotEmpty && !recipientIds.contains(currentUserId)) ||
+          (recipientIds.isEmpty &&
+              targetUserId != null &&
+              targetUserId != currentUserId)) {
+        return;
+      }
+
+      final bookingId =
+          data['bookingId']?.toString() ?? data['booking_id']?.toString() ?? '';
+      if (bookingId.isEmpty) return;
+
+      final rawUpdatedAt = data['updatedAt'] ?? data['updated_at'];
+      final updatedAt = rawUpdatedAt is DateTime
+          ? rawUpdatedAt
+          : DateTime.tryParse(rawUpdatedAt?.toString() ?? '') ?? DateTime.now();
+      final status = data['status']?.toString().toLowerCase() ?? '';
+      final alertKey = '$bookingId:${DateTime.now().microsecondsSinceEpoch}';
+      final alert = {
+        'alertKey': alertKey,
+        'bookingId': bookingId,
+        'groupId':
+            data['groupId']?.toString() ?? data['group_id']?.toString() ?? '',
+        'status': status,
+        'message': data['message']?.toString() ?? '',
+        'groupName':
+            data['groupName']?.toString() ??
+            data['group_name']?.toString() ??
+            '',
+        'requesterName':
+            data['requesterName']?.toString() ??
+            data['requester_name']?.toString() ??
+            '',
+        'updatedAt': updatedAt,
+      };
+
+      debugPrint('HomePage: Fitness booking alert received: status=$status');
       setState(() {
-        final bookingId = data['bookingId']?.toString() ?? data['booking_id']?.toString() ?? '';
-        final status = data['status']?.toString() ?? '';
-        final message = data['message']?.toString() ?? '';
-        final groupName = data['groupName']?.toString() ?? data['group_name']?.toString() ?? '';
-        final requesterName = data['requesterName']?.toString() ?? data['requester_name']?.toString() ?? '';
-        final updatedAt = DateTime.now();
         _fitnessBookingAlerts.removeWhere((a) => a['bookingId'] == bookingId);
-        _fitnessBookingAlerts.insert(0, {
-          'bookingId': bookingId,
-          'status': status,
-          'message': message,
-          'groupName': groupName,
-          'requesterName': requesterName,
-          'updatedAt': updatedAt,
-        });
-        Future.delayed(const Duration(seconds: 15), () {
-          if (!mounted) return;
-          setState(() {
-            _fitnessBookingAlerts.removeWhere((a) => a['bookingId'] == bookingId);
-          });
+        _fitnessBookingAlerts.insert(0, alert);
+      });
+
+      Future.delayed(const Duration(seconds: 15), () {
+        if (!mounted) return;
+        setState(() {
+          _fitnessBookingAlerts.removeWhere((a) => a['alertKey'] == alertKey);
         });
       });
     });
@@ -602,18 +649,29 @@ class _HomePageState extends ConsumerState<HomePage>
       }
 
       // 2) Then use explicit area/label/part fields from body_area
-      final explicit = [
-        bodyAreaMap['area']?.toString(),
-        bodyAreaMap['label']?.toString(),
-        bodyAreaMap['part']?.toString(),
-      ].where((s) => s != null && s!.trim().isNotEmpty && s.trim().toLowerCase() != 'null').map((s) => s!).toList();
+      final explicit =
+          [
+                bodyAreaMap['area']?.toString(),
+                bodyAreaMap['label']?.toString(),
+                bodyAreaMap['part']?.toString(),
+              ]
+              .where(
+                (s) =>
+                    s != null &&
+                    s!.trim().isNotEmpty &&
+                    s.trim().toLowerCase() != 'null',
+              )
+              .map((s) => s!)
+              .toList();
       if (explicit.isNotEmpty) {
         return explicit.first;
       }
 
       // 3) Fallback: derive from non-identity keys only (avoid gender/age/lang)
       final keys = bodyAreaMap.keys
-          .where((k) => k != 'gender' && k != 'age' && k != 'lang' && k != 'sex')
+          .where(
+            (k) => k != 'gender' && k != 'age' && k != 'lang' && k != 'sex',
+          )
           .map((k) => k.toString())
           .where((k) => k.trim().isNotEmpty)
           .toList();
@@ -628,7 +686,11 @@ class _HomePageState extends ConsumerState<HomePage>
       'id': m['id'],
       'patientName': name.isEmpty ? 'ผู้ป่วย' : name,
       'packageName': m['package_name'] ?? 'คำร้องขอปรึกษา',
-      'bodyArea': resolveBodyArea(m['body_area'], m['symptoms_chart'], m['symptoms']),
+      'bodyArea': resolveBodyArea(
+        m['body_area'],
+        m['symptoms_chart'],
+        m['symptoms'],
+      ),
       'requestedAt':
           DateTime.tryParse(m['created_at']?.toString() ?? '') ??
           DateTime.now(),
@@ -688,34 +750,31 @@ class _HomePageState extends ConsumerState<HomePage>
                   packageIds,
                   excludeProviderId: user.id,
                 )
-              : repo.watchAllRequestsWithUserInfo(
-                  excludeProviderId: user.id,
-                );
+              : repo.watchAllRequestsWithUserInfo(excludeProviderId: user.id);
 
           _consultationAlertSub = stream.listen((rawList) {
             _updateConsultationAlerts(rawList);
           });
 
           // 3. Polling fallback ทุก 30 วินาที (กรณี WebSocket disconnect)
-          _consultationPollTimer = Timer.periodic(
-            const Duration(seconds: 30),
-            (_) async {
-              if (!mounted) return;
-              try {
-                final polled = packageIds.isNotEmpty
-                    ? await repo.getRequestsForProfession(
-                        packageIds,
-                        excludeProviderId: user.id,
-                      )
-                    : await repo.getAllRequestsWithUserInfo(
-                        excludeProviderId: user.id,
-                      );
-                _updateConsultationAlerts(polled);
-              } catch (e) {
-                // เงียบ — ไม่ต้อง log ทุกรอบ
-              }
-            },
-          );
+          _consultationPollTimer = Timer.periodic(const Duration(seconds: 30), (
+            _,
+          ) async {
+            if (!mounted) return;
+            try {
+              final polled = packageIds.isNotEmpty
+                  ? await repo.getRequestsForProfession(
+                      packageIds,
+                      excludeProviderId: user.id,
+                    )
+                  : await repo.getAllRequestsWithUserInfo(
+                      excludeProviderId: user.id,
+                    );
+              _updateConsultationAlerts(polled);
+            } catch (e) {
+              // เงียบ — ไม่ต้อง log ทุกรอบ
+            }
+          });
         })
         .catchError((e) {
           debugPrint('HomePage: _subscribeConsultationAlerts setup error: $e');
@@ -1333,7 +1392,9 @@ class _HomePageState extends ConsumerState<HomePage>
   void _onAuthChanged() {
     final user = AuthService.instance.currentUser;
     final userId = user?.id;
-    debugPrint('HomePage: _onAuthChanged fired, userId=$userId, professionId=${user?.professionId}');
+    debugPrint(
+      'HomePage: _onAuthChanged fired, userId=$userId, professionId=${user?.professionId}',
+    );
 
     // Reset connection on auth change
     if (userId != null) {
@@ -2094,8 +2155,35 @@ class _HomePageState extends ConsumerState<HomePage>
                                           _onConsultationAlertDismissed,
                                       onConsultationAlertTapped:
                                           _onConsultationAlertTapped,
-                                      fitnessBookingAlerts: _fitnessBookingAlerts,
-                                      onFitnessBookingAlertTapped: (bookingId) {
+                                      fitnessBookingAlerts:
+                                          _fitnessBookingAlerts,
+                                      onFitnessBookingAlertTapped: (alert) {
+                                        final bookingId =
+                                            alert['bookingId']?.toString() ??
+                                            alert['booking_id']?.toString() ??
+                                            '';
+                                        final groupId =
+                                            alert['groupId']?.toString() ??
+                                            alert['group_id']?.toString() ??
+                                            '';
+                                        final status =
+                                            alert['status']
+                                                ?.toString()
+                                                .toLowerCase() ??
+                                            '';
+                                        if (status == 'pending' &&
+                                            groupId.isNotEmpty) {
+                                          Navigator.pushNamed(
+                                            context,
+                                            '/community/sport-club',
+                                            arguments: {
+                                              'groupId': groupId,
+                                              'intent': 'review_pending',
+                                            },
+                                          );
+                                          return;
+                                        }
+                                        if (bookingId.isEmpty) return;
                                         Navigator.pushNamed(
                                           context,
                                           '/community/sport-club/booking',
@@ -2363,7 +2451,11 @@ class _HomePageState extends ConsumerState<HomePage>
   Future<void> _checkErpAccess() async {
     final user = AuthService.instance.currentUser;
     if (user == null) {
-      if (mounted) setState(() { _canAccessErp = false; _erpAccessChecked = true; });
+      if (mounted)
+        setState(() {
+          _canAccessErp = false;
+          _erpAccessChecked = true;
+        });
       return;
     }
 
@@ -2382,21 +2474,31 @@ class _HomePageState extends ConsumerState<HomePage>
       _loadEmployeeInvitations();
     } catch (e) {
       debugPrint('HomePage: ERP access check error: $e');
-      if (mounted) setState(() { _canAccessErp = false; _erpAccessChecked = true; });
+      if (mounted)
+        setState(() {
+          _canAccessErp = false;
+          _erpAccessChecked = true;
+        });
     }
   }
 
   /// โหลดคำเชิญพนักงาน ERP ที่รอ current user ตอบรับ/ปฏิเสธ + ที่ถูกยกเลิกโดย admin
   Future<void> _loadEmployeeInvitations() async {
     if (!mounted) return;
-    await ref.read(phaseThreeProvider.notifier).loadPendingInvitationsForCurrentUser();
+    await ref
+        .read(phaseThreeProvider.notifier)
+        .loadPendingInvitationsForCurrentUser();
     if (!mounted) return;
-    await ref.read(phaseThreeProvider.notifier).loadCancelledInvitationsForCurrentUser();
+    await ref
+        .read(phaseThreeProvider.notifier)
+        .loadCancelledInvitationsForCurrentUser();
   }
 
   /// เมื่อผู้ใช้กดการ์ดคำเชิญพนักงานบน Home Header → เปิด dialog
   void _onEmployeeInvitationTapped(String token) {
-    final invitations = ref.read(phaseThreeProvider).pendingInvitationsForCurrentUser;
+    final invitations = ref
+        .read(phaseThreeProvider)
+        .pendingInvitationsForCurrentUser;
     final invitation = invitations.cast<Map<String, dynamic>?>().firstWhere(
       (inv) => inv?['token'] == token,
       orElse: () => null,
@@ -2415,9 +2517,11 @@ class _HomePageState extends ConsumerState<HomePage>
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(success
-                  ? 'ยอมรับคำเชิญสำเร็จ กำลังออกจากระบบเพื่อรีเฟรชสถานะ...'
-                  : 'ยอมรับคำเชิญล้มเหลว'),
+              content: Text(
+                success
+                    ? 'ยอมรับคำเชิญสำเร็จ กำลังออกจากระบบเพื่อรีเฟรชสถานะ...'
+                    : 'ยอมรับคำเชิญล้มเหลว',
+              ),
             ),
           );
           if (success) {
@@ -2426,7 +2530,9 @@ class _HomePageState extends ConsumerState<HomePage>
             await Supabase.instance.client.auth.signOut();
             await AuthService.instance.logout();
             if (!mounted) return;
-            Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+            Navigator.of(
+              context,
+            ).pushNamedAndRemoveUntil('/login', (route) => false);
           }
         },
         onReject: (String reason) async {
@@ -2441,7 +2547,9 @@ class _HomePageState extends ConsumerState<HomePage>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(success ? 'ปฏิเสธคำเชิญสำเร็จ' : 'ปฏิเสธคำเชิญล้มเหลว'),
+                content: Text(
+                  success ? 'ปฏิเสธคำเชิญสำเร็จ' : 'ปฏิเสธคำเชิญล้มเหลว',
+                ),
               ),
             );
           }
@@ -2903,7 +3011,8 @@ class _EmployeeInvitationDialog extends StatefulWidget {
   });
 
   @override
-  State<_EmployeeInvitationDialog> createState() => _EmployeeInvitationDialogState();
+  State<_EmployeeInvitationDialog> createState() =>
+      _EmployeeInvitationDialogState();
 }
 
 class _EmployeeInvitationDialogState extends State<_EmployeeInvitationDialog> {
@@ -2919,14 +3028,19 @@ class _EmployeeInvitationDialogState extends State<_EmployeeInvitationDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final professionName = widget.invitation['profession_name']?.toString() ?? '';
-    final organizationName = widget.invitation['organization_name']?.toString() ?? '';
+    final professionName =
+        widget.invitation['profession_name']?.toString() ?? '';
+    final organizationName =
+        widget.invitation['organization_name']?.toString() ?? '';
     // แสดงชื่อองค์กรเฉพาะเมื่อมีค่าจริง และไม่ใช่ชื่อ profession ที่ถูก fallback มา
-    final displayOrganization = organizationName.isNotEmpty && organizationName != professionName;
-    final jobTitle = widget.invitation['job_title']?.toString() ?? 'ไม่ระบุตำแหน่ง';
+    final displayOrganization =
+        organizationName.isNotEmpty && organizationName != professionName;
+    final jobTitle =
+        widget.invitation['job_title']?.toString() ?? 'ไม่ระบุตำแหน่ง';
     final department = widget.invitation['department']?.toString() ?? '';
     final branchName = widget.invitation['branch_name']?.toString() ?? '';
-    final invitedBy = widget.invitation['invited_by_name']?.toString() ?? 'ไม่ระบุ';
+    final invitedBy =
+        widget.invitation['invited_by_name']?.toString() ?? 'ไม่ระบุ';
     final employeeCode = widget.invitation['employee_code']?.toString() ?? '';
     final expiresAt = widget.invitation['expires_at']?.toString() ?? '';
 
@@ -2989,9 +3103,7 @@ class _EmployeeInvitationDialogState extends State<_EmployeeInvitationDialog> {
                   onPressed: _isProcessing
                       ? null
                       : () => setState(() => _showRejectField = true),
-                  style: FilledButton.styleFrom(
-                    foregroundColor: Colors.red,
-                  ),
+                  style: FilledButton.styleFrom(foregroundColor: Colors.red),
                   child: const Text('ปฏิเสธ'),
                 ),
                 FilledButton(

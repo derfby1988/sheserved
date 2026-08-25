@@ -99,6 +99,9 @@ class _TlzNotificationPanelState
   bool get _showsChat =>
       _selectedCategory == null || _selectedCategory == 'chat';
 
+  bool get _needsChatData =>
+      widget.category == null || _selectedCategory == 'chat';
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +113,7 @@ class _TlzNotificationPanelState
 
   Future<void> _loadInitialData() async {
     await _loadNotifications();
-    if (_showsChat) await _loadChatRooms();
+    if (_needsChatData) await _loadChatRooms();
   }
 
   Future<void> _loadNotifications() {
@@ -134,7 +137,7 @@ class _TlzNotificationPanelState
 
   Future<void> _refresh() async {
     final tasks = <Future<void>>[_loadNotifications()];
-    if (_showsChat) {
+    if (_needsChatData) {
       tasks.add(_loadChatRooms());
     }
     await Future.wait(tasks);
@@ -144,7 +147,7 @@ class _TlzNotificationPanelState
     if (_selectedCategory == category) return;
     setState(() {
       _selectedCategory = category;
-      if (!_showsChat) _chatRooms = [];
+      if (!_needsChatData) _chatRooms = [];
     });
     await _refresh();
   }
@@ -205,14 +208,123 @@ class _TlzNotificationPanelState
     );
   }
 
+  DateTime? _latestChatAt() {
+    DateTime? latest;
+    for (final room in _chatRooms) {
+      final createdAt = DateTime.tryParse(room['createdAt']?.toString() ?? '');
+      if (createdAt != null && (latest == null || createdAt.isAfter(latest))) {
+        latest = createdAt;
+      }
+    }
+    return latest;
+  }
+
+  List<({
+    String label,
+    String? value,
+    int unreadCount,
+    DateTime? latestAt,
+    int index,
+  })> _buildOrderedFilters({
+    required NotificationCategorySummary allSummary,
+    required int chatUnreadCount,
+    required DateTime? latestChatAt,
+  }) {
+    final filters = _filters.asMap().entries.map((entry) {
+      final filter = entry.value;
+      var unreadCount = 0;
+      DateTime? latestAt;
+
+      if (filter.value == null) {
+        unreadCount = allSummary.unreadCount + chatUnreadCount;
+        latestAt = allSummary.latestAt;
+      } else if (filter.value == 'chat') {
+        unreadCount = chatUnreadCount;
+        latestAt = latestChatAt;
+      } else {
+        final summary = ref
+            .watch(notificationCategorySummaryProvider(filter.value))
+            .maybeWhen(
+              data: (value) => value,
+              orElse: () => const NotificationCategorySummary(),
+            );
+        unreadCount = summary.unreadCount;
+        latestAt = summary.latestAt;
+      }
+
+      if (filter.value == null &&
+          latestChatAt != null &&
+          (latestAt == null || latestChatAt.isAfter(latestAt))) {
+        latestAt = latestChatAt;
+      }
+
+      return (
+        label: filter.label,
+        value: filter.value,
+        unreadCount: unreadCount,
+        latestAt: latestAt,
+        index: entry.key,
+      );
+    }).toList();
+
+    final allFilter = filters.first;
+    final categoryFilters = filters.skip(1).toList()
+      ..sort((a, b) {
+        final aHasUnread = a.unreadCount > 0;
+        final bHasUnread = b.unreadCount > 0;
+        if (aHasUnread != bHasUnread) return aHasUnread ? -1 : 1;
+
+        if (aHasUnread) {
+          final aLatest = a.latestAt;
+          final bLatest = b.latestAt;
+          if (aLatest != null && bLatest != null) {
+            final latestComparison = bLatest.compareTo(aLatest);
+            if (latestComparison != 0) return latestComparison;
+          } else if (aLatest != null) {
+            return -1;
+          } else if (bLatest != null) {
+            return 1;
+          }
+          final countComparison = b.unreadCount.compareTo(a.unreadCount);
+          if (countComparison != 0) return countComparison;
+        }
+
+        return a.index.compareTo(b.index);
+      });
+
+    return [allFilter, ...categoryFilters];
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(notificationProvider);
+    final allSummary = ref
+        .watch(notificationCategorySummaryProvider(null))
+        .maybeWhen(
+          data: (summary) => summary,
+          orElse: () => const NotificationCategorySummary(),
+        );
+    final selectedSummary = ref
+        .watch(notificationCategorySummaryProvider(_selectedCategory))
+        .maybeWhen(
+          data: (summary) => summary,
+          orElse: () => const NotificationCategorySummary(),
+        );
     final chatUnreadCount = _chatRooms.fold<int>(
       0,
       (total, room) => total + ((room['unreadCount'] as num?)?.toInt() ?? 0),
     );
-    final totalUnread = state.unreadCount + chatUnreadCount;
+    final selectedAppUnreadCount = _selectedCategory == null
+        ? allSummary.unreadCount
+        : selectedSummary.unreadCount;
+    final totalUnread =
+        selectedAppUnreadCount + (_showsChat ? chatUnreadCount : 0);
+    final latestChatAt = _latestChatAt();
+    final orderedFilters = _buildOrderedFilters(
+      allSummary: allSummary,
+      chatUnreadCount: chatUnreadCount,
+      latestChatAt: latestChatAt,
+    );
     final colorScheme = Theme.of(context).colorScheme;
 
     return DraggableScrollableSheet(
@@ -318,13 +430,16 @@ class _TlzNotificationPanelState
                               right: 32,
                             ),
                             scrollDirection: Axis.horizontal,
-                            itemCount: _filters.length,
+                            itemCount: orderedFilters.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(width: 8),
                             itemBuilder: (context, index) {
-                              final filter = _filters[index];
+                              final filter = orderedFilters[index];
                               final selected =
                                   _selectedCategory == filter.value;
+                              final hasUnread = filter.unreadCount > 0;
+                              final inactiveColor = colorScheme.onSurface
+                                  .withValues(alpha: 0.12);
                               return ChoiceChip(
                                 label: Text(filter.label),
                                 selected: selected,
@@ -333,19 +448,27 @@ class _TlzNotificationPanelState
                                 labelStyle: TextStyle(
                                   color: selected
                                       ? Colors.white
-                                      : colorScheme.onSurface,
+                                      : hasUnread
+                                          ? colorScheme.onSurface
+                                          : colorScheme.onSurface.withValues(
+                                              alpha: 0.55,
+                                            ),
                                   fontWeight: selected
                                       ? FontWeight.w700
                                       : FontWeight.w500,
                                 ),
                                 visualDensity: VisualDensity.compact,
-                                selectedColor:
-                                    AppColors.accent.withValues(alpha: 0.85),
-                                backgroundColor: colorScheme.surface
-                                    .withValues(alpha: 0.25),
+                                selectedColor: hasUnread
+                                    ? AppColors.accent.withValues(alpha: 0.85)
+                                    : Colors.grey.withValues(alpha: 0.70),
+                                backgroundColor: hasUnread
+                                    ? AppColors.accent.withValues(alpha: 0.15)
+                                    : inactiveColor,
                                 side: BorderSide(
-                                  color: colorScheme.onSurface
-                                      .withValues(alpha: 0.12),
+                                  color: hasUnread
+                                      ? AppColors.accent.withValues(alpha: 0.45)
+                                      : colorScheme.onSurface
+                                          .withValues(alpha: 0.18),
                                 ),
                               );
                             },

@@ -557,6 +557,38 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('user-online', { userId });
   });
 
+  const relayFitnessBookingStatus = (data) => {
+    if (!socketRateLimit(socket, 'fitness_booking_status')) return;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+
+    const actorUserId = data.actorUserId || data.actor_user_id;
+    if (!socket.userId || !actorUserId || `${actorUserId}` !== `${socket.userId}`) {
+      console.warn(`[SocketAuth] fitness booking actor mismatch for socket ${socket.id}`);
+      return;
+    }
+
+    const status = `${data.status || ''}`.toLowerCase();
+    if (!['pending', 'confirmed', 'rejected', 'cancelled'].includes(status)) return;
+
+    const rawRecipientIds = data.recipientUserIds || data.recipient_user_ids;
+    const recipientUserIds = Array.isArray(rawRecipientIds)
+      ? [...new Set(rawRecipientIds.map((id) => `${id}`.trim()).filter(Boolean))]
+      : data.userId || data.user_id
+        ? [`${data.userId || data.user_id}`.trim()]
+        : [];
+    if (recipientUserIds.length === 0) return;
+
+    socketService.broadcastFitnessBookingStatus(recipientUserIds, {
+      ...data,
+      status,
+      recipientUserIds,
+      recipient_user_ids: recipientUserIds,
+    });
+  };
+
+  socket.on('fitness_booking_status', relayFitnessBookingStatus);
+  socket.on('fitness-booking-status', relayFitnessBookingStatus);
+
   // Location update event
   socket.on('location-update', async (data) => {
     if (!socketRateLimit(socket, 'location-update')) return;

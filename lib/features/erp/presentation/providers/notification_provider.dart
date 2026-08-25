@@ -8,6 +8,16 @@ final notificationRepositoryProvider = Provider<NotificationRepository>((ref) {
   return NotificationRepository(Supabase.instance.client);
 });
 
+class NotificationCategorySummary {
+  final int unreadCount;
+  final DateTime? latestAt;
+
+  const NotificationCategorySummary({
+    this.unreadCount = 0,
+    this.latestAt,
+  });
+}
+
 class NotificationState {
   final bool isLoading;
   final List<AppNotification> notifications;
@@ -92,3 +102,19 @@ final notificationUnreadCountProvider =
       .watch(notificationRepositoryProvider)
       .watchUnreadCount(category: category);
 });
+
+final notificationCategorySummaryProvider =
+    StreamProvider.family<NotificationCategorySummary, String?>(
+  (ref, category) {
+    final repository = ref.watch(notificationRepositoryProvider);
+    return repository
+        .watchNotifications(category: category)
+        .asyncMap((notifications) async {
+      final unreadCount = await repository.getUnreadCount(category: category);
+      return NotificationCategorySummary(
+        unreadCount: unreadCount,
+        latestAt: notifications.isEmpty ? null : notifications.first.createdAt,
+      );
+    });
+  },
+);

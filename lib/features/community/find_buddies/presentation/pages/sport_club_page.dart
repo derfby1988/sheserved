@@ -9,6 +9,7 @@ import '../../../../../../services/auth_service.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../../../../shared/widgets/tlz_drawer.dart';
+import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../find_buddies/presentation/widgets/group_chat_popup.dart';
@@ -202,28 +203,40 @@ class _SportClubPageState extends State<SportClubPage> {
   void _handleIntent() {
     if (_intentHandled) return;
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is Map && args['intent'] == 'join_group') {
-      final groupId = args['groupId']?.toString();
-      if (groupId != null && groupId.isNotEmpty) {
-        _intentHandled = true;
-        final group = _groups.cast<Map<String, dynamic>?>().firstWhere(
-          (g) => g?['id']?.toString() == groupId,
-          orElse: () => null,
-        );
-        if (group != null) {
-          final requiresOwnerApproval =
-              group['requires_owner_approval'] == true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _showSessionPickerSheet(
-                groupId,
-                requiresOwnerApproval: requiresOwnerApproval,
-              );
-            }
-          });
-        }
-      }
+    if (args is! Map) return;
+
+    final intent = args['intent']?.toString();
+    final groupId = args['groupId']?.toString();
+    if (groupId == null ||
+        groupId.isEmpty ||
+        (intent != 'join_group' && intent != 'review_pending')) {
+      return;
     }
+
+    _intentHandled = true;
+    final group = _groups.cast<Map<String, dynamic>?>().firstWhere(
+      (g) => g?['id']?.toString() == groupId,
+      orElse: () => null,
+    );
+    if (group == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (intent == 'review_pending') {
+        _showGroupDetailSheet(group);
+        return;
+      }
+
+      final isGroupOwner =
+          group['created_by']?.toString() ==
+          AuthService.instance.currentUser?.id;
+      final requiresOwnerApproval =
+          group['requires_owner_approval'] == true && !isGroupOwner;
+      _showSessionPickerSheet(
+        groupId,
+        requiresOwnerApproval: requiresOwnerApproval,
+      );
+    });
   }
 
   Future<void> _reload() async {
@@ -415,8 +428,69 @@ class _SportClubPageState extends State<SportClubPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('จองไม่สำเร็จ: $e')));
+      ).showSnackBar(SnackBar(content: Text(_mapBookingError(e))));
     }
+  }
+
+  String _mapBookingError(Object e) {
+    final raw = e.toString();
+    if (raw.contains('GROUP_FULL')) {
+      return 'ก๊วนนี้เต็มแล้ว กรุณาเลือกก๊วนหรือรอบนัดอื่น';
+    }
+    if (raw.contains('OVERLAP_BOOKING')) {
+      return 'คุณมีรอบนัดซ้อนทับในช่วงเวลานี้ กรุณาเลือกเวลาอื่น';
+    }
+    if (raw.contains('SESSION_NOT_FOUND')) {
+      return 'ไม่พบรอบนัดนี้ กรุณารีเฟรชและลองใหม่';
+    }
+    if (raw.contains('BOOKING_NOT_FOUND')) {
+      return 'ไม่พบรอบจองนี้';
+    }
+    if (raw.contains('NOT_GROUP_ADMIN')) {
+      return 'คุณไม่มีสิทธิ์ดำเนินการรายการนี้';
+    }
+    if (raw.contains('UNAUTHORIZED')) {
+      return 'กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง';
+    }
+    return 'จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+  }
+
+  DateTime _roundUpToNearest(DateTime dt, {int roundMinutes = 30}) {
+    final roundedDown = DateTime(
+      dt.year,
+      dt.month,
+      dt.day,
+      dt.hour,
+      dt.minute - (dt.minute % roundMinutes),
+    );
+    return roundedDown.add(Duration(minutes: roundMinutes));
+  }
+
+  DateTime _dateTimeAt(DateTime date, TimeOfDay time) {
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  DateTime _endDateTimeAt(
+    DateTime date,
+    TimeOfDay startTime,
+    TimeOfDay endTime,
+  ) {
+    final start = _dateTimeAt(date, startTime);
+    var end = _dateTimeAt(date, endTime);
+    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+    return end;
+  }
+
+  bool _canViewFullGroup(Map<String, dynamic> g) {
+    final capacity = (g['capacity'] as num?)?.toInt() ?? 0;
+    final memberCount = (g['member_count'] as num?)?.toInt() ?? 0;
+    if (memberCount < capacity) return true;
+    final user = AuthService.instance.currentUser;
+    final groupId = g['id']?.toString() ?? '';
+    final isOwner = g['created_by']?.toString() == user?.id;
+    final isAdmin = user?.isAdmin == true;
+    final isJoined = _myJoinedGroupIds.contains(groupId);
+    return isOwner || isAdmin || isJoined;
   }
 
   @override
@@ -435,7 +509,6 @@ class _SportClubPageState extends State<SportClubPage> {
           // Custom Header matching home page style
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 50, 16, 20),
             decoration: BoxDecoration(
               gradient: AppColors.primaryGradient,
               borderRadius: const BorderRadius.only(
@@ -443,48 +516,68 @@ class _SportClubPageState extends State<SportClubPage> {
                 bottomRight: Radius.circular(32),
               ),
             ),
-            child: Row(
-              children: [
-                // Menu button
-                Builder(
-                  builder: (context) => IconButton(
-                    icon: const Icon(Icons.menu, color: Colors.white),
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Title
-                Expanded(
-                  child: Text(
-                    'หาเพื่อนออกกำลังกาย',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  // Menu button
+                  // Title
+                  middle: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'หาเพื่อนออกกำลังกาย',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
                     ),
                   ),
+                  // Action buttons
+                  actions: [
+                    IconButton(
+                      tooltip: 'รีเฟรช',
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      onPressed: _reloadingGroups ? null : _reload,
+                    ),
+                    IconButton(
+                      tooltip: 'ค้นหา',
+                      icon: const Icon(Icons.search, color: Colors.white),
+                      onPressed: _showSearchDialog,
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'เพิ่มเติม',
+                      icon: const Icon(Icons.more_vert, color: Colors.white),
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'my_groups':
+                            Navigator.pushNamed(
+                              context,
+                              '/community/sport-club/my-groups',
+                            );
+                          case 'toggle_view':
+                            setState(() => _showMapView = !_showMapView);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'my_groups',
+                          child: Text('ก๊วนของฉัน'),
+                        ),
+                        PopupMenuItem(
+                          value: 'toggle_view',
+                          child: Text(
+                            _showMapView ? 'แสดงรายการ' : 'แสดงแผนที่',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                // Action buttons
-                IconButton(
-                  icon: const Icon(Icons.search, color: Colors.white),
-                  onPressed: () => _showSearchDialog(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.person, color: Colors.white),
-                  tooltip: 'ก๊วนของฉัน',
-                  onPressed: () => Navigator.pushNamed(
-                    context,
-                    '/community/sport-club/my-groups',
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _showMapView ? Icons.list : Icons.map,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => setState(() => _showMapView = !_showMapView),
-                ),
-              ],
+              ),
             ),
           ),
           // Body content
@@ -497,9 +590,7 @@ class _SportClubPageState extends State<SportClubPage> {
                   topRight: Radius.circular(32),
                 ),
               ),
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _showMapView
+              child: _showMapView && !_loading
                   ? _buildMapView()
                   : RefreshIndicator(
                       onRefresh: _reload,
@@ -534,354 +625,390 @@ class _SportClubPageState extends State<SportClubPage> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          if (_reloadingGroups)
+                          if (_loading || _reloadingGroups)
                             for (var i = 0; i < 3; i++) _buildSkeletonCard(),
                           for (final g in _groups)
-                            InkWell(
-                              onTap: () => _showGroupDetailSheet(g),
-                              child: Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if ((g['venue_photo_url']?.toString() ??
-                                              g['cover_image_url']
-                                                  ?.toString() ??
-                                              '')
-                                          .isNotEmpty)
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child: Image.network(
-                                            (g['venue_photo_url']
-                                                        ?.toString()
-                                                        .isNotEmpty ??
-                                                    false)
-                                                ? g['venue_photo_url']
-                                                      .toString()
-                                                : g['cover_image_url']
-                                                      .toString(),
-                                            height: 140,
-                                            width: double.infinity,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      if ((g['venue_photo_url']?.toString() ??
-                                              g['cover_image_url']
-                                                  ?.toString() ??
-                                              '')
-                                          .isNotEmpty)
-                                        const SizedBox(height: 8),
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.center,
-                                              children: [
-                                                if ((g['sport_name']
-                                                            ?.toString() ??
-                                                        '')
-                                                    .isNotEmpty)
-                                                  _buildSportChipLabel(
-                                                    g['sport_icon']?.toString(),
-                                                    g['sport_name'].toString(),
-                                                  ),
-                                                if ((g['sport_name']
-                                                            ?.toString() ??
-                                                        '')
-                                                    .isNotEmpty)
-                                                  const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    g['name']?.toString() ?? '',
-                                                    style: const TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
+                            if (_canViewFullGroup(g))
+                              InkWell(
+                                onTap: () => _showGroupDetailSheet(g),
+                                child: Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if ((g['venue_photo_url']?.toString() ??
+                                                g['cover_image_url']
+                                                    ?.toString() ??
+                                                '')
+                                            .isNotEmpty)
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image.network(
+                                              (g['venue_photo_url']
+                                                          ?.toString()
+                                                          .isNotEmpty ??
+                                                      false)
+                                                  ? g['venue_photo_url']
+                                                        .toString()
+                                                  : g['cover_image_url']
+                                                        .toString(),
+                                              height: 140,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
                                             ),
                                           ),
-                                          const SizedBox(width: 6),
-                                          if (g['gender_preference'] != null &&
-                                              g['gender_preference']
-                                                      .toString() !=
-                                                  'any')
-                                            Chip(
-                                              label: Text(
+                                        if ((g['venue_photo_url']?.toString() ??
+                                                g['cover_image_url']
+                                                    ?.toString() ??
+                                                '')
+                                            .isNotEmpty)
+                                          const SizedBox(height: 8),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.center,
+                                                children: [
+                                                  if ((g['sport_name']
+                                                              ?.toString() ??
+                                                          '')
+                                                      .isNotEmpty)
+                                                    _buildSportChipLabel(
+                                                      g['sport_icon']
+                                                          ?.toString(),
+                                                      g['sport_name']
+                                                          .toString(),
+                                                    ),
+                                                  if ((g['sport_name']
+                                                              ?.toString() ??
+                                                          '')
+                                                      .isNotEmpty)
+                                                    const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      g['name']?.toString() ??
+                                                          '',
+                                                      style: const TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            if (g['gender_preference'] !=
+                                                    null &&
                                                 g['gender_preference']
+                                                        .toString() !=
+                                                    'any')
+                                              Chip(
+                                                label: Text(
+                                                  g['gender_preference']
+                                                              .toString() ==
+                                                          'male'
+                                                      ? 'ช.'
+                                                      : 'ญ.',
+                                                ),
+                                                backgroundColor:
+                                                    g['gender_preference']
                                                             .toString() ==
                                                         'male'
-                                                    ? 'ช.'
-                                                    : 'ญ.',
+                                                    ? Colors.blue.shade50
+                                                    : Colors.pink.shade50,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                              )
+                                            else
+                                              Chip(
+                                                label: const Text('เสรี'),
+                                                backgroundColor:
+                                                    Colors.green.shade50,
+                                                visualDensity:
+                                                    VisualDensity.compact,
                                               ),
-                                              backgroundColor:
-                                                  g['gender_preference']
-                                                          .toString() ==
-                                                      'male'
-                                                  ? Colors.blue.shade50
-                                                  : Colors.pink.shade50,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            )
-                                          else
-                                            Chip(
-                                              label: const Text('เสรี'),
-                                              backgroundColor:
-                                                  Colors.green.shade50,
-                                              visualDensity:
-                                                  VisualDensity.compact,
+                                          ],
+                                        ),
+                                        if ((g['description']?.toString() ?? '')
+                                            .isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 6,
                                             ),
-                                        ],
-                                      ),
-                                      if ((g['description']?.toString() ?? '')
-                                          .isNotEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 6,
+                                            child: Text(
+                                              g['description'].toString(),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
-                                          child: Text(
-                                            g['description'].toString(),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                        if ((g['province']?.toString() ?? '')
+                                            .isNotEmpty)
+                                          Text(
+                                            'พื้นที่: ' +
+                                                g['province'].toString() +
+                                                (g['district'] != null &&
+                                                        g['district']
+                                                            .toString()
+                                                            .isNotEmpty
+                                                    ? ' · ' +
+                                                          g['district']
+                                                              .toString()
+                                                    : ''),
                                           ),
-                                        ),
-                                      if ((g['province']?.toString() ?? '')
-                                          .isNotEmpty)
-                                        Text(
-                                          'พื้นที่: ' +
-                                              g['province'].toString() +
-                                              (g['district'] != null &&
-                                                      g['district']
-                                                          .toString()
-                                                          .isNotEmpty
-                                                  ? ' · ' +
-                                                        g['district'].toString()
-                                                  : ''),
-                                        ),
-                                      if (g['member_count'] != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 4,
+                                        if (g['member_count'] != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              'ว่าง: ${((g['capacity'] as num?)?.toInt() ?? 0) - ((g['member_count'] as num?)?.toInt() ?? 0)} คน',
+                                            ),
                                           ),
-                                          child: Text(
-                                            'ว่าง: ${((g['capacity'] as num?)?.toInt() ?? 0) - ((g['member_count'] as num?)?.toInt() ?? 0)} คน',
-                                          ),
-                                        ),
-                                      const SizedBox(height: 8),
-                                      FutureBuilder<List<Map<String, dynamic>>>(
-                                        future: _repo.listUpcomingSessions(
-                                          g['id'].toString(),
-                                        ),
-                                        builder: (context, snapshot) {
-                                          final items =
-                                              snapshot.data ?? const [];
-                                          if (snapshot.connectionState !=
-                                              ConnectionState.done) {
-                                            return const Padding(
-                                              padding: EdgeInsets.all(8.0),
-                                              child: LinearProgressIndicator(
-                                                minHeight: 2,
-                                              ),
-                                            );
-                                          }
-                                          if (snapshot.hasError) {
-                                            return Text(
-                                              'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
-                                              style: const TextStyle(
-                                                color: Colors.red,
-                                              ),
-                                            );
-                                          }
-                                          final gid = g['id']?.toString() ?? '';
-                                          if (items.isEmpty) {
+                                        const SizedBox(height: 8),
+                                        FutureBuilder<List<dynamic>>(
+                                          future: Future.wait<dynamic>([
+                                            _repo.listUpcomingSessions(
+                                              g['id'].toString(),
+                                            ),
+                                            _repo.hasAnySessions(
+                                              g['id'].toString(),
+                                            ),
+                                          ]),
+                                          builder: (context, snapshot) {
+                                            final items =
+                                                (snapshot.data?[0] as List?)
+                                                    ?.cast<
+                                                      Map<String, dynamic>
+                                                    >() ??
+                                                const <Map<String, dynamic>>[];
+                                            final hasAnySessions =
+                                                snapshot.data?[1] == true;
+                                            if (snapshot.connectionState !=
+                                                ConnectionState.done) {
+                                              return const Padding(
+                                                padding: EdgeInsets.all(8.0),
+                                                child: LinearProgressIndicator(
+                                                  minHeight: 2,
+                                                ),
+                                              );
+                                            }
+                                            if (snapshot.hasError) {
+                                              return Text(
+                                                'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
+                                                style: const TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                            final gid =
+                                                g['id']?.toString() ?? '';
+                                            if (items.isEmpty) {
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    hasAnySessions
+                                                        ? 'รอบนัดล่าสุดสิ้นสุดแล้ว'
+                                                        : 'ยังไม่มีรอบนัด',
+                                                  ),
+                                                  if (_myBlockedGroupIds
+                                                      .contains(gid))
+                                                    Align(
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      child: TextButton.icon(
+                                                        onPressed: null,
+                                                        icon: const Icon(
+                                                          Icons.hourglass_empty,
+                                                        ),
+                                                        label: const Text(
+                                                          'รอคิว',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (_myAdminGroups.contains(
+                                                    gid,
+                                                  ))
+                                                    Align(
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      child: TextButton.icon(
+                                                        onPressed: () =>
+                                                            _showCreateSessionSheet(
+                                                              g['id']
+                                                                  .toString(),
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .add_circle_outline,
+                                                        ),
+                                                        label: const Text(
+                                                          'เพิ่มรอบนัด',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              );
+                                            }
+                                            final isAdmin = _myAdminGroups
+                                                .contains(gid);
+                                            final isGroupOwner =
+                                                g['created_by']?.toString() ==
+                                                AuthService
+                                                    .instance
+                                                    .currentUser
+                                                    ?.id;
+                                            final hasJoined = _myJoinedGroupIds
+                                                .contains(gid);
+                                            final hasPending =
+                                                _myPendingGroupIds.contains(
+                                                  gid,
+                                                );
+                                            final hasBlocked =
+                                                _myBlockedGroupIds.contains(
+                                                  gid,
+                                                );
+                                            final requiresOwnerApproval =
+                                                g['requires_owner_approval'] ==
+                                                    true &&
+                                                !isGroupOwner;
+                                            final joinButton = hasBlocked
+                                                ? TextButton.icon(
+                                                    onPressed: null,
+                                                    icon: const Icon(
+                                                      Icons.hourglass_empty,
+                                                    ),
+                                                    label: const Text('รอคิว'),
+                                                  )
+                                                : hasJoined
+                                                ? TextButton.icon(
+                                                    onPressed: null,
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .check_circle_outline,
+                                                    ),
+                                                    label: const Text(
+                                                      'เข้าร่วมก๊วนแล้ว',
+                                                    ),
+                                                  )
+                                                : hasPending && !isGroupOwner
+                                                ? TextButton.icon(
+                                                    onPressed: null,
+                                                    icon: const Icon(
+                                                      Icons.hourglass_empty,
+                                                    ),
+                                                    label: const Text(
+                                                      'รออนุมัติ',
+                                                    ),
+                                                  )
+                                                : TextButton.icon(
+                                                    onPressed: () =>
+                                                        _showSessionPickerSheet(
+                                                          gid,
+                                                          requiresOwnerApproval:
+                                                              requiresOwnerApproval,
+                                                        ),
+                                                    icon: const Icon(
+                                                      Icons.event_available,
+                                                    ),
+                                                    label: Text(
+                                                      isGroupOwner
+                                                          ? 'กลับเข้าร่วมก๊วน'
+                                                          : requiresOwnerApproval
+                                                          ? 'ขอเข้าร่วมก๊วน'
+                                                          : 'เข้าร่วมก๊วน',
+                                                    ),
+                                                  );
                                             return Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
-                                                const Text(
-                                                  'รอบล่าสุดสิ้นสุดแล้ว',
-                                                ),
-                                                if (_myBlockedGroupIds.contains(
-                                                  gid,
-                                                ))
-                                                  Align(
-                                                    alignment:
-                                                        Alignment.centerRight,
-                                                    child: TextButton.icon(
-                                                      onPressed: null,
-                                                      icon: const Icon(
-                                                        Icons.hourglass_empty,
-                                                      ),
-                                                      label: const Text(
-                                                        'รอคิว',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                if (_myAdminGroups.contains(
-                                                  gid,
-                                                ))
-                                                  Align(
-                                                    alignment:
-                                                        Alignment.centerRight,
-                                                    child: TextButton.icon(
-                                                      onPressed: () =>
-                                                          _showCreateSessionSheet(
-                                                            g['id'].toString(),
-                                                          ),
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .add_circle_outline,
-                                                      ),
-                                                      label: const Text(
-                                                        'เพิ่มรอบนัด',
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            );
-                                          }
-                                          final isAdmin = _myAdminGroups
-                                              .contains(gid);
-                                          final hasJoined = _myJoinedGroupIds
-                                              .contains(gid);
-                                          final hasPending = _myPendingGroupIds
-                                              .contains(gid);
-                                          final hasBlocked = _myBlockedGroupIds
-                                              .contains(gid);
-                                          final requiresOwnerApproval =
-                                              g['requires_owner_approval'] ==
-                                              true;
-                                          final joinButton = hasBlocked
-                                              ? TextButton.icon(
-                                                  onPressed: null,
-                                                  icon: const Icon(
-                                                    Icons.hourglass_empty,
-                                                  ),
-                                                  label: const Text('รอคิว'),
-                                                )
-                                              : hasJoined
-                                              ? TextButton.icon(
-                                                  onPressed: null,
-                                                  icon: const Icon(
-                                                    Icons.check_circle_outline,
-                                                  ),
-                                                  label: const Text(
-                                                    'เข้าร่วมก๊วนแล้ว',
-                                                  ),
-                                                )
-                                              : hasPending
-                                              ? TextButton.icon(
-                                                  onPressed: null,
-                                                  icon: const Icon(
-                                                    Icons.hourglass_empty,
-                                                  ),
-                                                  label: const Text(
-                                                    'รออนุมัติ',
-                                                  ),
-                                                )
-                                              : TextButton.icon(
-                                                  onPressed: () =>
-                                                      _showSessionPickerSheet(
-                                                        gid,
-                                                        requiresOwnerApproval:
-                                                            requiresOwnerApproval,
-                                                      ),
-                                                  icon: const Icon(
-                                                    Icons.event_available,
-                                                  ),
-                                                  label: Text(
-                                                    requiresOwnerApproval
-                                                        ? 'ขอเข้าร่วมก๊วน'
-                                                        : 'เข้าร่วมก๊วน',
-                                                  ),
-                                                );
-                                          return Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              for (final s in items.take(3))
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        bottom: 8,
-                                                      ),
-                                                  child: Row(
-                                                    children: [
-                                                      const Text(
-                                                        'ห้วง: ',
-                                                        style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w500,
+                                                for (final s in items.take(3))
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 8,
                                                         ),
-                                                      ),
-                                                      Expanded(
-                                                        child: Text(
-                                                          _formatThaiSessionRange(
-                                                            DateTime.parse(
-                                                              s['starts_at']
-                                                                  .toString(),
-                                                            ).toLocal(),
-                                                            DateTime.parse(
-                                                              s['ends_at']
-                                                                  .toString(),
-                                                            ).toLocal(),
+                                                    child: Row(
+                                                      children: [
+                                                        const Text(
+                                                          'ห้วง: ',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w500,
                                                           ),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
+                                                        ),
+                                                        Expanded(
+                                                          child: Text(
+                                                            _formatThaiSessionRange(
+                                                              DateTime.parse(
+                                                                s['starts_at']
+                                                                    .toString(),
+                                                              ).toLocal(),
+                                                              DateTime.parse(
+                                                                s['ends_at']
+                                                                    .toString(),
+                                                              ).toLocal(),
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                if (isAdmin)
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.end,
+                                                    children: [
+                                                      joinButton,
+                                                      TextButton.icon(
+                                                        onPressed: () =>
+                                                            _showCreateSessionSheet(
+                                                              g['id']
+                                                                  .toString(),
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .add_circle_outline,
+                                                        ),
+                                                        label: const Text(
+                                                          'เพิ่มรอบนัด',
                                                         ),
                                                       ),
                                                     ],
+                                                  )
+                                                else
+                                                  Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: joinButton,
                                                   ),
-                                                ),
-                                              if (isAdmin)
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.end,
-                                                  children: [
-                                                    joinButton,
-                                                    TextButton.icon(
-                                                      onPressed: () =>
-                                                          _showCreateSessionSheet(
-                                                            g['id'].toString(),
-                                                          ),
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .add_circle_outline,
-                                                      ),
-                                                      label: const Text(
-                                                        'เพิ่มรอบนัด',
-                                                      ),
-                                                    ),
-                                                  ],
-                                                )
-                                              else
-                                                Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child: joinButton,
-                                                ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ],
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                           if (_isLoadingMore)
                             const Padding(
                               padding: EdgeInsets.all(16),
@@ -964,14 +1091,14 @@ class _SportClubPageState extends State<SportClubPage> {
   Future<void> _showCreateSessionSheet(String groupId) async {
     final now = DateTime.now();
     // ปัดขึ้นครึ่งชั่วโมงถัดไป
-    final roundedStart = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      now.minute < 30 ? now.hour : now.hour + 1,
-      now.minute < 30 ? 30 : 0,
+    final roundedStart = _roundUpToNearest(
+      now.add(const Duration(minutes: 15)),
     );
-    DateTime selectedDate = DateTime(now.year, now.month, now.day);
+    DateTime selectedDate = DateTime(
+      roundedStart.year,
+      roundedStart.month,
+      roundedStart.day,
+    );
     TimeOfDay startTime = TimeOfDay(
       hour: roundedStart.hour,
       minute: roundedStart.minute,
@@ -998,9 +1125,50 @@ class _SportClubPageState extends State<SportClubPage> {
                 context: ctx,
                 initialTime: startTime,
               );
-              if (picked != null) {
-                setModalState(() => startTime = picked);
+              if (picked == null) return;
+
+              final previousStart = _dateTimeAt(selectedDate, startTime);
+              final previousEnd = _endDateTimeAt(
+                selectedDate,
+                startTime,
+                endTime,
+              );
+              final proposedStart = _dateTimeAt(selectedDate, picked);
+              final earliest = _roundUpToNearest(
+                DateTime.now().add(const Duration(minutes: 15)),
+              );
+              final actualStart = proposedStart.isBefore(earliest)
+                  ? earliest
+                  : proposedStart;
+              DateTime actualEnd;
+              if (actualStart != proposedStart) {
+                var proposedEnd = _dateTimeAt(selectedDate, endTime);
+                if (!proposedEnd.isAfter(proposedStart)) {
+                  proposedEnd = proposedEnd.add(const Duration(days: 1));
+                }
+                final duration = proposedEnd.difference(proposedStart);
+                actualEnd = actualStart.add(
+                  duration.isNegative || duration == Duration.zero
+                      ? const Duration(hours: 1)
+                      : duration,
+                );
+              } else {
+                final shift = actualStart.difference(previousStart);
+                actualEnd = previousEnd.add(shift);
               }
+              if (!actualEnd.isAfter(actualStart)) {
+                actualEnd = actualStart.add(const Duration(hours: 1));
+              }
+
+              setModalState(() {
+                selectedDate = DateTime(
+                  actualStart.year,
+                  actualStart.month,
+                  actualStart.day,
+                );
+                startTime = TimeOfDay.fromDateTime(actualStart);
+                endTime = TimeOfDay.fromDateTime(actualEnd);
+              });
             }
 
             Future<void> pickEndTime() async {
@@ -1009,38 +1177,55 @@ class _SportClubPageState extends State<SportClubPage> {
                 initialTime: endTime,
               );
               if (picked != null) {
-                setModalState(() => endTime = picked);
+                final proposedEnd = DateTime(
+                  selectedDate.year,
+                  selectedDate.month,
+                  selectedDate.day,
+                  picked.hour,
+                  picked.minute,
+                );
+                final currentStart = DateTime(
+                  selectedDate.year,
+                  selectedDate.month,
+                  selectedDate.day,
+                  startTime.hour,
+                  startTime.minute,
+                );
+                if (!proposedEnd.isAfter(currentStart)) {
+                  final actualEnd = currentStart.add(const Duration(hours: 1));
+                  setModalState(
+                    () => endTime = TimeOfDay.fromDateTime(actualEnd),
+                  );
+                } else {
+                  setModalState(() => endTime = picked);
+                }
               }
             }
 
             Future<void> submit() async {
               setModalState(() => errorText = null);
-              final startsAt = DateTime(
-                selectedDate.year,
-                selectedDate.month,
-                selectedDate.day,
-                startTime.hour,
-                startTime.minute,
+              var startsAt = _dateTimeAt(selectedDate, startTime);
+              var endsAt = _endDateTimeAt(selectedDate, startTime, endTime);
+              final earliest = _roundUpToNearest(
+                DateTime.now().add(const Duration(minutes: 15)),
               );
-              final endsAt = DateTime(
-                selectedDate.year,
-                selectedDate.month,
-                selectedDate.day,
-                endTime.hour,
-                endTime.minute,
-              );
-              if (startsAt.isBefore(now.add(const Duration(minutes: 15)))) {
-                setModalState(
-                  () => errorText =
-                      'เวลาเริ่มต้องไม่น้อยกว่าอีก 15 นาทีจากตอนนี้',
-                );
-                return;
+              if (startsAt.isBefore(earliest)) {
+                final delta = earliest.difference(startsAt);
+                startsAt = earliest;
+                endsAt = endsAt.add(delta);
+                setModalState(() {
+                  selectedDate = DateTime(
+                    startsAt.year,
+                    startsAt.month,
+                    startsAt.day,
+                  );
+                  startTime = TimeOfDay.fromDateTime(startsAt);
+                  endTime = TimeOfDay.fromDateTime(endsAt);
+                });
               }
               if (!endsAt.isAfter(startsAt)) {
-                setModalState(
-                  () => errorText = 'เวลาสิ้นสุดต้องมากกว่าเวลาเริ่ม',
-                );
-                return;
+                endsAt = startsAt.add(const Duration(hours: 1));
+                setModalState(() => endTime = TimeOfDay.fromDateTime(endsAt));
               }
               setModalState(() => submitting = true);
               try {
@@ -1102,8 +1287,27 @@ class _SportClubPageState extends State<SportClubPage> {
                     ThaiBuddhistDatePickerField(
                       value: selectedDate,
                       label: 'วันที่',
-                      onDateSelected: (d) =>
-                          setModalState(() => selectedDate = d),
+                      onDateSelected: (d) {
+                        var nextStart = _dateTimeAt(d, startTime);
+                        var nextEnd = _endDateTimeAt(d, startTime, endTime);
+                        final earliest = _roundUpToNearest(
+                          DateTime.now().add(const Duration(minutes: 15)),
+                        );
+                        if (nextStart.isBefore(earliest)) {
+                          final delta = earliest.difference(nextStart);
+                          nextStart = earliest;
+                          nextEnd = nextEnd.add(delta);
+                        }
+                        setModalState(() {
+                          selectedDate = DateTime(
+                            nextStart.year,
+                            nextStart.month,
+                            nextStart.day,
+                          );
+                          startTime = TimeOfDay.fromDateTime(nextStart);
+                          endTime = TimeOfDay.fromDateTime(nextEnd);
+                        });
+                      },
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -1112,7 +1316,7 @@ class _SportClubPageState extends State<SportClubPage> {
                           child: OutlinedButton.icon(
                             onPressed: pickStartTime,
                             icon: const Icon(Icons.schedule),
-                            label: Text('เริ่ม ${startTime.format(ctx)}'),
+                            label: Text('เริ่ม ${startTime.format(ctx)} น.'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1120,7 +1324,7 @@ class _SportClubPageState extends State<SportClubPage> {
                           child: OutlinedButton.icon(
                             onPressed: pickEndTime,
                             icon: const Icon(Icons.timer_off_outlined),
-                            label: Text('สิ้นสุด ${endTime.format(ctx)}'),
+                            label: Text('สิ้นสุด ${endTime.format(ctx)} น.'),
                           ),
                         ),
                       ],
@@ -1179,10 +1383,13 @@ class _SportClubPageState extends State<SportClubPage> {
 
   Future<void> _showGroupDetailSheet(Map<String, dynamic> group) async {
     final groupId = group['id'].toString();
-    final isAdmin = _myAdminGroups.contains(groupId);
     final currentUser = AuthService.instance.currentUser;
     final currentUserId = currentUser?.id;
     final isGroupOwner = group['created_by']?.toString() == currentUserId;
+    final isAdmin =
+        isGroupOwner ||
+        _myAdminGroups.contains(groupId) ||
+        currentUser?.isAdmin == true;
     final canViewBlockedUsers = isGroupOwner || currentUser?.isAdmin == true;
     await showModalBottomSheet(
       context: context,
@@ -1279,7 +1486,8 @@ class _SportClubPageState extends State<SportClubPage> {
                                 ),
                               ),
                             ),
-                            if (group['requires_owner_approval'] == true) ...[
+                            if (group['requires_owner_approval'] == true &&
+                                !isGroupOwner) ...[
                               const SizedBox(height: 8),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -1664,6 +1872,25 @@ class _SportClubPageState extends State<SportClubPage> {
                                       ),
                                     );
                                   }
+                                  if (isSelf &&
+                                      isGroupOwner &&
+                                      group['owner_auto_join'] != false &&
+                                      memberUserId.isNotEmpty) {
+                                    actions.add(
+                                      _buildResponsiveSlidableAction(
+                                        onPressed: (_) =>
+                                            _withdrawOwnerParticipation(
+                                              sheetContext: ctx,
+                                              groupId: groupId,
+                                              userId: memberUserId,
+                                            ),
+                                        backgroundColor: Colors.red,
+                                        foregroundColor: Colors.white,
+                                        icon: Icons.person_remove_alt_1,
+                                        label: 'ถอน',
+                                      ),
+                                    );
+                                  }
                                   // Block + Remove: admin only, not self, not other admin
                                   if (isAdmin && !isSelf && !isMemberAdmin) {
                                     actions.add(
@@ -1916,6 +2143,69 @@ class _SportClubPageState extends State<SportClubPage> {
         },
       ),
     );
+  }
+
+  Future<void> _withdrawOwnerParticipation({
+    required BuildContext sheetContext,
+    required String groupId,
+    required String userId,
+  }) async {
+    final confirm = await showDialog<bool>(
+      context: sheetContext,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ถอนตัวจากสมาชิก'),
+        content: const Text(
+          'ต้องการถอนตัวจากการเป็นสมาชิกก๊วนนี้หรือไม่?\n'
+          'คุณยังคงเป็นผู้ดูแลก๊วน และจะเปิดพื้นที่ให้สมาชิกคนอื่นเข้าร่วมได้',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('ถอน', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final freshMembers = await _repo.listGroupMembers(groupId);
+      final hasOtherMembers = freshMembers.any(
+        (member) => member['user_id']?.toString() != userId,
+      );
+      if (hasOtherMembers) {
+        if (!sheetContext.mounted) return;
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          const SnackBar(
+            content: Text('ยังถอนไม่ได้ เพราะก๊วนมีสมาชิกคนอื่นอยู่แล้ว'),
+          ),
+        );
+        return;
+      }
+
+      await _repo.updateGroup(
+        groupId: groupId,
+        userId: userId,
+        ownerAutoJoin: false,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ถอนจากสมาชิกแล้ว และยังคงเป็นผู้ดูแลก๊วน'),
+        ),
+      );
+      Navigator.pop(sheetContext);
+      await _reload();
+    } catch (e) {
+      if (!sheetContext.mounted) return;
+      ScaffoldMessenger.of(
+        sheetContext,
+      ).showSnackBar(SnackBar(content: Text('ถอนไม่สำเร็จ: $e')));
+    }
   }
 
   Widget _buildGroupActionButtons({
@@ -2630,8 +2920,14 @@ class _SportClubPageState extends State<SportClubPage> {
       ),
     );
     if (confirmed != true) return;
+    final actorUserId = AuthService.instance.currentUser?.id;
+    if (actorUserId == null) return;
     try {
-      await _repo.leaveGroup(groupId: groupId, userId: memberUserId);
+      await _repo.leaveGroup(
+        groupId: groupId,
+        userId: memberUserId,
+        actorUserId: actorUserId,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('ถอด "$memberName" ออกจากก๊วนแล้ว')),
@@ -3136,6 +3432,7 @@ class _SportClubPageState extends State<SportClubPage> {
   Widget _buildMapView() {
     final markers = _groups
         .where((g) => g['lat'] != null && g['lng'] != null)
+        .where(_canViewFullGroup)
         .map((g) {
           final lat = (g['lat'] as num).toDouble();
           final lng = (g['lng'] as num).toDouble();
@@ -3292,7 +3589,7 @@ class _SportClubPageState extends State<SportClubPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('ค้นหาก๊วน'),
+          title: const Center(child: Text('ค้นหาก๊วน')),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3301,20 +3598,37 @@ class _SportClubPageState extends State<SportClubPage> {
                 const Text('ค้นหา'),
                 TextField(
                   controller: qController,
-                  decoration: const InputDecoration(
+                  onChanged: (_) => setDialogState(() {}),
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
+                  decoration: InputDecoration(
                     hintText: 'ค้นหาก๊วน / สถานที่',
+                    suffixIcon: qController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'ล้างค่า',
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              qController.clear();
+                              setDialogState(() {});
+                            },
+                          ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 const Text('จังหวัด'),
                 TextField(
                   controller: provinceController,
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
                   decoration: const InputDecoration(hintText: 'จังหวัด'),
                 ),
                 const SizedBox(height: 16),
                 const Text('อำเภอ'),
                 TextField(
                   controller: districtController,
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
                   decoration: const InputDecoration(hintText: 'อำเภอ'),
                 ),
                 const SizedBox(height: 16),

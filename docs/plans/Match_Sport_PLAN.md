@@ -77,13 +77,14 @@
 - **owner ไม่เข้าร่วม:** เพิ่ม toggle “เข้าร่วมก๊วนอัตโนมัติ” ให้ owner ปิดได้; owner ยังเป็นผู้ควบคุมก๊วนผ่าน `fitness_groups.created_by` แต่ไม่อยู่ในรายชื่อ active/ไม่ถูกนับ capacity และไม่มีสิทธิ์แชทในฐานะสมาชิกจนกว่าจะเปิดกลับ
 - **การแก้ไขภายหลัง:** ปิด toggle ได้เฉพาะเมื่อไม่มีสมาชิก active/confirmed อื่นที่ไม่ใช่ owner; เปิดกลับได้เมื่อมี capacity เหลือสำหรับ owner 1 คน ถ้าเต็มให้แจ้งให้เพิ่ม capacity ก่อน
 - **ผลของค่า `capacity=1`:** ถ้า owner auto-join จะมี owner อยู่ 1 คนและไม่เหลือที่สำหรับผู้อื่น; ถ้า owner ไม่ auto-join จะเปิดรับสมาชิกอื่นได้ 1 คน
-- **Migration ที่ต้องเพิ่ม:** เปลี่ยน constraint เป็น `CHECK (capacity BETWEEN 1 AND 30)` และเพิ่ม `owner_auto_join BOOLEAN NOT NULL DEFAULT true`; backfill กลุ่มเดิมให้ `owner_auto_join=true` เพื่อคงพฤติกรรมเดิม
-- **Trigger/RPC ที่ต้องปรับ:** สร้าง owner membership ตาม `owner_auto_join`, ให้ owner มีสิทธิ์จัดการแม้ membership inactive, และให้ capacity guard นับ owner เฉพาะเมื่อ auto-join พร้อม booking ที่ active ตามกติกา
+- **Migration ที่ apply แล้ว:** เปลี่ยน constraint เป็น `CHECK (capacity BETWEEN 1 AND 30)` และเพิ่ม `owner_auto_join BOOLEAN NOT NULL DEFAULT true`; backfill กลุ่มเดิมให้ `owner_auto_join=true` เพื่อคงพฤติกรรมเดิม ผ่าน migration `20260823110000_fitness_buddies_owner_participation.sql`
+- **Trigger/RPC ที่ปรับแล้ว:** สร้าง owner membership ตาม `owner_auto_join`, ให้ owner มีสิทธิ์จัดการแม้ membership inactive, ให้ capacity guard นับ owner เฉพาะเมื่อ auto-join และเพิ่ม owner rejoin ให้ booking เป็น `confirmed` โดยไม่ผ่าน approval ผ่าน migration `20260825100000_fitness_buddies_owner_rejoin.sql`
 - **สิทธิ์:** owner (`created_by`) ยังคงแก้ไขก๊วน/จัดการคำขอ/จัดการสมาชิกได้แม้ไม่ใช่สมาชิก active; admin คนอื่นใช้สิทธิ์ตาม membership role และไม่สามารถเปลี่ยน owner participation
 
 ### เข้าร่วมก๊วน = จองรอบนัด (Unified Action)
 - sheserved ไม่มีขั้นตอน "สมัครสมาชิกก๊วน" แยกจาก "จองรอบนัด" — ทั้งสองคำมีความหมายเดียวกัน: กด **"เข้าร่วมก๊วน"** = สร้าง `fitness_group_bookings` สำหรับรอบนัดถัดไปโดยตรง (สมาชิก sheserved จองได้อิสระ ไม่ต้องผ่านขั้นตอนสมัครสมาชิกก่อน)
 - เมื่อสร้างก๊วน ค่าเริ่มต้น `owner_auto_join=true` ให้ RPC upsert เจ้าของเป็น `role='admin', is_active=true` และนับ owner เป็นสมาชิก 1 คน; ถ้า owner เลือกไม่เข้าร่วม ให้ owner ยังคงเป็นผู้ควบคุมผ่าน `created_by` แต่ membership เป็น inactive/ไม่มีแถว active
+- เมื่อ owner opt-out แล้วกด “กลับเข้าร่วมก๊วน” ให้ใช้ booking รอบนัดเป็น action เดียวกัน แต่ RPC ต้องยกเว้น approval สำหรับ owner, เปลี่ยน booking เป็น `confirmed`, คืน owner เป็น admin active และตั้ง `owner_auto_join=true` หลังผ่าน capacity/overlap guard
 - เมื่อ booking ของผู้ขอถูกสร้าง RPC อาจ upsert `fitness_group_members` ตั้งแต่สถานะ `pending`; แต่ App Layer จะถือว่า “เข้าร่วมแล้ว” เฉพาะ admin ที่มีสิทธิ์ควบคุมก๊วนหรือผู้ที่มี booking `confirmed` อย่างน้อยหนึ่งรายการ
 - booking `pending` ของก๊วนที่ต้องอนุมัติ: แสดง CTA “รออนุมัติ”, อยู่เฉพาะ section คำขอรออนุมัติ, ไม่แสดงในรายชื่อ/จำนวน “เข้าร่วมแล้ว” และไม่แสดงก๊วนเป็น joined ของผู้ขอ
 - `capacity` คือจำนวนสมาชิก active สูงสุดรวม owner เมื่อ owner auto-join; ค่า `1` หมายถึง owner คนเดียวเมื่อเปิด auto-join หรือสมาชิกอื่น 1 คนเมื่อ owner ไม่เข้าร่วม
@@ -211,9 +212,13 @@ Scaffold
 - **Validation:**
   - เวลาเริ่มต้น ≥ ตอนนี้ + 15 นาที
   - เวลาสิ้นสุด > เวลาเริ่มต้น
+  - หากเวลาที่เลือกไม่ผ่านเงื่อนไข (`เริ่ม < ตอนนี้ + 15 นาที` หรือ `สิ้นสุด ≤ เริ่ม`) ระบบต้องขยับเวลาอัตโนมัติ และจะต้องอัปเดต `startTime`/`endTime` บนหน้าจอพร้อม `selectedDate` ไม่ใช่ปรับเฉพาะตัวแปรทีจะส่งเข้า repository เท่านั้น มิเช่นนั้นเวลาสิ้นสุดบนหน้าจอจะไม่เลื่อนตามทำให้ผู้ใช้สับสน
+  - การเลื่อนเวลาให้รักษาระยะห่าง (duration) เดิมของรอบนัด หรือถ้าข้ามเที่ยงคืนหรือไม่ผ่านเงื่อนไขให้ตั้ง `สิ้นสุด = เริ่ม + 1 ชั่วโมง`
 - **หลังบันทึกสำเร็จ:** ปิด Bottom Sheet, แสดง SnackBar "สร้างรอบนัดสำเร็จ", `setState()` เพื่อรีโหลด FutureBuilder รายการรอบนัด
+- **Root cause เคสปัญหาเวลาสิ้นสุดไม่เลื่อนตาม:** `setModalState()` อัปเดตแค่ `startsAt/endsAt` ที่บันทึก แต่ไม่อัปเดต `startTime`/`endTime` บนหน้าจอ ทำให้ผู้ใช้เห็นเวลาเก่าขณะทีส่งค่าไป DB เป็นค่าใหม่อยู่; แก้ไขโดย `setModalState(() { startTime = TimeOfDay.fromDateTime(actualStart); endTime = TimeOfDay.fromDateTime(actualEnd); })` ทุกครั้งทีมีการขยับเวลา
 - **ไฟล์ที่เกี่ยวข้อง:**
   - `lib/features/community/find_buddies/presentation/pages/sport_club_page.dart` — `_showCreateSessionSheet()`, ปุ่ม "เพิ่มรอบนัด"/"เข้าร่วมก๊วน"
+  - `lib/features/community/find_buddies/presentation/pages/create_session_page.dart` — หน้าสร้างรอบนัด fallback (หลัง `createGroup()`)
   - `lib/features/community/find_buddies/presentation/pages/create_group_page.dart` — redirect หลังสร้างก๊วน
   - `lib/features/community/find_buddies/data/fitness_buddies_repository.dart` — `createSession()`
   - `lib/shared/widgets/thai_buddhist_date_picker.dart` — `ThaiBuddhistDatePickerField`
@@ -230,17 +235,17 @@ Scaffold
 ## กติกาธุรกิจ — การจอง อนุมัติ และการแจ้งเตือน
 - ประเภทการจอง: ผู้ใช้จอง “เข้าร่วมรอบนัด (session)” ที่ `fitness_group_sessions`
 - การอนุมัติ:
-  - ค่าเริ่มต้น: ยอมรับอัตโนมัติ → สถานะ `confirmed` และแจ้งเตือนเฉพาะผู้จอง
-  - ถ้าเปิด Toggle “ต้องอนุมัติก่อน” → บันทึกเป็น `pending` รอเจ้าของอนุมัติ (เมื่ออนุมัติสำเร็จ แจ้งผู้จองเท่านั้น)
+  - ก๊วนเปิด (`requires_owner_approval=false`): ยอมรับอัตโนมัติ → สถานะ `confirmed` โดยไม่แจ้งเตือนผู้จองหรือเจ้าของก๊วน
+  - ก๊วนส่วนตัว (`requires_owner_approval=true`): บันทึกเป็น `pending` รอเจ้าของอนุมัติ และส่ง event แจ้งเตือนเจ้าของก๊วนทันทีเมื่อมีผู้ขอเข้าร่วม; เมื่อ `confirm` หรือ `reject` สำเร็จ ให้แจ้งผู้จองเท่านั้น
 - การยกเลิก:
   - ผู้จองยกเลิกเมื่อใดก็ได้ → เปลี่ยนเป็น `cancelled` และแจ้ง “เจ้าของก๊วน”
   - เจ้าของก๊วนยกเลิกรอบ/ก๊วนทั้งหมด → แจ้งผู้จองทุกคนที่มีสถานะไม่ใช่ `cancelled`
 - **หัวข้อแจ้งเตือน (Headsector ด้านขวา Home) — ใช้ WebSocket แบบ Real-time** (ตาม pattern เดียวกับ donation/yield-way ที่มีอยู่ ไม่ใช่ polling table):
-  - Backend (`websocket-server`): เพิ่ม event `fitness_booking_status` ที่ emit ไปยัง `userId` ที่เกี่ยวข้อง (ผู้จอง และ/หรือ เจ้าของก๊วน) ทันทีที่มีการ confirm/reject/cancel booking
-  - `lib/services/websocket_service.dart`: เพิ่ม `final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();` และ getter `Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;` (เหมือน `_donationStatusController`/`_yieldWayAlertController`)
-  - `lib/features/home/presentation/pages/home_page.dart`: เพิ่ม state `_fitnessBookingAlerts` + subscription ที่ listen ใน method รูปแบบเดียวกับ `_listenForDonationStatus()` พร้อม auto-clear หลัง ~15 วินาที
-  - `lib/features/home/presentation/widgets/home_header_section.dart`: เพิ่ม branch ใหม่ `item['type'] == 'fitness_booking'` ใน `combinedItems` (ตาม pattern ของ `donation_update`/`yield_way`) พร้อม callback `onFitnessBookingAlertTapped` นำไปหน้า `/community/sport-club/booking/:id` (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
-  - แสดงเป็นฟีดใหม่→เก่า คลิกเข้าหน้า "รายละเอียดการจอง"
+  - Backend (`websocket-server`): event `fitness_booking_status` emit ไปยัง `userId` ที่เกี่ยวข้องทันทีที่มีการสร้าง `pending` ของก๊วนส่วนตัว หรือมีการ confirm/reject/cancel booking; ก๊วนเปิดที่ auto-accept ไม่ emit event
+  - `lib/services/websocket_service.dart`: ใช้ `final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();` และ getter `Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;` (เหมือน `_donationStatusController`/`_yieldWayAlertController`)
+  - `lib/features/home/presentation/pages/home_page.dart`: ใช้ state `_fitnessBookingAlerts` + subscription ที่ listen ใน method รูปแบบเดียวกับ `_listenForDonationStatus()` พร้อม auto-clear หลัง ~15 วินาที
+  - `lib/features/home/presentation/widgets/home_header_section.dart`: แสดง branch `item['type'] == 'fitness_booking'` ใน `combinedItems`; เมื่อผู้ใช้เป็นเจ้าของก๊วนที่ได้รับคำขอ `pending` ให้นำไปหน้ารายละเอียดก๊วน/section “คำขอรออนุมัติ”; สถานะของผู้จองให้นำไปหน้า `/community/sport-club/booking/:id` (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
+  - แสดงเป็นฟีดใหม่→เก่า
 - **Timeout สำหรับ pending booking:** ถ้า booking สถานะ `pending` ไม่ได้รับอนุมัติภายใน 24 ชั่วโมง หรือถึงเวลาก่อนเริ่ม session 1 ชั่วโมง (แล้วแต่ถึงก่อน) ระบบ auto-reject (`status='rejected', cancelled_by='system'`) ผ่าน BullMQ delayed job ที่ enqueue ตอนสร้าง booking (สอดคล้องกับ `architecture_analysis.md` ที่ใช้ BullMQ queue อยู่แล้ว) และแจ้งเตือนทั้งผู้จองและเจ้าของก๊วนผ่าน event `fitness_booking_status` ด้านบน
 - ป้องกันการจองซ้ำซ้อน: ก๊วนเปิด (`requires_owner_approval=false`) ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) ในขั้นตอนขอร่วมก๊วน; ก๊วนส่วนตัว (`requires_owner_approval=true`) ให้สร้างคำขอ `pending` ก่อน แล้วตรวจ overlap ตอนแอดมินอนุมัติผ่าน `approve_fitness_session_booking()` RPC เพื่อไม่ให้คำขอค้างถูกตัดด้วย `OVERLAP_BOOKING` ตั้งแต่ต้น
 - บล็อกผู้ใช้: แอดมินก๊วนสามารถบล็อกจาก swipe ของสมาชิกหรือผู้ขอ pending (ห้ามจองก๊วนนี้); เจ้าของก๊วน/admin Sheserved ดูรายชื่อใน section “ถูกบล็อก” และปัดซ้ายเพื่อปลด
@@ -248,6 +253,8 @@ Scaffold
 ## อนุมัติคำขอเข้าร่วม (Owner Approval UI — ปรับเป็น Swipe)
 - ทริกเกอร์เดิมคือปุ่ม "จัดการ" ในรายละเอียดก๊วน แต่ปุ่มนี้ถูกยกเลิกแล้วตาม Phase 8
 - ปัจจุบัน admin เห็น section **"คำขอรออนุมัติ"** แยกเหนือรายชื่อสมาชิกใน `_showGroupDetailSheet()`; ผู้ที่มีเฉพาะ booking `pending` ไม่ถือว่าเข้าร่วมแล้ว
+- เมื่อมีผู้ขอเข้าร่วมก๊วนส่วนตัวและสร้าง booking `pending` สำเร็จ ระบบส่ง event `fitness_booking_status` แจ้งเจ้าของก๊วนทันที; ก๊วนเปิดที่ auto-accept ไม่ส่ง event แจ้งเตือน
+- เจ้าของก๊วนสามารถกดแจ้งเตือนจาก Headsector เพื่อเปิดหน้ารายละเอียดก๊วนและดูรายการใน section “คำขอรออนุมัติ”
 - แต่ละรายการแสดง avatar, ชื่อ และจำนวนรอบที่ขอ จากนั้นปัดซ้ายเพื่อเปิด **อนุมัติ / ปฏิเสธ / บล็อก**
 - อนุมัติหรือปฏิเสธ: เปิด dialog ให้เลือก booking pending เป็นรายรอบ แล้วเรียก `approveBooking()`/`rejectBooking()` เดิม; เมื่อเสร็จแล้ว refresh ด้วย `setSheetState()`
 - Blocklist: `blockUser()` upsert blocklist แล้วเรียก `leaveGroup()` เพื่อตั้งสมาชิก inactive และยกเลิก booking `pending/confirmed`; ผู้ถูกบล็อกจึงถูกนำออกจากทั้ง section pending และ “เข้าร่วมแล้ว”
@@ -256,7 +263,7 @@ Scaffold
   - `approveBooking({ bookingId, ownerId })` → เรียก RPC `approve_fitness_session_booking()` เพื่ออัปเดตสถานะเป็น `confirmed` พร้อมตรวจ overlap และสิทธิ์แอดมิน
   - `rejectBooking({ bookingId, ownerId, reason? })` → อัปเดตสถานะเป็น `rejected` เฉพาะแถวที่ยัง `pending` และบันทึก `cancelled_by='owner'` พร้อม `cancel_reason` ถ้ามี
 - รอบนัดที่มีอยู่: admin ปัดซ้ายแต่ละรอบเพื่อเปิด **แก้ไข / ยกเลิก**; ผู้ใช้ทั่วไปไม่มี action pane
-- Realtime/WebSocket: เมื่อเชื่อมต่อให้ emit event `fitness_booking_status` ไปยังผู้จองเมื่ออนุมัติ/ปฏิเสธสำเร็จ
+- Realtime/WebSocket: เมื่อสร้าง booking `pending` ของก๊วนส่วนตัวให้ emit event `fitness_booking_status` ไปยังเจ้าของก๊วน; เมื่ออนุมัติ/ปฏิเสธให้ emit ไปยังผู้จอง และเมื่อยกเลิกให้ emit ไปยังผู้รับที่เกี่ยวข้องตามกติกาการยกเลิก
 
 ## UX Completeness เพิ่มเติม
 - **Push Notification (นอกแอป):** รอบแรกไม่ทำ — Headsector ทำงานเฉพาะตอนแอปเปิดอยู่ (WebSocket only) ผู้ใช้ที่ปิดแอปจะไม่เห็นแจ้งเตือนจนกว่าจะเปิดแอปใหม่ (ออกแบบ `payload` ของ event ไว้ล่วงหน้าให้ขยายไปต่อ FCM/APNs ได้ในเฟสถัดไปโดยไม่แก้ schema)
@@ -287,13 +294,15 @@ Scaffold
 
 ### Auth Data Guidelines (`auth_data_guidelines.md`)
 - ❌ ห้ามใช้ `Supabase.instance.client.auth.currentUser` หรือ `_client.auth.currentUser` — ค่าเป็น `null` เสมอ
-- ✅ ดึง `userId` จาก `ServiceLocator.instance.currentUser?.id` เท่านั้น
-- ✅ Repository ต้องรับ `userId` เป็นพารามิเตอร์ ไม่ดึงเองจาก Supabase Auth
-- ✅ UI (Presentation) ส่ง `userId` จาก `ServiceLocator` เข้า Repository
+- ✅ ดึง `userId` จาก custom session ของโปรเจกต์ (`AuthService.instance.currentUser?.id` หรือ `ServiceLocator` abstraction ที่หน้าจอนั้นใช้อยู่)
+- ✅ Repository ต้องรับ `userId` เป็นพารามิเตอร์ ไม่ดึงเองจาก Supabase Auth และ mutation สำคัญต้องตรวจว่า `userId` ตรงกับ current user จาก custom auth ก่อนเรียก RPC
+- ✅ UI (Presentation) ส่ง `userId` จาก custom auth เข้า Repository
+- ✅ Owner rejoin ใช้ App-Layer authorization ตาม custom-auth policy; ห้ามเพิ่ม executable `auth.uid()` ใน RPC จนกว่าจะมี native Supabase Auth หรือ trusted backend identity bridge
 
 ### BOLA/IDOR Prevention (`docs/secure/01_broken_object_level_authorization.md`)
 - ⚠️ Backend endpoints ต้องใช้ `req.userId` จาก identity ที่ยืนยันแล้ว ไม่ใช่ `req.body.userId`
 - ⚠️ ทุก endpoint ที่อ่าน/แก้ไข booking, member, blocklist และ owner participation ต้องตรวจ ownership ก่อน (เช่น `booking.user_id = req.userId`, `member.role = 'admin'` หรือ `fitness_groups.created_by = req.userId`)
+- ⚠️ สำหรับ Flutter → Supabase RPC ใน custom-auth architecture ต้องรับ `userId` จาก `AuthService` ผ่าน Repository และตรวจ equality ก่อนเรียก; ห้ามถือ `p_user_id` จาก input อื่นเป็น identity ที่ยืนยันแล้ว
 - ⚠️ อย่าใช้ `SELECT *` — ระบุ column ที่ต้องการเท่านั้น
 - ⚠️ ตอบ 404 (ไม่ใช่ 403) เมื่อ object ไม่มีหรือไม่ใช่เจ้าของ เพื่อไม่ leak การมีอยู่ของ object
 - ⚠️ ป้องกัน mass assignment: ระบุ field ที่รับจาก body เป็น allowlist อย่างชัดเจน
@@ -311,7 +320,7 @@ Scaffold
   - `role`: enum allowlist `['member','admin']`
   - `cancelled_by`: enum allowlist `['user','owner','system']`
   - `cancel_reason`: สูงสุด 200 ตัวอักษร
-- DB constraints (CHECK, VARCHAR length, FK) เป็น defense layer สำรอง; constraint capacity 1–30 และ `owner_auto_join` ต้อง apply ผ่าน migration ของ Phase 9 (schema ที่ deploy เดิมยังเป็น capacity 2–30)
+- DB constraints (CHECK, VARCHAR length, FK) เป็น defense layer สำรอง; constraint capacity 1–30 และ `owner_auto_join` ถูก apply แล้วผ่าน migration ของ Phase 9; ถ้า environment ใดยังไม่ apply migration ต้อง migrate ก่อนใช้งาน
 
 ### Rate Limiting (`docs/secure/03_rate_limiting_resource_exhaustion.md`)
 - ใช้ Redis rate limiter ที่มีอยู่ (`middleware/rate-limiter.js`) สำหรับ endpoint ใหม่:
@@ -383,7 +392,7 @@ Scaffold
 - ผู้ใช้ที่ล็อกอินสามารถ “สร้างก๊วน” ได้ตามสิทธิ์ และแก้ไขได้เฉพาะแอดมินของก๊วน
 - Dev build ใช้แผนที่จากผู้ให้บริการไม่มีค่าใช้จ่าย และสามารถสลับไป Google Maps ผ่าน config/env
 - Toggle “ก๊วนส่วนตัว” แสดงในหน้าสร้างก๊วน (ค่าเริ่มต้น: ปิด = ก๊วนเปิด ยอมรับอัตโนมัติ; เปิด = ก๊วนส่วนตัว ต้องรออนุมัติ) — ฟิลด์เดียวนี้คือตัวกำหนดสถานะก๊วนส่วนตัว และก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ
-- เมื่อจองสำเร็จ ระบบแจ้งเตือนผู้จอง (headsector), ถ้ายกเลิกให้แจ้งเจ้าของก๊วน; ถ้าเจ้าของยกเลิกรอบ/ก๊วน ให้แจ้งผู้จองทั้งหมด
+- ก๊วนเปิดที่ auto-accept เปลี่ยน booking เป็น `confirmed` โดยไม่แจ้งเตือนใคร; ก๊วนส่วนตัวเมื่อมี booking `pending` ใหม่จะแจ้งเตือนเจ้าของก๊วนผ่าน Headsector; เมื่ออนุมัติ/ปฏิเสธจะแจ้งผู้จอง, เมื่อผู้จองยกเลิกจะแจ้งเจ้าของก๊วน และเมื่อเจ้าของยกเลิกรอบ/ก๊วนจะแจ้งผู้จองทั้งหมด
 - ป้องกันการจองซ้ำซ้อนตามช่วงเวลา หากทับซ้อนต้องอธิบายเหตุผลและไม่อนุญาต
 - หน้ารายละเอียดการจองมีปุ่ม “ยกเลิกจอง”; เจ้าของก๊วนเปิด dialog จากโปรไฟล์ผู้จองเพื่อดูประวัติและ “บล็อกผู้ใช้” ได้
 - Repository ดึง `userId` จาก `ServiceLocator.instance.currentUser?.id` เท่านั้น ไม่ใช้ `_client.auth.currentUser` (ตาม `auth_data_guidelines.md`)
@@ -395,7 +404,7 @@ Scaffold
 - กด "เข้าร่วมก๊วน" สร้าง booking โดยตรง (ไม่มีขั้นตอนสมัครสมาชิกแยก) และ `fitness_group_members` ถูก upsert อัตโนมัติในธุรกรรมเดียวกัน
 - `book_fitness_session()` RPC ป้องกันทั้งการจองซ้ำ (`UNIQUE`), เกิน capacity (`FOR UPDATE`), และจองซ้อนเวลา (`check_booking_overlap()`) แบบ atomic
 - Migration เพิ่ม `room_type`/`room_ref_id` ใน `chat_rooms` สำเร็จ และ `participant_ids` sync ถูกต้องเมื่อสมาชิก join/leave
-- Headsector แจ้งเตือนการจอง/อนุมัติ/ยกเลิกทำงานผ่าน WebSocket real-time (ไม่ใช่ polling) และปรากฏใน `home_header_section.dart`
+- Headsector แจ้งเตือนคำขอ `pending` ของก๊วนส่วนตัว รวมถึงการอนุมัติ/ปฏิเสธ/ยกเลิก ผ่าน WebSocket real-time (ไม่ใช่ polling) และปรากฏใน `home_header_section.dart`; ก๊วนเปิดที่ auto-accept ไม่แจ้งเตือน
 - Booking `pending` ที่ค้างเกิน 24 ชั่วโมงหรือใกล้เวลาเริ่ม session 1 ชั่วโมง ถูก auto-reject โดยระบบ
 - ข้อเสนอหมวดกีฬาใหม่ (`sports.status='pending'`) ปรากฏในรายการรออนุมัติของผู้ดูแลระบบ และ admin สามารถกำหนด emoji icon ได้ตอนอนุมัติ
 - `sports.icon` แสดงผลใน sport chip, การ์ดก๊วน, dropdown สร้างก๊วน, และรายการรออนุมัติ
@@ -440,7 +449,7 @@ Scaffold
 
 ## Roadmap ปรับปรุงจากผลวิเคราะห์ Gap (2026-08-22) — เรียงตามความสำคัญ
 
-> ผลตรวจสอบโค้ดจริง ณ 2026-08-23: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage และ swipe actions ในรายละเอียดก๊วนทำครบแล้ว — ช่องว่างที่เหลือคือการทดสอบ E2E (Phase 6), การทดสอบ regression และการปรับ owner participation/capacity policy ตาม Phase 9
+> ผลตรวจสอบโค้ดจริง ณ 2026-08-25: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage, swipe actions ในรายละเอียดก๊วน และ owner participation/owner rejoin ตาม Phase 9 ทำครบแล้ว — ช่องว่างที่เหลือคือการทดสอบ E2E (Phase 6) และการทดสอบ regression บน environment จริง
 
 ### Phase 1 — ปักหมุดพิกัดตอนสร้างก๊วน + Pagination ✅ เสร็จแล้ว (2026-08-22)
 - ปัญหา: ฟอร์ม `create_group_page.dart` ไม่มีการเก็บ `lat/lng` เลย → ก๊วนใหม่ไม่มีพิกัด, มุมมองแผนที่ใน `sport_club_page.dart` ไม่มี marker, ตัวกรองรัศมี (กม.) ไม่ทำงานจริง
@@ -471,12 +480,15 @@ Scaffold
 - **แก้ไขก๊วน:** หน้า/sheet แก้ไข (ชื่อ, คำอธิบาย, ภาพ, เพศ, toggle `requires_owner_approval`, พิกัด, capacity) เฉพาะแอดมินก๊วน — เพิ่ม `updateGroup()` ใน repository
 - **Validation ตอนแก้ไข capacity (policy ใหม่ใน Phase 9):** รองรับช่วง 1–30 พร้อมตรวจ owner participation แบบ fresh จาก DB; ปิดเข้าร่วมอัตโนมัติได้เฉพาะเมื่อไม่มีสมาชิกอื่น
 - **Owner participation:** เพิ่ม toggle “เข้าร่วมก๊วนอัตโนมัติ” ใน create/edit ค่าเริ่มต้นเปิด; ปิดภายหลังได้เฉพาะเมื่อไม่มีสมาชิก active/confirmed อื่นที่ไม่ใช่ owner และ owner ต้องยังคงสิทธิ์จัดการผ่าน `created_by`
+- **ปุ่มถอนเจ้าของ:** ในแถวสมาชิกของ owner ให้แสดงปุ่ม “ถอน” ผ่านเมนู swipe เดียวกับ “แชท”/เมนูจัดการอื่น เมื่อ owner ยังเป็นสมาชิก active; ยืนยันแล้วตรวจสมาชิกจาก DB แบบ fresh ก่อนเรียก `updateGroup(ownerAutoJoin: false)` เพื่อถอน owner ออกจาก active members แต่คงสิทธิ์ผู้ดูแลผ่าน `created_by`; ถ้ามีสมาชิกอื่นอยู่ให้คงกติกาปฏิเสธการถอนตาม owner participation policy
 - **แก้ไขรอบนัด:** แอดมินแก้ไขเวลาเริ่ม/สิ้นสุด และหมายเหตุของรอบนัดที่มีอยู่แล้ว — เพิ่ม `updateSession()` ใน repository
-- **ออกจากก๊วน:** เพิ่ม `leaveGroup()` — ตั้ง `fitness_group_members.is_active=false` + ยกเลิก booking `pending/confirmed` ทั้งหมดแบบ cascade ใน transaction เดียว (RPC) ตามหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด"
+- **ออกจากก๊วน:** เพิ่ม `leaveGroup()` — ตั้ง `fitness_group_members.is_active=false` + ยกเลิก booking `pending/confirmed` ทั้งหมดแบบ cascade ใน transaction เดียว ผ่าน RPC `leave_fitness_group(p_group_id, p_user_id, p_actor_id)`; self-leave ใช้ current user และ admin remove ส่ง actor จาก `AuthService`
 - **Blocklist UI:** รายชื่อสมาชิก/pending มี swipe ปุ่มบล็อก; ผู้ถูกบล็อกถูกถอดจากสมาชิก active และย้ายไป section “ถูกบล็อก” ซึ่งมองเห็นเฉพาะเจ้าของก๊วน/admin Sheserved; ปัดแถวผู้ถูกบล็อกเพื่อเปิดปุ่ม “ปลด”; ไม่มีปุ่ม/Blocklist Sheet แยกแล้ว; repository guard อยู่ใน `listBlockedUsers(..., requesterUserId)` และ `book_fitness_session()` RPC ตรวจ blocklist
 - **หน้า "ก๊วนของฉัน":** หน้ารวมก๊วนที่ผู้ใช้สร้าง/เข้าร่วม + ประวัติการจองทั้งหมด (ปัจจุบันไม่มีที่ดูรวม — ดูได้เฉพาะ booking detail ทีละรายการ) — เพิ่ม route `/community/sport-club/my-groups`
-- **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, section ผู้ถูกบล็อกแบบ swipe, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
+- **สถานะ:** ✅ ทำครบแล้วตามโค้ดจริง (รวม Phase 9 owner participation/rejoin) — `updateGroup()`/`updateSession()`/`leaveGroup()`/`blockUser()`/`unblockUser()`/`listBlockedUsers()` พร้อมใช้งาน, มี sheet แก้ไขก๊วนและรอบนัด, owner ถอน/กลับเข้าร่วมผ่าน flow ที่กำหนด, section ผู้ถูกบล็อกแบบ swipe, และหน้า `MyGroupsPage` + route `/community/sport-club/my-groups`
 - **บันทึกสาเหตุปัญหาการบันทึกแก้ไขก๊วน:** เดิม DB กำหนด `fitness_groups.capacity CHECK (capacity BETWEEN 2 AND 30)` จึงเกิด constraint error เมื่อข้อมูลเก่าเป็น `1`; Phase 9 เปลี่ยนเป็น 1–30, เพิ่ม `owner_auto_join` และปรับ UI/repository/migration เรียบร้อยแล้ว
+- **บันทึกสาเหตุ owner rejoin ใช้ไม่ได้:** ห้ามใช้ `auth.uid()` ใน RPC เพราะโปรเจกต์ใช้ custom `AuthService` และ Supabase Auth session เป็น `null`; Repository ต้องตรวจ `userId` กับ `AuthService.instance.currentUser?.id` ก่อนเรียก RPC และ RPC ต้องใช้ `created_by` เพื่อแยก owner พร้อมคง invoker scope ตาม custom-auth policy
+- **บันทึกสาเหตุออก/ถอดสมาชิกไม่สำเร็จ:** Repository เรียก `leave_fitness_group` แต่ไม่มี function นี้ใน migrations จึงเกิด PostgREST `schema cache ... no matches`; แก้ด้วย migration `20260825110000_fitness_buddies_leave_group.sql` ซึ่งสร้าง RPC แบบ atomic รับ `p_group_id`, `p_user_id`, `p_actor_id`, ตรวจ actor จาก custom-auth App Layer, ป้องกัน owner ถูกถอดผ่าน leave flow และยกเลิก booking `pending/confirmed` พร้อม deactivate membership
 
 ### Phase 5 — Auto-reject pending timeout (Supabase scheduled cleanup) ✅ เสร็จแล้ว (2026-08-23)
 - **เหตุผลที่เลือกแนวนี้ (Option A):** booking ถูกสร้างจาก Flutter → Supabase RPC โดยตรง ไม่ผ่าน backend request lifecycle การใช้ BullMQ delayed job enqueue ตอนสร้าง booking จะเกิด dual-write risk และเพิ่ม coupling กับ websocket-server โดยไม่จำเป็น DB เป็น source of truth อยู่แล้ว เงื่อนไข timeout ทั้งหมด (`status`, `starts_at`, `created_at`, `requires_owner_approval`) อยู่ในฐานข้อมูล — ให้ DB/RPC จัดการ atomic ปลอดภัยกว่า
@@ -709,7 +721,7 @@ Scaffold
 
 ---
 
-## Phase 9 — Owner Participation + Capacity 1–30 ✅ implement แล้ว (2026-08-23)
+## Phase 9 — Owner Participation + Capacity 1–30 ✅ implement แล้ว (2026-08-25)
 
 ### ข้อตกลงที่ยืนยันแล้ว
 - `capacity` หมายถึงจำนวนสมาชิก active สูงสุด **รวม owner เมื่อ owner auto-join**
@@ -721,6 +733,7 @@ Scaffold
 - ถ้า owner ไม่ auto-join และ capacity=1: ก๊วนเปิดรับสมาชิกอื่นได้ 1 คน
 - การปิด toggle ภายหลังทำได้เฉพาะเมื่อไม่มีสมาชิก active/confirmed อื่นที่ไม่ใช่ owner; ถ้ามีสมาชิกอื่นอยู่ต้องไม่อนุญาต
 - หากเปิด toggle กลับภายหลัง ต้องมี capacity ว่างสำหรับ owner 1 คน มิฉะนั้นให้แจ้งเพิ่ม capacity ก่อน
+- **Owner rejoin:** เมื่อ owner opt-out แล้ว หากเลือก “กลับเข้าร่วมก๊วน” ระบบต้องให้ owner จองรอบนัดได้ทันทีโดยไม่ผ่าน approval แม้ `requires_owner_approval=true`; booking ต้องเป็น `confirmed`, owner ต้องกลับเป็น `role='admin', is_active=true` และ `owner_auto_join=true` หลังผ่าน capacity/overlap guard
 
 ### งานที่ implement แล้ว
 - Migration: เปลี่ยน `fitness_groups.capacity` constraint จาก `BETWEEN 2 AND 30` เป็น `BETWEEN 1 AND 30`
@@ -729,8 +742,9 @@ Scaffold
 - Edit UI: เพิ่ม toggle owner auto-join; validation capacity 1–30; ห้ามปิดเมื่อมีสมาชิกอื่น active/confirmed; ห้ามเปิดเมื่อ capacity เต็ม
 - RPC สร้างก๊วน: สร้าง owner membership เฉพาะเมื่อ `owner_auto_join=true`; owner ที่ opt-out ยังผ่าน `created_by` เป็นผู้ควบคุม
 - RPC จอง: capacity guard ต้องนับ owner 1 คนเมื่อ auto-join และนับผู้จอง distinct ที่ `pending/confirmed` โดยไม่บวก owner ซ้ำ
+- RPC owner rejoin: owner ที่ opt-out จองรอบนัดได้ `confirmed` ทันทีแม้เป็นก๊วนปิด; ระบบเปิด `owner_auto_join=true` และคืน owner เป็น admin active แบบ atomic ตาม capacity guard — migration `20260825100000_fitness_buddies_owner_rejoin.sql`; authorization ใช้ `AuthService`/Dart repository ตาม custom-auth policy และไม่ใช้ `auth.uid()`
 - RPC อนุมัติ/จัดการ: ตรวจสิทธิ์ owner จาก `fitness_groups.created_by` ร่วมกับ admin membership เพื่อรองรับ owner ที่ inactive
-- Query/UI: member count, `listGroupMembers()`, `listMyJoinedGroupIds()`, `listMyGroups()` และ `isGroupMember()` ต้องใช้ effective membership ตาม owner participation + confirmed booking
+- Query/UI: member count, `listGroupMembers()`, `listMyJoinedGroupIds()`, `listMyGroups()` และ `isGroupMember()` ต้องใช้ effective membership ตาม owner participation + confirmed booking; `listMyAdminGroupIds()` ต้องรวม owner จาก `created_by` แม้ membership inactive
 - Chat sync: ปรับ trigger ให้ participant มีเฉพาะ owner ที่ auto-join และสมาชิกที่มี booking `confirmed`
 - Unblock guard: ใช้ capacity semantics ใหม่และตรวจ owner ที่ auto-join รวมในจำนวนก่อนอนุญาตปลดบล็อก
 
@@ -741,3 +755,65 @@ Scaffold
 - แก้ก๊วนจาก false เป็น true เมื่อ capacity เต็ม → ต้องปฏิเสธและแนะนำเพิ่ม capacity
 - ก๊วนเดิมที่ไม่มี `owner_auto_join` หลัง migration ต้องมีค่า `true`
 - ตรวจ CTA, member count, จำนวนว่าง, pending/confirmed, หน้า “ก๊วนของฉัน”, สิทธิ์แชท และสิทธิ์ admin ให้ตรงกัน
+- Owner ที่ opt-out ในก๊วนปิดต้องเห็น CTA “กลับเข้าร่วมก๊วน”; หลังจองต้องเป็น `confirmed` ทันทีและกลับเป็น admin active โดยไม่ขึ้น “รออนุมัติ”
+
+---
+
+## Phase 10 — ปรับปรุง Loading/Refresh UX ของหน้า “หาเพื่อนออกกำลังกาย” ✅ implement แล้ว (2026-08-25)
+
+### ปัญหาที่พบ
+- ผู้ใช้ยังเห็น `CircularProgressIndicator` กลางจอเมื่อเข้าหน้า “หาเพื่อนออกกำลังกาย” แม้ลบตัวโหลดของปุ่มรีเฟรชใน header ไปแล้ว
+- สาเหตุ: ใน `sport_club_page.dart` มีตัวโหลดอีกจุดคือ
+  ```dart
+  child: _loading
+      ? const Center(child: CircularProgressIndicator())
+      : _showMapView ? _buildMapView() : RefreshIndicator(...)
+  ```
+  โดย `_loading` เริ่มต้นเป็น `true` และเปลี่ยนเป็น `false` หลัง `_init()` โหลดข้อมูลเสร็จ จึงทำให้ผู้ใช้เห็นวงกลมหมุนกลางจอทุกครั้งที่เปิดหน้า
+
+### วิธีแก้ไข
+- ลบเงื่อนไข `_loading ? Center(CircularProgressIndicator)` ออกจาก body ของหน้า
+- ใช้ **Skeleton Card** (`_buildSkeletonCard()` ที่มีอยู่แล้ว ใช้ `Shimmer`) แสดง 3 รายการแทนระหว่างโหลดครั้งแรกและระหว่างรีเฟรช:
+  ```dart
+  if (_loading || _reloadingGroups)
+    for (var i = 0; i < 3; i++) _buildSkeletonCard(),
+  ```
+- ปรับเงื่อนไขการเลือก Map view ให้รอจนโหลดเสร็จก่อน:
+  ```dart
+  child: _showMapView && !_loading
+      ? _buildMapView()
+      : RefreshIndicator(...)
+  ```
+- ปุ่มรีเฟรชใน header แสดงไอคอน `Icons.refresh` คงที่ ไม่สลับเป็น `CircularProgressIndicator` ระหว่างโหลด; ป้องกันกดซ้ำด้วย `_reloadingGroups`
+- คง `CircularProgressIndicator` จุดอื่นที่จำเป็นไว้ เช่น โหลดเพิ่ม (`_isLoadingMore`), บันทึกฟอร์ม, และ `FutureBuilder` ใน dialog
+
+### ไฟล์ที่เกี่ยวข้อง
+- `lib/features/community/find_buddies/presentation/pages/sport_club_page.dart`
+
+### สาเหตุ/วิธีป้องกัน (บันทึกเพื่อไม่ให้เกิดซ้ำ)
+- การลบตัวโหลดในจุดเดียวไม่เพียงพอ ต้องตรวจทุกจุดที่ใช้ `_loading`/`_reloadingGroups` ร่วมกับ `CircularProgressIndicator`
+- ควรใช้ skeleton/shimmer สำหรับ loading state หลักของหน้า list เพื่อให้ผู้ใช้เห็นโครงสร้างคร่าวๆ แทนวงกลมหมุนกลางจอ
+- แยก loading state ของ header action (เช่น ปุ่มรีเฟรช) จาก loading state ของ body อย่างชัดเจน
+
+---
+
+## Phase 11 — ใช้ TlzAppTopBar ในหน้า “หาเพื่อนออกกำลังกาย” ✅ implement แล้ว (2026-08-25)
+
+### ข้อตกลงที่ยืนยันแล้ว
+- หน้า `sport_club_page.dart` ใช้ `TlzAppTopBar.onPrimary` เป็น header หลัก โดยคง gradient และมุมโค้งด้านล่างของ header เดิม
+- ส่วนกลางของ Top Bar แสดงชื่อ “หาเพื่อนออกกำลังกาย” แบบ `FittedBox` และบังคับให้แสดงหนึ่งบรรทัด
+- การค้นหายังคงใช้ปุ่มค้นหาและ `_showSearchDialog()` เดิม เพื่อไม่เปลี่ยนพฤติกรรมตัวกรองกีฬา/จังหวัด/อำเภอ/รัศมี
+- แสดงปุ่มมาตรฐาน Notification และ Cart ของ `TlzAppTopBar`
+- ปุ่มรีเฟรชและค้นหาเป็นปุ่มหลักที่แสดงโดยตรง ส่วน “ก๊วนของฉัน” และ Map/List อยู่ในเมนูเพิ่มเติมเพื่อให้ชื่อหน้าไม่ถูกย่อจนอ่านยากบนจอแคบ
+- ใช้ `SafeArea` และปรับ padding ให้ header รองรับพื้นที่ status bar ตามมาตรฐานของ Top Bar
+
+### สาเหตุ/วิธีป้องกัน
+- การวางปุ่มเฉพาะหน้า 4 ปุ่มรวมกับ Notification และ Cart ในแถวเดียวทำให้พื้นที่ชื่อหน้าเหลือน้อยและข้อความถูกย่อมากเกินไป
+- เมื่อนำ shared Top Bar มาใช้ ต้องตรวจสอบความกว้างรวมของ leading, middle และ actions ก่อนเพิ่มปุ่มใหม่
+- ควรเก็บ action ที่ใช้บ่อยไว้ในแถวหลัก และรวม action ที่ใช้รองลงมาไว้ใน overflow menu โดยต้องไม่สูญเสียฟังก์ชันเดิม
+
+### Search Dialog UX
+- แตะพื้นที่นอก `TextField` ภายใน dialog แล้วต้องซ่อนแป้นพิมพ์ด้วย `TextField.onTapOutside` และ `FocusManager.instance.primaryFocus?.unfocus()`
+- ช่อง “ค้นหา” ต้องแสดงปุ่มล้างค่าเมื่อมีข้อความ; กดแล้วล้าง `qController` และอัปเดต dialog ทันทีด้วย `setDialogState()`
+- ชื่อ dialog “ค้นหาก๊วน” ต้องจัดกึ่งกลางตามแนวนอนด้วย `Center`
+- ป้องกัน regression: การแตะช่องอื่นหรือ control อื่นใน dialog ต้องไม่ทำให้ dialog ปิด และการกดล้างค่าต้องไม่ล้างตัวกรองจังหวัด/อำเภอโดยไม่ตั้งใจ
