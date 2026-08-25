@@ -94,7 +94,11 @@ class WebSocketService {
   /// ✅ [Phase 4] Dead-man trigger notifications
   Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream => _emergencyHealthDeadManTriggeredController.stream;
   Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;
-  
+
+  void publishFitnessBookingAlert(Map<String, dynamic> alert) {
+    _fitnessBookingAlertController.add(alert);
+  }
+
   WebSocketService._(this._serverUrl);
   
   /// Singleton instance

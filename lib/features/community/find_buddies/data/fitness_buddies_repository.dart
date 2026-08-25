@@ -477,32 +477,42 @@ class FitnessBuddiesRepository {
     String? reason,
     String? actorUserId,
   }) {
-    final socket = WebSocketService().socket;
-    if (socket == null || recipientUserIds.isEmpty) return;
+    final ws = WebSocketService();
+    final socket = ws.socket;
+    final currentUserId = AuthService.instance.currentUser?.id;
+
+    final basePayload = <String, dynamic>{
+      'bookingId': bookingId,
+      'booking_id': bookingId,
+      'sessionId': sessionId,
+      'session_id': sessionId,
+      'groupId': groupId,
+      'group_id': groupId,
+      'groupName': groupName,
+      'group_name': groupName,
+      'status': status,
+      'message': message,
+      'recipientUserIds': recipientUserIds,
+      'recipient_user_ids': recipientUserIds,
+      if (actorUserId != null) 'actorUserId': actorUserId,
+      if (actorUserId != null) 'actor_user_id': actorUserId,
+      if (requesterId != null) 'requesterUserId': requesterId,
+      if (requesterId != null) 'requester_user_id': requesterId,
+      if (requesterName != null) 'requesterName': requesterName,
+      if (requesterName != null) 'requester_name': requesterName,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+    };
 
     for (final recipientUserId in recipientUserIds.toSet()) {
-      socket.emit('fitness_booking_status', {
-        'userId': recipientUserId,
-        'bookingId': bookingId,
-        'booking_id': bookingId,
-        'sessionId': sessionId,
-        'session_id': sessionId,
-        'groupId': groupId,
-        'group_id': groupId,
-        'groupName': groupName,
-        'group_name': groupName,
-        'status': status,
-        'message': message,
-        'recipientUserIds': recipientUserIds,
-        'recipient_user_ids': recipientUserIds,
-        if (actorUserId != null) 'actorUserId': actorUserId,
-        if (actorUserId != null) 'actor_user_id': actorUserId,
-        if (requesterId != null) 'requesterUserId': requesterId,
-        if (requesterId != null) 'requester_user_id': requesterId,
-        if (requesterName != null) 'requesterName': requesterName,
-        if (requesterName != null) 'requester_name': requesterName,
-        if (reason != null && reason.isNotEmpty) 'reason': reason,
-      });
+      final payload = Map<String, dynamic>.from(basePayload)
+        ..['userId'] = recipientUserId
+        ..['user_id'] = recipientUserId;
+      if (socket != null && socket.connected) {
+        socket.emit('fitness_booking_status', payload);
+      }
+      if (currentUserId != null && recipientUserId == currentUserId) {
+        ws.publishFitnessBookingAlert(payload);
+      }
     }
   }
 

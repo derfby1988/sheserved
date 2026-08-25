@@ -19,9 +19,10 @@
 
 ## หน้าจอและ UI (ใช้ `tlz_app_top_bar.dart`)
 - Top bar ทั่วไป: 
-  - ซ้าย: ปุ่มเปิด Drawer/ย้อนกลับ (ตาม context)
-  - กลาง: ชื่อหน้า "หาเพื่อนออกกำลังกาย" หรือชื่อก๊วน
-  - ขวา: ปุ่มค้นหา (รวมตัวกรองใน dialog เดียว), ปุ่มสลับ "รายการ/แผนที่"
+  - ซ้าย: ปุ่มเปิด Drawer (`TlzHamburgerMenu`)
+  - กลาง: ชื่อหน้า "หาเพื่อนออกกำลังกาย" แบบ `FittedBox` บังคับหนึ่งบรรทัด หรือชื่อก๊วน
+  - ขวา: ปุ่มรีเฟรช, ปุ่มค้นหา (เปิด `_showSearchDialog()`), ปุ่มเมนูเพิ่มเติม (ก๊วนของฉัน + สลับมุมมอง รายการ/แผนที่), ปุ่มแจ้งเตือน และปุ่มตะกร้าตามมาตรฐานของ `TlzAppTopBar`
+- การจัดวางปุ่ม: ลดจำนวนปุ่มหลักเพื่อรักษาพื้นที่ชื่อหน้า โดยเก็บ action ที่ใช้รองลงมาไว้ใน `PopupMenuButton` (`more_vert`)
 - หน้า "รายการก๊วน"
   - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม (เฉพาะ admin `role == 'admin'`; ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้) — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
   - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **จำนวนว่าง (capacity − member_count)**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับแอดมิน)
@@ -244,7 +245,10 @@ Scaffold
   - Backend (`websocket-server`): event `fitness_booking_status` emit ไปยัง `userId` ที่เกี่ยวข้องทันทีที่มีการสร้าง `pending` ของก๊วนส่วนตัว หรือมีการ confirm/reject/cancel booking; ก๊วนเปิดที่ auto-accept ไม่ emit event
   - `lib/services/websocket_service.dart`: ใช้ `final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();` และ getter `Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;` (เหมือน `_donationStatusController`/`_yieldWayAlertController`)
   - `lib/features/home/presentation/pages/home_page.dart`: ใช้ state `_fitnessBookingAlerts` + subscription ที่ listen ใน method รูปแบบเดียวกับ `_listenForDonationStatus()` พร้อม auto-clear หลัง ~15 วินาที
-  - `lib/features/home/presentation/widgets/home_header_section.dart`: แสดง branch `item['type'] == 'fitness_booking'` ใน `combinedItems`; เมื่อผู้ใช้เป็นเจ้าของก๊วนที่ได้รับคำขอ `pending` ให้นำไปหน้ารายละเอียดก๊วน/section “คำขอรออนุมัติ”; สถานะของผู้จองให้นำไปหน้า `/community/sport-club/booking/:id` (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
+  - `lib/features/home/presentation/widgets/home_header_section.dart`: แสดง branch `item['type'] == 'fitness_booking'` ใน `combinedItems`; callback `onFitnessBookingAlertTapped` รับข้อมูล alert `Map<String, dynamic>` ทั้งหมด
+    - ถ้า `status == 'pending'` และมี `groupId` → นำทางไป `/community/sport-club` พร้อม `arguments: { 'groupId': groupId, 'intent': 'review_pending' }` เพื่อให้เจ้าของก๊วน review คำขอทันที
+    - ถ้ามี `bookingId` → นำทางไป `/community/sport-club/booking` พร้อม `arguments: { 'id': bookingId }` สำหรับสถานะ confirm/reject/cancel (มี alias เดิม `/community/find-buddies/booking/:id` ชั่วคราว)
+    - alert payload จาก WebSocket/Repository ต้องส่ง `groupId`/`group_id` และ `bookingId`/`booking_id` พร้อม `status` เสมอ เพื่อให้ `home_page.dart` แยกทางเลือกนำทางได้ถูกต้อง
   - แสดงเป็นฟีดใหม่→เก่า
 - **Timeout สำหรับ pending booking:** ถ้า booking สถานะ `pending` ไม่ได้รับอนุมัติภายใน 24 ชั่วโมง หรือถึงเวลาก่อนเริ่ม session 1 ชั่วโมง (แล้วแต่ถึงก่อน) ระบบ auto-reject (`status='rejected', cancelled_by='system'`) ผ่าน BullMQ delayed job ที่ enqueue ตอนสร้าง booking (สอดคล้องกับ `architecture_analysis.md` ที่ใช้ BullMQ queue อยู่แล้ว) และแจ้งเตือนทั้งผู้จองและเจ้าของก๊วนผ่าน event `fitness_booking_status` ด้านบน
 - ป้องกันการจองซ้ำซ้อน: ก๊วนเปิด (`requires_owner_approval=false`) ตรวจผ่าน `check_booking_overlap()` RPC (ดู Data Integrity Guards) ในขั้นตอนขอร่วมก๊วน; ก๊วนส่วนตัว (`requires_owner_approval=true`) ให้สร้างคำขอ `pending` ก่อน แล้วตรวจ overlap ตอนแอดมินอนุมัติผ่าน `approve_fitness_session_booking()` RPC เพื่อไม่ให้คำขอค้างถูกตัดด้วย `OVERLAP_BOOKING` ตั้งแต่ต้น
@@ -817,3 +821,12 @@ Scaffold
 - ช่อง “ค้นหา” ต้องแสดงปุ่มล้างค่าเมื่อมีข้อความ; กดแล้วล้าง `qController` และอัปเดต dialog ทันทีด้วย `setDialogState()`
 - ชื่อ dialog “ค้นหาก๊วน” ต้องจัดกึ่งกลางตามแนวนอนด้วย `Center`
 - ป้องกัน regression: การแตะช่องอื่นหรือ control อื่นใน dialog ต้องไม่ทำให้ dialog ปิด และการกดล้างค่าต้องไม่ล้างตัวกรองจังหวัด/อำเภอโดยไม่ตั้งใจ
+
+---
+
+## การทดสอบ Widget
+- เพิ่ม `test/features/home/presentation/widgets/home_header_section_test.dart`
+- ครอบคลุม:
+  - แสดง fitness booking alert ขณะ `HomeHeaderSection` กำลังโหลด (`isLoading: true`)
+  - ส่งค่า `bookingId`, `groupId`, `status` ของ alert ไปยัง `onFitnessBookingAlertTapped` เมื่อผู้ใช้แตะข้อความ เพื่อให้ `home_page.dart` แยกนำทาง pending review กับรายละเอียด booking ได้ถูกต้อง
+- รัน: `flutter test test/features/home/presentation/widgets/home_header_section_test.dart`
