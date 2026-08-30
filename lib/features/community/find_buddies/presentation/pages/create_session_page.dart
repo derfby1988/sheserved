@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../../../services/auth_service.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 
 class CreateSessionPage extends StatefulWidget {
@@ -17,6 +18,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   DateTime? _endsAt;
   final _placeCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  int _capacity = 5;
   bool _submitting = false;
 
   @override
@@ -133,6 +135,8 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     final selectedStart = _startsAt;
     final selectedEnd = _endsAt;
     if (selectedStart == null || selectedEnd == null) return;
+    final actorUserId = AuthService.instance.currentUser?.id;
+    if (actorUserId == null) return;
 
     var startsAt = selectedStart;
     var endsAt = selectedEnd;
@@ -158,6 +162,8 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     try {
       await _repo.createSession(
         groupId: widget.groupId,
+        actorUserId: actorUserId,
+        capacity: _capacity,
         startsAt: startsAt,
         endsAt: endsAt,
         placeName: _placeCtrl.text.trim().isEmpty
@@ -206,6 +212,22 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                 ),
                 trailing: const Icon(Icons.schedule),
                 onTap: _pickEnd,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('จำนวนผู้เข้าร่วมสูงสุดในรอบนี้'),
+                  Text('$_capacity คน'),
+                ],
+              ),
+              Slider(
+                value: _capacity.toDouble(),
+                min: 1,
+                max: 30,
+                divisions: 29,
+                label: '$_capacity',
+                onChanged: (value) => setState(() => _capacity = value.toInt()),
               ),
               const SizedBox(height: 8),
               TextFormField(

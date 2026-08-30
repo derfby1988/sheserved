@@ -6,6 +6,69 @@ class FitnessBuddiesRepository {
   final SupabaseClient _client;
   FitnessBuddiesRepository(this._client);
 
+  void _assertCurrentUser(String actorUserId) {
+    final currentUserId = AuthService.instance.currentUser?.id;
+    if (currentUserId == null || currentUserId != actorUserId) {
+      throw StateError('UNAUTHORIZED');
+    }
+  }
+
+  Future<Map<String, dynamic>> _requireGroupManager({
+    required String groupId,
+    required String actorUserId,
+  }) async {
+    _assertCurrentUser(actorUserId);
+    final group = await _client
+        .from('fitness_groups')
+        .select('created_by, owner_auto_join')
+        .eq('id', groupId)
+        .maybeSingle();
+    if (group == null) throw StateError('GROUP_NOT_FOUND');
+
+    final isOwner = group['created_by']?.toString() == actorUserId;
+    final isSheservedAdmin = AuthService.instance.currentUser?.isAdmin == true;
+    if (!isOwner && !isSheservedAdmin) {
+      final member = await _client
+          .from('fitness_group_members')
+          .select('role, is_active')
+          .eq('group_id', groupId)
+          .eq('user_id', actorUserId)
+          .maybeSingle();
+      final isGroupAdmin =
+          member?['role']?.toString() == 'admin' &&
+          member?['is_active'] == true;
+      if (!isGroupAdmin) throw StateError('NOT_GROUP_ADMIN');
+    }
+
+    return Map<String, dynamic>.from(group);
+  }
+
+  Future<String> _getSessionGroupId(String sessionId) async {
+    final session = await _client
+        .from('fitness_group_sessions')
+        .select('group_id')
+        .eq('id', sessionId)
+        .maybeSingle();
+    final groupId = session?['group_id']?.toString();
+    if (groupId == null || groupId.isEmpty) {
+      throw StateError('SESSION_NOT_FOUND');
+    }
+    return groupId;
+  }
+
+  Future<String> _getBookingGroupId(String bookingId) async {
+    final booking = await _client
+        .from('fitness_group_bookings')
+        .select('session_id')
+        .eq('id', bookingId)
+        .maybeSingle();
+    final sessionId = booking?['session_id']?.toString();
+    if (sessionId == null || sessionId.isEmpty) {
+      throw StateError('BOOKING_NOT_FOUND');
+    }
+    return _getSessionGroupId(sessionId);
+  }
+
   /// Thai consonants in dictionary order (ก → ฮ)
   static const _thaiConsonants = 'กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ';
 
@@ -127,6 +190,15 @@ class FitnessBuddiesRepository {
   }
 
   Future<Set<String>> listMyAdminGroupIds(String userId) async {
+    final currentUser = AuthService.instance.currentUser;
+    if (currentUser?.id == userId && currentUser?.isAdmin == true) {
+      final allGroups = await _client.from('fitness_groups').select('id');
+      return (allGroups as List)
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    }
+
     final results = await Future.wait([
       _client
           .from('fitness_group_members')
@@ -329,6 +401,51 @@ class FitnessBuddiesRepository {
     return groups;
   }
 
+  Future<List<Map<String, dynamic>>> _attachSessionBookingSummaries(
+    List<Map<String, dynamic>> sessions,
+  ) async {
+    if (sessions.isEmpty) return sessions;
+
+    final sessionIds = sessions
+        .map((session) => session['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (sessionIds.isEmpty) return sessions;
+
+    final bookings = await _client
+        .from('fitness_group_bookings')
+        .select('session_id, user_id, status')
+        .inFilter('session_id', sessionIds)
+        .inFilter('status', ['pending', 'confirmed']);
+    final confirmedBySession = <String, Set<String>>{};
+    final pendingBySession = <String, Set<String>>{};
+    for (final booking in bookings as List) {
+      final sessionId = booking['session_id']?.toString() ?? '';
+      final userId = booking['user_id']?.toString() ?? '';
+      if (sessionId.isEmpty || userId.isEmpty) continue;
+      final status = booking['status']?.toString();
+      final target = status == 'confirmed'
+          ? confirmedBySession
+          : pendingBySession;
+      target.putIfAbsent(sessionId, () => <String>{}).add(userId);
+    }
+
+    return sessions.map((session) {
+      final copy = Map<String, dynamic>.from(session);
+      final sessionId = copy['id']?.toString() ?? '';
+      final confirmed = confirmedBySession[sessionId] ?? <String>{};
+      final pending = pendingBySession[sessionId] ?? <String>{};
+      final capacity = (copy['capacity'] as num?)?.toInt() ?? 0;
+      copy['confirmed_count'] = confirmed.length;
+      copy['pending_count'] = pending.length;
+      copy['reserved_count'] = confirmed.length;
+      copy['available_count'] = capacity > confirmed.length
+          ? capacity - confirmed.length
+          : 0;
+      return copy;
+    }).toList();
+  }
+
   Future<List<Map<String, dynamic>>> listUpcomingSessions(
     String groupId, {
     DateTime? from,
@@ -342,7 +459,7 @@ class FitnessBuddiesRepository {
         .gte('ends_at', nowIso)
         .order('starts_at', ascending: true)
         .limit(limit);
-    return List<Map<String, dynamic>>.from(res);
+    return _attachSessionBookingSummaries(List<Map<String, dynamic>>.from(res));
   }
 
   Future<bool> hasAnySessions(String groupId) async {
@@ -383,7 +500,7 @@ class FitnessBuddiesRepository {
         .eq('group_id', groupId)
         .order('starts_at', ascending: true)
         .limit(limit);
-    return List<Map<String, dynamic>>.from(res);
+    return _attachSessionBookingSummaries(List<Map<String, dynamic>>.from(res));
   }
 
   Future<List<Map<String, dynamic>>> listGroupMembers(String groupId) async {
@@ -403,7 +520,9 @@ class FitnessBuddiesRepository {
           .eq('is_active', true),
       _client
           .from('fitness_group_bookings')
-          .select('user_id, session:fitness_group_sessions!inner(group_id)')
+          .select(
+            'id, user_id, session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
+          )
           .eq('session.group_id', groupId)
           .eq('status', 'confirmed'),
     ]);
@@ -411,10 +530,23 @@ class FitnessBuddiesRepository {
         .map((e) => e['blocked_user_id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
-    final confirmedUserIds = (results[2] as List)
-        .map((booking) => booking['user_id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final confirmedSessionsByUser = <String, List<Map<String, dynamic>>>{};
+    for (final booking in results[2] as List) {
+      final userId = booking['user_id']?.toString() ?? '';
+      if (userId.isEmpty) continue;
+      final session = booking['session'];
+      final sessionData = session is List && session.isNotEmpty
+          ? session.first
+          : session is Map
+          ? session
+          : null;
+      if (sessionData is Map) {
+        final sessionCopy = Map<String, dynamic>.from(sessionData);
+        sessionCopy['booking_id'] = booking['id']?.toString();
+        confirmedSessionsByUser.putIfAbsent(userId, () => []).add(sessionCopy);
+      }
+    }
+    final confirmedUserIds = confirmedSessionsByUser.keys.toSet();
     return (results[0] as List)
         .map((e) {
           final member = Map<String, dynamic>.from(e);
@@ -426,6 +558,8 @@ class FitnessBuddiesRepository {
           } else {
             member['user'] = <String, dynamic>{};
           }
+          final userId = member['user_id']?.toString() ?? '';
+          member['confirmed_sessions'] = confirmedSessionsByUser[userId] ?? [];
           return member;
         })
         .where((member) {
@@ -516,7 +650,12 @@ class FitnessBuddiesRepository {
     }
   }
 
-  Future<void> cancelSession(String sessionId) async {
+  Future<void> cancelSession(
+    String sessionId, {
+    required String actorUserId,
+  }) async {
+    final groupId = await _getSessionGroupId(sessionId);
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
     await _client.from('fitness_group_sessions').delete().eq('id', sessionId);
   }
 
@@ -540,9 +679,7 @@ class FitnessBuddiesRepository {
         if (session != null) {
           final group = session['group'];
           final groupId = session['group_id']?.toString() ?? '';
-          final ownerId = group is Map
-              ? group['created_by']?.toString()
-              : null;
+          final ownerId = group is Map ? group['created_by']?.toString() : null;
           final groupName = group is Map
               ? (group['name']?.toString() ?? 'ก๊วนกีฬา')
               : 'ก๊วนกีฬา';
@@ -594,21 +731,31 @@ class FitnessBuddiesRepository {
     return Map<String, dynamic>.from(res);
   }
 
-  /// Check if [userId] has any pending bookings for sessions in [groupId].
-  /// Returns the list of pending booking rows (empty if none).
+  /// Lists only [userId]'s pending bookings for sessions in [groupId].
   Future<List<Map<String, dynamic>>> listMyPendingBookingsForGroup(
     String groupId,
     String userId,
   ) async {
+    _assertCurrentUser(userId);
     final res = await _client
         .from('fitness_group_bookings')
         .select(
-          'id, status, session_id, session:fitness_group_sessions!inner(group_id)',
+          'id, status, created_at, user:users!fitness_group_bookings_user_id_fkey(first_name, last_name, profile_image_url, id), session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
         )
         .eq('user_id', userId)
         .eq('status', 'pending')
-        .eq('session.group_id', groupId);
-    return List<Map<String, dynamic>>.from(res);
+        .eq('session.group_id', groupId)
+        .order('created_at', ascending: true);
+    return (res as List).map((row) {
+      final booking = Map<String, dynamic>.from(row);
+      final user = booking['user'];
+      if (user is List && user.isNotEmpty) {
+        booking['user'] = user.first;
+      } else if (user is! Map) {
+        booking['user'] = <String, dynamic>{};
+      }
+      return booking;
+    }).toList();
   }
 
   Future<void> cancelBooking(
@@ -631,8 +778,11 @@ class FitnessBuddiesRepository {
   /// List bookings for a given session (both pending and confirmed),
   /// including basic user profile fields for display.
   Future<List<Map<String, dynamic>>> listSessionBookings(
-    String sessionId,
-  ) async {
+    String sessionId, {
+    required String requesterUserId,
+  }) async {
+    final groupId = await _getSessionGroupId(sessionId);
+    await _requireGroupManager(groupId: groupId, actorUserId: requesterUserId);
     final res = await _client
         .from('fitness_group_bookings')
         .select(
@@ -654,14 +804,19 @@ class FitnessBuddiesRepository {
     }).toList();
   }
 
-  /// Approve a pending booking (owner action) via RPC with server-side overlap validation.
+  /// Approve a pending booking (group manager action) via RPC with server-side overlap validation.
   Future<void> approveBooking({
     required String bookingId,
-    required String ownerId,
+    required String actorUserId,
   }) async {
+    final bookingGroupId = await _getBookingGroupId(bookingId);
+    await _requireGroupManager(
+      groupId: bookingGroupId,
+      actorUserId: actorUserId,
+    );
     await _client.rpc(
       'approve_fitness_session_booking',
-      params: {'p_booking_id': bookingId, 'p_owner_id': ownerId},
+      params: {'p_booking_id': bookingId, 'p_owner_id': actorUserId},
     );
 
     final booking = await _client
@@ -693,19 +848,24 @@ class FitnessBuddiesRepository {
       groupName: groupName,
       status: 'confirmed',
       message: 'คำขอเข้าร่วมก๊วนของคุณได้รับการอนุมัติแล้ว',
-      requesterId: ownerId,
+      requesterId: actorUserId,
       requesterName: requesterName,
-      actorUserId: ownerId,
+      actorUserId: actorUserId,
     );
   }
 
-  /// Reject a pending booking (owner action). Minimal update: set status to 'rejected'.
+  /// Reject a pending booking (group manager action). Minimal update: set status to 'rejected'.
   /// Optionally records a cancel_reason with cancelled_by='owner' for audit consistency.
   Future<void> rejectBooking({
     required String bookingId,
-    required String ownerId,
+    required String actorUserId,
     String? reason,
   }) async {
+    final bookingGroupId = await _getBookingGroupId(bookingId);
+    await _requireGroupManager(
+      groupId: bookingGroupId,
+      actorUserId: actorUserId,
+    );
     await _client
         .from('fitness_group_bookings')
         .update({
@@ -745,10 +905,10 @@ class FitnessBuddiesRepository {
       groupName: groupName,
       status: 'rejected',
       message: 'คำขอเข้าร่วมก๊วนของคุณถูกปฏิเสธ',
-      requesterId: ownerId,
+      requesterId: actorUserId,
       requesterName: requesterName,
       reason: reason,
-      actorUserId: ownerId,
+      actorUserId: actorUserId,
     );
   }
 
@@ -759,7 +919,6 @@ class FitnessBuddiesRepository {
     String? description,
     bool requiresOwnerApproval = false,
     bool ownerAutoJoin = true,
-    int capacity = 5,
     String? coverImageUrl,
     String? venuePhotoUrl,
     String genderPreference = 'any',
@@ -768,16 +927,13 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
   }) async {
-    if (capacity < 1 || capacity > 30) {
-      throw ArgumentError('capacity must be between 1 and 30');
-    }
+    _assertCurrentUser(userId);
     final data = {
       'name': name,
       if (sportId != null) 'sport_id': sportId,
       if (description != null) 'description': description,
       'requires_owner_approval': requiresOwnerApproval,
       'owner_auto_join': ownerAutoJoin,
-      'capacity': capacity,
       if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
       if (venuePhotoUrl != null) 'venue_photo_url': venuePhotoUrl,
       'gender_preference': genderPreference,
@@ -797,6 +953,8 @@ class FitnessBuddiesRepository {
 
   Future<String> createSession({
     required String groupId,
+    required String actorUserId,
+    required int capacity,
     required DateTime startsAt,
     required DateTime endsAt,
     String? placeName,
@@ -804,8 +962,19 @@ class FitnessBuddiesRepository {
     double? lng,
     String? note,
   }) async {
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    if (capacity < 1 || capacity > 30) {
+      throw ArgumentError('capacity must be between 1 and 30');
+    }
+    if (startsAt.isBefore(DateTime.now().add(const Duration(minutes: 15)))) {
+      throw ArgumentError('startsAt must be at least 15 minutes in the future');
+    }
+    if (!endsAt.isAfter(startsAt)) {
+      throw ArgumentError('endsAt must be after startsAt');
+    }
     final data = {
       'group_id': groupId,
+      'capacity': capacity,
       'starts_at': startsAt.toUtc().toIso8601String(),
       'ends_at': endsAt.toUtc().toIso8601String(),
       if (placeName != null) 'place_name': placeName,
@@ -886,7 +1055,7 @@ class FitnessBuddiesRepository {
     String? description,
     bool? requiresOwnerApproval,
     bool? ownerAutoJoin,
-    int? capacity,
+    bool cancelOwnerBookings = false,
     String? coverImageUrl,
     String? venuePhotoUrl,
     String? genderPreference,
@@ -895,16 +1064,11 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
   }) async {
-    if (capacity != null && (capacity < 1 || capacity > 30)) {
-      throw ArgumentError('capacity must be between 1 and 30');
-    }
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (description != null) data['description'] = description;
     if (requiresOwnerApproval != null)
       data['requires_owner_approval'] = requiresOwnerApproval;
-    if (ownerAutoJoin != null) data['owner_auto_join'] = ownerAutoJoin;
-    if (capacity != null) data['capacity'] = capacity;
     if (coverImageUrl != null) data['cover_image_url'] = coverImageUrl;
     if (venuePhotoUrl != null) data['venue_photo_url'] = venuePhotoUrl;
     if (genderPreference != null) data['gender_preference'] = genderPreference;
@@ -912,17 +1076,34 @@ class FitnessBuddiesRepository {
     if (district != null) data['district'] = district;
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
-    if (data.isEmpty) return;
-    await _client
-        .from('fitness_groups')
-        .update(data)
-        .eq('id', groupId)
-        .eq('created_by', userId);
+    if (data.isEmpty && ownerAutoJoin == null) return;
+
+    final group = await _requireGroupManager(
+      groupId: groupId,
+      actorUserId: userId,
+    );
+    final currentOwnerAutoJoin = group['owner_auto_join'] != false;
+    if (ownerAutoJoin != null && ownerAutoJoin != currentOwnerAutoJoin) {
+      await _client.rpc(
+        'set_fitness_group_owner_auto_join',
+        params: {
+          'p_group_id': groupId,
+          'p_actor_id': userId,
+          'p_enabled': ownerAutoJoin,
+          'p_cancel_bookings': cancelOwnerBookings,
+        },
+      );
+    }
+    if (data.isNotEmpty) {
+      await _client.from('fitness_groups').update(data).eq('id', groupId);
+    }
   }
 
   // ── Phase 4: Update session ──
   Future<void> updateSession({
     required String sessionId,
+    required String actorUserId,
+    int? capacity,
     DateTime? startsAt,
     DateTime? endsAt,
     String? placeName,
@@ -930,7 +1111,11 @@ class FitnessBuddiesRepository {
     double? lng,
     String? note,
   }) async {
+    if (capacity != null && (capacity < 1 || capacity > 30)) {
+      throw ArgumentError('capacity must be between 1 and 30');
+    }
     final data = <String, dynamic>{};
+    if (capacity != null) data['capacity'] = capacity;
     if (startsAt != null)
       data['starts_at'] = startsAt.toUtc().toIso8601String();
     if (endsAt != null) data['ends_at'] = endsAt.toUtc().toIso8601String();
@@ -939,6 +1124,8 @@ class FitnessBuddiesRepository {
     if (lng != null) data['lng'] = lng;
     if (note != null) data['note'] = note;
     if (data.isEmpty) return;
+    final groupId = await _getSessionGroupId(sessionId);
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
     await _client
         .from('fitness_group_sessions')
         .update(data)
@@ -966,6 +1153,18 @@ class FitnessBuddiesRepository {
     );
   }
 
+  Future<void> removeParticipantFromSession({
+    required String bookingId,
+    required String actorUserId,
+  }) async {
+    final groupId = await _getBookingGroupId(bookingId);
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    await _client.rpc(
+      'remove_fitness_session_participant',
+      params: {'p_booking_id': bookingId, 'p_actor_id': actorUserId},
+    );
+  }
+
   // ── Phase 4: Blocklist (per-group; table: fitness_group_blocklist) ──
   Future<void> blockUser({
     required String groupId,
@@ -973,9 +1172,12 @@ class FitnessBuddiesRepository {
     required String blockedBy,
     String? reason,
   }) async {
-    final currentUserId = AuthService.instance.currentUser?.id;
-    if (currentUserId == null || currentUserId != blockedBy) {
-      throw StateError('UNAUTHORIZED');
+    final group = await _requireGroupManager(
+      groupId: groupId,
+      actorUserId: blockedBy,
+    );
+    if (group['created_by']?.toString() == blockedUserId) {
+      throw StateError('OWNER_CANNOT_BE_BLOCKED');
     }
     await _client.from('fitness_group_blocklist').upsert({
       'group_id': groupId,
@@ -992,40 +1194,12 @@ class FitnessBuddiesRepository {
     );
   }
 
-  Future<Map<String, int>?> getUnblockCapacityStatus({
-    required String groupId,
-    required String requesterUserId,
-  }) async {
-    final accessResults = await Future.wait([
-      _client
-          .from('fitness_groups')
-          .select('created_by, capacity')
-          .eq('id', groupId)
-          .maybeSingle(),
-      _client
-          .from('users')
-          .select('role')
-          .eq('id', requesterUserId)
-          .maybeSingle(),
-    ]);
-    final group = accessResults[0];
-    final groupOwnerId = group?['created_by']?.toString();
-    final requesterRole = accessResults[1]?['role']?.toString();
-    if (group == null ||
-        (groupOwnerId != requesterUserId && requesterRole != 'admin')) {
-      return null;
-    }
-    final members = await listGroupMembers(groupId);
-    return {
-      'capacity': (group['capacity'] as num?)?.toInt() ?? 0,
-      'member_count': members.length,
-    };
-  }
-
   Future<void> unblockUser({
     required String groupId,
     required String blockedUserId,
+    required String actorUserId,
   }) async {
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
     await _client
         .from('fitness_group_blocklist')
         .delete()
@@ -1037,21 +1211,14 @@ class FitnessBuddiesRepository {
     String groupId, {
     required String requesterUserId,
   }) async {
-    final accessResults = await Future.wait([
-      _client
-          .from('fitness_groups')
-          .select('created_by')
-          .eq('id', groupId)
-          .maybeSingle(),
-      _client
-          .from('users')
-          .select('role')
-          .eq('id', requesterUserId)
-          .maybeSingle(),
-    ]);
-    final groupOwnerId = accessResults[0]?['created_by']?.toString();
-    final requesterRole = accessResults[1]?['role']?.toString();
-    if (groupOwnerId != requesterUserId && requesterRole != 'admin') return [];
+    try {
+      await _requireGroupManager(
+        groupId: groupId,
+        actorUserId: requesterUserId,
+      );
+    } on StateError {
+      return [];
+    }
 
     final res = await _client
         .from('fitness_group_blocklist')
@@ -1080,8 +1247,10 @@ class FitnessBuddiesRepository {
 
   // ── Phase 8: List pending bookings for a group (all sessions) ──
   Future<List<Map<String, dynamic>>> listGroupPendingBookings(
-    String groupId,
-  ) async {
+    String groupId, {
+    required String requesterUserId,
+  }) async {
+    await _requireGroupManager(groupId: groupId, actorUserId: requesterUserId);
     final results = await Future.wait([
       _client
           .from('fitness_group_bookings')
