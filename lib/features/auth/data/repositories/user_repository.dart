@@ -216,10 +216,11 @@ class UserRepository {
   /// อัพเดทรหัสผ่าน
   Future<bool> updatePassword(String id, String newPassword) async {
     try {
+      final hashedPassword = _hashPassword(newPassword);
       await _client
           .from('users')
           .update({
-            'password_hash': newPassword, // TODO: Hash password
+            'password_hash': hashedPassword,
             'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('id', id);

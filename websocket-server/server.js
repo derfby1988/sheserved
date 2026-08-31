@@ -59,6 +59,7 @@ const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
 
 // Phase 1 — Route Security Middleware
 const { verifyToken, requireRole, requireAuth } = require('./middleware/auth');
+const { requestContext } = require('./middleware/request-context');
 const donationQueueService = require('./services/donation-queue');
 
 // Escrow Services
@@ -248,6 +249,7 @@ const {
 // Middleware
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' })); // R8: body size limit
+app.use(requestContext);
 
 // ✅ Rate Limiter: ใช้กับ API ทั้งหมด (60 req/min per IP)
 // ยกเว้น Static Files ที่ express.static จัดการเอง

@@ -285,12 +285,12 @@ class SyncService {
       saveToTarget: (data) => _saveToLocal('registration_field_configs', data),
     );
 
-    // Sync users (only non-sensitive data + password_hash for local auth)
+    // Sync users (non-sensitive data only; password_hash must never be stored or cached locally)
     await _syncTable(
       tableName: 'users',
       fetchFromSource: () async {
         final response = await client.from('users').select(
-            'id, profession_id, first_name, last_name, username, password_hash, verification_status, is_active, role, created_at, updated_at');
+            'id, profession_id, first_name, last_name, username, verification_status, is_active, role, created_at, updated_at');
         return List<Map<String, dynamic>>.from(response);
       },
       saveToTarget: (data) => _saveToLocal('users', data),
@@ -391,10 +391,18 @@ class SyncService {
 
   Future<void> _saveToLocal(String table, List<Map<String, dynamic>> data) async {
     try {
+      final sanitized = data.map((row) {
+        final r = Map<String, dynamic>.from(row);
+        if (table == 'users') {
+          r['password_hash'] = null;
+          r.remove('passwordHash');
+        }
+        return r;
+      }).toList();
       await http.post(
         Uri.parse('$_localApiUrl/api/$table/sync'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'data': data}),
+        body: json.encode({'data': sanitized}),
       ).timeout(const Duration(seconds: 8)); // เพิ่ม timeout 8 วินาที
     } catch (e) {
       debugPrint('SyncService: Failed to save $table to local - $e');

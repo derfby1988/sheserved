@@ -107,7 +107,6 @@ class UserModel {
   final String? profileImageUrl;
   final String? socialProvider; // google, facebook, apple, line
   final String? socialId;
-  final String? passwordHash;
   final VerificationStatus verificationStatus;
   final bool isActive;
   final DateTime? lastLoginAt;
@@ -159,7 +158,6 @@ class UserModel {
     required this.firstName,
     required this.lastName,
     required this.username,
-    this.passwordHash,
     this.phone,
     this.profileImageUrl,
     this.socialProvider,
@@ -193,7 +191,6 @@ class UserModel {
       'first_name': firstName,
       'last_name': lastName,
       'username': username,
-      'password_hash': passwordHash,
       'phone': phone,
       'profile_image_url': profileImageUrl,
       'social_provider': socialProvider,
@@ -230,7 +227,6 @@ class UserModel {
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       username: json['username'],
-      passwordHash: json['password_hash'],
       phone: json['phone'],
       profileImageUrl: json['profile_image_url'],
       socialProvider: json['social_provider'],
