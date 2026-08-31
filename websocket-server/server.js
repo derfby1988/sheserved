@@ -1831,7 +1831,9 @@ app.post('/api/users', strictRateLimiter, duplicateCheckMiddleware('user-create'
       `INSERT INTO users (profession_id, first_name, last_name, username, email, 
                           phone, password_hash, social_provider, social_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING *`,
+       RETURNING id, profession_id, first_name, last_name, username, email,
+                 phone, profile_image_url, social_provider, social_id,
+                 is_active, is_verified, created_at, updated_at`,
       [professionId, firstName, lastName, username, email,
         phone, passwordHash, socialProvider, socialId]
     );
@@ -1908,7 +1910,10 @@ app.put('/api/users/:id', strictRateLimiter, duplicateCheckMiddleware('user-upda
 
     values.push(id);
     const result = await pool.query(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex}
+       RETURNING id, profession_id, first_name, last_name, username, email,
+                 phone, profile_image_url, social_provider, social_id,
+                 is_active, is_verified, created_at, updated_at`,
       values
     );
 
