@@ -308,7 +308,7 @@ Scaffold
 - แผนที่: ระหว่างพัฒนาใช้ผู้ให้บริการไม่มีค่าใช้จ่าย (OSM + flutter_map); เตรียม config สำหรับสลับ Google Maps ได้โดยไม่แก้โค้ด
 - การบล็อก: ผู้ใช้ที่ถูกบล็อกจะถูกถอดจากสมาชิก active และยกเลิก booking `pending/confirmed` ผ่าน `leave_fitness_group`; ไม่สามารถจองใหม่ในก๊วนนั้นได้จนกว่าจะปลดบล็อก โดยผู้ดำเนินการต้องเป็นผู้จัดการก๊วน
 - การมองเห็นรายชื่อผู้ถูกบล็อก: ผู้จัดการก๊วนทุกประเภท (owner/active group admin/Sheserved admin) มีสิทธิ์ดูและจัดการ blocklist; UI และ repository `listBlockedUsers(..., requesterUserId)` ตรวจสิทธิ์ก่อนคืนข้อมูลโปรไฟล์
-- ข้อจำกัด security ปัจจุบัน: RLS ยังเป็น `USING(true)` และ legacy RPC รับ actor จาก client จึงยังไม่ใช่ cryptographic identity boundary; ช่วง compatibility ให้ Repository/App Layer ตรวจ `AuthService` ต่อไป และ Phase 13 จะย้าย private read/mutation ไป trusted Backend + secure RPC/strict RLS ก่อน revoke legacy path
+- ข้อจำกัด security ปัจจุบัน: RLS ยังเป็น `USING(true)` และ legacy RPC รับ actor จาก client จึงยังไม่ใช่ cryptographic identity boundary; ช่วง compatibility ให้ Repository/App Layer ตรวจ `AuthService` ต่อไป และ Phase 13 จะใช้ 3 path ตาม data classification — public read ผ่าน VIEW, private read ผ่าน Backend-issued PostgREST token + strict RLS, mutation ผ่าน trusted Backend + secure RPC — ก่อน revoke legacy path
 
 ## การปฏิบัติตามแนวทาง Security & Infrastructure
 
@@ -318,7 +318,7 @@ Scaffold
 - ✅ Repository ต้องรับ `userId`/`actorUserId` เป็นพารามิเตอร์ ไม่ดึงเองจาก Supabase Auth และ mutation สำคัญต้องตรวจว่า actor ตรงกับ current user จาก custom auth ก่อนดำเนินการ
 - ✅ Repository ของ Find Fitness Buddies ต้องตรวจผู้จัดการก๊วนผ่าน `_requireGroupManager()` ก่อนแก้ไขก๊วน/รอบนัด/คำขอ/blocklist โดยยอมรับ owner, active group admin หรือ Sheserved admin
 - ✅ UI (Presentation) ส่ง `userId`/`actorUserId` จาก custom auth เข้า Repository
-- ช่วง compatibility: Owner rejoin และ group management ใช้ App-Layer authorization ตามเดิม; target Phase 13 ใช้ secure RPC ที่อ่าน `SET LOCAL app.user_id` จาก Backend และไม่เพิ่ม `auth.uid()` เพราะตัดสินใจคง custom AuthService
+- ช่วง compatibility: Owner rejoin และ group management ใช้ App-Layer authorization ตามเดิม; target Phase 13 คง custom AuthService เป็น state container แต่ใช้ PostgREST token + `request.jwt.claims` สำหรับ private read และ secure RPC ที่อ่าน `SET LOCAL app.user_id` จาก Backend สำหรับ mutation; ไม่พึ่ง `auth.uid()` ของ native Supabase Auth
 
 ### BOLA/IDOR Prevention (`docs/secure/01_broken_object_level_authorization.md`)
 - ⚠️ Backend endpoints ต้องใช้ `req.userId` จาก identity ที่ยืนยันแล้ว ไม่ใช่ `req.body.userId`
@@ -356,7 +356,7 @@ Scaffold
 ### Session/Token Security (`docs/secure/08_session_token_security.md`)
 - เลือก Trusted Backend Identity Bridge: signed access JWT + rotated opaque refresh session + server-side password/social verification โดยคง `AuthService` เป็น state container ของ Flutter
 - ช่วง compatibility ก่อน cutover: App Layer และ legacy RPC ยังทำงานเพื่อไม่ให้ client ปัจจุบันเสีย แต่ยังไม่ถือเป็น cryptographic identity boundary
-- หลัง Fitness cutover: private read/mutation ต้องผ่าน Backend ที่สร้าง `req.userId` จาก JWT ที่ verify แล้ว; Backend ตั้ง `SET LOCAL app.user_id` ภายใน transaction และใช้ secure RPC signature ที่ไม่รับ actor จาก client
+- หลัง Fitness cutover: public browse ใช้ public VIEW + anon; private read ใช้ Backend-issued PostgREST token ที่ Supabase verify และ strict RLS; mutation ผ่าน Backend ที่สร้าง `req.userId` จาก JWT ที่ verify แล้ว, ตั้ง `SET LOCAL app.user_id` ใน transaction และใช้ secure RPC ที่ไม่รับ actor จาก client
 - ห้ามใช้ `x-user-id`, unsigned JWT, service-role เป็น app request role หรือ direct-Supabase mutation fallback หลัง cutover
 
 ### Google Maps API Key (`docs/secure/google_maps_key_restriction_guide.md`)
@@ -918,7 +918,48 @@ Scaffold
 
 ---
 
-## Phase 13 — Trusted Backend Identity Bridge Rollout (อนุมัติแนวทางแล้ว; รอ implement)
+## Phase 13 — Trusted Backend Identity Bridge Rollout (ตัดสินใจครบ 12/12; รอ implement)
+
+### Phase 13 baseline audit (สำรวจโค้ดจริง 2026-08-30)
+> ตัวเลขและข้อเท็จจริงทั้งหมดในหัวข้อนี้มาจากการอ่านโค้ด/migration จริง ไม่ใช่การประมาณ; ใช้เป็น baseline ในการวัดความคืบหน้าและกำหนด scope
+
+| ด้าน | สถานะจริง | ผลต่อแผน |
+|---|---|---|
+| Backend identity | `websocket-server/middleware/auth.js` `_extractUserId()` อ่าน `x-user-id` ก่อน แล้ว fallback ไป base64-decode JWT payload **โดยไม่ verify signature**; `verifyToken(pool)` ปล่อย anonymous ผ่านเมื่อไม่มี header | ต้องเขียน verification ใหม่ทั้งหมด ไม่ใช่แค่ปรับ |
+| Auth endpoints | **ไม่มี `/api/auth/*` เลย**; `Caddyfile.dev` มี path matcher แต่ไม่มี route จริง | Phase 13.2 คือการสร้างของใหม่ 100% |
+| Backend deps ที่ขาด | `jsonwebtoken`, `bcrypt`/`argon2`, `helmet` **ไม่มีใน package.json**; `pino` ถูก `require` ใน `utils/logger.js` แต่ไม่มีใน package.json และไม่ได้ติดตั้ง (`middleware/request-context.js` เป็น dead code ยังไม่ wire เข้า `server.js` จึงยังไม่ crash) | ต้องเพิ่ม dependency + ตรวจ supply chain ก่อน 13.2 |
+| Backend endpoint surface | `routes/` มี 4 ไฟล์ 25 endpoints (12 ต้องล็อกอิน) และ **ไม่มี endpoint ใดรับ actor id จาก body**; แต่ `server.js` มีอีก ~33 endpoints ที่หลายตัวรับ `userId`/`responderId` จาก `req.body`/`req.query` โดยไม่เทียบกับ `req.userId` | BOLA surface จริงอยู่ใน `server.js` ไม่ใช่ `routes/` |
+| WebSocket | handshake ใช้ `socket.handshake.auth.token` เป็น user id ตรง ๆ หรือ `x-user-id`/unsigned JWT; `join-room`, `join-emergency-chat` **ไม่มี membership check ใด ๆ** — client join ห้องไหนก็ได้ | ต้องเพิ่ม room authorization เป็นงานแยก ไม่ใช่ผลพลอยได้ของ JWT |
+| DB connection ของ backend | `server.js` สร้าง `new Pool()` ชี้ **local PostgreSQL** (`DB_HOST=localhost`, `DB_PORT=5432`); การคุย Supabase ใช้ `@supabase/supabase-js` + service key ผ่าน PostgREST | ⚠️ **ข้อค้นพบสำคัญที่สุด** — ดูหัวข้อ Q7 |
+| `SET LOCAL` / transaction | ไม่มี `SET LOCAL` และไม่มี `BEGIN/COMMIT` ใน request path ใด ๆ ทั้ง repo | ต้องสร้าง per-request transaction scope ใหม่ทั้งหมด |
+| Supabase pooler | ไม่พบ `pooler.supabase.com`, `pgbouncer`, หรือพอร์ต `6543` ในโค้ด/เอกสาร/env ใด ๆ | ยังไม่มี pooler constraint ผูกมัด — เลือกโหมดได้อิสระ |
+| service_role | ใช้ใน 10 ไฟล์ (`server.js` + 9 services) ผ่าน `SUPABASE_SERVICE_KEY`/`SUPABASE_SERVICE_ROLE_KEY` และบางไฟล์ fallback ไป `SUPABASE_ANON_KEY` | fallback ไป anon เป็น silent-downgrade ที่ต้องปิด |
+| Redis session helper | `middleware/cache-aside.js` มี `getSession/setSession/deleteSession` (คีย์ `auth:session:${sessionId}`, TTL 2 ชม., sliding) แต่ **ไม่มี production endpoint เรียกใช้** | โครงพร้อมแล้ว ต่อยอดได้เลย |
+| Rate limiting | มี 13 limiter รวม `loginLockoutLimiter` (5 ครั้ง → ล็อก 15 นาที) และ `otpCooldownLimiter` แต่ยังไม่ผูกกับ auth endpoint เพราะยังไม่มี auth endpoint | Phase 13.2 นำมาใช้ได้ทันที |
+| Flutter session | `AuthService` เก็บ `_currentUser` ใน memory เท่านั้น ไม่ persist; ปิดแอป = หลุด login | ต้องเพิ่ม token storage layer ใหม่ |
+| Flutter password | `user_repository.dart` hash SHA-256 ฝั่ง client แล้ว **query `.eq('password_hash', hashedPassword)`** — hash ทำหน้าที่เป็นรหัสผ่านจริง | ดูหัวข้อ P0 blockers |
+| Secure storage | `flutter_secure_storage` **ไม่ได้ประกาศใน pubspec.yaml** (มีใน pubspec.lock แบบ transitive 10.3.1 และไม่มีไฟล์ใน `lib/` import) | ต้อง declare เป็น direct dependency |
+| Refactor surface | `Supabase.instance.client` ถูกเรียก **189 ครั้งใน 83+ ไฟล์**; หนักสุด `consultation` 33, `services` 31, `admin` 24, `erp` 19, `donation` 16 | ยืนยันว่าต้องทำแบบ module wave ไม่ใช่ big-bang |
+| `x-user-id` ฝั่ง client | ตั้งเพียง 3 ที่: `victim_repository.dart`, `watermark_repository.dart`, `consultation_repository.dart` | จุดตัด client ง่ายกว่าที่คาด |
+| RLS ปัจจุบัน | 211 migration files, `ENABLE ROW LEVEL SECURITY` 208 ครั้ง, `CREATE POLICY` 468 ครั้ง, **`USING (true)` 372 ครั้ง**, `auth.uid()` 86 ครั้ง (มี policy จริงเช่น `app_notifications.recipient_id = auth.uid()` ที่จะเป็น null ตลอดใน custom auth) | 372 permissive policy = งาน tighten ที่ต้องแบ่ง wave |
+| DB roles | **`CREATE ROLE` = 0 ครั้ง** ในทุก migration; role ยังอยู่แค่ในเอกสาร `12_least_privilege.md` | Phase 13.1 ต้องสร้าง role จากศูนย์ |
+| `app.user_id` GUC | มีอยู่แล้วใน `20260624090500_add_user_categories_rls.sql` และ `app.require_current_user_id()` ใน `20260825130000` | pattern พิสูจน์แล้ว ต่อยอดได้ |
+| Secure vs legacy RPC | secure overload (ไม่รับ actor) ถูก `REVOKE` จาก `PUBLIC, anon, authenticated` และ **ยังไม่ grant ให้ใคร**; legacy overload ที่รับ actor **ยัง grant ให้ `anon, authenticated`** | ตรงตามที่แผนระบุ — compatibility window ยังเปิด |
+| Audit log | **ไม่มีตาราง `audit_logs`**; มี `transaction_audit_log`, `victim_report_consent_logs`, `victim_health_access_logs` เท่านั้น | ต้องตัดสินใจว่า auth audit ไปตารางไหน |
+| Session table | มี `public.sessions` จาก `20260728190000_create_sessions_table.sql` แต่ **ไม่มี `refresh_tokens`** | Q6-B: reuse/extend `public.sessions` ใน Phase 13.2 ไม่สร้างตาราง refresh ซ้ำซ้อน |
+| TLS | Caddy Phase 1 deploy แล้ว (`:8080` dev, `:80` local) แต่ **TLS/HTTPS ยังไม่ implement** | เป็น hard prerequisite ของ 13.0 |
+
+### P0 blockers — ต้องแก้ก่อนเริ่ม Phase 13 (แยกเป็น Phase 12.9)
+> B1–B4 เป็นช่องโหว่/bug ที่ทำงานอยู่ในโค้ดปัจจุบัน ไม่ใช่ความเสี่ยงในอนาคต; ต้องแก้ B1, B3, B4 ทันที, ทำ containment ของ B2 ทันที และปิด B2 แบบสมบูรณ์หลัง Flutter เปลี่ยน login ไป Backend ใน Phase 13.2 — ห้าม revoke direct auth query ก่อน compatibility cutover
+
+| # | ปัญหา | หลักฐาน | ผลกระทบ | วิธีแก้ที่เสนอ |
+|---|---|---|---|---|
+| B1 | `updatePassword()` เขียนรหัสผ่าน **แบบ plaintext** ลง `users.password_hash` | `user_repository.dart:222` `'password_hash': newPassword, // TODO: Hash password` | ผู้ใช้ที่เปลี่ยนรหัสผ่านมี plaintext อยู่ใน DB และ login ไม่ได้อีก (เพราะ login เทียบ SHA-256) | แก้ทันทีให้เรียก `_hashPassword()` เป็น hotfix; ระยะยาวย้ายไป server-side ใน 13.2 |
+| B2 | Client ส่ง SHA-256 hash เป็นเงื่อนไข query | `user_repository.dart:150` `.eq('password_hash', hashedPassword)` | hash **คือ** credential; ใครอ่าน `users` ได้ = login เป็นใครก็ได้; ประกอบกับ `USING(true)` บน `users` = auth bypass | ทำ containment ทันที (ห้ามคืน `password_hash` ใน generic user/public view) แต่ **อย่า revoke direct auth query ก่อน Flutter switch**; ปิดเต็มรูปแบบหลัง 13.2 เปลี่ยน login ไป Backend |
+| B3 | `SyncService` sync คอลัมน์ `password_hash` ลง local DB | `sync_service.dart:289-297` select list มี `password_hash` | hash ทั้งระบบถูกกระจายไปเครื่อง local ทุกเครื่องที่ sync | ตัด `password_hash` ออกจาก select list ของ sync และ purge สำเนาเดิมจาก local store |
+| B4 | `UserModel` พา `passwordHash` ไปทั่ว UI | `user_model.dart:110, 196, 233` | hash ค้างใน memory/log/crash report ได้ | ลบ field จาก model และทุกจุดที่ serialize (แผน 08 T8 ระบุไว้แล้ว) |
+
+> **หมายเหตุ:** B1 คือ bug ที่ทำให้ผู้ใช้ล็อกอินไม่ได้ด้วย ไม่ใช่แค่เรื่อง security — ควรแก้เป็น hotfix แยกจาก Phase 13 ทันที
 
 ### Architecture decision
 - คง custom `AuthService`/`ServiceLocator` เป็น state container ฝั่ง Flutter และไม่ย้ายไป Supabase Auth
@@ -926,114 +967,458 @@ Scaffold
 - Backend ตรวจ password และ social provider token ฝั่ง server; ห้าม query `password_hash` หรือเชื่อ social identity จาก Flutter โดยตรง
 - Flutter เก็บ access token ใน memory และ refresh token ใน platform secure storage; ใช้ authenticated HTTP client กลางจัดการ Bearer header, refresh-once และ logout เมื่อ refresh ล้มเหลว
 - HTTP/WebSocket ต้อง verify signature, issuer, audience, expiry และ session revoke state ก่อนสร้าง `req.userId`/`socket.userId`; ห้ามเชื่อ `x-user-id`, request body actor หรือ JWT ที่ decode โดยไม่ verify
-- Public read ที่ไม่มีข้อมูลส่วนตัวอาจอ่าน Supabase ด้วย anon keyต่อได้ภายใต้ public SELECT policy; private read และ mutation ต้องผ่าน Backend
-- Backend request path ใช้ DB role `sheserved_app` ที่ไม่มี `BYPASSRLS`; ห้ามใช้ Supabase `service_role` เป็น app request role
+- Public read ที่ไม่มีข้อมูลส่วนตัวอ่านผ่าน public VIEW ด้วย anon key; private read ใช้ short-lived PostgREST token ที่ Backend ออกให้เพื่อให้ RLS ทำงาน; mutation/operation ที่มี side effect ผ่าน Backend
+- Backend request path ใช้ `sheserved_gateway` (LOGIN, server-only credential) แล้ว `SET LOCAL ROLE sheserved_app`; `sheserved_app` เป็น permission role ที่ไม่มี `BYPASSRLS`, ไม่มี DDL; ห้ามใช้ Supabase `service_role` เป็น app request role
 - ทุก DB request ที่อาศัย identity ต้องทำใน transaction เดียวและตั้ง `SET LOCAL app.user_id`, `app.session_id`, `app.role`, `app.organization_id`/`app.branch_id` ตาม claims ที่ verify แล้ว
-- Strict RLS ใช้ `app.get_current_user_id()`/trusted transaction context; service-role จำกัดเฉพาะ migration, sync และ system job ที่กำหนดขอบเขต
+  - ⚠️ **ข้อจำกัดที่พบจากการสำรวจจริง:** ใช้ได้เฉพาะเมื่อ Backend เปิด connection `pg` **ตรงไปยัง Supabase Postgres** เท่านั้น; การเรียกผ่าน `@supabase/supabase-js`/PostgREST ทำ `SET LOCAL` ข้าม statement ไม่ได้เพราะแต่ละ RPC call เป็น transaction ของตัวเอง — ดู Decision Sheet Q7
+- Strict RLS ใช้ `app.current_user_id()`/trusted transaction context; service_role จำกัดเฉพาะ migration, sync และ audit/system worker ที่กำหนดขอบเขต และห้ามอยู่ใน HTTP/Socket request handler
 - Access JWT มี fixed expiry และไม่ใช้ sliding TTL; Redis ใช้ denylist/session cache/refresh lock/rate limit ส่วน refresh registry ถาวรอยู่ใน PostgreSQL
 
-### Compatibility contract ใน migration `20260825130000_fitness_buddies_session_capacity.sql`
-- เพิ่ม `app.require_current_user_id()` เพื่ออ่าน `app.user_id` และยืนยันว่าเป็น active user
+### Compatibility contract จาก migration `20260825130000_fitness_buddies_session_capacity.sql` และ migration ถัดไป
+- migration `20260825130000` ที่ apply แล้วมี `app.require_current_user_id()` สำหรับอ่าน `app.user_id`; **ห้ามแก้หรือรัน migration เดิมซ้ำ**
+- Phase 13.1 ใช้ migration ใหม่เพิ่ม `app.current_user_id()`/ปรับ helper ให้ยืนยัน active user; ถ้ามีทั้ง `app.user_id` และ `request.jwt.claims.sub` ต้องตรวจว่าเป็น UUID เดียวกัน ห้ามใช้ `COALESCE` กลบ identity ที่ขัดกัน
 - เพิ่ม secure RPC overload ที่ไม่รับ actor จาก client:
   - `is_fitness_group_manager(p_group_id)`
   - `set_fitness_group_owner_auto_join(p_group_id, p_enabled, p_cancel_bookings)`
   - `book_fitness_session(p_session_id)`
   - `approve_fitness_session_booking(p_booking_id)`
   - `leave_fitness_group(p_group_id, p_user_id)`
-- Secure overload เป็น bounded `SECURITY DEFINER` พร้อม `SET search_path=''`, รับเฉพาะ business/resource IDs และ derive actor จาก `app.require_current_user_id()`; ถูก `REVOKE ... FROM PUBLIC, anon, authenticated` และยังไม่ grant ให้ app role จนกว่า Phase 13.3 จะสร้าง/จำกัด role และโอน function owner เรียบร้อย
+- Secure overload เป็น bounded `SECURITY DEFINER` พร้อม `SET search_path=''`, รับเฉพาะ business/resource IDs และ derive actor จาก `app.require_current_user_id()`; ถูก `REVOKE ... FROM PUBLIC, anon, authenticated` และยังไม่ grant ให้ `sheserved_app` จนกว่า Phase 13.1 จะผ่าน role/pooler spike และโอน function owner เรียบร้อย
 - Legacy RPC signature ที่รับ `p_actor_id`/`p_user_id` ยังคง grant ให้ `anon, authenticated` ใน migration นี้เพื่อไม่ทำให้ Flutter ปัจจุบันเสียระหว่าง compatibility window
 - การคง legacy grant หมายความว่า actor spoofing ยังไม่ถูกปิดสมบูรณ์จนถึง Phase 13.5; ห้ามอ้างว่า migration preparation นี้เป็น security cutover
 - การสร้าง DB role, strict RLS และ revoke legacy grants ต้องอยู่ใน migration cutover ใหม่ภายหลัง ไม่แก้ย้อนหลัง migration ที่ apply แล้ว
 
-### Phase 13.0 — Documentation, secrets และ network prerequisites
-- อัปเดต security decision ให้เลือก JWT + Backend Gateway และกำหนด owner ของ signing keys/session registry
-- เพิ่ม backend env template สำหรับ JWT active/previous key, issuer, audience, access TTL, refresh TTL และ secure cookie/web settings โดยไม่ใส่ค่าจริงใน git
-- ใช้ dual-key rotation พร้อม `kid`; signing key/DB credential/Redis credential เป็น P2 server-only และต้อง rotate ตาม `docs/secure/07_secret_management.md`
-- Staging/production ต้องพร้อม HTTPS/WSS ผ่าน Caddy ก่อนเปิด token; auth endpoints ใช้ `Cache-Control: no-store`, CORS allowlist และ WebSocket origin allowlist
-- กำหนด role-specific TTL ตาม `docs/secure/08_session_token_security.md`; admin/clinical สั้นกว่า consumer และ sensitive action ต้อง re-auth
-- กำหนด LocalOnly/Unified behavior: Local Backend ออก/verify token ได้โดยไม่ใช้อินเทอร์เน็ต; เมื่อ identity authority ใช้งานไม่ได้ protected mutation ต้อง fail closed
-- Gate: environment validation ผ่าน, ไม่มี secret ใน client/log, HTTPS/WSS test ผ่าน และ legacy behavior ยังทำงานเหมือนเดิม
 
-### Phase 13.1 — Auth foundation แบบไม่เปลี่ยน Fitness path
-- เพิ่ม `/api/auth/login`, `/api/auth/social/:provider`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/logout-all`, `/api/auth/me` และ session-management endpoints
-- ใช้ Argon2id ฝั่ง server (bcrypt cost 12 เป็น fallback) พร้อม legacy SHA-256 lazy rehash; ห้ามส่ง `password_hash` กลับ Flutter
-- Social login ต้องส่ง provider credential ให้ Backend verify กับ provider ก่อน map `public.users` และออก Sheserved session
-- Refresh token ต้อง random อย่างน้อย 256-bit, เก็บ hash, rotate ทุกครั้ง, ตรวจ reuse และ revoke session family เมื่อพบ reuse
-- เพิ่ม account lockout/rate limit ต่อ identifier และ audit event: login success/failure, refresh, reuse, logout, revoke, role change
-- ขยาย `AuthService` ให้ถือ user + access token metadata โดยคง API `currentUser` เดิมเพื่อลดผลกระทบหน้าอื่น
-- เพิ่ม authenticated HTTP client กลาง; mobile เก็บ refresh ใน Keychain/EncryptedSharedPreferences, web ใช้ HttpOnly+Secure+SameSite=Strict และป้องกัน CSRF เฉพาะ refresh endpoint
-- Gate: login/register/social/refresh/logout/session restore ผ่าน test; legacy Fitness repository ยังไม่เปลี่ยน path
+---
 
-### Phase 13.2 — HTTP/WebSocket verified identity
-- แทนที่ middleware ที่รับ `x-user-id`/unsigned JWT ด้วย signature verification แบบ fail closed
-- Protected route ใช้ `req.userId`, `req.sessionId`, role/permission จาก verified claims และตรวจ active/revoked session ซ้ำตาม policy
-- Socket.IO รับเฉพาะ signed access token, verify เหมือน HTTP และ re-auth/reconnect เมื่อ token refresh; event-level actor ต้องตรง `socket.userId`
-- Public endpoint/anonymous socket แยก route และ event allowlist ชัดเจน ห้าม fallback จาก protected path ไป anonymous
-- Cache key ของ private response ต้องรวม user/org/permission context; ห้าม cache `/api/auth/*` response และห้าม log token/password/OTP
-- Gate: token ปลอม, หมดอายุ, issuer/audience ผิด, revoked session และ socket actor mismatch ถูกปฏิเสธ; client รุ่น compatibility ยังใช้งานส่วนที่ยังไม่ cutover ได้
+## Phase 13 — Decision Sheet (คำถามที่ต้องตอบก่อนเริ่ม พร้อมทางเลือก)
 
-### Phase 13.3 — DB identity context, roles และ RLS foundation
-- สร้าง role แยกใน migration ใหม่: `sheserved_app`, `sheserved_worker`, `sheserved_readonly`, `sheserved_migrate` และ `sheserved_fitness_owner NOLOGIN`; ยกเลิก `GRANT ALL` สำหรับ app request role
-- `sheserved_app` มีเฉพาะสิทธิ์ตาราง/RPC ของ Fitness ที่จำเป็น, ไม่มี DDL, ไม่มี `BYPASSRLS`, แก้/ลบ audit log ไม่ได้
-- ก่อน cutover ให้โอน ownership ของ bounded secure RPC จาก migration role ไป `sheserved_fitness_owner` ที่มีสิทธิ์เฉพาะตาราง Fitness; `sheserved_app` ได้เพียง `EXECUTE` และเรียก legacy actor signature โดยตรงไม่ได้
-- Backend checkout connection แล้วต้อง `BEGIN` → `SET LOCAL app.user_id/session_id/role/...` → query/RPC → `COMMIT`/`ROLLBACK` ก่อนคืน connection ทุกครั้ง เพื่อป้องกัน identity รั่วข้าม pooled connection
-- Grant secure RPC overload จาก migration preparation ให้ `sheserved_app`; Backend ห้ามเรียก legacy signature ที่รับ actor
-- เพิ่ม strict Fitness RLS ใน shadow/validation mode หรือ migration staging โดยใช้ trusted context; public SELECT policy แยกจาก private/member/admin policy
-- Service-role ใช้เฉพาะ migration/sync/system jobs และต้องมี credential/connection pool แยกจาก HTTP request handler
-- Gate: deny/allow matrix ผ่านสำหรับ owner, active group admin, Sheserved admin, member, unrelated user, blocked user, missing context และ invalid context
+> วิธีใช้: แต่ละคำถามมีข้อเท็จจริงจากโค้ดจริง, ทางเลือก, และคำแนะนำที่เหมาะกับ sheserved โดยเฉพาะ
+> ให้เลือก 1 ข้อต่อคำถาม แล้วบันทึกใน Decision Log ท้ายเอกสาร; ตัวเลือกที่เลือกจะกลายเป็นข้อผูกมัดของ sub-phase ที่เกี่ยวข้อง
 
-### Phase 13.4 — Fitness Backend Gateway canary
-- เพิ่ม Backend endpoints สำหรับ create/update group, create/update/cancel session, book/cancel/approve/reject booking, owner auto-join, leave/remove member, block/unblock และ sensitive reads
-- Flutter ส่งเฉพาะ resource/business fields; ห้ามส่ง actor ID เพื่อใช้ authorization โดย Backend derive actor จาก `req.userId`
-- Backend ใช้ policy/data-access boundary กลางและ ownership-scoped query/RPC; session capacity/approval ยังเป็น atomic ที่ DB
-- Public group/session list สามารถอ่าน Supabase โดยตรงต่อได้; pending/member profile/blocklist และ mutation ผ่าน Gateway
-- ใช้ environment/user cohort feature flag เลือก **หนึ่ง write path ต่อ request**; ห้าม dual-write เพราะเสี่ยงจองซ้ำและ state divergence
-- Shadow mode ทำได้เฉพาะเปรียบเทียบ authorization decision/read result โดยไม่ทำ mutation ซ้ำ
-- Offline/emergency mode เก็บ encrypted outbox ได้ แต่ห้ามถือว่า server-authorized จนกว่าจะออนไลน์และ Backend ตรวจ token/ownership ใหม่
-- Gate: canary ไม่มี booking ซ้ำ, capacity drift, notification drift หรือ permission regression; audit log ผูก actor/session/request ID ครบ
+### Q1 — ทีมและการแบ่งงาน: Phase 13 ควรใหญ่แค่ไหนต่อรอบ
+**ข้อเท็จจริง:** แผน 09 ประเมินเฉพาะชั้น auth ว่า 6–10 สัปดาห์ และประเมิน refactor repository ที่ยิง Supabase ตรงว่า "~40+ repositories"; การสำรวจจริงพบ **189 call sites ใน 83+ ไฟล์** ซึ่งมากกว่าที่แผนประเมิน
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | ทำ Phase 13 ตามลำดับเดิม 13.0→13.6 เป็นก้อนเดียว | ลำดับพึ่งพาชัด, เอกสารเดียว | ถ้าติดกลางทางต้องถือ half-migrated state นาน; rollback หลายชั้นพร้อมกัน |
+| **B** ⭐ | แยกเป็น **release ที่ deploy ได้จริงต่อ sub-phase** โดยแต่ละ sub-phase ต้อง "ปล่อยแล้วอยู่ได้ไม่มีกำหนด" (independently shippable) | ถ้าหยุดกลางทางระบบยังปลอดภัยกว่าเดิมและใช้งานได้; ลด risk ของ solo dev | ต้องรักษา compatibility 2 ทางนานกว่า |
+| **C** | ทำเฉพาะ 13.0–13.2 (auth identity ที่ verify ได้ แต่ยังไม่เปิด Fitness gateway/room path) แล้วหยุดประเมินก่อนตัดสินใจเรื่อง canary/RLS cutover | ได้ประโยชน์ security สูงสุดต่อความพยายาม (ปิด G2/G3) | Fitness ยังเปิด actor spoofing ต่อไป |
+
+**คำแนะนำ: B** — และเพิ่มกฎว่า *ทุก sub-phase ต้องจบด้วยสถานะที่ปล่อยค้างได้* เพราะโปรเจกต์นี้ดูแลโดยคนน้อยและมี feature อื่นเดินขนานอยู่
+**หมายเหตุ:** ถ้าเลือก C ให้ยอมรับอย่างชัดเจนในเอกสารว่า Fitness mutation ยัง spoof ได้ ห้ามเคลมว่า cutover แล้ว
+
+---
+
+### Q2 — Backend ตัวไหนเป็น identity authority
+**ข้อเท็จจริง:** `websocket-server` มี Express 5 + Socket.IO + `pg` Pool + ioredis + Caddy Phase 1 อยู่แล้ว; **ไม่มี `/api/auth/*`**; `jsonwebtoken`/`bcrypt`/`argon2`/`helmet` ไม่มีใน `package.json`; `utils/logger.js` require `pino` ที่ไม่ได้ติดตั้ง (แต่ยังไม่ถูก wire เข้า `server.js` จึงยังไม่ crash)
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** ⭐ | ต่อยอด `websocket-server` เดิม เพิ่ม `routes/auth.js`, `middleware/auth.js` และ `middleware/socket-auth.js` ที่ verify จริง; `server.js` ทำเพียง wiring | ใช้ Caddy/Redis/rate-limiter/pool ที่มีอยู่ทันที; ไม่มี service ใหม่ให้ดูแล | `server.js` ใหญ่อยู่แล้ว (~33 inline endpoints) เสี่ยง regression |
+| **B** | สร้าง service `auth-service` แยก process/repo | แยก blast radius, signing key อยู่ service เดียว | ต้อง deploy/monitor/TLS เพิ่ม; token verification ต้องแชร์ key หรือ JWKS |
+| **C** | ใช้ Supabase Edge Function เป็น auth authority | ไม่ต้องดูแล server; อยู่ใกล้ DB | ขัดกับ local-only/unified mode ที่ต้องออก token ได้โดยไม่มีอินเทอร์เน็ต |
+
+**คำแนะนำ: A** — เพราะ `docs/infrastructure/architecture_analysis.md` วาง Caddy → websocket-server เป็นทางเข้าหลักแล้ว และข้อกำหนด LocalOnly ตัด C ออกโดยปริยาย
+**เงื่อนไขบังคับถ้าเลือก A:** auth/Socket.IO verification ต้องอยู่ใน middleware แยกจาก `server.js`; `server.js` ทำเพียงประกอบ middleware; ย้าย inline endpoints ของ `server.js` เข้าสู่ `routes/` ทีละกลุ่มพร้อมเพิ่ม `req.userId` enforcement
+
+---
+
+### Q3 — Signing algorithm และที่เก็บ key
+**ข้อเท็จจริง:** แผน 08 แนะนำ HS256 ก่อนแล้วย้าย RS256; แผน 07 จัด JWT signing secret เป็น **P2 server-only rotate ทุก 90 วัน** และกำหนด dual-key period; ปัจจุบันไม่มี secret manager (`.env` เท่านั้น) และ `.env.example` ไม่มีตัวแปร JWT เลย
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** ⭐ | HS256 + dual key (`kid` = `active`/`previous`) ใน `.env`, rotate 90 วัน | ง่ายที่สุด, ตรงกับ single-service ปัจจุบัน | ทุก service ที่ verify ได้ก็ sign ได้ |
+| **B** | RS256 + JWKS endpoint | แยก signer/verifier; Supabase/PostgREST verify ด้วย public key ได้ | ต้องจัดการ key pair + JWKS cache; งานเพิ่มโดยยังไม่มีหลาย service |
+| **C** | HS256 ด้วย **Supabase JWT secret** เพื่อให้ PostgREST verify ได้ตรง | RLS ใช้ `auth.uid()` ได้เลย ไม่ต้อง gateway สำหรับ read | secret เดียวกันกับที่ Supabase ใช้; revoke ก่อนหมดอายุไม่ได้ (Supabase ไม่รู้จัก denylist ของเรา) |
+
+**คำแนะนำ: A สำหรับ token ของ Sheserved เอง** และถ้าเลือก Q7 ตัวเลือก C ให้ออก **token คนละใบ** ที่ sign ด้วย Supabase JWT secret แยกจาก access token หลัก อายุสั้นกว่า (≤5 นาที) และไม่ใช้เป็น refresh
+**เหตุผล:** อย่าให้ token ใบเดียวทำสองหน้าที่ เพราะขอบเขต revoke ต่างกันโดยธรรมชาติ
+
+---
+
+### Q4 — Password migration: SHA-256 → Argon2id
+**ข้อเท็จจริง:** `_hashPassword()` ใช้ SHA-256 ไม่มี salt; `login()` เทียบด้วย `.eq('password_hash', ...)`; `updatePassword()` เขียน **plaintext**; `SyncService` sync `password_hash` ไป local DB; ไม่มี rehash path
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | บังคับ reset password ทุกคน | ล้าง SHA-256 หมดในรอบเดียว, ชัดเจน | ผู้ใช้ทุกคนสะดุด; ต้องมีช่องทาง reset ที่เชื่อถือได้ (OTP) ก่อน |
+| **B** ⭐ | **Lazy rehash**: server รับ password จริง → เทียบ SHA-256 เดิม → ถ้าผ่านให้ Argon2id ทับทันที + ตั้ง deadline บังคับ reset ผู้ที่ไม่ login ภายใน N เดือน | ผู้ใช้ไม่สะดุด; migrate ตามการใช้งานจริง | ต้องคง legacy verify path ชั่วคราว |
+| **C** | เก็บ SHA-256 ต่อแต่ห่อด้วย Argon2id (`argon2(sha256(pw))`) แล้ว migrate เงียบ ๆ | ไม่ต้องรู้รหัสผ่านจริงก็ migrate ได้ทั้งตาราง | โครงสร้าง hash ซ้อนทำให้สับสนระยะยาว; ยังต้อง client ส่งอะไรมาให้ตรง |
+
+**คำแนะนำ: B + องค์ประกอบของ C เป็น backstop** — ทำ B เป็นทางหลัก และใช้ C (`argon2(sha256(pw))`) เฉพาะเพื่อ **ปิด plaintext-equivalent risk ของแถวที่ยังไม่ login** ทันทีในคืนเดียว โดยบันทึก `password_algo` ต่อแถว
+**สิ่งที่ต้องเพิ่มในตาราง `users`:** `password_algo VARCHAR(20)`, `password_updated_at TIMESTAMPTZ`, `password_migrated_at TIMESTAMPTZ`
+**Prerequisite บังคับ:** ต้องแก้ B1 (plaintext) และ B3 (sync hash) ก่อน มิฉะนั้น migration จะ migrate ข้อมูลที่ผิดอยู่แล้ว; แถวที่ตรวจพบว่าเป็น plaintext ต้องตั้ง `requires_password_reset`/บังคับ reset และ **ห้าม**นำไป backstop อัตโนมัติ
+**ลำดับ compatibility บังคับ:** Backend auth ต้องพร้อม → Flutter เปลี่ยน login/register/social ไป Backend → revoke direct password-hash query → จึงเปิด lazy rehash/backstop; ห้าม rehash ก่อนแอป switch
+
+---
+
+### Q5 — Public data contract: อะไรอ่านตรงด้วย anon key ได้
+**ข้อเท็จจริง:** `rls_audit_report.md` (2026-07-28) ระบุ 46 ตาราง: 15 มี policy เหมาะสม, **23 มี RLS แต่ `USING(true)`**, 6 เคยไม่มี RLS (แก้แล้ว), 2 ไม่มี RLS โดยเจตนา; ตารางเสี่ยงสูงที่ยัง `USING(true)`: `chat_rooms`, `chat_messages`, `consultation_requests`, `payment_transactions`, `checkout_sessions`, `provider_credentials`, `donation_contributions`
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | คง public read ทั้ง Fitness ตามเดิม (ทุกคอลัมน์) | ไม่ต้องแก้ browse flow เลย | รายชื่อสมาชิก/pending/โปรไฟล์รั่วผ่าน REST ตรง |
+| **B** ⭐ | สร้าง **public VIEW ต่อ use case** (เช่น `fitness_groups_public`, `fitness_sessions_public`) ที่ expose เฉพาะคอลัมน์ที่ตั้งใจ แล้วให้ anon อ่านได้เฉพาะ view; ตารางจริงปิด anon SELECT | ขอบเขต public ชัดเจนตรวจสอบได้; browse ไม่ต้องล็อกอิน; ไม่ต้องรอ gateway | ต้องแก้ query ฝั่ง Flutter ให้ชี้ view |
+| **C** | ปิด anon อ่านทั้งหมด ให้ทุก read ผ่าน gateway | ควบคุมสูงสุด + audit ครบ | ขัดข้อกำหนด "ดูก๊วนได้โดยไม่ล็อกอิน" ถ้า backend ล่ม; latency เพิ่มทุกหน้า |
+
+**คำแนะนำ: B** — เป็นวิธีที่ให้ผลลัพธ์ security สูงโดยไม่แตะ 189 call sites และทำได้ก่อน gateway
+**Deliverable ที่ต้องมีก่อน 13.0 จบ:** ตาราง classification ทุกตาราง Fitness ระบุ `public / member / manager / server-only` ต่อคอลัมน์
+
+---
+
+### Q6 — Refresh token rotation กับ parallel request
+**ข้อเท็จจริง:** ยังไม่มีตาราง `refresh_tokens`; มี `public.sessions` จาก `20260728190000_create_sessions_table.sql`; Redis มี `getSession/setSession/deleteSession` (`auth:session:${sessionId}`) ที่ไม่มีใครเรียก; Redis เป็น single instance `localhost:6379`
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | Strict: refresh ซ้ำ = revoke ทั้ง family ทันที | ตรวจ token theft ได้ไวสุด | มือถือยิงขนาน/รีทรายทำให้ผู้ใช้ถูกเตะออกโดยไม่มีการโจมตี |
+| **B** ⭐ | **Rotation + grace window**: token เก่าใช้ได้อีก 30–60 วินาทีหลัง rotate โดยคืน token ใหม่ **ใบเดิม** (idempotent), พร้อม Redis lock ต่อ session; ถ้าใช้ token เก่า *หลัง* grace = revoke family | ไม่ false-positive จาก parallel refresh; ยังตรวจ theft ได้ | ช่องเวลาที่ token ถูกขโมยใช้ได้จริง ≤ grace |
+| **C** | ไม่ rotate: refresh คงเดิมจนหมดอายุ | ง่ายสุด ไม่มี race | เสีย property การตรวจ theft ทั้งหมด — ขัดแผน 08 |
+
+**คำแนะนำ: B** — grace window 60 วินาที + `SETNX` lock ต่อ `session_id` (Redis มี distributed lock pattern ใช้อยู่แล้วตาม `caching_strategy.md`) พร้อม **client-side single-flight** (refresh หนึ่งครั้งต่อ session ในขณะเดียวกัน)
+**ข้อกำหนดที่เพิ่มเพื่อให้ replay ได้จริง:** เพราะ server เก็บ hash อย่างเดียวจึงคืน raw token ใหม่ให้ parallel request ไม่ได้; ต้องเก็บ refresh response ล่าสุดแบบ **เข้ารหัส** ใน Redis/secure server cache ด้วย TTL 60 วินาที (ห้ามเก็บ raw token plaintext ใน PostgreSQL/log) หรือใช้ idempotent refresh-result store ที่เทียบเท่า
+**การออกแบบตาราง:** **reuse `public.sessions` ที่มีอยู่แล้ว** (`20260728190000_create_sessions_table.sql`) เป็น refresh-session registry; migration ใหม่เพิ่ม `family_id`, `prev_token_hash`, `rotated_at` และใช้ `device_info` เดิม และใช้ `token_hash` เป็น hash ของ refresh token — เก็บ hash ใน PostgreSQL เป็น source of truth; Redis ใช้ lock/denylist และ encrypted replay result TTL 60 วิเท่านั้น เพราะ Redis เป็น single instance ไม่มี HA (`caching_strategy.md`); ห้ามสร้างตาราง refresh registry ใหม่ซ้ำซ้อน
+**มติ implementation:** reuse/extend `public.sessions` เดิม — schema นี้มี `user_id`, `token_hash`, `expires_at`, `revoked_at`, `device_info` และ index ที่ต้องใช้แล้ว; migration ใหม่เพิ่มเฉพาะ `family_id`, `prev_token_hash`, `rotated_at`; ห้ามสร้าง refresh state ซ้ำซ้อน
+
+---
+
+### Q7 — ⚠️ `SET LOCAL app.user_id` ใช้กับ Supabase ไม่ได้ตามที่แผนเขียนไว้
+**ข้อเท็จจริงที่เปลี่ยนแผน:**
+- `server.js` สร้าง `new Pool()` ชี้ **local PostgreSQL** (`DB_HOST=localhost:5432`) ไม่ใช่ Supabase
+- การคุย Supabase ทำผ่าน `@supabase/supabase-js` (PostgREST/HTTP) ใน 10 ไฟล์
+- ข้อมูล Fitness ทั้งหมดอยู่ใน **Supabase** ไม่ใช่ local DB
+- **PostgREST ทำ `SET LOCAL` ข้าม statement ไม่ได้** เพราะแต่ละ RPC call เป็น transaction ของตัวเอง
+- ไม่พบการใช้ pooler (`6543`) หรือ `pgbouncer` ที่ใดเลย จึงยังไม่มีข้อผูกมัด
+
+**สรุป:** ประโยค "Backend `BEGIN` → `SET LOCAL app.user_id` → RPC → `COMMIT`" **ใช้ได้เฉพาะเมื่อ backend เปิด connection `pg` ตรงไปยัง Supabase Postgres** ไม่ใช่ผ่าน supabase-js — แผนเดิมยังไม่ได้ระบุจุดนี้
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | Backend เปิด `pg` Pool ตรงไป Supabase Postgres (transaction pooler `:6543`) แล้วทำ `BEGIN; SET LOCAL app.user_id; ...; COMMIT` | ตรงกับ `app.require_current_user_id()` ที่ **มีอยู่แล้ว**; ควบคุม transaction/atomicity เต็มที่ | backend ต้องถือ DB credential ของ Supabase; ทุก read/write ที่ต้อง identity ต้องผ่าน backend (แตะ call sites จำนวนมาก) |
+| **B** | ไม่ใช้ `SET LOCAL`; backend เรียก legacy RPC ที่รับ actor param แต่ **client เรียกไม่ได้แล้ว** (revoke จาก anon) | เปลี่ยนน้อยสุด; ใช้ RPC ที่มีอยู่ทันที | RLS ไม่ได้เป็นชั้นป้องกัน เพราะ service_role bypass ทั้งหมด — เหลือชั้นเดียวคือ backend |
+| **C** ⭐ | **Hybrid ตามความเสี่ยง**: <br>• public read → anon key + public VIEW (Q5-B) <br>• private read → client ยิง Supabase ตรงด้วย **JWT ที่ sign ด้วย Supabase JWT secret** → PostgREST verify → RLS ใช้ `auth.uid()`/`request.jwt.claims` <br>• mutation ที่ต้อง atomic/มี side effect → gateway + `pg` ตรง + `SET LOCAL` | ไม่ต้อง refactor 189 call sites ทันที; ได้ RLS จริงที่ DB; mutation สำคัญยัง atomic และ audit ได้ | ต้องดูแลสอง identity path; revoke access token ก่อนหมดอายุใน PostgREST path ทำไม่ได้ → ต้องใช้ TTL สั้น |
+
+**คำแนะนำ: C** — เป็นตัวเลือกเดียวที่สอดคล้องกับข้อเท็จจริงทั้งสามข้อ: (1) 189 call sites, (2) 372 permissive policy ที่ต้อง tighten อยู่แล้ว, (3) ต้องคง public browse
+**ผลต่อ RLS:** policy ของตาราง Fitness ควรอ่าน identity จาก **ทั้งสองแหล่ง** ผ่าน helper เดียว แต่ต้องตรวจ conflict ก่อนเลือกค่า:
+```
+app.current_user_id() :=
+  gateway_id := parse_uuid(current_setting('app.user_id', true))
+  rest_id := parse_uuid(request.jwt.claims ->> 'sub')
+  if gateway_id IS NOT NULL AND rest_id IS NOT NULL AND gateway_id <> rest_id:
+    RAISE EXCEPTION 'UNAUTHORIZED'
+  return COALESCE(gateway_id, rest_id)
+```
+helper ต้องยืนยัน active user และทุก policy/RPC ใช้ helper นี้ตัวเดียว เพื่อไม่ให้ identity ที่ขัดกันถูกกลบด้วย `COALESCE`
+**ถ้าเลือก A:** ต้องยืนยันว่า Supabase pooler mode ที่ใช้เป็น **transaction mode** (`:6543`) ซึ่ง `SET LOCAL` ทำงานได้เพราะอยู่ใน transaction; ห้ามใช้ `SET` ธรรมดาเด็ดขาด
+
+---
+
+### Q8 — Offline / LocalOnly กับ fail-closed
+**ข้อเท็จจริง:** `AppConfig.databaseMode` hardcode เป็น `unified`; `SyncService._pendingChanges` และ `UnifiedRepository._offlineQueue` เป็น **in-memory list ไม่ persist** — ปิดแอปคือหาย; log จาก `flutter run` แสดงว่าเมื่อเน็ตหลุดทั้ง Supabase และ local API ล้มเหลวพร้อมกันและแอปยัง retry เป็นรอบ
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** ⭐ | **Fitness mutation = online-only, fail closed** (ไม่มี offline queue); เก็บ offline capability ไว้เฉพาะ Emergency/Health ที่จำเป็นจริง | ตรงกับ business จริง (จองรอบนัดขณะออฟไลน์ไม่มีความหมาย เพราะ capacity ต้องตรวจที่ server); ลด attack surface มาก | ผู้ใช้ที่เน็ตไม่ดีทำรายการไม่ได้ |
+| **B** | ทำ persistent encrypted outbox สำหรับทุก module | UX ดีที่สุดตอนออฟไลน์ | ต้องออกแบบ conflict/idempotency/replay auth ทั้งระบบ — งานใหญ่และเสี่ยง double-booking |
+| **C** | Outbox เฉพาะ Emergency + re-verify token ตอน sync | สมดุล | ยังต้องมี persistent store + token grace |
+
+**คำแนะนำ: A** — และระบุในแผนตรง ๆ ว่า Fitness ไม่รองรับ offline mutation
+**เหตุผลเชิงเทคนิค:** capacity ของรอบนัดต้อง atomic ที่ DB (`pending` ไม่กินที่นั่ง, ตรวจซ้ำตอน approve) — offline booking ที่ sync ภายหลังจะขัดกับกติกานี้โดยพื้นฐาน
+**ผลพลอยได้ที่ควรทำ:** in-memory queue ที่มีอยู่ควรถูกลบหรือทำ persistent ให้ชัด เพราะสถานะปัจจุบัน "ดูเหมือนมี offline support แต่หายเมื่อปิดแอป" อันตรายกว่าไม่มีเลย
+
+---
+
+### Q9 — WebSocket room authorization
+**ข้อเท็จจริง:** `join-room` และ `join-emergency-chat` **ไม่มี membership check** — client join ห้องใดก็ได้; handshake รับ `socket.handshake.auth.token` เป็น user id ตรง ๆ; group chat ของ Fitness ผูก `chat_rooms` (`group_chat_popup.dart`)
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** ⭐ | ตรวจ membership ที่ DB ทุกครั้งที่ join + cache ผลใน Redis 60 วินาที; ห้าม join ห้องที่ไม่ผ่านการตรวจ | ถูกต้องเสมอ; สอดคล้อง blocklist/remove member ที่เปลี่ยนได้ตลอด | +1 query ต่อ join (cache ช่วยได้) |
+| **B** | ใส่รายการห้องที่อนุญาตใน JWT claims | ไม่ต้อง query ตอน join | claims เก่าหลังถูกถอด/บล็อก; token ใหญ่ขึ้นตามจำนวนก๊วน |
+| **C** | ตรวจตอน join + ตรวจซ้ำตอน emit ทุก event | แน่นที่สุด | overhead สูงต่อ event; ต้องระวัง latency ของแชท |
+
+**คำแนะนำ: A + องค์ประกอบของ C เฉพาะ event ที่มีผลถาวร** — 13.1 เป็นต้นไปใช้ direct `pg`/`sheserved_app` ตรวจ DB ตอน join; ก่อน DB foundation พร้อม ห้ามให้ HTTP/socket handler ใช้ service_role ทั่วไป (ถ้าจำเป็นต้องมี compatibility adapter ให้เป็น read-only allowlist, time-boxed และมี audit); ตรวจซ้ำก่อน `message:send` และ `history/read` ที่เปิดเผยข้อมูลหรือเขียนถาวร ส่วน `typing` ใช้ผลจาก join ได้
+**เพิ่มเติมบังคับ:** ต้อง **invalidate cache ทันที** เมื่อมีการถอดสมาชิก/บล็อก/revoke และต้อง force-leave socket ที่อยู่ในห้องนั้น; ถ้ามีหลาย socket instance ให้ใช้ Redis Pub/Sub
+
+---
+
+### Q10 — Canary จะวัดอะไรถึงถือว่าผ่าน
+**ข้อเท็จจริง:** gate เดิมเขียนเชิงคุณภาพ ("ไม่มี booking ซ้ำ, capacity drift") ยังไม่มีตัวเลข; ไม่มีตาราง `audit_logs`; `pino` ยังไม่ถูกใช้จริง
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | ใช้ SQL invariant query รายวันเป็น gate | ทำได้ทันที ไม่ต้องมี observability stack | เห็นย้อนหลัง ไม่ real-time |
+| **B** ⭐ | SQL invariant + structured log counter + alert 3 ตัว (auth failure spike, permission-denied spike, invariant violation) | ตรวจจับได้จริงและยังไม่ต้องลงทุน Loki/Grafana ทันที | ต้องทำ `pino` ให้ทำงานจริงก่อน |
+| **C** | ตั้ง Loki + Grafana + dashboard ก่อนเริ่ม canary | สมบูรณ์ที่สุด | เลื่อน Phase 13 ออกไปเพื่องาน infra |
+
+**คำแนะนำ: B** — โดยใช้ invariant query เหล่านี้เป็น **hard gate** (ต้อง = 0 ทุกข้อ ต่อเนื่อง 7 วัน):
+```sql
+-- 1. confirmed เกิน capacity ของรอบ
+SELECT count(*) FROM fitness_group_sessions s
+WHERE (SELECT count(*) FROM fitness_group_bookings b
+       WHERE b.session_id = s.id AND b.status = 'confirmed') > s.capacity;
+
+-- 2. booking ซ้ำ (ควรถูกกันด้วย UNIQUE แต่ต้องยืนยันว่าไม่มีทางเลี่ยง)
+SELECT count(*) FROM (
+  SELECT session_id, user_id FROM fitness_group_bookings
+  GROUP BY session_id, user_id HAVING count(*) > 1
+) d;
+
+-- 3. ผู้ถูกบล็อกยังมี booking ที่ยังไม่ยกเลิกในรอบอนาคต
+SELECT count(*) FROM fitness_group_bookings b
+JOIN fitness_group_sessions s ON s.id = b.session_id
+JOIN fitness_group_blocklist bl
+  ON bl.group_id = s.group_id AND bl.blocked_user_id = b.user_id AND bl.is_active
+WHERE b.status IN ('pending','confirmed') AND s.starts_at > now();
+
+-- 4. owner_auto_join = true แต่ owner ไม่มี confirmed booking ในรอบอนาคต
+SELECT count(*) FROM fitness_groups g
+JOIN fitness_group_sessions s ON s.group_id = g.id AND s.starts_at > now()
+WHERE g.owner_auto_join
+  AND NOT EXISTS (SELECT 1 FROM fitness_group_bookings b
+                  WHERE b.session_id = s.id AND b.user_id = g.created_by
+                    AND b.status = 'confirmed');
+
+-- 5. active membership ที่ไม่มี pending/confirmed booking ใน upcoming sessions และไม่ใช่ admin/owner
+SELECT count(*) FROM fitness_group_members m
+JOIN fitness_groups g ON g.id = m.group_id
+WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
+  AND NOT EXISTS (SELECT 1 FROM fitness_group_bookings b
+                  JOIN fitness_group_sessions s ON s.id = b.session_id
+                  WHERE s.group_id = m.group_id AND b.user_id = m.user_id
+                    AND s.starts_at > now()
+                    AND b.status IN ('pending', 'confirmed'));
+```
+**SLI/SLO ที่เสนอ:** auth endpoint error rate < 1% (ไม่รวม invalid credential ตามเกณฑ์ที่กำหนด), refresh success rate > 99% (แยก revoked/expired ออกจาก server error), p95 latency ของ mutation ผ่าน gateway ≤ baseline + 150 ms, invariant ใหม่ 1–5 = 0 ต่อเนื่อง 7 วัน, จำนวน `authz.denied` ต่อผู้ใช้ไม่เกิน baseline × 1.5
+**ข้อกำหนด baseline:** รัน invariant 1–5 ก่อน canary, แยก/แก้ pre-existing violation ให้หมดหรือบันทึก waiver พร้อม owner; gate นับเฉพาะ violation ใหม่หลังเริ่ม canary; 404 จาก BOLA concealment ห้ามนับรวมเป็น permission spike โดยไม่จำแนก event
+
+---
+
+### Q11 — Audit log ของ auth จะไปที่ไหน และเมื่อไหร่
+**ข้อเท็จจริง:** **ไม่มีตาราง `audit_logs`**; มี `transaction_audit_log` + `record_audit_log()` (procurement), `victim_report_consent_logs`, `victim_health_access_logs`; แผน 05 เสนอ schema `audit_logs` ไว้ครบแล้วและระบุว่าแผน 12 `permission_audit_log` ควรรวมเป็นตารางเดียวกัน
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | structured log (pino) เท่านั้นในช่วง Phase 13, ทำตาราง audit ที Phase S1 | เร็ว ไม่ต้องออกแบบ schema | ช่วง cutover ไม่มี audit trail ที่ query ได้ — จุดที่ต้องการมากที่สุด |
+| **B** ⭐ | สร้าง `audit_logs` ตาม schema แผน 05 ตั้งแต่ 13.2 แต่ **เขียนเฉพาะ auth + Fitness manager action** ก่อน (ไม่ต้องครบทุก module) | มี trail ตอน cutover; schema เดียวใช้ต่อได้ทั้งระบบ; ตอบ compliance ในอนาคต | ต้อง partition/retention ตั้งแต่ต้น |
+| **C** | reuse `transaction_audit_log` ที่มีอยู่ | ไม่เพิ่มตาราง | schema ออกแบบมาเพื่อ procurement; ปนความหมาย |
+
+**คำแนะนำ: B** — สร้างตารางเดียวแต่เริ่ม populate แค่ scope ที่จำเป็น
+**Event ขั้นต่ำที่ต้อง log ใน 13.2:** `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`
+**ข้อกำหนด implementation:** ถ้า partition ตาม `occurred_at` ต้องออกแบบ primary/unique key ให้รวม partition key เช่น `(occurred_at, id)` หรือใช้ index strategy ที่ถูกต้องกับ PostgreSQL; ห้ามใช้ primary key `id` เดี่ยวบน partitioned parent โดยไม่ตรวจสอบ
+**การเขียน audit:** auth handler/HTTP request ห้ามถือ service_role เพื่อเขียนโดยตรง; ส่ง event เข้า durable queue/outbox แล้ว `audit-worker` ที่มี `sheserved_worker` เป็นผู้เขียน; compliance event เขียน transaction เดียวกับ operation; ต้อง redaction PII/secret และมี retry/dead-letter
+**ข้อบังคับ:** ต้อง `REVOKE UPDATE, DELETE ON audit_logs` จาก app role ตั้งแต่ migration แรก (แผน 05 และ 12 ระบุตรงกัน)
+
+---
+
+### Q12 — Backend ที่ถือ service_role กลายเป็นเป้าหมายเดียว
+**ข้อเท็จจริง:** service_role ถูกใช้ใน 10 ไฟล์ และ **บาง service fallback ไป `SUPABASE_ANON_KEY`** เมื่อไม่มี service key; ไม่มี secret manager; TLS ยังไม่ implement; `ALLOWED_ORIGINS` default เป็น `'*'`
+
+| ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **A** | คง service_role ใช้ต่อ แต่จำกัดเฉพาะ background jobs และห้ามอยู่ใน request path | ทำได้เร็ว; ตรงกับ `bounded_gateway_design.md` | request path ยังต้องมี credential อื่นอยู่ดี |
+| **B** ⭐ | สร้าง permission role `sheserved_app NOLOGIN` (ไม่มี `BYPASSRLS`) และ login role `sheserved_gateway LOGIN` ที่ `SET ROLE sheserved_app` สำหรับ business request path; เพิ่ม auth-only role/pool แยกสำหรับ login/session functions; คง service_role เฉพาะ migration/sync/audit-worker/system job + **ลบ fallback ไป anon ทั้งหมด** | ได้ least privilege จริง; RLS เป็นชั้นป้องกันที่สอง; ตรงแผน 12 | ต้องสร้าง role (ยังไม่มี `CREATE ROLE` ใน migration เลย) และ grant ต่อ object |
+| **C** | ย้าย secret ไป Vault/Infisical ก่อนเริ่ม | จัดการ secret ครบ | เลื่อน Phase 13 เพื่องาน infra |
+
+**คำแนะนำ: B** — และทำ `.env` hardening ขั้นต่ำ (permission 600, ไม่มี fallback เงียบ, `ALLOWED_ORIGINS` บังคับตั้งค่าใน production) โดยเลื่อน secret manager ไปหลัง cutover
+**ความเสี่ยงที่ต้องยอมรับอย่างชัดเจน:** backend ยังเป็น single point of compromise — บรรเทาด้วย `sheserved_gateway` ที่ไม่มี `BYPASSRLS`/DDL และใช้ `SET ROLE sheserved_app` ใน transaction; ห้าม HTTP handler ถือ service_role; service_role แยกไว้เฉพาะ worker/system job; ห้ามลบ audit log
+
+---
+
+## Phase 13 — โครงสร้าง sub-phase ฉบับปรับปรุง
+
+> **Decision Q1 = B (2026-08-30):** แต่ละ sub-phase เป็น **release ที่ deploy ได้จริงแบบอิสระ** และต้อง "ปล่อยแล้วค้างอยู่ได้ไม่มีกำหนดโดยไม่ทำให้ระบบแย่ลง" (independently shippable)
+> **กฎ 3 ข้อของ Q1-B:**
+> 1. ทุก sub-phase ต้องจบด้วย **deliverable ที่ deploy ได้** และถ้าหยุดหลัง sub-phase ใด ระบบต้องปลอดภัยกว่า/เท่าเดิม ไม่ใช่ครึ่ง ๆ กลาง ๆ
+> 2. **ห้ามเริ่ม sub-phase ถัดไปก่อนปิด gate ของ sub-phase ปัจจุบัน** (แต่ละ gate ต้องมีหลักฐาน เช่น log/metrics/test ที่รันผ่าน)
+> 3. ถ้าตัดสินใจหยุดกลางทาง ให้เลือกจุดหยุดที่ "ปลอดภัยที่สุดต่อความพยายาม" — จุดที่แนะนำคือหลัง 13.0 (prerequisite พร้อม), หลัง 13.1 (DB role/pooler พร้อม แต่ยังไม่เปิด auth path), หลัง 13.2 (auth จริง, audit worker และ Flutter switch แล้ว แต่ Fitness ยัง legacy), และหลัง 13.3 (HTTP/WebSocket identity verify แล้ว) — แต่ละจุดมี Safe Stop/Deliverable/Gate ของตัวเอง
+> ลำดับพึ่งพาที่ปรับตามความเสี่ยงและ least privilege: **12.9 → 13.0 → 13.1 (DB bootstrap/role spike) → 13.2 (server auth + Flutter switch) → 13.3 (verified HTTP/WebSocket + room auth) → 13.4 → 13.5 → 13.6**; ห้ามเริ่ม phase ถัดไปก่อน gate ปัจจุบันผ่าน
+
+### Phase 12.9 — Hotfix ช่องโหว่ที่ทำงานอยู่ (ทำก่อนทุกอย่าง, ไม่ต้องรอ decision)
+- แก้ `updatePassword()` ให้ hash ก่อนบันทึก (B1) — เป็น bug ที่ทำให้ล็อกอินไม่ได้ด้วย; ตรวจและหยุดใช้แถวที่พบว่าเป็น plaintext
+- **Password exposure containment (B2):** ห้ามคืน `password_hash` ใน generic user/public view และห้ามเพิ่ม call site ใหม่; **ยังไม่ revoke direct auth query ของแอปเก่า** จนกว่า Phase 13.2 จะเปลี่ยน Flutter login ไป Backend มิฉะนั้นแอปเก่าจะล็อกอินไม่ได้
+- ตัด `password_hash` ออกจาก select list ของ `SyncService` และ purge สำเนาเดิมจาก local store (B3)
+- ลบ `passwordHash` จาก `UserModel` และทุกจุดที่ serialize (B4)
+- เพิ่ม `pino` เป็น direct dependency (Q10-B ต้องใช้ structured counter), ตรวจ lockfile/supply chain, wire `request-context` ที่มีอยู่เข้าจุดเริ่ม Express และทดสอบ redaction; ห้ามถอด logger แล้วกลับไปใช้ unstructured log เพราะจะทำให้ canary gate Q10 ไม่ครบ
+- **Plaintext scan:** ตรวจรูปแบบ/แหล่งที่มาของ `users.password_hash`; แถวที่ไม่ใช่ legacy SHA-256/Argon2id ให้ตั้งสถานะ `requires_password_reset` หรือบังคับ reset โดยไม่พยายาม hash ค่า plaintext เดิมอัตโนมัติ
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ หยุดได้ แต่ต้องบันทึก residual risk ว่า B2 ยังไม่ปิดเต็มรูปแบบจนกว่า 13.2 compatibility cutover
+- **Deliverable:** hotfix PR + local-data purge + plaintext inventory + test report
+- Gate: update password ไม่เก็บ plaintext; plaintext inventory มีการจัดการ; ไม่มี `password_hash` ใน sync/model/public response ใหม่; ระบบเดิมยัง login/register ได้; `pino` redaction/request ID ทำงาน; B2 direct query มี owner และวันปิดใน Phase 13.2
+
+### Phase 13.0 — Prerequisites (เอกสาร, secret, network, data contract)
+- ตัดสินใจ Q1–Q12 และบันทึกใน Decision Log
+- **Public data contract:** ตาราง classification ต่อคอลัมน์ของทุกตาราง Fitness (`public / member / manager / server-only`)
+- **Decision Q5 = B (public VIEW):** สร้าง public VIEW ต่อ use case โดย expose เฉพาะคอลัมน์ที่ตั้งใจ:
+  - `fitness_groups_public` — รายการการ์ด: id, sport_id, name, description, province, district, lat/lng (ปัดถ้าจำเป็น), gender_preference, cover_image_url, venue_photo_url, created_at, aggregate รอบ upcoming/confirmed/pending โดยไม่เปิดรายชื่อ
+  - `fitness_sessions_public` — รายละเอียดรอบ: id, group_id, starts_at, ends_at, capacity, confirmed_count, available_count, place_name, lat/lng, note
+  - **ห้าม** expose ใน public view: `created_by`, รายชื่อ members/bookings, blocklist, owner_auto_join หรือข้อมูลส่วนตัว
+  - ตั้งค่า view เป็น security model ที่ตรวจสอบแล้ว (ไม่เปิดทางอ้อมให้ anon อ่านตารางจริง); anon อ่านได้เฉพาะ view และตารางจริงจะปิด anon SELECT ใน migration cutover 13.5
+  - Flutter repository เปลี่ยน query browse ไปชี้ view; count/aggregate ต้องทดสอบว่าไม่เปิด row ของ member
+  - Grant `SELECT` เฉพาะ view ให้ `anon`/`authenticated`; ห้าม grant mutation ให้ `authenticated` เพราะ Q7-C ให้ mutation ผ่าน gateway เท่านั้น
+- เพิ่ม env template สำหรับ JWT (`JWT_ACTIVE_KID`, `JWT_ACTIVE_SECRET`, `JWT_PREVIOUS_KID`, `JWT_PREVIOUS_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `ACCESS_TTL`, `REFRESH_TTL`, `SUPABASE_JWT_SECRET`) โดยไม่ใส่ค่าจริงใน git; validator ต้อง fail startup เมื่อ key/issuer/audience/TTL ผิดหรือซ้ำกัน
+- **Decision Q3 = A:** HS256 dual-key — เก็บ key active/previous ใน server secret store (`.env` permission 600 ในระยะแรก), ใส่ `kid`, allowlist algorithm เป็น HS256 เท่านั้น, verify ต้องเลือกเฉพาะ known `kid` และลอง active/previous ระหว่าง rotation, sign ด้วย active เท่านั้น; runbook rotation 90 วันตาม `docs/secure/07_secret_management.md`
+- **Decision Q7 = C:** public read → anon+VIEW; private read → short-lived PostgREST token ที่ Backend ออกให้และ sign ด้วย `SUPABASE_JWT_SECRET` (claims อย่างน้อย `sub`, `role='authenticated'`, `iss`, `aud`, `iat`, `exp`, TTL ≤5 นาที, ไม่ใช่ access/refresh token หลัก); mutation → Gateway + direct Supabase `pg` + `SET LOCAL`
+- ลบ silent fallback `SUPABASE_SERVICE_KEY → SUPABASE_ANON_KEY` ในทุก service; ถ้าไม่มี service key ต้อง fail loud; ห้าม service_role อยู่ใน HTTP/Socket request handler
+- บังคับ `ALLOWED_ORIGINS` ใน production (เลิก default `'*'`); ตรวจ CORS และ WebSocket origin allowlist
+- HTTPS/WSS ผ่าน Caddy บน staging (ปัจจุบัน TLS ยังไม่มี — เป็น hard blocker ของ 13.2)
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ **แนะนำจุดหยุดแรก** — หลัง 13.0 config/contract/TLS พร้อมและยังไม่มี production path เปลี่ยน; residual risk B2 ยังถูกบันทึกจนกว่า 13.2 compatibility cutover
+- **Deliverable:** env template + public data contract + public view design/test + config hardening PR
+- Gate: environment validation ผ่าน, ไม่มี secret ใน client/log, view ไม่เปิด PII, HTTPS/WSS ใช้งานได้บน staging, service fallback ถูกลบ, Decision Log ครบทุกข้อ
+
+### Phase 13.1 — DB identity context, roles และ RLS foundation (Decision Q7 = C, Q12 = B)
+- **จุดประสงค์:** เตรียม trusted DB path, worker/audit role และ staging RLS ก่อนเปิด Auth/verified WebSocket; phase นี้ต้องไม่มี production cutover และยังไม่รับ traffic ใหม่
+- **Decision Q7 = C:** สร้าง helper เดียวรวมสอง identity path — RLS/RPC ทุกจุดต้องอ่านจาก helper นี้เท่านั้น; `app.current_user_id()` ต้อง parse UUID/ตรวจ active user และถ้ามีทั้ง `app.user_id` กับ `request.jwt.claims.sub` แล้วไม่ตรงกันต้องคืน `UNAUTHORIZED` (ห้ามใช้ `COALESCE` กลบ identity conflict); `app.require_current_user_id()` เดิมเรียก helper นี้
+- **PostgREST path (เตรียมไว้เท่านั้น):** private read จะใช้ token ที่ Auth Backend mint ให้ใน Phase 13.2 → PostgREST verify ด้วย Supabase JWT secret → policy อ่าน `request.jwt.claims` ผ่าน helper; token ต้องมี `sub`, `role='authenticated'`, `iss`, `aud`, `iat`, `exp` และ TTL ≤5 นาที
+- **Decision Q12 = B / role model:** `sheserved_app NOLOGIN` เป็น permission role (ไม่มี `BYPASSRLS`, ไม่มี DDL, ห้าม UPDATE/DELETE `audit_logs`); `sheserved_gateway LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS` เป็น server-only business connection role ที่ `SET LOCAL ROLE sheserved_app`; เพิ่ม `sheserved_auth NOLOGIN` + `sheserved_auth_gateway LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS` สำหรับ bounded login/password/session functions และใช้ pool แยก (ไม่ให้ auth handler ใช้ service_role); `sheserved_worker`, `sheserved_readonly`, `sheserved_migrate` ใช้ credential/pool แยกตามหน้าที่; `sheserved_fitness_owner NOLOGIN` เป็น owner ของ bounded secure RPC
+- Migration ใหม่ต้องสร้าง/ตั้งสิทธิ์ role ทั้งหมดแบบ idempotent ผ่าน migration/admin connection; ห้ามให้ app role สร้าง role หรือ DDL เอง
+- **Gateway path:** local PostgreSQL pool เดิมต้องแยกจาก Supabase direct pool; direct pool ใช้ env `SUPABASE_DB_*` คนละชุด; ทุก request ทำ `BEGIN → SET LOCAL ROLE sheserved_app → SET LOCAL app.user_id/session_id/role/... → query/RPC → COMMIT/ROLLBACK`; error ต้อง `ROLLBACK` และ reset/release connection ทุกครั้ง
+- **Spike ก่อนเปิด role/DB path:** ยืนยัน Supabase hosted อนุญาต role/membership, `sheserved_gateway` ต่อผ่าน transaction pooler `:6543` ได้, `SET LOCAL ROLE`/`SET LOCAL app.user_id` ทำงาน, RLS ไม่รั่วข้าม pooled connection และ role ไม่มี privilege เกินขอบเขต; ถ้าไม่ได้ให้หยุดและปรับ credential/network — เป็น hard gate
+- โอน ownership secure RPC ไป `sheserved_fitness_owner`; grant `EXECUTE` เฉพาะ `sheserved_app`; Backend ห้ามเรียก legacy actor signature
+- เขียน strict Fitness RLS ใน staging/shadow; private-read policy ให้ `authenticated` ตาม data classification; public browse ใช้ public VIEW และ grant `SELECT` เฉพาะ view; **ห้าม grant mutation ให้ `authenticated`**
+- `public.sessions` เป็น auth-private: ห้าม grant table SELECT ให้ `anon`/`authenticated` แบบกว้าง; session-management endpoint ใช้ Backend/worker scoped access เท่านั้น และ refresh registry ไม่เปิดผ่าน public PostgREST
+- service_role จำกัดเฉพาะ migration/sync/audit-worker/system job และมี pool แยกจาก HTTP/Socket request; ลบ silent fallback `SUPABASE_SERVICE_KEY → SUPABASE_ANON_KEY` ทุกจุด; ไม่มี key = fail loud
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สอง — DB roles/helper/pooler พร้อมใน staging แต่ production RLS/legacy grants ยังไม่เปลี่ยน; ไม่มีผลต่อผู้ใช้
+- **Deliverable:** migration roles + helper + Supabase direct-pool adapter + audit-worker role/outbox plumbing + staging RLS/public-view scripts + deny/allow matrix
+- Gate: owner/active group admin/Sheserved admin/member/unrelated/blocked/missing/invalid identity matrix ผ่าน; pooled request A/B ไม่รั่ว; `sheserved_gateway`/`sheserved_app` ต่อ DDL/แก้ audit ไม่ได้; `public.sessions`/auth-private data ไม่เปิดผ่าน PostgREST; service_role ไม่อยู่ใน request handler; public browse ยังทำงาน
+
+### Phase 13.2 — Auth foundation (ยังไม่แตะ Fitness path)
+- **Decision Q3 = A:** sign HS256 ด้วย key active (`kid` ใน header), verify ด้วย active/previous ที่เป็น known key เท่านั้น; `ACCESS_TTL`/`REFRESH_TTL` ตาม role; ห้าม log secret/token
+- เพิ่ม `routes/auth.js`: `login`, `social/:provider`, `refresh`, `logout`, `logout-all`, `me`, `sessions`, `sessions/:id`
+- เพิ่ม dependency: `jsonwebtoken`, `argon2` (fallback `bcrypt` cost 12), `helmet`; ตรวจ published date ≥ 7 วันตามกฎ supply chain
+- **Decision Q11 = B (audit_logs):** reuse/extend `public.sessions` เป็น refresh registry และสร้าง `audit_logs` ตาม schema แผน 05 ตั้งแต่ migration แรกของ 13.2 พร้อม index `(actor_id, occurred_at DESC)`, `(resource_type, resource_id, occurred_at DESC)`, `(event_type, occurred_at DESC)`; ถ้า partition ตาม `occurred_at` ให้ใช้ primary/unique key ที่รวม partition key เช่น `(occurred_at, id)` หรือ index strategy ที่ PostgreSQL รองรับ — ห้ามใช้ primary key `id` เดี่ยวบน partitioned parent โดยไม่ตรวจสอบ; `REVOKE UPDATE, DELETE` จาก app role ตั้งแต่แรก; retention security event 1 ปี online / 3 ปี archive
+- Audit events ขั้นต่ำ: `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`; auth handler ส่งผ่าน durable queue/outbox ไป `audit-worker` ที่ใช้ `sheserved_worker`, ไม่ถือ service_role ใน HTTP request; compliance event เขียนใน transaction เดียวกับ operation; redaction ห้ามเก็บ password/token/OTP/secret/PII ที่ไม่จำเป็น
+- **Decision Q4 = B (lazy rehash + backstop):** เพิ่ม `password_algo VARCHAR(20)`, `password_updated_at TIMESTAMPTZ`, `password_migrated_at TIMESTAMPTZ` และ `requires_password_reset BOOLEAN` บน `users`; verify `argon2id` ก่อน, legacy SHA-256 ต่อเมื่อยังอยู่ใน compatibility window แล้ว rehash เป็น Argon2id ทันที; backstop ใช้ `argon2(sha256(pw))` เฉพาะแถว legacy SHA-256 ที่ตรวจรูปแบบได้และไม่มี plaintext; แถว plaintext ให้บังคับ reset ห้าม hash ค่าเดิมอัตโนมัติ; ครบ 90 วันหลัง password cutover ผู้ใช้ที่ยังไม่เป็น `argon2id` ต้อง reset ผ่าน OTP
+- Social: verify provider token ฝั่ง server ก่อน map `public.users` (ปัจจุบันเชื่อ SDK ทั้งหมด)
+- **Decision Q7 = C:** ออก PostgREST token แยกใบสำหรับ private read — sign ด้วย `SUPABASE_JWT_SECRET`, claims `sub`, `role='authenticated'`, `iss`, `aud`, `iat`, `exp`, TTL ≤5 นาที; Backend เท่านั้นที่ mint token; ไม่ใช่ access/refresh token หลัก และ Flutter ห้ามถือ secret
+- **Decision Q6 = B:** refresh token random ≥256-bit, เก็บ hash ใน `public.sessions` ที่ขยายแล้ว; rotate ทุกครั้ง; ใช้ client-side single-flight + Redis `SETNX` lock ต่อ `session_id`; เพื่อคืนผลลัพธ์เดิมให้ parallel request ต้องเก็บ refresh response ล่าสุดแบบเข้ารหัสใน Redis/server cache TTL 60 วิ (ห้าม raw token plaintext ใน DB/log); token เก่าหลัง grace = revoke family + audit; Redis ล่มให้ fallback DB ตาม policy
+- ผูก `loginLockoutLimiter`/`authRateLimiter`/`otpCooldownLimiter` ที่มีอยู่แล้วเข้ากับ auth endpoints
+- Flutter: declare `flutter_secure_storage` เป็น direct dependency; `AuthService` ถือ user + access token metadata โดยคง API `currentUser` เดิม; เพิ่ม authenticated HTTP client กลาง (refresh-once/single-flight, logout เมื่อ refresh ล้ม)
+- **ลำดับ compatibility บังคับ:** (1) ship backend auth, (2) Flutter login/register/social เปลี่ยนไป Backend และเพิ่ม minimum-supported-app/force-update policy, (3) monitor ว่าไม่มี client-side login รุ่นเก่าค้าง, (4) revoke direct `password_hash` query/สิทธิ์ anon, (5) เปิด `PASSWORD_SERVER_VERIFY` และ lazy rehash/backstop; ระหว่าง transition server verify Argon2id + legacy SHA-256 ได้ แต่ไม่ให้ client query hash ต่อหลัง cutover
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สาม — auth server + Flutter switch + password exposure cutover เสร็จ, แต่ Fitness ยังใช้ path เดิมและยัง spoof ได้ในส่วน Fitness (ห้ามเคลมว่า Fitness cutover)
+- **Deliverable:** backend auth + extended `public.sessions`/`audit_logs`/durable audit queue + Flutter token layer + minimum-app-version control
+- Gate: login/register/social/refresh/logout/session restore, refresh parallel/reuse, plaintext-reset, old-app rejection และ audit delivery ผ่าน test; **Fitness repository ยังไม่เปลี่ยน path**
+
+### Phase 13.3 — Verified identity ที่ HTTP และ WebSocket (Decision Q2 = A, Q9 = A)
+- **Decision Q2 = A:** `websocket-server` เดิมคือ identity authority; auth code อยู่ใน `middleware/auth.js`, `middleware/socket-auth.js` และ `routes/auth.js`; `server.js` ทำเพียง wiring (`io.use(socketAuth(...))`/mount routes) **ห้ามมี token decode/verify ใน `server.js`**
+- `middleware/auth.js`/`socket-auth.js`: verify algorithm allowlist HS256, known `kid` (active/previous), signature, issuer, audience, expiry, session revoke และ active user แบบ fail closed; **เลิกใช้ `x-user-id` เป็น identity** (เหลือได้เฉพาะ tracing หลัง redaction)
+- **ย้าย inline endpoints ทั้งหมดของ `server.js` (~33 จุด) เข้าสู่ `routes/` ทีละกลุ่ม** พร้อมใช้ `req.userId` แทน `userId`/`responderId` จาก body/query (จุดเสี่ยงที่พบ: ~1603, 1663, 1695, 1714, 1817, 1927, 2104) และปฏิเสธ mismatch
+- **Decision Q9 = A:** handshake รับ signed access token เท่านั้น; ทุก `join` ต้องผ่าน DB membership check โดยใช้ Supabase direct-pool adapter/`sheserved_app` จาก 13.1 (ไม่ใช้ service_role ใน request handler) แล้ว cache ผลใน Redis 60 วิ; ก่อน 13.1 gate ผ่าน ห้ามเปิด room authorization ใน production
+- ห้อง Fitness ตรวจ `chat_rooms` → `fitness_groups` → active `fitness_group_members` และไม่มี active `fitness_group_blocklist`; ต้องมี migration ผูก `chat_rooms.group_id` ↔ `fitness_groups.id`; consultation/emergency ตรวจ membership ของห้องนั้น
+- invalidate cache + force-leave socket ทันทีเมื่อถอดสมาชิก/บล็อก/revoke; หลาย instance ใช้ Redis Pub/Sub; ตรวจซ้ำก่อน `message:send`, `history/read` และ event ที่มีผลถาวร; `typing` ใช้ผลจาก join ได้
+- Flutter เปลี่ยน 3 จุด `x-user-id` (`victim_repository`, `watermark_repository`, `consultation_repository`) ไปใช้ `Authorization: Bearer`; private Supabase read ใช้ PostgREST token แยกจาก access token หลัก
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สี่ — หลัง 13.3 HTTP/WebSocket identity verify แล้วและ room membership ทำงาน แต่ Fitness gateway/cutover ยังไม่เปิด; direct mutation legacy ยังต้องระบุ residual risk
+- **Deliverable:** release 13.3 = verified middleware + `socket-auth` + BOLA refactor + room authorization + Flutter Bearer migration
+- Gate: forged/unsigned/expired/wrong-issuer-audience/revoked token → 401; missing/conflicting identity → 401; actor mismatch → ปฏิเสธ; join ห้องไม่ได้รับอนุญาต → ปฏิเสธ; `message:send`/history หลัง revoke → ปฏิเสธ; public/anonymous allowlist ไม่ fallback ไป protected
+
+### Phase 13.4 — Fitness Gateway canary (Decision Q10 = B, Q8 = A)
+- เพิ่ม Backend endpoints ตามตาราง "Fitness secure endpoint/RPC mapping"; ทุก mutation ใช้ Supabase direct-pool adapter ผ่าน `sheserved_gateway` → `SET LOCAL ROLE sheserved_app` → `SET LOCAL app.*` → secure RPC/query ใน transaction เดียว
+- Flutter ส่งเฉพาะ resource/business fields; **ห้ามส่ง actor ID เพื่อ authorization**; actor มาจาก verified `req.userId`
+- **หนึ่ง write path ต่อ request** ผ่าน feature flag; ห้าม dual-write และห้าม optimistic local write ที่กลายเป็น write ที่สอง; idempotency key ต้องผูกกับ user/session/resource/action
+- **Decision Q8 = A:** Fitness mutation online-only และ fail closed เมื่อไม่มี network/verified token; ไม่ใส่ Fitness booking/approval/member mutation ลง offline queue; offline Emergency/Health ต้องมี policy แยกและห้ามนำมาใช้กับ Fitness
+- **Decision Q7 = C:** public browse ใช้ anon + public VIEW; private read ใช้ PostgREST token TTL ≤5 นาที; mutation ใช้ Gateway เท่านั้น; repository ต้องเลือก path ตาม data classification ไม่ fallback ข้ามขอบเขต
+- Shadow mode เปรียบเทียบเฉพาะ authorization decision/read result โดยไม่ mutate ซ้ำ; ห้าม shadow path เขียน booking/notification/audit ซ้ำ
+- **Decision Q10 = B:** ทำ `pino` ให้ทำงานจริงก่อน; เก็บ structured event พร้อม request/session/user ID แบบ redacted; cron รัน invariant SQL 1–5 ทุก 5 นาที และ alert violation แรกทันที
+- Baseline ก่อน canary: เก็บ SLI/SLO และผล invariant 1–5 ของ path เดิมอย่างน้อย 7 วัน; แก้ pre-existing violation หรือทำ waiver พร้อม owner; ระหว่าง canary gate นับเฉพาะ violation ใหม่
+- **Hard gate:** invariant ใหม่ 1–5 ต้อง = 0 ต่อเนื่อง 7 วัน; auth error < 1% (ไม่รวม invalid credential ตามเกณฑ์), refresh success > 99% (แยก revoked/expired), p95 mutation latency ≤ baseline + 150 ms, `authz.denied` ≤ baseline × 1.5
+- **3 alerts:** auth failure spike > 20/นาที/IP หรือ > 5/นาที/user; `authz.denied` spike > 10/นาที/user (ไม่รวม 404 BOLA ที่จำแนกเป็น event อื่น); invariant violation; ช่องทางเริ่มต้น webhook/อีเมลหรือระบบแจ้งเตือนที่อนุมัติ
+- **ผลพลอยได้บังคับ:** ตรวจ `UnifiedRepository._offlineQueue` และ `SyncService._pendingChanges`; Fitness ไม่ใช้ queue เหล่านี้ และ feature อื่นต้องไม่อ้างว่า persistent offline หาก queue ยังเป็น memory-only
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ canary เป็น cohort ผ่าน feature flag; ปิด flag กลับไป path เดิมได้โดยไม่เปิด anon mutation และเก็บ invariant/SLI เป็น baseline ของ 13.5
+- **Deliverable:** gateway endpoints + feature flag + one-write-path guard + structured log/cron/alerts + invariant dashboard + canary runbook
+- Gate: invariant/SLI/SLO ผ่าน 7 วัน; booking ซ้ำ/capacity drift/notification drift = 0; audit log ผูก actor/session/request ID ครบ; rollback flag ทดสอบจริง
 
 ### Phase 13.5 — Fitness security cutover
-- เปลี่ยน Fitness Repository ทุก mutation/private read ให้ใช้ authenticated Backend path และยืนยันว่าไม่มี direct Supabase write เหลือ
-- Apply migration cutover ใหม่เพื่อ:
-  - `REVOKE EXECUTE` legacy Fitness RPC จาก `PUBLIC, anon, authenticated`
-  - revoke permissive INSERT/UPDATE/DELETE policies ของ Fitness tables
-  - enable/force strict RLS และ grant เฉพาะ scoped DB roles/secure RPCs
-  - คง public SELECT เท่าที่จำเป็น
-- ปิด `x-user-id`, request actor และ direct-Supabase mutation fallback ใน production โดยเด็ดขาด
-- Rollback ต้องเป็นการ rollback Backend/App version พร้อม matching DB migration ที่ผ่านการอนุมัติ; ห้ามมี runtime switch กลับไปเปิด anon mutation
-- Gate: direct REST/RPC ด้วย anon keyถูกปฏิเสธ, spoof UUID ไม่เปลี่ยนข้อมูล, Backend verified owner/admin ยังทำงานครบ และ public browse ไม่เสีย
+- **แยก 3 path ใน repository ตาม Q5-B/Q7-C:** (1) browse/public → anon + `fitness_groups_public`/`fitness_sessions_public`, (2) private read → Backend-issued PostgREST token และ RLS role `authenticated`, (3) mutation → Gateway direct-pg + `sheserved_gateway`/`SET LOCAL ROLE sheserved_app`; ห้าม fallback ข้าม path และห้ามใช้ anon กับ private data
+- Fitness Repository ทุก mutation/private read ใช้ authenticated path; static scan ต้องยืนยันว่าไม่มี direct Supabase write/actor parameter/fallback เหลือใน Fitness
+- migration cutover ใหม่ที่ผ่าน approval เท่านั้น: `REVOKE EXECUTE` legacy actor-param RPC จาก `PUBLIC, anon, authenticated`; ลบ permissive write policy ของ Fitness; enable/force strict RLS; public view grant เฉพาะ `SELECT`; private read policy ให้ `authenticated`; mutation RPC/table privilege ให้ `sheserved_app` เท่านั้น (ไม่ grant mutation ให้ `authenticated`)
+- `sheserved_gateway` เป็น login role server-only และใช้ `SET LOCAL ROLE sheserved_app`; service_role ไม่อยู่ใน request path; ปิด `x-user-id`, request actor และ direct-Supabase mutation fallback ใน production
+- ก่อน apply cutover ต้องมี min-supported app/force-update policy, verified gateway canary, invariant baseline ไม่มี violation ใหม่, backup/restore rehearsal และ rollback release ที่ยังใช้ secure path; **ห้ามมี runtime switch กลับไปเปิด anon mutation**
+- Rollback ต้องเป็น Backend/App version ที่ยังใช้ secure path พร้อม matching DB forward-fix/migration ที่อนุมัติ; ห้าม down migration ที่คืนสิทธิ์ anon หรือ legacy actor RPC
+- **จุดหยุดที่ปลอดภัย (Safe Stop):** ⚠️ จุดที่หยุดได้ยากที่สุด — หลัง 13.5 แล้วห้าม rollback ไป anon mutation เด็ดขาด; ถือเป็น commit ระยะยาวหลัง gate ครบ
+- **Deliverable:** Fitness 3 paths + strict RLS/roles + legacy revoke + test/backup/rollback evidence
+- Gate: anon direct REST/RPC ถูกปฏิเสธ; spoof UUID ไม่เปลี่ยนข้อมูล; public browse ยัง anonymous ได้; private read ไม่มี PII รั่ว; manager flow/capacity/owner rules ครบ; rollback secure release ทดสอบแล้ว
 
 ### Phase 13.6 — Module waves และ legacy cleanup
-- ย้าย protected module อื่นตาม risk: health/consultation/chat → donation/escrow → users/roles → ERP → module ที่เหลือ
-- แต่ละ module tighten RLS/DB grants หลัง Backend cutover ของ module นั้นเท่านั้น ไม่เปิด strict RLS ทั้งแอปแบบ big-bang
-- เมื่อ client compatibility window สิ้นสุด ให้ลบ legacy Fitness function overload ที่รับ actor หรือคงไว้แบบ revoked สำหรับ forensic compatibility
-- ลบ client-side password verification, `passwordHash` ใน `UserModel`, unsigned token decode และ `x-user-id`
-- อัปเดต `.agent/workflows/auth_data_guidelines.md`, `docs/secure/*` และ `docs/infrastructure/*` ให้สะท้อน verified Backend identity, DB roles, RLS context, token/cache/TLS/rollback policy
-- ทำ quarterly access review, key rotation drill, refresh-token reuse drill และ incident rollback drill
+- ลำดับ wave ตามความเสี่ยง × ปริมาณ call sites จากการสำรวจจริง:
+  1. `chat` (1 call site) + `health` (2) — เสี่ยงสูงแต่แตะน้อย ทำเป็น wave นำร่อง
+  2. `consultation` (33) — เสี่ยงสูงและใหญ่สุด
+  3. `donation`/escrow (16) — การเงิน
+  4. `admin` (24) + `profile` (12)
+  5. `erp` (19) + `pharmacy` (3) + `kpi` (3)
+  6. `services` (31) — ชั้นล่างที่กระทบทุก module ทำท้ายสุด
+- **แต่ละ wave เป็น release อิสระ (Q1-B):** หลังทุก wave ต้องไม่มี direct Supabase mutation/private-data bypass, private read ใช้ authenticated path, RLS ของ module strict, audit/metrics ผ่าน และสามารถหยุดค้างระหว่าง wave ได้โดยไม่กระทบ wave ที่ผ่านมา
+- tighten RLS/DB grants เฉพาะหลัง cutover ของ module นั้น; ห้าม big-bang ทั้ง 372 policy; `service_role` ต้องอยู่เฉพาะ worker/system path
+- ลบ client-side password verification, `passwordHash`, `x-user-id`, unsigned token decode และ legacy RPC ที่รับ actor (หรือคงไว้แบบ revoked เพื่อ forensic compatibility เท่านั้น)
+- อัปเดต `.agent/workflows/auth_data_guidelines.md`, `docs/secure/*`, `docs/infrastructure/*` ให้สะท้อน verified identity, 3 data paths, role/pool, RLS context, token/cache/TLS/rollback policy
+- ทำ quarterly access review, key rotation drill, refresh-token reuse drill, incident rollback drill และตรวจว่าไม่มี server handler ถือ service_role
+- **Deliverable ต่อ wave:** migration + gateway/repository refactor + tests + audit/metrics + gate ของ wave; **จุดจบ Phase 13:** ไม่มี direct Supabase mutation/private-data bypass ใน production, legacy actor-param RPC ถูก revoke หรือคงแบบ revoked, และ service_role ไม่อยู่ใน request path
 
-### Fitness secure endpoint/RPC mapping
-| Action | Backend input จาก client | Verified actor | Secure DB path |
+### Fitness secure endpoint/RPC mapping (ใช้หลัง Phase 13.1 DB foundation)
+| Action | Backend input จาก client | Verified actor | Secure path |
 |---|---|---|---|
-| Book session | `sessionId` | `req.userId` | `book_fitness_session(p_session_id)` |
-| Approve booking | `bookingId` | `req.userId` | `approve_fitness_session_booking(p_booking_id)` |
-| Owner auto-join | `groupId, enabled, cancelBookings` | `req.userId` | `set_fitness_group_owner_auto_join(p_group_id, p_enabled, p_cancel_bookings)` |
-| Leave/remove member | `groupId, targetUserId` | `req.userId` | `leave_fitness_group(p_group_id, p_user_id)` — ยกเลิกทั้งก๊วน |
-| Remove session participant | `bookingId` | `req.userId` | `remove_fitness_session_participant(p_booking_id)` — ยกเลิกเฉพาะรอบ |
+| Book session | `sessionId` | `req.userId` | Gateway transaction + `SET LOCAL` + `book_fitness_session(p_session_id)` |
+| Approve booking | `bookingId` | `req.userId` | Gateway transaction + `approve_fitness_session_booking(p_booking_id)` |
+| Owner auto-join | `groupId, enabled, cancelBookings` | `req.userId` | Gateway transaction + `set_fitness_group_owner_auto_join(...)` |
+| Leave/remove member | `groupId, targetUserId` | `req.userId` | Gateway transaction + `leave_fitness_group(p_group_id, p_user_id)` |
+| Remove session participant | `bookingId` | `req.userId` | Gateway transaction + `remove_fitness_session_participant(p_booking_id)` |
 | Manager check | `groupId` | transaction context | `is_fitness_group_manager(p_group_id)` |
-| Create/update/cancel group/session | allowlisted business fields | `req.userId` | scoped transaction + strict RLS/manager policy |
-| Cancel/reject booking | `bookingId, reason?` | `req.userId` | ownership/manager-scoped transaction |
-| Block/unblock user | `groupId, targetUserId, reason?` | `req.userId` | manager-scoped transaction + strict RLS |
+| Create/update/cancel group/session | allowlisted business fields | `req.userId` | scoped gateway transaction + strict RLS/manager policy |
+| Cancel/reject booking | `bookingId, reason?` | `req.userId` | ownership/manager-scoped gateway transaction |
+| Block/unblock user | `groupId, targetUserId, reason?` | `req.userId` | manager-scoped gateway transaction + strict RLS |
+
+> ทุก secure mutation ต้องรับเฉพาะ resource/business IDs และ derive actor จาก verified context; `targetUserId` เป็น resource เป้าหมาย ไม่ใช่ actor; secure RPC ที่ไม่มี actor parameter grant ให้ `sheserved_app` เท่านั้น
 
 ### Required regression/security tests ก่อน Phase 13.5
-- forged/unsigned/expired/wrong-audience JWT → 401
-- revoked session/refresh reuse/inactive user → 401 และ audit event
+- forged/unsigned/expired/wrong-algorithm/wrong-issuer/wrong-audience/unknown-`kid` JWT → 401
+- revoked session, refresh reuse หลัง grace, inactive user และ conflicting `app.user_id`/JWT subject → 401 + audit event
 - member ส่ง owner/admin UUID ใน body/header → ไม่มีผล; Backend ใช้ verified actor เท่านั้น
-- missing `SET LOCAL app.user_id` หรือ invalid/inactive ID → secure RPC คืน `UNAUTHORIZED`
-- pooled connection request A/B สลับกันแล้ว identity ไม่รั่ว
-- owner/active group admin/Sheserved admin ผ่านเฉพาะ scope ที่กำหนด; member/unrelated/blocked ถูกปฏิเสธ
-- pending ไม่กิน session capacity; concurrent approval/book ไม่เกิน capacity
-- owner auto-join capacity/overlap ยัง all-or-nothing
-- anon direct mutation/RPC หลัง cutover → permission denied
-- public group/session browse ยังทำงานโดยไม่ login
-- WebSocket token refresh/reconnect และ actor mismatch ทำงานถูกต้อง
-- logs/audit ไม่เก็บ password, access token, refresh token, OTP หรือ signing key
+- missing/invalid/inactive `SET LOCAL app.user_id` → secure RPC คืน `UNAUTHORIZED`
+- pooled connection request A/B สลับกันแล้ว identity/role ไม่รั่ว; `RESET ROLE`/release ทำงานทุกเส้นทาง error
+- `sheserved_gateway` ต่อ pooler ได้, `SET LOCAL ROLE sheserved_app` ได้, `sheserved_app` ทำ DDL/แก้หรือลบ audit ไม่ได้
+- owner/active group admin/Sheserved admin ผ่านเฉพาะ scope; member/unrelated/blocked ถูกปฏิเสธ
+- pending ไม่กิน capacity; concurrent approval/book ไม่เกิน capacity; owner auto-join capacity/overlap all-or-nothing
+- public VIEW เปิดเฉพาะคอลัมน์ที่กำหนด; anon อ่าน public browse ได้ แต่ไม่อ่านตารางจริง/member/booking/blocklist/private profile
+- direct anon mutation/RPC และ legacy actor-param RPC หลัง cutover → permission denied
+- WebSocket handshake token, room join membership, `message:send`, history/read หลัง revoke และ force-leave ทำงานถูกต้อง; `x-user-id` ไม่มีผลต่อ actor
+- refresh parallel ได้ผลลัพธ์ idempotent โดยไม่คืน raw token จาก log/DB; reuse หลัง grace revoke family
+- plaintext password ถูกบังคับ reset; ไม่มี `password_hash` ใน Flutter model, sync, public response หรือ log
+- Q8-A: Fitness mutation เมื่อ offline → fail closed และไม่มี booking ใน outbox
+- Q10-B: invariant 1–5 baseline/violation alert, SLI/SLO และ rollback flag ทำงานจริง
+- logs/audit ไม่เก็บ password, access token, refresh token, OTP, signing key หรือ PII ที่ไม่จำเป็น
+
+---
+
+## Phase 13 — Decision Log (สถานะ: ตัดสินใจแล้ว 12/12 ครบ — Q1–Q12)
+
+| # | คำถาม | ตัวเลือก | คำแนะนำ | ตัดสินใจ | วันที่ |
+|---|---|---|---|---|---|
+| Q1 | ขนาดของ sub-phase | A / B / C | **B** independently shippable | ✅ **B** — แยก release ต่อ sub-phase, หยุดค้างได้ทุกจุด | 2026-08-30 |
+| Q2 | Backend identity authority | A / B / C | **A** ต่อยอด `websocket-server` | ✅ **A** — เพิ่ม `routes/auth.js` + verify ใน `middleware/auth.js` เดิม, แยกไฟล์ auth ออกจาก `server.js` | 2026-08-30 |
+| Q3 | Signing algorithm + key | A / B / C | **A** HS256 dual-key (+ token แยกถ้า Q7=C) | ✅ **A** — HS256 dual-key (`kid` active/previous), rotate 90 วัน; Q7=C แล้ว → ออก PostgREST token แยกที่ sign ด้วย Supabase JWT secret (TTL ≤5 นาที) | 2026-08-30 |
+| Q4 | Password migration | A / B / C | **B** lazy rehash + backstop C | ✅ **B** — lazy rehash Argon2id เมื่อ login + backstop `argon2(sha256(pw))` ปิดความเสี่ยงแถวที่ยังไม่ login + deadline บังคับ reset | 2026-08-30 |
+| Q5 | Public data contract | A / B / C | **B** public VIEW ต่อ use case | ✅ **B** — สร้าง public VIEW ต่อ use case, anon อ่านได้เฉพาะ view, ปิด anon SELECT ตารางจริง | 2026-08-30 |
+| Q6 | Refresh rotation | A / B / C | **B** rotation + grace 60s + lock | ✅ **B** — rotation + grace window 60 วิ + client single-flight + Redis `SETNX` lock; เก็บ replay result แบบเข้ารหัสชั่วคราว; token เก่าหลัง grace = revoke ทั้ง family | 2026-08-30 |
+| Q7 | identity path ไปถึง DB | A / B / C | **C** hybrid ตามความเสี่ยง | ✅ **C** — public read: anon+VIEW; private read: JWT ที่ PostgREST verify (RLS จริง); mutation: gateway + `pg` ตรง + `SET LOCAL` | 2026-08-30 |
+| Q8 | Offline mutation | A / B / C | **A** Fitness online-only fail closed | ✅ **A** — Fitness mutation = online-only, fail closed; ไม่มี offline queue สำหรับ Fitness; ลบ/ทำให้ชัดเจนเรื่อง in-memory queue เดิม | 2026-08-30 |
+| Q9 | WebSocket room auth | A / B / C | **A** DB check + Redis cache 60s | ✅ **A** (+ตรวจ `message:send`/history/read และ event ถาวร) — DB check ตอน join + Redis cache 60 วิ + invalidate/force-leave ทันทีเมื่อถอด/บล็อก/revoke | 2026-08-30 |
+| Q10 | Canary metrics | A / B / C | **B** invariant SQL + log counter + 3 alerts | ✅ **B** — invariant SQL 1–5 เป็น hard gate (0 ใหม่ต่อเนื่อง 7 วันหลัง baseline) + pino counter + 3 alerts (auth failure spike, authz spike, invariant violation) | 2026-08-30 |
+| Q11 | Audit log | A / B / C | **B** สร้าง `audit_logs` ตั้งแต่ 13.2 | ✅ **B** — สร้าง `audit_logs` ตั้งแต่ 13.2 ด้วย partition key ที่ถูกต้อง, durable audit-worker/outbox, populate auth + Fitness manager action, `REVOKE UPDATE/DELETE` ตั้งแต่ migration แรก | 2026-08-30 |
+| Q12 | service_role / least privilege | A / B / C | **B** `sheserved_app` ไม่มี BYPASSRLS | ✅ **B** — `sheserved_app NOLOGIN` + `sheserved_gateway LOGIN` ใช้ `SET LOCAL ROLE`; auth role/pool แยก; service_role เฉพาะ worker/system path; ลบ fallback ไป anon ทั้งหมด | 2026-08-30 |
+
+> **แพ็กเกจที่อนุมัติ:** (B, A, A, B, B, B, C, A, A, B, B, B) และ implementation amendments: staged B2, `sheserved_gateway LOGIN` + `sheserved_app NOLOGIN`, auth-only role/pool แยก, no service_role ใน request path, encrypted refresh replay result, partition-valid audit schema/durable worker, `socket-auth` แยกไฟล์ และ invariant baseline ก่อน canary
+
+### Phase 12.9 / Phase 13 readiness checklist
+| รายการตรวจ | สถานะ |
+|---|---|
+| Q1–Q12 มีคำตอบและผูกกับ sub-phase ที่เกี่ยวข้อง | ✅ ครบ 12/12 |
+| ลำดับแก้ความเสี่ยง | ✅ 12.9 data/password containment → 13.0 prerequisites → 13.1 DB roles/pooler → 13.2 server auth + audit worker + Flutter switch → 13.3 verified HTTP/WebSocket → 13.4 canary → 13.5 cutover → 13.6 waves |
+| แอปเก่าจะไม่ถูกตัดก่อนเวลา | ✅ B2 revoke direct query ทำหลัง Flutter switch + minimum-supported-app/force-update |
+| `sheserved_app NOLOGIN` ใช้เปิด connection ได้หรือไม่ | ✅ แก้แล้ว: `sheserved_gateway LOGIN NOINHERIT` ใช้ `SET LOCAL ROLE sheserved_app` |
+| service_role หลุดเข้า request path หรือไม่ | ✅ ห้าม; เหลือเฉพาะ migration/sync/audit-worker/system job และ pool แยก |
+| refresh grace คืน token ใหม่ซ้ำได้จริงหรือไม่ | ✅ ใช้ client single-flight + encrypted replay result TTL 60 วิ; ไม่เก็บ raw token ใน DB/log |
+| audit partition และการส่ง event เชื่อถือได้หรือไม่ | ✅ partition key ถูกต้อง + durable outbox/queue + `audit-worker` + redaction/retry/dead-letter |
+| WebSocket auth มี DB path ก่อนเปิด room check หรือไม่ | ✅ DB foundation อยู่ 13.1 และ room auth อยู่ 13.3; ไม่มี service_role request handler |
+| canary แยกข้อมูลเสียเดิมกับข้อมูลเสียใหม่หรือไม่ | ✅ baseline invariant ก่อน canary; gate นับเฉพาะ violation ใหม่ |
+| แผน rollback เปิดช่องโหว่เดิมกลับหรือไม่ | ✅ rollback ได้เฉพาะ secure App/Backend release; ห้ามเปิด anon mutation/legacy actor RPC กลับ |
+| สถานะ implementation | ⚠️ ปรับเอกสารเสร็จ; Phase 12.9/13 ยังไม่ได้ลงมือแก้โค้ดหรือ apply migration ใหม่ |
