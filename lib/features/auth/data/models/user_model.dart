@@ -109,6 +109,8 @@ class UserModel {
   final String? socialId;
   final VerificationStatus verificationStatus;
   final bool isActive;
+  /// จำเป็นต้องเปลี่ยนรหัสผ่าน (ตั้งโดย migration Phase 12.9 สำหรับแถว plaintext/unrecognized)
+  final bool requiresPasswordReset;
   final DateTime? lastLoginAt;
   final DateTime? lastSeenAt; // Real-time presence tracking
   final String availabilityStatus; // 'online', 'busy', 'offline'
@@ -164,6 +166,7 @@ class UserModel {
     this.socialId,
     this.verificationStatus = VerificationStatus.pending,
     this.isActive = true,
+    this.requiresPasswordReset = false,
     this.lastLoginAt,
     this.lastSeenAt,
     this.availabilityStatus = 'online',
@@ -197,6 +200,7 @@ class UserModel {
       'social_id': socialId,
       'verification_status': verificationStatus.value,
       'is_active': isActive,
+      'requires_password_reset': requiresPasswordReset,
       'last_login_at': lastLoginAt?.toIso8601String(),
       'last_seen_at': lastSeenAt?.toIso8601String(),
       'availability_status': availabilityStatus,
@@ -234,6 +238,7 @@ class UserModel {
       verificationStatus:
           VerificationStatusExtension.fromString(json['verification_status'] ?? 'pending'),
       isActive: json['is_active'] ?? true,
+      requiresPasswordReset: json['requires_password_reset'] ?? false,
       lastLoginAt: json['last_login_at'] != null ? DateTime.parse(json['last_login_at']) : null,
       lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
       availabilityStatus: json['availability_status'] ?? 'online',
@@ -283,6 +288,7 @@ class UserModel {
     String? socialId,
     VerificationStatus? verificationStatus,
     bool? isActive,
+    bool? requiresPasswordReset,
     DateTime? lastLoginAt,
     DateTime? lastSeenAt,
     String? availabilityStatus,
@@ -310,6 +316,7 @@ class UserModel {
       socialId: socialId ?? this.socialId,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       isActive: isActive ?? this.isActive,
+      requiresPasswordReset: requiresPasswordReset ?? this.requiresPasswordReset,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       availabilityStatus: availabilityStatus ?? this.availabilityStatus,

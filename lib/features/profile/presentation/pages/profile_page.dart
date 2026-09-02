@@ -38,6 +38,7 @@ import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_approver_settings_widget.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_request_management_panel.dart';
 import 'package:sheserved/features/donation/presentation/pages/leader_verification_page.dart';
+import 'package:sheserved/config/app_config.dart';
 import '../../../auth/data/models/password_change_result.dart';
 import '../widgets/change_password_bottom_sheet.dart';
 
@@ -3254,7 +3255,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   Widget _buildChangePasswordTile() {
-    final disabled = !_hasPassword;
+    final isLocalOnly = AppConfig.databaseMode == DatabaseMode.localOnly;
+    final noPassword = !_hasPassword;
+    final disabled = isLocalOnly || noPassword;
 
     return InkWell(
       onTap: disabled ? null : _openChangePasswordBottomSheet,
@@ -3295,13 +3298,40 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    disabled
-                        ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
-                        : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
+                    isLocalOnly
+                        ? 'ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมด Local Only'
+                        : noPassword
+                            ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
+                            : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: disabled ? Colors.grey : AppColors.textSecondary,
                     ),
                   ),
+                  // §8 R5: แจ้งเตือนเมื่อถูกบังคับให้เปลี่ยนรหัสผ่าน
+                  // (ต้องกรอกรหัสผ่านเดิมให้ถูกต้องก่อนเสมอ — §6.5 ปกติ)
+                  if (!noPassword &&
+                      (_user?.requiresPasswordReset ?? false)) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          size: 16,
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'จำเป็นต้องเปลี่ยนรหัสผ่านเพื่อความปลอดภัยของบัญชี',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -172,7 +172,7 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
         _setError('กรุณาเข้าสู่ระบบก่อนเปลี่ยนรหัสผ่าน');
         break;
       case PasswordChangeResult.unsupportedOffline:
-        _setError('ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมต Offline');
+        _setError('ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมด Offline');
         break;
       case PasswordChangeResult.socialAccountNoPassword:
         _setError('บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน');
@@ -188,9 +188,13 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets.bottom),
-      child: SingleChildScrollView(
+    // PopScope กันการปิด sheet (ปัด/แตะพื้นหลัง/ปุ่ม back) ระหว่าง request
+    // เทียบเท่า isDismissible:false + enableDrag:false แบบ dynamic (§3 R3)
+    return PopScope(
+      canPop: !_isChangingPassword,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: viewInsets.bottom),
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -323,6 +327,7 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
       ),
     );
   }
