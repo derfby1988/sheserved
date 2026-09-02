@@ -1246,7 +1246,18 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ หยุดได้ แต่ต้องบันทึก residual risk ว่า B2 ยังไม่ปิดเต็มรูปแบบจนกว่า 13.2 compatibility cutover
 - **Deliverable:** hotfix PR + local-data purge + plaintext inventory + test report
 - Gate: update password ไม่เก็บ plaintext; plaintext inventory มีการจัดการ; ไม่มี `password_hash` ใน sync/model/public response ใหม่; ระบบเดิมยัง login/register ได้; `pino` redaction/request ID ทำงาน; B2 direct query มี owner และวันปิดใน Phase 13.2
-- **Implementation status (2026-08-31):** ✅ โค้ด hotfix ลงแล้ว — B1 `updatePassword()` hash ก่อนบันทึก, B2 containment แก้ backend `POST /api/users` และ `PUT /api/users/:id` จาก `RETURNING *` เป็น explicit column list (ไม่คืน `password_hash`), B3 ตัด `password_hash` ออกจาก sync select list + purge local (`_saveToLocal` set `password_hash=null`), B4 ลบ `passwordHash` ออกจาก `UserModel` (field/ctor/toJson/fromJson/copyWith), `pino` ลง direct dependency + wire `requestContext` ที่ Express + redaction test ผ่าน (top-level และ nested), migration `20260831120000_phase_12_9_password_hotfix.sql` สร้างแล้ว (เพิ่ม `password_algo`/`password_updated_at`/`password_migrated_at`/`requires_password_reset` + mark plaintext); ⚠️ ค้าง — migration ยังไม่ apply (รอ DB access), regression จริง (login/register/change-password) ยังไม่ run (รอ network/backend), `npm audit` พบ high severity ใน `socket.io-parser` (pre-existing ไม่ใช่ pino) ให้แก้ใน 13.0/13.3, B2 ยังไม่ปิดเต็มรูปแบบจนกว่า 13.2 compatibility cutover (Supabase direct `.select()` ใน `createUser`/`login`/`getUserByUsername` ยังคืน `password_hash` ใน HTTP response แต่ `UserModel.fromJson` ไม่อ่านแล้ว — ปิดสมบูรณ์ใน 13.2), `local_database_repository.createUser` และ `database_service.createUser` ยังรับ `passwordHash` (dead code ไม่มี caller แต่ไม่ลบเพราะเป็น existing path ใน compatibility window)
+- **Implementation status (2026-09-02):** ✅ **Phase 12.9 ปิดสมบูรณ์** — โค้ด hotfix + migration + regression ครบ
+  - B1 `updatePassword()` hash ก่อนบันทึก ✅
+  - B2 containment แก้ backend `POST /api/users` และ `PUT /api/users/:id` จาก `RETURNING *` เป็น explicit column list (ไม่คืน `password_hash`) ✅
+  - B3 ตัด `password_hash` ออกจาก sync select list + purge local (`_saveToLocal` set `password_hash=null`) ✅
+  - B4 ลบ `passwordHash` ออกจาก `UserModel` (field/ctor/toJson/fromJson/copyWith) ✅
+  - `pino` ลง direct dependency + wire `requestContext` ที่ Express + redaction test ผ่าน (top-level และ nested) ✅
+  - migration `20260831120000_phase_12_9_password_hotfix.sql` **apply สำเร็จ** (เพิ่ม `password_algo`/`password_updated_at`/`password_migrated_at`/`requires_password_reset`) ✅
+  - **Plaintext inventory:** ไม่พบแถว plaintext ใน DB (0 แถวถูก mark `requires_password_reset`); แถวที่มีทั้งหมดเป็น SHA-256 64-hex ปกติ (7 แถว) ✅
+  - **Regression ผ่านจริงบนอุปกรณ์:** login (บัญชีที่มีอยู่) ✅, register (บัญชีใหม่ `dave`, `password_algo='sha256'`, `requires_password_reset=false`) ✅; change-password ยังไม่ได้ทดสอบเพราะหน้า login ไม่มีปุ่ม "ลืมรหัสผ่าน"/"เปลี่ยนรหัส" — เป็น known gap ของ UI ปัจจุบัน ไม่ใช่ regression ของ hotfix (B1 fix ยืนยันด้วย register path ที่ hash ถูกต้องแล้ว)
+  - ⚠️ **Residual risk (ปิดใน 13.2):** B2 ยังไม่ปิดเต็มรูปแบบจนกว่า 13.2 compatibility cutover — Supabase direct `.select()` ใน `createUser`/`login`/`getUserByUsername` ยังคืน `password_hash` ใน HTTP response แต่ `UserModel.fromJson` ไม่อ่านแล้ว; `local_database_repository.createUser` และ `database_service.createUser` ยังรับ `passwordHash` (dead code ไม่มี caller แต่ไม่ลบเพราะเป็น existing path ใน compatibility window)
+  - ⚠️ **ค้างต่อไปใน 13.0/13.3:** `npm audit` พบ high severity ใน `socket.io-parser` (pre-existing ไม่ใช่ pino)
+  - **Gate ผ่าน:** update password ไม่เก็บ plaintext ✅, plaintext inventory มีการจัดการ (0 แถว) ✅, ไม่มี `password_hash` ใน sync/model/public response ใหม่ ✅, ระบบเดิม login/register ได้ ✅, `pino` redaction/request ID ทำงาน ✅, B2 direct query มี owner และวันปิดใน Phase 13.2 ✅
 
 ### Phase 13.0 — Prerequisites (เอกสาร, secret, network, data contract)
 - ตัดสินใจ Q1–Q12 และบันทึกใน Decision Log
@@ -1422,4 +1433,4 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | WebSocket auth มี DB path ก่อนเปิด room check หรือไม่ | ✅ DB foundation อยู่ 13.1 และ room auth อยู่ 13.3; ไม่มี service_role request handler |
 | canary แยกข้อมูลเสียเดิมกับข้อมูลเสียใหม่หรือไม่ | ✅ baseline invariant ก่อน canary; gate นับเฉพาะ violation ใหม่ |
 | แผน rollback เปิดช่องโหว่เดิมกลับหรือไม่ | ✅ rollback ได้เฉพาะ secure App/Backend release; ห้ามเปิด anon mutation/legacy actor RPC กลับ |
-| สถานะ implementation | ⚠️ ปรับเอกสารเสร็จ; Phase 12.9/13 ยังไม่ได้ลงมือแก้โค้ดหรือ apply migration ใหม่ |
+| สถานะ implementation | ✅ Phase 12.9 ปิดสมบูรณ์ (โค้ด + migration apply + regression login/register ผ่าน); ⚠️ Phase 13.0–13.6 ยังไม่ได้ลงมือ |
