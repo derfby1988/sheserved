@@ -556,7 +556,7 @@ module.exports = (pool) => {
     // Get emergency videos list (trending) - with user info & interaction counts
     router.get('/emergency/list', ipLimiter, async (req, res) => {
         const { page, limit, offset } = clampPagination(req);
-        const cacheKey = `video:emergency:list:${page}:${limit}`;
+        const cacheKey = `video:emergency:list:v2:${page}:${limit}`;
 
         console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
         try {
@@ -565,7 +565,7 @@ module.exports = (pool) => {
                 // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
                 // 2. Added LIMIT and OFFSET for infinite scrolling
                 const result = await pool.query(`
-                    SELECT v.id, v.user_id, v.title, v.description, v.type, v.category_id, v.status, v.thumbnail_url, v.bunny_url, v.photo_urls,
+                    SELECT v.id, v.user_id, v.title, v.description, v.type, v.category_id, v.status, v.thumbnail_url, v.bunny_url, v.photo_urls, v.created_at,
                         COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                         u.profile_image_url AS user_avatar,
                         dc.name AS category_name,

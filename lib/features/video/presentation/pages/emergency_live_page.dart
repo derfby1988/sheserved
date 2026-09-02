@@ -19,7 +19,7 @@ import '../../../../services/auth_service.dart';
 import '../../../emergency/data/repositories/emergency_dead_man_repository.dart';
 import '../../../donation/models/donation_models.dart';
 import '../../../donation/data/repositories/donation_repository.dart';
-import '../../../donation/presentation/pages/donation_create_page.dart';  // ✅ เพิ่ม import
+import '../../../donation/presentation/pages/donation_create_page.dart'; // ✅ เพิ่ม import
 
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
@@ -59,13 +59,19 @@ class EmergencyLivePage extends StatefulWidget {
   final String? responseId;
   final bool autoOpenChat;
 
-  const EmergencyLivePage({super.key, this.videoId, this.responseId, this.autoOpenChat = false});
+  const EmergencyLivePage({
+    super.key,
+    this.videoId,
+    this.responseId,
+    this.autoOpenChat = false,
+  });
 
   @override
   State<EmergencyLivePage> createState() => _EmergencyLivePageState();
 }
 
-class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProviderStateMixin {
+class _EmergencyLivePageState extends State<EmergencyLivePage>
+    with TickerProviderStateMixin {
   // === State Variables ===
   final GlobalKey _trendingPanelKey = GlobalKey();
   double _trendingPanelBottom = 0;
@@ -75,10 +81,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   final VictimRepository _victimRepository = VictimRepository();
   int _viewerCount = 0;
   int _likeCount = 0;
-  bool _hasLiked = false;    // ✅ [Support Analytics] DB Toggle state
-  int _likeTrigger = 0;      // ✅ [Support Analytics] increments to force chart refresh
+  bool _hasLiked = false; // ✅ [Support Analytics] DB Toggle state
+  int _likeTrigger =
+      0; // ✅ [Support Analytics] increments to force chart refresh
   int _yieldWayCount = 0;
-  int _yieldWayNotifiedCount = 0; // ✅ จำนวนผู้ที่ระบบแจ้งเตือนให้ทางไป (สำหรับคำนวณกราฟ)
+  int _yieldWayNotifiedCount =
+      0; // ✅ จำนวนผู้ที่ระบบแจ้งเตือนให้ทางไป (สำหรับคำนวณกราฟ)
   bool _isYieldPulsing = false; // ✅ สำหรับแสดง pulse effect บนแผนที่
   // ✅ รองรับหลายคำร้องต่อวิดีโอเดียว: Map<requestId, currentAmount>
   Map<String, double> _requestTotals = {};
@@ -88,9 +96,14 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   // เก็บยอดรวมสำหรับแสดง (หากไม่มีคำร้อง active ใดเลยให้แสดง 0)
   double get _donationTotal {
     if (_activeDonationRequests.isEmpty) return 0.0;
-    final req = _activeDonationRequests[_activeRequestIndex.clamp(0, _activeDonationRequests.length - 1)];
+    final req =
+        _activeDonationRequests[_activeRequestIndex.clamp(
+          0,
+          _activeDonationRequests.length - 1,
+        )];
     return _requestTotals[req.id] ?? req.currentAmount ?? 0.0;
   }
+
   RealtimeChannel? _supabaseInteractionSub;
   RealtimeChannel? _emergencyHealthSessionSub;
   RealtimeChannel? _emergencyHealthTokenSub;
@@ -101,7 +114,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   late AnimationController _liveBlinkController;
   late AnimationController _pulseController;
   GoogleMapController? _mapController;
-  
+
   StreamSubscription? _connectionSub;
   StreamSubscription? _interactionSub;
   StreamSubscription? _progressSub;
@@ -137,7 +150,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   List<DonationCategory> _emergencyCategories = [];
   bool _isLoadingCategories = false;
 
-  List<Video> _trendingVideos = []; int _trendingPage = 1; bool _hasMoreTrending = true; bool _isLoadingMoreTrending = false;
+  List<Video> _trendingVideos = [];
+  int _trendingPage = 1;
+  bool _hasMoreTrending = true;
+  bool _isLoadingMoreTrending = false;
   bool _isLoadingTrending = true;
   String? _highlightVideoId;
 
@@ -145,12 +161,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
   int _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
   Timer? _countdownTimer;
   Timer? _durationTimer;
-  
+
   bool _isPhotoMode = false;
   bool _isThaiMhungReporting = false;
   bool _isSendingThaiMhungPhotos = false;
   final List<XFile> _capturedPhotos = [];
-  List<ThaiMhungPhoto> _thaiMhungPhotos = []; int _galleryPage = 1; bool _hasMoreGallery = true; bool _isLoadingMoreGallery = false; ScrollController _galleryScrollController = ScrollController();
+  List<ThaiMhungPhoto> _thaiMhungPhotos = [];
+  int _galleryPage = 1;
+  bool _hasMoreGallery = true;
+  bool _isLoadingMoreGallery = false;
+  ScrollController _galleryScrollController = ScrollController();
   final List<LatLng> _routePoints = [];
   bool _canViewUnblurred = false;
   bool _isUiVisible = true;
@@ -175,9 +195,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     _currentResponseId = widget.responseId;
     _isChatVisible = widget.autoOpenChat;
 
-    _liveBlinkController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000))..repeat(reverse: true);
-    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat();
-    
+    _liveBlinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+
     _checkPermissions();
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
@@ -265,7 +291,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     // วัดตำแหน่งด้านล่างของกล่องยอดนิยมหลัง Build เพื่อปรับขนาดแชท
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_trendingPanelKey.currentContext != null) {
-        final RenderBox? box = _trendingPanelKey.currentContext!.findRenderObject() as RenderBox?;
+        final RenderBox? box =
+            _trendingPanelKey.currentContext!.findRenderObject() as RenderBox?;
         if (box != null) {
           final position = box.localToGlobal(Offset.zero);
           final bottom = position.dy + box.size.height;
@@ -288,258 +315,328 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
         behavior: HitTestBehavior.translucent,
         child: Stack(
           children: [
-          // Layer 1: Background layers (Map, Compass, Gallery, Back Button)
-          EmergencyMapSection(
-            currentVideoId: _currentVideoId,
-            currentVideo: _currentVideo,
-            routePoints: _routePoints,
-            userLocation: _userLocation,
-            responders: _responders,
-            selectedTab: _selectedTab,
-            onMapCreated: (controller) {
-               _mapController = controller;
-               Future.delayed(const Duration(milliseconds: 500), () => _adjustMapBounds());
-            },
-            isUiVisible: _isUiVisible,
-            topPadding: _calculateMapTopPadding(),
-            onMapTap: () {
-               if (_selectedTab != 0 || _isThaiMhungReporting) {
-                 setState(() {
-                   _selectedTab = 0;
-                   _isThaiMhungReporting = false;
-                   _isUiVisible = true;
-                 });
-               } else {
-                 _toggleUiVisibility();
-               }
-            },
-            currentResponseId: _currentResponseId,
-            deviceHeading: _deviceHeading,
-            isThaiMhungReporting: _isThaiMhungReporting,
-            onBackTap: () {
-              setState(() {
-                _isThaiMhungReporting = false;
-                _selectedTab = 0;
-              });
-            },
-            isYieldPulsing: _isYieldPulsing, // ✅ ส่งสถานะ pulse ให้ Map
-            isEmergencyHealthDataAvailable: _isEmergencyHealthDataAvailable,
-            onShowHealthDataTap: _showEmergencyHealthDataDialog,
-            emergencyHealthStatus: _emergencyHealthSession?['status']?.toString(),
-          ),
-
-          // Floating New Photo Effect
-          if (_currentVideoId != null)
-             Positioned.fill(
-               child: IgnorePointer(
-                 child: Align(
-                   alignment: Alignment.center,
-                   child: AnimatedOpacity(
-                     opacity: _floatingMapPhoto != null ? 1.0 : 0.0,
-                     duration: const Duration(milliseconds: 600),
-                     child: _floatingMapPhoto != null ? Container(
-                       margin: const EdgeInsets.only(bottom: 120), // ยกขึ้นไม่ให้โดนบัง
-                       padding: const EdgeInsets.all(8),
-                       decoration: BoxDecoration(
-                         color: Colors.black.withOpacity(0.6),
-                         borderRadius: BorderRadius.circular(16),
-                         border: Border.all(color: Colors.pinkAccent.withOpacity(0.5), width: 2),
-                         boxShadow: [
-                           BoxShadow(
-                             color: Colors.pinkAccent.withOpacity(0.3),
-                             blurRadius: 20,
-                             spreadRadius: 5,
-                           ),
-                         ],
-                       ),
-                       child: Column(
-                         mainAxisSize: MainAxisSize.min,
-                         children: [
-                           const Text(
-                             '✨ พิกัดภาพถ่ายใหม่',
-                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                           ),
-                           const SizedBox(height: 8),
-                           ClipRRect(
-                             borderRadius: BorderRadius.circular(8),
-                             child: Image.network(
-                               _floatingMapPhoto!.photoUrl,
-                               height: 150,
-                               fit: BoxFit.cover,
-                               errorBuilder: (context, _, __) => const Icon(Icons.broken_image, color: Colors.white54, size: 40),
-                             ),
-                           ),
-                         ],
-                       ),
-                     ) : const SizedBox.shrink(),
-                   ),
-                 ),
-               ),
-             ),
-
-          // Layer 2: Main UI Interaction Overlay
-          EmergencyUiOverlay(
-            isUiVisible: _isUiVisible,
-            isConnected: _isConnected,
-            selectedTab: _selectedTab,
-            isThaiMhungReporting: _isThaiMhungReporting,
-            currentResponseId: _currentResponseId,
-            isEligibleResponder: _isEligibleResponder(),
-            liveBlinkController: _liveBlinkController,
-            hasVideo: _currentVideoId != null,
-            onTabSelected: (index) {
-              if (index == 0) {
-                _onThaiMhungTabSelected();
-              } else {
+            // Layer 1: Background layers (Map, Compass, Gallery, Back Button)
+            EmergencyMapSection(
+              currentVideoId: _currentVideoId,
+              currentVideo: _currentVideo,
+              routePoints: _routePoints,
+              userLocation: _userLocation,
+              responders: _responders,
+              selectedTab: _selectedTab,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                Future.delayed(
+                  const Duration(milliseconds: 500),
+                  () => _adjustMapBounds(),
+                );
+              },
+              isUiVisible: _isUiVisible,
+              topPadding: _calculateMapTopPadding(),
+              onMapTap: () {
+                if (_selectedTab != 0 || _isThaiMhungReporting) {
+                  setState(() {
+                    _selectedTab = 0;
+                    _isThaiMhungReporting = false;
+                    _isUiVisible = true;
+                  });
+                } else {
+                  _toggleUiVisibility();
+                }
+              },
+              currentResponseId: _currentResponseId,
+              deviceHeading: _deviceHeading,
+              isThaiMhungReporting: _isThaiMhungReporting,
+              onBackTap: () {
                 setState(() {
-                  _selectedTab = index;
                   _isThaiMhungReporting = false;
-                });
-              }
-            },
-            onEmergencyTabSelected: () async {
-               setState(() { _selectedTab = 2; _isThaiMhungReporting = false; });
-               await _loadConfigFromDatabase();
-               if (_emergencyCategories.isEmpty) _loadEmergencyCategories();
-               _initCamera();
-            },
-            onOpenInMaps: _openInGoogleMaps,
-            onUpdateStatus: _updateRescueStatus,
-            onAcceptRescue: _acceptRescue,
-            onToggleUi: () {
-              if (_isChatVisible) {
-                FocusScope.of(context).unfocus();
-              } else if (_isThaiMhungReporting || _selectedTab == 2) {
-                setState(() {
                   _selectedTab = 0;
-                  _isThaiMhungReporting = false;
-                  _isUiVisible = true;
                 });
-              } else {
-                setState(() => _isUiVisible = !_isUiVisible);
-              }
-            },
-             onToggleChat: () => setState(() => _isChatVisible = !_isChatVisible),
-             isChatVisible: _isChatVisible,
-             onDeclineRescue: _declineRescueDialog,
-            triageBadgeCount: _triageBadgeCount,
-            onTriageTabSelected: () {
-              if (_currentVideoId != null) {
-                TriageSheetWidget.show(context, _currentVideoId!, _victimRepository);
-              }
-            },
-            content: _buildMainContent(),
-           ),
-
-          // Layer 3: Top Bar (Back Button and Custom Video Controls)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 16,
-            right: 16,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                FloatingBackButton(
-                  visible: _isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting,
-                  onTap: () => Navigator.of(context).pop(),
-                ),
-                if (_isUiVisible && _selectedTab != 2 && _selectedTab != 1 && !_isThaiMhungReporting && _chewieController != null && !_isOverlayVisible) ...[
-                  const SizedBox(width: 12),
-                  GlassmorphismVideoControls(
-                    controller: _chewieController!.videoPlayerController,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          // Emergency Chat Overlay (Floating Window at bottom-right)
-          if (_isChatVisible && _currentVideoId != null && _isUiVisible && _selectedTab != 2 && !_isThaiMhungReporting)
-            Positioned(
-              right: 16,
-              // วางชิดด้านล่างขวาของจอ (ระดับเดียวกับปุ่ม Tab ที่เลื่อนไปซ้าย)
-              bottom: MediaQuery.of(context).padding.bottom + 16,
-              width: MediaQuery.of(context).size.width * 0.55, 
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  // คำนวณความสูงสูงสุด: จอทั้งหมด - (ตำแหน่งล่างของกล่องยอดนิยม) - ระยะแป้นพิมพ์ - ระยะห่างจากขอบล่าง - ระยะห่างจากกล่องยอดนิยม (12)
-                  maxHeight: _trendingPanelBottom > 0 
-                      ? (MediaQuery.of(context).size.height - _trendingPanelBottom - MediaQuery.of(context).viewInsets.bottom - (MediaQuery.of(context).padding.bottom + 16) - 12)
-                          .clamp(100, MediaQuery.of(context).size.height * 0.4) // ให้สูงได้สูงสุด 40% ของจอ
-                      : MediaQuery.of(context).size.height * 0.25, // Fallback
-                ),
-                child: EmergencyChatWidget(
-                key: ValueKey(_currentVideoId!), // ผูก key ให้สร้างใหม่เมื่อเปลี่ยนเหตุการณ์
-                videoId: _currentVideoId!,
-                userId: AuthService.instance.userId ?? 'unknown',
-                userName: AuthService.instance.currentUser?.fullName ?? 'Anonymous',
-                role: _getChatRole(),
-                professionName: _currentProfessionName,
-                profileImageUrl: AuthService.instance.currentUser?.profileImageUrl,
-                onClose: () => setState(() => _isChatVisible = false),
-              ),
-              ),
-            ),
-          
-          // Layer 5: Rescue Accept Panel (Must be on topmost layer, over chat window)
-          if (_isUiVisible && _isEligibleResponder() && _selectedTab == 0)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: MediaQuery.of(context).padding.bottom + 48,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: RescueAcceptPanelWidget(
-                  onAccept: _acceptRescue,
-                ),
-              ),
-            ),
-          
-          // Layer 6: Rescue Control Panel (MUST BE ABOVE CHAT AND OVERLAY)
-          if (_isUiVisible && _currentResponseId != null && _selectedTab == 0)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: MediaQuery.of(context).padding.bottom + 105, // อยู่เหนือ Bottom Tabs
-              child: RescueControlPanelWidget(
-                onOpenInMaps: _openInGoogleMaps,
-                onUpdateStatus: _updateRescueStatus,
-              ),
+              },
+              isYieldPulsing: _isYieldPulsing, // ✅ ส่งสถานะ pulse ให้ Map
+              isEmergencyHealthDataAvailable: _isEmergencyHealthDataAvailable,
+              onShowHealthDataTap: _showEmergencyHealthDataDialog,
+              emergencyHealthStatus: _emergencyHealthSession?['status']
+                  ?.toString(),
             ),
 
-          // ✅ [Phase 3a] Floating button to view patient health data
-          if (_isUiVisible && _currentResponseId != null && _isEmergencyHealthDataAvailable && _selectedTab != 1)
-            Positioned(
-              right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 160,
-              child: FloatingActionButton.extended(
-                onPressed: _showEmergencyHealthDataDialog,
-                backgroundColor: Colors.green.shade700,
-                icon: const Icon(Icons.medical_services, color: Colors.white),
-                label: const Text(
-                  'ข้อมูลสุขภาพ',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'SukhumvitSet',
+            // Floating New Photo Effect
+            if (_currentVideoId != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: AnimatedOpacity(
+                      opacity: _floatingMapPhoto != null ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 600),
+                      child: _floatingMapPhoto != null
+                          ? Container(
+                              margin: const EdgeInsets.only(
+                                bottom: 120,
+                              ), // ยกขึ้นไม่ให้โดนบัง
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Colors.pinkAccent.withOpacity(0.5),
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.pinkAccent.withOpacity(0.3),
+                                    blurRadius: 20,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    '✨ พิกัดภาพถ่ายใหม่',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      _floatingMapPhoto!.photoUrl,
+                                      height: 150,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, _, __) =>
+                                          const Icon(
+                                            Icons.broken_image,
+                                            color: Colors.white54,
+                                            size: 40,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
+
+            // Layer 2: Main UI Interaction Overlay
+            EmergencyUiOverlay(
+              isUiVisible: _isUiVisible,
+              isConnected: _isConnected,
+              selectedTab: _selectedTab,
+              isThaiMhungReporting: _isThaiMhungReporting,
+              currentResponseId: _currentResponseId,
+              isEligibleResponder: _isEligibleResponder(),
+              liveBlinkController: _liveBlinkController,
+              hasVideo: _currentVideoId != null,
+              onTabSelected: (index) {
+                if (index == 0) {
+                  _onThaiMhungTabSelected();
+                } else {
+                  setState(() {
+                    _selectedTab = index;
+                    _isThaiMhungReporting = false;
+                  });
+                }
+              },
+              onEmergencyTabSelected: () async {
+                setState(() {
+                  _selectedTab = 2;
+                  _isThaiMhungReporting = false;
+                });
+                await _loadConfigFromDatabase();
+                if (_emergencyCategories.isEmpty) _loadEmergencyCategories();
+                _initCamera();
+              },
+              onOpenInMaps: _openInGoogleMaps,
+              onUpdateStatus: _updateRescueStatus,
+              onAcceptRescue: _acceptRescue,
+              onToggleUi: () {
+                if (_isChatVisible) {
+                  FocusScope.of(context).unfocus();
+                } else if (_isThaiMhungReporting || _selectedTab == 2) {
+                  setState(() {
+                    _selectedTab = 0;
+                    _isThaiMhungReporting = false;
+                    _isUiVisible = true;
+                  });
+                } else {
+                  setState(() => _isUiVisible = !_isUiVisible);
+                }
+              },
+              onToggleChat: () =>
+                  setState(() => _isChatVisible = !_isChatVisible),
+              isChatVisible: _isChatVisible,
+              onDeclineRescue: _declineRescueDialog,
+              triageBadgeCount: _triageBadgeCount,
+              onTriageTabSelected: () {
+                if (_currentVideoId != null) {
+                  TriageSheetWidget.show(
+                    context,
+                    _currentVideoId!,
+                    _victimRepository,
+                  );
+                }
+              },
+              content: _buildMainContent(),
             ),
 
-          if (_isUiVisible && _deadManCheckin?.isEnabled == true && _selectedTab != 1)
+            // Layer 3: Top Bar (Back Button and Custom Video Controls)
             Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
               left: 16,
-              top: MediaQuery.of(context).padding.top + 88,
-              child: _buildDeadManCheckInChip(),
+              right: 16,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  FloatingBackButton(
+                    visible:
+                        _isUiVisible &&
+                        _selectedTab != 2 &&
+                        _selectedTab != 1 &&
+                        !_isThaiMhungReporting,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  if (_isUiVisible &&
+                      _selectedTab != 2 &&
+                      _selectedTab != 1 &&
+                      !_isThaiMhungReporting &&
+                      _chewieController != null &&
+                      !_isOverlayVisible) ...[
+                    const SizedBox(width: 12),
+                    GlassmorphismVideoControls(
+                      controller: _chewieController!.videoPlayerController,
+                    ),
+                  ],
+                ],
+              ),
             ),
 
-          if (_isEmergencyHealthPanicVisible && _emergencyHealthSession != null && _selectedTab != 1)
-            Positioned.fill(
-              child: _buildEmergencyHealthPanicOverlay(),
-            ),
-        ],
-      ),
+            // Emergency Chat Overlay: message bubbles span the screen width.
+            // The input stays on the right so its vertical center aligns with
+            // the bottom Thai Mhung / เกี่ยวดอง tab row.
+            if (_isChatVisible &&
+                _currentVideoId != null &&
+                _isUiVisible &&
+                _selectedTab != 2 &&
+                !_isThaiMhungReporting)
+              Positioned(
+                left: 8,
+                right: 8,
+                // Position the chat so the last message ends just above the
+                // bottom tab row and the input is centered on that row.
+                bottom:
+                    MediaQuery.of(context).padding.bottom +
+                    MediaQuery.of(context).viewInsets.bottom +
+                    12 +
+                    MediaQuery.of(context).size.height * 0.1 / 2 -
+                    24,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: _trendingPanelBottom > 0
+                        ? (MediaQuery.of(context).size.height -
+                                  _trendingPanelBottom -
+                                  (MediaQuery.of(context).padding.bottom +
+                                      MediaQuery.of(context).viewInsets.bottom +
+                                      12 +
+                                      MediaQuery.of(context).size.height *
+                                          0.1 /
+                                          2 -
+                                      24) -
+                                  12)
+                              .clamp(
+                                100,
+                                MediaQuery.of(context).size.height * 0.4,
+                              )
+                        : MediaQuery.of(context).size.height * 0.25,
+                  ),
+                  child: EmergencyChatWidget(
+                    key: ValueKey(
+                      _currentVideoId!,
+                    ), // ผูก key ให้สร้างใหม่เมื่อเปลี่ยนเหตุการณ์
+                    videoId: _currentVideoId!,
+                    userId: AuthService.instance.userId ?? 'unknown',
+                    userName:
+                        AuthService.instance.currentUser?.fullName ??
+                        'Anonymous',
+                    role: _getChatRole(),
+                    professionName: _currentProfessionName,
+                    profileImageUrl:
+                        AuthService.instance.currentUser?.profileImageUrl,
+                    onClose: () => setState(() => _isChatVisible = false),
+                  ),
+                ),
+              ),
+
+            // Layer 5: Rescue Accept Panel (Must be on topmost layer, over chat window)
+            if (_isUiVisible && _isEligibleResponder() && _selectedTab == 0)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: MediaQuery.of(context).padding.bottom + 48,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: RescueAcceptPanelWidget(onAccept: _acceptRescue),
+                ),
+              ),
+
+            // Layer 6: Rescue Control Panel (MUST BE ABOVE CHAT AND OVERLAY)
+            if (_isUiVisible && _currentResponseId != null && _selectedTab == 0)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom:
+                    MediaQuery.of(context).padding.bottom +
+                    105, // อยู่เหนือ Bottom Tabs
+                child: RescueControlPanelWidget(
+                  onOpenInMaps: _openInGoogleMaps,
+                  onUpdateStatus: _updateRescueStatus,
+                ),
+              ),
+
+            // ✅ [Phase 3a] Floating button to view patient health data
+            if (_isUiVisible &&
+                _currentResponseId != null &&
+                _isEmergencyHealthDataAvailable &&
+                _selectedTab != 1)
+              Positioned(
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 160,
+                child: FloatingActionButton.extended(
+                  onPressed: _showEmergencyHealthDataDialog,
+                  backgroundColor: Colors.green.shade700,
+                  icon: const Icon(Icons.medical_services, color: Colors.white),
+                  label: const Text(
+                    'ข้อมูลสุขภาพ',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'SukhumvitSet',
+                    ),
+                  ),
+                ),
+              ),
+
+            if (_isUiVisible &&
+                _deadManCheckin?.isEnabled == true &&
+                _selectedTab != 1)
+              Positioned(
+                left: 16,
+                top: MediaQuery.of(context).padding.top + 88,
+                child: _buildDeadManCheckInChip(),
+              ),
+
+            if (_isEmergencyHealthPanicVisible &&
+                _emergencyHealthSession != null &&
+                _selectedTab != 1)
+              Positioned.fill(child: _buildEmergencyHealthPanicOverlay()),
+          ],
+        ),
       ),
     );
   }
@@ -548,7 +645,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     final remaining = _emergencyHealthCountdownSeconds;
     final minutes = (remaining ~/ 60).toString().padLeft(2, '0');
     final seconds = (remaining % 60).toString().padLeft(2, '0');
-    final sessionStatus = _emergencyHealthSession?['status']?.toString() ?? 'counting';
+    final sessionStatus =
+        _emergencyHealthSession?['status']?.toString() ?? 'counting';
 
     return IgnorePointer(
       ignoring: false,
@@ -588,7 +686,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.warning_rounded, color: Colors.white, size: 72),
+                        const Icon(
+                          Icons.warning_rounded,
+                          color: Colors.white,
+                          size: 72,
+                        ),
                         const SizedBox(height: 16),
                         const Text(
                           'Panic Cancel Notification',
@@ -616,11 +718,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                         const SizedBox(height: 20),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.14),
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.white.withOpacity(0.14)),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.14),
+                            ),
                           ),
                           child: Text(
                             'กดปุ่มด้านล่างเพื่อยกเลิกการปลดล็อกข้อมูลสุขภาพทันที ถ้าคุณกดผิดหรือไม่ต้องการให้ระบบแชร์ข้อมูลกับผู้ช่วยเหลือ',
@@ -662,7 +769,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('กำลังนับถอยหลังจากฝั่งเซิร์ฟเวอร์อยู่'),
+                                content: Text(
+                                  'กำลังนับถอยหลังจากฝั่งเซิร์ฟเวอร์อยู่',
+                                ),
                                 behavior: SnackBarBehavior.floating,
                               ),
                             );
@@ -693,7 +802,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     final currentUserId = AuthService.instance.userId;
 
     // 1. Reporter: เจ้าของวิดีโอ หรือกำลังรายงานอยู่
-    if (_currentVideo != null && _currentVideo?.userId == currentUserId) return 'reporter';
+    if (_currentVideo != null && _currentVideo?.userId == currentUserId)
+      return 'reporter';
     if (_selectedTab == 2 || _isRecording) return 'reporter';
 
     // 2. Responder: ต้องเป็นคนทีกด "ยืนยันรับการช่วยเหลือ" ของเหตุการณ์นี้แล้ว (_currentResponseId มีค่า)
@@ -705,38 +815,64 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
     return 'viewer';
   }
 
-
-
   Future<void> _declineRescueDialog() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('ปฏิเสธการช่วยเหลือ', style: TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
-        content: const Text('ยืนยันว่าจะปฏิเสธการช่วยเหลือเหตุการณ์นี้ใช่หรือไม่?', style: TextStyle(fontFamily: 'SukhumvitSet')),
+        title: const Text(
+          'ปฏิเสธการช่วยเหลือ',
+          style: TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: const Text(
+          'ยืนยันว่าจะปฏิเสธการช่วยเหลือเหตุการณ์นี้ใช่หรือไม่?',
+          style: TextStyle(fontFamily: 'SukhumvitSet'),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('ยืนยัน', style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ยืนยัน', style: TextStyle(color: Colors.red)),
+          ),
         ],
-      )
+      ),
     );
     if (confirm == true) {
       if (!mounted) return;
       setState(() {
         _hasRejected = true;
-        _isChatVisible = false; // กลับสู่โหมด emergency ปกติ (ซ่อนแชทด้วยเผื่อเปิดค้างไว้)
+        _isChatVisible =
+            false; // กลับสู่โหมด emergency ปกติ (ซ่อนแชทด้วยเผื่อเปิดค้างไว้)
       });
       final userId = AuthService.instance.userId;
       if (userId != null && _currentVideoId != null) {
-        await ServiceLocator.instance.videoRepository.rejectIncident(videoId: _currentVideoId!, responderId: userId);
-        
+        await ServiceLocator.instance.videoRepository.rejectIncident(
+          videoId: _currentVideoId!,
+          responderId: userId,
+        );
+
         // Save to dismissed alert IDs so it disappears from Home page stack
         try {
           final repo = ServiceLocator.instance.userRepository;
-          final saved = await repo.getUiPreference(userId, 'dismissed_emergency_alert_ids');
-          final list = saved != null && saved.isNotEmpty ? saved.split(',').toList() : <String>[];
+          final saved = await repo.getUiPreference(
+            userId,
+            'dismissed_emergency_alert_ids',
+          );
+          final list = saved != null && saved.isNotEmpty
+              ? saved.split(',').toList()
+              : <String>[];
           if (!list.contains(_currentVideoId!)) {
             list.add(_currentVideoId!);
-            await repo.saveUiPreference(userId, 'dismissed_emergency_alert_ids', list.join(','));
+            await repo.saveUiPreference(
+              userId,
+              'dismissed_emergency_alert_ids',
+              list.join(','),
+            );
           }
         } catch (e) {
           debugPrint('Error saving dismissed alert on reject: $e');
@@ -767,7 +903,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             _selectedEmergencyCategoryId = cat.id;
             _selectedEmergencyCategory = cat;
           }),
-          onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
+          onModeChanged: (photoMode) =>
+              setState(() => _isPhotoMode = photoMode),
           onLoadCategories: _loadEmergencyCategories,
           onYieldWay: _yieldWay,
           yieldWayCount: '$_yieldWayCount คน',
@@ -782,42 +919,44 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
           isSendingPhotos: _isSendingThaiMhungPhotos,
         );
       } else {
-      return LiveViewWidget(
-        chewieController: _chewieController,
-        currentVideoId: _currentVideoId,
-        currentVideo: _currentVideo,
-        formattedViewerCount: _formatCount(_viewerCount),
-        viewerCount: _viewerCount,
-        likeCountFormatted: _formatCount(_likeCount),
-        activeRequests: _activeDonationRequests,
-        activeRequestIndex: _activeRequestIndex,
-        userCanCreateRequest: _canCreateDonationRequest(),
-        onSwitchRequest: (forward) {
-          if (_activeDonationRequests.isEmpty) return;
-          setState(() {
-            _activeRequestIndex = ((_activeRequestIndex + (forward ? 1 : -1)) %
-                _activeDonationRequests.length);
-          });
-        },
-        trendingVideos: _trendingVideos,
-        onLoadMoreTrending: _loadMoreTrendingVideos,
-        isLoadingTrending: _isLoadingTrending,
-        highlightVideoId: _highlightVideoId,
-        canViewUnblurred: _canViewUnblurred,
-        yieldWayCount: '$_yieldWayCount คน',
-        yieldWayCountValue: _yieldWayCount,
-        yieldWayNotifiedCount: _yieldWayNotifiedCount,
-        onLike: _onLike,
-        isLiked: _hasLiked,
-        likeCount: _likeCount,
-        likeTrigger: _likeTrigger,
-        onYieldWay: _yieldWay,
-        onDonate: _showDonationSheet,
-        onSwitchVideo: _switchVideo,
-        onNewPhotoArrived: _handleNewPhotoArrived,
-        onOverlayChanged: (visible) => setState(() => _isOverlayVisible = visible),
-        trendingPanelKey: _trendingPanelKey,
-      );
+        return LiveViewWidget(
+          chewieController: _chewieController,
+          currentVideoId: _currentVideoId,
+          currentVideo: _currentVideo,
+          formattedViewerCount: _formatCount(_viewerCount),
+          viewerCount: _viewerCount,
+          likeCountFormatted: _formatCount(_likeCount),
+          activeRequests: _activeDonationRequests,
+          activeRequestIndex: _activeRequestIndex,
+          userCanCreateRequest: _canCreateDonationRequest(),
+          onSwitchRequest: (forward) {
+            if (_activeDonationRequests.isEmpty) return;
+            setState(() {
+              _activeRequestIndex =
+                  ((_activeRequestIndex + (forward ? 1 : -1)) %
+                  _activeDonationRequests.length);
+            });
+          },
+          trendingVideos: _trendingVideos,
+          onLoadMoreTrending: _loadMoreTrendingVideos,
+          isLoadingTrending: _isLoadingTrending,
+          highlightVideoId: _highlightVideoId,
+          canViewUnblurred: _canViewUnblurred,
+          yieldWayCount: '$_yieldWayCount คน',
+          yieldWayCountValue: _yieldWayCount,
+          yieldWayNotifiedCount: _yieldWayNotifiedCount,
+          onLike: _onLike,
+          isLiked: _hasLiked,
+          likeCount: _likeCount,
+          likeTrigger: _likeTrigger,
+          onYieldWay: _yieldWay,
+          onDonate: _showDonationSheet,
+          onSwitchVideo: _switchVideo,
+          onNewPhotoArrived: _handleNewPhotoArrived,
+          onOverlayChanged: (visible) =>
+              setState(() => _isOverlayVisible = visible),
+          trendingPanelKey: _trendingPanelKey,
+        );
       }
     } else if (_selectedTab == 1) {
       return const SizedBox.shrink();
@@ -843,7 +982,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage> with TickerProvid
             _selectedEmergencyCategoryId = cat.id;
             _selectedEmergencyCategory = cat;
           }),
-          onModeChanged: (photoMode) => setState(() => _isPhotoMode = photoMode),
+          onModeChanged: (photoMode) =>
+              setState(() => _isPhotoMode = photoMode),
           onLoadCategories: _loadEmergencyCategories,
           onYieldWay: _yieldWay,
           yieldWayCount: '$_yieldWayCount คน',

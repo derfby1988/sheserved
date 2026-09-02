@@ -20,40 +20,63 @@ class WebSocketService {
   static const int _maxConnectionAttempts = 3;
   static const int _socketReconnectionAttempts = 10;
   Timer? _heartbeatTimer;
-  
+
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
-  final _locationController = StreamController<Map<String, dynamic>>.broadcast();
+  final _locationController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final _errorController = StreamController<String>.broadcast();
   final _typingController = StreamController<Map<String, dynamic>>.broadcast();
-  final _callInviteController = StreamController<Map<String, dynamic>>.broadcast();
-  final _callAcceptController = StreamController<Map<String, dynamic>>.broadcast();
-  final _callRejectController = StreamController<Map<String, dynamic>>.broadcast();
-  final _webrtcSignalController = StreamController<Map<String, dynamic>>.broadcast();
-  final _emergencyChatController = StreamController<Map<String, dynamic>>.broadcast();
-  
+  final _callInviteController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _callAcceptController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _callRejectController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _webrtcSignalController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyChatController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   // Video Stream Controllers
-  final _videoProgressController = StreamController<Map<String, dynamic>>.broadcast();
-  final _videoStatusController = StreamController<Map<String, dynamic>>.broadcast();
-  final _videoInteractionController = StreamController<Map<String, dynamic>>.broadcast();
-  
-  final _emergencyNotificationController = StreamController<Map<String, dynamic>>.broadcast();
-  final _rescueIncomingController = StreamController<Map<String, dynamic>>.broadcast();
-  final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
-  final _donationStatusController = StreamController<Map<String, dynamic>>.broadcast();
-  final _thaiMhungPhotoController = StreamController<Map<String, dynamic>>.broadcast();
+  final _videoProgressController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _videoStatusController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _videoInteractionController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  final _emergencyNotificationController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _rescueIncomingController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _viewerCountController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _cumulativeViewerCountController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _donationStatusController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _thaiMhungPhotoController =
+      StreamController<Map<String, dynamic>>.broadcast();
   // Phase 6.12: Async Thai Mhung Face Blur completion event
-  final _photoBlurCompleteController = StreamController<Map<String, dynamic>>.broadcast();
+  final _photoBlurCompleteController =
+      StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Yield Way] Stream สำหรับรับการแจ้งเตือนให้ทาง
-  final _yieldWayAlertController = StreamController<Map<String, dynamic>>.broadcast();
+  final _yieldWayAlertController =
+      StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Thumbnail] Stream สำหรับ Thumbnail อัปเดตแบบ Real-time (Recommendation #7)
-  final _thumbnailUpdateController = StreamController<Map<String, dynamic>>.broadcast();
+  final _thumbnailUpdateController =
+      StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Phase 4] Emergency health sensor / dead-man switch events
-  final _emergencyHealthSensorAlertController = StreamController<Map<String, dynamic>>.broadcast();
-  final _emergencyHealthDeadManReminderController = StreamController<Map<String, dynamic>>.broadcast();
-  final _emergencyHealthDeadManTriggeredController = StreamController<Map<String, dynamic>>.broadcast();
-  final _fitnessBookingAlertController = StreamController<Map<String, dynamic>>.broadcast();
-  
+  final _emergencyHealthSensorAlertController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyHealthDeadManReminderController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyHealthDeadManTriggeredController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _fitnessBookingAlertController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   // Getters
   bool get isConnected => _isConnected;
   bool get isEnabled => _isEnabled;
@@ -61,54 +84,85 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get locationStream => _locationController.stream;
   Stream<String> get errorStream => _errorController.stream;
   Stream<Map<String, dynamic>> get typingStream => _typingController.stream;
-  Stream<Map<String, dynamic>> get callInviteStream => _callInviteController.stream;
-  Stream<Map<String, dynamic>> get callAcceptStream => _callAcceptController.stream;
-  Stream<Map<String, dynamic>> get callRejectStream => _callRejectController.stream;
-  Stream<Map<String, dynamic>> get webrtcSignalStream => _webrtcSignalController.stream;
-  Stream<Map<String, dynamic>> get emergencyChatStream => _emergencyChatController.stream;
-  
+  Stream<Map<String, dynamic>> get callInviteStream =>
+      _callInviteController.stream;
+  Stream<Map<String, dynamic>> get callAcceptStream =>
+      _callAcceptController.stream;
+  Stream<Map<String, dynamic>> get callRejectStream =>
+      _callRejectController.stream;
+  Stream<Map<String, dynamic>> get webrtcSignalStream =>
+      _webrtcSignalController.stream;
+  Stream<Map<String, dynamic>> get emergencyChatStream =>
+      _emergencyChatController.stream;
+
   // Video Getters
-  Stream<Map<String, dynamic>> get videoProgressStream => _videoProgressController.stream;
-  Stream<Map<String, dynamic>> get videoStatusStream => _videoStatusController.stream;
-  Stream<Map<String, dynamic>> get videoInteractionStream => _videoInteractionController.stream;
+  Stream<Map<String, dynamic>> get videoProgressStream =>
+      _videoProgressController.stream;
+  Stream<Map<String, dynamic>> get videoStatusStream =>
+      _videoStatusController.stream;
+  Stream<Map<String, dynamic>> get videoInteractionStream =>
+      _videoInteractionController.stream;
   IO.Socket? get socket => _socket;
-  
+
   // Emergency Getters
-  Stream<Map<String, dynamic>> get emergencyNotificationStream => _emergencyNotificationController.stream;
-  Stream<Map<String, dynamic>> get rescueIncomingStream => _rescueIncomingController.stream;
-  Stream<Map<String, dynamic>> get viewerCountStream => _viewerCountController.stream;
+  Stream<Map<String, dynamic>> get emergencyNotificationStream =>
+      _emergencyNotificationController.stream;
+  Stream<Map<String, dynamic>> get rescueIncomingStream =>
+      _rescueIncomingController.stream;
+  Stream<Map<String, dynamic>> get viewerCountStream =>
+      _viewerCountController.stream;
+  Stream<Map<String, dynamic>> get cumulativeViewerCountStream =>
+      _cumulativeViewerCountController.stream;
+
   /// สถานะคำร้องบริจาคผ่านการอนุมัติเปลี่ยนสถานะแบบ Real-time
-  Stream<Map<String, dynamic>> get donationStatusStream => _donationStatusController.stream;
+  Stream<Map<String, dynamic>> get donationStatusStream =>
+      _donationStatusController.stream;
+
   /// ภาพไทยมุงใหม่เข้ามาแบบ Real-time ผ่าน WebSocket
-  Stream<Map<String, dynamic>> get thaiMhungPhotoStream => _thaiMhungPhotoController.stream;
+  Stream<Map<String, dynamic>> get thaiMhungPhotoStream =>
+      _thaiMhungPhotoController.stream;
+
   /// Phase 6.12: รับ event เมื่อ face blur เสร็จสิ้น (background async processing)
-  Stream<Map<String, dynamic>> get photoBlurCompleteStream => _photoBlurCompleteController.stream;
+  Stream<Map<String, dynamic>> get photoBlurCompleteStream =>
+      _photoBlurCompleteController.stream;
+
   /// ✅ [Yield Way] การแจ้งเตือนให้ทางแบบ Real-time
-  Stream<Map<String, dynamic>> get yieldWayAlertStream => _yieldWayAlertController.stream;
+  Stream<Map<String, dynamic>> get yieldWayAlertStream =>
+      _yieldWayAlertController.stream;
+
   /// ✅ [Thumbnail] Thumbnail URL อัปเดตแบบ Real-time — TrendingPanel ใช้เพื่อรีเฟรชรูปพื้นหลังการ์ด (Recommendation #7)
-  Stream<Map<String, dynamic>> get thumbnailUpdateStream => _thumbnailUpdateController.stream;
+  Stream<Map<String, dynamic>> get thumbnailUpdateStream =>
+      _thumbnailUpdateController.stream;
+
   /// ✅ [Phase 4] Sensor anomaly alerts for emergency health
-  Stream<Map<String, dynamic>> get emergencyHealthSensorAlertStream => _emergencyHealthSensorAlertController.stream;
+  Stream<Map<String, dynamic>> get emergencyHealthSensorAlertStream =>
+      _emergencyHealthSensorAlertController.stream;
+
   /// ✅ [Phase 4] Dead-man reminder notifications
-  Stream<Map<String, dynamic>> get emergencyHealthDeadManReminderStream => _emergencyHealthDeadManReminderController.stream;
+  Stream<Map<String, dynamic>> get emergencyHealthDeadManReminderStream =>
+      _emergencyHealthDeadManReminderController.stream;
+
   /// ✅ [Phase 4] Dead-man trigger notifications
-  Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream => _emergencyHealthDeadManTriggeredController.stream;
-  Stream<Map<String, dynamic>> get fitnessBookingAlertStream => _fitnessBookingAlertController.stream;
+  Stream<Map<String, dynamic>> get emergencyHealthDeadManTriggeredStream =>
+      _emergencyHealthDeadManTriggeredController.stream;
+  Stream<Map<String, dynamic>> get fitnessBookingAlertStream =>
+      _fitnessBookingAlertController.stream;
 
   void publishFitnessBookingAlert(Map<String, dynamic> alert) {
     _fitnessBookingAlertController.add(alert);
   }
 
   WebSocketService._(this._serverUrl);
-  
+
   /// Singleton instance
   factory WebSocketService({String? serverUrl}) {
     _instance ??= WebSocketService._(
-      serverUrl ?? AppConfig.websocketUrl, // ใช้ค่าจาก Config เป็นหลักแทน localhost
+      serverUrl ??
+          AppConfig.websocketUrl, // ใช้ค่าจาก Config เป็นหลักแทน localhost
     );
     return _instance!;
   }
-  
+
   /// Enable or disable WebSocket connection
   void setEnabled(bool enabled) {
     _isEnabled = enabled;
@@ -116,21 +170,21 @@ class WebSocketService {
       disconnect();
     }
   }
-  
+
   /// Reset connection attempts (call this when user manually tries to connect)
   void resetConnectionAttempts() {
     _connectionAttempts = 0;
     _connectionErrorLogCount = 0;
     _lastConnectionErrorLogAt = null;
   }
-  
+
   /// Connect to WebSocket Server
   Future<void> connect({String? userId, String? authToken}) async {
     if (!_isEnabled) {
       debugPrint('WebSocket is disabled');
       return;
     }
-    
+
     if (_isConnected) {
       debugPrint('WebSocket already connected');
       return;
@@ -140,16 +194,20 @@ class WebSocketService {
       _socket!.connect();
       return;
     }
-    
+
     // Check connection attempts to prevent infinite retry
     if (_connectionAttempts >= _maxConnectionAttempts) {
-      debugPrint('WebSocket: Max connection attempts reached. Call resetConnectionAttempts() to retry.');
-      _errorController.add('Max connection attempts reached. Server may not be running.');
+      debugPrint(
+        'WebSocket: Max connection attempts reached. Call resetConnectionAttempts() to retry.',
+      );
+      _errorController.add(
+        'Max connection attempts reached. Server may not be running.',
+      );
       return;
     }
-    
+
     _connectionAttempts++;
-    
+
     try {
       _socket = IO.io(
         _serverUrl,
@@ -164,17 +222,17 @@ class WebSocketService {
             .setAuth({'userId': userId, 'token': authToken})
             .build(),
       );
-      
+
       // Connection Events
       _socket!.onConnect((_) {
         debugPrint('WebSocket connected');
         _isConnected = true;
         _connectionAttempts = 0; // Reset on successful connection
         _connectionController.add(true);
-        
+
         // Start heartbeat to keep connection alive in background
         _startHeartbeat();
-        
+
         // Send user info after connection
         if (userId != null) {
           final user = AuthService.instance.currentUser;
@@ -190,28 +248,32 @@ class WebSocketService {
           });
         }
       });
-      
+
       _socket!.onDisconnect((_) {
         debugPrint('WebSocket disconnected');
         _isConnected = false;
         _connectionController.add(false);
       });
-      
+
       _socket!.onConnectError((error) {
         _isConnected = false;
         _connectionErrorLogCount++;
         final now = DateTime.now();
-        final shouldLog = _connectionErrorLogCount <= 3 ||
+        final shouldLog =
+            _connectionErrorLogCount <= 3 ||
             _lastConnectionErrorLogAt == null ||
-            now.difference(_lastConnectionErrorLogAt!) >= const Duration(seconds: 30);
+            now.difference(_lastConnectionErrorLogAt!) >=
+                const Duration(seconds: 30);
         if (shouldLog) {
           _lastConnectionErrorLogAt = now;
           debugPrint('WebSocket connection error: $error');
-          debugPrint('Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)');
+          debugPrint(
+            'Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)',
+          );
         }
         _errorController.add('Connection error: $error');
       });
-      
+
       // Location Events
       _socket!.on('location-updated', (data) {
         // debugPrint('Location updated: $data'); // Removed to reduce terminal noise
@@ -237,7 +299,7 @@ class WebSocketService {
       _socket!.on('webrtc-signal', (data) {
         _webrtcSignalController.add(Map<String, dynamic>.from(data));
       });
-      
+
       // Video Events
       _socket!.on('video-progress', (data) {
         _videoProgressController.add(Map<String, dynamic>.from(data));
@@ -265,14 +327,20 @@ class WebSocketService {
       _socket!.on('viewer-count', (data) {
         _viewerCountController.add(Map<String, dynamic>.from(data));
       });
-      
+
+      _socket!.on('cumulative-viewer-count', (data) {
+        _cumulativeViewerCountController.add(Map<String, dynamic>.from(data));
+      });
+
       _socket!.on('emergency-chat-message', (data) {
         _emergencyChatController.add(Map<String, dynamic>.from(data));
       });
 
       // Donation Status Events
       _socket!.on('donation-request-status-updated', (data) {
-        debugPrint('WebSocket: donation-request-status-updated received: $data');
+        debugPrint(
+          'WebSocket: donation-request-status-updated received: $data',
+        );
         _donationStatusController.add(Map<String, dynamic>.from(data));
       });
 
@@ -302,18 +370,30 @@ class WebSocketService {
 
       // ✅ [Phase 4] Sensor anomaly alerts / dead-man switch notifications
       _socket!.on('emergency-health-sensor-alert', (data) {
-        debugPrint('[EmergencyHealth] emergency-health-sensor-alert received: $data');
-        _emergencyHealthSensorAlertController.add(Map<String, dynamic>.from(data));
+        debugPrint(
+          '[EmergencyHealth] emergency-health-sensor-alert received: $data',
+        );
+        _emergencyHealthSensorAlertController.add(
+          Map<String, dynamic>.from(data),
+        );
       });
 
       _socket!.on('emergency-health-dead-man-reminder', (data) {
-        debugPrint('[EmergencyHealth] emergency-health-dead-man-reminder received: $data');
-        _emergencyHealthDeadManReminderController.add(Map<String, dynamic>.from(data));
+        debugPrint(
+          '[EmergencyHealth] emergency-health-dead-man-reminder received: $data',
+        );
+        _emergencyHealthDeadManReminderController.add(
+          Map<String, dynamic>.from(data),
+        );
       });
 
       _socket!.on('emergency-health-dead-man-triggered', (data) {
-        debugPrint('[EmergencyHealth] emergency-health-dead-man-triggered received: $data');
-        _emergencyHealthDeadManTriggeredController.add(Map<String, dynamic>.from(data));
+        debugPrint(
+          '[EmergencyHealth] emergency-health-dead-man-triggered received: $data',
+        );
+        _emergencyHealthDeadManTriggeredController.add(
+          Map<String, dynamic>.from(data),
+        );
       });
 
       _socket!.on('fitness-booking-status', (data) {
@@ -329,10 +409,9 @@ class WebSocketService {
         }
         _errorController.add('Error: $error');
       });
-      
+
       // เชื่อมต่อหลังจาก setup events แล้ว
       _socket!.connect();
-      
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to connect WebSocket: $e');
@@ -340,7 +419,7 @@ class WebSocketService {
       _errorController.add('Failed to connect: $e');
     }
   }
-  
+
   /// Send location update to server
   void sendLocation({
     required String userId,
@@ -354,7 +433,7 @@ class WebSocketService {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     final locationData = {
       'userId': userId,
       'latitude': latitude,
@@ -364,47 +443,47 @@ class WebSocketService {
       if (speed != null) 'speed': speed,
       if (heading != null) 'heading': heading,
     };
-    
+
     _socket!.emit('location-update', locationData);
   }
-  
+
   /// Subscribe to specific user's location
   void subscribeToUser(String userId) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     _socket!.emit('subscribe-user', {'userId': userId});
   }
-  
+
   /// Unsubscribe from user's location
   void unsubscribeFromUser(String userId) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     _socket!.emit('unsubscribe-user', {'userId': userId});
   }
-  
+
   /// Join a room (e.g., for group tracking)
   void joinRoom(String roomId) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     _socket!.emit('join-room', {'roomId': roomId});
   }
-  
+
   /// Leave a room
   void leaveRoom(String roomId) {
     if (!_isConnected || _socket == null) {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     _socket!.emit('leave-room', {'roomId': roomId});
   }
 
@@ -419,7 +498,12 @@ class WebSocketService {
   }
 
   /// Send call invitation
-  void sendCallInvite(String roomId, String callerId, String callerName, String? callerAvatar) {
+  void sendCallInvite(
+    String roomId,
+    String callerId,
+    String callerName,
+    String? callerAvatar,
+  ) {
     if (!_isConnected || _socket == null) return;
     _socket!.emit('call-invite', {
       'roomId': roomId,
@@ -432,28 +516,19 @@ class WebSocketService {
   /// Accept call
   void acceptCall(String roomId, String calleeId) {
     if (!_isConnected || _socket == null) return;
-    _socket!.emit('call-accept', {
-      'roomId': roomId,
-      'calleeId': calleeId,
-    });
+    _socket!.emit('call-accept', {'roomId': roomId, 'calleeId': calleeId});
   }
 
   /// Reject or end call
   void rejectCall(String roomId, String userId) {
     if (!_isConnected || _socket == null) return;
-    _socket!.emit('call-reject', {
-      'roomId': roomId,
-      'userId': userId,
-    });
+    _socket!.emit('call-reject', {'roomId': roomId, 'userId': userId});
   }
 
   /// Send WebRTC signaling data
   void sendWebRTCSignal(String roomId, Map<String, dynamic> signalData) {
     if (!_isConnected || _socket == null) return;
-    _socket!.emit('webrtc-signal', {
-      'roomId': roomId,
-      'signal': signalData,
-    });
+    _socket!.emit('webrtc-signal', {'roomId': roomId, 'signal': signalData});
   }
 
   /// Send Emergency Alert to Volunteers
@@ -470,7 +545,7 @@ class WebSocketService {
       debugPrint('WebSocket not connected');
       return;
     }
-    
+
     _socket!.emit('emergency-alert', {
       'userId': userId,
       'categoryId': categoryId,
@@ -480,7 +555,9 @@ class WebSocketService {
       'isThaiMhungEnabled': isThaiMhungEnabled,
       'incidentId': incidentId, // ✅ ส่ง incidentId ไปยัง server
     });
-    debugPrint('Sent emergency alert for category: $categoryId, incidentId: $incidentId, thaiMhung: $isThaiMhungEnabled');
+    debugPrint(
+      'Sent emergency alert for category: $categoryId, incidentId: $incidentId, thaiMhung: $isThaiMhungEnabled',
+    );
   }
 
   /// Create emergency health release session on the Node.js server.
@@ -516,7 +593,9 @@ class WebSocketService {
       );
       return null;
     } catch (e) {
-      debugPrint('WebSocketService: createEmergencyHealthReleaseSession error: $e');
+      debugPrint(
+        'WebSocketService: createEmergencyHealthReleaseSession error: $e',
+      );
       return null;
     }
   }
@@ -601,7 +680,7 @@ class WebSocketService {
     String? responseId,
   }) {
     if (!_isConnected || _socket == null) return;
-    
+
     _socket!.emit('rescue-status-update', {
       'videoId': videoId,
       'volunteerId': volunteerId,
@@ -655,7 +734,7 @@ class WebSocketService {
       'professionName': professionName,
     });
   }
-  
+
   /// Disconnect from server
   void disconnect() {
     _stopHeartbeat();
@@ -674,7 +753,9 @@ class WebSocketService {
     _stopHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 25), (timer) {
       if (_isConnected && _socket != null) {
-        _socket!.emit('ping-heartbeat', {'timestamp': DateTime.now().toIso8601String()});
+        _socket!.emit('ping-heartbeat', {
+          'timestamp': DateTime.now().toIso8601String(),
+        });
       }
     });
   }
@@ -684,7 +765,7 @@ class WebSocketService {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
   }
-  
+
   /// Dispose resources
   /// Join a video room to receive interactions
   void joinVideoRoom(String videoId) {
@@ -698,8 +779,25 @@ class WebSocketService {
     _socket!.emit('leave-room', {'roomId': 'video-$videoId'});
   }
 
+  /// Record one video open as a cumulative view.
+  void recordVideoView(String videoId) {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null || !_isConnected || _socket == null) return;
+    _socket!.emit('video-interaction', {
+      'videoId': videoId,
+      'userId': userId,
+      'type': 'view',
+      'value': 0,
+    });
+  }
+
   /// Send a video interaction (like, gift)
-  void sendVideoInteraction(String videoId, String userId, String type, {int value = 0}) {
+  void sendVideoInteraction(
+    String videoId,
+    String userId,
+    String type, {
+    int value = 0,
+  }) {
     if (!_isConnected || _socket == null) return;
     _socket!.emit('video-interaction', {
       'videoId': videoId,
@@ -777,7 +875,7 @@ class WebSocketService {
     String? victimId,
   }) {
     if (!_isConnected || _socket == null) return;
-    
+
     _socket!.emit('rescue-status-update', {
       'videoId': videoId,
       'volunteerId': volunteerId,

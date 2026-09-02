@@ -99,7 +99,10 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         if (video.localFilePath != null && File(video.localFilePath!).existsSync()) {
           _initializePlayer(video.localFilePath!, isLocal: true);
         } else if (video.bunnyUrl != null && video.bunnyUrl!.isNotEmpty) {
-          _initializePlayer(video.bunnyUrl!, isLocal: false);
+          _initializePlayer(
+            ServiceLocator.instance.videoRepository.ensureFullUrl(video.bunnyUrl!),
+            isLocal: false,
+          );
         }
       }
       // หมายเหตุ: _loadGalleryPhotos() ทำหน้าที่ดึงภาพไทยมุงที่ด้านล่างแล้ว (line 109)

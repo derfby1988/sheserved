@@ -409,6 +409,89 @@ static String? _normalizeLocalUrl(String? url) {
 
 ---
 
+### 🕒 Trending Card Timestamp Display Policy (Updated 2026-09-01)
+
+> **ไฟล์ที่เกี่ยวข้อง:** `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart`, `websocket-server/routes/video.js`
+
+การ์ดเหตุการณ์ใน Trending Panel ต้องแสดงเวลาตามกฎต่อไปนี้ — **ทุกกรณีต้องใช้ `video.createdAt` ของผู้สร้างสื่อเท่านั้น** ห้ามใช้ `updated_at`, เวลาเซิร์ฟเวอร์ปัจจุบัน, เวลาประมวลผล, หรือเวลา generate thumbnail แทน
+
+#### รูปแบบการแสดงผล
+
+| อายุสื่อ | ข้อความที่แสดง | ตัวอย่าง |
+|---------|---------------|---------|
+| < 1 นาที | `เมื่อครู่นี้` | `เมื่อครู่นี้` |
+| 1–59 นาที | `N นาทีที่แล้ว` | `15 นาทีที่แล้ว` |
+| ≥ 1 ชั่วโมง | วันที่และเวลาแบบไทย (24 ชม.) | `25 พ.ค.69 12.22 น.` |
+
+#### Logic ฝั่ง Flutter
+
+```dart
+final createdAt = AppConfig.toThailand(video.createdAt);
+final now = AppConfig.thailandNow;
+final diff = now.difference(createdAt);
+
+final dateStr =
+    diff.inMinutes >= 0 && diff.inMinutes < 60
+      ? diff.inMinutes == 0
+          ? 'เมื่อครู่นี้'
+          : '${diff.inMinutes} นาทีที่แล้ว'
+      : _formatThaiDate(createdAt);
+```
+
+`_formatThaiDate()` ใช้:
+- เดือนย่อภาษาไทย (พ.ค., มิ.ย., ...)
+- ปี พ.ศ. (ค.ศ. + 543) แสดงเป็นเลข 2 หลักท้าย (`69` สำหรับ 2569)
+- เวลา 24 ชั่วโมง คั่นด้วยจุด
+- คำลงท้าย `น.`
+
+#### ฝั่ง Backend (Mandatory)
+
+- Query `/api/videos/emergency/list` ต้อง SELECT `v.created_at` ออกมาด้วยเสมอ
+- Cache key ของ emergency list ต้องถูก version เพื่อป้องกัน client ได้ response เก่าที่ไม่มี `created_at`
+- หาก `created_at` หายไป Flutter จะ fall back ไปใช้ `DateTime.now()` ซึ่งผิด — ต้องไม่เกิดกรณีนี้
+
+#### ข้อควรระวัง
+
+- ข้อความ relative (`เมื่อครู่นี้`, `N นาทีที่แล้ว`) เปลี่ยนได้ตามเวลาที่ผ่านไป แต่ต้องคำนวณจาก `created_at` ที่คงที่เท่านั้น
+- รูปแบบ absolute (`25 พ.ค.69 12.22 น.`) ต้องคงที่ ไม่เปลี่ยนตามเวลา
+- ใช้พฤติกรรมเดียวกันทั้งการ์ดวิดีโอและการ์ดภาพ emergency
+
+---
+
+### 👁️ Cumulative Viewer Count Badge (Updated 2026-09-01)
+
+> **ไฟล์ที่เกี่ยวข้อง:** `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart`, `lib/services/websocket_service.dart`, `websocket-server/server.js`, `websocket-server/routes/video.js`
+
+การ์ดใน Trending Panel แสดง **จำนวนผู้เข้าชมสะสม (Cumulative Viewer Count)** ที่มุมขวาบนของการ์ด — ไม่ใช่จำนวนผู้ชมพร้อมกันในห้อง (Concurrent Viewers)
+
+#### คำจำกัดความ (แยกจากกันชัดเจน)
+
+| แนวคิด | ความหมาย | ฟิลด์/Event |
+|--------|---------|-------------|
+| **Cumulative Viewer Count** | ยอดรวมผู้เคยเปิดดูวิดีโอตั้งแต่สร้าง | `cached_view_count` → `viewer_count` (API), `_viewerCount` (Flutter), event `cumulative-viewer-count` |
+| **Concurrent Viewers** | จำนวนผู้ชมที่อยู่ในห้องวิดีโอ ณ ขณะนั้น | event `viewer-count` |
+
+#### Data Flow
+
+1. ผู้ใช้เปิด/เลือกการ์ดวิดีโอ → Flutter ส่ง `record-view` ผ่าน WebSocket
+2. Server insert row `view` ลง `video_interactions`
+3. Database trigger `trg_update_interaction_counts` อัปเดต `cached_view_count` ในตาราง `videos` อัตโนมัติ
+4. Server อ่าน `cached_view_count` ล่าสุดจาก PostgreSQL แล้ว broadcast `cumulative-viewer-count` ให้ทุก client
+5. Trending Panel รับ event และอัปเดต badge ทันที
+
+#### กัน Double Count
+
+- ห้ามเพิ่ม `cached_view_count` ในโค้ดฝั่ง server ด้วยมือ — ให้ trigger เป็นคนเพิ่มอย่างเดียว
+- `TrendingPanelWidget` มี guard กันบันทึกซ้ำเมื่อเลือกการ์ดเดิมซ้ำ หรือระหว่าง card transition
+- หนึ่งการเลือกการ์ด = หนึ่งการนับ view
+
+#### ฝั่ง Backend
+
+- Query `/api/videos/emergency/list` ต้อง SELECT `v.cached_view_count AS viewer_count`
+- ฟอร์แมตตัวเลขแบบ compact ฝั่ง Flutter: `999`, `1.2K`, `1.5M`
+
+---
+
 ### ⚡ Quick Commands Cheatsheet
 
 ```bash
@@ -494,6 +577,82 @@ module.exports = {
 - หลังแก้ไฟล์ `queues/index.js` ให้รัน `node -c server.js` เพื่อ syntax check ก่อน commit
 - ตรวจสอบว่าฟังก์ชันใหม่ไม่ถูกวาง nested ใน `shutdownAll()`, `getHealthSnapshot()` หรือ function อื่น
 - ใช้ `eslint` หรือตรวจสอบ indentation ว่า `async function` อยู่ระดับเดียวกับ `module.exports`
+
+---
+
+### 🐛 Video Player `bunnyUrl` IP Normalization Bug (Fixed 2026-09-01)
+
+> **วันที่พบ:** 2026-09-01 | **สถานะ:** ✅ แก้ไขแล้ว | **ไฟล์:** `lib/features/video/data/repositories/video_repository.dart`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`
+
+#### อาการ
+หลังเปลี่ยน IP เครื่องหลัก (เช่นจาก `172.20.10.13` เป็น `192.168.1.129`) แล้วอัปเดต `AppConfig.mainMachineIp` กับ `LOCAL_API_URL` ทั้งหมด:
+- Thumbnail บน Trending Card โหลดได้ (Flutter `_normalizeLocalUrl()` ทำงาน)
+- API / WebSocket ต่อได้
+- แต่ **Video Player (ExoPlayer/Android)** ไม่สามารถเล่นวิดีโอได้ และ logcat แสดง:
+  ```
+  java.net.SocketTimeoutException: failed to connect to /172.20.10.13 (port 8080) from /192.168.1.126 (port ...) after 8000ms
+  ```
+
+#### สาเหตุ
+1. `bunnyUrl` ที่ได้จาก DB ยังเก็บ URL เก่า `http://172.20.10.13:8080/temp/videos/.../index.m3u8`
+2. `emergency_navigation_logic.dart` ส่ง `video.bunnyUrl!` เข้า `_initializePlayer(...)` โดยตรง โดยไม่ผ่าน normalization
+3. `_ensureFullUrl()` ใน `video_repository.dart` แก้เฉพาะ `localhost:3000` และ `http://...:3000` ไม่ได้จัดการ `http://...:8080` (Caddy Phase 1) ทำให้ URL HLS ยังชี้ไป IP เก่า
+
+#### วิธีแก้ไข
+**1. ปรับ `_ensureFullUrl()` ให้ normalize ทุก local IP/hostname** (`lib/features/video/data/repositories/video_repository.dart`):
+```dart
+String _ensureFullUrl(String url) {
+  if (url.isEmpty) return '';
+  final baseUrl = AppConfig.localApiUrl;
+
+  // ✅ CDN (https) ไม่ต้องแตะต้อง
+  if (url.startsWith('https://')) return url;
+
+  // ✅ Normalize ทุก local URL ที่ชี้ไป backend เก่า
+  // Phase 1 ใช้ Caddy ผ่าน AppConfig.localApiUrl (เช่น http://192.168.1.129:8080)
+  if (url.startsWith('http://')) {
+    // กรณี localhost ทุก port
+    if (url.startsWith('http://localhost')) {
+      return url.replaceFirst(
+        RegExp(r'^http://localhost(:\d+)?'),
+        baseUrl,
+      );
+    }
+
+    // กรณี http://172.20.10.13:8080/... หรือ http://192.168.0.116:3000/...
+    // แทนที IPv4:port เก่าด้วย Caddy endpoint ปัจจุบัน
+    return url.replaceFirst(
+      RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
+      baseUrl,
+    );
+  }
+
+  // ✅ Relative path → เติม baseUrl
+  String fullUrl;
+  if (url.startsWith('/')) {
+    fullUrl = '$baseUrl$url';
+  } else {
+    fullUrl = '$baseUrl/$url';
+  }
+
+  return fullUrl;
+}
+```
+
+**2. ส่ง `bunnyUrl` ผ่าน `ensureFullUrl()` ก่อนเข้า video player** (`lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`):
+```dart
+} else if (video.bunnyUrl != null && video.bunnyUrl!.isNotEmpty) {
+  _initializePlayer(
+    ServiceLocator.instance.videoRepository.ensureFullUrl(video.bunnyUrl!),
+    isLocal: false,
+  );
+}
+```
+
+#### ป้องกัน
+- เมื่อแก้ IP ตาม Runbook ต้องทดสอบไม่ใช่แค่ thumbnail/API แต่ต้อง **ทดสอบเล่นวิดีโอจริง** (ExoPlayer)
+- ค้นหา `\.bunnyUrl` หรือ `_initializePlayer\(.*video\.bunnyUrl` ทั้งหมดใน project ให้ผ่าน `ensureFullUrl()` หรือ `_normalizeLocalUrl()` เสมอ
+- รักษา `AppConfig.localApiUrl` ให้ชี้ไป Caddy endpoint (`:8080`) ไม่ใช่ Node.js port `:3000` ตรง ๆ
 
 ---
 

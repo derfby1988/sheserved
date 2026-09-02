@@ -239,6 +239,7 @@ const {
   cacheAside,
   invalidateCache,
   invalidateCacheMany,
+  invalidateCachePattern,
   getSession,
   setSession,
   deleteSession,
@@ -820,6 +821,19 @@ io.on('connection', (socket) => {
              VALUES ($1, $2, $3, $4, NOW())`,
             [videoId, userId, type, value || 0]
           );
+
+          if (type === 'view') {
+            // The database trigger updates cached_view_count after the INSERT.
+            // Do not increment it here, otherwise one view is counted twice.
+            const countResult = await pool.query(
+              `SELECT cached_view_count FROM videos WHERE id = $1`,
+              [videoId]
+            );
+            const cumulativeCount = Number(countResult.rows[0]?.cached_view_count || 0);
+            await invalidateCachePattern('video:emergency:list:*');
+            io.emit('cumulative-viewer-count', { videoId, count: cumulativeCount });
+            console.log(`[CumulativeViewers] ${videoId}: ${cumulativeCount}`);
+          }
         }
 
         // [Donation Integration]: ถ้าเป็นการบริจาค (gift) ให้อัปเดต donation_request ที่เกี่ยวข้อง

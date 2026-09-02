@@ -34,16 +34,20 @@ class VideoRepository {
   Future<List<Video>> getVideos({String? type}) async {
     // Attempt Local API first, since FFmpeg system is local
     try {
-      final url = type != null 
-          ? '${AppConfig.localApiUrl}/api/videos?type=$type' 
+      final url = type != null
+          ? '${AppConfig.localApiUrl}/api/videos?type=$type'
           : '${AppConfig.localApiUrl}/api/videos';
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => Video.fromJson(json)).toList();
       }
     } catch (e) {
-      debugPrint('VideoRepository: Local fetch failed (this is normal if server is off) - $e');
+      debugPrint(
+        'VideoRepository: Local fetch failed (this is normal if server is off) - $e',
+      );
     }
 
     var query = _client.from('videos').select();
@@ -57,28 +61,36 @@ class VideoRepository {
   }
 
   /// ดึงวิดีโอฉุกเฉินที่กำลัง Live อยู่
-  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos) 
+  /// 📸 ดึงภาพไทยมุงจากตารางจริง (thai_mhung_photos)
   /// @param videoId คือ incident (emergency) video ID ที่ภาพเหล่านั้นอ้างอิง
-  Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(String videoId, {int page = 1, int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> getThaiMhungGalleryPhotos(
+    String videoId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
     try {
       final List<Map<String, dynamic>> finalPhotos = [];
-      
+
       // === 1. Local API Fast-Path (Dedicated Pagination Endpoint) ===
       try {
         final response = await http
-            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gallery?page=$page&limit=$limit'))
+            .get(
+              Uri.parse(
+                '${AppConfig.localApiUrl}/api/videos/$videoId/gallery?page=$page&limit=$limit',
+              ),
+            )
             .timeout(const Duration(seconds: 10));
         if (response.statusCode == 200) {
           final List data = jsonDecode(response.body);
           for (final v in data) {
-             final url = _ensureFullUrl(v['photo_url']?.toString() ?? '');
-             finalPhotos.add({
-               'id': v['id'],
-               'photo_url': url,
-               'created_at': v['created_at'],
-               'user_id': v['user_id'],
-               'blur_status': v['blur_status'] ?? 'completed',
-             });
+            final url = _ensureFullUrl(v['photo_url']?.toString() ?? '');
+            finalPhotos.add({
+              'id': v['id'],
+              'photo_url': url,
+              'created_at': v['created_at'],
+              'user_id': v['user_id'],
+              'blur_status': v['blur_status'] ?? 'completed',
+            });
           }
         }
       } catch (e) {
@@ -95,10 +107,12 @@ class VideoRepository {
               .eq('video_id', videoId)
               .order('created_at', ascending: false)
               .range(offset, offset + limit - 1);
-          
+
           final results1 = List<Map<String, dynamic>>.from(response1 as List);
           if (results1.isNotEmpty) {
-            debugPrint('VideoRepository: ✅ Gallery loaded ${results1.length} photos exclusively for incident $videoId');
+            debugPrint(
+              'VideoRepository: ✅ Gallery loaded ${results1.length} photos exclusively for incident $videoId',
+            );
             for (var v in results1) {
               finalPhotos.add({
                 ...v,
@@ -108,7 +122,9 @@ class VideoRepository {
             }
           }
         } catch (e) {
-          debugPrint('VideoRepository: Supabase thai_mhung_photos fetch failed: $e');
+          debugPrint(
+            'VideoRepository: Supabase thai_mhung_photos fetch failed: $e',
+          );
         }
       }
 
@@ -123,7 +139,13 @@ class VideoRepository {
   Future<List<Video>> getEmergencyVideos({int page = 1, int limit = 20}) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit')).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit',
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => Video.fromJson(json)).toList();
@@ -148,7 +170,10 @@ class VideoRepository {
     final response = await _client
         .from('videos')
         .select()
-        .eq('type', 'thai_mhung_photo') // แก้จาก 'emergency_photo' → ให้ตรงกับค่าที่บันทึกจริง
+        .eq(
+          'type',
+          'thai_mhung_photo',
+        ) // แก้จาก 'emergency_photo' → ให้ตรงกับค่าที่บันทึกจริง
         .eq('category_id', categoryId)
         .order('created_at', ascending: false)
         .limit(10);
@@ -159,7 +184,9 @@ class VideoRepository {
   Future<Video?> getVideoById(String id) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id')).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id'))
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return Video.fromJson(jsonDecode(response.body));
       }
@@ -180,7 +207,13 @@ class VideoRepository {
   Future<List<VideoGpsTrack>> getGpsTracks(String videoId) async {
     // Attempt Local API first
     try {
-      final response = await http.get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/gps-tracks')).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/$videoId/gps-tracks',
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         return data.map((json) => VideoGpsTrack.fromJson(json)).toList();
@@ -215,15 +248,17 @@ class VideoRepository {
   }) async {
     // ---- Primary Path: Local API ----
     try {
-      final response = await http.post(
-        Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'responderId': responderId,
-          'latitude': latitude,
-          'longitude': longitude,
-        }),
-      ).timeout(const Duration(seconds: 5));
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'responderId': responderId,
+              'latitude': latitude,
+              'longitude': longitude,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -240,40 +275,55 @@ class VideoRepository {
             'volunteer_start_lat': latitude,
             'volunteer_start_lng': longitude,
           }, onConflict: 'video_id, volunteer_id');
-          debugPrint('VideoRepository: ✅ Synced acceptIncident to Supabase (responseId=$responseId)');
+          debugPrint(
+            'VideoRepository: ✅ Synced acceptIncident to Supabase (responseId=$responseId)',
+          );
         } catch (syncErr) {
           // Sync ล้มเหลว ไม่ใช่ error ร้ายแรง — Local API ยังทำงานปกติ
-          debugPrint('VideoRepository: ⚠️ Supabase sync failed (non-critical): $syncErr');
+          debugPrint(
+            'VideoRepository: ⚠️ Supabase sync failed (non-critical): $syncErr',
+          );
         }
 
         return responseId;
       }
     } catch (e) {
-      debugPrint('VideoRepository: Local acceptIncident failed → fallback to Supabase: $e');
+      debugPrint(
+        'VideoRepository: Local acceptIncident failed → fallback to Supabase: $e',
+      );
     }
 
     // ---- Fallback Path: Supabase Cloud (เมื่อ Local API ไม่ตอบสนอง) ----
     try {
-      final result = await _client.from('incident_responses').insert({
-        'video_id': videoId,
-        'volunteer_id': responderId,
-        'status': 'en_route',
-        'accepted_at': AppConfig.currentUtc.toIso8601String(),
-        'volunteer_start_lat': latitude,
-        'volunteer_start_lng': longitude,
-      }).select('id').single();
+      final result = await _client
+          .from('incident_responses')
+          .insert({
+            'video_id': videoId,
+            'volunteer_id': responderId,
+            'status': 'en_route',
+            'accepted_at': AppConfig.currentUtc.toIso8601String(),
+            'volunteer_start_lat': latitude,
+            'volunteer_start_lng': longitude,
+          })
+          .select('id')
+          .single();
 
       debugPrint('VideoRepository: ✅ acceptIncident via Supabase fallback');
       return result['id']?.toString();
     } catch (supabaseErr) {
-      debugPrint('VideoRepository: ❌ Both Local and Supabase acceptIncident failed: $supabaseErr');
-      
+      debugPrint(
+        'VideoRepository: ❌ Both Local and Supabase acceptIncident failed: $supabaseErr',
+      );
+
       // ✅ FK violation (code 23503) = video exists only in Local DB, not synced to Supabase yet
       // → Return a generated local responseId so the UI can proceed without Supabase
       final errStr = supabaseErr.toString();
       if (errStr.contains('23503') || errStr.contains('foreign key')) {
-        final localResponseId = '${DateTime.now().millisecondsSinceEpoch}-local';
-        debugPrint('VideoRepository: ⚠️ Video is Local-only. Using local responseId: $localResponseId');
+        final localResponseId =
+            '${DateTime.now().millisecondsSinceEpoch}-local';
+        debugPrint(
+          'VideoRepository: ⚠️ Video is Local-only. Using local responseId: $localResponseId',
+        );
         return localResponseId;
       }
     }
@@ -293,7 +343,9 @@ class VideoRepository {
         'status': 'cancelled',
         'resolved_at': AppConfig.currentUtc.toIso8601String(),
       }, onConflict: 'video_id, volunteer_id');
-      debugPrint('VideoRepository: ✅ Synced rejectIncident to Supabase (cancelled)');
+      debugPrint(
+        'VideoRepository: ✅ Synced rejectIncident to Supabase (cancelled)',
+      );
     } catch (e) {
       debugPrint('VideoRepository: ❌ Supabase rejectIncident failed: $e');
     }
@@ -302,7 +354,9 @@ class VideoRepository {
   /// Accept an emergency rescue job — Legacy method ใช้ Supabase โดยตรง
   /// ✅ Deprecated: ใช้ acceptIncident() แทน (รองรับ Dual-Write)
   /// คงไว้เพื่อ backward compatibility กับโค้ดเก่าที่ยังเรียกใช้อยู่
-  @Deprecated('Use acceptIncident() instead. It now supports Dual-Write (Local + Supabase Sync)')
+  @Deprecated(
+    'Use acceptIncident() instead. It now supports Dual-Write (Local + Supabase Sync)',
+  )
   Future<String> acceptRescue({
     required String videoId,
     required String volunteerId,
@@ -310,18 +364,23 @@ class VideoRepository {
     double? startLng,
   }) async {
     try {
-      final response = await _client.from('incident_responses').insert({
-        'video_id': videoId,
-        'volunteer_id': volunteerId,
-        'status': 'accepted',
-        'accepted_at': AppConfig.currentUtc.toIso8601String(),
-        'volunteer_start_lat': startLat,
-        'volunteer_start_lng': startLng,
-      }).select('id').single();
+      final response = await _client
+          .from('incident_responses')
+          .insert({
+            'video_id': videoId,
+            'volunteer_id': volunteerId,
+            'status': 'accepted',
+            'accepted_at': AppConfig.currentUtc.toIso8601String(),
+            'volunteer_start_lat': startLat,
+            'volunteer_start_lng': startLng,
+          })
+          .select('id')
+          .single();
 
       return response['id'] as String;
     } catch (e) {
-      if (e.toString().contains('duplicate') || e.toString().contains('unique')) {
+      if (e.toString().contains('duplicate') ||
+          e.toString().contains('unique')) {
         throw Exception('คุณได้รับงานนี้ไปแล้ว');
       }
       rethrow;
@@ -332,19 +391,25 @@ class VideoRepository {
   Future<void> addInteraction(VideoInteraction interaction) async {
     if (AppConfig.useLocalDatabase) {
       try {
-        final url = Uri.parse('${AppConfig.localApiUrl}/api/videos/${interaction.videoId}/interactions');
-        final response = await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(interaction.toJson()),
-        ).timeout(const Duration(seconds: 10));
+        final url = Uri.parse(
+          '${AppConfig.localApiUrl}/api/videos/${interaction.videoId}/interactions',
+        );
+        final response = await http
+            .post(
+              url,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(interaction.toJson()),
+            )
+            .timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           debugPrint('VideoRepository: Recorded interaction locally');
           return;
         }
       } catch (e) {
-        debugPrint('VideoRepository: Local interaction failed, falling back to Supabase: $e');
+        debugPrint(
+          'VideoRepository: Local interaction failed, falling back to Supabase: $e',
+        );
       }
     }
 
@@ -359,12 +424,18 @@ class VideoRepository {
     if (AppConfig.useLocalDatabase) {
       try {
         final response = await http
-            .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/interactions'))
+            .get(
+              Uri.parse(
+                '${AppConfig.localApiUrl}/api/videos/$videoId/interactions',
+              ),
+            )
             .timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          debugPrint('VideoRepository: ✅ getInteractionSummary from Local API: $data');
+          debugPrint(
+            'VideoRepository: ✅ getInteractionSummary from Local API: $data',
+          );
           return {
             'likes': data['likes'] ?? 0,
             'donations': (data['donations'] as num?)?.toDouble() ?? 0.0,
@@ -372,7 +443,9 @@ class VideoRepository {
           };
         }
       } catch (e) {
-        debugPrint('VideoRepository: Local getInteractionSummary failed → fallback to Supabase: $e');
+        debugPrint(
+          'VideoRepository: Local getInteractionSummary failed → fallback to Supabase: $e',
+        );
       }
     }
 
@@ -413,7 +486,9 @@ class VideoRepository {
     try {
       final response = await http
           .post(
-            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/interactions'),
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/$videoId/interactions',
+            ),
             headers: {'Content-Type': 'application/json'},
             body: '{"user_id":"$userId","type":"like","value":0}',
           )
@@ -435,7 +510,11 @@ class VideoRepository {
   Future<bool> getLikeStatus(String videoId, String userId) async {
     try {
       final response = await http
-          .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/status?userId=$userId'))
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/$videoId/likes/status?userId=$userId',
+            ),
+          )
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -452,7 +531,11 @@ class VideoRepository {
   Future<List<Map<String, dynamic>>> getLikeTrend(String videoId) async {
     try {
       final response = await http
-          .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/likes/trend'))
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/$videoId/likes/trend',
+            ),
+          )
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
@@ -464,23 +547,26 @@ class VideoRepository {
     return [];
   }
 
-
-  RealtimeChannel subscribeToInteractions(String videoId, void Function(Map<String, dynamic> payload) onInsert) {
-    return _client.channel('public:video_interactions:$videoId')
-      .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'video_interactions',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'video_id',
-          value: videoId,
-        ),
-        callback: (payload) {
-          onInsert(payload.newRecord);
-        },
-      )
-      .subscribe();
+  RealtimeChannel subscribeToInteractions(
+    String videoId,
+    void Function(Map<String, dynamic> payload) onInsert,
+  ) {
+    return _client
+        .channel('public:video_interactions:$videoId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'video_interactions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'video_id',
+            value: videoId,
+          ),
+          callback: (payload) {
+            onInsert(payload.newRecord);
+          },
+        )
+        .subscribe();
   }
 
   /// Stream สำหรับ Real-time updates ของวิดีโอ
@@ -511,14 +597,19 @@ class VideoRepository {
       'POST',
       Uri.parse('${AppConfig.localApiUrl}/api/videos/upload'),
     );
+    // The server authenticates upload routes before multipart fields are parsed.
+    request.headers['x-user-id'] = userId;
 
     request.fields['userId'] = userId;
-    request.fields['title'] = 'Emergency Incident ${AppConfig.thailandNow.toIso8601String()}';
+    request.fields['title'] =
+        'Emergency Incident ${AppConfig.thailandNow.toIso8601String()}';
     request.fields['type'] = 'emergency';
     if (categoryId != null) request.fields['categoryId'] = categoryId;
     request.fields['gpsTracks'] = jsonEncode(gpsTracks);
 
-    request.files.add(await http.MultipartFile.fromPath('video', videoFile.path));
+    request.files.add(
+      await http.MultipartFile.fromPath('video', videoFile.path),
+    );
 
     var response = await request.send();
 
@@ -551,7 +642,9 @@ class VideoRepository {
     final int quota = isThaiMhung ? maxThaiMhungPhotos : maxEmergencyPhotos;
     if (photoFiles.length > quota) {
       final modeName = isThaiMhung ? 'ไทยมุง' : 'Emergency';
-      throw Exception("โหมด$modeName อัปโหลดรูปภาพได้สูงสุด $quota รูปต่อครั้ง");
+      throw Exception(
+        "โหมด$modeName อัปโหลดรูปภาพได้สูงสุด $quota รูปต่อครั้ง",
+      );
     }
 
     if (photoFiles.isEmpty) {
@@ -564,10 +657,15 @@ class VideoRepository {
       'POST',
       Uri.parse('${AppConfig.localApiUrl}/api/videos/upload-photos'),
     );
+    // The server authenticates upload routes before multipart fields are parsed.
+    request.headers['x-user-id'] = userId;
 
     request.fields['userId'] = userId;
-    request.fields['title'] = 'Emergency Incident Photos ${AppConfig.thailandNow.toIso8601String()}';
-    request.fields['type'] = isThaiMhung ? 'thai_mhung_photo' : 'emergency_photo';
+    request.fields['title'] =
+        'Emergency Incident Photos ${AppConfig.thailandNow.toIso8601String()}';
+    request.fields['type'] = isThaiMhung
+        ? 'thai_mhung_photo'
+        : 'emergency_photo';
     // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
     request.fields['isThaiMhung'] = isThaiMhung.toString();
     if (categoryId != null) request.fields['categoryId'] = categoryId;
@@ -586,8 +684,9 @@ class VideoRepository {
 
     final respStr = await response.stream.bytesToString();
     final data = jsonDecode(respStr);
-    final String? vId = data['video']?['id']?.toString() ?? data['id']?.toString();
-    
+    final String? vId =
+        data['video']?['id']?.toString() ?? data['id']?.toString();
+
     // Phase 6.12: Return full response for async blur UI
     return {
       'videoId': vId,
@@ -605,21 +704,27 @@ class VideoRepository {
       // ดึงวิดีโอที่มีสถานะ ready และเป็นประเภท emergency หรือ normal
       final response = await _client
           .from('videos')
-          .select('id, user_id, type, status, video_gps_tracks(latitude, longitude, timestamp_offset)')
+          .select(
+            'id, user_id, type, status, video_gps_tracks(latitude, longitude, timestamp_offset)',
+          )
           .or('status.eq.ready,status.eq.processing')
           .order('created_at', ascending: false)
           .limit(20);
 
       final List<Map<String, dynamic>> locations = [];
-      
+
       for (var video in response as List) {
         final tracks = video['video_gps_tracks'] as List?;
         if (tracks != null && tracks.isNotEmpty) {
           // ใช้พิกัดล่าสุด (ที่มี timestamp_offset มากที่สุด)
-          final latestTrack = tracks.reduce((curr, next) => 
-            (curr['timestamp_offset'] as int) > (next['timestamp_offset'] as int) ? curr : next
+          final latestTrack = tracks.reduce(
+            (curr, next) =>
+                (curr['timestamp_offset'] as int) >
+                    (next['timestamp_offset'] as int)
+                ? curr
+                : next,
           );
-          
+
           locations.add({
             'videoId': video['id'],
             'userId': video['user_id'],
@@ -678,8 +783,13 @@ class VideoRepository {
 
         final tracks = video['video_gps_tracks'] as List?;
         if (tracks != null && tracks.isNotEmpty) {
-          final latestTrack = tracks.reduce((curr, next) =>
-              (curr['timestamp_offset'] as int) > (next['timestamp_offset'] as int) ? curr : next);
+          final latestTrack = tracks.reduce(
+            (curr, next) =>
+                (curr['timestamp_offset'] as int) >
+                    (next['timestamp_offset'] as int)
+                ? curr
+                : next,
+          );
 
           locations.add({
             'videoId': videoId,
@@ -717,25 +827,31 @@ class VideoRepository {
       'status': status,
       'updated_at': AppConfig.currentUtc.toIso8601String(),
     };
-    
-    if (status == 'arrived') updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
+
+    if (status == 'arrived')
+      updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
     if (status == 'resolved' || status == 'cancelled') {
-        updates['resolved_at'] = AppConfig.currentUtc.toIso8601String();
+      updates['resolved_at'] = AppConfig.currentUtc.toIso8601String();
     }
     if (notes != null) updates['notes'] = notes;
 
-    await _client.from('incident_responses').update(updates).eq('id', responseId);
+    await _client
+        .from('incident_responses')
+        .update(updates)
+        .eq('id', responseId);
   }
 
   /// Fetch the volunteer's active rescues to persist state
-  Future<List<Map<String, dynamic>>> getActiveRescues(String volunteerId) async {
+  Future<List<Map<String, dynamic>>> getActiveRescues(
+    String volunteerId,
+  ) async {
     final response = await _client
         .from('incident_responses')
         .select('*, videos(*)')
         .eq('volunteer_id', volunteerId)
         .inFilter('status', ['accepted', 'arrived'])
         .order('accepted_at', ascending: false);
-    
+
     return List<Map<String, dynamic>>.from(response as List);
   }
 
@@ -749,7 +865,7 @@ class VideoRepository {
           .order('timestamp_offset', ascending: false)
           .limit(1)
           .maybeSingle();
-      
+
       if (response != null) {
         double parseDouble(dynamic value) {
           if (value == null) return 0.0;
@@ -769,14 +885,19 @@ class VideoRepository {
       return null;
     }
   }
-  
+
   /// ตรวจสอบว่าวิดีโอรายการใดบ้างที่มีจิตอาสาในสาขานั้นๆ รับงานไปแล้ว (ใช้สำหรับกรองในหน้า Home)
-  Future<Set<String>> getTakenIncidentVideoIdsByProfession(List<String> videoIds, String professionId) async {
+  Future<Set<String>> getTakenIncidentVideoIdsByProfession(
+    List<String> videoIds,
+    String professionId,
+  ) async {
     if (videoIds.isEmpty) return {};
     try {
       final response = await _client
           .from('incident_responses')
-          .select('video_id, users:volunteer_id(user_group_roles(profession_id))')
+          .select(
+            'video_id, users:volunteer_id(user_group_roles(profession_id))',
+          )
           .inFilter('video_id', videoIds)
           .inFilter('status', ['accepted', 'arrived']);
 
@@ -784,7 +905,7 @@ class VideoRepository {
       for (var row in response as List) {
         final videoId = row['video_id'] as String?;
         final userData = row['users'];
-        
+
         String? responderProfId;
         if (userData is Map && userData['user_group_roles'] != null) {
           final roles = userData['user_group_roles'];
@@ -807,12 +928,14 @@ class VideoRepository {
   }
 
   /// Get list of responders (volunteers) currently rushing to this incident
-  Future<List<Map<String, dynamic>>> getIncidentResponders(String videoId) async {
+  Future<List<Map<String, dynamic>>> getIncidentResponders(
+    String videoId,
+  ) async {
     try {
       // Query incident_responses and join with consumer_profiles for name
-        final response = await _client
-            .from('incident_responses')
-            .select('''
+      final response = await _client
+          .from('incident_responses')
+          .select('''
               id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
               users:volunteer_id(
                 consumer_profiles(full_name),
@@ -822,9 +945,9 @@ class VideoRepository {
                 )
               )
             ''')
-            .eq('video_id', videoId)
-            .inFilter('status', ['accepted', 'arrived'])
-            .order('accepted_at', ascending: true);
+          .eq('video_id', videoId)
+          .inFilter('status', ['accepted', 'arrived'])
+          .order('accepted_at', ascending: true);
 
       final List<Map<String, dynamic>> responders = [];
       for (var row in response as List) {
@@ -871,7 +994,6 @@ class VideoRepository {
         });
       }
 
-
       return responders;
     } catch (e) {
       debugPrint('Error fetching incident responders: $e');
@@ -884,9 +1006,10 @@ class VideoRepository {
     required String userId,
     required bool isActive,
   }) async {
-    await _client.from('consumer_profiles').update({
-      'is_volunteer_active': isActive,
-    }).eq('user_id', userId);
+    await _client
+        .from('consumer_profiles')
+        .update({'is_volunteer_active': isActive})
+        .eq('user_id', userId);
   }
 
   /// Check if user has an active volunteer profession
@@ -912,30 +1035,33 @@ class VideoRepository {
     if (url.isEmpty) return '';
     final baseUrl = AppConfig.localApiUrl;
 
-    // ✅ ถ้ามี 'localhost' ให้เปลี่ยนเป็น IP ทันทีตาม AppConfig
-    if (url.contains('localhost:3000')) {
-      return url.replaceAll('http://localhost:3000', baseUrl);
-    }
+    // ✅ CDN (https) ไม่ต้องแตะต้อง
+    if (url.startsWith('https://')) return url;
 
-    // ✅ Auto-correct URL ที่ชี้ไป local server เดิม (IP/hostname + :3000)
-    // Phase 1 ใช้ Caddy ผ่าน AppConfig.localApiUrl (เช่น http://192.168.1.111:8080)
-    if (url.startsWith('http://') && url.contains(':3000')) {
-      final corrected = url.replaceFirst(
-        RegExp(r'^http://[^/]+:3000'),
+    // ✅ Normalize ทุก local URL ที่ชี้ไป backend เก่า
+    // Phase 1 ใช้ Caddy ผ่าน AppConfig.localApiUrl (เช่น http://192.168.1.129:8080)
+    if (url.startsWith('http://')) {
+      // กรณี localhost ทุก port
+      if (url.startsWith('http://localhost')) {
+        return url.replaceFirst(RegExp(r'^http://localhost(:\d+)?'), baseUrl);
+      }
+
+      // กรณี http://172.20.10.13:8080/... หรือ http://192.168.0.116:3000/...
+      // แทนที IPv4:port เก่าด้วย Caddy endpoint ปัจจุบัน
+      return url.replaceFirst(
+        RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
         baseUrl,
       );
-      return corrected;
     }
 
-    if (url.startsWith('http')) return url;
-    
+    // ✅ Relative path → เติม baseUrl
     String fullUrl;
     if (url.startsWith('/')) {
       fullUrl = '$baseUrl$url';
     } else {
       fullUrl = '$baseUrl/$url';
     }
-    
+
     return fullUrl;
   }
 }

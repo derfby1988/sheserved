@@ -9,7 +9,7 @@ DO $$ BEGIN
     CREATE TYPE victim_verify_status AS ENUM ('unverified', 'confirmed', 'disputed');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TABLE incident_victims (
+CREATE TABLE IF NOT EXISTS incident_victims (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     incident_id       UUID NOT NULL,
 
@@ -60,11 +60,11 @@ CREATE INDEX idx_victims_linked_user   ON incident_victims(linked_user_id) WHERE
 CREATE INDEX idx_victims_retention     ON incident_victims(retention_countdown_started_at)
     WHERE is_deleted = FALSE AND retention_countdown_started_at IS NOT NULL;
 
-CREATE UNIQUE INDEX idx_victims_no_dup
+CREATE UNIQUE INDEX IF NOT EXISTS idx_victims_no_dup
     ON incident_victims(incident_id, lower(first_name), lower(last_name))
     WHERE is_deleted = FALSE AND first_name IS NOT NULL AND last_name IS NOT NULL;
 
-ALTER TABLE incident_victims ADD CONSTRAINT chk_deceased_requires_confirmation
+ALTER TABLE incident_victims ADD CONSTRAINT IF NOT EXISTS chk_deceased_requires_confirmation
     CHECK (
         triage_level <> 'deceased'
         OR (deceased_confirmed_by IS NOT NULL
@@ -72,7 +72,7 @@ ALTER TABLE incident_victims ADD CONSTRAINT chk_deceased_requires_confirmation
             AND char_length(coalesce(deceased_reason, '')) >= 10)
     );
 
-ALTER TABLE incident_victims ADD CONSTRAINT chk_deceased_no_health_unlock
+ALTER TABLE incident_victims ADD CONSTRAINT IF NOT EXISTS chk_deceased_no_health_unlock
     CHECK (NOT (triage_level = 'deceased' AND health_data_consent_verified = TRUE));
 
 ALTER TABLE incident_victims DISABLE ROW LEVEL SECURITY;

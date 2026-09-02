@@ -77,7 +77,7 @@ function verifyToken(pool) {
 
     try {
       const result = await pool.query(
-        'SELECT id, is_active, role FROM users WHERE id = $1',
+        'SELECT id, is_active, user_category_id FROM users WHERE id = $1',
         [rawId]
       );
 
@@ -92,10 +92,10 @@ function verifyToken(pool) {
 
       req.user = {
         id: userRow.id,
-        role: userRow.role || 'consumer',
+        role: userRow.user_category_id || 'consumer',
       };
       req.userId = userRow.id;
-      req.userRole = userRow.role || 'consumer';
+      req.userRole = userRow.user_category_id || 'consumer';
 
       next();
     } catch (err) {

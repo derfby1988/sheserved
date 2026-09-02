@@ -38,8 +38,8 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
   // ── Anti-spam state ──
   DateTime? _lastMessageTime;
-  final int _cooldownSeconds = 3; 
-  final int _maxChars = 100; 
+  final int _cooldownSeconds = 3;
+  final int _maxChars = 100;
   final Map<int, bool> _expandedMessages = {};
 
   // ── Filter state ──
@@ -48,7 +48,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   @override
   void initState() {
     super.initState();
-    
+
     // ตั้งค่าเริ่มต้นของตัวกรอง: ให้เปิดขึ้นอัตโนมัติถ้าเป็นกลุ่มสิทธิ์สูง
     _isFilterActive = widget.role == 'reporter' || widget.role == 'responder';
 
@@ -57,11 +57,14 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     _chatSubscription = WebSocketService().emergencyChatStream.listen((data) {
       if (data['videoId'] == widget.videoId) {
         final incoming = Map<String, dynamic>.from(data);
-        final isDuplicate = _messages.any((m) => m['id'] != null && m['id'] == incoming['id']);
+        final isDuplicate = _messages.any(
+          (m) => m['id'] != null && m['id'] == incoming['id'],
+        );
         if (!isDuplicate) {
           setState(() => _messages.add(incoming));
           // ถ้าเปิดฟิลเตอร์อยู่ และข้อความใหม่ไม่ใช่กลุ่มที่ตรงกับฟิลเตอร์ ก็ไม่ต้องเลื่อนจอ
-          final isPrivilegedRole = incoming['role'] == 'reporter' || incoming['role'] == 'responder';
+          final isPrivilegedRole =
+              incoming['role'] == 'reporter' || incoming['role'] == 'responder';
           if (!_isFilterActive || isPrivilegedRole) {
             _scrollToBottom();
           }
@@ -69,14 +72,19 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       }
     });
 
-    WebSocketService().joinEmergencyChat(widget.videoId, widget.userId, widget.role);
+    WebSocketService().joinEmergencyChat(
+      widget.videoId,
+      widget.userId,
+      widget.role,
+    );
   }
 
   @override
   void didUpdateWidget(covariant EmergencyChatWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     // หากฐานะ (Role) ของผู้ใช้เปลี่ยนกลางคันเป็นกลุ่มสิทธิ์สูง ให้เปิดฟิลเตอร์แชทอัตโนมัติ
-    if (widget.role != oldWidget.role && (widget.role == 'reporter' || widget.role == 'responder')) {
+    if (widget.role != oldWidget.role &&
+        (widget.role == 'reporter' || widget.role == 'responder')) {
       setState(() {
         _isFilterActive = true;
       });
@@ -87,39 +95,50 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     try {
       final url = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat';
       debugPrint('[Chat] Loading history from: $url');
-      
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
-      debugPrint('[Chat] Response status: ${response.statusCode}, body length: ${response.body.length}');
-      
+
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 6));
+      debugPrint(
+        '[Chat] Response status: ${response.statusCode}, body length: ${response.body.length}',
+      );
+
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
         debugPrint('[Chat] Got ${data.length} active messages');
-        
+
         if (data.isNotEmpty) {
-          if (mounted) setState(() {
-            _messages.clear();
-            _messages.addAll(data.map((e) => Map<String, dynamic>.from(e)));
-            _isLoadingHistory = false;
-          });
+          if (mounted)
+            setState(() {
+              _messages.clear();
+              _messages.addAll(data.map((e) => Map<String, dynamic>.from(e)));
+              _isLoadingHistory = false;
+            });
           _scrollToBottom();
           return;
         }
       }
 
-      final archivedUrl = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat/archived';
+      final archivedUrl =
+          '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat/archived';
       debugPrint('[Chat] Trying archived endpoint: $archivedUrl');
-      
-      final archivedResponse = await http.get(Uri.parse(archivedUrl)).timeout(const Duration(seconds: 6));
-      
+
+      final archivedResponse = await http
+          .get(Uri.parse(archivedUrl))
+          .timeout(const Duration(seconds: 6));
+
       if (archivedResponse.statusCode == 200 && mounted) {
         final List<dynamic> archivedData = jsonDecode(archivedResponse.body);
         debugPrint('[Chat] Got ${archivedData.length} archived messages');
-        
-        if (mounted) setState(() {
-          _messages.clear();
-          _messages.addAll(archivedData.map((e) => Map<String, dynamic>.from(e)));
-          _isLoadingHistory = false;
-        });
+
+        if (mounted)
+          setState(() {
+            _messages.clear();
+            _messages.addAll(
+              archivedData.map((e) => Map<String, dynamic>.from(e)),
+            );
+            _isLoadingHistory = false;
+          });
         _scrollToBottom();
         return;
       }
@@ -159,7 +178,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
     if (text.length > _maxChars) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ข้อความยาวเกินไป (สูงสุด 100 ตัวอักษร)'), backgroundColor: Colors.orange),
+        const SnackBar(
+          content: Text('ข้อความยาวเกินไป (สูงสุด 100 ตัวอักษร)'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -167,10 +189,18 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     final now = DateTime.now();
     if (_lastMessageTime != null) {
       final difference = now.difference(_lastMessageTime!).inSeconds;
-      final requiredCooldown = (widget.role == 'reporter' || widget.role == 'responder') ? 1 : _cooldownSeconds;
+      final requiredCooldown =
+          (widget.role == 'reporter' || widget.role == 'responder')
+          ? 1
+          : _cooldownSeconds;
       if (difference < requiredCooldown) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('กรุณารอ ${requiredCooldown - difference} วินาทีก่อนส่งข้อความถัดไป'), backgroundColor: Colors.orange),
+          SnackBar(
+            content: Text(
+              'กรุณารอ ${requiredCooldown - difference} วินาทีก่อนส่งข้อความถัดไป',
+            ),
+            backgroundColor: Colors.orange,
+          ),
         );
         return;
       }
@@ -180,7 +210,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       final linkRegex = RegExp(r'(https?:\/\/|www\.)[^\s]+');
       if (linkRegex.hasMatch(text)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่อนุญาตให้ส่งลิงก์ในห้องแชท'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('ไม่อนุญาตให้ส่งลิงก์ในห้องแชท'),
+            backgroundColor: Colors.red,
+          ),
         );
         return;
       }
@@ -213,21 +246,33 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
   Color _roleColor(String role) {
     switch (role) {
-      case 'reporter':   return const Color(0xFFFF9500); // Orange
-      case 'responder':  return const Color(0xFF007AFF); // Blue
-      case 'thaimhung':  return const Color(0xFFFF2D78); // Pink
-      case 'viewer':     return const Color(0xFFFF2D78); // Pink (โหมดสนับสนุน)
-      default:           return const Color(0xFF8E8E93); // Grey
+      case 'reporter':
+        return const Color(0xFFFF9500); // Orange
+      case 'responder':
+        return const Color(0xFF007AFF); // Blue
+      case 'thaimhung':
+        return const Color(0xFFFF2D78); // Pink
+      case 'viewer':
+        return const Color(0xFFFF2D78); // Pink (โหมดสนับสนุน)
+      default:
+        return const Color(0xFF8E8E93); // Grey
     }
   }
 
   String _roleLabel(String role, String shortName, {String? professionName}) {
     switch (role) {
-      case 'reporter':  return 'ผู้แจ้งเหตุ';
-      case 'responder': return professionName?.isNotEmpty == true ? professionName! : 'เจ้าหน้าที่';
-      case 'thaimhung': return shortName;
-      case 'viewer':    return shortName;
-      default:          return shortName;
+      case 'reporter':
+        return 'ผู้แจ้งเหตุ';
+      case 'responder':
+        return professionName?.isNotEmpty == true
+            ? professionName!
+            : 'เจ้าหน้าที่';
+      case 'thaimhung':
+        return shortName;
+      case 'viewer':
+        return shortName;
+      default:
+        return shortName;
     }
   }
 
@@ -243,7 +288,14 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final isPrivilegedUser = widget.role == 'reporter' || widget.role == 'responder';
+    final isPrivilegedUser =
+        widget.role == 'reporter' || widget.role == 'responder';
+    const inputHeight = 48.0;
+    final inputSpacer =
+        ((MediaQuery.of(context).size.height * 0.1 - inputHeight) / 2).clamp(
+          0.0,
+          double.infinity,
+        );
 
     return Dismissible(
       key: ValueKey('chat_dismiss_${widget.videoId}'),
@@ -253,84 +305,110 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
-      children: [
-        // ── Top Bar ──
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            // ── Filter Toggle (สำหรับผู้แจ้งและเจ้าหน้าที่) ──
-            if (isPrivilegedUser) ...[
-              Container(
-                padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.45),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _isFilterActive ? Colors.lightBlueAccent.withOpacity(0.5) : Colors.white24, width: 0.5),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _isFilterActive ? Icons.filter_alt : Icons.filter_alt_outlined, 
-                      color: _isFilterActive ? Colors.lightBlueAccent : Colors.white70, 
-                      size: 14,
+        children: [
+          // ── Top Bar ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // ── Filter Toggle (สำหรับผู้แจ้งและเจ้าหน้าที่) ──
+              if (isPrivilegedUser) ...[
+                Container(
+                  padding: const EdgeInsets.only(
+                    left: 8,
+                    right: 2,
+                    top: 4,
+                    bottom: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.45),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _isFilterActive
+                          ? Colors.lightBlueAccent.withOpacity(0.5)
+                          : Colors.white24,
+                      width: 0.5,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'ผู้แจ้ง & จนท.',
-                      style: TextStyle(fontFamily: 'Sukhumvit Set', color: _isFilterActive ? Colors.white : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 2),
-                    SizedBox(
-                      height: 18,
-                      width: 32,
-                      child: Transform.scale(
-                        scale: 0.55,
-                        child: Switch(
-                          value: _isFilterActive,
-                          activeColor: Colors.white,
-                          activeTrackColor: Colors.blueAccent,
-                          inactiveThumbColor: Colors.white70,
-                          inactiveTrackColor: Colors.white24,
-                          onChanged: (val) {
-                            setState(() => _isFilterActive = val);
-                            if (val) _scrollToBottom();
-                          },
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isFilterActive
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_outlined,
+                        color: _isFilterActive
+                            ? Colors.lightBlueAccent
+                            : Colors.white70,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'ผู้แจ้ง & จนท.',
+                        style: TextStyle(
+                          fontFamily: 'Sukhumvit Set',
+                          color: _isFilterActive
+                              ? Colors.white
+                              : Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 2),
+                      SizedBox(
+                        height: 18,
+                        width: 32,
+                        child: Transform.scale(
+                          scale: 0.55,
+                          child: Switch(
+                            value: _isFilterActive,
+                            activeColor: Colors.white,
+                            activeTrackColor: Colors.blueAccent,
+                            inactiveThumbColor: Colors.white70,
+                            inactiveTrackColor: Colors.white24,
+                            onChanged: (val) {
+                              setState(() => _isFilterActive = val);
+                              if (val) _scrollToBottom();
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+
+              // ── Close button ──
+              GestureDetector(
+                onTap: widget.onClose,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.45),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
-              const SizedBox(width: 8),
             ],
+          ),
+          const SizedBox(height: 4),
 
-            // ── Close button ──
-            GestureDetector(
-              onTap: widget.onClose,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.45),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8),
-                  ],
-                ),
-                child: const Icon(Icons.close, color: Colors.white, size: 16),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
+          // ── รายการข้อความ ──
+          Flexible(child: _buildMessageList()),
 
-        // ── รายการข้อความ ──
-        Flexible(child: _buildMessageList()),
+          SizedBox(height: inputSpacer),
 
-        // ── Input bar ──
-        _buildInputArea(),
-      ],
-    ),
+          // ── Input bar ──
+          _buildInputArea(inputHeight),
+        ],
+      ),
     );
   }
 
@@ -341,15 +419,21 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 16),
           child: SizedBox(
-            width: 22, height: 22,
-            child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              color: Colors.white54,
+              strokeWidth: 2,
+            ),
           ),
         ),
       );
     }
 
-    final displayMessages = _isFilterActive 
-        ? _messages.where((m) => m['role'] == 'reporter' || m['role'] == 'responder').toList()
+    final displayMessages = _isFilterActive
+        ? _messages
+              .where((m) => m['role'] == 'reporter' || m['role'] == 'responder')
+              .toList()
         : _messages;
 
     if (displayMessages.isEmpty) {
@@ -365,8 +449,13 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              _isFilterActive ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่' : 'ยังไม่มีการสนทนา',
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+              _isFilterActive
+                  ? 'ยังไม่มีข้อความจากกลุ่มเจ้าหน้าที่'
+                  : 'ยังไม่มีการสนทนา',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12,
+              ),
             ),
           ),
         ),
@@ -385,7 +474,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         itemBuilder: (context, index) {
           final msg = displayMessages[index];
           final isMe = msg['userId'] == widget.userId;
-          
+
           bool showLabel = true;
           if (index > 0) {
             final prevMsg = displayMessages[index - 1];
@@ -393,7 +482,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               showLabel = false;
             }
           }
-          
+
           return _buildBubble(msg, isMe, showLabel, index);
         },
       ),
@@ -401,12 +490,17 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   }
 
   // ── Chat Bubble ลอยบนแผนที่ ──
-  Widget _buildBubble(Map<String, dynamic> msg, bool isMe, bool showLabel, int index) {
+  Widget _buildBubble(
+    Map<String, dynamic> msg,
+    bool isMe,
+    bool showLabel,
+    int index,
+  ) {
     final role = msg['role'] ?? 'viewer';
     final professionName = msg['professionName'] as String?;
     final rawName = msg['userName'] ?? 'Unknown';
     final shortName = _formatShortName(rawName);
-    
+
     final color = _roleColor(role);
     final label = _roleLabel(role, shortName, professionName: professionName);
     final content = msg['content'] ?? '';
@@ -419,7 +513,9 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             // ── sender label ──
@@ -435,14 +531,22 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                   children: [
                     if (!isMe) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.85),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           label,
-                          style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontFamily: 'Sukhumvit Set',
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       if (!isViewerOrThaimhung) ...[
@@ -454,7 +558,12 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            shadows: [Shadow(color: Colors.black.withOpacity(0.8), blurRadius: 4)],
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.8),
+                                blurRadius: 4,
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -467,20 +576,33 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            shadows: [Shadow(color: Colors.black.withOpacity(0.8), blurRadius: 4)],
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.8),
+                                blurRadius: 4,
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 4),
                       ],
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.85),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           label,
-                          style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontFamily: 'Sukhumvit Set',
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -490,23 +612,33 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
             // ── bubble body ──
             Container(
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.56),
+              width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
               decoration: BoxDecoration(
                 color: isMe
                     ? color.withOpacity(0.15)
                     : Colors.black.withOpacity(0.52),
                 borderRadius: BorderRadius.only(
-                  topLeft: showLabel && !isMe ? Radius.zero : const Radius.circular(14),
-                  topRight: showLabel && isMe ? Radius.zero : const Radius.circular(14),
+                  topLeft: showLabel && !isMe
+                      ? Radius.zero
+                      : const Radius.circular(14),
+                  topRight: showLabel && isMe
+                      ? Radius.zero
+                      : const Radius.circular(14),
                   bottomLeft: const Radius.circular(14),
                   bottomRight: const Radius.circular(14),
                 ),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 2)),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
                 ],
                 border: Border.all(
-                  color: isMe ? color.withOpacity(0.4) : Colors.white.withOpacity(0.12),
+                  color: isMe
+                      ? color.withOpacity(0.4)
+                      : Colors.white.withOpacity(0.12),
                   width: 0.5,
                 ),
               ),
@@ -516,24 +648,33 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                   Text(
                     content,
                     maxLines: _expandedMessages[index] == true ? null : 3,
-                    overflow: _expandedMessages[index] == true ? TextOverflow.visible : TextOverflow.ellipsis,
+                    overflow: _expandedMessages[index] == true
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: 'Sukhumvit Set',
-                      color: color, 
+                      color: color,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       height: 1.15,
-                      shadows: const [Shadow(color: Colors.black54, blurRadius: 3)],
+                      shadows: const [
+                        Shadow(color: Colors.black54, blurRadius: 3),
+                      ],
                     ),
                   ),
                   if (content.length > 60 && _expandedMessages[index] != true)
                     GestureDetector(
-                      onTap: () => setState(() => _expandedMessages[index] = true),
+                      onTap: () =>
+                          setState(() => _expandedMessages[index] = true),
                       child: const Padding(
                         padding: EdgeInsets.only(top: 4),
                         child: Text(
                           '...อ่านเพิ่มเติม',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -550,7 +691,9 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
                   fontFamily: 'Sukhumvit Set',
                   color: Colors.white.withOpacity(0.55),
                   fontSize: 9,
-                  shadows: [Shadow(color: Colors.black.withOpacity(0.7), blurRadius: 3)],
+                  shadows: [
+                    Shadow(color: Colors.black.withOpacity(0.7), blurRadius: 3),
+                  ],
                 ),
               ),
             ),
@@ -561,58 +704,90 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   }
 
   // ── Input area ลอยบนแผนที่ ──
-  Widget _buildInputArea() {
-    return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white, // เปลี่ยนพื้นหลังเป็นสีขาวเพื่อให้ตัวหนังสือสีดำเห็นชัด
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withOpacity(0.8)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              style: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.black, fontSize: 13), // เปลี่ยนตัวอักษรเป็นสีดำ
-              maxLines: 1,
-              enableInteractiveSelection: false, // 🚫 ป้องกันการกดค้างเพื่อ Paste
-              contextMenuBuilder: (context, editableTextState) => const SizedBox.shrink(), // 🚫 ซ่อน Context Menu (Cut, Copy, Paste)
-              decoration: InputDecoration(
-                hintText: 'พิมพ์ข้อความ...',
-                hintStyle: const TextStyle(fontFamily: 'Sukhumvit Set', color: Colors.black54, fontSize: 13), // เปลี่ยนสี hint เป็นเทาเข้ม
-                counterText: '', // ซ่อน counter default
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
+  Widget _buildInputArea(double inputHeight) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: FractionallySizedBox(
+        widthFactor: 0.56,
+        child: Container(
+          height: inputHeight,
+          margin: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors
+                .white, // เปลี่ยนพื้นหลังเป็นสีขาวเพื่อให้ตัวหนังสือสีดำเห็นชัด
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withOpacity(0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
               ),
-              maxLength: _maxChars,
-              onSubmitted: (_) => _sendMessage(),
-            ),
+            ],
           ),
-          GestureDetector(
-            onTap: _sendMessage,
-            child: Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF007AFF), Color(0xFF0051D5)],
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  style: const TextStyle(
+                    fontFamily: 'Sukhumvit Set',
+                    color: Colors.black,
+                    fontSize: 13,
+                  ), // เปลี่ยนตัวอักษรเป็นสีดำ
+                  maxLines: 1,
+                  enableInteractiveSelection:
+                      false, // 🚫 ป้องกันการกดค้างเพื่อ Paste
+                  contextMenuBuilder: (context, editableTextState) =>
+                      const SizedBox.shrink(), // 🚫 ซ่อน Context Menu (Cut, Copy, Paste)
+                  decoration: InputDecoration(
+                    hintText: 'พิมพ์ข้อความ...',
+                    hintStyle: const TextStyle(
+                      fontFamily: 'Sukhumvit Set',
+                      color: Colors.black54,
+                      fontSize: 13,
+                    ), // เปลี่ยนสี hint เป็นเทาเข้ม
+                    counterText: '', // ซ่อน counter default
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                  ),
+                  maxLength: _maxChars,
+                  onSubmitted: (_) => _sendMessage(),
                 ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: const Color(0xFF007AFF).withOpacity(0.4), blurRadius: 8),
-                ],
               ),
-              child: const Icon(Icons.send_rounded, color: Colors.white, size: 17),
-            ),
+              GestureDetector(
+                onTap: _sendMessage,
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF007AFF), Color(0xFF0051D5)],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF007AFF).withOpacity(0.4),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.send_rounded,
+                    color: Colors.white,
+                    size: 17,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

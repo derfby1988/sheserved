@@ -12,7 +12,7 @@ async function getVictimPermissions(pool, userId, incidentId) {
     ),
     pool.query(
       `SELECT 1 FROM users
-        WHERE id = $1 AND role = 'admin' AND is_active = TRUE LIMIT 1`,
+        WHERE id = $1 AND user_category_id = 'admin' AND is_active = TRUE LIMIT 1`,
       [userId]
     ),
   ]);
