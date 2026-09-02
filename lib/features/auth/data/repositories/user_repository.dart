@@ -158,62 +158,54 @@ class UserRepository {
   Future<UserModel?> login(String identifier, String password) async {
     final hashedPassword = _hashPassword(password);
 
-    try {
-      // 1. ค้นหา username + phone พร้อมกัน (parallel) พร้อม timeout
-      final results = await Future.wait([
-        _client
-            .from('users')
-            .select('*, professions(is_volunteer, category)')
-            .eq('username', identifier)
-            .eq('password_hash', hashedPassword)
-            .eq('is_active', true)
-            .maybeSingle()
-            .timeout(const Duration(seconds: 8)),
-        _client
-            .from('users')
-            .select('*, professions(is_volunteer, category)')
-            .eq('phone', identifier)
-            .eq('password_hash', hashedPassword)
-            .eq('is_active', true)
-            .maybeSingle()
-            .timeout(const Duration(seconds: 8)),
-      ]);
+    // 1. ค้นหา username + phone พร้อมกัน (parallel) พร้อม timeout
+    final results = await Future.wait([
+      _client
+          .from('users')
+          .select('*, professions(is_volunteer, category)')
+          .eq('username', identifier)
+          .eq('password_hash', hashedPassword)
+          .eq('is_active', true)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8)),
+      _client
+          .from('users')
+          .select('*, professions(is_volunteer, category)')
+          .eq('phone', identifier)
+          .eq('password_hash', hashedPassword)
+          .eq('is_active', true)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8)),
+    ]);
 
-      UserModel? user;
-      final usernameResult = results[0];
-      final phoneResult = results[1];
+    UserModel? user;
+    final usernameResult = results[0];
+    final phoneResult = results[1];
 
-      if (usernameResult != null) {
-        user = UserModel.fromJson(usernameResult);
-      } else if (phoneResult != null) {
-        user = UserModel.fromJson(phoneResult);
-      }
-
-      if (user != null && user.professionId == null) {
-        try {
-          // Fallback: check user_group_roles table if profession_id is null in users table
-          final groupResponse = await _client
-              .from('user_group_roles')
-              .select('profession_id')
-              .eq('user_id', user.id)
-              .maybeSingle()
-              .timeout(const Duration(seconds: 5));
-          if (groupResponse != null) {
-            user = user.copyWith(professionId: groupResponse['profession_id']);
-          }
-        } catch (e) {
-          debugPrint('login: Optional user_group_roles check failed: $e');
-        }
-      }
-
-      return user;
-    } on TimeoutException catch (e) {
-      debugPrint('UserRepository.login timeout: $e');
-      return null;
-    } catch (e) {
-      debugPrint('UserRepository.login error: $e');
-      return null;
+    if (usernameResult != null) {
+      user = UserModel.fromJson(usernameResult);
+    } else if (phoneResult != null) {
+      user = UserModel.fromJson(phoneResult);
     }
+
+    if (user != null && user.professionId == null) {
+      try {
+        // Fallback: check user_group_roles table if profession_id is null in users table
+        final groupResponse = await _client
+            .from('user_group_roles')
+            .select('profession_id')
+            .eq('user_id', user.id)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 5));
+        if (groupResponse != null) {
+          user = user.copyWith(professionId: groupResponse['profession_id']);
+        }
+      } catch (e) {
+        debugPrint('login: Optional user_group_roles check failed: $e');
+      }
+    }
+
+    return user;
   }
 
   /// ฟังก์ชันช่วยสำหรับ Hash Password

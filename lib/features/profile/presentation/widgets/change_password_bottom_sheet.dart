@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -42,11 +43,11 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
   int _currentPasswordFailCount = 0;
   DateTime? _cooldownUntil;
   Timer? _cooldownTimer;
+  int _cooldownRemainingSeconds = 0;
 
   @override
   void initState() {
     super.initState();
-    _startCooldownTicker();
   }
 
   @override
@@ -61,28 +62,27 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
   void _startCooldownTicker() {
     _cooldownTimer?.cancel();
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_cooldownUntil != null && DateTime.now().isAfter(_cooldownUntil!)) {
+      if (!mounted) return;
+
+      if (_cooldownRemainingSeconds <= 1) {
+        _cooldownTimer?.cancel();
         setState(() {
           _cooldownUntil = null;
+          _cooldownRemainingSeconds = 0;
           _currentPasswordFailCount = 0;
+          _errorMessage = null;
         });
-      } else if (_cooldownUntil != null) {
-        // Force UI to update countdown text
-        if (mounted) setState(() {});
+      } else {
+        setState(() => _cooldownRemainingSeconds--);
       }
     });
   }
 
   bool get _isCooldownActive =>
-      _cooldownUntil != null && DateTime.now().isBefore(_cooldownUntil!);
-
-  int get _remainingCooldownSeconds {
-    if (_cooldownUntil == null) return 0;
-    final diff = _cooldownUntil!.difference(DateTime.now()).inSeconds;
-    return diff > 0 ? diff : 0;
-  }
+      _cooldownUntil != null && _cooldownRemainingSeconds > 0;
 
   void _setError(String? message) {
+    if (!mounted) return;
     setState(() => _errorMessage = message);
   }
 
@@ -123,16 +123,36 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
   }
 
   void _incrementFailCount() {
-    _currentPasswordFailCount++;
-    if (_currentPasswordFailCount >= 3) {
-      _cooldownUntil = DateTime.now().add(const Duration(seconds: 30));
+    final nextFailCount = _currentPasswordFailCount + 1;
+    final shouldStartCooldown = nextFailCount >= 3;
+    final cooldownUntil = shouldStartCooldown
+        ? DateTime.now().add(const Duration(seconds: 30))
+        : null;
+
+    setState(() {
+      _currentPasswordFailCount = nextFailCount;
+      if (cooldownUntil != null) {
+        _cooldownUntil = cooldownUntil;
+        _cooldownRemainingSeconds = 30;
+        _errorMessage = null;
+      } else {
+        _errorMessage = 'รหัสผ่านปัจจุบันไม่ถูกต้อง';
+      }
+    });
+
+    if (shouldStartCooldown) {
       _startCooldownTicker();
+    }
+    if (kDebugMode) {
+      debugPrint(
+        'ChangePasswordBottomSheet: current-password failure '
+        '#$nextFailCount, cooldown=$_isCooldownActive',
+      );
     }
   }
 
   Future<void> _handleSubmit() async {
     if (_isCooldownActive) {
-      _setError('ลองผิดหลายครั้ง กรุณารอ $_remainingCooldownSeconds วินาที');
       return;
     }
 
@@ -142,19 +162,36 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
       return;
     }
 
+    FocusScope.of(context).unfocus();
     setState(() {
       _isChangingPassword = true;
       _errorMessage = null;
     });
 
     final repository = widget.userRepository ?? UserRepository(Supabase.instance.client);
-    final result = await repository.changeCurrentUserPassword(
-      currentPassword: _currentPasswordController.text.trim(),
-      newPassword: _newPasswordController.text,
-    );
+    PasswordChangeResult result;
+    try {
+      result = await repository.changeCurrentUserPassword(
+        currentPassword: _currentPasswordController.text.trim(),
+        newPassword: _newPasswordController.text,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      if (kDebugMode) {
+        debugPrint('ChangePasswordBottomSheet: password change request failed');
+      }
+      setState(() {
+        _isChangingPassword = false;
+        _errorMessage = 'ไม่สามารถเปลี่ยนรหัสผ่านได้ กรุณาลองใหม่';
+      });
+      return;
+    }
 
     if (!mounted) return;
 
+    if (kDebugMode) {
+      debugPrint('ChangePasswordBottomSheet: repository result=$result');
+    }
     setState(() => _isChangingPassword = false);
 
     switch (result) {
@@ -163,7 +200,6 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
         break;
       case PasswordChangeResult.currentPasswordIncorrect:
         _incrementFailCount();
-        _setError('รหัสผ่านปัจจุบันไม่ถูกต้อง');
         break;
       case PasswordChangeResult.invalidPassword:
         _setError('รหัสผ่านใหม่ไม่ถูกต้อง');
@@ -295,7 +331,6 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
               ),
               const SizedBox(height: 16),
             ],
-
             // Submit buttons
             Row(
               children: [
@@ -312,7 +347,7 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
                   child: TlzButton(
                     key: const Key('change_password_submit'),
                     text: _isCooldownActive
-                        ? 'รอ $_remainingCooldownSeconds วิ'
+                        ? 'รอ $_cooldownRemainingSeconds วิ'
                         : 'เปลี่ยนรหัสผ่าน',
                     type: TlzButtonType.primary,
                     isFullWidth: true,

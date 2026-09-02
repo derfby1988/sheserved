@@ -4,6 +4,7 @@ import 'package:sheserved/core/constants/password_policy.dart';
 import 'package:sheserved/features/auth/data/models/password_change_result.dart';
 import 'package:sheserved/features/auth/data/repositories/user_repository.dart';
 import 'package:sheserved/features/profile/presentation/widgets/change_password_bottom_sheet.dart';
+import 'package:sheserved/shared/widgets/tlz_button.dart';
 
 import '../../../chat/data/repositories/chat_repository_test.mocks.dart';
 
@@ -157,8 +158,27 @@ void main() {
         await tester.pump();
       }
 
-      expect(find.text('รหัสผ่านปัจจุบันไม่ถูกต้อง'), findsOneWidget);
-      expect(find.textContaining('รอ'), findsOneWidget);
+      // ครั้งที่ 3 แสดง cooldown เฉพาะในปุ่ม (§6.4)
+      expect(find.text('ลองผิดหลายครั้ง กรุณารอสักครู่'), findsNothing);
+      expect(find.textContaining('เหลือเวลา'), findsNothing);
+      final submitButton = tester.widget<TlzButton>(find.byKey(const Key('change_password_submit')));
+      expect(submitButton.text, 'รอ 30 วิ');
+      expect(submitButton.onPressed, isNull);
+
+      await tester.pump(const Duration(seconds: 1));
+      final countdownButton = tester.widget<TlzButton>(
+        find.byKey(const Key('change_password_submit')),
+      );
+      expect(countdownButton.text, 'รอ 29 วิ');
+      expect(find.textContaining('เหลือเวลา'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 29));
+      final unlockedButton = tester.widget<TlzButton>(
+        find.byKey(const Key('change_password_submit')),
+      );
+      expect(unlockedButton.text, 'เปลี่ยนรหัสผ่าน');
+      expect(unlockedButton.onPressed, isNotNull);
+      expect(find.textContaining('เหลือเวลา'), findsNothing);
     });
   });
 }

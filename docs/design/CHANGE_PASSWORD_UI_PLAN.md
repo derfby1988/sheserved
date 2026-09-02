@@ -208,8 +208,10 @@ Future<bool> _verifyCurrentPassword(String userId, String currentPassword) async
 
 Mitigation ระดับ client (บังคับใช้ในรอบนี้):
 - นับจำนวนครั้งที่ `currentPasswordIncorrect` ติดกันใน state ของ Bottom Sheet (`_currentPasswordFailCount`)
-- หลังผิดครบ 3 ครั้ง → disable ปุ่ม `เปลี่ยนรหัสผ่าน` เป็นเวลา 30 วินาที พร้อมข้อความ `ลองผิดหลายครั้ง กรุณารอสักครู่`
-- reset counter เมื่อ submit สำเร็จหรือปิด Bottom Sheet
+- หลังผิดครบ 3 ครั้ง → disable ปุ่ม `เปลี่ยนรหัสผ่าน` เป็นเวลา 30 วินาที และแสดง countdown เฉพาะ **ภายในปุ่ม** ในรูป `รอ X วิ` (เช่น `รอ 30 วิ`, `รอ 29 วิ`, ...)
+- ไม่แสดงข้อความ cooldown ภายนอกปุ่ม ไม่แสดง banner `เหลือเวลา X วินาที` และไม่แสดงข้อความ `ลองผิดหลายครั้ง กรุณารอสักครู่` ใน error area
+- ใช้ `_cooldownRemainingSeconds` ร่วมกับ `_cooldownTimer` เพื่ออัปเดต label ของปุ่มทุก 1 วินาที โดยไม่พึ่ง `DateTime.now()` ในการ render ทำให้ widget tests กับพฤติกรรมบน device เป็น deterministic
+- reset counter เมื่อ submit สำเร็จหรือเมื่อ cooldown หมดเวลา
 - บันทึกไว้ใน residual risk ของแผนนี้ว่า cooldown ระดับ client ไม่ใช่ตัวป้องกันจริง (ผู้ใช้ปิดแอปแล้วเปิดใหม่ก็ reset ได้) การป้องกันจริงต้องรอ server-side rate limiter ใน Phase 13.2
 
 ### 6.5 ขั้นตอนการทำงานใน compatibility phase
@@ -218,7 +220,7 @@ Mitigation ระดับ client (บังคับใช้ในรอบน
 2. ปฏิเสธทันทีถ้าไม่มีผู้ใช้ login → `PasswordChangeResult.unauthorized`
 3. ถ้า `AppConfig.databaseMode == DatabaseMode.localOnly` → `PasswordChangeResult.unsupportedOffline` (ดู §6.3)
 4. ถ้า current user เป็น social login ล้วน (ไม่มี `password_hash`) → `PasswordChangeResult.socialAccountNoPassword` (ดู §8)
-5. ตรวจ cooldown จาก brute-force counter (§6.4); ถ้ายังล็อกอยู่ → `PasswordChangeResult.tooManyAttempts`
+5. (UI-only guard) ถ้า `_isCooldownActive` ยัง true ให้ `_handleSubmit()` return ก่อนเรียก repository — ไม่ต้องส่ง request ซ้ำและไม่ต้องนับ failure เพิ่ม; `PasswordChangeResult.tooManyAttempts` ยังคงมีไว้ใน enum แต่ไม่ถูกใช้ในรอบนี้ เพราะการ block ทำที่ widget state ก่อนเรียก `UserRepository`
 6. ตรวจรหัสผ่านเดิมด้วยวิธีใน §6.2 (ไม่ดึง `password_hash` กลับมา); ผิด → เพิ่ม fail counter, คืน `PasswordChangeResult.currentPasswordIncorrect`
 7. ตรวจ `newPassword` ตาม policy ใน §5.1; ไม่ผ่าน → `PasswordChangeResult.invalidPassword`
 8. hash `newPassword` ด้วย `_hashPassword()` เดิม (SHA-256) — **ยังไม่เปลี่ยนเป็น Argon2id ในรอบนี้** เพราะนั่นเป็นงานของ Phase 13.2 ที่ต้องมี server-side hashing ก่อน
@@ -282,10 +284,12 @@ _obscureConfirmPassword
 _isPasswordVisibleMode
 _isChangingPassword
 _currentPasswordFailCount   // เพิ่ม: นับ currentPasswordIncorrect ติดกัน (§6.4)
-_cooldownUntil               // เพิ่ม: DateTime? เวลาที่ปลดล็อกปุ่มได้ (§6.4)
+_cooldownUntil              // เพิ่ม: DateTime? เวลาที่ปลดล็อกปุ่มได้ (§6.4)
+_cooldownRemainingSeconds   // เพิ่ม: int จำนวนวินาทีที่เหลือ ใช้ render label ปุ่ม
+_cooldownTimer              // เพิ่ม: Timer? สำหรับ countdown ทุก 1 วินาที
 ```
 
-ปุ่ม `เปลี่ยนรหัสผ่าน` ต้อง disabled หรือแสดง loading ระหว่าง request เพื่อป้องกันการ submit ซ้ำ และต้อง disabled เพิ่มระหว่าง `_cooldownUntil` ยังไม่ผ่าน (แสดง countdown/ข้อความ `ลองผิดหลายครั้ง กรุณารอสักครู่` ตาม §6.4)
+ปุ่ม `เปลี่ยนรหัสผ่าน` ต้อง disabled หรือแสดง loading ระหว่าง request เพื่อป้องกันการ submit ซ้ำ และต้อง disabled เพิ่มระหว่าง `_isCooldownActive` ยัง true โดย label ของปุ่มเปลี่ยนเป็น `รอ X วิ`; ข้อความ cooldown ต้องไม่อยู่นอกปุ่ม
 
 เมื่อสำเร็จ:
 
@@ -375,7 +379,7 @@ ChangePasswordPage
 - รหัสผ่านใหม่กับยืนยันไม่ตรงกัน
 - รหัสผ่านใหม่ซ้ำกับรหัสผ่านเดิม
 - เปิดการมองเห็นแล้ว submit ได้โดยไม่มีช่องยืนยัน
-- ผิดรหัสผ่านเดิมติดกัน 3 ครั้ง → ปุ่มถูก disable ตาม cooldown (§6.4); ครบเวลาแล้วปุ่มกลับมาใช้ได้
+- ผิดรหัสผ่านเดิมติดกัน 3 ครั้ง → ปุ่มถูก disable ตาม cooldown (§6.4); ข้อความ countdown แสดงเฉพาะในปุ่ม (`รอ 30 วิ` → `รอ 29 วิ`); ไม่มีข้อความ/banner cooldown ภายนอก; ครบเวลาแล้วปุ่มกลับมาใช้ได้
 - บัญชี social-login-only เปิด Bottom Sheet แล้วได้ผลลัพธ์ `socialAccountNoPassword` ไม่ใช่ฟอร์มเปลี่ยนรหัสผ่านปกติ (§8)
 
 ### Functional regression
@@ -442,7 +446,7 @@ hash_length = 64
 - `UserRepository.updatePassword` เดิมถูกเปลี่ยนเป็น private (`_setHashedPassword`) หรือถูกลบ — ไม่มี public method ที่ set password โดยไม่ผ่านการตรวจรหัสผ่านเดิม
 - `AuthService.applyUserUpdate()` มีอยู่และถูกเรียกหลังเปลี่ยนรหัสผ่านสำเร็จ
 - เมนู `เปลี่ยนรหัสผ่าน` ถูก disable/แสดงข้อความอธิบายเมื่อ `AppConfig.databaseMode == DatabaseMode.localOnly`
-- brute-force cooldown ของรหัสผ่านเดิมทำงานตาม §6.4 และถูกบันทึกเป็น residual risk (ไม่ใช่ทางแก้ถาวร)
+- brute-force cooldown ของรหัสผ่านเดิมทำงานตาม §6.4 (countdown แสดงเฉพาะในปุ่ม ไม่มีข้อความ/banner ภายนอก) และถูกบันทึกเป็น residual risk (ไม่ใช่ทางแก้ถาวร)
 - known limitations (ไม่มี audit log, ไม่ revoke session อื่น) ถูกบันทึกไว้ในแผนนี้อย่างชัดเจน ไม่ใช่ความเงียบที่อาจทำให้เข้าใจผิดว่า Phase 12.9/13.2 ปิดครบแล้ว
 
 ## 12. อ้างอิง

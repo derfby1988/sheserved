@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
@@ -11,7 +12,9 @@ import '../../../../services/auth_service.dart';
 /// Login Page
 /// หน้าลงชื่อเข้าใช้ - Dark Gold Theme ตามภาพตัวอย่าง
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final UserRepository? userRepository;
+
+  const LoginPage({super.key, this.userRepository});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -24,6 +27,10 @@ class _LoginPageState extends State<LoginPage>
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  int _failedLoginAttempts = 0;
+  DateTime? _loginCooldownUntil;
+  Timer? _loginCooldownTimer;
+  int _loginCooldownRemainingSeconds = 0;
   SocialProvider? _loadingProvider;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -44,7 +51,9 @@ class _LoginPageState extends State<LoginPage>
   void initState() {
     super.initState();
 
-    if (AppConfig.isSupabaseConfigured) {
+    if (widget.userRepository != null) {
+      _userRepository = widget.userRepository;
+    } else if (AppConfig.isSupabaseConfigured) {
       try {
         final supabaseClient = Supabase.instance.client;
         _userRepository = UserRepository(supabaseClient);
@@ -79,6 +88,7 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
+    _loginCooldownTimer?.cancel();
     _usernameController.dispose();
     _passwordController.dispose();
     _animationController.dispose();
@@ -245,7 +255,7 @@ class _LoginPageState extends State<LoginPage>
                                         obscureText: _obscurePassword,
                                         textInputAction: TextInputAction.done,
                                         onSubmitted: (_) {
-                                          if (_isLoading) return;
+                                          if (_isLoading || _isLoginCooldownActive) return;
                                           _handleLogin();
                                         },
                                         suffixIcon: IconButton(
@@ -270,7 +280,8 @@ class _LoginPageState extends State<LoginPage>
                                       SizedBox(
                                         height: 54,
                                         child: ElevatedButton(
-                                          onPressed: _isLoading
+                                          key: const Key('login_submit'),
+                                          onPressed: _isLoading || _isLoginCooldownActive
                                               ? null
                                               : _handleLogin,
                                           style: ElevatedButton.styleFrom(
@@ -299,7 +310,9 @@ class _LoginPageState extends State<LoginPage>
                                                   ),
                                                 )
                                               : Text(
-                                                  'เข้าสู่ระบบ',
+                                                  _isLoginCooldownActive
+                                                      ? 'รอ $_loginCooldownRemainingSeconds วิ'
+                                                      : 'เข้าสู่ระบบ',
                                                   style: AppTextStyles.button
                                                       .copyWith(
                                                         color: Colors.black,
@@ -612,7 +625,57 @@ class _LoginPageState extends State<LoginPage>
     return CustomPaint(size: const Size(26, 26), painter: _GoogleIconPainter());
   }
 
+  bool get _isLoginCooldownActive =>
+      _loginCooldownUntil != null && _loginCooldownRemainingSeconds > 0;
+
+  void _startLoginCooldownTimer() {
+    _loginCooldownTimer?.cancel();
+    _loginCooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
+      if (_loginCooldownRemainingSeconds <= 1) {
+        _loginCooldownTimer?.cancel();
+        setState(() {
+          _loginCooldownUntil = null;
+          _loginCooldownRemainingSeconds = 0;
+          _failedLoginAttempts = 0;
+        });
+      } else {
+        setState(() => _loginCooldownRemainingSeconds--);
+      }
+    });
+  }
+
+  bool _recordFailedLogin() {
+    final nextAttempt = _failedLoginAttempts + 1;
+    final shouldStartCooldown = nextAttempt >= 3;
+
+    setState(() {
+      _failedLoginAttempts = nextAttempt;
+      if (shouldStartCooldown) {
+        _loginCooldownUntil = DateTime.now().add(const Duration(seconds: 30));
+        _loginCooldownRemainingSeconds = 30;
+      }
+    });
+
+    if (shouldStartCooldown) {
+      _startLoginCooldownTimer();
+    }
+    return shouldStartCooldown;
+  }
+
+  void _resetFailedLoginAttempts() {
+    _loginCooldownTimer?.cancel();
+    _loginCooldownTimer = null;
+    _failedLoginAttempts = 0;
+    _loginCooldownUntil = null;
+    _loginCooldownRemainingSeconds = 0;
+  }
+
   void _handleLogin() async {
+    if (_isLoginCooldownActive) {
+      return;
+    }
     if (_userRepository == null) {
       _showSnackBar('ระบบยังไม่พร้อมใช้งาน (Supabase not configured)');
       return;
@@ -642,6 +705,7 @@ class _LoginPageState extends State<LoginPage>
       if (!mounted) return;
 
       if (user != null) {
+        _resetFailedLoginAttempts();
         debugPrint('LoginPage: calling AuthService.instance.login()');
         await AuthService.instance.login(user).timeout(
           const Duration(seconds: 3),
@@ -690,7 +754,10 @@ class _LoginPageState extends State<LoginPage>
           }
         });
       } else {
-        _showSnackBar('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        final cooldownStarted = _recordFailedLogin();
+        if (!cooldownStarted) {
+          _showSnackBar('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        }
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -698,7 +765,7 @@ class _LoginPageState extends State<LoginPage>
         }
       }
     } catch (e) {
-      debugPrint('Login error: $e');
+      debugPrint('LoginPage: login request failed (${e.runtimeType})');
       if (mounted) {
         _showSnackBar('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
         setState(() {
