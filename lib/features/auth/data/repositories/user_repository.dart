@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import 'package:sheserved/config/app_config.dart';
+import 'package:sheserved/core/constants/password_policy.dart';
+import 'package:sheserved/services/auth_service.dart';
+import '../models/password_change_result.dart';
 
 /// User Repository - จัดการข้อมูลผู้ใช้ใน Database
 class UserRepository {
@@ -125,7 +128,22 @@ class UserRepository {
     return response != null;
   }
 
-  /// ตรวจสอบว่า phone มีอยู่แล้วหรือไม่
+  /// ตรวจสอบว่าผู้ใช้มี `password_hash` ที่ไม่เป็น null หรือไม่
+  /// ไม่ select `password_hash` กลับมา — ใช้ filter `.isFilter('password_hash', null)`
+  Future<bool> hasPassword(String userId) async {
+    try {
+      final row = await _client
+          .from('users')
+          .select('id')
+          .eq('id', userId)
+          .isFilter('password_hash', null)
+          .maybeSingle();
+      return row == null;
+    } catch (e) {
+      debugPrint('UserRepository.hasPassword error: $e');
+      return true; // เซฟฟอล: ถือว่ามีรหัสผ่านเพื่อเปิด menu (ให้ bottom sheet จัดการเงื่อนไขเอง)
+    }
+  }
   Future<bool> isPhoneExists(String phone) async {
     final response = await _client
         .from('users')
@@ -213,20 +231,108 @@ class UserRepository {
     return UserModel.fromJson(response);
   }
 
-  /// อัพเดทรหัสผ่าน
-  Future<bool> updatePassword(String id, String newPassword) async {
+  /// เปลี่ยนรหัสผ่านของผู้ใช้ปัจจุบัน (compatibility phase — SHA-256)
+  ///
+  /// ไม่อ่าน `password_hash` กลับเข้ามาใน client memory — ตรวจรหัสผ่านเดิมด้วย
+  /// filter `.eq('password_hash', hash(...))` เหมือน `login()` แล้วดูว่ามีแถว match หรือไม่
+  Future<PasswordChangeResult> changeCurrentUserPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    // 1. ต้องมีผู้ใช้ login
+    final user = AuthService.instance.currentUser;
+    if (user == null || user.id.isEmpty) {
+      return PasswordChangeResult.unauthorized;
+    }
+    final userId = user.id;
+
+    // 2. Local-only mode ยังไม่รองรับการเปลี่ยนรหัสผ่าน
+    if (AppConfig.databaseMode == DatabaseMode.localOnly) {
+      return PasswordChangeResult.unsupportedOffline;
+    }
+
+    // 3. ถ้าไม่มี password_hash (social login ล้วน หรือยังไม่เคยตั้ง) → ไม่แสดงฟอร์ม
+    final noPassword = await _client
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .isFilter('password_hash', null)
+        .maybeSingle();
+    if (noPassword != null) {
+      return PasswordChangeResult.socialAccountNoPassword;
+    }
+
+    // 4. ตรวจรหัสผ่านเดิม (ไม่ดึง hash กลับมา)
+    final currentPasswordOk = await _verifyCurrentPassword(userId, currentPassword);
+    if (!currentPasswordOk) {
+      return PasswordChangeResult.currentPasswordIncorrect;
+    }
+
+    // 5. ตรวจรหัสผ่านใหม่
+    if (newPassword.isEmpty ||
+        newPassword.length < PasswordPolicy.minLength ||
+        newPassword == currentPassword) {
+      return PasswordChangeResult.invalidPassword;
+    }
+
+    // 6. hash และ update
+    final hashedPassword = _hashPassword(newPassword);
+    final updated = await _setHashedPassword(userId, hashedPassword);
+    if (updated == null) {
+      return PasswordChangeResult.failed;
+    }
+
+    // 7. refresh current user ใน AuthService (ไม่มี password_hash ใน UserModel)
+    AuthService.instance.applyUserUpdate(updated);
+
+    return PasswordChangeResult.success;
+  }
+
+  /// ตรวจรหัสผ่านเดิมโดยไม่ select `password_hash` กลับมา
+  /// ใช้ filter แทน คล้ายกับ `login()`
+  Future<bool> _verifyCurrentPassword(String userId, String currentPassword) async {
     try {
-      final hashedPassword = _hashPassword(newPassword);
-      await _client
+      final hashedPassword = _hashPassword(currentPassword);
+      final match = await _client
+          .from('users')
+          .select('id') // ห้ามมี password_hash ใน select list
+          .eq('id', userId)
+          .eq('password_hash', hashedPassword)
+          .eq('is_active', true)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8));
+      return match != null;
+    } on TimeoutException catch (e) {
+      debugPrint('UserRepository._verifyCurrentPassword timeout: $e');
+      return false;
+    } catch (e) {
+      debugPrint('UserRepository._verifyCurrentPassword error: $e');
+      return false;
+    }
+  }
+
+  /// Helper สำหรับ update password_hash ของ user ที่ระบุ
+  /// ห้ามเรียกจาก UI โดยตรง — ใช้ผ่าน `changeCurrentUserPassword()` เท่านั้น
+  Future<UserModel?> _setHashedPassword(String userId, String hashedPassword) async {
+    try {
+      final now = DateTime.now();
+      final response = await _client
           .from('users')
           .update({
             'password_hash': hashedPassword,
-            'updated_at': DateTime.now().toIso8601String(),
+            'password_algo': 'sha256',
+            'password_updated_at': now.toIso8601String(),
+            'requires_password_reset': false,
+            'updated_at': now.toIso8601String(),
+            // ห้ามตั้ง password_migrated_at — สงวนไว้สำหรับ Argon2id cutover ใน Phase 13.2
           })
-          .eq('id', id);
-      return true;
+          .eq('id', userId)
+          .select()
+          .single();
+      return UserModel.fromJson(response);
     } catch (e) {
-      return false;
+      debugPrint('UserRepository._setHashedPassword error: $e');
+      return null;
     }
   }
 

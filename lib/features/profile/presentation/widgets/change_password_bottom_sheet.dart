@@ -1,0 +1,329 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_text_styles.dart';
+import '../../../../core/constants/password_policy.dart';
+import '../../../auth/data/models/password_change_result.dart';
+import '../../../auth/data/repositories/user_repository.dart';
+import '../../../../shared/widgets/tlz_button.dart';
+import '../../../../shared/widgets/tlz_text_field.dart';
+
+/// Bottom Sheet สำหรับเปลี่ยนรหัสผ่านของผู้ใช้ปัจจุบัน
+///
+/// รองรับโหมดซ่อน/แสดงรหัสผ่าน กรอกยืนยันรหัสผ่านซ้ำ และ cooldown
+/// ป้องกัน brute-force ของรหัสผ่านเดิมในระดับ client (30 วินาทีหลังผิด 3 ครั้ง)
+class ChangePasswordBottomSheet extends StatefulWidget {
+  final UserRepository? userRepository;
+
+  const ChangePasswordBottomSheet({super.key, this.userRepository});
+
+  @override
+  State<ChangePasswordBottomSheet> createState() =>
+      _ChangePasswordBottomSheetState();
+}
+
+class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  bool _obscureCurrentPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
+
+  /// โหมดแสดงรหัสผ่าน (global) — true แล้วซ่อนช่องยืนยัน
+  bool _isPasswordVisibleMode = false;
+
+  bool _isChangingPassword = false;
+  String? _errorMessage;
+
+  // Brute-force cooldown state
+  int _currentPasswordFailCount = 0;
+  DateTime? _cooldownUntil;
+  Timer? _cooldownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCooldownTicker();
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  void _startCooldownTicker() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_cooldownUntil != null && DateTime.now().isAfter(_cooldownUntil!)) {
+        setState(() {
+          _cooldownUntil = null;
+          _currentPasswordFailCount = 0;
+        });
+      } else if (_cooldownUntil != null) {
+        // Force UI to update countdown text
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  bool get _isCooldownActive =>
+      _cooldownUntil != null && DateTime.now().isBefore(_cooldownUntil!);
+
+  int get _remainingCooldownSeconds {
+    if (_cooldownUntil == null) return 0;
+    final diff = _cooldownUntil!.difference(DateTime.now()).inSeconds;
+    return diff > 0 ? diff : 0;
+  }
+
+  void _setError(String? message) {
+    setState(() => _errorMessage = message);
+  }
+
+  String? _validate() {
+    final currentPassword = _currentPasswordController.text.trim();
+    final newPassword = _newPasswordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (currentPassword.isEmpty) {
+      return 'กรุณากรอกรหัสผ่านปัจจุบัน';
+    }
+    if (newPassword.isEmpty) {
+      return 'กรุณากรอกรหัสผ่านใหม่';
+    }
+    if (newPassword.length < PasswordPolicy.minLength) {
+      return PasswordPolicy.minLengthMessage;
+    }
+    if (newPassword == currentPassword) {
+      return 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม';
+    }
+    if (!_isPasswordVisibleMode) {
+      if (confirmPassword.isEmpty) {
+        return 'กรุณายืนยันรหัสผ่านใหม่';
+      }
+      if (confirmPassword != newPassword) {
+        return 'รหัสผ่านใหม่และการยืนยันไม่ตรงกัน';
+      }
+    }
+
+    return null;
+  }
+
+  void _toggleNewPasswordVisibility() {
+    setState(() {
+      _isPasswordVisibleMode = !_isPasswordVisibleMode;
+      _obscureNewPassword = !_obscureNewPassword;
+    });
+  }
+
+  void _incrementFailCount() {
+    _currentPasswordFailCount++;
+    if (_currentPasswordFailCount >= 3) {
+      _cooldownUntil = DateTime.now().add(const Duration(seconds: 30));
+      _startCooldownTicker();
+    }
+  }
+
+  Future<void> _handleSubmit() async {
+    if (_isCooldownActive) {
+      _setError('ลองผิดหลายครั้ง กรุณารอ $_remainingCooldownSeconds วินาที');
+      return;
+    }
+
+    final validationError = _validate();
+    if (validationError != null) {
+      _setError(validationError);
+      return;
+    }
+
+    setState(() {
+      _isChangingPassword = true;
+      _errorMessage = null;
+    });
+
+    final repository = widget.userRepository ?? UserRepository(Supabase.instance.client);
+    final result = await repository.changeCurrentUserPassword(
+      currentPassword: _currentPasswordController.text.trim(),
+      newPassword: _newPasswordController.text,
+    );
+
+    if (!mounted) return;
+
+    setState(() => _isChangingPassword = false);
+
+    switch (result) {
+      case PasswordChangeResult.success:
+        Navigator.of(context).pop(PasswordChangeResult.success);
+        break;
+      case PasswordChangeResult.currentPasswordIncorrect:
+        _incrementFailCount();
+        _setError('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+        break;
+      case PasswordChangeResult.invalidPassword:
+        _setError('รหัสผ่านใหม่ไม่ถูกต้อง');
+        break;
+      case PasswordChangeResult.unauthorized:
+        _setError('กรุณาเข้าสู่ระบบก่อนเปลี่ยนรหัสผ่าน');
+        break;
+      case PasswordChangeResult.unsupportedOffline:
+        _setError('ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมต Offline');
+        break;
+      case PasswordChangeResult.socialAccountNoPassword:
+        _setError('บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน');
+        break;
+      case PasswordChangeResult.tooManyAttempts:
+      case PasswordChangeResult.failed:
+        _setError('ไม่สามารถเปลี่ยนรหัสผ่านได้ กรุณาลองใหม่');
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'เปลี่ยนรหัสผ่าน',
+              key: const Key('change_password_title'),
+              style: AppTextStyles.heading2,
+            ),
+            const SizedBox(height: 24),
+
+            // รหัสผ่านปัจจุบัน
+            TlzTextField(
+              label: 'รหัสผ่านปัจจุบัน',
+              controller: _currentPasswordController,
+              obscureText: _obscureCurrentPassword,
+              enabled: !_isChangingPassword,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureCurrentPassword ? Icons.visibility_off : Icons.visibility,
+                  color: AppColors.textSecondary,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _obscureCurrentPassword = !_obscureCurrentPassword;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // รหัสผ่านใหม่
+            TlzTextField(
+              label: 'รหัสผ่านใหม่',
+              controller: _newPasswordController,
+              obscureText: _obscureNewPassword,
+              enabled: !_isChangingPassword,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
+                  color: AppColors.textSecondary,
+                ),
+                onPressed: _toggleNewPasswordVisibility,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // ช่องยืนยัน — แสดงเฉพาะเมื่อไม่ได้เปิดการมองเห็น
+            if (!_isPasswordVisibleMode) ...[
+              TlzTextField(
+                label: 'ยืนยันรหัสผ่านใหม่',
+                controller: _confirmPasswordController,
+                obscureText: _obscureConfirmPassword,
+                enabled: !_isChangingPassword,
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureConfirmPassword
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              Text(
+                'เปิดการมองเห็นแล้ว ไม่ต้องกรอกรหัสผ่านซ้ำ',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // Password policy hint
+            Text(
+              PasswordPolicy.minLengthMessage,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Error message
+            if (_errorMessage != null) ...[
+              Text(
+                _errorMessage!,
+                key: const Key('change_password_error'),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.error,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Submit buttons
+            Row(
+              children: [
+                Expanded(
+                  child: TlzButton(
+                    text: 'ยกเลิก',
+                    type: TlzButtonType.secondary,
+                    isFullWidth: true,
+                    onPressed: _isChangingPassword ? null : () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TlzButton(
+                    key: const Key('change_password_submit'),
+                    text: _isCooldownActive
+                        ? 'รอ $_remainingCooldownSeconds วิ'
+                        : 'เปลี่ยนรหัสผ่าน',
+                    type: TlzButtonType.primary,
+                    isFullWidth: true,
+                    isLoading: _isChangingPassword,
+                    onPressed: (_isChangingPassword || _isCooldownActive)
+                        ? null
+                        : _handleSubmit,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}

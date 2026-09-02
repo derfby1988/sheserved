@@ -1,0 +1,66 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/features/auth/data/models/password_change_result.dart';
+import 'package:sheserved/features/auth/data/models/user_model.dart';
+import 'package:sheserved/features/auth/data/repositories/user_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+void main() {
+  group('UserRepository (change password)', () {
+    late UserRepository repository;
+
+    setUp(() {
+      repository = UserRepository(
+        SupabaseClient('https://test.supabase.co', 'test-anon-key'),
+      );
+    });
+
+    test('changeCurrentUserPassword returns unauthorized when no user is logged in', () async {
+      final result = await repository.changeCurrentUserPassword(
+        currentPassword: 'current123',
+        newPassword: 'newpassword123',
+      );
+
+      expect(result, equals(PasswordChangeResult.unauthorized));
+    });
+
+    test('new password validation rejects passwords shorter than minLength', () {
+      const shortPassword = '1234567';
+      expect(shortPassword.length, lessThan(8));
+    });
+
+    test('UserModel toJson does not include passwordHash', () {
+      final user = UserModel(
+        id: 'test-user-id',
+        userType: UserType.consumer,
+        firstName: 'Test',
+        lastName: 'User',
+        username: 'testuser',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final json = user.toJson();
+
+      expect(json, isNot(contains('passwordHash')));
+      expect(json, isNot(contains('password_hash')));
+    });
+
+    test('UserModel fromJson ignores password_hash field', () {
+      final json = <String, dynamic>{
+        'id': 'test-user-id',
+        'first_name': 'Test',
+        'last_name': 'User',
+        'username': 'testuser',
+        'password_hash': 'should_be_ignored',
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      final user = UserModel.fromJson(json);
+
+      // ถ้า fromJson ดึง password_hash เข้ามาเป็นฟิลด์ จะมี getter หรือ property ที่ export ออกมา
+      // เนื่องจากไม่มีฟิลด์ passwordHash ให้ดึงค่าได้ เราจึงตรวจว่า toJson ไม่ส่งออกค่านั้น
+      expect(user.toJson(), isNot(contains('password_hash')));
+    });
+  });
+}

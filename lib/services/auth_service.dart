@@ -74,7 +74,13 @@ class AuthService extends ChangeNotifier {
     }
   }
   
-  /// Logout user (clear current user) - auto stops presence heartbeat
+  /// อัปเดต currentUser ในหน่วยความจำหลังข้อมูลผู้ใช้เปลี่ยน (เช่น เปลี่ยนรหัสผ่าน)
+  /// ไม่ fetch ใหม่จาก DB — ใช้ user object ที่ caller มีอยู่แล้ว
+  void applyUserUpdate(UserModel updatedUser) {
+    if (_currentUser?.id != updatedUser.id) return; // ป้องกัน user ผิดคน
+    _currentUser = updatedUser;
+    notifyListeners();
+  }
   Future<void> logout() async {
     // หยุด heartbeat ก่อน logout
     await PresenceService.instance.stop();

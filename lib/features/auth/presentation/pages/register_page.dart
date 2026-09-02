@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_text_styles.dart';
+import 'package:sheserved/core/constants/app_text_styles.dart';
+import 'package:sheserved/core/constants/password_policy.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/models/user_model.dart';
 import '../widgets/social_login_button.dart';
@@ -665,8 +666,8 @@ class _RegisterPageState extends State<RegisterPage>
       _showSnackBar('กรุณากรอกรหัสผ่าน');
       return;
     }
-    if (_passwordController.text.length < 6) {
-      _showSnackBar('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+    if (_passwordController.text.length < PasswordPolicy.minLength) {
+      _showSnackBar(PasswordPolicy.minLengthMessage);
       return;
     }
     if (_passwordController.text != _confirmPasswordController.text) {

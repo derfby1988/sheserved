@@ -38,6 +38,8 @@ import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_approver_settings_widget.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_request_management_panel.dart';
 import 'package:sheserved/features/donation/presentation/pages/leader_verification_page.dart';
+import '../../../auth/data/models/password_change_result.dart';
+import '../widgets/change_password_bottom_sheet.dart';
 
 enum ProfileTab {
   profile,
@@ -122,6 +124,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
 
+  // สถานะว่าผู้ใช้ปัจจุบันมี password_hash หรือไม่ (ใช้ disable menu เปลี่ยนรหัสผ่าน)
+  bool _hasPassword = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -190,6 +195,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       if (userId == null) throw Exception('User not logged in');
 
       final data = await _repository.getFullProfileData(userId);
+      final userRepo = UserRepository(Supabase.instance.client);
+      final hasPassword = await userRepo.hasPassword(userId);
+
       if (mounted) {
         setState(() {
           _user = data['user'];
@@ -200,6 +208,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           _alertRadius = _user?.alertRadius ?? 500;
           _isYieldWayEnabled = _user?.isYieldWayEnabled ?? false;
           _yieldWayRadius = _user?.yieldWayRadius ?? 1000;
+          _hasPassword = hasPassword;
 
           // โหลดค่า unblurred_profession_ids จาก dynamicData (user_registration_data)
           // เพื่อความเข้ากันได้ 100% กับ Supabase Cloud โดยไม่ต้องแก้ Schema ตารางหลัก
@@ -742,6 +751,17 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   _buildHeader(),
                   const SizedBox(height: 24),
                   _buildCoreInfo(),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  Text(
+                    'ความปลอดภัยของบัญชี',
+                    style: AppTextStyles.heading3.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildChangePasswordTile(),
                   const SizedBox(height: 16),
                   const Divider(),
                   const SizedBox(height: 16),
@@ -3201,5 +3221,94 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     } finally {
       if (mounted) setState(() => _isSavingDeadManSettings = false);
     }
+  }
+
+  // =====================================================
+  // CHANGE PASSWORD
+  // =====================================================
+
+  Future<void> _openChangePasswordBottomSheet() async {
+    final result = await showModalBottomSheet<PasswordChangeResult?>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => const ChangePasswordBottomSheet(),
+    );
+
+    if (result == PasswordChangeResult.success) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('เปลี่ยนรหัสผ่านเรียบร้อยแล้ว'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      await _loadProfile();
+    }
+  }
+
+  Widget _buildChangePasswordTile() {
+    final disabled = !_hasPassword;
+
+    return InkWell(
+      onTap: disabled ? null : _openChangePasswordBottomSheet,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: disabled ? Colors.grey.shade100 : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: disabled
+                    ? Colors.grey.shade200
+                    : AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.key,
+                color: disabled ? Colors.grey.shade600 : AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'เปลี่ยนรหัสผ่าน',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: disabled ? Colors.grey : AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    disabled
+                        ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
+                        : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: disabled ? Colors.grey : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!disabled) const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
   }
 }

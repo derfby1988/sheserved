@@ -3,8 +3,9 @@ import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
-import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_text_styles.dart';
+import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/core/constants/app_text_styles.dart';
+import 'package:sheserved/core/constants/password_policy.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
 import '../../../../shared/widgets/image_upload_field.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
@@ -1603,9 +1604,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             stepIndex: 1,
           ));
         }
-        if (_passwordController.text.length < 6) {
-          issues.add(const _ValidationIssue(
-            message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร',
+        if (_passwordController.text.length < PasswordPolicy.minLength) {
+          issues.add(_ValidationIssue(
+            message: PasswordPolicy.minLengthMessage,
             type: _ValidationIssueType.form,
             stepIndex: 1,
           ));
