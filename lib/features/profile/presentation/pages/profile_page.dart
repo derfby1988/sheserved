@@ -45,6 +45,7 @@ import '../widgets/change_password_bottom_sheet.dart';
 enum ProfileTab {
   profile,
   volunteer,
+  shareHealth,
   donationApprove,
   history,
 }
@@ -693,6 +694,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       activeColor: const Color(0xFFF5A623),
                       onTap: () => setState(() => _selectedTab = ProfileTab.volunteer),
                     ),
+                    _buildTabItem(
+                      icon: Icons.health_and_safety_outlined,
+                      text: 'แชร์สุขภาพ',
+                      isActive: _selectedTab == ProfileTab.shareHealth,
+                      activeColor: const Color(0xFFE91E63),
+                      onTap: () => setState(() => _selectedTab = ProfileTab.shareHealth),
+                    ),
                     if (_canApproveDonation)
                       _buildTabItem(
                         icon: Icons.admin_panel_settings_outlined,
@@ -776,6 +784,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   ..._buildDynamicFields(),
                 ] else if (_selectedTab == ProfileTab.volunteer) ...[
                   _buildNotificationSettings(),
+                ] else if (_selectedTab == ProfileTab.shareHealth) ...[
+                  _buildShareHealthSettings(),
                 ] else if (_selectedTab == ProfileTab.donationApprove && _canApproveDonation) ...[
                   DonationApproverSettingsWidget(
                     repository: _donationRepository,
@@ -1883,7 +1893,14 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           const SizedBox(height: 24),
           _buildUnblurredProfessionSection(),
         ],
-        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildShareHealthSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         _buildEmergencyHealthSettingsSection(),
         const SizedBox(height: 24),
         _buildDeadManSwitchSection(),

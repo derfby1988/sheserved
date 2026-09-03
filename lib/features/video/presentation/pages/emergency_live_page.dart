@@ -39,6 +39,7 @@ import 'widgets/emergency_map_section.dart';
 import 'widgets/emergency_ui_overlay.dart';
 import 'widgets/floating_back_button.dart';
 import 'widgets/emergency_chat_widget.dart';
+import 'widgets/fullscreen_video_viewer.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
 import 'widgets/rescue_control_panel_widget.dart';
 import 'widgets/triage_sheet_widget.dart';
@@ -959,6 +960,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           onNewPhotoArrived: _handleNewPhotoArrived,
           onOverlayChanged: (visible) =>
               setState(() => _isOverlayVisible = visible),
+          onOpenFullscreen: _openFullscreen,
           trendingPanelKey: _trendingPanelKey,
         );
       }

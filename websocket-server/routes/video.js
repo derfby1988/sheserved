@@ -784,9 +784,12 @@ module.exports = (pool) => {
                     );
                     liked = false;
                 } else {
-                    // Like: INSERT
+                    // Like: INSERT — ON CONFLICT กัน race condition
+                    // (uniq_like_per_user_video partial unique index)
                     await pool.query(
-                        `INSERT INTO video_interactions (video_id, user_id, type, value, created_at) VALUES ($1, $2, 'like', 0, NOW())`,
+                        `INSERT INTO video_interactions (video_id, user_id, type, value, created_at)
+                         VALUES ($1, $2, 'like', 0, NOW())
+                         ON CONFLICT (video_id, user_id) WHERE type = 'like' DO NOTHING`,
                         [id, user_id]
                     );
                     liked = true;

@@ -45,6 +45,10 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   // ── Filter state ──
   late bool _isFilterActive;
 
+  // ── Scroll-to-bottom button state ──
+  bool _showScrollToBottom = false;
+  bool _isNearBottom = true;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +57,22 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     _isFilterActive = widget.role == 'reporter' || widget.role == 'responder';
 
     _loadChatHistory();
+
+    // ตรวจตำแหน่ง scroll เพื่อแสดงปุ่ม "เลื่อน" เมื่ออ่านข้อความเก่า
+    _scrollController.addListener(() {
+      if (!_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final maxScroll = position.maxScrollExtent;
+      final currentScroll = position.pixels;
+      // ถ้าอยู่ใกล้ล่างสุด (ภายใน 80px) ถือว่าอยู่ล่าง → ซ่อนปุ่ม
+      final nearBottom = (maxScroll - currentScroll) <= 80;
+      if (nearBottom != _isNearBottom) {
+        setState(() {
+          _isNearBottom = nearBottom;
+          _showScrollToBottom = !nearBottom;
+        });
+      }
+    });
 
     _chatSubscription = WebSocketService().emergencyChatStream.listen((data) {
       if (data['videoId'] == widget.videoId) {
@@ -193,6 +213,42 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         );
       }
     });
+  }
+
+  Widget _buildScrollToBottomButton() {
+    return GestureDetector(
+      onTap: () {
+        _scrollToBottom();
+        setState(() {
+          _showScrollToBottom = false;
+          _isNearBottom = true;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.arrow_downward, color: Colors.white, size: 14),
+            SizedBox(width: 4),
+            Text(
+              'เลื่อน',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _sendMessage() {
@@ -422,6 +478,16 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
           // ── รายการข้อความ ──
           // รายการข้อความขยายจากบนลงล่าง ฟองข้อความอยู่เหนือ input โดยตรง
           Flexible(child: _buildMessageList()),
+
+          // ── ปุ่ม "เลื่อน" แสดงเมื่อเลื่อนอ่านข้อความเก่าขึ้นไป ──
+          if (_showScrollToBottom)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Align(
+                alignment: Alignment.center,
+                child: _buildScrollToBottomButton(),
+              ),
+            ),
 
           // ── Input bar ──
           _buildInputArea(inputHeight),

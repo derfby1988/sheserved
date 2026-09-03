@@ -489,7 +489,10 @@ class VideoRepository {
             Uri.parse(
               '${AppConfig.localApiUrl}/api/videos/$videoId/interactions',
             ),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': userId, // ✅ requireAuth ต้องการ header นี้
+            },
             body: '{"user_id":"$userId","type":"like","value":0}',
           )
           .timeout(const Duration(seconds: 5));
@@ -499,11 +502,18 @@ class VideoRepository {
           'liked': data['liked'] as bool? ?? false,
           'count': data['count'] as int? ?? 0,
         };
+      } else {
+        debugPrint(
+          'VideoRepository: toggleLike HTTP ${response.statusCode}: '
+          '${response.body}',
+        );
       }
     } catch (e) {
       debugPrint('VideoRepository: toggleLike failed: $e');
     }
-    return {'liked': false, 'count': 0};
+    // คืน map ว่างเมื่อล้มเหลว → caller ใช้ ?? fallback เป็นค่าปัจจุบัน
+    // แทนการรีเซ็ตยอดเป็น 0
+    return {};
   }
 
   /// ✅ [Support Analytics] Check if user has liked this video

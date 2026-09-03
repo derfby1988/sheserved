@@ -900,6 +900,60 @@ String _ensureFullUrl(String url) {
 - **Privacy Enforcement**: มีระบบเบลอภาพอัตโนมัติ (Image Filter Blur) และขึ้นไอคอนรูปโล่ หากผู้ใช้ไม่ใช่ Responder ตัวจริง เพื่อคุ้มครองสิทธิส่วนบุคคลของภาพผู้ประสบเหตุ
 - **Lightbox Preview**: เมื่อผู้ใช้มีสิทธิและแตะที่รูปภาพ ภาพจะขยายเต็มหน้าจอแบบ Popup (Interactive Viewer) เพื่อช่วยวิเคราะห์การทำงาน
 
+### 3.1 Fullscreen Video Viewer และการเปลี่ยนเหตุการณ์ด้วยการปัด (แผนงาน — ยังไม่ Implement)
+
+#### เป้าหมายและขอบเขต
+- เมื่อยังไม่มีรูปภาพจาก Ruler Gallery ที่ถูกเลือกอยู่ และผู้ใช้แตะพื้นที่ Video Player ให้เปิด **Fullscreen Video Viewer** ผ่าน route แยกเต็มหน้าจอ ไม่ใช้ `Positioned.fill` ทับ `LiveViewWidget` เดิม
+- Fullscreen ต้องเปิดได้เฉพาะเมื่อมี `_currentVideoId` และมี Video Player ที่พร้อมใช้งานเท่านั้น หากยังไม่มีการ์ดเหตุการณ์ที่เลือก ให้คงสถานะซ่อน Video Player และไม่เปิด fullscreen จากพื้นที่ว่าง
+- การเปิด fullscreen ต้องไม่เปลี่ยนสถานะการเลือกของ Ruler Gallery และไม่ทำลาย/สร้างซ้ำ controller ของวิดีโอโดยไม่จำเป็น
+
+#### Interaction ใน Fullscreen (Gesture Map)
+| ท่าทาง (Gesture) | ผลลัพธ์ |
+|---|---|
+| **ปัดขึ้น** | ไปการ์ดเหตุการณ์ถัดไปในรายการ Trending ตามลำดับที่โหลดอยู่ |
+| **ปัดลง** | ไปการ์ดเหตุการณ์ก่อนหน้าในรายการ Trending |
+| **Single tap** | สลับ **เล่น/หยุดวิดีโอ** (play/pause) ของการ์ดปัจจุบัน |
+| **Double tap** | กด **Like** แบบ toggle (unique/toggle logic เดิม) อัปเดตจำนวน Like แบบ real-time ไม่เปิด/ปิด fullscreen |
+| **ปัดขวา (ลากตามนิ้ว)** | **Drag-to-dismiss** ปิด fullscreen — วิดีโอเลื่อนตามนิ้ว และปล่อยเพื่อปิด หากปล่อยก่อนถึงเกณฑ์ให้ spring กลับมา |
+| **ปุ่มปิด (X)** | ปิด fullscreen ทันที (ทางเลือกเดียวกับปัดขวา) |
+
+- **การเปลี่ยนการ์ด (ปัดขึ้น/ลง)**: ใช้ flow เดียวกับการเลือกการ์ดปกติ (เปลี่ยน `_currentVideoId`, โหลดข้อมูลเหตุการณ์, เปลี่ยน video source, อัปเดตแผนที่/แกลลอรี่/สถิติ) พร้อม loading/error state ระหว่างเปลี่ยน และมี transition animation แบบเลื่อนแนวตั้ง (vertical fling) ต่อการ์ด
+- หากปัดถึงต้นหรือท้ายรายการ ให้โหลดหน้าถัดไปเมื่อมีข้อมูลเพิ่มเติม หรือแสดงสถานะว่าไม่มีการ์ดเพิ่มเติม โดยไม่วนกลับไปการ์ดเดิมโดยไม่แจ้งผู้ใช้
+- **การนับการดูสะสม**: ทุกครั้งที่ปัดเปลี่ยนการ์ดใน fullscreen ให้ส่ง view event (`recordVideoView` + join/leave video room) **ทุกครั้งที่การ์ดเปลี่ยน** เหมือนแตะการ์ดในแผงยอดนิยม และให้ DB trigger / unique constraint เป็นตัวตัดยอดซ้ำของผู้ใช้คนเดียวกัน
+- **การแสดงข้อมูลบนวิดีโอ (Fullscreen Overlay)**:
+  - ปุ่มปิด (X) มุมซ้าย/ขวาบน มองเห็นตลอดหรือแสดงซ้อนเมื่อ single tap
+  - **ชื่อเหตุการณ์/การ์ด** (title)
+  - **จำนวนผู้ชมปัจจุบัน** (viewer count) แบบ real-time
+  - **ยอดไลค์** (like count) อัปเดตแบบ real-time
+- ต้องป้องกัน gesture conflict:
+  - vertical swipe → เฉพาะเปลี่ยนการ์ด
+  - double tap → เฉพาะ Like
+  - single tap → เฉพาะ play/pause (ไม่ชน double tap ด้วย `GestureDetector` ดีเลย์แยก)
+  - horizontal drag → เฉพาะ drag-to-dismiss
+  - ขณะวิดีโอกำลังโหลด/error state ให้บล็อก gesture ที่ต้องใช้วิดีโอ และแสดง loading/error UI ตามปกติ
+
+#### การคงการ์ดเมื่อปิด Fullscreen
+- เมื่อปิด fullscreen ให้ส่ง `currentVideoId` ล่าสุดกลับมายัง `EmergencyLivePage` และคงการ์ดเหตุการณ์ล่าสุดเป็นการ์ดที่เลือกอยู่
+- หลังกลับจาก fullscreen ต้องคง video source, แผนที่, จำนวนผู้ชม, Like state และข้อมูลเหตุการณ์ของการ์ดล่าสุด ไม่ย้อนกลับไปการ์ดเดิมที่เปิด fullscreen
+- Ruler Gallery ต้อง sync ไปยังเหตุการณ์ล่าสุดเท่านั้นเมื่อกลับหน้าเดิม และห้ามเปิด Lightbox/Overlay ของรูปโดยอัตโนมัติ
+
+#### การแยกความรับผิดชอบกับ Ruler Gallery
+- Fullscreen ใช้ route/widget แยกจาก Ruler Gallery เพื่อไม่ให้ fullscreen รับ gesture ของ Ruler และไม่บังหรือ reset `FixedExtentScrollController`
+- ขณะ fullscreen เปิด Ruler Gallery ด้านหลังไม่รับ gesture และไม่โหลด/เปลี่ยนรูปจากการแตะที่ตำแหน่งเดิม
+- เมื่อ fullscreen ปิด ให้คืนการควบคุม gesture ให้ Ruler Gallery และรักษา index/การ์ดล่าสุดให้ตรงกับ `_currentVideoId`
+
+#### Acceptance Criteria
+1. แตะ Video Player ขณะไม่มีรูปใน Ruler ที่ถูกเลือก → เปิด fullscreen ได้เมื่อมีการ์ดเหตุการณ์ปัจจุบัน
+2. ปัดขึ้น/ลง → เปลี่ยนการ์ดและวิดีโอได้โดยไม่ทำให้ Ruler Gallery เล่น/เลื่อนผิดพฤติกรรม
+3. Single tap → สลับ play/pause ของการ์ดปัจจุบัน และไม่ชนกับการแตะสองครั้ง
+4. Double-tap → Like แบบ toggle และจำนวน Like ตรงกับระบบปกติ
+5. เปิดหรือเปลี่ยนการ์ดหลายครั้ง → ยอดดูสะสมเพิ่มตามการ์ดที่เปลี่ยนจริง และ DB ตัดยอดซ้ำของผู้ใช้คนเดียวกัน
+6. ปัดขวาแบบ drag-to-dismiss: วิดีโอเลื่อนตามนิ้ว ปล่อยถึงเกณฑ์ → ปิด, ปล่อยไม่ถึงเกณฑ์ → spring กลับ
+7. กดปุ่มปิด (X) → ปิด fullscreen ทันที
+8. หลังปิด → ค้างที่การ์ดเหตุการณ์ล่าสุดที่ดูใน fullscreen
+9. Fullscreen overlay แสดง ชื่อเหตุการณ์, จำนวนผู้ชม, ยอดไลค์ และปุ่มปิด
+10. ยังไม่มีการ์ดเหตุการณ์ → ไม่มี video player และไม่เปิด fullscreen จากพื้นที่ว่าง
+
 ### 4. Yield Way Feedback System (ระบบคัดกรองและแจ้งเตือนการให้ทาง - อัปเดตใหม่)
 - **การเข้าถึงและการตั้งค่า (Access & Configuration):**
   - **Standard Tab:** แถบ "จิตอาสา" จะแสดงผลเป็นค่าเริ่มต้นสำหรับผู้ใช้งานทุกคนในหน้า Profile เพื่อให้สามารถเข้าถึงการตั้งค่าความปลอดภัยและชุมชนได้ตลอดเวลา

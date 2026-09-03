@@ -12,6 +12,9 @@
 // Load environment variables
 require('dotenv').config();
 
+// File system module (used by disk cleanup cron and other fs.promises calls)
+const fs = require('fs');
+
 // Phase 13.0 — Validate environment before any service initializes
 const { validateEnv } = require('./config/validate-env');
 validateEnv();

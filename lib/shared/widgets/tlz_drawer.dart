@@ -211,21 +211,7 @@ class _TlzDrawerState extends State<TlzDrawer>
 
     return SizedBox(
       width: drawerWidth,
-      child: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 30,
-              spreadRadius: 5,
-              offset: const Offset(
-                10,
-                0,
-              ), // สาดเงาออกไปทางขวา (หน้า Home) ทีนอกตัว Drawer
-            ),
-          ],
-        ),
-        child: Drawer(
+      child: Drawer(
           backgroundColor: Colors.transparent,
           child: GestureDetector(
             onHorizontalDragUpdate: _handleSwipeUpdate,
@@ -932,7 +918,6 @@ class _TlzDrawerState extends State<TlzDrawer>
             ),
           ),
         ),
-      ),
     );
   }
 
