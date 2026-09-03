@@ -91,6 +91,41 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     }
   }
 
+  void _mergeHistory(List<dynamic> data) {
+    if (!mounted) return;
+
+    final merged = <String, Map<String, dynamic>>{
+      for (final message in _messages)
+        if (message['id'] != null) message['id'].toString(): message,
+    };
+
+    for (final message in data) {
+      final normalized = Map<String, dynamic>.from(message);
+      final id = normalized['id']?.toString();
+      if (id != null) {
+        merged[id] = normalized;
+      } else {
+        _messages.add(normalized);
+      }
+    }
+
+    final messages = merged.values.toList()
+      ..sort((a, b) {
+        final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '');
+        final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '');
+        return (aTime ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
+          bTime ?? DateTime.fromMillisecondsSinceEpoch(0),
+        );
+      });
+
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(messages);
+      _isLoadingHistory = false;
+    });
+  }
+
   Future<void> _loadChatHistory() async {
     try {
       final url = '${AppConfig.localApiUrl}/api/videos/${widget.videoId}/chat';
@@ -108,12 +143,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         debugPrint('[Chat] Got ${data.length} active messages');
 
         if (data.isNotEmpty) {
-          if (mounted)
-            setState(() {
-              _messages.clear();
-              _messages.addAll(data.map((e) => Map<String, dynamic>.from(e)));
-              _isLoadingHistory = false;
-            });
+          _mergeHistory(data);
           _scrollToBottom();
           return;
         }
@@ -131,14 +161,7 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         final List<dynamic> archivedData = jsonDecode(archivedResponse.body);
         debugPrint('[Chat] Got ${archivedData.length} archived messages');
 
-        if (mounted)
-          setState(() {
-            _messages.clear();
-            _messages.addAll(
-              archivedData.map((e) => Map<String, dynamic>.from(e)),
-            );
-            _isLoadingHistory = false;
-          });
+        _mergeHistory(archivedData);
         _scrollToBottom();
         return;
       }
@@ -291,11 +314,6 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
     final isPrivilegedUser =
         widget.role == 'reporter' || widget.role == 'responder';
     const inputHeight = 48.0;
-    final inputSpacer =
-        ((MediaQuery.of(context).size.height * 0.1 - inputHeight) / 2).clamp(
-          0.0,
-          double.infinity,
-        );
 
     return Dismissible(
       key: ValueKey('chat_dismiss_${widget.videoId}'),
@@ -304,7 +322,8 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         widget.onClose();
       },
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           // ── Top Bar ──
           Row(
@@ -401,9 +420,8 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
           const SizedBox(height: 4),
 
           // ── รายการข้อความ ──
+          // รายการข้อความขยายจากบนลงล่าง ฟองข้อความอยู่เหนือ input โดยตรง
           Flexible(child: _buildMessageList()),
-
-          SizedBox(height: inputSpacer),
 
           // ── Input bar ──
           _buildInputArea(inputHeight),

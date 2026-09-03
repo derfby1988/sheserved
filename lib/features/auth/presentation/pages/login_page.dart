@@ -732,6 +732,11 @@ class _LoginPageState extends State<LoginPage>
             final args = ModalRoute.of(context)?.settings.arguments;
             debugPrint('LoginPage: args = $args');
             if (args is Map<String, dynamic>) {
+              if (args['returnAfterLogin'] == true) {
+                debugPrint('LoginPage: returnAfterLogin, popping back');
+                Navigator.pop(context);
+                return;
+              }
               final String? target = args['redirect'] ?? args['route'];
               final dynamic targetArgs = args['args'] ?? args['arguments'];
               if (target != null) {
@@ -844,6 +849,11 @@ class _LoginPageState extends State<LoginPage>
             final args = ModalRoute.of(context)?.settings.arguments;
             debugPrint('LoginPage: social args = $args');
             if (args is Map<String, dynamic>) {
+              if (args['returnAfterLogin'] == true) {
+                debugPrint('LoginPage: social returnAfterLogin, popping back');
+                Navigator.pop(context);
+                return;
+              }
               final String? target = args['redirect'] ?? args['route'];
               final dynamic targetArgs = args['args'] ?? args['arguments'];
               if (target != null) {

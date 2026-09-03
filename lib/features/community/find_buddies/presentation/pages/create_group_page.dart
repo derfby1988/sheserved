@@ -8,7 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../../../../shared/widgets/image_upload_field.dart';
+import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 
 class CreateGroupPage extends StatefulWidget {
   const CreateGroupPage({super.key});
@@ -284,301 +286,567 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('สร้างก๊วนกีฬา')),
-      body: SafeArea(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-          child: Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Center(
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.5,
-                    child: _isSportsLoading
-                        ? TextField(
-                            enabled: false,
-                            decoration: InputDecoration(
-                              labelText: 'กีฬา',
-                              suffixIcon: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                        : DropdownMenu<String>(
-                            key: ValueKey(
-                              '${_sportId ?? 'none'}:${_sports.length}',
-                            ),
-                            initialSelection: _sportId,
-                            width: MediaQuery.of(context).size.width * 0.5,
-                            menuHeight:
-                                MediaQuery.of(context).size.height * 0.5,
-                            label: const Text('กีฬา *'),
-                            onSelected: (v) => setState(() => _sportId = v),
-                            dropdownMenuEntries: _sports
-                                .map(
-                                  (s) => DropdownMenuEntry<String>(
-                                    value: s['id'].toString(),
-                                    label: s['name_th']?.toString() ?? 'กีฬา',
-                                    leadingIcon:
-                                        (s['icon']?.toString() ?? '').isNotEmpty
-                                        ? Text(
-                                            s['icon']!.toString(),
-                                            style: _emojiTextStyle(context),
-                                          )
-                                        : null,
-                                  ),
-                                )
-                                .toList(),
-                          ),
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradient,
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'ชื่อก๊วน (สูงสุด 60 ตัวอักษร)',
-                  ),
-                  maxLength: 60,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'กรุณาระบุชื่อก๊วน'
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                if (_recentGroupNames.isNotEmpty)
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _recentGroupNames
-                          .take(8)
-                          .map(
-                            (n) => Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ActionChip(
-                                label: Text(n, overflow: TextOverflow.ellipsis),
-                                onPressed: () {
-                                  setState(() {
-                                    _nameCtrl.text = n;
-                                    _nameCtrl.selection =
-                                        TextSelection.fromPosition(
-                                          TextPosition(offset: n.length),
-                                        );
-                                  });
-                                },
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                if (_recentGroupNames.isNotEmpty) const SizedBox(height: 8),
-                TextFormField(
-                  controller: _descCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'คำอธิบาย (ไม่บังคับ)',
-                  ),
-                  maxLines: 3,
-                  maxLength: 500,
-                ),
-                const SizedBox(height: 8),
-                ImageUploadField(
-                  label: 'ภาพปกก๊วน',
-                  bucket: 'fitness-group-covers',
-                  pathPrefix: 'covers/',
-                  initialUrl: _coverImageUrl,
-                  onUploaded: (url) => setState(() => _coverImageUrl = url),
-                  onRemoved: () => setState(() => _coverImageUrl = null),
-                ),
-                const SizedBox(height: 12),
-                ImageUploadField(
-                  label: 'ภาพถ่ายสนาม',
-                  bucket: 'fitness-group-venues',
-                  pathPrefix: 'venues/',
-                  initialUrl: _venuePhotoUrl,
-                  onUploaded: (url) => setState(() => _venuePhotoUrl = url),
-                  onRemoved: () => setState(() => _venuePhotoUrl = null),
-                ),
-                const SizedBox(height: 12),
-                const Text('เพศที่ต้องการชวนเข้าร่วม'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('ช.'),
-                      selected: _genderPreference == 'male',
-                      onSelected: (_) =>
-                          setState(() => _genderPreference = 'male'),
-                    ),
-                    ChoiceChip(
-                      label: const Text('ญ.'),
-                      selected: _genderPreference == 'female',
-                      onSelected: (_) =>
-                          setState(() => _genderPreference = 'female'),
-                    ),
-                    ChoiceChip(
-                      label: const Text('เสรี'),
-                      selected: _genderPreference == 'any',
-                      onSelected: (_) =>
-                          setState(() => _genderPreference = 'any'),
-                    ),
-                  ],
-                ),
-                SwitchListTile(
-                  title: const Text(
-                    'ก๊วนส่วนตัว (ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง)',
-                  ),
-                  subtitle: const Text(
-                    'ปิด = ก๊วนเปิด (ยอมรับอัตโนมัติ) · เปิด = ก๊วนส่วนตัว (รออนุมัติ)',
-                  ),
-                  value: _requiresOwnerApproval,
-                  onChanged: (v) => setState(() => _requiresOwnerApproval = v),
-                ),
-                SwitchListTile(
-                  title: const Text('เข้าร่วมทุกรอบอัตโนมัติ'),
-                  subtitle: const Text(
-                    'เปิด = เจ้าของก๊วนถูกจองในทุก upcoming session · ปิด = เจ้าของเลือกจองเป็นรายรอบ',
-                  ),
-                  value: _ownerAutoJoin,
-                  onChanged: (v) => setState(() => _ownerAutoJoin = v),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _provinceCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'จังหวัด (ไม่บังคับ)',
-                        ),
+                  middle: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'สร้างก๊วนกีฬา',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _districtCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'อำเภอ/เขต (ไม่บังคับ)',
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              'ตำแหน่งสนาม (ไม่บังคับ)',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            const Spacer(),
-                            TextButton.icon(
-                              onPressed: _isGettingLocation
-                                  ? null
-                                  : _getCurrentLocation,
-                              icon: _isGettingLocation
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.my_location, size: 18),
-                              label: const Text('ใช้ตำแหน่งฉัน'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 200,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: FlutterMap(
-                              options: MapOptions(
-                                initialCenter: _lat != null && _lng != null
-                                    ? LatLng(_lat!, _lng!)
-                                    : const LatLng(13.7563, 100.5018),
-                                initialZoom: _lat != null ? 15 : 6,
-                                onTap: (tapPosition, point) {
-                                  setState(() {
-                                    _lat = point.latitude;
-                                    _lng = point.longitude;
-                                  });
-                                },
-                              ),
+              ),
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(32),
+                      topRight: Radius.circular(32),
+                    ),
+                  ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                    child: Form(
+                      key: _formKey,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                        children: [
+                          _buildModernSection(
+                            title: 'ข้อมูลพื้นฐาน',
+                            icon: Icons.info_outline,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                TileLayer(
-                                  urlTemplate:
-                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName:
-                                      'com.example.treeLawZoo',
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _isSportsLoading
+                                          ? _buildLoadingField('กีฬา')
+                                          : _buildModernSportDropdown(),
+                                    ),
+                                  ],
                                 ),
-                                if (_lat != null && _lng != null)
-                                  MarkerLayer(
-                                    markers: [
-                                      Marker(
-                                        point: LatLng(_lat!, _lng!),
-                                        width: 40,
-                                        height: 40,
-                                        alignment: Alignment.topCenter,
-                                        child: const Icon(
-                                          Icons.location_on,
-                                          color: Colors.red,
-                                          size: 36,
-                                        ),
-                                      ),
-                                    ],
+                                const SizedBox(height: 16),
+                                _buildModernTextField(
+                                  controller: _nameCtrl,
+                                  label: 'ชื่อก๊วน',
+                                  hint: 'ระบุชื่อที่สื่อถึงกิจกรรม',
+                                  maxLength: 60,
+                                  validator: (v) => (v == null || v.trim().isEmpty)
+                                      ? 'กรุณาระบุชื่อก๊วน'
+                                      : null,
+                                ),
+                                if (_recentGroupNames.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'ใช้ชื่อที่เคยใช้ล่าสุด:',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
+                                  const SizedBox(height: 8),
+                                  _buildRecentNames(),
+                                ],
+                                const SizedBox(height: 16),
+                                _buildModernTextField(
+                                  controller: _descCtrl,
+                                  label: 'คำอธิบาย (ไม่บังคับ)',
+                                  hint: 'รายละเอียดเพิ่มเติม เช่น ระดับฝีมือ อุปกรณ์...',
+                                  maxLines: 3,
+                                  maxLength: 500,
+                                ),
                               ],
                             ),
                           ),
-                        ),
-                        if (_lat != null && _lng != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'พิกัด: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
+                          const SizedBox(height: 24),
+                          _buildModernSection(
+                            title: 'รูปภาพ',
+                            icon: Icons.image_outlined,
+                            child: Column(
+                              children: [
+                                ImageUploadField(
+                                  label: 'ภาพปกก๊วน',
+                                  bucket: 'fitness-group-covers',
+                                  pathPrefix: 'covers/',
+                                  initialUrl: _coverImageUrl,
+                                  onUploaded: (url) => setState(() => _coverImageUrl = url),
+                                  onRemoved: () => setState(() => _coverImageUrl = null),
+                                ),
+                                const SizedBox(height: 16),
+                                ImageUploadField(
+                                  label: 'ภาพถ่ายสนาม',
+                                  bucket: 'fitness-group-venues',
+                                  pathPrefix: 'venues/',
+                                  initialUrl: _venuePhotoUrl,
+                                  onUploaded: (url) => setState(() => _venuePhotoUrl = url),
+                                  onRemoved: () => setState(() => _venuePhotoUrl = null),
+                                ),
+                              ],
                             ),
                           ),
+                          const SizedBox(height: 24),
+                          _buildModernSection(
+                            title: 'การตั้งค่าก๊วน',
+                            icon: Icons.settings_outlined,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'เพศที่ต้องการชวนเข้าร่วม',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _buildModernGenderPicker(),
+                                const SizedBox(height: 20),
+                                _buildModernSwitch(
+                                  title: 'ก๊วนส่วนตัว',
+                                  subtitle: 'ต้องรอให้เจ้าของอนุมัติก่อนจึงจะจองได้',
+                                  value: _requiresOwnerApproval,
+                                  onChanged: (v) => setState(() => _requiresOwnerApproval = v),
+                                ),
+                                const Divider(height: 24),
+                                _buildModernSwitch(
+                                  title: 'เข้าร่วมอัตโนมัติ',
+                                  subtitle: 'เจ้าของก๊วนจะอยู่ในรายชื่อจองทุกรอบนัด',
+                                  value: _ownerAutoJoin,
+                                  onChanged: (v) => setState(() => _ownerAutoJoin = v),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          _buildModernSection(
+                            title: 'สถานที่และพิกัด',
+                            icon: Icons.location_on_outlined,
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildModernTextField(
+                                        controller: _provinceCtrl,
+                                        label: 'จังหวัด',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildModernTextField(
+                                        controller: _districtCtrl,
+                                        label: 'อำเภอ/เขต',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _buildModernMapCard(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          _buildSubmitButton(),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _submitting ? null : _submit,
-                  icon: _submitting
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernSection({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.backgroundCream.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.primary.withOpacity(0.1),
+            ),
+          ),
+          child: child,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    int? maxLength,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      maxLength: maxLength,
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        counterText: '',
+      ),
+    );
+  }
+
+  Widget _buildModernSportDropdown() {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.2)),
+          ),
+        ),
+      ),
+      child: DropdownMenu<String>(
+        key: ValueKey('${_sportId ?? 'none'}:${_sports.length}'),
+        initialSelection: _sportId,
+        width: MediaQuery.of(context).size.width - 72, // Adjust for padding
+        menuHeight: MediaQuery.of(context).size.height * 0.4,
+        label: const Text('เลือกประเภทกีฬา *'),
+        onSelected: (v) => setState(() => _sportId = v),
+        dropdownMenuEntries: _sports.map((s) {
+          return DropdownMenuEntry<String>(
+            value: s['id'].toString(),
+            label: s['name_th']?.toString() ?? 'กีฬา',
+            leadingIcon: (s['icon']?.toString() ?? '').isNotEmpty
+                ? Text(
+                    s['icon']!.toString(),
+                    style: _emojiTextStyle(context).copyWith(fontSize: 18),
+                  )
+                : null,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildLoadingField(String label) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+      ),
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          const Spacer(),
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentNames() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: _recentGroupNames.take(8).map((n) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ActionChip(
+              backgroundColor: AppColors.primary.withOpacity(0.05),
+              side: BorderSide(color: AppColors.primary.withOpacity(0.1)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              label: Text(n, style: const TextStyle(fontSize: 12)),
+              onPressed: () {
+                setState(() {
+                  _nameCtrl.text = n;
+                  _nameCtrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: n.length),
+                  );
+                });
+              },
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildModernGenderPicker() {
+    return Row(
+      children: [
+        _buildGenderChip('male', 'ช.'),
+        const SizedBox(width: 8),
+        _buildGenderChip('female', 'ญ.'),
+        const SizedBox(width: 8),
+        _buildGenderChip('any', 'เสรี'),
+      ],
+    );
+  }
+
+  Widget _buildGenderChip(String value, String label) {
+    final isSelected = _genderPreference == value;
+    return GestureDetector(
+      onTap: () => setState(() => _genderPreference = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.primary.withOpacity(0.2),
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  )
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : AppColors.textPrimary,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernSwitch({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        Switch.adaptive(
+          value: value,
+          activeColor: AppColors.primary,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModernMapCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(
+              children: [
+                const Text(
+                  'ตำแหน่งสนาม',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                  icon: _isGettingLocation
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 14,
+                          height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.save),
-                  label: const Text('บันทึก'),
+                      : const Icon(Icons.my_location, size: 16),
+                  label: const Text('ใช้ตำแหน่งฉัน', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.primary),
                 ),
               ],
             ),
           ),
+          SizedBox(
+            height: 180,
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: _lat != null && _lng != null
+                    ? LatLng(_lat!, _lng!)
+                    : const LatLng(13.7563, 100.5018),
+                initialZoom: _lat != null ? 15 : 6,
+                onTap: (tapPosition, point) {
+                  setState(() {
+                    _lat = point.latitude;
+                    _lng = point.longitude;
+                  });
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.treeLawZoo',
+                ),
+                if (_lat != null && _lng != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(_lat!, _lng!),
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.topCenter,
+                        child: const Icon(Icons.location_on, color: Colors.red, size: 32),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          if (_lat != null && _lng != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: AppColors.backgroundCream.withOpacity(0.5),
+              child: Text(
+                'พิกัด: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Container(
+      width: double.infinity,
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _submitting ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: _submitting
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(Icons.check_circle_outline, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text(
+                    'สร้างก๊วนใหม่',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

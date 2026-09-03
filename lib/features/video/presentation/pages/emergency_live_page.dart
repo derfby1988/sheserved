@@ -305,6 +305,32 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       }
     });
 
+    // ตำแหน่งด้านล่างของ Emergency Chat Overlay ไม่ให้ทับปุ่มไทยมุง/เกี่ยวดอง
+    // อ้างอิง VIDEO_SYSTEM_PLAN.md ส่วน 15. Emergency Chat Overlay Layout
+    //
+    // ⚠️ Scaffold ใช้ resizeToAvoidBottomInset (default true) เมื่อแป้นพิมพ์เปิด
+    // Stack ถูกย่อให้สูงเพียงเหนือแป้นพิมพ์แล้ว จึงห้ามบวก viewInsets.bottom ซ้ำ
+    //   - keyboard เปิด: แถวปุ่มถูกซ่อน → แชทชิดขอบบนแป้นพิมพ์ 8pt
+    //   - keyboard ปิด: padding.bottom = 34 (home indicator) → แชทอยู่เหนือแถวปุ่ม
+    final mq = MediaQuery.of(context);
+    final viewInsets = mq.viewInsets.bottom;
+    final actionRowHeight = mq.size.height * 0.1;
+    final chatBottom = viewInsets > 0
+        ? 8.0
+        : mq.padding.bottom + 12 + actionRowHeight;
+    final availableChatHeight =
+        mq.size.height - _trendingPanelBottom - chatBottom - 12;
+
+    // ความสูงสูงสุด:
+    // - keyboard เปิด/ยังไม่วัด trending panel: จำกัด 25% ของจอ
+    // - keyboard ปิด + วัด trending panel ได้แล้ว: ชิดขอบล่าง trending panel
+    final double maxChatHeight;
+    if (_trendingPanelBottom > 0 && viewInsets == 0) {
+      maxChatHeight = availableChatHeight.clamp(100.0, mq.size.height * 0.7);
+    } else {
+      maxChatHeight = availableChatHeight.clamp(100.0, mq.size.height * 0.25);
+    }
+
     return Scaffold(
       body: GestureDetector(
         onTap: () {
@@ -430,6 +456,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               isConnected: _isConnected,
               selectedTab: _selectedTab,
               isThaiMhungReporting: _isThaiMhungReporting,
+              isKeyboardVisible: viewInsets > 0,
               currentResponseId: _currentResponseId,
               isEligibleResponder: _isEligibleResponder(),
               liveBlinkController: _liveBlinkController,
@@ -518,8 +545,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             ),
 
             // Emergency Chat Overlay: message bubbles span the screen width.
-            // The input stays on the right so its vertical center aligns with
-            // the bottom Thai Mhung / เกี่ยวดอง tab row.
+            // ชิดด้านบนของปุ่มไทยมุง/เกี่ยวดอง เมื่อ keyboard ปิด
+            // เมื่อ keyboard เปิด ชิดบนแป้นพิมพ์ 8 pt
+            // อ้างอิง VIDEO_SYSTEM_PLAN.md ส่วน 15. Emergency Chat Overlay Layout
             if (_isChatVisible &&
                 _currentVideoId != null &&
                 _isUiVisible &&
@@ -528,33 +556,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               Positioned(
                 left: 8,
                 right: 8,
-                // Position the chat so the last message ends just above the
-                // bottom tab row and the input is centered on that row.
-                bottom:
-                    MediaQuery.of(context).padding.bottom +
-                    MediaQuery.of(context).viewInsets.bottom +
-                    12 +
-                    MediaQuery.of(context).size.height * 0.1 / 2 -
-                    24,
+                bottom: chatBottom,
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: _trendingPanelBottom > 0
-                        ? (MediaQuery.of(context).size.height -
-                                  _trendingPanelBottom -
-                                  (MediaQuery.of(context).padding.bottom +
-                                      MediaQuery.of(context).viewInsets.bottom +
-                                      12 +
-                                      MediaQuery.of(context).size.height *
-                                          0.1 /
-                                          2 -
-                                      24) -
-                                  12)
-                              .clamp(
-                                100,
-                                MediaQuery.of(context).size.height * 0.4,
-                              )
-                        : MediaQuery.of(context).size.height * 0.25,
-                  ),
+                  constraints: BoxConstraints(maxHeight: maxChatHeight),
                   child: EmergencyChatWidget(
                     key: ValueKey(
                       _currentVideoId!,

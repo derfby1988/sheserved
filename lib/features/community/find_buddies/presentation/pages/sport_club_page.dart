@@ -708,9 +708,25 @@ class _SportClubPageState extends State<SportClubPage> {
                               if (_canViewFullGroup(g))
                                 InkWell(
                                   onTap: () => _showGroupDetailSheet(g),
-                                  child: Card(
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.5),
+                                        width: 1,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.05),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
                                     child: Padding(
-                                      padding: const EdgeInsets.all(12),
+                                      padding: const EdgeInsets.all(16),
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
@@ -792,30 +808,58 @@ class _SportClubPageState extends State<SportClubPage> {
                                                   g['gender_preference']
                                                           .toString() !=
                                                       'any')
-                                                Chip(
-                                                  label: Text(
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: (g['gender_preference']
+                                                                .toString() ==
+                                                            'male'
+                                                        ? Colors.blue
+                                                        : Colors.pink).withOpacity(0.1),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: (g['gender_preference']
+                                                                  .toString() ==
+                                                              'male'
+                                                          ? Colors.blue
+                                                          : Colors.pink).withOpacity(0.2),
+                                                    ),
+                                                  ),
+                                                  child: Text(
                                                     g['gender_preference']
                                                                 .toString() ==
                                                             'male'
                                                         ? 'ช.'
                                                         : 'ญ.',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: g['gender_preference']
+                                                                  .toString() ==
+                                                              'male'
+                                                          ? Colors.blue.shade700
+                                                          : Colors.pink.shade700,
+                                                    ),
                                                   ),
-                                                  backgroundColor:
-                                                      g['gender_preference']
-                                                              .toString() ==
-                                                          'male'
-                                                      ? Colors.blue.shade50
-                                                      : Colors.pink.shade50,
-                                                  visualDensity:
-                                                      VisualDensity.compact,
                                                 )
                                               else
-                                                Chip(
-                                                  label: const Text('เสรี'),
-                                                  backgroundColor:
-                                                      Colors.green.shade50,
-                                                  visualDensity:
-                                                      VisualDensity.compact,
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.withOpacity(0.1),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: Colors.green.withOpacity(0.2),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    'เสรี',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.green.shade700,
+                                                    ),
+                                                  ),
                                                 ),
                                             ],
                                           ),
@@ -3585,30 +3629,39 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Widget _buildSkeletonCard() {
-    return Card(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Shimmer.fromColors(
           baseColor: Colors.grey.shade300,
           highlightColor: Colors.grey.shade100,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 120, height: 14, color: Colors.white),
+              Container(width: 120, height: 14, color: Colors.white.withOpacity(0.5)),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
                 height: 18,
-                color: Colors.white,
+                color: Colors.white.withOpacity(0.5),
               ),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
                 height: 12,
-                color: Colors.white,
+                color: Colors.white.withOpacity(0.5),
               ),
               const SizedBox(height: 6),
-              Container(width: 180, height: 12, color: Colors.white),
+              Container(width: 180, height: 12, color: Colors.white.withOpacity(0.5)),
             ],
           ),
         ),
@@ -3680,13 +3733,21 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Widget _buildFloatingButtons() {
-    final user = AuthService.instance.currentUser;
-    if (user == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(right: 4, bottom: 4),
       child: FloatingActionButton.extended(
         heroTag: 'createGroupFab',
         onPressed: () async {
+          final currentUser = AuthService.instance.currentUser;
+          if (currentUser == null) {
+            await Navigator.pushNamed(
+              context,
+              '/login',
+              arguments: {'returnAfterLogin': true},
+            );
+            if (!mounted) return;
+            if (AuthService.instance.currentUser == null) return;
+          }
           final result = await Navigator.pushNamed(
             context,
             '/community/sport-club/group/create',

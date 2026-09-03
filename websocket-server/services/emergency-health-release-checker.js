@@ -21,10 +21,14 @@ const socketService = require('./socket-service');
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ANON_KEY;
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = SUPABASE_URL && SUPABASE_KEY
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required for emergency health release checker. Exiting.');
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 

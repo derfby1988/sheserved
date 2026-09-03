@@ -1,0 +1,70 @@
+# =============================================================
+# Caddyfile.staging — TLS/HTTPS for Phase 13.0 staging
+# ใช้สำหรับ: staging environment ที่ต้องการ HTTPS/WSS จริง
+# รัน: caddy run --config Caddyfile.staging --adapter caddyfile
+#
+# Prerequisites:
+#   1. Domain ชี้มาที่เครื่องนี้ (A record หรือ CNAME)
+#   2. Caddy จะ auto-provision Let's Encrypt certificate
+#   3. Port 443 เปิด (ต้อง sudo หรือ setcap)
+#
+# Phase 13.0: TLS เป็น hard prerequisite ของ 13.2 (auth endpoint)
+# =============================================================
+
+{
+	admin off
+	# staging.sheserved.example.com — เปลี่ยนเป็น domain จริง
+	email admin@sheserved.example.com
+}
+
+staging.sheserved.example.com {
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+
+	header {
+		-Server
+		X-Powered-By "Sheserved-Proxy"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Auth endpoints — strict limit
+	@auth path /api/auth/* /api/login /api/register /api/otp/* /api/verify* /api/reset*
+	handle @auth {
+		reverse_proxy localhost:3000
+	}
+
+	# Upload endpoints — low rate, larger body
+	@upload path_regexp ^/api/.*upload
+	handle @upload {
+		request_body {
+			max_size 25MB
+		}
+		reverse_proxy localhost:3000
+	}
+
+	# Emergency endpoints — high burst
+	@emergency path_regexp ^/api/.*emergency
+	handle @emergency {
+		reverse_proxy localhost:3000
+	}
+
+	# WebSocket — WSS (secure WebSocket)
+	handle /socket.io/* {
+		reverse_proxy localhost:3000
+	}
+
+	# Default API
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+}

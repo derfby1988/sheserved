@@ -27,6 +27,10 @@ class EmergencyUiOverlay extends StatelessWidget {
   final bool isChatVisible;
   final int triageBadgeCount;
   final VoidCallback? onTriageTabSelected;
+  // สถานะแป้นพิมพ์ต้องส่งมาจากผู้ปกครอง (context เหนือ Scaffold)
+  // เพราะ Scaffold แบบ resizeToAvoidBottomInset จะลบ viewInsets ออกจาก
+  // MediaQuery ที่ children ใน body เห็น — เช็คตรงนี้จะได้ false เสมอ
+  final bool isKeyboardVisible;
 
   const EmergencyUiOverlay({
     super.key,
@@ -50,11 +54,14 @@ class EmergencyUiOverlay extends StatelessWidget {
     this.isChatVisible = false,
     this.triageBadgeCount = 0,
     this.onTriageTabSelected,
+    this.isKeyboardVisible = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool showAcceptPanel = isEligibleResponder && selectedTab == 0;
+    // ซ่อนแถวปุ่มไทยมุง/เกี่ยวดองเมื่อแป้นพิมพ์เปิด เพื่อไม่ให้แชททับปุ่ม
+    final bool keyboardVisible = isKeyboardVisible;
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -77,54 +84,55 @@ class EmergencyUiOverlay extends StatelessWidget {
                     child: GestureDetector(
                       onTap: showAcceptPanel ? onDeclineRescue : onToggleUi,
                       behavior: HitTestBehavior.translucent,
-                      child: isThaiMhungReporting 
-                          ? content 
-                          : SingleChildScrollView(
-                              child: content,
-                            ),
+                      child: isThaiMhungReporting
+                          ? content
+                          : SingleChildScrollView(child: content),
                     ),
                   ),
 
                   // Bottom Right Actions (Chat Button)
-                  if (selectedTab != 2 && !isThaiMhungReporting && hasVideo)
+                  if (!keyboardVisible &&
+                      selectedTab != 2 &&
+                      !isThaiMhungReporting &&
+                      hasVideo)
                     Padding(
                       padding: const EdgeInsets.only(right: 20, bottom: 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          _buildChatButton(),
-                        ],
+                        children: [_buildChatButton()],
                       ),
                     ),
 
-                  // Tabs
-                  BottomTabsWidget(
-                    selectedTab: selectedTab,
-                    blinkAnimation: liveBlinkController,
-                    showThaiMhung: hasVideo, 
-                    onTabSelected: onTabSelected,
-                    onEmergencyTabSelected: onEmergencyTabSelected,
-                    isChatVisible: isChatVisible,
-                    isEligibleResponder: isEligibleResponder,
-                    isThaiMhungReporting: isThaiMhungReporting,
-                    showEmergency: hasVideo,
-                    triageBadgeCount: triageBadgeCount,
-                    onTriageTabSelected: onTriageTabSelected,
-                  ),
-                  if (!hasVideo && selectedTab == 0) ...[
-                    const SizedBox(height: 48),
-                    TlzBottomNavigationBar(
-                      currentIndex: 2,
-                      isVisible: true,
-                      centerButtonHint: 'กดอีกครั้งเพื่อแจ้งเหตุ',
-                      onIndexChanged: (index) {
-                        Navigator.of(context).pop(index);
-                      },
-                      onAddPressed: onEmergencyTabSelected,
+                  // Tabs — ซ่อนทั้งแถวเมื่อแป้นพิมพ์เปิด
+                  if (!keyboardVisible) ...[
+                    BottomTabsWidget(
+                      selectedTab: selectedTab,
+                      blinkAnimation: liveBlinkController,
+                      showThaiMhung: hasVideo,
+                      onTabSelected: onTabSelected,
+                      onEmergencyTabSelected: onEmergencyTabSelected,
+                      isChatVisible: isChatVisible,
+                      isEligibleResponder: isEligibleResponder,
+                      isThaiMhungReporting: isThaiMhungReporting,
+                      showEmergency: hasVideo,
+                      triageBadgeCount: triageBadgeCount,
+                      onTriageTabSelected: onTriageTabSelected,
                     ),
-                  ] else ...[
-                    const SizedBox(height: 12),
-                  ]
+                    if (!hasVideo && selectedTab == 0) ...[
+                      const SizedBox(height: 48),
+                      TlzBottomNavigationBar(
+                        currentIndex: 2,
+                        isVisible: true,
+                        centerButtonHint: 'กดอีกครั้งเพื่อแจ้งเหตุ',
+                        onIndexChanged: (index) {
+                          Navigator.of(context).pop(index);
+                        },
+                        onAddPressed: onEmergencyTabSelected,
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                    ],
+                  ],
                 ],
               ),
             ),
@@ -135,7 +143,8 @@ class EmergencyUiOverlay extends StatelessWidget {
   }
 
   Widget _buildChatButton() {
-    if (isChatVisible) return const SizedBox.shrink(); // ⬅️ ซ่อนปุ่มถ้าแชทเปิดอยู่
+    if (isChatVisible)
+      return const SizedBox.shrink(); // ⬅️ ซ่อนปุ่มถ้าแชทเปิดอยู่
 
     return GestureDetector(
       onTap: onToggleChat,
@@ -148,13 +157,7 @@ class EmergencyUiOverlay extends StatelessWidget {
         ),
         child: const Stack(
           clipBehavior: Clip.none,
-          children: [
-            Icon(
-              Icons.forum_outlined,
-              color: Colors.white,
-              size: 24,
-            ),
-          ],
+          children: [Icon(Icons.forum_outlined, color: Colors.white, size: 24)],
         ),
       ),
     );

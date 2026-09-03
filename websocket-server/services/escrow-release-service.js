@@ -22,11 +22,18 @@ const { createClient } = require('@supabase/supabase-js');
 const socketService = require('./socket-service');
 
 // Supabase client ที่ใช้ service role (bypass RLS สำหรับ escrow operations)
-// ⚠️ ต้อง set SUPABASE_SERVICE_ROLE_KEY ใน .env ก่อน production
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
-);
+// ⚠️ ต้อง set SUPABASE_SERVICE_KEY หรือ SUPABASE_SERVICE_ROLE_KEY ใน .env
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required for escrow release service. Exiting.');
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+
+const supabase = (SUPABASE_URL && SUPABASE_SERVICE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  : null;
 
 // =====================================================
 // MAIN: Release Escrow หลัง Consensus ผ่าน

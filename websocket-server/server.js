@@ -12,6 +12,10 @@
 // Load environment variables
 require('dotenv').config();
 
+// Phase 13.0 — Validate environment before any service initializes
+const { validateEnv } = require('./config/validate-env');
+validateEnv();
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -37,14 +41,15 @@ if (supabaseUrl && supabaseAnonKey) {
 }
 
 // Service-role client for sync operations (bypass RLS)
+// Phase 13.0: No silent fallback to anon key — fail loud if service key missing
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 let supabaseForSync = null;
 if (supabaseUrl && supabaseServiceKey) {
   supabaseForSync = createClient(supabaseUrl, supabaseServiceKey);
   console.log('✅ Supabase service-role client initialized for sync');
-} else if (supabaseUrl && supabaseAnonKey) {
-  supabaseForSync = supabase;
-  console.warn('⚠️  SUPABASE_SERVICE_KEY not set — sync will use anon key (may hit RLS)');
+} else {
+  console.error('❌ FATAL: SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) is required for sync client. Sync will not work.');
+  if (process.env.NODE_ENV === 'production') process.exit(1);
 }
 
 // Video System Services & Routes
@@ -79,7 +84,7 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*')
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
@@ -1406,6 +1411,11 @@ io.on('connection', (socket) => {
           "UPDATE chat_rooms SET last_message = $1, updated_at = NOW() WHERE id = $2",
           [content, roomId]
         );
+
+        // The history endpoint is cached by video and limit. Invalidate every
+        // active-history page after persistence so reopening the chat cannot
+        // restore a stale list that predates the new message.
+        await invalidateCachePattern(`chat:active:${videoId}:*`);
       } catch (err) {
         console.error('[Chat] Failed to persist message:', err.message);
       }

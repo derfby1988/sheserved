@@ -12,6 +12,11 @@ const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const HAS_SERVICE_KEY = Boolean(SUPABASE_SERVICE_KEY);
 
+if (!SUPABASE_URL || (!SUPABASE_SERVICE_KEY && !SUPABASE_ANON_KEY)) {
+  console.error('❌ FATAL: SUPABASE_URL and at least one of SUPABASE_SERVICE_KEY/SUPABASE_ANON_KEY are required for consultation queue. Exiting.');
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+
 const connection = createBullmqConnection();
 const QUEUE_NAME = 'consultation-flow';
 

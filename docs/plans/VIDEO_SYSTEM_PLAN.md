@@ -409,6 +409,78 @@ static String? _normalizeLocalUrl(String? url) {
 
 ---
 
+### 🛠️ Backend Dependency Recovery — `Cannot find module` (Updated 2026-09-03)
+
+> **อาการ**: รัน `npm start` ใน `websocket-server` แล้ว Node.js crash ทันทีพร้อมข้อความ `Error: Cannot find module '<package>'` ทั้งที่ `package.json` ระบุแพ็กเกจนั้นอยู่ — พบจริงกับ `pino` และ `uuid`
+
+#### สาเหตุ
+
+1. **`node_modules/` และ `package-lock.json` ไม่ตรงกับ `package.json`** — เกิดจากการลบ `node_modules` ด้วยตนเอง, `flutter clean` ที่ลบทับ, หรือการ restore จาก backup ที่ไม่ครบ
+2. **แพ็กเกจอยู่ใน `overrides` เท่านั้น ไม่ได้อยู่ใน `dependencies`** — `overrides` บังคับเวอร์ชันเฉพาะเมื่อแพ็กเกจนั้นถูกติดตั้งเป็น transitive dependency เท่านั้น ไม่ได้ติดตั้งแพ็กเกจโดยตรง ทำให้ `require('uuid')` ใน source code ล้มเหลว
+3. **`npm install` รายงาน `up to date` ทั้งที่ขาดแพ็กเกจ** — เพราะ `package-lock.json` เก่ายังค้างอยู่และ npm คิดว่า tree สมบูรณ์แล้ว
+
+#### วิธีแก้ไข (ตามลำดับ)
+
+**กรณีที่ 1 — แพ็กเกจอยู่ใน `dependencies` แล้ว แต่ `node_modules` หาย**
+
+```bash
+cd websocket-server
+rm -rf node_modules package-lock.json
+npm install
+```
+
+> ลบ `package-lock.json` ด้วยเพื่อบังคับให้ npm สร้าง tree ใหม่จาก `package.json` ปัจจุบัน ไม่ใช่ lock เก่า
+
+**กรณีที่ 2 — แพ็กเกจอยู่ใน `overrides` เท่านั้น ไม่มีใน `dependencies`**
+
+ย้ายแพ็กเกจจาก `overrides` ไป `dependencies` ด้วย ดังตัวอย่าง `uuid`:
+
+```diff
+  "dependencies": {
+    ...
+-   "socket.io": "^4.8.3"
++   "socket.io": "^4.8.3",
++   "uuid": "^11.1.1"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.8",
+    "ws": "^8.21.0",
+    "uuid": "^11.1.1",
+    "engine.io": "^6.6.8"
+  }
+```
+
+> `overrides` ควรเก็บไว้เพื่อบังคับเวอร์ชัน transitive dependencies แต่ต้องเพิ่มแพ็กเกจเดียวกันใน `dependencies` ด้วยถ้า source code `require()` มันโดยตรง
+
+จากนั้นรัน:
+
+```bash
+npm install
+npm start
+```
+
+#### การตรวจสอบก่อนเริ่มเซิร์ฟเวอร์ (Pre-flight Check)
+
+ก่อนรัน `npm start` ทุกครั้งหลังเปลี่ยนเครื่อง/restore repo ให้ตรวจสอบ:
+
+```bash
+cd websocket-server
+# ตรวจว่าแพ็กเกจหลักที่ source code เรียกใช้มีอยู่จริง
+ls node_modules/pino node_modules/uuid node_modules/express node_modules/socket.io 2>&1
+# ถ้ามี "No such file or directory" ให้รัน rm -rf node_modules package-lock.json && npm install
+```
+
+#### แพ็กเกจที่เคยเจอปัญหา (Watchlist)
+
+| แพ็กเกจ | สาเหตุ | วันที่เจอ |
+|---------|--------|----------|
+| `pino` | `node_modules` หายหลัง restore/clean | 2026-09-03 |
+| `uuid` | อยู่ใน `overrides` เท่านั้น ไม่มีใน `dependencies` | 2026-09-03 |
+
+> หากเพิ่ม dependency ใหม่ในอนาคต ให้ตรวจสอบว่าอยู่ใน `dependencies` (ไม่ใช่แค่ `overrides`) และทดสอบ `npm start` หลัง `rm -rf node_modules && npm install` ทุกครั้ง
+
+---
+
 ### 🕒 Trending Card Timestamp Display Policy (Updated 2026-09-01)
 
 > **ไฟล์ที่เกี่ยวข้อง:** `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart`, `websocket-server/routes/video.js`
@@ -4467,5 +4539,77 @@ supabase db push
 - ทุกครั้งที่ต้องส่ง `List<String>` จาก Flutter ไป Postgres RPC ให้ตรวจสอบว่า column เป้าหมายเป็น `text[]` หรือ `jsonb` — ถ้าเป็น `text[]` ให้แปลงด้วย `jsonb_array_elements_text` หรือ cast ก่อน insert
 - ถ้ามี RPC บายพาสสำหรับ `UPDATE` แล้ว ต้องสร้าง RPC คู่ขนานสำหรับ `INSERT` เสมอ เมื่อ RLS บังคับใช้
 - Flutter ไม่ควรพึ่ง service role key เพื่อข้าม RLS บน client — ต้องข้ามที่ RPC ฝั่ง Supabase เท่านั้น
+
+## 15. Emergency Chat Overlay Layout (Updated 2026-09-03)
+
+> **ไฟล์ที่เกี่ยวข้อง:** `lib/features/video/presentation/pages/emergency_live_page.dart`, `lib/features/video/presentation/pages/widgets/emergency_chat_widget.dart`, `lib/features/video/presentation/pages/widgets/bottom_tabs_widget.dart`
+
+หน้า `EmergencyLivePage` มี overlay แชททฉุกเฉินลอยบนแผนที่ ต้องปฏิบัติตามข้อกำหนดตำแหน่งและความสูงดังต่อไปนี้ เพื่อป้องกันบดบังปุ่ม **ไทยมุง / เกี่ยวดอง / แจ้งเหต��ัน�ุุฉุกเฉิน** และป�้องก้องกันฟองข้อความ + ช่องกรอกลอยสูงเกิดไป
+
+### 15.1 ข้อกำหนดตำแหน่ง
+
+1. **เมื่อไม่มีแป้นพิมพ์ (keyboard closed)**
+   - ด้านล่างของ `EmergencyChatWidget` ต้องอยู่ **เหนือ row ของปุ่ม `BottomTabsWidget` เท่านั้น**
+   - ไม่อนุญาตให้ overlay ทับปุ่ม `ไทยมุง`, `เกี่ยวดอง`, หรือ `ัน�น�แจ้งเหตุแจ้งเหตุฉุกเฉิน`
+   - `BottomTabsWidget` ใช้ `maxButtonSize = screenHeight * 0.1` และ `GlassTabButton` สัดส่วน 1:1
+   - ระยะ bottom offset ของ chat overlay:
+     ```
+     bottom = padding.bottom + 12 + maxButtonSize
+     ```
+     โดย `12` คือ `SizedBox` ระหว่าง `BottomTabsWidget` กับขอบล่างของ SafeArea
+
+2. **เมื่อมีแป้นพิมพ์ (keyboard open)**
+   - `Scaffold` ใช้ `resizeToAvoidBottomInset` (default `true`) — body/Stack ถูกย่อให้สูงเพียงเหนือแป้นพิมพ์แล้ว
+   - ⚠️ **Scaffold จะลบ `viewInsets.bottom` ออกจาก MediaQuery ที่ children ใน body เห็น** — วิดเจ็ตข้างใน body (เช่น `EmergencyUiOverlay`) เช็ค `MediaQuery.viewInsets.bottom` ตรง ๆ จะได้ `0` เสมอ
+   - **แถวปุ่ม `BottomTabsWidget` ต้องถูกซ่อน** เมื่อแป้นพิมพ์เปิด โดยส่ง `isKeyboardVisible` เป็น parameter จาก `emergency_live_page.dart` (context เหนือ Scaffold อ่าน `viewInsets` ได้จริง) ลงใน `EmergencyUiOverlay`
+   - **ห้ามบวก `viewInsets.bottom` ซ้ำ** ใน `Positioned.bottom` — จะทำให้แชทลอยขึ้นไปสุดจอ (double-counting)
+   - แชทต้องชิดขอบล่างของพื้นที่ที่เหลือ (ขอบบนแป้นพิมพ์) 8pt
+
+3. **รวมเงื่อนไข:**
+   ```dart
+   final mq = MediaQuery.of(context);
+   final viewInsets = mq.viewInsets.bottom;
+   final actionRowHeight = mq.size.height * 0.1;
+   final chatBottom = viewInsets > 0
+       ? 8.0  // keyboard เปิด: ปุ่มถูกซ่อน → ชิดขอบบนแป้นพิมพ์
+       : mq.padding.bottom + 12 + actionRowHeight;  // keyboard ปิด: เหนือแถวปุ่ม
+   ```
+   - keyboard ปิด: `padding.bottom = 34` (home indicator) → แชทอยู่เหนือแถวปุ่ม
+   - keyboard เปิด: แถวปุ่มซ่อน, ขอบล่าง Stack = ขอบบนแป้นพิมพ์ → แชทชิดขอบบนแป้นพิมพ์ 8pt
+
+### 15.2 ข้อกำหนดความสูง
+
+- ความสูงสูงสุดของ `EmergencyChatWidget`:
+  - ถ้า **keyboard เปิด** หรือ **ยังไม่ได้วัดขอบล่าง Trending Panel** → จำกัด **25% ของความสูงหน้าจอ**
+  - ถ้า **keyboard ปิด และวัด `trendingPanelBottom` ได้แล้ว** → ความสูงสูงสุด = พื้นที่ว่างระหว่าง `trendingPanelBottom + 12` ถึง `chatBottom` (overlay ชิดขอบล่างของกล่องยอดนิยม)
+- เมื่อมี Trending Panel ให้คำนวณจากพื้นที่ว่างระหว่าง `trendingPanelBottom` กับ `chatBottom`
+- ช่องกรอกข้อความ (Input) ต้องอยู่ **ชิดล่างสุด** ของ overlay ด้วยการใช้ `Column.mainAxisAlignment = MainAxisAlignment.end`
+- ฟองข้อความต้องอยู่ **เหนือ input โดยตรง** ไม่ลอยสูงเกินกว่าความสูง overlay
+- ไม่มี `inputSpacer` หรือตัวยก input ให้ลอยขึ้นไป
+
+### 15.3 ตัวอย่างโครงสร้าง widget
+
+```dart
+// emergency_chat_widget.dart
+Column(
+  mainAxisSize: MainAxisSize.max,
+  mainAxisAlignment: MainAxisAlignment.end,
+  children: [
+    // ปิด / filter ด้านบน
+    Row(...),
+    const SizedBox(height: 4),
+    // รายการข้อความขยายตัวจากล่างขา�า�ึ้ึ้นบน
+    Flexible(child: _buildMessageList()),
+    // ช่องกรอกชิดล่าง
+    _buildInputArea(inputHeight),
+  ],
+)
+```
+
+### 15.4 สิ่งห้าม
+
+- ห้ามใช้ `Column.mainAxisSize = MainAxisSize.min` แล้วใส่ `Align` ชั่วคราว — ทำให้ overlay ลอยไม่สม่ำเสมอ
+- ห้ามเพิ่ม `SizedBox` ยก input ให้สูงกว่า bottom ของ overlay
+- ห้ามให้ `ListView` ลอยสูงกว่าพื้นที่ที overlay กำหนด
 
 

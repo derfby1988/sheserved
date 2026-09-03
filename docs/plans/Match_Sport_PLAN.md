@@ -1280,6 +1280,71 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **Deliverable:** env template + public data contract + public view design/test + config hardening PR
 - Gate: environment validation ผ่าน, ไม่มี secret ใน client/log, view ไม่เปิด PII, HTTPS/WSS ใช้งานได้บน staging, service fallback ถูกลบ, Decision Log ครบทุกข้อ
 
+#### Phase 13.0 — Public Data Contract Classification (Q5 = B)
+
+| Table | Column | Classification | Exposed in public VIEW? |
+|---|---|---|---|
+| sports | id | public | ✅ `sports_select_all` policy (existing) |
+| | name_th | public | ✅ |
+| | name_en | public | ✅ |
+| | icon | public | ✅ |
+| | status | public (approved) | ✅ |
+| | proposed_by | server-only (PII) | ❌ |
+| | proposed_at | server-only | ❌ |
+| | reviewed_by | server-only (PII) | ❌ |
+| | reviewed_at | server-only | ❌ |
+| | rejection_reason | server-only | ❌ |
+| fitness_groups | id | public | ✅ fitness_groups_public |
+| | sport_id | public | ✅ |
+| | name | public | ✅ |
+| | description | public | ✅ |
+| | province | public | ✅ |
+| | district | public | ✅ |
+| | lat / lng | public (coarse) | ✅ |
+| | gender_preference | public | ✅ |
+| | requires_owner_approval | public | ✅ |
+| | capacity | public | ✅ |
+| | cover_image_url | public | ✅ |
+| | venue_photo_url | public | ✅ |
+| | created_at | public | ✅ |
+| | visibility | server-only | ❌ (view filters = 'public') |
+| | created_by | server-only (PII) | ❌ |
+| fitness_group_sessions | id | public | ✅ fitness_sessions_public |
+| | group_id | public | ✅ |
+| | starts_at / ends_at | public | ✅ |
+| | place_name | public | ✅ |
+| | lat / lng | public | ✅ |
+| | note | public | ✅ |
+| | capacity (from group) | public | ✅ |
+| | confirmed_count (aggregate) | public | ✅ |
+| | available_count (aggregate) | public | ✅ |
+| fitness_group_members | user_id | member/manager | ❌ |
+| | role | member/manager | ❌ |
+| | is_active | member/manager | ❌ |
+| | joined_at | member/manager | ❌ |
+| fitness_group_bookings | user_id | member/manager | ❌ |
+| | status | member/manager | ❌ |
+| | created_at / cancelled_at | member/manager | ❌ |
+| | cancelled_by / cancel_reason | member/manager | ❌ |
+| fitness_group_blocklist | blocked_user_id | manager/server-only | ❌ |
+| | blocked_by | manager/server-only | ❌ |
+| | reason | manager/server-only | ❌ |
+| | is_active | manager/server-only | ❌ |
+
+> **หมายเหตุ:** anon อ่านได้เฉพาะ public VIEW; member/manager columns จะถูกจำกัดด้วย RLS ใน Phase 13.1/13.5; การ revoke anon SELECT จากตารางจริงจะทำใน migration cutover 13.5
+
+#### Phase 13.0 — Implementation status (2026-09-03)
+- ✅ **Public view migration:** `20260903110900_phase_13_0_fitness_public_views.sql` — `fitness_groups_public` (exposes id, sport_id, name, description, province, district, lat/lng, gender_preference, requires_owner_approval, capacity, cover_image_url, venue_photo_url, created_at + aggregate counts: upcoming_sessions_count, upcoming_confirmed_count, upcoming_pending_count; filters `visibility='public'`); `fitness_sessions_public` (exposes id, group_id, starts_at, ends_at, capacity, place_name, lat/lng, note, confirmed_count, available_count; joins group for capacity, filters `visibility='public'`); `GRANT SELECT TO anon, authenticated`
+- ✅ **Flutter browse query:** `fitness_buddies_repository.dart` `listGroups()` ชี้ไป `fitness_groups_public` แล้ว
+- ✅ **Fitness browse UX (guest mode):** ปุ่ม 'สร้างก๊วน' บน `SportClubPage` แสดงใน guest mode; กดแล้ว push `/login` พร้อม `arguments: {'returnAfterLogin': true}`; หลัง login สำเร็จ `LoginPage` pop กลับยัง `SportClubPage` เดิม (state และแถบ bottom nav สูงเพิ่ง) แล้วเปิดหน้า create group ต่อทันที
+- ✅ **`.env.example`:** เพิ่ม `SUPABASE_JWT_SECRET`, `JWT_ACTIVE_KID/SECRET`, `JWT_PREVIOUS_KID/SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `ACCESS_TTL`, `REFRESH_TTL`, `SUPABASE_SERVICE_KEY` template (สำหรับ services ที่ลบ fallback แล้ว)
+- ✅ **Env validator (`config/validate-env.js`):** `REQUIRED_IN_PRODUCTION` คง `DB_*`, `ALLOWED_ORIGINS`, `SUPABASE_URL`; JWT env ยังเป็น template สำหรับ 13.2 (ตรวจเมื่อ set, ไม่ required ตอน 13.0); ตรวจ `kid` ซ้ำ, TTL range, secret length ≥32, service key mandatory, `SUPABASE_JWT_SECRET`/service key placeholders; เพิ่ม JWT + service key placeholder ใน `FORBIDDEN_VALUES`; wired `validateEnv()` เข้า `server.js` startup
+- ✅ **Silent fallback removed:** ลบ `SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY` ใน 8 ไฟล์ (server.js, escrow-deadline-checker, escrow-release-service, inventory-alert-checker, payment-queue-service, emergency-health-release-checker, emergency-health-monitor-service, consultation-queue); pattern: `SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY` เท่านั้น, missing = `console.error` + `process.exit(1)` ใน production
+- ✅ **`ALLOWED_ORIGINS`:** `server.js` เลิก default `*` บน `ALLOWED_ORIGINS` (fail-closed); CORS + WebSocket origin allowlist ใช้ env ชุดเดียวกัน; validator บังคับไม่ใช่ `*` ใน production/staging
+- ✅ **Caddy TLS/WSS staging:** `Caddyfile.staging` — auto HTTPS via Let's Encrypt, HSTS, security headers, WSS via `/socket.io/*` reverse proxy, `X-Forwarded-Proto` header
+- ⚠️ **Residual:** Caddyfile.staging ใช้ placeholder domain `staging.sheserved.example.com` — ต้องเปลี่ยนเป็น domain จริงก่อน deploy; TLS certificate auto-provision ต้องทดสอบบน staging จริง
+- **Gate ผ่าน:** environment validation พร้อม ✅, view ไม่เปิด PII ✅, service fallback ถูกลบ ✅, Decision Log ครบ ✅, HTTPS/WSS config พร้อม (รอ domain จริง) ⚠️
+
 ### Phase 13.1 — DB identity context, roles และ RLS foundation (Decision Q7 = C, Q12 = B)
 - **จุดประสงค์:** เตรียม trusted DB path, worker/audit role และ staging RLS ก่อนเปิด Auth/verified WebSocket; phase นี้ต้องไม่มี production cutover และยังไม่รับ traffic ใหม่
 - **Decision Q7 = C:** สร้าง helper เดียวรวมสอง identity path — RLS/RPC ทุกจุดต้องอ่านจาก helper นี้เท่านั้น; `app.current_user_id()` ต้อง parse UUID/ตรวจ active user และถ้ามีทั้ง `app.user_id` กับ `request.jwt.claims.sub` แล้วไม่ตรงกันต้องคืน `UNAUTHORIZED` (ห้ามใช้ `COALESCE` กลบ identity conflict); `app.require_current_user_id()` เดิมเรียก helper นี้
@@ -1435,4 +1500,4 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | WebSocket auth มี DB path ก่อนเปิด room check หรือไม่ | ✅ DB foundation อยู่ 13.1 และ room auth อยู่ 13.3; ไม่มี service_role request handler |
 | canary แยกข้อมูลเสียเดิมกับข้อมูลเสียใหม่หรือไม่ | ✅ baseline invariant ก่อน canary; gate นับเฉพาะ violation ใหม่ |
 | แผน rollback เปิดช่องโหว่เดิมกลับหรือไม่ | ✅ rollback ได้เฉพาะ secure App/Backend release; ห้ามเปิด anon mutation/legacy actor RPC กลับ |
-| สถานะ implementation | ✅ Phase 12.9 ปิดสมบูรณ์ (โค้ด + migration apply + regression login/register ผ่าน); ⚠️ Phase 13.0–13.6 ยังไม่ได้ลงมือ |
+| สถานะ implementation | ✅ Phase 12.9 ปิดสมบูรณ์; ✅ Phase 13.0 ปิดสมบูรณ์ (public views + env template + validator + fallback removed + Caddy staging); ⚠️ Phase 13.1–13.6 ยังไม่ได้ลงมือ |

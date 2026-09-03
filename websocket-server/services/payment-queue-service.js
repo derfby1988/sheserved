@@ -7,10 +7,17 @@ const { resolveQueueOptions } = require('../utils/queue-config');
 const connection = createBullmqConnection();
 
 // Setup Supabase (Service Role for transfers)
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
-);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required for payment queue service. Exiting.');
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+
+const supabase = (SUPABASE_URL && SUPABASE_SERVICE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  : null;
 
 // Create the Transfer Queue
 const QUEUE_NAME = 'payment-transfers';

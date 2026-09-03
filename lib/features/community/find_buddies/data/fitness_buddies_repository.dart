@@ -318,7 +318,7 @@ class FitnessBuddiesRepository {
     int limit = 50,
     int offset = 0,
   }) async {
-    final base = _client.from('fitness_groups').select('*');
+    final base = _client.from('fitness_groups_public').select('*');
     var query = base;
     if (sportId != null && sportId.isNotEmpty)
       query = query.eq('sport_id', sportId);
@@ -327,7 +327,7 @@ class FitnessBuddiesRepository {
     if (district != null && district.isNotEmpty)
       query = query.eq('district', district);
     if (q != null && q.isNotEmpty) query = query.ilike('name', '%$q%');
-    // ทุกก๊วน (รวมก๊วนส่วนตัว) แสดงในรายการเปิดรับ; openOnly = เฉพาะก๊วนที่เข้าร่วมได้ทันที
+    // Phase 13.0: fitness_groups_public view only exposes visibility='public' groups
     if (openOnly) {
       query = query.eq('requires_owner_approval', false);
     }

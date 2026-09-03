@@ -16,6 +16,8 @@ const REQUIRED_IN_PRODUCTION = [
   'DB_USER',
   'DB_PASSWORD',
   'ALLOWED_ORIGINS',
+  // Phase 13.0 — Supabase URL required for any environment
+  'SUPABASE_URL',
 ];
 
 const FORBIDDEN_VALUES = [
@@ -25,6 +27,10 @@ const FORBIDDEN_VALUES = [
   'password',
   '*',
   'your-pull-zone.b-cdn.net',
+  'change-me-to-256-bit-secret-1',
+  'change-me-to-256-bit-secret-2',
+  'your-supabase-jwt-secret',
+  'your-service-role-key',
 ];
 
 const SENSITIVE_KEY_PATTERNS = [
@@ -74,6 +80,39 @@ function validateEnv() {
 
     if (process.env.BUNNY_CDN_URL && process.env.BUNNY_CDN_URL === 'https://your-pull-zone.b-cdn.net') {
       problems.push('BUNNY_CDN_URL is still placeholder');
+    }
+
+    // Phase 13.0 — JWT validation
+    if (process.env.JWT_ACTIVE_KID && process.env.JWT_PREVIOUS_KID &&
+        process.env.JWT_ACTIVE_KID === process.env.JWT_PREVIOUS_KID) {
+      problems.push('JWT_ACTIVE_KID and JWT_PREVIOUS_KID must not be the same');
+    }
+
+    const accessTtl = parseInt(process.env.ACCESS_TTL, 10);
+    const refreshTtl = parseInt(process.env.REFRESH_TTL, 10);
+    if (process.env.ACCESS_TTL && (isNaN(accessTtl) || accessTtl <= 0 || accessTtl > 3600)) {
+      problems.push('ACCESS_TTL must be a positive integer ≤ 3600 (seconds)');
+    }
+    if (process.env.REFRESH_TTL && (isNaN(refreshTtl) || refreshTtl <= 0 || refreshTtl > 2592000)) {
+      problems.push('REFRESH_TTL must be a positive integer ≤ 2592000 (30 days in seconds)');
+    }
+
+    if (process.env.JWT_ACTIVE_SECRET && process.env.JWT_ACTIVE_SECRET.length < 32) {
+      problems.push('JWT_ACTIVE_SECRET must be at least 32 characters (HS256 minimum)');
+    }
+    if (process.env.JWT_PREVIOUS_SECRET && process.env.JWT_PREVIOUS_SECRET.length < 32) {
+      problems.push('JWT_PREVIOUS_SECRET must be at least 32 characters (HS256 minimum)');
+    }
+
+    // Phase 13.0 — Service role key mandatory in production
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceKey) {
+      problems.push('SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) is required in production — no silent fallback to anon');
+    }
+
+    // Phase 13.0 — SUPABASE_JWT_SECRET must not be placeholder
+    if (process.env.SUPABASE_JWT_SECRET && process.env.SUPABASE_JWT_SECRET === 'your-supabase-jwt-secret') {
+      problems.push('SUPABASE_JWT_SECRET is still placeholder');
     }
   }
 
