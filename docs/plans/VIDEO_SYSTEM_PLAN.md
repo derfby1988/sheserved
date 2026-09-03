@@ -728,6 +728,60 @@ String _ensureFullUrl(String url) {
 
 ---
 
+## Phase — Responder Route Color by Profession
+
+> Planned: 2026-09-03
+> Status: Pending implementation
+
+### 1. Objective
+เปลี่ยนเส้นประ (dashed polyline) ของจิตอาสาใน `EmergencyLivePage` จากสีฟ้าคงที (`Colors.blue`) ให้ใช้สีตาม `professionColor` ของแต่ละคน (`professions.color_hex`)
+
+### 2. Background
+`MapBackgroundWidget` วาดเส้นทางของแต่ละจิตอาสาด้วยสีฟ้าคงที:
+
+```dart
+color: Colors.blue.withOpacity(0.6),
+```
+
+ปัจจุบัน `GET /api/videos/:id/responders` ส่ง `profession_color` กลับมาแล้ว และ `VideoRepository.getIncidentResponders` map เป็น `professionColor` นอกจากนี้ `MapBackgroundWidget` ยังใช้ `professionColor` กำหนดสีของ marker อยู่แล้ว ดังนั้นการนำไปใช้กับ `Polyline` จึงทำได้โดยไม่ต้องเพิ่ม API ใหม่
+
+### 3. Implementation Steps
+
+#### 3.1 Flutter — `lib/features/video/presentation/pages/widgets/map_background_widget.dart`
+- ในส่วนสร้าง `Polyline` ของ responder ให้ parse `r['professionColor']` ก่อนกำหนด `color`
+- แปลง hex string เป็น `Color` ด้วย pattern เดียวกับ marker
+- คงค่า `.withOpacity(0.6)` และ `dash pattern` ไว้
+- Fallback ไป `Colors.blue` เมื่อไม่มีสีหรือ parse ไม่ผ่าน
+
+#### 3.2 Backend — `websocket-server/routes/video.js`
+- ตรวจสอบ `GET /:id/responders` ว่า `SELECT p.color_hex` ครบทุก responder
+- ตรวจสอบ Supabase fallback ใน `video_repository.dart` ว่าดึง `professions.color_hex` ด้วย
+- (Optional) เพิ่ม `p.category` หากต้องการรองรับ "สีกลุ่มอาชีพ" ในอนาคต
+
+### 4. Edge Cases
+
+| สถานการณ์ | การจัดการ |
+|---|---|
+| `professionColor` เป็น `null` | ใช้ `Colors.blue` |
+| hex ไม่ถูกต้อง | ใช้ default และ log warning |
+| จิตอาสาหลายคนอาชีพเดียวกัน | เส้นซ้อนทับสีเดียวกัน แก้ด้วย dash pattern ที่มีอยู่ |
+| Web platform | Google Maps web รองรับ `Polyline` สี custom ปกติ |
+
+### 5. Testing Checklist
+- [ ] Responder 1 คน มีสีตามอาชีพ
+- [ ] Responder หลายคนหลายอาชีพ เส้นเป็นคนละสี
+- [ ] `professionColor` เป็น null/invalid ไม่ crash
+- [ ] สีเข้มไม่บดบังแผนที่ (opacity 0.6)
+- [ ] iOS / Android / Web render ตรงกัน
+
+### 6. Acceptance Criteria
+- `MapBackgroundWidget` วาดเส้นทางจิตอาสาด้วยสี `professionColor`
+- Fallback default ทำงานได้โดยไม่ crash
+- Dash pattern และ width คงเดิม
+- ไม่กระทบ marker hue ที่ใช้ `professionColor` อยู่แล้ว
+
+---
+
 ## Cost Estimation
 
 ### Bunny.net (สำหรับประเทศไทย)
@@ -4705,3 +4759,68 @@ Column(
 - ห้ามให้ `ListView` ลอยสูงกว่าพื้นที่ที overlay กำหนด
 
 
+---
+
+## Phase — Responder Route Polyline (Development → Production)
+
+> Planned: 2026-09-03
+> Status: Pending implementation
+
+แผนแยกการ implement การวาดเส้นทางละเอียดของจิตอาสาบนแผนที่ออกเป็น 2 ระยะ ช่วงพัฒนาเน้น render polyline ให้ถูกต้องโดยใช้ test data สำเร็จรูป ช่วง production ค่อยเชื่อมกับ routing provider ของจริง
+
+### 1. Phase 1 — Development: วาดเส้นจาก `encodedPolyline` ที่มีอยู่
+
+**Objective:** รองรับการวาด `Polyline` ละเอียดบนแผนที่โดยไม่ต้องเรียก routing API ในช่วง dev/test
+
+- สร้างตัวอย่าง `encodedPolyline` สำหรับ dev/test (hardcoded ใน `MapBackgroundWidget` หรือ mock data)
+- ใช้ `flutter_polyline_points` decode แล้วสร้าง `Polyline` บน `EmergencyLivePage`
+- ปรับ `_adjustMapBounds()` ให้ include ทุกจุดของ `encodedPolyline` (ไม่ใช่แค่ start/end) เพื่อไม่ให้เส้นทางโค้งหลุดหน้าจอ
+- รองรับสีตามอาชีพ (เชื่อมกับ Phase — Responder Route Color by Profession)
+- รองรับ dash pattern / width / opacity
+- ทดสอบ performance กับเส้นทาง 100+ points
+
+### 2. Phase 2 — Production: สร้าง `encodedPolyline` จากเส้นทางถนนจริง
+
+**Objective:** เชื่อมกับ routing provider เพื่อสร้าง `encodedPolyline` ของเส้นทางถนนจริงที่จิตอาสาต้องใช้
+
+#### 2.1 Routing Provider ตัวเลือก
+
+| Provider | ค่าใช้จ่าย | ข้อดี | ข้อควรระวัง |
+|---|---|---|---|
+| Google Maps Directions API | มีค่าใช้จ่าย (ภายใน free tier ของ Google Maps Platform) | แม่นยำ ครอบคลุมไทย | ต้องบริหาร quota/credit; ห้ามเปิด `Maps JavaScript API` ตามแผนเดิม |
+| OSRM (`router.project-osrm.org`) | ฟรี demo | ไม่เสียเงิน | limit ต่ำ, ข้อมูลถนนไทยไม่สมบูรณ์, ไม่เหมาะ production |
+| Self-host OSRM/Valhalla | ค่าเซิร์ฟเวอร์ | ฟรี license, ควบคุมเอง | ต้องเตรียมข้อมูลถนนและ maintain |
+| OpenRouteService | มี free tier | API key ฟรี | rate limit, ข้อมูลถนนไทย varies |
+
+#### 2.2 Implementation Steps
+
+- แก้ `_drawRouteToEmergency` ใน `rescue_page.dart` ให้เลือก provider ได้ (default OSRM สำหรับ dev, Google สำหรับ production ถ้า budget อนุญาต)
+- ส่ง `encodedPolyline` ผ่าน `WebSocketService.sendVolunteerRoute` (มีแล้ว) เมื่อ route พร้อม
+- เก็บ `route_polyline` ลง `incident_responses` (มีแล้ว)
+- `MapBackgroundWidget` ใช้ `route_polyline` แทนเส้นตรงถ้ามี ถ้าไม่มี fallback ไปเส้นตรง
+- อัปเดต `VIDEO_SYSTEM_PLAN.md` เรื่อง Cost Prevention เพิ่มเตือน Directions API
+- (Optional) อัปเดต `encodedPolyline` แบบ real-time เมื่อจิตอาสาออกนอก route
+
+### 3. Fallback & Edge Cases
+
+| สถานการณ์ | การจัดการ |
+|---|---|
+| routing API ล้ม | fallback เส้นตรงจาก `currentLat/Lng` ไปจุดเกิดเหตุ |
+| ไม่มี `encodedPolyline` | ใช้เส้นตรงเหมือนเดิม |
+| dev/test | ใช้ mock `encodedPolyline` โดยไม่ต้องเรียก API |
+| ผู้ใช้ปิดการใช้งาน routing provider | ใช้เส้นตรง |
+
+### 4. Testing Checklist
+
+**Phase 1:**
+- [ ] Decode `encodedPolyline` ได้ถูกต้อง
+- [ ] `Polyline` วาดบน `EmergencyLivePage` ได้
+- [ ] `_adjustMapBounds` include ทุกจุดของ polyline
+- [ ] สี/width/opacity ถูกต้อง
+
+**Phase 2:**
+- [ ] เรียก routing provider ได้ใน production mode
+- [ ] ส่ง `encodedPolyline` ขึ้น server ได้
+- [ ] `MapBackgroundWidget` แสดงเส้นทางจริงเมื่อมี `route_polyline`
+- [ ] fallback เส้นตรงทำงานเมื่อ route หาย
+- [ ] ไม่มีค่าใช้จ่ายแฝงใน dev mode
