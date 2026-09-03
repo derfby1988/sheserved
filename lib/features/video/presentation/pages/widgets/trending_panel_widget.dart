@@ -14,6 +14,11 @@ class TrendingPanelWidget extends StatefulWidget {
   final Function(String) onSwitchVideo;
   final VoidCallback? onLoadMore;
 
+  /// ✅ ล็อกแผงขณะผู้ช่วยเหลืออยู่ระหว่างภารกิจ (currentResponseId != null)
+  /// - แสดงเฉพาะการ์ดเหตุการณ์ปัจจุบัน ไม่แสดงการ์ดอื่น
+  /// - ป้องกันผู้ช่วยเหลือเผลอกดเปลี่ยนเหตุการณ์ก่อนจบภารกิจ
+  final bool lockToCurrentVideo;
+
   const TrendingPanelWidget({
     super.key,
     required this.trendingVideos,
@@ -22,6 +27,7 @@ class TrendingPanelWidget extends StatefulWidget {
     required this.onSwitchVideo,
     this.highlightVideoId,
     this.onLoadMore,
+    this.lockToCurrentVideo = false,
   });
 
   @override
@@ -260,227 +266,245 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
             ),
             const SizedBox(height: 8),
             Flexible(
-              child: widget.isLoadingTrending
-                  ? _buildSkeletonList()
-                  : widget.trendingVideos.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(16.0),
+              child: Builder(
+                builder: (context) {
+                  // ✅ ระหว่างภารกิจ: แสดงเฉพาะการ์ดเหตุการณ์ปัจจุบันเท่านั้น
+                  final displayVideos = widget.lockToCurrentVideo
+                      ? widget.trendingVideos
+                            .where((v) => v.id == widget.currentVideoId)
+                            .toList()
+                      : widget.trendingVideos;
+
+                  if (widget.isLoadingTrending) {
+                    return _buildSkeletonList();
+                  }
+                  if (displayVideos.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16.0),
                       child: Center(
                         child: Text(
-                          'ไม่มีข้อมูล',
-                          style: TextStyle(
+                          widget.lockToCurrentVideo
+                              ? 'อยู่ระหว่างภารกิจ — แสดงเฉพาะเหตุการณ์ปัจจุบัน'
+                              : 'ไม่มีข้อมูล',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
                             fontFamily: 'SukhumvitSet',
                             color: Colors.black54,
+                            fontSize: 12,
                           ),
                         ),
                       ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      itemCount: widget.trendingVideos.length,
-                      itemBuilder: (context, index) {
-                        final video = widget.trendingVideos[index];
-                        final bool isNewEmergency =
-                            video.id == widget.highlightVideoId;
+                    );
+                  }
+                  return ListView.builder(
+                    controller: _scrollController,
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    itemCount: displayVideos.length,
+                    itemBuilder: (context, index) {
+                      final video = displayVideos[index];
+                      final bool isNewEmergency =
+                          video.id == widget.highlightVideoId;
 
-                        // ใช้เวลาที่ผู้สร้างสร้างวิดีโอ/ภาพจาก created_at เท่านั้น
-                        // แสดงข้อความ relative สำหรับสื่อใหม่ และใช้วันเวลาเต็มเมื่อเกิน 1 ชั่วโมง
-                        final now = AppConfig.thailandNow;
-                        final createdAt = AppConfig.toThailand(video.createdAt);
-                        final diff = now.difference(createdAt);
-                        final dateStr =
-                            diff.inMinutes >= 0 && diff.inMinutes < 60
-                            ? diff.inMinutes == 0
-                                  ? 'เมื่อครู่นี้'
-                                  : '${diff.inMinutes} นาทีที่แล้ว'
-                            : _formatThaiDate(createdAt);
+                      // ใช้เวลาที่ผู้สร้างสร้างวิดีโอ/ภาพจาก created_at เท่านั้น
+                      // แสดงข้อความ relative สำหรับสื่อใหม่ และใช้วันเวลาเต็มเมื่อเกิน 1 ชั่วโมง
+                      final now = AppConfig.thailandNow;
+                      final createdAt = AppConfig.toThailand(video.createdAt);
+                      final diff = now.difference(createdAt);
+                      final dateStr = diff.inMinutes >= 0 && diff.inMinutes < 60
+                          ? diff.inMinutes == 0
+                                ? 'เมื่อครู่นี้'
+                                : '${diff.inMinutes} นาทีที่แล้ว'
+                          : _formatThaiDate(createdAt);
 
-                        String displayTitle = video.categoryName ?? '';
-                        if (displayTitle.isEmpty || displayTitle == 'null') {
-                          if (video.title.startsWith('Emergency Incident')) {
-                            displayTitle = 'เหตุฉุกเฉิน';
-                          } else {
-                            displayTitle = video.title;
-                          }
-                          if (displayTitle.isEmpty) {
-                            displayTitle = video.description ?? 'เหตุฉุกเฉิน';
-                          }
-                          displayTitle = displayTitle.replaceAll(
-                            RegExp(r'\s+\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}$'),
-                            '',
-                          );
+                      String displayTitle = video.categoryName ?? '';
+                      if (displayTitle.isEmpty || displayTitle == 'null') {
+                        if (video.title.startsWith('Emergency Incident')) {
+                          displayTitle = 'เหตุฉุกเฉิน';
+                        } else {
+                          displayTitle = video.title;
                         }
-
-                        if (displayTitle.length > 30) {
-                          displayTitle = '${displayTitle.substring(0, 30)}...';
+                        if (displayTitle.isEmpty) {
+                          displayTitle = video.description ?? 'เหตุฉุกเฉิน';
                         }
-
-                        if (isNewEmergency) {
-                          displayTitle = '🚨 ใหม่: $displayTitle';
-                        }
-
-                        final bool hasLocalPreview =
-                            video.localFilePath != null;
-                        final bool isStillProcessing =
-                            video.status == VideoStatus.processing;
-                        final bool isSelected =
-                            video.id == widget.currentVideoId;
-
-                        final String? effectiveThumbnailUrl =
-                            _thumbnailOverrides[video.id] ??
-                            video.bestThumbnailUrl;
-
-                        if (!_itemKeys.containsKey(video.id)) {
-                          _itemKeys[video.id] = GlobalKey();
-                        }
-                        final itemKey = _itemKeys[video.id];
-
-                        return GestureDetector(
-                          key: itemKey,
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            debugPrint(
-                              '[TrendingPanel] Card tapped! video.id: ${video.id}, currentVideoId: ${widget.currentVideoId}',
-                            );
-                            if (video.id == widget.currentVideoId) {
-                              debugPrint(
-                                '[TrendingPanel] Already on this video; view not recorded.',
-                              );
-                              return;
-                            }
-                            if (_lastViewIntentId == video.id) {
-                              debugPrint(
-                                '[TrendingPanel] Duplicate tap ignored for ${video.id}.',
-                              );
-                              return;
-                            }
-                            _lastViewIntentId = video.id;
-                            WebSocketService().recordVideoView(video.id);
-                            widget.onSwitchVideo(video.id);
-                          },
-                          child: AnimatedBuilder(
-                            animation: _pulseController,
-                            builder: (context, child) {
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOutCirc,
-                                margin: const EdgeInsets.only(bottom: 8),
-                                width: double.infinity,
-                                clipBehavior: Clip.hardEdge,
-                                decoration: BoxDecoration(
-                                  color: isNewEmergency
-                                      ? Colors.red.withOpacity(
-                                          0.9 + (0.1 * _pulseController.value),
-                                        )
-                                      : isSelected
-                                      ? Colors.amber[900]?.withOpacity(0.85)
-                                      : Colors.blueGrey[900],
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: isNewEmergency
-                                      ? Border.all(
-                                          color: Colors.white,
-                                          width: 2,
-                                        )
-                                      : isSelected
-                                      ? Border.all(
-                                          color: Colors.amberAccent,
-                                          width: 2.5,
-                                        )
-                                      : Border.all(
-                                          color: Colors.transparent,
-                                          width: 2.5,
-                                        ),
-                                  boxShadow: isNewEmergency
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.red.withOpacity(0.4),
-                                            blurRadius:
-                                                12 * _pulseController.value,
-                                            spreadRadius:
-                                                2 * _pulseController.value,
-                                          ),
-                                        ]
-                                      : isSelected
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.orangeAccent
-                                                .withOpacity(0.5),
-                                            blurRadius: 8,
-                                            spreadRadius: 2,
-                                          ),
-                                        ]
-                                      : null,
-                                  // ✅ Bug #5 Fix: ไม่ใช้ BoxDecoration.image → ใช้ Stack+Image.network ใน child แทน
-                                ),
-                                child: child,
-                              );
-                            },
-                            // ✅ Bug #5 Fix: ใช้ Stack เป็น child ของ AnimatedBuilder
-                            // เพื่อให้ Image.network มี errorBuilder + loadingBuilder
-                            child: Stack(
-                              fit: StackFit.loose,
-                              children: [
-                                // Layer 1: Thumbnail Background
-                                if (effectiveThumbnailUrl != null)
-                                  Positioned.fill(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: CachedNetworkImage(
-                                        imageUrl: effectiveThumbnailUrl,
-                                        fit: BoxFit.cover,
-                                        color:
-                                            (isNewEmergency
-                                                    ? Colors.red
-                                                    : isSelected
-                                                    ? Colors.orange
-                                                    : Colors.black)
-                                                .withOpacity(
-                                                  isSelected ? 0.3 : 0.5,
-                                                ),
-                                        colorBlendMode: BlendMode.darken,
-                                        // ✅ errorWidget: แสดง fallback เมื่อ URL โหลดไม่ได้
-                                        errorWidget: (_, __, ___) =>
-                                            _buildPlaceholderBackground(),
-                                        // ✅ placeholder: shimmer เบาๆ ขณะโหลด
-                                        placeholder: (_, __) =>
-                                            _buildLoadingBackground(),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Positioned.fill(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: _buildPlaceholderBackground(),
-                                    ),
-                                  ),
-
-                                // Layer 2: Text + Badge
-                                _buildCardText(
-                                  isSelected: isSelected,
-                                  displayTitle: displayTitle,
-                                  dateStr: dateStr,
-                                  hasLocalPreview: hasLocalPreview,
-                                  isStillProcessing: isStillProcessing,
-                                ),
-
-                                // Layer 3: Cumulative viewer count
-                                Positioned(
-                                  top: 6,
-                                  right: 6,
-                                  child: _buildCumulativeViewerBadge(
-                                    _cumulativeViewerOverrides[video.id] ??
-                                        video.viewerCount,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        displayTitle = displayTitle.replaceAll(
+                          RegExp(r'\s+\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}$'),
+                          '',
                         );
-                      },
-                    ),
+                      }
+
+                      if (displayTitle.length > 30) {
+                        displayTitle = '${displayTitle.substring(0, 30)}...';
+                      }
+
+                      if (isNewEmergency) {
+                        displayTitle = '🚨 ใหม่: $displayTitle';
+                      }
+
+                      final bool hasLocalPreview = video.localFilePath != null;
+                      final bool isStillProcessing =
+                          video.status == VideoStatus.processing;
+                      final bool isSelected = video.id == widget.currentVideoId;
+
+                      final String? effectiveThumbnailUrl =
+                          _thumbnailOverrides[video.id] ??
+                          video.bestThumbnailUrl;
+
+                      if (!_itemKeys.containsKey(video.id)) {
+                        _itemKeys[video.id] = GlobalKey();
+                      }
+                      final itemKey = _itemKeys[video.id];
+
+                      return GestureDetector(
+                        key: itemKey,
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          debugPrint(
+                            '[TrendingPanel] Card tapped! video.id: ${video.id}, currentVideoId: ${widget.currentVideoId}',
+                          );
+                          // ✅ ระหว่างภารกิจ: ห้ามเปลี่ยนเหตุการณ์
+                          if (widget.lockToCurrentVideo) {
+                            debugPrint(
+                              '[TrendingPanel] Locked during mission — card switch blocked.',
+                            );
+                            return;
+                          }
+                          if (video.id == widget.currentVideoId) {
+                            debugPrint(
+                              '[TrendingPanel] Already on this video; view not recorded.',
+                            );
+                            return;
+                          }
+                          if (_lastViewIntentId == video.id) {
+                            debugPrint(
+                              '[TrendingPanel] Duplicate tap ignored for ${video.id}.',
+                            );
+                            return;
+                          }
+                          _lastViewIntentId = video.id;
+                          WebSocketService().recordVideoView(video.id);
+                          widget.onSwitchVideo(video.id);
+                        },
+                        child: AnimatedBuilder(
+                          animation: _pulseController,
+                          builder: (context, child) {
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCirc,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              width: double.infinity,
+                              clipBehavior: Clip.hardEdge,
+                              decoration: BoxDecoration(
+                                color: isNewEmergency
+                                    ? Colors.red.withOpacity(
+                                        0.9 + (0.1 * _pulseController.value),
+                                      )
+                                    : isSelected
+                                    ? Colors.amber[900]?.withOpacity(0.85)
+                                    : Colors.blueGrey[900],
+                                borderRadius: BorderRadius.circular(12),
+                                border: isNewEmergency
+                                    ? Border.all(color: Colors.white, width: 2)
+                                    : isSelected
+                                    ? Border.all(
+                                        color: Colors.amberAccent,
+                                        width: 2.5,
+                                      )
+                                    : Border.all(
+                                        color: Colors.transparent,
+                                        width: 2.5,
+                                      ),
+                                boxShadow: isNewEmergency
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.red.withOpacity(0.4),
+                                          blurRadius:
+                                              12 * _pulseController.value,
+                                          spreadRadius:
+                                              2 * _pulseController.value,
+                                        ),
+                                      ]
+                                    : isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.orangeAccent
+                                              .withOpacity(0.5),
+                                          blurRadius: 8,
+                                          spreadRadius: 2,
+                                        ),
+                                      ]
+                                    : null,
+                                // ✅ Bug #5 Fix: ไม่ใช้ BoxDecoration.image → ใช้ Stack+Image.network ใน child แทน
+                              ),
+                              child: child,
+                            );
+                          },
+                          // ✅ Bug #5 Fix: ใช้ Stack เป็น child ของ AnimatedBuilder
+                          // เพื่อให้ Image.network มี errorBuilder + loadingBuilder
+                          child: Stack(
+                            fit: StackFit.loose,
+                            children: [
+                              // Layer 1: Thumbnail Background
+                              if (effectiveThumbnailUrl != null)
+                                Positioned.fill(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: CachedNetworkImage(
+                                      imageUrl: effectiveThumbnailUrl,
+                                      fit: BoxFit.cover,
+                                      color:
+                                          (isNewEmergency
+                                                  ? Colors.red
+                                                  : isSelected
+                                                  ? Colors.orange
+                                                  : Colors.black)
+                                              .withOpacity(
+                                                isSelected ? 0.3 : 0.5,
+                                              ),
+                                      colorBlendMode: BlendMode.darken,
+                                      // ✅ errorWidget: แสดง fallback เมื่อ URL โหลดไม่ได้
+                                      errorWidget: (_, __, ___) =>
+                                          _buildPlaceholderBackground(),
+                                      // ✅ placeholder: shimmer เบาๆ ขณะโหลด
+                                      placeholder: (_, __) =>
+                                          _buildLoadingBackground(),
+                                    ),
+                                  ),
+                                )
+                              else
+                                Positioned.fill(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: _buildPlaceholderBackground(),
+                                  ),
+                                ),
+
+                              // Layer 2: Text + Badge
+                              _buildCardText(
+                                isSelected: isSelected,
+                                displayTitle: displayTitle,
+                                dateStr: dateStr,
+                                hasLocalPreview: hasLocalPreview,
+                                isStillProcessing: isStillProcessing,
+                              ),
+
+                              // Layer 3: Cumulative viewer count
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: _buildCumulativeViewerBadge(
+                                  _cumulativeViewerOverrides[video.id] ??
+                                      video.viewerCount,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 10),
           ],

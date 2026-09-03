@@ -50,6 +50,10 @@ class LiveViewWidget extends StatefulWidget {
   final GlobalKey? trendingPanelKey;
   final VoidCallback? onOpenFullscreen;
 
+  /// ✅ ล็อกแผงเหตุการณ์ขณะผู้ช่วยเหลืออยู่ระหว่างภารกิจ
+  /// - ป้องกันการปัดเปลี่ยนการ์ดและกดการ์ดอื่น
+  final bool lockToCurrentVideo;
+
   const LiveViewWidget({
     super.key,
     required this.chewieController,
@@ -81,6 +85,7 @@ class LiveViewWidget extends StatefulWidget {
     this.onOverlayChanged,
     this.trendingPanelKey,
     this.onOpenFullscreen,
+    this.lockToCurrentVideo = false,
   });
 
   @override
@@ -168,6 +173,17 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
   /// - ไม่ทำงานเมื่อ Overlay รูปจาก Ruler Gallery เปิดอยู่
   void _handleVerticalSwipe(bool isUp) {
     if (widget.currentVideoId == null) return;
+    // ✅ ระหว่างภารกิจ: ห้ามเปลี่ยนเหตุการณ์ (ป้องกันเผลอกด)
+    if (widget.lockToCurrentVideo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('อยู่ระหว่างภารกิจ — ไม่สามารถเปลี่ยนเหตุการณ์ได้'),
+          duration: Duration(seconds: 1),
+          backgroundColor: Colors.black54,
+        ),
+      );
+      return;
+    }
     if (_selectedOverlayPhotoUrl != null)
       return; // overlay เปิดอยู่ — ไม่เปลี่ยนการ์ด
     final videos = widget.trendingVideos;
@@ -530,6 +546,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                       currentVideoId: widget.currentVideoId,
                       highlightVideoId: widget.highlightVideoId,
                       onSwitchVideo: widget.onSwitchVideo,
+                      lockToCurrentVideo: widget.lockToCurrentVideo,
                     ),
                   ),
                 ),

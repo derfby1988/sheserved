@@ -37,6 +37,10 @@ class FullscreenVideoViewer extends StatefulWidget {
   /// รับการแจ้งเตือนเมื่อเปลี่ยนการ์ด (เพื่อให้ parent sync ข้อมูล)
   final void Function(Video video)? onVideoChanged;
 
+  /// ✅ ล็อกการเปลี่ยนการ์ดขณะผู้ช่วยเหลืออยู่ระหว่างภารกิจ
+  /// (แสดงเฉพาะการ์ดปัจจุบัน ปัดขึ้น/ลงไม่เปลี่ยนเหตุการณ์)
+  final bool lockToCurrentVideo;
+
   const FullscreenVideoViewer({
     super.key,
     required this.videos,
@@ -45,6 +49,7 @@ class FullscreenVideoViewer extends StatefulWidget {
     this.hasMore = false,
     this.onDismissed,
     this.onVideoChanged,
+    this.lockToCurrentVideo = false,
   });
 
   @override
@@ -388,6 +393,13 @@ class _FullscreenVideoViewerState extends State<FullscreenVideoViewer>
   }
 
   Future<void> _changeCard(int delta) async {
+    // ✅ ระหว่างภารกิจ: ห้ามเปลี่ยนเหตุการณ์
+    if (widget.lockToCurrentVideo) {
+      _showNoMoreCardsSnackBar(
+        'อยู่ระหว่างภารกิจ — ไม่สามารถเปลี่ยนเหตุการณ์ได้',
+      );
+      return;
+    }
     final newIndex = _currentIndex + delta;
     if (newIndex < 0) {
       // ไม่มีการ์ดก่อนหน้า

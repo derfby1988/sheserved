@@ -962,6 +962,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               setState(() => _isOverlayVisible = visible),
           onOpenFullscreen: _openFullscreen,
           trendingPanelKey: _trendingPanelKey,
+          lockToCurrentVideo: _currentResponseId != null,
         );
       }
     } else if (_selectedTab == 1) {

@@ -636,6 +636,45 @@ module.exports = (pool) => {
         }
     });
 
+    // Get active responders for an incident (Local DB is the source of truth
+    // for accept/status updates — see POST /:id/accept and rescue-status-update
+    // socket handler, which both write to Local Postgres only).
+    router.get('/:id/responders', ipLimiter, async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query(
+                `SELECT
+                    ir.id,
+                    ir.volunteer_id,
+                    ir.status,
+                    ir.accepted_at,
+                    ir.volunteer_start_lat,
+                    ir.volunteer_start_lng,
+                    TRIM(CONCAT(u.first_name, ' ', COALESCE(u.last_name, ''))) AS volunteer_name,
+                    p.id AS profession_id,
+                    p.name AS profession_name,
+                    p.color_hex AS profession_color
+                 FROM incident_responses ir
+                 LEFT JOIN users u ON u.id = ir.volunteer_id
+                 LEFT JOIN LATERAL (
+                    SELECT ugr.profession_id
+                    FROM user_group_roles ugr
+                    WHERE ugr.user_id = ir.volunteer_id
+                    LIMIT 1
+                 ) ugr ON true
+                 LEFT JOIN professions p ON p.id = ugr.profession_id
+                 WHERE ir.video_id = $1
+                   AND ir.status IN ('accepted', 'arrived', 'en_route')
+                 ORDER BY ir.accepted_at ASC`,
+                [id]
+            );
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Get Incident Responders Error:', error.message);
+            res.status(500).json({ error: 'Failed to fetch incident responders' });
+        }
+    });
+
     // Get GPS tracks for a video
     router.get('/:id/gps-tracks', ipLimiter, async (req, res) => {
         try {

@@ -251,7 +251,10 @@ class VideoRepository {
       final response = await http
           .post(
             Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': responderId,
+            },
             body: jsonEncode({
               'responderId': responderId,
               'latitude': latitude,
@@ -938,56 +941,109 @@ class VideoRepository {
   }
 
   /// Get list of responders (volunteers) currently rushing to this incident
+  /// -------------------------------------------------------------------
+  /// ✅ Primary Path: Local API — accept/status-update ทั้งหมดเขียนลง
+  ///    Local Postgres เท่านั้น (`POST /:id/accept`, `rescue-status-update`
+  ///    socket handler) การ dual-write ไป Supabase อาจล้มเหลวเงียบๆ เมื่อวิดีโอ
+  ///    ยังไม่ถูก sync ไป Supabase (FK violation) — ดังนั้น Local API คือ
+  ///    source of truth ที่แท้จริงของหน้านี้
+  /// ✅ Fallback Path: Supabase Cloud (กรณี Local API ไม่ตอบสนอง)
   Future<List<Map<String, dynamic>>> getIncidentResponders(
     String videoId,
   ) async {
+    // ---- Primary Path: Local API ----
     try {
-      // Query incident_responses and join with consumer_profiles for name
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/$videoId/responders',
+            ),
+          )
+          .timeout(const Duration(seconds: 6));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> rows = jsonDecode(response.body);
+        return rows.map((rawRow) {
+          final row = Map<String, dynamic>.from(rawRow as Map);
+          return {
+            'id': row['id'],
+            'volunteerId': row['volunteer_id'],
+            'status': row['status'],
+            'acceptedAt': row['accepted_at'],
+            'startLat': row['volunteer_start_lat'],
+            'startLng': row['volunteer_start_lng'],
+            'volunteerName':
+                (row['volunteer_name'] as String?)?.trim().isNotEmpty == true
+                ? row['volunteer_name']
+                : 'อาสาสมัคร',
+            'professionName': row['profession_name'] ?? 'ทีมกู้ภัย',
+            'professionColor': row['profession_color'],
+            'professionId': row['profession_id']?.toString(),
+          };
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint(
+        'VideoRepository: Local getIncidentResponders failed → fallback to Supabase: $e',
+      );
+    }
+
+    // ---- Fallback Path: Supabase Cloud ----
+    try {
+      // Do not use a nested users:volunteer_id select here. Some environments
+      // have the FK in PostgreSQL but PostgREST has no relationship in cache.
       final response = await _client
           .from('incident_responses')
-          .select('''
-              id, volunteer_id, status, accepted_at, volunteer_start_lat, volunteer_start_lng,
-              users:volunteer_id(
-                consumer_profiles(full_name),
-                user_group_roles(
-                   profession_id,
-                   professions(name, color_hex)
-                )
-              )
-            ''')
+          .select(
+            'id, volunteer_id, status, accepted_at, '
+            'volunteer_start_lat, volunteer_start_lng',
+          )
           .eq('video_id', videoId)
-          .inFilter('status', ['accepted', 'arrived'])
+          .inFilter('status', ['accepted', 'arrived', 'en_route'])
           .order('accepted_at', ascending: true);
 
       final List<Map<String, dynamic>> responders = [];
-      for (var row in response as List) {
+      for (final rawRow in response as List) {
+        final row = Map<String, dynamic>.from(rawRow as Map);
+        final volunteerId = row['volunteer_id']?.toString();
         String? volunteerName;
         String? professionName;
         String? professionId;
         String? professionColor;
 
-        // Extract user data
-        final userData = row['users'];
-        if (userData is Map) {
-          // Extract name from consumer_profiles
-          final profile = userData['consumer_profiles'];
-          if (profile is Map) {
-            volunteerName = profile['full_name'];
-          } else if (profile is List && profile.isNotEmpty) {
-            volunteerName = profile.first['full_name'];
-          }
+        // Profile/role data is optional. A failure here must not hide the
+        // responder marker or route from the incident reporter.
+        if (volunteerId != null && volunteerId.isNotEmpty) {
+          try {
+            final profile = await _client
+                .from('consumer_profiles')
+                .select('full_name')
+                .eq('user_id', volunteerId)
+                .maybeSingle();
+            volunteerName = profile?['full_name']?.toString();
+          } catch (_) {}
 
-          // Extract profession from user_group_roles
-          final roles = userData['user_group_roles'];
-          if (roles is List && roles.isNotEmpty) {
-            final firstRole = roles.first;
-            professionId = firstRole['profession_id']?.toString();
-            final prof = firstRole['professions'];
-            if (prof != null) {
-              professionName = prof['name'];
-              professionColor = prof['color_hex'];
+          try {
+            final role = await _client
+                .from('user_group_roles')
+                .select('profession_id')
+                .eq('user_id', volunteerId)
+                .limit(1)
+                .maybeSingle();
+            professionId = role?['profession_id']?.toString();
+
+            if (professionId != null && professionId.isNotEmpty) {
+              try {
+                final profession = await _client
+                    .from('professions')
+                    .select('name, color_hex')
+                    .eq('id', professionId)
+                    .maybeSingle();
+                professionName = profession?['name']?.toString();
+                professionColor = profession?['color_hex']?.toString();
+              } catch (_) {}
             }
-          }
+          } catch (_) {}
         }
 
         responders.add({

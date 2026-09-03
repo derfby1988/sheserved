@@ -361,10 +361,12 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   Future<void> _loadResponders() async {
+    final videoId = _currentVideoId;
+    if (videoId == null) return;
     try {
       final responders = await ServiceLocator.instance.videoRepository
-          .getIncidentResponders(_currentVideoId!);
-      if (mounted) {
+          .getIncidentResponders(videoId);
+      if (mounted && _currentVideoId == videoId) {
         setState(() {
           double parseDouble(dynamic value) {
             if (value == null) return 0.0;
@@ -376,21 +378,23 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           final String? myUserId = AuthService.instance.userId;
 
           for (int i = 0; i < responders.length; i++) {
-            var r = responders[i];
-            r['currentLat'] = r['startLat'];
-            r['currentLng'] = r['startLng'];
+            final r = responders[i];
+            final startLat = parseDouble(r['startLat']);
+            final startLng = parseDouble(r['startLng']);
+            final hasStartLocation =
+                r['startLat'] != null && r['startLng'] != null;
+            r['currentLat'] = hasStartLocation ? startLat : null;
+            r['currentLng'] = hasStartLocation ? startLng : null;
 
             // Check if user is already a responder
-            if (myUserId != null && r['volunteerId'] == myUserId) {
+            if (myUserId != null && r['volunteerId']?.toString() == myUserId) {
               _currentResponseId = r['id']?.toString();
             }
 
-            if (r['startLat'] != null &&
-                r['startLng'] != null &&
-                _currentVideo != null) {
+            if (hasStartLocation && _currentVideo != null) {
               final double distanceMeters = Geolocator.distanceBetween(
-                parseDouble(r['startLat']),
-                parseDouble(r['startLng']),
+                startLat,
+                startLng,
                 _currentVideo!.latitude,
                 _currentVideo!.longitude,
               );
@@ -411,17 +415,29 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     } catch (_) {}
   }
 
-  void _adjustMapBounds() {
-    if (_mapController == null || !mounted) return;
+  Future<void> _animateMapCameraSafely(CameraUpdate update) async {
+    final controller = _mapController;
+    if (controller == null || !mounted) return;
+    try {
+      await controller.animateCamera(update);
+    } catch (_) {
+      // The map may have been replaced/disposed during an async page update.
+    }
+  }
+
+  Future<void> _adjustMapBounds() async {
+    final controller = _mapController;
+    if (controller == null || !mounted) return;
     if (_routePoints.isEmpty) {
-      if (_currentVideoId == null && _userLocation != null)
-        _mapController?.animateCamera(
+      if (_currentVideoId == null && _userLocation != null) {
+        await _animateMapCameraSafely(
           CameraUpdate.newLatLngZoom(_userLocation!, 15.0),
         );
+      }
       return;
     }
     if (_responders.isEmpty) {
-      _mapController?.animateCamera(
+      await _animateMapCameraSafely(
         CameraUpdate.newLatLngZoom(_routePoints.last, 17.0),
       );
       return;
@@ -438,13 +454,22 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         if (r['currentLng'] > maxLng) maxLng = r['currentLng'];
       }
     }
-    LatLngBounds bounds = LatLngBounds(
+
+    // Google Maps rejects zero-area bounds. This occurs when the incident and
+    // responder have the same coordinates or only one valid coordinate exists.
+    if ((maxLat - minLat).abs() < 0.000001 &&
+        (maxLng - minLng).abs() < 0.000001) {
+      await _animateMapCameraSafely(
+        CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 17.0),
+      );
+      return;
+    }
+
+    final bounds = LatLngBounds(
       southwest: LatLng(minLat, minLng),
       northeast: LatLng(maxLat, maxLng),
     );
-    try {
-      _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60.0));
-    } catch (_) {}
+    await _animateMapCameraSafely(CameraUpdate.newLatLngBounds(bounds, 60.0));
   }
 
   // _recordView ถูกปิดการใช้งานแล้ว — WebSocket Server นับ unique viewers ผ่าน room จัดการที่ Server โดยตรง
@@ -853,6 +878,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
                 // sync ข้อมูลเบื้องต้นเมื่อเปลี่ยนการ์ดใน fullscreen
                 // (ใช้สำหรับ update state ภายใน fullscreen เท่านั้น)
               },
+              // ✅ ระหว่างภารกิจ: ล็อกการเปลี่ยนการ์ดใน fullscreen ด้วย
+              lockToCurrentVideo: _currentResponseId != null,
               onDismissed: (currentVideoId) {
                 // คงการ์ดเหตุการณ์ล่าสุดที่ดูใน fullscreen
                 if (currentVideoId != _currentVideoId) {

@@ -833,6 +833,14 @@ String _ensureFullUrl(String url) {
 4.  **Operational Phase**:
     - เมื่อกด "ตอบรับ" ระบบจะเริ่มส่งพิกัด GPS ของอาชีพ (Responder) ไปยังผู้แจ้งเหตุทันที
     - หน้าจอเปลี่ยนเป็นโหมดนำทาง (Navigation) และแสดง ETA (เวลาที่คาดว่าจะถึง)
+    - **Mission Lock (ล็อกการเปลี่ยนเหตุการณ์ระหว่างภารกิจ)**:
+        - ขณะ `_currentResponseId != null` (ผู้ช่วยเหลืออยู่ระหว่างภารกิจ) แผงยอดนิยม (Trending Panel) จะแสดงเฉพาะการ์ดเหตุการณ์ปัจจุบันเท่านั้น **ไม่แสดงการ์ดอื่นที่ไม่เกี่ยวข้อง**
+        - ปิดความสามารถเปลี่ยนเหตุการณ์ทุกช่องทาง เพื่อป้องกันผู้ช่วยเหลือเผลอกดเปลี่ยนเหตุการณ์ขณะภารกิจยังไม่จบ:
+            - แตะการ์ดอื่นใน Trending Panel → ถูกบล็อก (มองไม่เห็นการ์ดอื่นเลย)
+            - ปัดขึ้น/ลงบน Video Player หน้าปกติ → ถูกบล็อก พร้อม SnackBar "อยู่ระหว่างภารกิจ — ไม่สามารถเปลี่ยนเหตุการณ์ได้"
+            - ปัดขึ้น/ลงใน Fullscreen Video Viewer → ถูกบล็อก พร้อม SnackBar เดียวกัน
+        - เมื่อจบภารกิจ (`_currentResponseId` กลับเป็น null หลังสถานะ `resolved`/`cancelled`) → คืนความสามารถเปลี่ยนเหตุการณ์ตามปกติ
+        - **เหตุผล**: หากผู้ช่วยเหลือเปลี่ยนเหตุการณ์กลางคัน จะสูญเสียการติดตามเส้นทาง GPS, สถานะ responder, แผนที่ และข้อมูลแชทของเหตุการณ์เดิมที่ยังค้างภารกิจ
 5.  **Completion Phase**: เมื่อถึงจุดเกิดเหตุ สามารถกด "ถึงที่เกิดเหตุแล้ว" เพื่อสรุปภารกิจ
 
 ### 3. Database & Tracking logic
@@ -1266,6 +1274,36 @@ return user.isProfessionalResponder;
 debugPrint('_isEligibleResponder: no mapped professions → denied.');
 return false;
 ```
+
+---
+
+### Bug Fix #7 — Responder Marker/เส้นทางไม่แสดงฝั่งผู้แจ้งเหตุ (Local-first Data Flow)
+**วันที่:** 2026-09-03
+**ไฟล์ที่เกี่ยวข้อง:** `lib/features/video/data/repositories/video_repository.dart`, `websocket-server/routes/video.js`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`, `lib/features/video/presentation/pages/parts/emergency_websocket_logic.dart`, `lib/features/video/presentation/pages/widgets/action_buttons_widget.dart`
+
+**อาการ:** ฝั่งผู้แจ้งเหตุได้รับ SnackBar "กู้ภัยกำลังเดินทางมาหาคุณ..." แต่ไม่แสดง marker ผู้ช่วยเหลือ จำนวนผู้ช่วยเหลือ และเส้นทางบนแผนที่ + Error แดง `Invalid argument(s): 0` หลังรับภารกิจ
+
+**สาเหตุ (Root Causes — 6 จุดซ้อนกัน):**
+1. **Auth Header ขาดใน `/accept`**: `acceptIncident()` เรียก `POST /api/videos/:id/accept` โดยไม่ส่ง header `x-user-id` ขณะที่ route ใช้ `requireAuth` → Local API ตอบ 401 → fallback ไปบันทึก Supabase แทน ทำให้ **Local Postgres ไม่มีแถว responder**
+2. **อ่านคนละฐานข้อมูลกับที่เขียน**: `acceptIncident`/`rescue-status-update` เขียนลง **Local Postgres เป็น source of truth** (dual-write ไป Supabase เป็น non-critical และอาจล้มเหลวเงียบๆ จาก FK violation เมื่อวิดีโอยังไม่ถูก sync) แต่ `getIncidentResponders()` อ่านจาก **Supabase โดยตรง** → ไม่เจอข้อมูลที่เพิ่งบันทึก
+3. **PostgREST Relationship Cache**: query แบบ nested `users:volunteer_id(...)` ล้มทั้งชุดด้วย `PGRST200` แม้ FK จะมีอยู่จริงใน PostgreSQL (schema cache ไม่รู้จัก) — query ล้ม = รายการ responder ว่างทั้งหมด
+4. **Status Filter ไม่ครบ**: server บันทึกสถานะเริ่มต้นเป็น `en_route` แต่ query กรองเฉพาะ `accepted, arrived` → responder ที่กำลังเดินทางไม่ถูกโหลด
+5. **Location Key Mismatch**: listener `location-updated` ค้นหาด้วย `userId` และเขียน `latitude/longitude` แต่ map ใช้ `volunteerId` + `currentLat/currentLng` → ตำแหน่ง real-time ไม่เคยอัปเดตบนแผนที่
+6. **Zero-area LatLngBounds**: เมื่อ responder กับจุดเกิดเหตุพิกัดใกล้/เท่ากัน `CameraUpdate.newLatLngBounds` throw `Invalid argument(s): 0` (และ `animateCamera` เป็น async ที่เดิมไม่ `await` จึงจับ error ไม่ได้) + `ActionButtonsWidget` เรียก `clamp(0, -1)` บน list คำร้องที่ว่างหลังผู้ใช้กลายเป็น Responder
+
+**กฎที่ต้องปฏิบัติ:**
+- **Local-first สำหรับข้อมูลภารกิจ**: ข้อมูล `incident_responses` ต้องอ่านจาก Local API (`GET /api/videos/:id/responders`) ก่อนเสมอ — Supabase เป็น fallback เท่านั้น เพราะ accept/status-update เขียนลง Local Postgres เท่านั้น
+- **`x-user-id` ทุก request ที่ backend ใช้ `requireAuth`**: ลืม header นี้ = 401 เงียบๆ ที่ fallback ไป cloud แล้วข้อมูลแยกกันระหว่าง Local/Cloud (เคยเกิดกับ `toggleLike` และ `acceptIncident`)
+- **ห้ามพึ่ง nested PostgREST relationship** (`users:volunteer_id(...)`) สำหรับตารางที่ FK อาจไม่อยู่ใน schema cache — ให้ query ตารางหลักก่อนแล้วดึงข้อมูลเสริมแยก โดยความล้มเหลวของข้อมูลเสริมต้องไม่ซ่อนข้อมูลหลัก (พิกัด/สถานะ)
+- **Field naming ต้องตรงกันตลอดสาย**: DB (`volunteer_id`) → repository (`volunteerId`) → map widget (`currentLat/currentLng`) — การเปลี่ยนชื่อ key ต้องตรวจทั้งสายทั้ง producer และ consumer
+- **Location listener ต้องกรองตาม incident**: `location-updated` เป็น broadcast รวมทุก user — ห้ามเพิ่ม user ภายนอกเข้า `_responders` ของเหตุการณ์ปัจจุบัน ให้ update เฉพาะ responder ที่โหลดไว้แล้ว
+- **Async race guard**: ทุก async load ที่ผูกกับ `_currentVideoId` ต้อง capture videoId ก่อน await และตรวจว่ายังตรงกับเหตุการณ์ปัจจุบันก่อน `setState`
+- **กัน ArgumentError จาก list ว่าง**: ห้าม `list[index.clamp(0, list.length - 1)]` เมื่อ list อาจว่าง (clamp กับ upperLimit -1 → `ArgumentError`) และ `GoogleMap.animateCamera` ต้อง `await` + ใช้ `newLatLngZoom` แทนเมื่อ bounds มีพื้นที่เป็นศูนย์
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- `GET /api/videos/:id/responders` คืนแถวของเหตุการณ์นั้นจาก Local DB
+- หน้า reporter เห็น marker responder + เส้นประนำทาง + snackbar แจ้งสถานะ
+- ไม่มี `PGRST200` ใน log ของ flow นี้
 
 ---
 

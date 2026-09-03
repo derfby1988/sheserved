@@ -14,7 +14,7 @@ import 'like_trend_chart_widget.dart'; // ✅ นำเข้า Widget ให�
 class ActionButtonsWidget extends StatelessWidget {
   final String likeCountFormatted;
   final int likeCount; // ✅ เพิ่มตัวแปรยอดไลค์แบบตัวเลข
-  final bool isLiked;  // ✅ [Support Analytics] DB toggle state
+  final bool isLiked; // ✅ [Support Analytics] DB toggle state
 
   // รายการคำร้องบริจาคที่ active อยู่ของวิดีโอนี้
   final List<DonationRequest> activeRequests;
@@ -26,7 +26,8 @@ class ActionButtonsWidget extends StatelessWidget {
 
   final String yieldWayCount; // ✅ เพิ่มกลับมาเพื่อใช้แสดงผลข้อความ
   final int yieldWayCountValue; // ✅ เพิ่มค่าตัวเลขเพื่อคำนวณกราฟ
-  final int yieldWayNotifiedCount; // ✅ เพิ่มจำนวนผู้ที่ถูกแจ้งเตือนเพื่อหาเปอร์เซ็นต์
+  final int
+  yieldWayNotifiedCount; // ✅ เพิ่มจำนวนผู้ที่ถูกแจ้งเตือนเพื่อหาเปอร์เซ็นต์
   final VoidCallback onLike;
   final VoidCallback onYieldWay;
   final VoidCallback onDonate;
@@ -127,26 +128,37 @@ class ActionButtonsWidget extends StatelessWidget {
   /// แถวบริจาค — มีลูกศรสลับคำร้อง หากมีหลายใบ
   Widget _buildDonationRow() {
     final hasMultiple = activeRequests.length > 1;
-    final req = activeRequests[activeRequestIndex.clamp(0, activeRequests.length - 1)];
-    
+    // ✅ รองรับโหมด Reporter/Responder ที่ยังไม่มีคำร้อง active
+    // (ต้องไม่ clamp กับ list ว่าง → จะ throw ArgumentError)
+    final DonationRequest? req = activeRequests.isEmpty
+        ? null
+        : activeRequests[activeRequestIndex.clamp(
+            0,
+            activeRequests.length - 1,
+          )];
+
     // คำนวณเปอร์เซ็นต์สำหรับกราฟบริจาค
     // ใช้ goalAmountGross (รวมค่าบริการแล้ว) ตามที่ USER ต้องการ หรือ targetAmount เป็นตัวสำรอง
-    final double target = req.goalAmountGross ?? req.targetAmount ?? 0.0;
-    final double current = req.currentAmount ?? 0.0;
-    final double percentage = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
+    final double target = req?.goalAmountGross ?? req?.targetAmount ?? 0.0;
+    final double current = req?.currentAmount ?? 0.0;
+    final double percentage = target > 0
+        ? (current / target).clamp(0.0, 1.0)
+        : 0.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final double leftBoxWidth = 50.0;
         final double arrowWidth = 18.0;
-        
+
         // พื้นที่ที่เหลือสำหรับกราฟ
         double maxBarWidth = constraints.maxWidth - leftBoxWidth;
         if (hasMultiple && !userCanCreateRequest) {
           maxBarWidth -= (arrowWidth * 2);
         }
-        
-        final double currentBarWidth = current == 0 ? 0.0 : maxBarWidth * percentage;
+
+        final double currentBarWidth = current == 0
+            ? 0.0
+            : maxBarWidth * percentage;
 
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -166,7 +178,11 @@ class ActionButtonsWidget extends StatelessWidget {
                       bottomLeft: Radius.circular(4),
                     ),
                   ),
-                  child: const Icon(Icons.chevron_left, color: Colors.white, size: 14),
+                  child: const Icon(
+                    Icons.chevron_left,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
               ),
 
@@ -198,13 +214,25 @@ class ActionButtonsWidget extends StatelessWidget {
                             maintainAnimation: true,
                             maintainState: true,
                             visible: false,
-                            child: Text('0', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800)),
+                            child: Text(
+                              '0',
+                              style: TextStyle(
+                                fontFamily: 'SukhumvitSet',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
                               _donationDisplayValue,
-                              style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                              style: const TextStyle(
+                                fontFamily: 'SukhumvitSet',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ],
@@ -223,24 +251,35 @@ class ActionButtonsWidget extends StatelessWidget {
                     onTap: onDonate,
                     child: Container(
                       width: currentBarWidth,
-                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 2,
+                        horizontal: 8,
+                      ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [_donationLabelColor.withOpacity(0.7), _donationLabelColor],
+                          colors: [
+                            _donationLabelColor.withOpacity(0.7),
+                            _donationLabelColor,
+                          ],
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
                         ),
                       ),
                       alignment: Alignment.centerLeft,
-                      child: current > 0 
-                        ? const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              'บริจาค',
-                              style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
+                      child: current > 0
+                          ? const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'บริจาค',
+                                style: TextStyle(
+                                  fontFamily: 'SukhumvitSet',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ),
 
@@ -248,15 +287,26 @@ class ActionButtonsWidget extends StatelessWidget {
                   GestureDetector(
                     onTap: onDonate,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: _donationLabelColor,
                         borderRadius: BorderRadius.only(
-                          topRight: (hasMultiple && !userCanCreateRequest) ? Radius.zero : const Radius.circular(12),
-                          bottomRight: (hasMultiple && !userCanCreateRequest) ? Radius.zero : const Radius.circular(12),
+                          topRight: (hasMultiple && !userCanCreateRequest)
+                              ? Radius.zero
+                              : const Radius.circular(12),
+                          bottomRight: (hasMultiple && !userCanCreateRequest)
+                              ? Radius.zero
+                              : const Radius.circular(12),
                         ),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
                         ],
                       ),
                       child: Center(
@@ -264,7 +314,12 @@ class ActionButtonsWidget extends StatelessWidget {
                           _donationLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                          style: const TextStyle(
+                            fontFamily: 'SukhumvitSet',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -287,7 +342,11 @@ class ActionButtonsWidget extends StatelessWidget {
                       bottomRight: Radius.circular(4),
                     ),
                   ),
-                  child: const Icon(Icons.chevron_right, color: Colors.white, size: 14),
+                  child: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
               ),
           ],
@@ -298,19 +357,23 @@ class ActionButtonsWidget extends StatelessWidget {
 
   Widget _buildInteractionButtonRow() {
     const orange = Color(0xFFFF6B35);
-    
+
     // คำนวณเปอร์เซ็นต์สำหรับการให้ทาง
     // USER ต้องการ: เทียบกับจำนวนที่ระบบแจ้งเตือนไป (yieldWayNotifiedCount)
-    final double percentage = yieldWayNotifiedCount > 0 
-        ? (yieldWayCountValue / yieldWayNotifiedCount).clamp(0.0, 1.0) 
+    final double percentage = yieldWayNotifiedCount > 0
+        ? (yieldWayCountValue / yieldWayNotifiedCount).clamp(0.0, 1.0)
         : 0.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final double leftBoxWidth = 50.0;
-        final double buttonWidth = 32.0; // ใช้ความกว้างเดียวกับปุ่มหัวใจเพื่อให้ Layout ตรงกัน
-        final double maxBarWidth = constraints.maxWidth - leftBoxWidth - buttonWidth;
-        final double currentBarWidth = yieldWayCountValue == 0 ? 0.0 : maxBarWidth * percentage;
+        final double buttonWidth =
+            32.0; // ใช้ความกว้างเดียวกับปุ่มหัวใจเพื่อให้ Layout ตรงกัน
+        final double maxBarWidth =
+            constraints.maxWidth - leftBoxWidth - buttonWidth;
+        final double currentBarWidth = yieldWayCountValue == 0
+            ? 0.0
+            : maxBarWidth * percentage;
 
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -340,13 +403,25 @@ class ActionButtonsWidget extends StatelessWidget {
                           maintainAnimation: true,
                           maintainState: true,
                           visible: false,
-                          child: Text('0', style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800)),
+                          child: Text(
+                            '0',
+                            style: TextStyle(
+                              fontFamily: 'SukhumvitSet',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
                             yieldWayCount,
-                            style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                            style: const TextStyle(
+                              fontFamily: 'SukhumvitSet',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -364,7 +439,10 @@ class ActionButtonsWidget extends StatelessWidget {
                   // กราฟแท่ง
                   Container(
                     width: currentBarWidth,
-                    padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 2,
+                      horizontal: 4,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [orange.withOpacity(0.7), orange],
@@ -379,7 +457,12 @@ class ActionButtonsWidget extends StatelessWidget {
                             child: Text(
                               'ให้ทาง',
                               maxLines: 1,
-                              style: TextStyle(fontFamily: 'SukhumvitSet', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                              style: TextStyle(
+                                fontFamily: 'SukhumvitSet',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
                             ),
                           )
                         : const SizedBox.shrink(),
@@ -398,11 +481,19 @@ class ActionButtonsWidget extends StatelessWidget {
                           bottomRight: Radius.circular(12),
                         ),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
                         ],
                       ),
                       child: const Center(
-                        child: Icon(Icons.emergency_share_rounded, color: Colors.white, size: 14),
+                        child: Icon(
+                          Icons.emergency_share_rounded,
+                          color: Colors.white,
+                          size: 14,
+                        ),
                       ),
                     ),
                   ),

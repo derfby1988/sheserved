@@ -2965,7 +2965,7 @@ class _HomePageState extends ConsumerState<HomePage>
   Widget _buildStackedAlerts() {
     final total = _professionalAlerts.length;
     // Show top card and edges of 2 cards behind it
-    const int maxVisible = 3;
+    const int maxVisible = 1;
     final displayCount = total > maxVisible ? maxVisible : total;
 
     return SizedBox(

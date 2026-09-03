@@ -10,6 +10,14 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     }
   }
 
+  double? _parseLocationCoordinate(dynamic value) {
+    final coordinate = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+    if (coordinate == null || !coordinate.isFinite) return null;
+    return coordinate;
+  }
+
   Future<void> _loadDeadManCheckinState() async {
     final userId = AuthService.instance.userId;
     if (userId == null) return;
@@ -19,7 +27,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     }
 
     try {
-      final checkin = await ServiceLocator.instance.emergencyDeadManRepository.fetchCheckin(userId);
+      final checkin = await ServiceLocator.instance.emergencyDeadManRepository
+          .fetchCheckin(userId);
       if (!mounted) return;
       setState(() {
         _deadManCheckin = checkin;
@@ -39,7 +48,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     setState(() => _isDeadManCheckingIn = true);
     try {
-      await ServiceLocator.instance.emergencyDeadManRepository.updateCheckInTimestamp(userId: userId);
+      await ServiceLocator.instance.emergencyDeadManRepository
+          .updateCheckInTimestamp(userId: userId);
       await _loadDeadManCheckinState();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,17 +108,26 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                 const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               else
-                const Icon(Icons.verified_user_outlined, color: Colors.white, size: 18),
+                const Icon(
+                  Icons.verified_user_outlined,
+                  color: Colors.white,
+                  size: 18,
+                ),
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _isDeadManCheckingIn ? 'กำลังยืนยันความปลอดภัย...' : 'ยืนยันความปลอดภัยตอนนี้',
+                    _isDeadManCheckingIn
+                        ? 'กำลังยืนยันความปลอดภัย...'
+                        : 'ยืนยันความปลอดภัยตอนนี้',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -138,7 +157,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   void _setupWebSocketStreams() {
     final ws = WebSocketService();
     _connectionSub?.cancel();
-    _connectionSub = ws.connectionStream.listen((connected) { if (mounted) setState(() => _isConnected = connected); });
+    _connectionSub = ws.connectionStream.listen((connected) {
+      if (mounted) setState(() => _isConnected = connected);
+    });
 
     // Video Interaction & Viewer Count (Always listen, filter by _currentVideoId)
     _interactionSub?.cancel();
@@ -150,7 +171,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
             // Do NOT increment here to avoid double-counting with HTTP toggle
             if (data['type'] == 'yield-way-updated') {
               _yieldWayCount = (data['count'] as num?)?.toInt() ?? 0;
-              _yieldWayNotifiedCount = (data['notifiedCount'] as num?)?.toInt() ?? 0; // ✅ รับค่าจำนวนที่แจ้งเตือนไปจาก Server
+              _yieldWayNotifiedCount =
+                  (data['notifiedCount'] as num?)?.toInt() ??
+                  0; // ✅ รับค่าจำนวนที่แจ้งเตือนไปจาก Server
               if (data['triggerAnimation'] == true) {
                 _triggerYieldPulse();
               }
@@ -171,8 +194,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     // ✅ [Support Analytics] Real-time like count from other users
     ws.socket?.on('like-count-updated', (data) {
       if (!mounted) return;
-      final Map<String, dynamic> payload =
-          (data is Map) ? Map<String, dynamic>.from(data) : {};
+      final Map<String, dynamic> payload = (data is Map)
+          ? Map<String, dynamic>.from(data)
+          : {};
       if (payload['videoId'] == _currentVideoId) {
         setState(() {
           _likeCount = (payload['count'] as num?)?.toInt() ?? _likeCount;
@@ -190,10 +214,15 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     _progressSub?.cancel();
     _progressSub = ws.videoProgressStream.listen((data) {
-      if (_currentVideoId != null && data['videoId'] == _currentVideoId && data['location'] != null) {
+      if (_currentVideoId != null &&
+          data['videoId'] == _currentVideoId &&
+          data['location'] != null) {
         final loc = data['location'];
         final point = LatLng(loc['lat'], loc['lng']);
-        if (mounted) setState(() { _routePoints.add(point); });
+        if (mounted)
+          setState(() {
+            _routePoints.add(point);
+          });
       }
     });
 
@@ -205,13 +234,18 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     _emergencySub?.cancel();
     _emergencySub = ws.emergencyNotificationStream.listen((data) {
       final currentUserId = AuthService.instance.userId?.toString();
-      final reporterId = data['userId']?.toString() ?? data['senderId']?.toString();
-      final bool isSelfReport = (reporterId != null && currentUserId != null) && (reporterId.trim() == currentUserId.trim());
+      final reporterId =
+          data['userId']?.toString() ?? data['senderId']?.toString();
+      final bool isSelfReport =
+          (reporterId != null && currentUserId != null) &&
+          (reporterId.trim() == currentUserId.trim());
       if (mounted && data['videoId'] != _currentVideoId && !isSelfReport) {
-        setState(() { _highlightVideoId = data['videoId']; });
+        setState(() {
+          _highlightVideoId = data['videoId'];
+        });
         _loadTrendingVideos();
-      } else { 
-        _loadTrendingVideos(); 
+      } else {
+        _loadTrendingVideos();
       }
 
       // ✅ ถ้าเป็นไทยมุงแจ้งภาพในเหตุการณ์ที่กำลังเปิดอยู่ ให้รีโหลด Gallery
@@ -222,51 +256,70 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     _rescueIncomingSub?.cancel();
     _rescueIncomingSub = ws.rescueIncomingStream.listen((data) {
+      if (!mounted || data['videoId']?.toString() != _currentVideoId) {
+        return;
+      }
       if (mounted) {
-         final status = data['status'];
-         String msg = '';
-         if (status == 'accepted') { msg = 'กู้ภัยกำลังเดินทางมาหาคุณ...'; _loadResponders(); }
-         else if (status == 'arrived') msg = 'กู้ภัยเดินทางมาถึงที่เกิดเหตุแล้ว!';
-         else if (status == 'resolved') msg = 'ภารกิจของกู้ภัยเสร็จสิ้น!';
-         
-         if (msg.isNotEmpty) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-             content: Row(children: [
-               const Icon(Icons.airport_shuttle, color: Colors.white), 
-               const SizedBox(width: 8), 
-               Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)))
-             ]), 
-             backgroundColor: status == 'resolved' ? Colors.green : Colors.blueAccent, 
-             duration: const Duration(seconds: 5), 
-             behavior: SnackBarBehavior.floating,
-           ));
-         }
+        final status = data['status'];
+        String msg = '';
+        if (status == 'accepted') {
+          msg = 'กู้ภัยกำลังเดินทางมาหาคุณ...';
+          _loadResponders();
+        } else if (status == 'arrived')
+          msg = 'กู้ภัยเดินทางมาถึงที่เกิดเหตุแล้ว!';
+        else if (status == 'resolved')
+          msg = 'ภารกิจของกู้ภัยเสร็จสิ้น!';
+
+        if (msg.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.airport_shuttle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      msg,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: status == 'resolved'
+                  ? Colors.green
+                  : Colors.blueAccent,
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     });
 
     _locationSub?.cancel();
     _locationSub = ws.locationStream.listen((data) {
-      if (!mounted) return;
-      final String? userId = data['userId'];
-      if (userId == null) return;
+      if (!mounted || _currentVideoId == null) return;
+      final userId = data['userId']?.toString();
+      if (userId == null || userId.isEmpty) return;
+
+      final latitude = _parseLocationCoordinate(data['latitude']);
+      final longitude = _parseLocationCoordinate(data['longitude']);
+      if (latitude == null || longitude == null) return;
+
+      // location-updated is broadcast globally and has no incident id.
+      // Only update users already loaded for this incident; never add an
+      // unrelated user's location to the current responder list.
+      final responderIndex = _responders.indexWhere(
+        (responder) => responder['volunteerId']?.toString() == userId,
+      );
+      if (responderIndex < 0) return;
+
       setState(() {
-        bool found = false;
-        for (int i = 0; i < _responders.length; i++) {
-          if (_responders[i]['userId'] == userId) {
-            _responders[i]['latitude'] = data['latitude'];
-            _responders[i]['longitude'] = data['longitude'];
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          _responders.add({
-            'userId': userId,
-            'latitude': data['latitude'],
-            'longitude': data['longitude'],
-            'fullName': data['fullName'] ?? 'Responder',
-          });
-        }
+        final responder = _responders[responderIndex];
+        responder['currentLat'] = latitude;
+        responder['currentLng'] = longitude;
+        responder['latitude'] = latitude;
+        responder['longitude'] = longitude;
       });
     });
 
@@ -278,27 +331,34 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     });
 
     _emergencyHealthSensorAlertSub?.cancel();
-    _emergencyHealthSensorAlertSub = ws.emergencyHealthSensorAlertStream.listen((data) {
-      if (!mounted) return;
-      _showEmergencyHealthSensorAlert(data);
-    });
+    _emergencyHealthSensorAlertSub = ws.emergencyHealthSensorAlertStream.listen(
+      (data) {
+        if (!mounted) return;
+        _showEmergencyHealthSensorAlert(data);
+      },
+    );
 
     _emergencyHealthDeadManReminderSub?.cancel();
-    _emergencyHealthDeadManReminderSub = ws.emergencyHealthDeadManReminderStream.listen((data) {
-      if (!mounted) return;
-      _showEmergencyHealthDeadManReminder(data);
-    });
+    _emergencyHealthDeadManReminderSub = ws.emergencyHealthDeadManReminderStream
+        .listen((data) {
+          if (!mounted) return;
+          _showEmergencyHealthDeadManReminder(data);
+        });
 
     _emergencyHealthDeadManTriggeredSub?.cancel();
-    _emergencyHealthDeadManTriggeredSub = ws.emergencyHealthDeadManTriggeredStream.listen((data) {
-      if (!mounted) return;
-      _showEmergencyHealthDeadManTriggered(data);
-    });
+    _emergencyHealthDeadManTriggeredSub = ws
+        .emergencyHealthDeadManTriggeredStream
+        .listen((data) {
+          if (!mounted) return;
+          _showEmergencyHealthDeadManTriggered(data);
+        });
 
     // ✅ [Phase 3a] Listen for emergency health data release broadcast
     ws.socket?.on('emergency-health-released', (data) {
       if (!mounted) return;
-      final payload = (data is Map) ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+      final payload = (data is Map)
+          ? Map<String, dynamic>.from(data)
+          : <String, dynamic>{};
       if (payload['incidentId']?.toString() == _currentVideoId) {
         _handleEmergencyHealthReleased(payload);
       }
@@ -377,7 +437,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   Future<void> _refreshTriageBadge() async {
     if (_currentVideoId == null) return;
     try {
-      final summary = await _victimRepository.getTriageSummary(_currentVideoId!);
+      final summary = await _victimRepository.getTriageSummary(
+        _currentVideoId!,
+      );
       if (mounted) {
         setState(() => _triageBadgeCount = summary.total);
       }
@@ -387,18 +449,19 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   void _subscribeToVideoEvents(String videoId) {
     final ws = WebSocketService();
     ws.joinVideoRoom(videoId);
-    
+
     // Supabase subscription (one-time or per video)
     _supabaseInteractionSub?.unsubscribe();
-    _supabaseInteractionSub = ServiceLocator.instance.videoRepository.subscribeToInteractions(videoId, (payload) {
-       if (mounted && _currentVideoId == videoId) { 
-         setState(() { 
-           // ✅ Supabase fallback: only update if we're offline or count hasn't been set by socket
-           // Do NOT increment blindly — like count is controlled by 'like-count-updated' event
-           // This ensures no double-counting between WebSocket and Supabase realtime
-         }); 
-       }
-    });
+    _supabaseInteractionSub = ServiceLocator.instance.videoRepository
+        .subscribeToInteractions(videoId, (payload) {
+          if (mounted && _currentVideoId == videoId) {
+            setState(() {
+              // ✅ Supabase fallback: only update if we're offline or count hasn't been set by socket
+              // Do NOT increment blindly — like count is controlled by 'like-count-updated' event
+              // This ensures no double-counting between WebSocket and Supabase realtime
+            });
+          }
+        });
   }
 
   Future<void> _maybeStartEmergencyHealthReleaseSession({
@@ -408,9 +471,16 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     if (userId == null) return;
 
     try {
-      final settings = await ServiceLocator.instance.emergencyHealthSettingsRepository.fetchSettings(userId);
-      if (settings == null || !settings.isEnabled || settings.consentGivenAt == null) {
-        debugPrint('[EmergencyHealth] Auto-release is disabled or consent missing for user=$userId');
+      final settings = await ServiceLocator
+          .instance
+          .emergencyHealthSettingsRepository
+          .fetchSettings(userId);
+      if (settings == null ||
+          !settings.isEnabled ||
+          settings.consentGivenAt == null) {
+        debugPrint(
+          '[EmergencyHealth] Auto-release is disabled or consent missing for user=$userId',
+        );
         return;
       }
 
@@ -463,7 +533,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
             if (updated is Map<String, dynamic>) {
               _handleEmergencyHealthSessionUpdate(updated);
             } else if (updated is Map) {
-              _handleEmergencyHealthSessionUpdate(Map<String, dynamic>.from(updated));
+              _handleEmergencyHealthSessionUpdate(
+                Map<String, dynamic>.from(updated),
+              );
             }
           },
         )
@@ -482,7 +554,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     }
   }
 
-  void _handleEmergencyHealthSessionUpdate(Map<String, dynamic> updatedSession) {
+  void _handleEmergencyHealthSessionUpdate(
+    Map<String, dynamic> updatedSession,
+  ) {
     _emergencyHealthSession = updatedSession;
     final status = updatedSession['status']?.toString();
 
@@ -526,8 +600,11 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   void _startEmergencyHealthCountdown(Map<String, dynamic> session) {
     _stopEmergencyHealthCountdown();
 
-    final triggeredAt = DateTime.tryParse(session['triggered_at']?.toString() ?? '');
-    final delayMinutes = int.tryParse(session['release_delay_minutes']?.toString() ?? '') ?? 5;
+    final triggeredAt = DateTime.tryParse(
+      session['triggered_at']?.toString() ?? '',
+    );
+    final delayMinutes =
+        int.tryParse(session['release_delay_minutes']?.toString() ?? '') ?? 5;
     final dueAt = triggeredAt != null
         ? triggeredAt.add(Duration(minutes: delayMinutes))
         : DateTime.now().add(Duration(minutes: delayMinutes));
@@ -543,14 +620,17 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     }
 
     refreshCountdown();
-    _emergencyHealthCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      refreshCountdown();
-      if (_emergencyHealthCountdownSeconds <= 0) {
-        _emergencyHealthCountdownTimer?.cancel();
-        _emergencyHealthCountdownTimer = null;
-      }
-    });
+    _emergencyHealthCountdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (!mounted) return;
+        refreshCountdown();
+        if (_emergencyHealthCountdownSeconds <= 0) {
+          _emergencyHealthCountdownTimer?.cancel();
+          _emergencyHealthCountdownTimer = null;
+        }
+      },
+    );
   }
 
   void _stopEmergencyHealthCountdown() {
@@ -601,10 +681,15 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     // ✅ เงื่อนไขเพิ่มเติม: ถ้าเป็นคนแจ้งเหตุเอง (Reporter) ไม่ต้องเด้ง Dialog ให้ทางสำหรับงานของตัวเอง
     final currentUserId = AuthService.instance.userId?.toString();
-    final reporterId = data['reporterId']?.toString() ?? data['victimId']?.toString();
-    
-    if (currentUserId != null && reporterId != null && currentUserId.trim() == reporterId.trim()) {
-      debugPrint('[Yield Way] Suppressing alert dialog because user is the reporter of this incident.');
+    final reporterId =
+        data['reporterId']?.toString() ?? data['victimId']?.toString();
+
+    if (currentUserId != null &&
+        reporterId != null &&
+        currentUserId.trim() == reporterId.trim()) {
+      debugPrint(
+        '[Yield Way] Suppressing alert dialog because user is the reporter of this incident.',
+      );
       return;
     }
 
@@ -628,7 +713,12 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   }
 
   void _showEmergencyHealthSensorAlert(Map<String, dynamic> data) {
-    final reasons = (data['reasons'] as List?)?.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() ?? const [];
+    final reasons =
+        (data['reasons'] as List?)
+            ?.map((e) => e.toString())
+            .where((e) => e.isNotEmpty)
+            .toList() ??
+        const [];
     final message = reasons.isNotEmpty
         ? 'ตรวจพบความผิดปกติ: ${reasons.join(' • ')}'
         : 'ตรวจพบความผิดปกติของข้อมูลสุขภาพ';
@@ -766,7 +856,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     final sessionStatus = _emergencyHealthSession?['status']?.toString();
 
     // Determine which state to show
-    if (_emergencyHealthData != null && _emergencyHealthData!['allowed'] == true) {
+    if (_emergencyHealthData != null &&
+        _emergencyHealthData!['allowed'] == true) {
       _showReleasedHealthDataDialog();
       return;
     }
@@ -788,8 +879,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
   void _showReleasedHealthDataDialog() {
     if (!mounted || _emergencyHealthData == null) return;
 
-    final patient = _emergencyHealthData!['patient'] as Map<String, dynamic>? ?? {};
-    final healthData = _emergencyHealthData!['healthData'] as Map<String, dynamic>? ?? {};
+    final patient =
+        _emergencyHealthData!['patient'] as Map<String, dynamic>? ?? {};
+    final healthData =
+        _emergencyHealthData!['healthData'] as Map<String, dynamic>? ?? {};
 
     showModalBottomSheet(
       context: context,
@@ -821,7 +914,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                   ),
                   // Header
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -830,7 +926,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                             color: Colors.green.shade50,
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(Icons.medical_services, color: Colors.green.shade700),
+                          child: Icon(
+                            Icons.medical_services,
+                            color: Colors.green.shade700,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -868,31 +967,62 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                   Expanded(
                     child: ListView(
                       controller: scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
                       children: [
                         // Patient info card
                         _buildPatientInfoCard(patient),
                         const SizedBox(height: 16),
                         // Health data fields
                         if (healthData['bloodType'] != null)
-                          _buildHealthDataCard('กรุ๊ปเลือด', healthData['bloodType'], Icons.water_drop),
+                          _buildHealthDataCard(
+                            'กรุ๊ปเลือด',
+                            healthData['bloodType'],
+                            Icons.water_drop,
+                          ),
                         if (healthData['allergies'] != null)
-                          _buildHealthDataCard('แพ้ยา/อาหาร', healthData['allergies'], Icons.warning_amber),
+                          _buildHealthDataCard(
+                            'แพ้ยา/อาหาร',
+                            healthData['allergies'],
+                            Icons.warning_amber,
+                          ),
                         if (healthData['chronicConditions'] != null)
-                          _buildHealthDataCard('โรคประจำตัว', healthData['chronicConditions'], Icons.healing),
+                          _buildHealthDataCard(
+                            'โรคประจำตัว',
+                            healthData['chronicConditions'],
+                            Icons.healing,
+                          ),
                         if (healthData['surgicalHistory'] != null)
-                          _buildHealthDataCard('ประวัติผ่าตัด', healthData['surgicalHistory'], Icons.local_hospital),
-                        if ((healthData['prescriptions'] as List?)?.isNotEmpty == true) ...[
+                          _buildHealthDataCard(
+                            'ประวัติผ่าตัด',
+                            healthData['surgicalHistory'],
+                            Icons.local_hospital,
+                          ),
+                        if ((healthData['prescriptions'] as List?)
+                                ?.isNotEmpty ==
+                            true) ...[
                           const SizedBox(height: 16),
                           _buildSectionHeader('ยาล่าสุด', Icons.medication),
                           for (final p in healthData['prescriptions'] as List)
-                            _buildListTile(p['medications'] ?? p['notes'] ?? ''),
+                            _buildListTile(
+                              p['medications'] ?? p['notes'] ?? '',
+                            ),
                         ],
-                        if ((healthData['consultationNotes'] as List?)?.isNotEmpty == true) ...[
+                        if ((healthData['consultationNotes'] as List?)
+                                ?.isNotEmpty ==
+                            true) ...[
                           const SizedBox(height: 16),
-                          _buildSectionHeader('บันทึกการรักษา', Icons.description),
-                          for (final n in healthData['consultationNotes'] as List)
-                            _buildListTile(n['chief_complaint'] ?? n['diagnosis'] ?? ''),
+                          _buildSectionHeader(
+                            'บันทึกการรักษา',
+                            Icons.description,
+                          ),
+                          for (final n
+                              in healthData['consultationNotes'] as List)
+                            _buildListTile(
+                              n['chief_complaint'] ?? n['diagnosis'] ?? '',
+                            ),
                         ],
                         const SizedBox(height: 32),
                       ],
@@ -907,14 +1037,18 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     );
   }
 
-  void _showLockedHealthDataDialog({bool isCounting = false, bool isCancelled = false}) {
+  void _showLockedHealthDataDialog({
+    bool isCounting = false,
+    bool isCancelled = false,
+  }) {
     if (!mounted) return;
 
     final session = _emergencyHealthSession;
     final triggeredAt = session?['triggered_at'] != null
         ? DateTime.tryParse(session!['triggered_at'].toString())
         : null;
-    final delayMinutes = (session?['release_delay_minutes'] as num?)?.toInt() ?? 5;
+    final delayMinutes =
+        (session?['release_delay_minutes'] as num?)?.toInt() ?? 5;
     final remainingSec = triggeredAt != null
         ? (delayMinutes * 60) - DateTime.now().difference(triggeredAt).inSeconds
         : 0;
@@ -969,17 +1103,35 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: BackdropFilter(
-                                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                                    filter: ImageFilter.blur(
+                                      sigmaX: 6,
+                                      sigmaY: 6,
+                                    ),
                                     child: Container(
-                                      color: Colors.grey.shade200.withOpacity(0.5),
+                                      color: Colors.grey.shade200.withOpacity(
+                                        0.5,
+                                      ),
                                       child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          Container(width: 80, height: 12, color: Colors.grey.shade300),
+                                          Container(
+                                            width: 80,
+                                            height: 12,
+                                            color: Colors.grey.shade300,
+                                          ),
                                           const SizedBox(height: 8),
-                                          Container(width: 120, height: 12, color: Colors.grey.shade300),
+                                          Container(
+                                            width: 120,
+                                            height: 12,
+                                            color: Colors.grey.shade300,
+                                          ),
                                           const SizedBox(height: 8),
-                                          Container(width: 60, height: 12, color: Colors.grey.shade300),
+                                          Container(
+                                            width: 60,
+                                            height: 12,
+                                            color: Colors.grey.shade300,
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -990,7 +1142,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: isCancelled ? Colors.grey.shade700 : Colors.orange.shade700,
+                                  color: isCancelled
+                                      ? Colors.grey.shade700
+                                      : Colors.orange.shade700,
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -1007,14 +1161,16 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                           isCancelled
                               ? 'ข้อมูลสุขภาพถูกยกเลิก'
                               : (isCounting
-                                  ? 'ข้อมูลสุขภาพกำลังถูกปลดล็อก'
-                                  : 'ข้อมูลสุขภาพไม่พร้อมใช้งาน'),
+                                    ? 'ข้อมูลสุขภาพกำลังถูกปลดล็อก'
+                                    : 'ข้อมูลสุขภาพไม่พร้อมใช้งาน'),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'SukhumvitSet',
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
-                            color: isCancelled ? Colors.grey.shade700 : Colors.orange.shade800,
+                            color: isCancelled
+                                ? Colors.grey.shade700
+                                : Colors.orange.shade800,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1022,8 +1178,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                           isCancelled
                               ? 'ผู้ป่วยได้ยกเลิกการแชร์ข้อมูลสุขภาพสำหรับเหตุการณ์นี้'
                               : (isCounting
-                                  ? 'ข้อมูลสุขภาพจะถูกปลดล็อกให้ผู้ช่วยเหลือที่ผ่านเงื่อนไขในอีก $remainingMin นาที'
-                                  : 'ไม่มีข้อมูลสุขภาพที่เปิดใช้งานสำหรับเหตุการณ์นี้'),
+                                    ? 'ข้อมูลสุขภาพจะถูกปลดล็อกให้ผู้ช่วยเหลือที่ผ่านเงื่อนไขในอีก $remainingMin นาที'
+                                    : 'ไม่มีข้อมูลสุขภาพที่เปิดใช้งานสำหรับเหตุการณ์นี้'),
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'SukhumvitSet',
@@ -1036,7 +1192,9 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                           LinearProgressIndicator(
                             value: 1.0 - (remainingMin / delayMinutes),
                             backgroundColor: Colors.grey.shade200,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.orange.shade700,
+                            ),
                             minHeight: 6,
                             borderRadius: BorderRadius.circular(3),
                           ),
@@ -1096,7 +1254,8 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                 ),
               ],
             ),
-            if (patient['emergencyContact'] != null || patient['emergencyPhone'] != null) ...[
+            if (patient['emergencyContact'] != null ||
+                patient['emergencyPhone'] != null) ...[
               const Divider(height: 20),
               Row(
                 children: [
@@ -1105,7 +1264,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
                   Expanded(
                     child: Text(
                       '${patient['emergencyContact'] ?? ''} ${patient['emergencyPhone'] ?? ''}',
-                      style: const TextStyle(fontFamily: 'SukhumvitSet', fontSize: 13),
+                      style: const TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
@@ -1222,8 +1384,19 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$label: ', style: const TextStyle(fontFamily: 'SukhumvitSet', fontWeight: FontWeight.bold)),
-          Expanded(child: Text(displayValue, style: const TextStyle(fontFamily: 'SukhumvitSet'))),
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontFamily: 'SukhumvitSet',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              displayValue,
+              style: const TextStyle(fontFamily: 'SukhumvitSet'),
+            ),
+          ),
         ],
       ),
     );
