@@ -906,6 +906,7 @@ color: Colors.blue.withOpacity(0.6),
         - **บล็อกการแจ้งเหตุซ้อน (Flutter Guard)**: ก่อนเริ่มบันทึกวิดีโอ (`_onLongPressDownVideo`) และก่อนส่งภาพถ่าย (`_sendPhotos` กรณีไม่ใช่โหมดไทยมุง) → ตรวจ `getReporterActiveIncidentVideoIds(userId)` หากมีภารกิจค้าง → แสดง SnackBar "คุณมีเหตุการณ์ที่ภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อนจึงจะแจ้งเหตุใหม่ได้" แล้วเด้งไปเหตุการณ์ที่ภารกิจค้างล่าสุด **พร้อมสลับแท็บกลับหน้า Live อัตโนมัติ** (`_selectedTab = 0`) — โหมดไทยมุง (`_isThaiMhungReporting = true`) ได้รับการยกเว้นเพราะแนบภาพเข้าเหตุการณ์เดิมไม่ใช่แจ้งเหตุใหม่
         - **ปุ่มยกเลิกภารกิจฝั่งผู้แจ้ง (แก้ deadlock)**: ผู้แจ้งที่ดูเหตุการณ์ของตนเองที่มีภารกิจค้าง (`_reporterActiveMissionVideoIds.contains(_currentVideoId)` และไม่ได้เป็นจิตอาสาทำภารกิจ) จะเห็นปุ่ม **"ยกเลิกภารกิจนี้"** แดงเหนือ Bottom Tabs → ยืนยันผ่าน dialog → `VideoRepository.cancelMissionByReporter()` เรียก `POST /api/videos/:id/status` ด้วย `x-user-id` ของผู้แจ้ง → backend ตรวจว่าผู้เรียกเป็นเจ้าของวิดีโอ → อัปเดต**ทุก** active response ของเหตุการณ์เป็น `cancelled` + แจ้งจิตอาสาผ่าน socket `rescue-cancelled` + archive แชท — ผู้แจ้งยกเลิกได้เฉพาะ `cancelled` (ห้าม `resolved`/`arrived` เพราะเป็นสถานะของจิตอาสา) — เหตุผล: หากจิตอาสาทิ้งภารกิจไว้โดยไม่กดจบ ผู้แจ้งจะติดล็อกไม่สามารถแจ้งเหตุใหม่ได้จนกว่าครบ 24 ชม.
         - **Donation Guard (กันยกเลิกเมื่อเริ่มรับบริจาค — 2026-09-04)**: ก่อนยกเลิกภารกิจ backend ตรวจ `donation_requests` ของวิดีโอนั้น (`approval_status IN ('pending_local','active')`) หาก `SUM(current_amount) > 0` (มีเงินบริจาคเข้ามาแล้ว) → **บล็อก** `409 { code: 'MISSION_CANCEL_HAS_DONATIONS', currentAmount, activeRequestCount }` — ผู้แจ้งเห็น SnackBar แจ้ง "ต้องติดต่อผู้ดูแลระบบเพื่อจัดการเงินและคืนเงินผู้บริจาคก่อน" (Refund flow = ขั้นตอนถัดไป ตาม DONATION_SYSTEM_PLAN.md §8.1) — หากไม่มีเงิน (`current_amount = 0`) → ยกเลิกภารกิจได้ และ**ปิดคำร้องบริจาคที่ `pending_local`/`active` ที่ยังไม่มีเงินเป็น `cancelled` อัตโนมัติ** + emit `donation-closed` ไป `room-video-{videoId}`
+        - **UI Adjustment — ย้ายเครื่องมือ Responder ไปใต้กล่องยอดนิยม (2026-09-04)**: `RescueControlPanelWidget` (นำทาง Maps / ถึงที่เกิดเหตุแล้ว / จบภารกิจ) เดิมวางกลางล่าง (`bottom + 105`) ทับกล่องแชทและปุ่มส่งกำลังใจ/เปิดรับบริจาคขณะภารกิจค้าง → ย้ายไปวาง**ต่อจากกล่องยอดนิยมมุมขวาบน** (`top: _trendingPanelBottom + 8`, แนวตั้ง compact กว้างเท่ากล่องยอดนิยม) — ตำแหน่งอ้างจากการวัด RenderBox ของกล่องยอดนิยมจริง (`_trendingPanelBottom`/`_trendingPanelRight`/`_trendingPanelWidth` วัดใน postFrameCallback) — **ปุ่ม "ยกเลิกภารกิจนี้" ฝั่งผู้แจ้งใช้ slot เดียวกัน** (ทั้งสองไม่แสดงพร้อมกัน: control panel = จิตอาสาทำภารกิจ / ปุ่มยกเลิก = ผู้แจ้งมีภารกิจค้าง) — โครงสร้าง Stack/layer เดิมไม่เปลี่ยน ปรับเฉพาะค่า Positioned
         - **ล้างล็อกเมื่อจบภารกิจ**: `_updateRescueStatus` เมื่อสถานะกลายเป็น `resolved`/`cancelled` → เรียก `_computeMissionTrendingFilter()` ใหม่ เพื่อล้าง `_isReporterLocked` หากไม่มีภารกิจค้างเหลืออยู่
         - **Backend Guard (สำหรับอนาคต)**: หากต้องการบังคับที่ source การสร้างเหตุการณ์ ให้ตรวจสอบ `incident_responses` ผ่าน `incident_videos.user_id` ว่าผู้แจ้งรายนี้ยังมีภารกิจค้างหรือไม่ก่อนอนุญาตให้ insert วิดีโอ emergency ใหม่
 5.  **Completion Phase**: เมื่อถึงจุดเกิดเหตุ สามารถกด "ถึงที่เกิดเหตุแล้ว" เพื่อสรุปภารกิจ
@@ -4870,24 +4871,29 @@ supabase db push
 
 - ความสูงสูงสุดของ `EmergencyChatWidget`:
   - ถ้า **keyboard เปิด** หรือ **ยังไม่ได้วัดขอบล่าง Trending Panel** → จำกัด **25% ของความสูงหน้าจอ**
-  - ถ้า **keyboard ปิด และวัด `trendingPanelBottom` ได้แล้ว** → ความสูงสูงสุด = พื้นที่ว่างระหว่าง `trendingPanelBottom + 12` ถึง `chatBottom` (overlay ชิดขอบล่างของกล่องยอดนิยม)
+  - ถ้า **keyboard ปิด และวัด `trendingPanelBottom` ได้แล้ว** → ความสูงสุด = พื้นที่ว่างระหว่าง `trendingPanelBottom + 12` ถึง `chatBottom` (overlay ชิดขอบล่างของกล่องยอดนิยม)
 - เมื่อมี Trending Panel ให้คำนวณจากพื้นที่ว่างระหว่าง `trendingPanelBottom` กับ `chatBottom`
-- ช่องกรอกข้อความ (Input) ต้องอยู่ **ชิดล่างสุด** ของ overlay ด้วยการใช้ `Column.mainAxisAlignment = MainAxisAlignment.end`
+- ✅ **(เพิ่ม 2026-09-04) เพดานบนของแชทต้องไม่บังแถวปุ่ม action**: คำนวณ `chatTopBoundary = max(trendingPanelBottom, actionButtonsBottom)` โดย `actionButtonsBottom` = ขอบล่างจริงของ `ActionButtonsWidget` (ส่งกำลังใจ/เปิดรับบริจาค/ให้ทาง) ที่วัดด้วย `_actionButtonsKey` (GlobalKey → RenderBox ใน postFrameCallback เช่นเดียวกับ trending panel) — สาเหตุ: ฟองข้อความฝั่งผู้อื่นชิดซ้าย (`Alignment.centerLeft`) ซ้อนทับแถวปุ่ม action ฝั่งซ้ายเมื่อแชทมีข้อความหลายฟอง → บังทั้งภาพและการกด — `availableChatHeight = screenHeight - chatTopBoundary - chatBottom - 12`
+- ✅ **(เพิ่ม 2026-09-04) ซ่อนแถวปุ่ม action ขณะแป้นพิมพ์เปิด (Option B)**: แถว `ViewerCountWidget + ActionButtonsWidget` ใน `LiveViewWidget` ถูกครอบด้วย `AnimatedSize` + เงื่อนไข `!_isKeyboardOpen` — เมื่อเปิดแป้นพิมพ์ แถวปุ่มยุบหาย (transition 250ms) เช่นเดียวกับ `BottomTabsWidget` — เมื่อปิดแป้นพิมพ์กลับมาอัตโนมัติ — **เพดานแชทตอนแป้นพิมพ์เปิด = `max(trendingPanelBottom, videoCardBottom)`** (ไม่นับ `actionButtonsBottom` เพราะปุ่มถูกซ่อนแล้ว และการ์ดวิดีโอเป็นองค์ประกอบล่างสุดฝั่งซ้าย วัดด้วย `_videoCardKey`) → แชทได้พื้นที่ ~220px (input + 3-4 ฟองล่าสุด) แทนที่จะเหลือ ~110px เมื่อก่อน — `availableChatHeight = screenHeight - chatTopBoundary - chatBottom - 12`
+- ช่องกรอกข้อความ (Input) ต้องอยู่ **ชิดล่างสุด** ของ overlay
 - ฟองข้อความต้องอยู่ **เหนือ input โดยตรง** ไม่ลอยสูงเกินกว่าความสูง overlay
 - ไม่มี `inputSpacer` หรือตัวยก input ให้ลอยขึ้นไป
+- ✅ **(แก้ 2026-09-04) `Column.mainAxisSize = MainAxisSize.min` เป็นข้อบังคับ**: เดิมใช้ `max` ทำให้ Column ยืดขึ้นไปถึงใต้กล่องยอดนิยมเสมอ (ตาม maxHeight) แม้ข้อความน้อย — พื้นที่ล่องหนด้านบน **ดูดกลืนการ tap** บังปุ่ม **ส่งกำลังใจ / เปิดรับบริจาค** และแผนที่ ผู้ใช้ต้องปิดแชทก่อนจึงกดได้ — ด้วย `min` + `Positioned(left, right, bottom)` แชทจะหุ้มเนื้อหาเท่านั้น (ยังยึดขอบล่างเดิม) และแตะพื้นที่ว่างผ่านทะลุไปยังปุ่มด้านล่างได้
+- ✅ **(แก้ 2026-09-04) ฟองข้อความกว้างพอดีข้อความ (fit-content)**: เดิม bubble ใช้ `width: double.infinity` พื้นหลังเต็มความกว้างแนวนอนเสมอ → เปลี่ยนเป็น `ConstrainedBox(maxWidth: 78% ของจอ)` ไม่มี width — ฟองสั้นหุ้มข้อความพอดี ฟองยาวขยายถึงเพดาน 78% แล้วตัดคำ/อ่านเพิ่มเติม
 
 ### 15.3 ตัวอย่างโครงสร้าง widget
 
 ```dart
 // emergency_chat_widget.dart
 Column(
-  mainAxisSize: MainAxisSize.max,
+  // ✅ min — แชทหุ้มเนื้อหา พื้นที่ว่างด้านบนไม่ดูดกลืนการ tap
+  mainAxisSize: MainAxisSize.min,
   mainAxisAlignment: MainAxisAlignment.end,
   children: [
     // ปิด / filter ด้านบน
     Row(...),
     const SizedBox(height: 4),
-    // รายการข้อความขยายตัวจากล่างขา�า�ึ้ึ้นบน
+    // รายการข้อความขยายตัวจากล่างขึ้นบน
     Flexible(child: _buildMessageList()),
     // ช่องกรอกชิดล่าง
     _buildInputArea(inputHeight),
@@ -4897,9 +4903,11 @@ Column(
 
 ### 15.4 สิ่งห้าม
 
-- ห้ามใช้ `Column.mainAxisSize = MainAxisSize.min` แล้วใส่ `Align` ชั่วคราว — ทำให้ overlay ลอยไม่สม่ำเสมอ
+- ~~ห้ามใช้ `Column.mainAxisSize = MainAxisSize.min`~~ → **(ปรับ 2026-09-04) ให้ใช้ `min` เสมอ** ร่วมกับ `Positioned(left, right, bottom)` — ข้อห้ามเดิมมีเงื่อนไขคือ "ห้าม min แล้วใส่ `Align` ชั่วคราว" (ทำให้ overlay ลอยไม่สม่ำเสมอ) — ห้ามใส่ `Align` ครอบ Column อยู่เสมอ ให้ยึดตำแหน่งด้วย `Positioned.bottom` เท่านั้น
+- ห้ามใช้ `mainAxisSize: max` ใน Column ของแชท — สร้างพื้นที่ล่องหนดูดกลืนการ tap ปุ่มด้านล่าง (ส่งกำลังใจ/เปิดรับบริจาค)
 - ห้ามเพิ่ม `SizedBox` ยก input ให้สูงกว่า bottom ของ overlay
-- ห้ามให้ `ListView` ลอยสูงกว่าพื้นที่ที overlay กำหนด
+- ห้ามให้ `ListView` ลอยสูงกว่าพื้นที่ที่ overlay กำหนด
+- ห้ามใช้ `width: double.infinity` บนฟองข้อความ — ให้ใช้ `ConstrainedBox(maxWidth: 78%)` ให้กว้างพอดีข้อความ
 
 
 ---

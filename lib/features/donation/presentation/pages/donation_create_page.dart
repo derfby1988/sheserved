@@ -951,6 +951,13 @@ class _DonationCreatePageState extends State<DonationCreatePage> {
             foregroundColor: AppColors.primary,
             elevation: 0,
             centerTitle: true,
+            // ✅ ปุ่มกลับหน้าเดิมชัดเจนเสมอ — เดิมพึ่ง automaticallyImplyLeading
+            // ซึ่งบางเส้นทางเปิดหน้านี้แล้วไม่มีปุ่มกลับให้กด
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'กลับหน้าเดิม',
+            ),
           ),
           body: _isLoading
               ? const Center(child: CircularProgressIndicator())

@@ -378,7 +378,11 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
         widget.onClose();
       },
       child: Column(
-        mainAxisSize: MainAxisSize.max,
+        // ✅ ใช้ min — เดิมเป็น max ทำให้ Column ยืดขึ้นไปถึงใต้กล่องยอดนิยม
+        // (ตาม maxHeight) แม้ไม่มีข้อความ แล้วพื้นที่ล่องหนนั้นดูดกลืนการ tap
+        // บังปุ่มส่งกำลังใจ/เปิดรับบริจาคและแผนที่ — ผู้ใช้ต้องปิดแชทก่อน
+        // จึงจะกดได้ ด้วย min แชทจะหุ้มเนื้อหาเท่านั้น แตะพื้นที่ว่างผ่านทะลุ
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           // ── Top Bar ──
@@ -695,74 +699,83 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
               ),
 
             // ── bubble body ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-              decoration: BoxDecoration(
-                color: isMe
-                    ? color.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.52),
-                borderRadius: BorderRadius.only(
-                  topLeft: showLabel && !isMe
-                      ? Radius.zero
-                      : const Radius.circular(14),
-                  topRight: showLabel && isMe
-                      ? Radius.zero
-                      : const Radius.circular(14),
-                  bottomLeft: const Radius.circular(14),
-                  bottomRight: const Radius.circular(14),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                border: Border.all(
-                  color: isMe
-                      ? color.withOpacity(0.4)
-                      : Colors.white.withOpacity(0.12),
-                  width: 0.5,
-                ),
+            // ✅ กว้างพอดีข้อความ (fit-content) — เดิม width: double.infinity
+            // ทำให้พื้นหลังฟองเต็มความกว้างแนวนอนเสมอ ตอนนี้จำกัด maxWidth
+            // ~78% ของจอ ฟองสั้นหุ้มข้อความพอดี ฟองยาวขยายถึงเพดานแล้วตัดคำ
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.78,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    content,
-                    maxLines: _expandedMessages[index] == true ? null : 3,
-                    overflow: _expandedMessages[index] == true
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'Sukhumvit Set',
-                      color: color,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      height: 1.15,
-                      shadows: const [
-                        Shadow(color: Colors.black54, blurRadius: 3),
-                      ],
-                    ),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isMe
+                      ? color.withOpacity(0.15)
+                      : Colors.black.withOpacity(0.52),
+                  borderRadius: BorderRadius.only(
+                    topLeft: showLabel && !isMe
+                        ? Radius.zero
+                        : const Radius.circular(14),
+                    topRight: showLabel && isMe
+                        ? Radius.zero
+                        : const Radius.circular(14),
+                    bottomLeft: const Radius.circular(14),
+                    bottomRight: const Radius.circular(14),
                   ),
-                  if (content.length > 60 && _expandedMessages[index] != true)
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _expandedMessages[index] = true),
-                      child: const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text(
-                          '...อ่านเพิ่มเติม',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: isMe
+                        ? color.withOpacity(0.4)
+                        : Colors.white.withOpacity(0.12),
+                    width: 0.5,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      content,
+                      maxLines: _expandedMessages[index] == true ? null : 3,
+                      overflow: _expandedMessages[index] == true
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Sukhumvit Set',
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.15,
+                        shadows: const [
+                          Shadow(color: Colors.black54, blurRadius: 3),
+                        ],
+                      ),
+                    ),
+                    if (content.length > 60 &&
+                        _expandedMessages[index] != true)
+                      GestureDetector(
+                        onTap: () =>
+                            setState(() => _expandedMessages[index] = true),
+                        child: const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            '...อ่านเพิ่มเติม',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
 

@@ -1,6 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+/// เครื่องมือผู้ช่วยเหลือ (Responder) — วางแบบแนวตั้ง compact
+/// ตำแหน่ง: ใต้กล่องยอดนิยมมุมขวาบน (ต่อจากกล่องยอดนิยม)
+/// เพื่อไม่ให้ทับกล่องแชท/ปุ่มส่งกำลังใจ/เปิดรับบริจาคด้านล่าง
+/// อ้างอิง VIDEO_SYSTEM_PLAN.md — Mission Lock UI Adjustment
 class RescueControlPanelWidget extends StatelessWidget {
   final VoidCallback onOpenInMaps;
   final Function(String) onUpdateStatus;
@@ -14,9 +18,8 @@ class RescueControlPanelWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.15),
@@ -26,101 +29,82 @@ class RescueControlPanelWidget extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.6), // Further transparency
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+              color: Colors.white.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(16),
+              border:
+                  Border.all(color: Colors.white.withOpacity(0.1), width: 1),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.emergency_share, color: Colors.blue, size: 20),
-                    const SizedBox(width: 8),
+                    const Icon(Icons.emergency_share,
+                        color: Colors.blue, size: 16),
+                    const SizedBox(width: 6),
                     const Expanded(
                       child: Text(
-                        'เครื่องมือผู้ช่วยเหลือ (Responder)',
+                        'เครื่องมือผู้ช่วยเหลือ',
                         style: TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: Colors.blue, 
-                          fontSize: 11, // Smaller for 1 line
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                          fontSize: 10,
                           fontFamily: 'SukhumvitSet',
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 4),
                     _buildControlStatusBadge(),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: onOpenInMaps,
-                        icon: const Icon(Icons.navigation, size: 16),
-                        label: const Text(
-                          'นำทาง Maps',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal),
-                          maxLines: 1,
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade50.withOpacity(0.6),
-                          foregroundColor: Colors.blue,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => onUpdateStatus('arrived'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade50.withOpacity(0.6),
-                          foregroundColor: Colors.orange.shade900,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: const Text(
-                          'ถึงที่เกิดเหตุแล้ว',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal),
-                          maxLines: 1,
-                        ),
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 10),
+                _buildToolButton(
+                  context: context,
+                  icon: Icons.navigation,
+                  label: 'นำทาง Maps',
+                  backgroundColor: Colors.blue.shade50.withOpacity(0.6),
+                  foregroundColor: Colors.blue,
+                  onTap: onOpenInMaps,
                 ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.center,
-                  child: FractionallySizedBox(
-                    widthFactor: 0.5, // 50% width
-                    child: ElevatedButton(
-                      onPressed: () => onUpdateStatus('resolved'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.withOpacity(0.9),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(0, 42), // Width 0 but height 42
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: EdgeInsets.zero,
+                const SizedBox(height: 8),
+                _buildToolButton(
+                  context: context,
+                  icon: Icons.location_on,
+                  label: 'ถึงที่เกิดเหตุแล้ว',
+                  backgroundColor: Colors.orange.shade50.withOpacity(0.6),
+                  foregroundColor: Colors.orange.shade900,
+                  onTap: () => onUpdateStatus('arrived'),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed: () => onUpdateStatus('resolved'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.withOpacity(0.9),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Text(
-                        'จบภารกิจ', 
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        maxLines: 1,
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: const Text(
+                      'จบภารกิจ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        fontFamily: 'SukhumvitSet',
                       ),
+                      maxLines: 1,
                     ),
                   ),
                 ),
@@ -132,16 +116,58 @@ class RescueControlPanelWidget extends StatelessWidget {
     );
   }
 
+  Widget _buildToolButton({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required Color backgroundColor,
+    required Color foregroundColor,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 36,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 15),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.normal,
+            fontFamily: 'SukhumvitSet',
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildControlStatusBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.blue.shade100.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: const Text(
         'กำลังปฏิบัติการ',
-        style: TextStyle(fontSize: 9, color: Colors.blue, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          fontSize: 8,
+          color: Colors.blue,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'SukhumvitSet',
+        ),
       ),
     );
   }

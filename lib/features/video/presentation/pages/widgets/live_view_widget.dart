@@ -49,6 +49,12 @@ class LiveViewWidget extends StatefulWidget {
   final void Function(bool isOverlayVisible)? onOverlayChanged;
   final GlobalKey? trendingPanelKey;
   final VoidCallback? onOpenFullscreen;
+  // ✅ GlobalKey ของแถวปุ่ม action (ส่งกำลังใจ/บริจาค/ให้ทาง) — ใช้วัดขอบล่าง
+  // เพื่อจำกัดความสูงแชท ไม่ให้ฟองข้อความลอยขึ้นไปบังปุ่มเหล่านี้
+  final GlobalKey? actionButtonsKey;
+  // ✅ GlobalKey ของการ์ดวิดีโอ — ใช้เป็นเพดานแชทตอนแป้นพิมพ์เปิด
+  // (ปุ่ม action ถูกซ่อนแล้ว เหลือการ์ดวิดีโอเป็นองค์ประกอบล่างสุดฝั่งซ้าย)
+  final GlobalKey? videoCardKey;
 
   /// ✅ ล็อกแผงเหตุการณ์ขณะผู้ช่วยเหลืออยู่ระหว่างภารกิจ
   /// - ป้องกันการปัดเปลี่ยนการ์ดและกดการ์ดอื่น
@@ -84,6 +90,8 @@ class LiveViewWidget extends StatefulWidget {
     this.onNewPhotoArrived,
     this.onOverlayChanged,
     this.trendingPanelKey,
+    this.actionButtonsKey,
+    this.videoCardKey,
     this.onOpenFullscreen,
     this.lockToCurrentVideo = false,
   });
@@ -254,6 +262,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Stack(
+                                  key: widget.videoCardKey,
                                   children: [
                                     VideoPlayerWidget(
                                       chewieController: widget.chewieController,
@@ -451,36 +460,55 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                                       ),
                                   ],
                                 ),
-                                if (widget.currentVideoId != null) ...[
-                                  const SizedBox(height: 12),
-                                  ViewerCountWidget(
-                                    formattedViewerCount:
-                                        widget.formattedViewerCount,
-                                    viewerCount: widget.viewerCount,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  ActionButtonsWidget(
-                                    likeCountFormatted:
-                                        widget.likeCountFormatted,
-                                    likeCount: widget
-                                        .likeCount, // ✅ ส่งยอดไลค์ไปให้กราฟด้านใน
-                                    isLiked: widget.isLiked,
-                                    activeRequests: widget.activeRequests,
-                                    activeRequestIndex:
-                                        widget.activeRequestIndex,
-                                    yieldWayCount: widget.yieldWayCount,
-                                    yieldWayCountValue:
-                                        widget.yieldWayCountValue,
-                                    yieldWayNotifiedCount:
-                                        widget.yieldWayNotifiedCount,
-                                    userCanCreateRequest:
-                                        widget.userCanCreateRequest,
-                                    onLike: widget.onLike,
-                                    onYieldWay: widget.onYieldWay,
-                                    onDonate: widget.onDonate,
-                                    onSwitchRequest: widget.onSwitchRequest,
-                                  ),
-                                ],
+                                // ✅ ซ่อนแถว viewer count + ปุ่ม action (ส่งกำลังใจ/
+                                // เปิดรับบริจาค/ให้ทาง) ขณะแป้นพิมพ์เปิด — เหมือน
+                                // BottomTabsWidget ที่ซ่อนอยู่แล้ว กันฟองแชท
+                                // ลอยขึ้นไปบัง/บล็อกปุ่ม และเพิ่มพื้นที่แชทตอนพิมพ์
+                                // ใช้ AnimatedSize ให้ยุบ/กลับมาอย่างนุ่มนวล
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOut,
+                                  alignment: Alignment.topCenter,
+                                  child: widget.currentVideoId != null &&
+                                          !_isKeyboardOpen
+                                      ? Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const SizedBox(height: 12),
+                                            ViewerCountWidget(
+                                              formattedViewerCount: widget
+                                                  .formattedViewerCount,
+                                              viewerCount: widget.viewerCount,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            ActionButtonsWidget(
+                                              key: widget.actionButtonsKey,
+                                              likeCountFormatted: widget
+                                                  .likeCountFormatted,
+                                              likeCount: widget.likeCount,
+                                              isLiked: widget.isLiked,
+                                              activeRequests:
+                                                  widget.activeRequests,
+                                              activeRequestIndex:
+                                                  widget.activeRequestIndex,
+                                              yieldWayCount:
+                                                  widget.yieldWayCount,
+                                              yieldWayCountValue:
+                                                  widget.yieldWayCountValue,
+                                              yieldWayNotifiedCount: widget
+                                                  .yieldWayNotifiedCount,
+                                              userCanCreateRequest: widget
+                                                  .userCanCreateRequest,
+                                              onLike: widget.onLike,
+                                              onYieldWay: widget.onYieldWay,
+                                              onDonate: widget.onDonate,
+                                              onSwitchRequest:
+                                                  widget.onSwitchRequest,
+                                            ),
+                                          ],
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
                               ],
                             ),
                           ),

@@ -76,6 +76,20 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   // === State Variables ===
   final GlobalKey _trendingPanelKey = GlobalKey();
   double _trendingPanelBottom = 0;
+  // ✅ ตำแหน่งขอบขวา/ความกว้างของกล่องยอดนิยม — ใช้วางเครื่องมือ Responder
+  // และปุ่มยกเลิกภารกิจฝั่งผู้แจ้ง "ต่อจากกล่องยอดนิยม" (มุมขวาบน)
+  // เพื่อไม่ให้ทับกล่องแชท/ปุ่มส่งกำลังใจ/เปิดรับบริจาคด้านล่าง
+  double _trendingPanelRight = 0;
+  double _trendingPanelWidth = 0;
+  // ✅ ขอบล่างของแถวปุ่ม action (ส่งกำลังใจ/เปิดรับบริจาค/ให้ทาง) — ใช้เป็น
+  // เพดานบนของแชทร่วมกับ trendingPanelBottom (ใช้จุดที่ต่ำกว่า) เพื่อไม่ให้
+  // ฟองข้อความลอยขึ้นไปบัง/บล็อกการกดปุ่มเหล่านี้ขณะเปิดแชท
+  final GlobalKey _actionButtonsKey = GlobalKey();
+  double _actionButtonsBottom = 0;
+  // ✅ ขอบล่างของการ์ดวิดีโอ — ใช้เป็นเพดานแชทตอนแป้นพิมพ์เปิด เพราะปุ่ม
+  // action ถูกซ่อนชั่วคราว (Option B) การ์ดวิดีโอจึงเป็นองค์ประกอบล่างสุดฝั่งซ้าย
+  final GlobalKey _videoCardKey = GlobalKey();
+  double _videoCardBottom = 0;
   bool _isOverlayVisible = false;
   int _selectedTab = 0;
   int _triageBadgeCount = 0;
@@ -303,6 +317,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   @override
   Widget build(BuildContext context) {
     // วัดตำแหน่งด้านล่างของกล่องยอดนิยมหลัง Build เพื่อปรับขนาดแชท
+    // และวางเครื่องมือ Responder / ปุ่มยกเลิกฝั่งผู้แจ้งต่อจากกล่องยอดนิยม
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_trendingPanelKey.currentContext != null) {
         final RenderBox? box =
@@ -310,10 +325,44 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         if (box != null) {
           final position = box.localToGlobal(Offset.zero);
           final bottom = position.dy + box.size.height;
-          if (_trendingPanelBottom != bottom) {
+          final right = position.dx + box.size.width;
+          final width = box.size.width;
+          if (_trendingPanelBottom != bottom ||
+              _trendingPanelRight != right ||
+              _trendingPanelWidth != width) {
             setState(() {
               _trendingPanelBottom = bottom;
+              _trendingPanelRight = right;
+              _trendingPanelWidth = width;
             });
+          }
+        }
+      }
+      // ✅ วัดขอบล่างแถวปุ่ม action (ส่งกำลังใจ/บริจาค/ให้ทาง) — ใช้เป็น
+      // เพดานบนของแชท กันฟองข้อความลอยขึ้นไปบังปุ่มเหล่านี้
+      if (_actionButtonsKey.currentContext != null) {
+        final RenderBox? aBox =
+            _actionButtonsKey.currentContext!.findRenderObject() as RenderBox?;
+        if (aBox != null && aBox.attached) {
+          final aPosition = aBox.localToGlobal(Offset.zero);
+          final aBottom = aPosition.dy + aBox.size.height;
+          if (_actionButtonsBottom != aBottom) {
+            setState(() => _actionButtonsBottom = aBottom);
+          }
+        }
+      } else if (_actionButtonsBottom != 0) {
+        // ✅ ปุ่ม action ถูกซ่อน (แป้นพิมพ์เปิด) → ไม่นับเป็นเพดานอีกต่อไป
+        setState(() => _actionButtonsBottom = 0);
+      }
+      // ✅ วัดขอบล่างการ์ดวิดีโอ — เพดานแชทสำรองตอนแป้นพิมพ์เปิด
+      if (_videoCardKey.currentContext != null) {
+        final RenderBox? vBox =
+            _videoCardKey.currentContext!.findRenderObject() as RenderBox?;
+        if (vBox != null && vBox.attached) {
+          final vPosition = vBox.localToGlobal(Offset.zero);
+          final vBottom = vPosition.dy + vBox.size.height;
+          if (_videoCardBottom != vBottom) {
+            setState(() => _videoCardBottom = vBottom);
           }
         }
       }
@@ -332,14 +381,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     final chatBottom = viewInsets > 0
         ? 8.0
         : mq.padding.bottom + 12 + actionRowHeight;
+    // ✅ เพดานบนของแชท = จุดที่ต่ำที่สุดขององค์ประกอบที่มองเห็นเหนือแชท:
+    // (1) ขอบล่างกล่องยอดนิยม (ขวา) (2) ขอบล่างการ์ดวิดีโอ (ซ้าย)
+    // (3) ขอบล่างแถวปุ่ม action — เฉพาะตอนแป้นพิมพ์ปิด เพราะปุ่มถูกซ่อน
+    // ชั่วคราวตอนพิมพ์ (Option B) จึงปล่อยให้แชทใช้พื้นที่นั้นได้
+    double chatTopBoundary = _trendingPanelBottom;
+    if (_videoCardBottom > chatTopBoundary) chatTopBoundary = _videoCardBottom;
+    if (viewInsets == 0 && _actionButtonsBottom > chatTopBoundary) {
+      chatTopBoundary = _actionButtonsBottom;
+    }
     final availableChatHeight =
-        mq.size.height - _trendingPanelBottom - chatBottom - 12;
+        mq.size.height - chatTopBoundary - chatBottom - 12;
 
     // ความสูงสูงสุด:
     // - keyboard เปิด/ยังไม่วัด trending panel: จำกัด 25% ของจอ
     // - keyboard ปิด + วัด trending panel ได้แล้ว: ชิดขอบล่าง trending panel
     final double maxChatHeight;
-    if (_trendingPanelBottom > 0 && viewInsets == 0) {
+    if (chatTopBoundary > 0 && viewInsets == 0) {
       maxChatHeight = availableChatHeight.clamp(100.0, mq.size.height * 0.7);
     } else {
       maxChatHeight = availableChatHeight.clamp(100.0, mq.size.height * 0.25);
@@ -603,14 +661,20 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 ),
               ),
 
-            // Layer 6: Rescue Control Panel (MUST BE ABOVE CHAT AND OVERLAY)
-            if (_isUiVisible && _currentResponseId != null && _selectedTab == 0)
+            // Layer 6: Rescue Control Panel — ✅ ย้ายจากกลางล่าง (ทับแชท/ปุ่ม
+            // ส่งกำลังใจ/เปิดรับบริจาค) มาไว้ "ต่อจากกล่องยอดนิยม" มุมขวาบน
+            // ตำแหน่งอ้างจากการวัดกล่องยอดนิยมจริง (_trendingPanelBottom/Right)
+            // ✅ ซ่อนขณะแป้นพิมพ์แชทเปิด เพื่อเปิดพื้นที่ให้แชทและไม่บังฟองข้อความ
+            if (_isUiVisible &&
+                _currentResponseId != null &&
+                _selectedTab == 0 &&
+                mq.viewInsets.bottom == 0)
               Positioned(
-                left: 0,
-                right: 0,
-                bottom:
-                    MediaQuery.of(context).padding.bottom +
-                    105, // อยู่เหนือ Bottom Tabs
+                top: _trendingPanelBottom > 0 ? _trendingPanelBottom + 8 : 300,
+                right: _trendingPanelWidth > 0
+                    ? (mq.size.width - _trendingPanelRight)
+                    : 16,
+                width: _trendingPanelWidth > 0 ? _trendingPanelWidth : 220,
                 child: RescueControlPanelWidget(
                   onOpenInMaps: _openInGoogleMaps,
                   onUpdateStatus: _updateRescueStatus,
@@ -620,41 +684,56 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             // ✅ Reporter Mission Lock: ปุ่มยกเลิกภารกิจสำหรับผู้แจ้ง
             // แสดงเมื่อกำลังดูเหตุการณ์ของตนเองที่มีภารกิจค้าง
             // (แก้ deadlock — ผู้แจ้งถูกล็อกไม่ให้แจ้งเหตุใหม่ แต่จิตอาสา
-            // อาจทิ้งภารกิจไว้โดยไม่กดจบ)
+            // อาจทิ้งภารกิจไว้โดยไม่กดจบ) — ใช้ slot เดียวกับเครื่องมือ
+            // Responder (ใต้กล่องยอดนิยม) เพราะไม่แสดงพร้อมกัน
             if (_isUiVisible &&
                 _selectedTab == 0 &&
                 _currentResponseId == null &&
                 _currentVideoId != null &&
-                _reporterActiveMissionVideoIds.contains(_currentVideoId))
+                _reporterActiveMissionVideoIds.contains(_currentVideoId) &&
+                mq.viewInsets.bottom == 0)
               Positioned(
-                left: 0,
-                right: 0,
-                bottom: MediaQuery.of(context).padding.bottom + 105,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: ElevatedButton.icon(
-                    onPressed: _cancelMissionByReporter,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade600,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      elevation: 4,
+                top: _trendingPanelBottom > 0 ? _trendingPanelBottom + 8 : 300,
+                right: _trendingPanelWidth > 0
+                    ? (mq.size.width - _trendingPanelRight)
+                    : 16,
+                width: _trendingPanelWidth > 0 ? _trendingPanelWidth : 220,
+                child: ElevatedButton(
+                  onPressed: _cancelMissionByReporter,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
                     ),
-                    icon: const Icon(Icons.cancel_outlined, size: 20),
-                    label: const Text(
-                      'ยกเลิกภารกิจนี้',
-                      style: TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
+                    elevation: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cancel_outlined, size: 18),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: const Text(
+                            'ยกเลิกภารกิจนี้',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'SukhumvitSet',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1019,6 +1098,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               setState(() => _isOverlayVisible = visible),
           onOpenFullscreen: _openFullscreen,
           trendingPanelKey: _trendingPanelKey,
+          actionButtonsKey: _actionButtonsKey,
+          videoCardKey: _videoCardKey,
           lockToCurrentVideo: _currentResponseId != null,
         );
       }
