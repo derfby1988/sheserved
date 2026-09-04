@@ -33,6 +33,41 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาเลือกประเภทเหตุฉุกเฉินก่อนเริ่มบันทึก'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
       return;
     }
+    // ✅ Reporter Mission Lock: ห้ามแจ้งเหตุซ้อนหากยังมีเหตุการณ์ของตนเอง
+    // ที่มีภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อน
+    final userId = AuthService.instance.userId;
+    if (userId != null) {
+      try {
+        final active = await ServiceLocator.instance.videoRepository
+            .getReporterActiveIncidentVideoIds(userId);
+        if (!mounted) return;
+        if (active.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'คุณมีเหตุการณ์ที่ภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อนจึงจะแจ้งเหตุใหม่ได้',
+                style: TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          // เด้งไปเหตุการณ์ที่ภารกิจค้างล่าสุด + สลับกลับหน้า Live
+          final firstActive = active.first;
+          if (firstActive.isNotEmpty) {
+            _switchVideo(firstActive);
+            setState(() => _selectedTab = 0);
+          }
+          return;
+        }
+      } catch (e) {
+        debugPrint('[ReporterLock] active mission check failed: $e');
+      }
+    }
     setState(() => _prepCountdown = 3);
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -132,6 +167,42 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         ),
       );
       return;
+    }
+    // ✅ Reporter Mission Lock: ห้ามแจ้งเหตุซ้อน (โหมดภาพถ่าย)
+    // ยกเว้น: โหมดไทยมุงที่แนบภาพเข้าเหตุการณ์เดิม (_isThaiMhungReporting)
+    if (!_isThaiMhungReporting) {
+      final userId = AuthService.instance.userId;
+      if (userId != null) {
+        try {
+          final active = await ServiceLocator.instance.videoRepository
+              .getReporterActiveIncidentVideoIds(userId);
+          if (!mounted) return;
+          if (active.isNotEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'คุณมีเหตุการณ์ที่ภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อนจึงจะแจ้งเหตุใหม่ได้',
+                  style: TextStyle(
+                    fontFamily: 'SukhumvitSet',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            final firstActive = active.first;
+            if (firstActive.isNotEmpty) {
+              _switchVideo(firstActive);
+              setState(() => _selectedTab = 0);
+            }
+            return;
+          }
+        } catch (e) {
+          debugPrint('[ReporterLock] active mission check failed: $e');
+        }
+      }
     }
     String? categoryId = _isThaiMhungReporting ? _currentVideo?.categoryId : _selectedEmergencyCategoryId;
     if (categoryId == null && !_isThaiMhungReporting) return;

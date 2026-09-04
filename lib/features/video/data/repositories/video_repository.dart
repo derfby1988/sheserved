@@ -911,6 +911,56 @@ class VideoRepository {
     }
   }
 
+  /// ผู้แจ้งเหตุยกเลิกภารกิจทั้งหมดบนเหตุการณ์ของตนเอง
+  /// Backend จะอัปเดตทุก active response (accepted/arrived/en_route)
+  /// ของวิดีโอนี้เป็น `cancelled` และแจ้งจิตอาสาผ่าน socket
+  /// ✅ Primary Path: Local API (x-user-id = ผู้แจ้ง)
+  /// ✅ Donation Guard: ถ้า backend ตอบ `409 MISSION_CANCEL_HAS_DONATIONS`
+  ///    (มีเงินบริจาคเข้ามาแล้ว) คืน code/message เพื่อให้ UI แสดงเหตุผล
+  Future<({bool success, String? code, String? message})>
+  cancelMissionByReporter({
+    required String videoId,
+    required String reporterId,
+    String? notes,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': reporterId,
+            },
+            body: jsonEncode({
+              'status': 'cancelled',
+              'notes': notes ?? 'ยกเลิกโดยผู้แจ้งเหตุ',
+            }),
+          )
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        debugPrint(
+          'VideoRepository: ✅ cancelMissionByReporter succeeded (videoId=$videoId)',
+        );
+        return (success: true, code: null, message: null);
+      }
+      // ✅ อ่าน error body เพื่อแสดงเหตุผลที่ถูกบล็อก (เช่น มีเงินบริจาคแล้ว)
+      String? code;
+      String? message;
+      try {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        code = decoded['code']?.toString();
+        message = decoded['error']?.toString();
+      } catch (_) {}
+      debugPrint(
+        'VideoRepository: ⚠️ cancelMissionByReporter returned ${response.statusCode}: ${response.body}',
+      );
+      return (success: false, code: code, message: message);
+    } catch (e) {
+      debugPrint('VideoRepository: ❌ cancelMissionByReporter failed: $e');
+      return (success: false, code: null, message: null);
+    }
+  }
+
   /// Fetch the volunteer's active rescues to persist state
   /// ✅ Primary Path: Local API — accept/status-update เขียนลง Local Postgres
   ///    เท่านั้น (Supabase copy อาจว่างเพราะ dual-write ล้มเหลวเงียบๆ)
@@ -948,6 +998,62 @@ class VideoRepository {
         .order('accepted_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(response as List);
+  }
+
+  /// Fetch the video IDs of incidents reported by this user that currently
+  /// have an active (unfinished) rescue mission. Used to lock the reporter's
+  /// Trending panel to their own pending-mission cards.
+  /// ✅ Primary Path: Local API
+  /// ✅ Fallback Path: Supabase Cloud
+  Future<Set<String>> getReporterActiveIncidentVideoIds(
+    String reporterId,
+  ) async {
+    // ---- Primary Path: Local API ----
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/reporter/$reporterId/active-missions',
+            ),
+          )
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final List<dynamic> ids = jsonDecode(response.body);
+        return ids.map((e) => e.toString()).toSet();
+      }
+    } catch (e) {
+      debugPrint(
+        'VideoRepository: Local getReporterActiveIncidentVideoIds failed → fallback to Supabase: $e',
+      );
+    }
+
+    // ---- Fallback Path: Supabase Cloud ----
+    try {
+      final videosResponse = await _client
+          .from('videos')
+          .select('id')
+          .eq('user_id', reporterId);
+      final videoIds = (videosResponse as List)
+          .map((v) => v['id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (videoIds.isEmpty) return {};
+
+      final response = await _client
+          .from('incident_responses')
+          .select('video_id')
+          .inFilter('video_id', videoIds)
+          .inFilter('status', ['accepted', 'arrived', 'en_route']);
+
+      return (response as List)
+          .map((r) => r['video_id']?.toString())
+          .whereType<String>()
+          .toSet();
+    } catch (e) {
+      debugPrint('Error in getReporterActiveIncidentVideoIds: $e');
+      return {};
+    }
   }
 
   /// Get the real GPS location of an emergency incident from video_gps_tracks

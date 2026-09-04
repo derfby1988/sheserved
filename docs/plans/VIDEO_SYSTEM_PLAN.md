@@ -898,6 +898,16 @@ color: Colors.blue.withOpacity(0.6),
             - ปัดขึ้น/ลงใน Fullscreen Video Viewer → ถูกบล็อก พร้อม SnackBar เดียวกัน
         - เมื่อจบภารกิจ (`_currentResponseId` กลับเป็น null หลังสถานะ `resolved`/`cancelled`) → คืนความสามารถเปลี่ยนเหตุการณ์และรับงานใหม่ตามปกติ
         - **เหตุผล**: หากผู้ช่วยเหลือเปลี่ยนเหตุการณ์กลางคัน จะสูญเสียการติดตามเส้นทาง GPS, สถานะ responder, แผนที่ และข้อมูลแชทของเหตุการณ์เดิมที่ยังค้างภารกิจ
+    - **Reporter Mission Lock (ล็อกผู้แจ้งเหตุที่มีภารกิจค้าง — เพิ่ม 2026-09-04)**:
+        - **หลักการ**: ผู้แจ้งเหตุไม่สามารถ **แจ้งเหตุการณ์ซ้อน** ได้หากยังมีเหตุการณ์ของตนเองที่มีภารกิจยังไม่จบ (`incident_responses` status `accepted`/`arrived`/`en_route`) — ต้องรอให้ภารกิจของเหตุการณ์เดิมจบ (`resolved`/`cancelled`) ก่อนจึงแจ้งเหตุใหม่ได้
+        - **Trending Filter สำหรับผู้แจ้ง**: ขณะมีเหตุการณ์ของตนเองที่ภารกิจค้าง กล่องยอดนิยมจะล็อกให้เห็นเฉพาะ **(1) การ์ดที่กำลังดูอยู่ (2) การ์ดของตนเองที่มีภารกิจค้าง** — หากไม่มีภารกิจค้างแล้วจึงคืนสู่สถานะผู้ชมทั่วไป (เห็นทุกการ์ดตามปกติ)
+        - **การคำนวณ**: `_computeMissionTrendingFilter()` เรียก `VideoRepository.getReporterActiveIncidentVideoIds(userId)` (Local-first endpoint `GET /api/videos/reporter/:reporterId/active-missions`) เพื่อรวบรวม video IDs ที่ผู้แจ้งมีภารกิจค้าง → เก็บใน `_reporterActiveMissionVideoIds` และ `_isReporterLocked` → `_filteredTrendingVideos()` นำไปกรองก่อนนโยบายจิตอาสาทั่วไป (ยกเว้นเมื่อผู้ใช้เป็นจิตอาสาที่กำลังทำภารกิจอยู่ ให้ภารกิจจิตอาสามาก่อน) — เรียกทุกครั้งหลัง `_loadTrendingVideos()` / `_loadMoreTrendingVideos()` / จบภารกิจ (`_updateRescueStatus` → `resolved`/`cancelled`) เพื่อให้ตัวกรองสดใหม่
+        - **Fullscreen**: ใช้ลิสต์ `_filteredTrendingVideos()` เหมือนกัน เพื่อไม่ให้ปัดหนีตัวกรองไปเหตุการณ์นอกขอบเขต
+        - **บล็อกการแจ้งเหตุซ้อน (Flutter Guard)**: ก่อนเริ่มบันทึกวิดีโอ (`_onLongPressDownVideo`) และก่อนส่งภาพถ่าย (`_sendPhotos` กรณีไม่ใช่โหมดไทยมุง) → ตรวจ `getReporterActiveIncidentVideoIds(userId)` หากมีภารกิจค้าง → แสดง SnackBar "คุณมีเหตุการณ์ที่ภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อนจึงจะแจ้งเหตุใหม่ได้" แล้วเด้งไปเหตุการณ์ที่ภารกิจค้างล่าสุด **พร้อมสลับแท็บกลับหน้า Live อัตโนมัติ** (`_selectedTab = 0`) — โหมดไทยมุง (`_isThaiMhungReporting = true`) ได้รับการยกเว้นเพราะแนบภาพเข้าเหตุการณ์เดิมไม่ใช่แจ้งเหตุใหม่
+        - **ปุ่มยกเลิกภารกิจฝั่งผู้แจ้ง (แก้ deadlock)**: ผู้แจ้งที่ดูเหตุการณ์ของตนเองที่มีภารกิจค้าง (`_reporterActiveMissionVideoIds.contains(_currentVideoId)` และไม่ได้เป็นจิตอาสาทำภารกิจ) จะเห็นปุ่ม **"ยกเลิกภารกิจนี้"** แดงเหนือ Bottom Tabs → ยืนยันผ่าน dialog → `VideoRepository.cancelMissionByReporter()` เรียก `POST /api/videos/:id/status` ด้วย `x-user-id` ของผู้แจ้ง → backend ตรวจว่าผู้เรียกเป็นเจ้าของวิดีโอ → อัปเดต**ทุก** active response ของเหตุการณ์เป็น `cancelled` + แจ้งจิตอาสาผ่าน socket `rescue-cancelled` + archive แชท — ผู้แจ้งยกเลิกได้เฉพาะ `cancelled` (ห้าม `resolved`/`arrived` เพราะเป็นสถานะของจิตอาสา) — เหตุผล: หากจิตอาสาทิ้งภารกิจไว้โดยไม่กดจบ ผู้แจ้งจะติดล็อกไม่สามารถแจ้งเหตุใหม่ได้จนกว่าครบ 24 ชม.
+        - **Donation Guard (กันยกเลิกเมื่อเริ่มรับบริจาค — 2026-09-04)**: ก่อนยกเลิกภารกิจ backend ตรวจ `donation_requests` ของวิดีโอนั้น (`approval_status IN ('pending_local','active')`) หาก `SUM(current_amount) > 0` (มีเงินบริจาคเข้ามาแล้ว) → **บล็อก** `409 { code: 'MISSION_CANCEL_HAS_DONATIONS', currentAmount, activeRequestCount }` — ผู้แจ้งเห็น SnackBar แจ้ง "ต้องติดต่อผู้ดูแลระบบเพื่อจัดการเงินและคืนเงินผู้บริจาคก่อน" (Refund flow = ขั้นตอนถัดไป ตาม DONATION_SYSTEM_PLAN.md §8.1) — หากไม่มีเงิน (`current_amount = 0`) → ยกเลิกภารกิจได้ และ**ปิดคำร้องบริจาคที่ `pending_local`/`active` ที่ยังไม่มีเงินเป็น `cancelled` อัตโนมัติ** + emit `donation-closed` ไป `room-video-{videoId}`
+        - **ล้างล็อกเมื่อจบภารกิจ**: `_updateRescueStatus` เมื่อสถานะกลายเป็น `resolved`/`cancelled` → เรียก `_computeMissionTrendingFilter()` ใหม่ เพื่อล้าง `_isReporterLocked` หากไม่มีภารกิจค้างเหลืออยู่
+        - **Backend Guard (สำหรับอนาคต)**: หากต้องการบังคับที่ source การสร้างเหตุการณ์ ให้ตรวจสอบ `incident_responses` ผ่าน `incident_videos.user_id` ว่าผู้แจ้งรายนี้ยังมีภารกิจค้างหรือไม่ก่อนอนุญาตให้ insert วิดีโอ emergency ใหม่
 5.  **Completion Phase**: เมื่อถึงจุดเกิดเหตุ สามารถกด "ถึงที่เกิดเหตุแล้ว" เพื่อสรุปภารกิจ
 
 ### 3. Database & Tracking logic
@@ -1451,6 +1461,46 @@ return false;
 - เหตุการณ์ที่จบภารกิจแล้ว (resolved โดยอาชีพเดียวกัน) ไม่แสดงในกล่องยอดนิยมของจิตอาสาอาชีพนั้น และไม่แจ้งเตือนซ้ำบน Home
 - กดรับเหตุการณ์ที่จบแล้วโดยตรง (API) → `409 MISSION_ALREADY_RESOLVED`
 - ผู้ชมทั่วไป (ไม่มีอาชีพตรง) → กล่องยอดนิยมแสดงครบตามปกติ
+
+---
+
+### Bug Fix #11 — Reporter Mission Lock: ขยายนโยบายห้ามแจ้งเหตุซ้อน + ล้างล็อกเมื่อจบภารกิจ + กรองทุกหน้า (2026-09-04)
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `lib/features/video/data/repositories/video_repository.dart`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`, `lib/features/video/presentation/pages/parts/emergency_reporting_logic.dart`, `lib/features/video/presentation/pages/emergency_live_page.dart`
+
+**อาการหลัง implement ครั้งแรก (ช่องว่าง 4 จุด):**
+1. **ไม่มี guard บล็อกการแจ้งเหตุซ้อน**: แผนบอก "ผู้แจ้งห้ามแจ้งเหตุซ้อน" แต่ `_onLongPressDownVideo()` / `_sendPhotos()` / `_uploadIncident()` ไม่ตรวจภารกิจค้างเลย → ผู้แจ้งสามารถกดอัดวิดีโอใหม่ได้ทันทีแม้เหตุการณ์เดิมยังมีจิตอาสากำลังไปช่วย
+2. **การ์ดหน้า 2+ ไม่ถูกกรอง**: `_loadMoreTrendingVideos()` เพิ่มการ์ดเข้า `_trendingVideos` แต่ไม่เรียก `_computeMissionTrendingFilter()` ใหม่ → การ์ดที่โหลดมาเพิ่มไม่ผ่านตัวกรอง eligibility/reporter lock
+3. **Reporter lock ไม่ล้างเมื่อจบภารกิจ**: `_updateRescueStatus('resolved'/'cancelled')` ล้าง `_currentResponseId` และ `_pendingMissionVideoId` แต่ไม่เรียก `_computeMissionTrendingFilter()` → ผู้แจ้งติดล็อกจนกว่าจะรีเฟรชหน้า
+4. **`hasOwnVideo` เช็คเฉพาะการ์ดในหน้า 1**: เงื่อนไข `_trendingVideos.any((v) => v.userId == userId)` ทำให้ถ้าเหตุการณ์ของผู้แจ้งเกิน 20 อันดับแรก → ข้ามการเรียก endpoint ทั้งที่อาจมีภารกิจค้าง
+
+**วิธีแก้ไข (Implemented):**
+1. **Flutter Guard บล็อกแจ้งเหตุซ้อน**:
+   - `_onLongPressDownVideo()` (วิดีโอ): ก่อนเริ่มนับเวลาถอยหลัง → เรียก `getReporterActiveIncidentVideoIds(userId)` หากมีภารกิจค้าง → SnackBar "คุณมีเหตุการณ์ที่ภารกิจยังไม่จบ — ต้องรอให้ภารกิจเดิมจบก่อนจึงจะแจ้งเหตุใหม่ได้" + `_switchVideo()` ไปเหตุการณ์ที่ค้างล่าสุด
+   - `_sendPhotos()` (ภาพถ่าย): ตรวจเหมือนกัน ยกเว้นโหมดไทยมุง (`_isThaiMhungReporting = true`) ที่แนบภาพเข้าเหตุการณ์เดิม — ไม่ใช่แจ้งเหตุใหม่
+2. **กรองหน้าถัดไป**: เพิ่ม `await _computeMissionTrendingFilter()` ใน `_loadMoreTrendingVideos()` หลัง `setState` เพิ่มการ์ดใหม่
+3. **ล้างล็อกเมื่อจบภารกิจ**: ใน `_updateRescueStatus` เมื่อ `status == 'resolved' || 'cancelled'` → เรียก `_computeMissionTrendingFilter()` หลังล้าง `_currentResponseId`/`_pendingMissionVideoId` เพื่อคำนวณ `_isReporterLocked` ใหม่ (หากไม่มีภารกิจค้างเหลือ → คืนสู่ผู้ชมทั่วไป)
+4. **ยกเลิก `hasOwnVideo` gate**: `_computeMissionTrendingFilter()` เรียก `getReporterActiveIncidentVideoIds(userIdStr)` ทุกครั้ง (ไม่จำกัดแค่การมีการ์ดของตนเองใน `_trendingVideos` หน้า 1) — endpoint ตรวจจาก DB โดยตรงอยู่แล้ว
+
+**โครงสร้างไฟล์หลัก:**
+- Backend: `GET /api/videos/reporter/:reporterId/active-missions` — คืน `DISTINCT v.id` จาก `videos` JOIN `incident_responses` ที่ `status IN ('accepted','arrived','en_route')` และ `accepted_at` ภายใน 24 ชม. (กัน zombie mission)
+- Repository: `getReporterActiveIncidentVideoIds(reporterId)` — Local-first + Supabase fallback (flat queries)
+- State: `_reporterActiveMissionVideoIds` (Set<String>) + `_isReporterLocked` (bool) ใน `_EmergencyLivePageState`
+- Filter: `_filteredTrendingVideos()` กรณี 1 (reporter lock) ทำงานก่อนกรณี 2 (volunteer filter) — ยกเว้นเมื่อผู้ใช้เป็นจิตอาสาที่กำลังทำภารกิจ (`_currentResponseId != null || _pendingMissionVideoId != null`)
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- ผู้แจ้งที่มีเหตุการณ์ภารกิจค้าง → กดอัดวิดีโอ/ส่งภาพใหม่ไม่ได้ ขึ้น SnackBar แล้วเด้งไปเหตุการณ์ที่ค้าง **พร้อมสลับกลับหน้า Live อัตโนมัติ** (`_selectedTab = 0` — แก้บั๊กที่ `_switchVideo` ไม่สลับแท็บ ทำให้ผู้ใช้บนแท็บแจ้งเหตุไม่เห็นการเปลี่ยนเหตุการณ์)
+- โหมดไทยมุง (แนบภาพเข้าเหตุการณ์เดิม) → ส่งได้ปกติ ไม่ถูกบล็อก
+- เมื่อภารกิจจบ → ล็อกถูกล้างทันที กล่องยอดนิยมคืนเป็นผู้ชมทั่วไป
+- โหลดหน้าถัดไป → การ์ดใหม่ถูกกรองตามสิทธิเช่นกัน
+- เหตุการณ์ของผู้แจ้งที่อยู่นอก 20 อันดับแรก → ยังถูกตรวจพบและล็อกได้
+
+**รอบแก้ที่ 2 (2026-09-04 — หลังทดสอบจริงบนมือถือ):**
+
+| ปัญหาที่พบจากทดสอบ | สาเหตุ | วิธีแก้ |
+|---|---|---|
+| SnackBar ขึ้นแต่ไม่เด้งไปเหตุการณ์ที่ค้าง | `_switchVideo()` เปลี่ยนเฉพาะ `_currentVideoId` ไม่สลับ `_selectedTab` — ผู้ใช้อยู่บนแท็บแจ้งเหตุ (Tab 2) จึงไม่เห็นการเปลี่ยน | เพิ่ม `setState(() => _selectedTab = 0)` หลัง `_switchVideo(firstActive)` ใน guard ทั้ง 2 จุด |
+| ผู้แจ้งไม่มีปุ่มจบ/ยกเลิกภารกิจ (deadlock) | `POST /:id/status` ใช้ `WHERE ... AND volunteer_id = $4` — ผู้แจ้งเรียกแล้ว 404; UI แสดง `RescueControlPanelWidget` เฉพาะจิตอาสา (`_currentResponseId != null`) | (1) Backend: ตรวจ `isVideoOwner` ก่อน — เจ้าของวิดีโอยกเลิกได้เฉพาะ `cancelled` โดยอัปเดต**ทุก** active response ของเหตุการณ์ (2) Flutter: เพิ่มปุ่ม "ยกเลิกภารกิจนี้" แดงเหนือ Bottom Tabs เมื่อดูเหตุการณ์ตัวเองที่มีภารกิจค้าง + `VideoRepository.cancelMissionByReporter()` (x-user-id ของผู้แจ้ง) + dialog ยืนยัน + ล้างล็อกหลังยกเลิกสำเร็จ |
+| ยกเลิกภารกิจได้แม้มีเงินบริจาคแล้ว (ขัด DONATION_SYSTEM_PLAN.md §8.1) | เส้นทาง `isVideoOwner` ไม่ตรวจ `donation_requests` — ผู้แจ้งอาจยกเลิกทั้งที่ผู้บริจาคมอบเงินแล้ว เงินค้างไม่มีกระบวนการจัดการ | (1) Backend: Donation Guard — `SUM(current_amount) > 0` บน `pending_local`/`active` → `409 MISSION_CANCEL_HAS_DONATIONS` + `currentAmount` (2) Backend: ถ้าไม่มีเงิน → ปิดคำร้องที่ยังไม่มีเงินเป็น `cancelled` อัตโนมัติ + emit `donation-closed` (3) Flutter: `cancelMissionByReporter` คืน `(success, code, message)` — แสดงข้อความบล็อกจาก backend ใน SnackBar (5 วิ) (4) Refund/Admin-notify = ขั้นตอนถัดไป (บันทึกใน DONATION_SYSTEM_PLAN.md §8.1) |
 
 ---
 

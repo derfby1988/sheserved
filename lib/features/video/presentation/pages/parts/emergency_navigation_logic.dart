@@ -147,14 +147,14 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
-  /// ✅ Volunteer Trending Filter: คำนวณชุด video_ids ที่จิตอาสา "มีสิทธิ
-  /// เข้าร่วม" ตามเกณฑ์เดียวกับ _isEligibleResponder (Rule 3-5 + resolved):
-  /// ไม่ใช่เหตุการณ์ตัวเอง + อาชีพตรงกับ volunteerProfessionIds ของหมวดหมู่
-  /// + ไม่มีคนอาชีพเดียวกันรับหรือจบภารกิจไปแล้ว (taken endpoint รวม resolved)
-  /// ทำงาน "ทุกครั้ง" สำหรับจิตอาสา — ไม่ผูกกับการมีภารกิจค้าง
+  /// ✅ Mission Trending Filter: คำนวณชุด video_ids ที่จะแสดงในกล่องยอดนิยม
+  /// ตามบทบาทของผู้ใช้:
+  /// - จิตอาสา: ใช้เกณฑ์ _isEligibleResponder (Rule 3-5 + resolved)
+  /// - ผู้แจ้งเหตุที่มีภารกิจค้าง: ล็อกให้เห็นเฉพาะการ์ดของตนเองที่มีภารกิจค้าง
+  /// - ผู้ชมทั่วไป: เห็นทุกการ์ดตามปกติ
   Future<void> _computeMissionTrendingFilter() async {
     final user = AuthService.instance.currentUser;
-    if (user == null || _emergencyCategories.isEmpty) return;
+    if (user == null) return;
     final userProfId = user.professionId;
     final String userIdStr = user.id.toString();
 
@@ -162,52 +162,100 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     // ผู้ชมทั่วไป (ไม่มีอาชีพตรง) → ไม่กรอง เห็นทุกการ์ดตามปกติ
     final isVolunteer = userProfId != null &&
         userProfId.isNotEmpty &&
+        _emergencyCategories.isNotEmpty &&
         _emergencyCategories.any(
           (c) => c.volunteerProfessionIds.contains(userProfId),
         );
     if (mounted && _isVolunteerCapable != isVolunteer) {
       setState(() => _isVolunteerCapable = isVolunteer);
     }
-    if (!isVolunteer) return;
 
-    final Set<String> eligible = {};
-    for (final v in _trendingVideos) {
-      // Rule 3: ไม่ใช่เหตุการณ์ที่ตัวเองแจ้ง
-      if (v.userId?.toString() == userIdStr) continue;
-      // Rule 4: อาชีพต้องตรงกับ volunteerProfessionIds ของหมวดหมู่
-      // (วิดีโอไม่มี category = ไม่มีสิทธิให้ใครรับ → กรองออก)
-      final category = _emergencyCategories
-          .where((c) => c.id == v.categoryId)
-          .firstOrNull;
-      if (category == null || category.volunteerProfessionIds.isEmpty) continue;
-      if (userProfId == null ||
-          !category.volunteerProfessionIds.contains(userProfId)) {
-        continue;
+    if (isVolunteer) {
+      final Set<String> eligible = {};
+      for (final v in _trendingVideos) {
+        // Rule 3: ไม่ใช่เหตุการณ์ที่ตัวเองแจ้ง
+        if (v.userId?.toString() == userIdStr) continue;
+        // Rule 4: อาชีพต้องตรงกับ volunteerProfessionIds ของหมวดหมู่
+        // (วิดีโอไม่มี category = ไม่มีสิทธิให้ใครรับ → กรองออก)
+        final category = _emergencyCategories
+            .where((c) => c.id == v.categoryId)
+            .firstOrNull;
+        if (category == null || category.volunteerProfessionIds.isEmpty)
+          continue;
+        if (userProfId == null ||
+            !category.volunteerProfessionIds.contains(userProfId)) {
+          continue;
+        }
+        eligible.add(v.id);
       }
-      eligible.add(v.id);
-    }
-    // Rule 5 + Resolved: ตัดเหตุการณ์ที่มีคนอาชีพเดียวกันรับอยู่ หรือ
-    // จบภารกิจไปแล้ว (taken endpoint รวม status resolved แล้ว)
-    if (eligible.isNotEmpty && userProfId != null) {
-      try {
-        final taken = await ServiceLocator.instance.videoRepository
-            .getTakenIncidentVideoIdsByProfession(
-              eligible.toList(),
-              userProfId,
-            );
-        eligible.removeAll(taken);
-      } catch (e) {
-        debugPrint('[MissionFilter] taken-by-profession check failed: $e');
+      // Rule 5 + Resolved: ตัดเหตุการณ์ที่มีคนอาชีพเดียวกันรับอยู่ หรือ
+      // จบภารกิจไปแล้ว (taken endpoint รวม status resolved แล้ว)
+      if (eligible.isNotEmpty && userProfId != null) {
+        try {
+          final taken = await ServiceLocator.instance.videoRepository
+              .getTakenIncidentVideoIdsByProfession(
+                eligible.toList(),
+                userProfId,
+              );
+          eligible.removeAll(taken);
+        } catch (e) {
+          debugPrint('[MissionFilter] taken-by-profession check failed: $e');
+        }
+      }
+      if (mounted) {
+        setState(() => _eligibleTrendingVideoIds
+          ..clear()
+          ..addAll(eligible));
       }
     }
-    if (mounted) setState(() => _eligibleTrendingVideoIds..clear()
-      ..addAll(eligible));
+
+    // ✅ ผู้แจ้งเหตุ: ตรวจว่ามีเหตุการณ์ของตนเองที่มีภารกิจค้างหรือไม่
+    // หากมีจะล็อกกล่องยอดนิยมให้เห็นเฉพาะการ์ดของตนเองที่ภารกิจค้าง
+    // หมายเหตุ: ไม่จำกัดเฉพาะการที่ผู้ใช้มีการ์ดใน _trendingVideos เพราะ
+    // เหตุการณ์ของผู้ใช้อาจอยู่นอก 20 อันดับแรก แต่ยังมีภารกิจค้างอยู่
+    try {
+      final active = await ServiceLocator.instance.videoRepository
+          .getReporterActiveIncidentVideoIds(userIdStr);
+      if (mounted) {
+        setState(() {
+          _reporterActiveMissionVideoIds
+            ..clear()
+            ..addAll(active);
+          _isReporterLocked = active.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      debugPrint('[MissionFilter] reporter active missions check failed: $e');
+    }
   }
 
-  /// กล่องยอดนิยมสำหรับจิตอาสา: แสดงเฉพาะ (1) การ์ดที่กำลังดูอยู่
-  /// (2) การ์ดเหตุการณ์ที่ภารกิจตนเองค้าง (3) การ์ดที่มีสิทธิเข้าร่วมเป็นจิตอาสา
-  /// ผู้ชมทั่วไป (ไม่ใช่จิตอาสา) → แสดงทั้งหมดตามปกติ
+  /// กล่องยอดนิยม:
+  /// - ผู้แจ้งเหตุที่มีภารกิจค้าง: เห็นเฉพาะการ์ดของตนเองที่มีภารกิจค้าง
+  /// - จิตอาสา: แสดง (1) การ์ดที่กำลังดูอยู่ (2) การ์ดภารกิจตนเองค้าง
+  ///   (3) การ์ดที่มีสิทธิเข้าร่วมเป็นจิตอาสา
+  /// - ผู้ชมทั่วไป: แสดงทั้งหมดตามปกติ
   List<Video> _filteredTrendingVideos() {
+    // กรณี 1: ผู้แจ้งเหตุที่มีภารกิจค้าง และไม่ได้เป็นจิตอาสาที่กำลังทำภารกิจ
+    // (ล็อกการ์ดที่เป็นของตนเองที่มีภารกิจค้าง)
+    if (_isReporterLocked &&
+        _reporterActiveMissionVideoIds.isNotEmpty &&
+        _currentResponseId == null &&
+        _pendingMissionVideoId == null) {
+      final filtered = _trendingVideos
+          .where(
+            (v) =>
+                v.id == _currentVideoId ||
+                _reporterActiveMissionVideoIds.contains(v.id),
+          )
+          .toList();
+      if (_currentVideo != null &&
+          !filtered.any((v) => v.id == _currentVideoId)) {
+        filtered.insert(0, _currentVideo!);
+      }
+      return filtered;
+    }
+
+    // กรณี 2: จิตอาสามีภารกิจค้าง หรือมีสิทธิตามอาชีพ
     if (!_isVolunteerCapable) return _trendingVideos;
     final filtered = _trendingVideos
         .where(
@@ -653,6 +701,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           _isLoadingMoreTrending = false;
           if (videos.length < 20) _hasMoreTrending = false;
         });
+        // ✅ คำนวณตัวกรองใหม่หลังโหลดหน้าถัดไป เพื่อให้การ์ดใหม่
+        // ถูกกรองตามสิทธิจิตอาสา / reporter lock ด้วย
+        await _computeMissionTrendingFilter();
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingMoreTrending = false);
@@ -750,6 +801,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         });
         _compassSub?.cancel();
         _compassSub = null;
+        // ✅ ล้าง reporter lock / volunteer filter ใหม่ เนื่องจากภารกิจจบ
+        // แล้ว ผู้ใช้อาจกลับสู่สถานะผู้ชมทั่วไปหรือเหลือภารกิจค้างอื่น
+        _computeMissionTrendingFilter();
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -784,6 +838,98 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           ),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// ✅ Reporter Mission Lock: ผู้แจ้งยกเลิกภารกิจทั้งหมดบนเหตุการณ์ของตนเอง
+  /// แก้ deadlock — ผู้แจ้งถูกล็อกไม่ให้แจ้งเหตุใหม่ แต่ถ้าจิตอาสาทิ้งภารกิจ
+  /// ไว้ ผู้แจ้งต้องยกเลิกเองได้ (backend อัปเดตทุก active response เป็น
+  /// cancelled และแจ้งจิตอาสาผ่าน socket rescue-cancelled)
+  Future<void> _cancelMissionByReporter() async {
+    final videoId = _currentVideoId;
+    final userId = AuthService.instance.currentUser?.id;
+    if (videoId == null || userId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: Colors.red),
+            SizedBox(width: 8),
+            Text(
+              'ยกเลิกภารกิจ',
+              style: TextStyle(
+                fontFamily: 'SukhumvitSet',
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'คุณต้องการยกเลิกภารกิจช่วยเหลือของเหตุการณ์นี้ใช่หรือไม่?\n\nจิตอาสาที่กำลังเดินทางมาจะได้รับแจ้งทันที',
+          style: TextStyle(fontFamily: 'SukhumvitSet'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'ไม่ยกเลิก',
+              style: TextStyle(color: Colors.grey, fontFamily: 'SukhumvitSet'),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'ยกเลิกภารกิจ',
+              style: TextStyle(color: Colors.white, fontFamily: 'SukhumvitSet'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final result = await ServiceLocator.instance.videoRepository
+        .cancelMissionByReporter(videoId: videoId, reporterId: userId);
+    if (!mounted) return;
+
+    if (result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ยกเลิกภารกิจเรียบร้อยแล้ว'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      // คำนวณตัวกรองใหม่ — reporter lock ควรถูกล้างเพราะไม่มีภารกิจค้างแล้ว
+      await _computeMissionTrendingFilter();
+    } else {
+      // ✅ Donation Guard: แสดงเหตุผลจาก backend (เช่น มีเงินบริจาคแล้ว)
+      final message = result.message ??
+          'ไม่สามารถยกเลิกภารกิจได้ กรุณาลองใหม่อีกครั้ง';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: const TextStyle(
+              fontFamily: 'SukhumvitSet',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
           behavior: SnackBarBehavior.floating,
         ),
       );

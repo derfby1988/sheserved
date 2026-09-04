@@ -149,6 +149,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   // ✅ ผู้ใช้เป็น "จิตอาสา" (อาชีพตรงกับ volunteerProfessionIds ของ category
   // ใดๆ) — จิตอาสาเท่านั้นที่กล่องยอดนิยมถูกกรองตามสิทธิ ผู้ชมทั่วไปเห็นทุกการ์ด
   bool _isVolunteerCapable = false;
+  // ✅ ผู้ใช้เป็น "ผู้แจ้งเหตุ" ที่มีภารกิจค้างอยู่ — กล่องยอดนิยมจะล็อก
+  // แสดงเฉพาะการ์ดของตนเองที่มีภารกิจยังไม่จบ
+  final Set<String> _reporterActiveMissionVideoIds = {};
+  bool _isReporterLocked = false;
 
   CameraController? _cameraController;
   bool _isRecording = false;
@@ -610,6 +614,48 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 child: RescueControlPanelWidget(
                   onOpenInMaps: _openInGoogleMaps,
                   onUpdateStatus: _updateRescueStatus,
+                ),
+              ),
+
+            // ✅ Reporter Mission Lock: ปุ่มยกเลิกภารกิจสำหรับผู้แจ้ง
+            // แสดงเมื่อกำลังดูเหตุการณ์ของตนเองที่มีภารกิจค้าง
+            // (แก้ deadlock — ผู้แจ้งถูกล็อกไม่ให้แจ้งเหตุใหม่ แต่จิตอาสา
+            // อาจทิ้งภารกิจไว้โดยไม่กดจบ)
+            if (_isUiVisible &&
+                _selectedTab == 0 &&
+                _currentResponseId == null &&
+                _currentVideoId != null &&
+                _reporterActiveMissionVideoIds.contains(_currentVideoId))
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: MediaQuery.of(context).padding.bottom + 105,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: ElevatedButton.icon(
+                    onPressed: _cancelMissionByReporter,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      elevation: 4,
+                    ),
+                    icon: const Icon(Icons.cancel_outlined, size: 20),
+                    label: const Text(
+                      'ยกเลิกภารกิจนี้',
+                      style: TextStyle(
+                        fontFamily: 'SukhumvitSet',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
                 ),
               ),
 

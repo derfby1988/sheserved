@@ -669,22 +669,68 @@ module.exports = (pool) => {
     // Update rescue status (arrived, resolved, cancelled)
     // Primary HTTP path for mission lifecycle updates. Guarantees persistence
     // even if WebSocket is disconnected or drops mid-request.
+    // ✅ Reporter Mission Lock: the video owner (reporter) may also cancel
+    // ALL active responses on their own incident — prevents the reporter from
+    // being locked out of reporting new incidents when a volunteer abandons
+    // the mission without completing it.
     router.post('/:id/status', requireAuth, strictRateLimiter, async (req, res) => {
         try {
             const { id } = req.params;
-            const volunteerId = req.userId;
+            const userId = req.userId;
+            const volunteerId = userId;
             const { responseId, status, notes } = req.body;
 
-            if (!volunteerId) {
+            if (!userId) {
                 return res.status(401).json({ error: 'Authentication required' });
             }
             if (!status || !['accepted', 'en_route', 'arrived', 'resolved', 'cancelled'].includes(status)) {
                 return res.status(400).json({ error: 'Invalid status' });
             }
 
+            // ✅ Reporter cancel path: the video owner may only cancel
+            const videoRes = await pool.query('SELECT user_id FROM videos WHERE id = $1', [id]);
+            const isVideoOwner = videoRes.rows[0]?.user_id === userId;
+            const io = socketService.getIO();
+
             let query;
             let params;
-            if (responseId) {
+            if (isVideoOwner) {
+                if (status !== 'cancelled') {
+                    return res.status(403).json({ error: 'ผู้แจ้งเหตุสามารถยกเลิกภารกิจเท่านั้น' });
+                }
+                // ✅ Donation Guard (DONATION_SYSTEM_PLAN.md §8.1): ห้ามยกเลิก
+                // ภารกิจถ้ามีเงินบริจาคเข้ามาแล้วในคำร้องของวิดีโอนี้ — ต้องจัดการ
+                // เงิน/คืนผู้บริจาคผ่าน Admin ก่อน (คืนเงิน = ขั้นตอนถัดไป)
+                const donationCheck = await pool.query(
+                    `SELECT COALESCE(SUM(current_amount), 0)::float8 AS total,
+                            COUNT(*)::int AS active_count
+                     FROM donation_requests
+                     WHERE video_id = $1
+                       AND approval_status IN ('pending_local', 'active')`,
+                    [id]
+                );
+                const donationTotal = Number(donationCheck.rows[0]?.total || 0);
+                if (donationTotal > 0) {
+                    return res.status(409).json({
+                        error: 'ไม่สามารถยกเลิกภารกิจได้ เนื่องจากมีการรับบริจาคเงินเข้ามาแล้ว — กรุณาติดต่อผู้ดูแลระบบเพื่อจัดการเงินและคืนเงินผู้บริจาคก่อน',
+                        code: 'MISSION_CANCEL_HAS_DONATIONS',
+                        currentAmount: donationTotal,
+                        activeRequestCount: donationCheck.rows[0]?.active_count || 0
+                    });
+                }
+                // Cancel every active response on this incident
+                query = `
+                    UPDATE incident_responses
+                    SET status = 'cancelled',
+                        resolved_at = CASE WHEN resolved_at IS NULL THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+                        notes = COALESCE($2, notes),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE video_id = $1
+                      AND status IN ('accepted', 'arrived', 'en_route')
+                    RETURNING *
+                `;
+                params = [id, notes || null];
+            } else if (responseId) {
                 query = `
                     UPDATE incident_responses
                     SET status = $1,
@@ -718,11 +764,44 @@ module.exports = (pool) => {
 
             const updatedRow = result.rows[0];
 
+            // ✅ Reporter cancel: ปิดคำร้องบริจาคที่ยังไม่มีเงิน (pending_local/active
+            // ที่ current_amount = 0) ให้เป็น cancelled พร้อมกัน — ตาม
+            // DONATION_SYSTEM_PLAN.md §8.1 (ยกเลิกได้เมื่อยังไม่มีเงินบริจาค)
+            // หมายเหตุ: Local donation_requests ไม่มีคอลัมน์ closed_at/closed_reason
+            // (ยังไม่ migrate) — เก็บเหตุผลลง custom_data (JSONB) แทน
+            if (isVideoOwner) {
+                try {
+                    const closeDonRes = await pool.query(
+                        `UPDATE donation_requests
+                         SET approval_status = 'cancelled',
+                             status = 'cancelled',
+                             custom_data = custom_data ||
+                                 jsonb_build_object(
+                                     'closed_at', to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+                                     'closed_reason', COALESCE($2, 'ยกเลิกภารกิจโดยผู้แจ้งเหตุ — ยังไม่มีการรับบริจาคเงิน')
+                                 ),
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE video_id = $1
+                           AND approval_status IN ('pending_local', 'active')
+                           AND current_amount = 0
+                         RETURNING id`,
+                        [id, notes || null]
+                    );
+                    if (closeDonRes.rows.length > 0 && io) {
+                        io.to(`room-video-${id}`).emit('donation-closed', {
+                            videoId: id,
+                            reason: 'ยกเลิกภารกิจโดยผู้แจ้งเหตุ',
+                            requestIds: closeDonRes.rows.map((r) => r.id)
+                        });
+                    }
+                } catch (donErr) {
+                    console.error('[Rescue Status HTTP] Close donation requests error:', donErr.message);
+                }
+            }
+
             // Real-time notifications via socketService
-            const io = socketService.getIO();
             if (io) {
                 // 1. Notify victim
-                const videoRes = await pool.query('SELECT user_id FROM videos WHERE id = $1', [id]);
                 const victimId = videoRes.rows[0]?.user_id;
                 if (victimId) {
                     io.to(`user-${victimId}`).emit('rescue-incoming', {
@@ -871,6 +950,30 @@ module.exports = (pool) => {
         } catch (error) {
             console.error('Get Active Rescues Error:', error.message);
             res.status(500).json({ error: 'Failed to fetch active rescues' });
+        }
+    });
+
+    // Get the incident video IDs for which a reporter has active (unfinished)
+    // missions. The Flutter Live page uses this to lock the reporter's Trending
+    // panel to their own pending-mission cards only, reverting to the public
+    // feed once all their missions are resolved/cancelled.
+    router.get('/reporter/:reporterId/active-missions', ipLimiter, async (req, res) => {
+        try {
+            const { reporterId } = req.params;
+            if (!reporterId) return res.json([]);
+            const result = await pool.query(
+                `SELECT DISTINCT v.id
+                 FROM videos v
+                 JOIN incident_responses ir ON ir.video_id = v.id
+                 WHERE v.user_id = $1
+                   AND ir.status IN ('accepted', 'arrived', 'en_route')
+                   AND ir.accepted_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'`,
+                [reporterId]
+            );
+            res.json(result.rows.map((r) => r.id));
+        } catch (error) {
+            console.error('Get Reporter Active Missions Error:', error.message);
+            res.status(500).json({ error: 'Failed to fetch reporter active missions' });
         }
     });
 
