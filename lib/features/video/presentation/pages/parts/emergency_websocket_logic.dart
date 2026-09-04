@@ -323,6 +323,27 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
       });
     });
 
+    // ✅ [Phase 1: Responder Route Polyline] รับ real-time route update
+    ws.socket?.on('responder-route-updated', (data) {
+      if (!mounted) return;
+      final payload = (data is Map) ? Map<String, dynamic>.from(data) : {};
+      final videoId = payload['videoId']?.toString();
+      final volunteerId = payload['volunteerId']?.toString();
+      final encodedPolyline = payload['encodedPolyline'] as String?;
+
+      if (videoId != _currentVideoId || encodedPolyline == null) return;
+
+      final responderIndex = _responders.indexWhere(
+        (r) => r['volunteerId']?.toString() == volunteerId,
+      );
+      if (responderIndex >= 0) {
+        setState(() {
+          _responders[responderIndex]['routePolyline'] = encodedPolyline;
+        });
+        _adjustMapBounds();
+      }
+    });
+
     _yieldWayAlertSub?.cancel();
     _yieldWayAlertSub = ws.yieldWayAlertStream.listen((data) {
       if (mounted) {

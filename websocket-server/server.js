@@ -967,6 +967,14 @@ io.on('connection', (socket) => {
 
         // ทันทีหลังบันทึก route → ส่งการแจ้งเตือนให้ผู้ใช้ที่อยู่บนเส้นทาง
         await _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, toLat, toLng);
+
+        // ✅ กระจาย route_polyline ไปยังห้องวิดีโอแบบเรียลไทม์ (ไม่มี cost)
+        io.to(`room-video-${videoId}`).emit('responder-route-updated', {
+          videoId,
+          responseId,
+          volunteerId: userId || socket.userId,
+          encodedPolyline,
+        });
       } catch (err) {
         console.error('[Yield Way] Failed to save route:', err.message);
       }
@@ -1776,7 +1784,7 @@ app.get('/api/professions', async (req, res) => {
       const result = await pool.query(
         `SELECT id, name, name_en, description, icon_name, category, 
                 is_built_in, is_active, requires_verification, display_order,
-                created_at, updated_at
+                color_hex, created_at, updated_at
          FROM professions 
          WHERE is_active = true 
          ORDER BY display_order ASC`
@@ -2190,10 +2198,10 @@ app.post('/api/professions/sync', async (req, res) => {
     let synced = 0;
     for (const item of data) {
       await pool.query(
-        `INSERT INTO professions (id, name, name_en, description, icon_name, category, 
-                                  is_built_in, is_active, requires_verification, display_order,
-                                  created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO professions (id, name, name_en, description, icon_name, category,
+                                  is_built_in, is_active, is_volunteer, requires_verification, display_order,
+                                  color_hex, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            name_en = EXCLUDED.name_en,
@@ -2202,13 +2210,16 @@ app.post('/api/professions/sync', async (req, res) => {
            category = EXCLUDED.category,
            is_built_in = EXCLUDED.is_built_in,
            is_active = EXCLUDED.is_active,
+           is_volunteer = EXCLUDED.is_volunteer,
            requires_verification = EXCLUDED.requires_verification,
            display_order = EXCLUDED.display_order,
+           color_hex = EXCLUDED.color_hex,
            updated_at = EXCLUDED.updated_at`,
         [
           item.id, item.name, item.name_en, item.description, item.icon_name,
-          item.category, item.is_built_in, item.is_active, item.requires_verification,
-          item.display_order, item.created_at, item.updated_at
+          item.category, item.is_built_in, item.is_active, item.is_volunteer,
+          item.requires_verification, item.display_order, item.color_hex,
+          item.created_at, item.updated_at
         ]
       );
       synced++;

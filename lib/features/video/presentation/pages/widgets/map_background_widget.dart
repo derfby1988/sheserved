@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import '../../../models/video_models.dart';
 import 'package:sheserved/services/platform_service.dart';
 
@@ -176,19 +177,54 @@ class MapBackgroundWidget extends StatelessWidget {
                     color: const Color(0xFF7B2FF7),
                     width: 5,
                   ),
-                  // 2. เส้นทางจาก Responder แต่ละคนไปยังจุดเกิดเหตุ (ถ้ามีพิกัด)
-                  ...responders.where((r) => r['currentLat'] != null && r['currentLng'] != null && routePoints.isNotEmpty).map((r) {
+                  // 2. เส้นทางจาก Responder แต่ละคนไปยังจุดเกิดเหตุ
+                  // ✅ [Phase 1: Responder Route Polyline + Route Color by Profession]
+                  // ถ้ามี routePolyline (encoded) ให้ decode วาดเส้นทางละเอียด
+                  // ถ้าไม่มี ให้ fallback เส้นตรงเดิม (ประหยัดค่าใช้จ่าย/ไม่มีเน็ต)
+                  ...responders.where((r) => (r['currentLat'] != null && r['currentLng'] != null) || r['routePolyline'] != null).map((r) {
+                    Color routeColor = Colors.blue.withValues(alpha: 0.7);
+                    if (r['professionColor'] != null) {
+                      try {
+                        final hex = (r['professionColor'] as String).replaceAll('#', '').trim();
+                        if (hex.length == 6) {
+                          routeColor = Color(int.parse('FF$hex', radix: 16)).withValues(alpha: 0.85);
+                        } else if (hex.length == 8) {
+                          routeColor = Color(int.parse(hex, radix: 16));
+                        }
+                      } catch (_) {}
+                    }
+
+                    List<LatLng> points = [];
+                    final encoded = r['routePolyline'] as String?;
+                    if (encoded != null && encoded.isNotEmpty) {
+                      try {
+                        final decoded = PolylinePoints.decodePolyline(encoded);
+                        points = decoded.map((p) => LatLng(p.latitude, p.longitude)).toList();
+                      } catch (e) {
+                        debugPrint('MapBackgroundWidget: decode polyline failed: $e');
+                      }
+                    }
+
+                    // Fallback to straight dashed line if no decoded points
+                    if (points.isEmpty && r['currentLat'] != null && r['currentLng'] != null && routePoints.isNotEmpty) {
+                      points = [
+                        LatLng(r['currentLat'], r['currentLng']),
+                        routePoints.last,
+                      ];
+                    }
+
+                    if (points.isEmpty) return null;
+
+                    final isDecoded = points.length > 2;
+
                     return Polyline(
                       polylineId: PolylineId('responder_route_${r['id']}'),
-                      points: [
-                        LatLng(r['currentLat'], r['currentLng']),
-                        routePoints.last, // ลากไปยังจุดล่าสุดของที่เกิดเหตุ
-                      ],
-                      color: Colors.blue.withOpacity(0.6),
-                      width: 4,
-                      patterns: [PatternItem.dash(20), PatternItem.gap(10)], // ทำเป็นเส้นประเพื่อให้ดูแตกต่าง
+                      points: points,
+                      color: routeColor,
+                      width: isDecoded ? 5 : 4,
+                      patterns: isDecoded ? [] : [PatternItem.dash(20), PatternItem.gap(10)],
                     );
-                  }),
+                  }).whereType<Polyline>(),
                 },
           markers: mapMarkers,
         ),

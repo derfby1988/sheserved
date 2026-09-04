@@ -876,6 +876,7 @@ module.exports = (pool) => {
                     ir.accepted_at,
                     ir.volunteer_start_lat,
                     ir.volunteer_start_lng,
+                    ir.route_polyline,
                     TRIM(CONCAT(u.first_name, ' ', COALESCE(u.last_name, ''))) AS volunteer_name,
                     p.id AS profession_id,
                     p.name AS profession_name,
@@ -883,12 +884,16 @@ module.exports = (pool) => {
                  FROM incident_responses ir
                  LEFT JOIN users u ON u.id = ir.volunteer_id
                  LEFT JOIN LATERAL (
+                    -- Fallback เมื่อ users.profession_id เป็น null เท่านั้น:
+                    -- เลือกอาชีพ "จิตอาสา" (is_volunteer = true) จาก user_group_roles
                     SELECT ugr.profession_id
                     FROM user_group_roles ugr
+                    LEFT JOIN professions pv ON pv.id = ugr.profession_id
                     WHERE ugr.user_id = ir.volunteer_id
+                    ORDER BY COALESCE(pv.is_volunteer, false) DESC, pv.display_order ASC NULLS LAST
                     LIMIT 1
-                 ) ugr ON true
-                 LEFT JOIN professions p ON p.id = ugr.profession_id
+                 ) vp ON true
+                 LEFT JOIN professions p ON p.id = COALESCE(u.profession_id, vp.profession_id)
                  WHERE ir.video_id = $1
                    AND ir.status IN ('accepted', 'arrived', 'en_route')
                  ORDER BY ir.accepted_at ASC`,

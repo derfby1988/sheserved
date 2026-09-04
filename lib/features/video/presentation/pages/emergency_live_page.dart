@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sheserved/features/home/presentation/widgets/background_permission_dialog.dart';
 import '../../../../services/location_tracking_service.dart';
@@ -205,6 +206,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   bool _isChatVisible = false;
   bool _hasRejected = false;
   String? _currentProfessionName;
+  String? _currentProfessionColor;
   Map<String, dynamic>? _emergencyHealthSession;
   bool _isEmergencyHealthPanicVisible = false;
   bool _hasPlayedEmergencyHealthAlert = false;
@@ -1145,18 +1147,34 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     }
   }
 
-  /// ดึงชื่ออาชีพของผู้ใช้ปัจจุบัน (เพื่อแสดงใน Chat สำหรับ Responder)
+  /// ดึงชื่อและสีอาชีพของผู้ใช้ปัจจุบัน (เพื่อแสดงใน Chat และเส้นทางสำหรับ Responder)
   Future<void> _fetchProfessionName() async {
     final user = AuthService.instance.currentUser;
-    if (user != null && user.professionId != null) {
+    String? profId = user?.professionId;
+
+    if (user != null && profId == null) {
+      try {
+        final groupRole = await Supabase.instance.client
+            .from('user_group_roles')
+            .select('profession_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        profId = groupRole?['profession_id']?.toString();
+      } catch (_) {}
+    }
+
+    if (profId != null) {
       try {
         final repo = ServiceLocator.instance.professionRepository;
-        final profession = await repo.getProfessionById(user.professionId!);
+        final profession = await repo.getProfessionById(profId);
         if (profession != null && mounted) {
-          setState(() => _currentProfessionName = profession.name);
+          setState(() {
+            _currentProfessionName = profession.name;
+            _currentProfessionColor = profession.colorHex;
+          });
         }
       } catch (e) {
-        debugPrint('Error fetching profession name: $e');
+        debugPrint('Error fetching profession name/color: $e');
       }
     }
   }

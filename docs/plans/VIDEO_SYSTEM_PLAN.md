@@ -756,6 +756,7 @@ color: Colors.blue.withOpacity(0.6),
 #### 3.2 Backend — `websocket-server/routes/video.js`
 - ตรวจสอบ `GET /:id/responders` ว่า `SELECT p.color_hex` ครบทุก responder
 - ตรวจสอบ Supabase fallback ใน `video_repository.dart` ว่าดึง `professions.color_hex` ด้วย
+- ✅ **(กำหนด 2026-09-04) ลำดับความสำคัญของอาชีพที่ใช้ระบายสีเส้น**: `users.profession_id` (อาชีพหลักที่แสดงบนโปรไฟล์) → ถ้า null ค่อยใช้ `user_group_roles` โดยเลือกอาชีพ `is_volunteer = true` ก่อน แล้วเรียงตาม `display_order` — เหตุผล: จิตอาสาอาจมีแถว role เก่าค้างใน Local DB (เช่น กู้ภัย) ที่ไม่ตรงกับอาชีพหลักที่โปรไฟล์แสดง การใช้ `users.profession_id` ก่อนทำให้สีเส้นตรงกับอาชีพในโปรไฟล์เสมอ
 - (Optional) เพิ่ม `p.category` หากต้องการรองรับ "สีกลุ่มอาชีพ" ในอนาคต
 
 ### 4. Edge Cases
@@ -779,6 +780,42 @@ color: Colors.blue.withOpacity(0.6),
 - Fallback default ทำงานได้โดยไม่ crash
 - Dash pattern และ width คงเดิม
 - ไม่กระทบ marker hue ที่ใช้ `professionColor` อยู่แล้ว
+
+### 7. ✅ บทเรียนจากการแก้ไขจริง (2026-09-04) — สีเส้นไม่ตรงตารางเมื่อเปลี่ยนสีอาชีพ
+
+> สถานะ: แก้ไขและตรวจสอบบนเครื่องจริงแล้ว (เส้น responder แสดงสี `#2196F3` ตาม `professions.color_hex`)
+
+#### 7.1 อาการที่พบ
+เปลี่ยนสีอาชีพในหน้าแก้ไขอาชีพ (Admin) แล้วเส้นทางจิตอาสาบนแผนที่ `EmergencyLivePage` ยังแสดงสีเก่า (แดง/เขียว/ส้ม) ไม่ตามตารางจริง
+
+#### 7.2 สาเหตุที่พบ (เรียงตามลำดับการไล่)
+
+| # | ปัญหา | ตำแหน่ง | วิธีแก้ |
+|---|---|---|---|
+| 1 | **Server เก่ารันค้าง** — process `node server.js` เก่ายึด port 3000 ทำให้ `npm run dev` ใหม่ crash ด้วย `EADDRINUSE` และโค้ดที่แก้ไม่เคยถูกโหลด | กระบวนการ dev | `lsof -nP -iTCP:3000 -sTCP:LISTEN` → kill PID เก่า → สตาร์ตใหม่ **ทุกครั้งที่แก้ backend ต้อง verify ว่า server ที่รันอยู่เป็นโค้ดใหม่** |
+| 2 | **Sync endpoint ไม่รวม `color_hex` / `is_volunteer`** — `POST /api/professions/sync` (Supabase → Local PostgreSQL) ไม่รวมคอลัมน์นี้ ทำให้ Local DB เก็บสี/ธงเก่า (เช่น `#FF0000`) แม้ Supabase แก้เป็นสีใหม่แล้ว | `websocket-server/server.js` (`/api/professions/sync`, `GET /api/professions`) | เพิ่ม `color_hex` และ `is_volunteer` ใน INSERT/ON CONFLICT UPDATE และ SELECT ของ `/api/professions` — **หลังแก้สีในหน้าแก้ไขอาชีพ ต้องรัน sync นี้อีกครั้ง** สีจึงถึง Local DB |
+| 3 | **Migration ไม่ครบ** — `incident_responses.route_polyline` ไม่มีใน Local PostgreSQL → `GET /:id/responders` 500 (`column ir.route_polyline does not exist`) | `websocket-server/migrations/yield_way_system.sql` | รัน migration: `psql -f migrations/yield_way_system.sql` (ใช้ `IF NOT EXISTS` ปลอดภัย) |
+| 4 | **ลำดับความสำคัญของอาชีพผิด** — จิตอาสา 1 คนอาจมีทั้ง `users.profession_id` (อาชีพหลักตามโปรไฟล์) และแถว `user_group_roles` เก่าค้าง (เช่น กู้ภัย) ที่ Supabase ไม่มี การ `LIMIT 1` แบบไม่เรียง หรือการให้น้ำหนัก roles ก่อน ทำให้หยิบอาชีพผิด | `routes/video.js` + `video_repository.dart` | **ใช้ `users.profession_id` เป็นลำดับแรกเสมอ** (ตรงกับอาชีพบนโปรไฟล์) → fallback `user_group_roles` เรียง `is_volunteer DESC, display_order ASC` เฉพาะเมื่ออาชีพหลักเป็น null |
+| 5 | **Optimistic responder ใช้สี hardcode** — `_acceptRescue()` เคย add responder ด้วย `professionColor: '#FF3B30'` ก่อนข้อมูลจริงมา | `emergency_navigation_logic.dart` | ลบ optimistic entry ออก — หลังรับงานเรียก `await _loadResponders()` โหลดจาก Local API/ฐานข้อมูลจริงเท่านั้น |
+
+#### 7.3 ลำดับความสำคัญของอาชีพที่ใช้ระบายสี (ข้อบังคับ)
+
+```
+1. users.profession_id            ← อาชีพหลักที่โปรไฟล์แสดง (Supabase = source of truth)
+2. user_group_roles → is_volunteer = true ก่อน → display_order
+3. สี default Colors.blue เมื่อไม่มีข้อมูล
+```
+
+⚠️ **ห้าม**ใช้ `user_group_roles` ก่อน `users.profession_id` — Local DB อาจมีแถว role เก่าค้าง/ซ้ำที่ Supabase ไม่มี (พบจริง: 37 แถวซ้ำของ user เดียว) ทำให้สีเส้นไม่ตรงโปรไฟล์
+
+#### 7.4 Checklist เมื่อเปลี่ยนสีอาชีพจากหน้าแก้ไขอาชีพ
+
+- [ ] บันทึกในหน้าแก้ไขอาชีพ → เขียน `professions.color_hex` ที่ **Supabase**
+- [ ] รัน sync ให้ Local PostgreSQL รับค่าใหม่ (`POST /api/professions/sync` ด้วยข้อมูลจาก Supabase — endpoint นี้รวม `color_hex` + `is_volunteer` แล้ว)
+- [ ] ตรวจ: `SELECT name, color_hex FROM professions WHERE id = '<id>'` ใน **Local PostgreSQL** ต้องได้สีใหม่
+- [ ] ตรวจ endpoint: `GET /api/videos/:id/responders` → `profession_color` ต้องเป็นสีใหม่
+- [ ] Hot restart แอป (responder list โหลดครั้งเดียวตอนเข้าเหตุการณ์)
+- [ ] ⚠️ ถ้าแก้แล้วสียังเก่า → เช็คว่า **process บน port 3000 เป็นโค้ดใหม่** (`lsof -i :3000` — มีของเก่ารันค้างบ่อยมาก)
 
 ---
 
@@ -4964,10 +5001,10 @@ Column(
 ### 4. Testing Checklist
 
 **Phase 1:**
-- [ ] Decode `encodedPolyline` ได้ถูกต้อง
-- [ ] `Polyline` วาดบน `EmergencyLivePage` ได้
-- [ ] `_adjustMapBounds` include ทุกจุดของ polyline
-- [ ] สี/width/opacity ถูกต้อง
+- [x] Decode `encodedPolyline` ได้ถูกต้อง (`PolylinePoints.decodePolyline`)
+- [x] `Polyline` วาดบน `EmergencyLivePage` ได้ (`MapBackgroundWidget` decode `routePolyline` อัตโนมัติ พร้อม fallback เส้นตรงประเดิม)
+- [x] `_adjustMapBounds` include ทุกจุดของ polyline (ป้องกันเส้นทางโค้งหลุดขอบแผนที่)
+- [x] สีตามอาชีพ (`professionColor`) / width / opacity ถูกต้อง (Phase — Responder Route Color by Profession รวมอยู่ในนี้แล้ว)
 
 **Phase 2:**
 - [ ] เรียก routing provider ได้ใน production mode

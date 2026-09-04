@@ -1205,6 +1205,7 @@ class VideoRepository {
             'professionName': row['profession_name'] ?? 'ทีมกู้ภัย',
             'professionColor': row['profession_color'],
             'professionId': row['profession_id']?.toString(),
+            'routePolyline': row['route_polyline'],
           };
         }).toList();
       }
@@ -1222,7 +1223,7 @@ class VideoRepository {
           .from('incident_responses')
           .select(
             'id, volunteer_id, status, accepted_at, '
-            'volunteer_start_lat, volunteer_start_lng',
+            'volunteer_start_lat, volunteer_start_lng, route_polyline',
           )
           .eq('video_id', videoId)
           .inFilter('status', ['accepted', 'arrived', 'en_route'])
@@ -1250,23 +1251,68 @@ class VideoRepository {
           } catch (_) {}
 
           try {
-            final role = await _client
-                .from('user_group_roles')
-                .select('profession_id')
-                .eq('user_id', volunteerId)
-                .limit(1)
-                .maybeSingle();
-            professionId = role?['profession_id']?.toString();
+            // ✅ Responder Route Color by Profession:
+            // ใช้อาชีพหลักจาก users.profession_id (ตรงกับหน้าโฟไฟล์) เป็นลำดับแรก
+            // ถ้าไม่มี ค่อย fallback ไป user_group_roles (เลือกอาชีพจิตอาสา is_volunteer ก่อน)
+            String? primaryProfId;
+            try {
+              final userRow = await _client
+                  .from('users')
+                  .select('profession_id')
+                  .eq('id', volunteerId)
+                  .maybeSingle();
+              primaryProfId = userRow?['profession_id']?.toString();
+            } catch (_) {}
 
-            if (professionId != null && professionId.isNotEmpty) {
+            final roleIds = <String>[];
+            try {
+              final roles = await _client
+                  .from('user_group_roles')
+                  .select('profession_id')
+                  .eq('user_id', volunteerId);
+              roleIds.addAll(
+                (roles as List)
+                    .map((r) => r['profession_id']?.toString())
+                    .whereType<String>()
+                    .where((id) => id.isNotEmpty),
+              );
+            } catch (_) {}
+
+            final lookupIds = <String>[
+              if (primaryProfId != null && primaryProfId.isNotEmpty)
+                primaryProfId,
+              ...roleIds.where((id) => id != primaryProfId),
+            ];
+            if (lookupIds.isEmpty) {
+              professionId = null;
+            } else {
               try {
-                final profession = await _client
+                final professions = await _client
                     .from('professions')
-                    .select('name, color_hex')
-                    .eq('id', professionId)
-                    .maybeSingle();
-                professionName = profession?['name']?.toString();
-                professionColor = profession?['color_hex']?.toString();
+                    .select('id, name, color_hex, is_volunteer, display_order')
+                    .inFilter('id', lookupIds);
+                final profRows = (professions as List)
+                    .map((p) => Map<String, dynamic>.from(p as Map))
+                    .toList();
+                // เรียง: อาชีพหลัก (users.profession_id) → อาชีพจิตอาสา → display_order
+                int rank(Map<String, dynamic> p) {
+                  final id = p['id']?.toString();
+                  if (id == primaryProfId) return 0;
+                  if (p['is_volunteer'] == true) return 1;
+                  return 2;
+                }
+
+                profRows.sort((a, b) {
+                  final ra = rank(a), rb = rank(b);
+                  if (ra != rb) return ra.compareTo(rb);
+                  return ((a['display_order'] as num?) ?? 0)
+                      .compareTo((b['display_order'] as num?) ?? 0);
+                });
+                if (profRows.isNotEmpty) {
+                  professionId = profRows.first['id']?.toString();
+                  professionName = profRows.first['name']?.toString();
+                  professionColor = profRows.first['color_hex']?.toString();
+                }
               } catch (_) {}
             }
           } catch (_) {}
@@ -1279,6 +1325,7 @@ class VideoRepository {
           'acceptedAt': row['accepted_at'],
           'startLat': row['volunteer_start_lat'],
           'startLng': row['volunteer_start_lng'],
+          'routePolyline': row['route_polyline'],
           'volunteerName': volunteerName ?? 'อาสาสมัคร',
           'professionName': professionName ?? 'ทีมกู้ภัย',
           'professionColor': professionColor,

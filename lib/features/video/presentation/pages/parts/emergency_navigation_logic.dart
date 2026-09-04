@@ -629,12 +629,28 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     double maxLat = _routePoints.last.latitude;
     double minLng = _routePoints.last.longitude;
     double maxLng = _routePoints.last.longitude;
+
+    void updateBounds(double lat, double lng) {
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+
     for (var r in _responders) {
       if (r['currentLat'] != null && r['currentLng'] != null) {
-        if (r['currentLat'] < minLat) minLat = r['currentLat'];
-        if (r['currentLat'] > maxLat) maxLat = r['currentLat'];
-        if (r['currentLng'] < minLng) minLng = r['currentLng'];
-        if (r['currentLng'] > maxLng) maxLng = r['currentLng'];
+        updateBounds(r['currentLat'], r['currentLng']);
+      }
+
+      // ✅ [Phase 1: Responder Route Polyline] Include every point of decoded polyline
+      final encoded = r['routePolyline'] as String?;
+      if (encoded != null && encoded.isNotEmpty) {
+        try {
+          final decoded = PolylinePoints.decodePolyline(encoded);
+          for (var p in decoded) {
+            updateBounds(p.latitude, p.longitude);
+          }
+        } catch (_) {}
       }
     }
 
@@ -1100,22 +1116,6 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         });
       }
 
-      final user = AuthService.instance.currentUser;
-      if (user != null && _userLocation != null) {
-        _responders.add({
-          'id': responseId,
-          'volunteerId': userId,
-          'status': 'accepted',
-          'volunteerName': user.fullName,
-          'professionName': 'อาสาสมัคร',
-          'professionColor': '#FF3B30',
-          'currentLat': _userLocation!.latitude,
-          'currentLng': _userLocation!.longitude,
-          'distanceKm': 0.0,
-          'estimatedMinutes': 0,
-        });
-      }
-
       final socket = WebSocketService().socket;
       if (socket != null && socket.connected) {
         socket.emit('rescue-status-update', {
@@ -1126,6 +1126,10 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           'responseId': _currentResponseId,
         });
       }
+
+      // โหลด responder ใหม่จาก Local API/ฐานข้อมูลจริง เพื่อให้
+      // professionColor มาจาก professions.color_hex ไม่ใช้ค่า optimistic ที่ค้างอยู่
+      await _loadResponders();
 
       _startResponderTracking();
       _adjustMapBounds();
